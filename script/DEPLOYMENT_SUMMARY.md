@@ -1,6 +1,6 @@
 # Deployment System Summary
 
-> **⚠️ Deployment is now EOA-only.** A single **deployer EOA** runs every step (`forge script … --broadcast`); no Safe executes any deploy/config transaction. The deployer holds `DEFAULT_ADMIN_ROLE` + `MANAGER` through deploy/config, and the final step `07_TransferAdminToSecurityCouncil.s.sol` hands those roles to the **security-council Safe** (`addresses.securityCouncil`) and renounces the deployer's. The council Safe is the end-state admin and drives post-deploy **upgrades** via `script/upgrade/*` (which still emit Safe-TX batches). **`script/deploy/README.md` is the authoritative, up-to-date procedure** — the Safe-TX-bundle steps described in some sections below are historical and superseded for deployment/configuration (`SafeTxBuilder` is retained only for the council's governance/upgrade scripts).
+> **⚠️ Deployment is now EOA-only.** A single **deployer EOA** runs every step (`forge script … --broadcast`); no Safe executes any deploy/config transaction. The deployer holds `DEFAULT_ADMIN_ROLE` + `MANAGER` through deploy/config, and the final ROLE-HANDOFF step `07_TransferAdminToSecurityCouncil.s.sol` hands those roles to the **security-council Safe** (`addresses.securityCouncil`) and renounces the deployer's. The council Safe is the end-state admin and drives post-deploy **upgrades** via `script/upgrade/*` (which still emit Safe-TX batches). **`script/deploy/README.md` is the authoritative, up-to-date procedure** — the Safe-TX-bundle steps described in some sections below are historical and superseded for deployment/configuration (`SafeTxBuilder` is retained only for the council's governance/upgrade scripts).
 
 > **Status — deployed across 24 chains.** The Onchain Accounting System (NAV) is live: **7 chains fully configured** (custom price feeds + balance adapters) and **17 with the NAV implementation + proxy** only. Deployed addresses live in `script/config/deployments/{chainId}.json` (the only place addresses live; broadcast logs are not committed) and are mirrored in [`script/deploy/DEPLOYED_ADDRESSES.md`](deploy/DEPLOYED_ADDRESSES.md). The `PriceFeedLib` / `NAVRegistryLib` library pins are build config (not per-chain deployed addresses).
 >
@@ -11,7 +11,7 @@
 
 ## ✅ What Has Been Implemented
 
-This deployment system uses an **EOA deployer** (`--broadcast`) with **CREATE2 deterministic addresses** across multiple chains, handing admin to a security-council Safe at the end (step 07).
+This deployment system uses an **EOA deployer** (`--broadcast`) with **CREATE2 deterministic addresses** across multiple chains, handing admin to a security-council Safe at the end (step 07). Note `07` is the last step that touches the NAV/Bridge **proxies**, not the last script: `08` (asset-kind registry) is order-independent and stays EOA-owned by design.
 
 ### Core Infrastructure
 

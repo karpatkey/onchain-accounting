@@ -41,22 +41,53 @@ contract AssetKindRegistryTest is Test {
     // The six combinations
     // ============================================================
 
-    /// @dev Every cell of the 2x3 matrix round-trips. This is the test that justifies two axes rather than one enum:
-    ///      if a single enum could express these, the combinations would not be independent.
+    /// @dev Every cell the registry can hold round-trips, storage-wise: the mapping is agnostic and accepts all six
+    ///      pairs. This is the test that justifies two axes rather than one enum — if a single enum could express
+    ///      these, the combinations would not be independent.
+    ///
+    ///      **`Pegged + Appreciating` is exercised here for STORAGE only, and its member is deliberately a made-up
+    ///      address rather than a real asset.** No real asset belongs in that cell: a growing redemption rate on a
+    ///      static balance moves the USD price off $1, which is what "not pegged" means. See {AccrualKind}. Storing it
+    ///      must still work — the registry is a dumb map and must not silently reinterpret what a MANAGER wrote — but
+    ///      pointing a real symbol at it would pin a classification the pricing layer contradicts.
     function test_allSixCombinationsRoundTrip() public {
+        address unreachableCellProbe = makeAddr("pegged-appreciating-has-no-real-member");
+
         _set(USDC, PegKind.Pegged, AccrualKind.None);
         _set(AUSDC, PegKind.Pegged, AccrualKind.Rebasing);
-        _set(SDAI, PegKind.Pegged, AccrualKind.Appreciating);
+        _set(unreachableCellProbe, PegKind.Pegged, AccrualKind.Appreciating);
         _set(WETH, PegKind.Floating, AccrualKind.None);
         _set(STETH, PegKind.Floating, AccrualKind.Rebasing);
         _set(WSTETH, PegKind.Floating, AccrualKind.Appreciating);
 
         _assertKind(USDC, PegKind.Pegged, AccrualKind.None);
         _assertKind(AUSDC, PegKind.Pegged, AccrualKind.Rebasing);
-        _assertKind(SDAI, PegKind.Pegged, AccrualKind.Appreciating);
+        _assertKind(unreachableCellProbe, PegKind.Pegged, AccrualKind.Appreciating);
         _assertKind(WETH, PegKind.Floating, AccrualKind.None);
         _assertKind(STETH, PegKind.Floating, AccrualKind.Rebasing);
         _assertKind(WSTETH, PegKind.Floating, AccrualKind.Appreciating);
+    }
+
+    /// @dev **sDAI is `Floating`, not `Pegged`** — the ruling that resolves the one contested cell. A yield-bearing
+    ///      wrapper has no peg: its USD price is not $1 and rises with accrued yield, exactly as wstETH's does with
+    ///      ETH. This test exists because an earlier revision of this file asserted `Pegged + Appreciating` for sDAI,
+    ///      which contradicted the repo's own pricing layer — `pegToleranceBps` (the absolute-$1 guard) is set on the
+    ///      eight true stablecoins and NOT on sDAI/sGHO/sUSDe/sUSDS, which get the wstETH treatment instead.
+    ///
+    ///      If this ever flips back to `Pegged`, the registry and `PriceFeedLib` disagree about whether the asset is
+    ///      worth $1, and `08_DeployAssetKindRegistry`'s `Pegged` ⇔ `pegToleranceBps > 0` assertion should have fired
+    ///      first. sDAI and wstETH landing in the SAME cell is the point: both are appreciating wrappers, and the
+    ///      denomination of the underlying does not make one of them pegged.
+    function test_sDAIIsFloatingNotPegged_becauseYieldBearingMeansNoPeg() public {
+        _set(SDAI, PegKind.Floating, AccrualKind.Appreciating);
+        _assertKind(SDAI, PegKind.Floating, AccrualKind.Appreciating);
+
+        // Same cell as wstETH — the shared mechanism, not a coincidence.
+        _set(WSTETH, PegKind.Floating, AccrualKind.Appreciating);
+        (PegKind sdaiPeg, AccrualKind sdaiAccrual) = registry.getAssetKind(SDAI);
+        (PegKind wstethPeg, AccrualKind wstethAccrual) = registry.getAssetKind(WSTETH);
+        assertEq(uint8(sdaiPeg), uint8(wstethPeg), "an appreciating wrapper is Floating regardless of denomination");
+        assertEq(uint8(sdaiAccrual), uint8(wstethAccrual));
     }
 
     /// @dev `Pegged + Rebasing` has NO registered member today — no aToken is currently registered — so it would

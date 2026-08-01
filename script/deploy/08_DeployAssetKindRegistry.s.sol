@@ -22,10 +22,17 @@ import {PegKind, AccrualKind} from "../../src/utils/AssetKind.sol";
 ///      enum ever gains a member, while an unknown string cannot be mistaken for a valid one. The string -> enum
 ///      mapping lives in {ConfigReader} so production and any harness share one source of truth.
 ///
-///      Independent of the NAV stack: this touches neither `PriceFeedLib` nor `NAVRegistryLib`, so neither library pin
-///      moves and this step does not gate — or get gated by — a NAV redeploy. Run it any time after the assets config
-///      exists. Re-running is safe: the step is idempotent and re-classifies an existing registry rather than
-///      deploying a second one.
+///      Independent of the NAV stack: this SCRIPT references neither `PriceFeedLib` nor `NAVRegistryLib`, so it does not
+///      gate — or get gated by — a NAV redeploy. Run it any time after the assets config exists.
+///
+///      **But do not read that as "no pin regeneration is owed".** The FEATURE moves `PriceFeedLib`'s pin
+///      (`0xfc6AE534…` → `0x49C18627665562F4bEbae5208BA6eF7428039614`): `AssetKindRegistry`'s presence under `src/`
+///      tipped the `via_ir` whole-program stack margin and forced the `PriceFeedLib._assignHealthArrays` extraction.
+///      `NAVRegistryLib` is genuinely unchanged. See the note on {AssetKindRegistry}.
+///
+///      Re-running is safe — the step is idempotent and re-classifies an existing registry rather than deploying a
+///      second one — **but only with `PERSIST_DEPLOYMENTS=1`**, since the skip guard reads the record that flag gates.
+///      See the warning at the guard itself.
 ///
 ///      **The registry is EOA-owned deliberately FOR THIS DEPLOY, with a handover to the security-council Safe
 ///      PLANNED.** This is a considered choice, not a defect — do not "fix" it by adding a handoff to `07` or a new
@@ -52,6 +59,18 @@ contract DeployAssetKindRegistry is BaseDeployScript {
     ///         {AssetAddressMissing} because the two are different config mistakes: an absent `address` key versus a
     ///         present-but-zero one.
     error AssetAddressZero(string symbol);
+
+    /// @notice Thrown when an asset's `pegKind` disagrees with its `pegToleranceBps` about whether the asset is worth
+    ///         $1. Carries both sides so the operator sees the disagreement, not just one half of it.
+    /// @dev This repo has TWO authorities on peggedness and they must not silently diverge. `pegToleranceBps` enables
+    ///      {PriceFeedLib}'s absolute peg guard and is documented there as set "only on assets whose fundamental value
+    ///      is $1"; `pegKind` is the new classification. The invariant is `Pegged` ⇔ `pegToleranceBps > 0`.
+    ///
+    ///      This guard exists because the divergence was found BY HAND during review: the matrix originally called sDAI
+    ///      `Pegged` while the pricing config gave it the wstETH treatment (`divergenceToleranceBps` + monitor feeds,
+    ///      no `pegToleranceBps`). Two authorities disagreeing in silence is the failure mode; this makes them disagree
+    ///      loudly, before the classification reaches a chain where it is indistinguishable from a correct one.
+    error PegKindContradictsPegTolerance(string symbol, bool pegged, uint256 pegToleranceBps);
 
     function run() public override {
         uint256 chainId = block.chainid;
@@ -80,8 +99,15 @@ contract DeployAssetKindRegistry is BaseDeployScript {
             // wrong: it is NOT guarding a half-deploy. `vm.startBroadcast()` only RECORDS transactions — they are sent
             // after `run()` returns — so a revert anywhere in this body aborts before anything is broadcast, and that
             // holds under `--skip-simulation` too (which skips the on-chain simulation, not the local execution).
-            // There is no reachable "registry deployed but unclassified" state. This guard buys a named error and a
-            // script that is correct on its own terms rather than by virtue of how `forge script` sequences work.
+            // So no CONFIG error can produce a "deployed but unclassified" registry — this guard buys a named error and
+            // a script correct on its own terms rather than by virtue of how `forge script` sequences work.
+            //
+            // That state IS still reachable one stage later, and precision matters more here than reassurance: once
+            // broadcast begins, `new AssetKindRegistry` and `setAssetKinds` are dispatched as two sequential txs, so if
+            // the second never lands — gas, RPC failure, an operator interrupt, a reorg — the registry exists
+            // unclassified and its address is already recorded. The idempotent re-run recovers it, which is why this is
+            // tolerable rather than fatal. **Verify after broadcasting that classification actually landed;** do not
+            // read this guard as making that check unnecessary.
             if (assets[i] == address(0)) revert AssetAddressZero(symbol);
 
             (PegKind peg, bool pegValid) = ConfigReader.readAssetPegKind(vm, chainId, symbol);
@@ -91,6 +117,24 @@ contract DeployAssetKindRegistry is BaseDeployScript {
             (AccrualKind accrual, bool accrualValid) = ConfigReader.readAssetAccrualKind(vm, chainId, symbol);
             if (!accrualValid) revert AssetKindMissingOrInvalid(symbol, "accrualKind");
             accrualKinds[i] = accrual;
+
+            // Cross-check the two authorities on peggedness. See {PegKindContradictsPegTolerance}: `pegToleranceBps`
+            // already gates PriceFeedLib's absolute-$1 guard, so `pegKind == Pegged` must agree with it in BOTH
+            // directions. A `Pegged` asset with no peg tolerance is a classification the pricing layer contradicts; a
+            // peg-guarded asset marked `Floating` is the same disagreement mirrored.
+            //
+            // **DO NOT RELAX THIS TO A WARNING, AND DO NOT DELETE IT AS REDUNDANT.** It looks redundant precisely when
+            // it is working — the two authorities agree today (measured: 25 of 93 configured rows are `Pegged`, and
+            // exactly those 25 carry `pegToleranceBps`, zero violations). This is the guard that makes them fail LOUDLY
+            // rather than silently diverging, and that divergence is not hypothetical: it was already found once, by
+            // hand during review, when the kind matrix called sDAI `Pegged` while the pricing config gave it the wstETH
+            // treatment. A label that contradicts the live peg guard is indistinguishable from a correct one once it is
+            // on-chain, which is why this must abort the deploy rather than log.
+            bool pegged = peg == PegKind.Pegged;
+            uint256 pegToleranceBps = ConfigReader.readAssetPegToleranceBps(vm, chainId, symbol);
+            if (pegged != (pegToleranceBps > 0)) {
+                revert PegKindContradictsPegTolerance(symbol, pegged, pegToleranceBps);
+            }
         }
 
         // Idempotent, like every sibling step (`03`'s per-feed guards, `04`'s adapters and assistants): re-run it and
@@ -103,10 +147,17 @@ contract DeployAssetKindRegistry is BaseDeployScript {
         // The two guards interact: `saveDeployedAddress` (below) writes only when `PERSIST_DEPLOYMENTS` is set, and this
         // guard reads what that wrote. So a real `--broadcast` WITHOUT `PERSIST_DEPLOYMENTS=1` deploys a live registry
         // and records nothing, and the next run deploys a second one — exactly the harm this guard exists to prevent.
-        // There is no fallback: `08` uses plain `new` (CREATE), not CREATE2, so unlike `04`/`05` there is no
-        // deterministic address to probe for code. `saveDeployedAddress` does log "NOT persisted to config" in that
-        // case, but that is one line in a wall of output, in a repo whose own rule is never to trust a deploy script's
-        // exit code. **Always run this step with `PERSIST_DEPLOYMENTS=1`** (the README example does).
+        //
+        // There is no fallback, and it is worth being exact about why, because the obvious explanation is wrong: it is
+        // NOT simply "CREATE rather than CREATE2". `05` does probe a CREATE2 address for code, but `04` does not — its
+        // adapters use plain `new` behind a deployment-record lookup, structurally identical to this. The real
+        // difference is which writer is used: `03`/`04`'s adapters record through the UNGATED
+        // `ConfigReader.writeAdapterAddress`, while this step (like `04`'s three assistants) records through the
+        // `PERSIST_DEPLOYMENTS`-gated `saveDeployedAddress`. So `04`'s assistants share this exposure exactly.
+        //
+        // `saveDeployedAddress` does log "NOT persisted to config" in that case, but that is one line in a wall of
+        // output, in a repo whose own rule is never to trust a deploy script's exit code. **Always run this step with
+        // `PERSIST_DEPLOYMENTS=1`** (the README example does).
         address existing = readDeployedAddress("AssetKindRegistry");
 
         vm.startBroadcast();
@@ -118,9 +169,10 @@ contract DeployAssetKindRegistry is BaseDeployScript {
         } else {
             // The deployer keeps MANAGER so the same deploy run — NOT the same transaction; under
             // `vm.startBroadcast()` the constructor and `setAssetKinds` are two separate txs — can classify. Admin goes
-            // to the chain's configured admin, which is that same EOA on every chain. Both roles staying with the EOA
-            // is the INTENDED end state here, not a pending handoff: `07` deliberately does not know this contract
-            // exists, and moving the roles to the council is a manual post-deploy step. See the docstring above.
+            // to the chain's configured admin, which is that same EOA on every chain. Both roles landing on the EOA is
+            // deliberate FOR THIS DEPLOY, and a handover to the council IS EXPECTED LATER (it rides the deferred
+            // step-07 Safe-handoff work). `07` deliberately does not know this contract exists, so that handover is a
+            // documented MANUAL post-deploy step, not a scripted one — see the docstring above and README.
             registry = new AssetKindRegistry(chain.admin, msg.sender);
         }
 

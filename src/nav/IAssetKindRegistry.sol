@@ -12,6 +12,18 @@ import {PegKind, AccrualKind} from "src/utils/AssetKind.sol";
 ///      `AccrualKind.None` is a plausible-looking answer that is wrong for most assets — a silent default here would
 ///      be indistinguishable from real data, which is the failure mode the repo's fail-closed guards exist to avoid.
 ///      Callers that need to probe without reverting use {isClassified}.
+///
+///      **⚠️ Implementations revert with errors this interface does NOT declare, so this ABI is not a complete error
+///      set.** A consumer generating handlers from `IAssetKindRegistry` alone cannot decode them:
+///      - `InvalidArguments()` — from `src/errors.sol`, a shared repo-wide error. Thrown by BOTH setters when
+///        `asset == address(0)`, and by the constructor when either role holder is `address(0)`. Selector:
+///        `bytes4(keccak256("InvalidArguments()"))`.
+///      - `AccessControlUnauthorizedAccount(address,bytes32)` and `AccessControlBadConfirmation()` — from OpenZeppelin
+///        `AccessControl`, thrown by the MANAGER gate on every mutator and by `renounceRole`.
+///
+///      This note lives on the interface declaration rather than beside the error list because a NatSpec block that
+///      floats between two members attaches to neither and is dropped from `devdoc` entirely — i.e. it would be absent
+///      from exactly the generated documentation its audience reads.
 interface IAssetKindRegistry {
     /// @notice Emitted when an asset's classification is set or changed.
     event AssetKindSet(address indexed asset, PegKind pegKind, AccrualKind accrualKind);
@@ -28,15 +40,9 @@ interface IAssetKindRegistry {
     /// @notice A batch setter was given arrays of differing lengths.
     error KindArrayLengthMismatch(uint256 assets, uint256 pegKinds, uint256 accrualKinds);
 
-    /// @dev **Implementations also revert `InvalidArguments()` (from `src/errors.sol`), which is NOT declared in this
-    ///      interface** — it is a shared repo-wide error rather than a registry-specific one, so it does not appear in
-    ///      this ABI. A consumer generating handlers from this interface alone cannot decode it. It is thrown by both
-    ///      setters when `asset == address(0)`, and by the constructor when either role holder is `address(0)`.
-    ///      Selector: `bytes4(keccak256("InvalidArguments()"))`.
-
     /// @notice Classifies one asset. MANAGER-gated. Re-classification is allowed and emits again.
     /// @dev Reverts `InvalidArguments()` if `asset` is `address(0)` — this repo's USD-quote sentinel, never a
-    ///      registered asset. See the note above on that error not being declared here.
+    ///      registered asset. That error is not declared in this interface; see the contract-level note.
     function setAssetKind(address asset, PegKind pegKind, AccrualKind accrualKind) external;
 
     /// @notice Classifies many assets in one call. MANAGER-gated. All three arrays must be the same length.

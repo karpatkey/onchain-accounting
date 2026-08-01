@@ -21,17 +21,33 @@ enum PegKind {
 ///      exchange RATE grows while the balance is static (sDAI, wstETH, ERC-4626 shares). `None` = neither; value
 ///      changes only with the market price.
 ///
+///      Note that `Appreciating` is exactly the mechanism that makes an asset unpeggable: a growing redemption rate on
+///      a static balance moves the USD price off $1. Hence the empty `Pegged + Appreciating` cell below.
+///
 ///      **Why two axes and not one enum.** A single enum forces a wrong answer on assets this repo already
-///      registers, because peg and accrual vary independently. All six cells are real:
+///      registers, because peg and accrual vary independently:
 ///
 ///      | | `None` | `Rebasing` | `Appreciating` |
 ///      |---|---|---|---|
-///      | `Pegged`   | USDC | aUSDC | sDAI |
-///      | `Floating` | WETH | stETH | wstETH |
+///      | `Pegged`   | USDC | aUSDC | *(unreachable — see below)* |
+///      | `Floating` | WETH | stETH | wstETH, **sDAI**, sGHO, sUSDe, sUSDS |
 ///
-///      Note `Pegged + Rebasing` has **no registered member today** — no aToken is currently registered — but the
-///      cell is reachable and the first aToken registration is a plausible near-term event, so it is a supported
-///      combination rather than a hypothetical one, and it is covered by tests.
+///      **`sDAI` is `Floating`, not `Pegged`** — a yield-bearing wrapper has no peg. Its USD price is not $1 and rises
+///      with its accrued yield, which is the same reason wstETH is `Floating`. This is not a judgement call: the repo's
+///      pricing layer already encodes it. {PriceFeedLib}'s absolute peg guard is enabled per-asset by a non-zero
+///      `pegToleranceBps`, described there as set "only on assets whose fundamental value is $1", and on mainnet it is
+///      set on exactly the eight true stablecoins (USDC, USDS, USDT, DAI, GHO, USDe, RLUSD, crvUSD). The
+///      yield-bearing family — sDAI, sGHO, sUSDe, sUSDS, syrupUSDC — instead carries `divergenceToleranceBps` plus
+///      monitor feeds, i.e. byte-for-byte the wstETH treatment. `08_DeployAssetKindRegistry` asserts the two
+///      authorities agree (`Pegged` ⇔ `pegToleranceBps > 0`) so they can never silently diverge again.
+///
+///      **The two empty cells are empty for DIFFERENT reasons. Do not conflate them.**
+///      - `Pegged + Rebasing` — empty today but genuinely **REACHABLE**: an aToken for USDC has a growing balance at a
+///        $1 price. No aToken is currently registered, and the first such registration legitimately occupies this cell,
+///        so it is a supported combination and is covered by tests deliberately.
+///      - `Pegged + Appreciating` — arguably **UNREACHABLE**, not merely unoccupied. If the redemption rate grows while
+///        the balance is static, the USD price must rise above $1 — which is precisely what "not pegged" means. If you
+///        believe you have found a member, you have probably found a `Floating + Appreciating` asset.
 /// @author KPK
 enum AccrualKind {
     None, // no intrinsic accrual: WETH, USDC, WBTC, ARB

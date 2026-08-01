@@ -89,7 +89,9 @@ forge script script/deploy/07_TransferAdminToSecurityCouncil.s.sol --chain-id 1 
 
 Deploys the per-chain `AssetKindRegistry` and classifies every asset in `nav-config/assets-and-price-feeds/<chainId>.json` on the two-axis taxonomy — `PegKind { Pegged, Floating }` × `AccrualKind { None, Rebasing, Appreciating }`.
 
-**Not coupled to `07`, in either direction.** It deploys a standalone contract with its own roles, touches neither library pin, and never touches the NAV/Bridge proxies — so it can run before or after the council handoff. It is listed last only because it was added last.
+**Not coupled to `07`, in either direction.** It deploys a standalone contract with its own roles and never touches the NAV/Bridge proxies, so it can run before or after the council handoff. It is listed last only because it was added last.
+
+**A pin regeneration IS owed for this feature, though not by this script.** `AssetKindRegistry`'s presence under `src/` tipped the `via_ir` whole-program stack margin and forced an extraction in `PriceFeedLib`, moving its pin `0xfc6AE534…` → `0x49C18627665562F4bEbae5208BA6eF7428039614`. `NAVRegistryLib` is unchanged. Do not conclude from "08 touches neither library" that nothing needs repinning.
 
 **Fail-closed: it aborts unless EVERY configured asset carries a valid `pegKind` and `accrualKind` string.** Absent or unrecognized values are not defaulted, not skipped and not warned about — a default classification is indistinguishable from a real one once it is on-chain, so the only safe place to notice the gap is before the transaction. A revert here is the guard working. Values are strings rather than integers so a stale integer cannot silently re-map if an enum ever gains a member.
 
@@ -115,28 +117,32 @@ Until it happens: that one key can re-classify any asset, and the only signal is
 This is a step **you should expect to perform**, not an optional aside. It is a manual operational action taken after the deploy, outside any script — deliberately not automated, so it does not ride the numbered pipeline. Two council transactions from the deployer EOA, a verification, then two renouncements, mirroring what `07` does for the proxies:
 
 ```bash
+RPC=$YOUR_MAINNET_RPC_URL                # cast defaults to localhost:8545 - always pass this
+DEPLOYER_EOA=0xYourDeployer               # the EOA that ran 08; needed for the renounce calls
 REGISTRY=$(jq -r '.AssetKindRegistry' script/config/deployments/1.json)
 COUNCIL=$(jq -r '.addresses.securityCouncil' script/config/chains/1.json)
-MANAGER_ROLE=$(cast keccak "MANAGER")   # DEFAULT_ADMIN_ROLE is 0x00…0
+MANAGER_ROLE=$(cast keccak "MANAGER")     # DEFAULT_ADMIN_ROLE is 0x00…0
 
 # 1. grant both roles to the council
 cast send $REGISTRY "grantRole(bytes32,address)" \
   0x0000000000000000000000000000000000000000000000000000000000000000 $COUNCIL \
-  --account $DEPLOYER_NAME
-cast send $REGISTRY "grantRole(bytes32,address)" $MANAGER_ROLE $COUNCIL --account $DEPLOYER_NAME
+  --rpc-url $RPC --account $DEPLOYER_NAME
+cast send $REGISTRY "grantRole(bytes32,address)" $MANAGER_ROLE $COUNCIL \
+  --rpc-url $RPC --account $DEPLOYER_NAME
 
 # 2. verify BEFORE renouncing — a renounce with no council admin freezes the registry permanently
 cast call $REGISTRY "hasRole(bytes32,address)(bool)" \
-  0x0000000000000000000000000000000000000000000000000000000000000000 $COUNCIL
-cast call $REGISTRY "hasRole(bytes32,address)(bool)" $MANAGER_ROLE $COUNCIL
+  0x0000000000000000000000000000000000000000000000000000000000000000 $COUNCIL --rpc-url $RPC
+cast call $REGISTRY "hasRole(bytes32,address)(bool)" $MANAGER_ROLE $COUNCIL --rpc-url $RPC
 
 # 3. only then drop the deployer's own roles
-cast send $REGISTRY "renounceRole(bytes32,address)" $MANAGER_ROLE $DEPLOYER_EOA --account $DEPLOYER_NAME
+cast send $REGISTRY "renounceRole(bytes32,address)" $MANAGER_ROLE $DEPLOYER_EOA \
+  --rpc-url $RPC --account $DEPLOYER_NAME
 cast send $REGISTRY "renounceRole(bytes32,address)" \
   0x0000000000000000000000000000000000000000000000000000000000000000 $DEPLOYER_EOA \
-  --account $DEPLOYER_NAME
+  --rpc-url $RPC --account $DEPLOYER_NAME
 ```
 
 Step 2 is not optional. `AssetKindRegistry` is stock OZ `AccessControl` with no renounce restriction, so renouncing the last `DEFAULT_ADMIN_ROLE` before the council holds it leaves **no role admin at all**: the classification map keeps answering reads forever and can never be changed again. Because admin and manager are the same key, one misordered renounce loses both axes at once.
 
-> Note: `PERSIST_DEPLOYMENTS=1` gates the top-level impl/proxy address writes (`saveDeployedAddress` in 01/01_2/02/02_2 **and 08**) to the deployments file `script/config/deployments/{chainId}.json` — without it those only log. The per-adapter writes in 04 (`balanceAdapters.<Name>`) and 05 (`bridgeAdapters.<Name>`) go through `ConfigReader.writeAdapterAddress` and are NOT gated by this flag — they write on every run. Governance after handoff (upgrades) is council-Safe-driven via `script/upgrade/*`, which still produce Safe-TX JSON batches.
+> Note: `PERSIST_DEPLOYMENTS=1` gates the top-level impl/proxy address writes (`saveDeployedAddress` in 01/01_2/02/02_2 **and 08**) to the deployments file `script/config/deployments/{chainId}.json` — without it those only log. The per-adapter writes in 04 (`balanceAdapters.<Name>`) and 05 (`bridgeAdapters.<Name>`) go through `ConfigReader.writeAdapterAddress` and are NOT gated by this flag — they write on every run. **Careful: that exemption does not cover all of 04.** 04's three *assistants* (`NexusMutualStakingPoolsAssistant`, `EtherFiWithdrawalQueueAssistant`, `StakeWiseV3ExitQueueAssistant`) are top-level keys written through the **gated** `saveDeployedAddress`, and their skip-if-deployed guards read those same records — so running 04 without the flag records no assistants and a re-run deploys duplicates. Run 04 with `PERSIST_DEPLOYMENTS=1` too. Governance after handoff (upgrades) is council-Safe-driven via `script/upgrade/*`, which still produce Safe-TX JSON batches.

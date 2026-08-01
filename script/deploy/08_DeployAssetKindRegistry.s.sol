@@ -130,6 +130,12 @@ contract DeployAssetKindRegistry is BaseDeployScript {
             // hand during review, when the kind matrix called sDAI `Pegged` while the pricing config gave it the wstETH
             // treatment. A label that contradicts the live peg guard is indistinguishable from a correct one once it is
             // on-chain, which is why this must abort the deploy rather than log.
+            //
+            // Known tension in the FORWARD direction (`Pegged` ⇒ tolerance set), for whoever hits it first: it makes a
+            // classification axis depend on an operational tolerance choice. A USD stablecoin priced off a fundamental
+            // $1 feed, where a peg guard would be redundant, is definitionally `Pegged` yet would legitimately carry no
+            // tolerance. No such asset exists across the seven configured chains today. If one appears, the right move
+            // is to reconsider this invariant deliberately — NOT to mislabel the asset `Floating` to silence the abort.
             bool pegged = peg == PegKind.Pegged;
             uint256 pegToleranceBps = ConfigReader.readAssetPegToleranceBps(vm, chainId, symbol);
             if (pegged != (pegToleranceBps > 0)) {

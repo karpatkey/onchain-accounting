@@ -35,11 +35,17 @@ enum PegKind {
 ///      **`sDAI` is `Floating`, not `Pegged`** — a yield-bearing wrapper has no peg. Its USD price is not $1 and rises
 ///      with its accrued yield, which is the same reason wstETH is `Floating`. This is not a judgement call: the repo's
 ///      pricing layer already encodes it. {PriceFeedLib}'s absolute peg guard is enabled per-asset by a non-zero
-///      `pegToleranceBps`, described there as set "only on assets whose fundamental value is $1", and on mainnet it is
-///      set on exactly the eight true stablecoins (USDC, USDS, USDT, DAI, GHO, USDe, RLUSD, crvUSD). The
-///      yield-bearing family — sDAI, sGHO, sUSDe, sUSDS, syrupUSDC — instead carries `divergenceToleranceBps` plus
-///      monitor feeds, i.e. byte-for-byte the wstETH treatment. `08_DeployAssetKindRegistry` asserts the two
-///      authorities agree (`Pegged` ⇔ `pegToleranceBps > 0`) so they can never silently diverge again.
+///      `pegToleranceBps`, described there as set "only on assets whose fundamental value is $1", and across the seven
+///      configured chains it is set on exactly 25 rows — the true stablecoins (on mainnet: USDC, USDS, USDT, DAI, GHO,
+///      USDe, RLUSD, crvUSD). **No yield-bearing wrapper carries it** — not sDAI, sGHO, sUSDe, sUSDS or syrupUSDC —
+///      which is the discriminator, and it holds for every one of them.
+///
+///      Be careful not to over-state the parallel: only `sUSDe` additionally gets wstETH's exact treatment
+///      (`divergenceToleranceBps` + monitor feeds); sGHO, sUSDS and syrupUSDC carry neither, because no independent
+///      market feed exists for them. And `sDAI` is not a mainnet-registered asset at all — it is configured only on
+///      Gnosis (chain 100). So the shared fact is the ABSENCE of a peg tolerance, not the presence of divergence
+///      monitoring. `08_DeployAssetKindRegistry` asserts the two authorities agree (`Pegged` ⇔ `pegToleranceBps > 0`)
+///      so they can never silently diverge again.
 ///
 ///      **The two empty cells are empty for DIFFERENT reasons. Do not conflate them.**
 ///      - `Pegged + Rebasing` — empty today but genuinely **REACHABLE**: an aToken for USDC has a growing balance at a

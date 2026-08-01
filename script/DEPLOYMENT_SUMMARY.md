@@ -452,7 +452,8 @@ Note: Proxy deploy + init is done via EOA in `02_DeployProxies.s.sol` (no Safe T
 4. **Deploy adapters** - Run scripts 03–05 with adapters enabled in the `contracts-deployment-config/` files; broadcast to deploy adapter contracts.
 5. **Configure adapters** - Run `06_Configure.s.sol` with `--broadcast --account` (deployer EOA holds admin+MANAGER): adds balance adapters, sets meta-instances, authorizes bridge adapters, authorizes bridge accounts, and registers bridge assets (the last two from `bridge-escrow/<chainId>.json` — required for `depositAndBridge` to work). Idempotent.
 6. **Verify** - Run `VerifyEtherscan.s.sol` (or `script/verify/verify-all.sh`) to check and submit `forge verify-contract` for each deployed contract.
-7. **Transfer admin** - Run `07_TransferAdminToSecurityCouncil.s.sol` last: hands DEFAULT_ADMIN + MANAGER to the council Safe and renounces the deployer's roles.
+7. **Transfer admin** - Run `07_TransferAdminToSecurityCouncil.s.sol` as the last ROLE-HANDOFF step: hands DEFAULT_ADMIN + MANAGER to the council Safe and renounces the deployer's roles.
+8. **Asset-kind registry** - Run `08_DeployAssetKindRegistry.s.sol` with `PERSIST_DEPLOYMENTS=1`. Order-independent (before or after 07) but **do not skip it**, or no `AssetKindRegistry` exists on the chain and nothing in the pipeline says so. Fail-closed: aborts unless every configured asset carries a valid `pegKind` + `accrualKind`.
 
 ## What You Need to Do to Deploy NAVCalculator and BridgeEscrow
 

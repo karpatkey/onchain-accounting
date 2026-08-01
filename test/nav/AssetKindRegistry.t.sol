@@ -70,19 +70,26 @@ contract AssetKindRegistryTest is Test {
 
     /// @dev **sDAI is `Floating`, not `Pegged`** — the ruling that resolves the one contested cell. A yield-bearing
     ///      wrapper has no peg: its USD price is not $1 and rises with accrued yield, exactly as wstETH's does with
-    ///      ETH. This test exists because an earlier revision of this file asserted `Pegged + Appreciating` for sDAI,
-    ///      which contradicted the repo's own pricing layer — `pegToleranceBps` (the absolute-$1 guard) is set on the
-    ///      eight true stablecoins and NOT on sDAI/sGHO/sUSDe/sUSDS, which get the wstETH treatment instead.
+    ///      ETH. An earlier revision of this file asserted `Pegged + Appreciating` for sDAI, which contradicted the
+    ///      repo's own pricing layer: `pegToleranceBps` (the absolute-$1 guard) is set on the true stablecoins and on
+    ///      **no** yield-bearing wrapper. That absence is the discriminator — note that only `sUSDe` also carries
+    ///      wstETH's `divergenceToleranceBps` + monitors, and sDAI is configured on Gnosis rather than mainnet.
     ///
-    ///      If this ever flips back to `Pegged`, the registry and `PriceFeedLib` disagree about whether the asset is
-    ///      worth $1, and `08_DeployAssetKindRegistry`'s `Pegged` ⇔ `pegToleranceBps > 0` assertion should have fired
-    ///      first. sDAI and wstETH landing in the SAME cell is the point: both are appreciating wrappers, and the
-    ///      denomination of the underlying does not make one of them pegged.
+    ///      **⚠️ This is a DOCUMENTATION test, not a machine check of the ruling, and must not be cited as one.** Every
+    ///      value it asserts is written by the test two lines earlier, and nothing in THIS repo classifies sDAI — the
+    ///      classification data lives in the sibling config PR. So no mutation of the production code fails this test
+    ///      that `test_allSixCombinationsRoundTrip` would not already catch. It is kept for the same reason
+    ///      {test_wstETHIsFloatingNotPegged} is: it records the intended classification next to the reasoning, where a
+    ///      future author will look.
+    ///
+    ///      The ONLY machine check of the ruling is `08_DeployAssetKindRegistry`'s `Pegged` ⇔ `pegToleranceBps > 0`
+    ///      assertion, which runs against the real config at deploy time and aborts on disagreement.
     function test_sDAIIsFloatingNotPegged_becauseYieldBearingMeansNoPeg() public {
         _set(SDAI, PegKind.Floating, AccrualKind.Appreciating);
         _assertKind(SDAI, PegKind.Floating, AccrualKind.Appreciating);
 
-        // Same cell as wstETH — the shared mechanism, not a coincidence.
+        // Same cell as wstETH — recording the shared mechanism, not proving it (see the warning above: both values
+        // are written here, so this comparison cannot fail independently of the round-trip test).
         _set(WSTETH, PegKind.Floating, AccrualKind.Appreciating);
         (PegKind sdaiPeg, AccrualKind sdaiAccrual) = registry.getAssetKind(SDAI);
         (PegKind wstethPeg, AccrualKind wstethAccrual) = registry.getAssetKind(WSTETH);

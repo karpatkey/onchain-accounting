@@ -6,9 +6,14 @@ pragma solidity ^0.8;
 ///      something". So USDC/USDT/DAI/USDe are `Pegged`; **wstETH is `Floating`**, even though it is rigidly related to
 ///      stETH, because its USD price moves with ETH.
 ///
-///      The axis is not cosmetic: it predicts an operational property. A zero-heartbeat-margin staleness condition
-///      bites `Pegged` feeds and not `Floating` ones, because a floating asset's divergence threshold fires long
-///      before its heartbeat expires, while a pegged asset can sit quietly at its peg until the heartbeat lapses.
+///      The axis is not cosmetic: it correlates with an operational property. A zero-heartbeat-margin staleness
+///      condition bites HEARTBEAT-DRIVEN feeds, and a pegged asset can sit quietly at its peg until its heartbeat
+///      lapses, whereas an asset that moves usually republishes on its **deviation threshold** first so the heartbeat
+///      never binds. Note "deviation" (the feed's own publish trigger), NOT `divergenceToleranceBps` — that is this
+///      repo's separate cross-feed comparison and does not cause a feed to publish.
+///
+///      It is a correlation, not a law: the exposure follows the feed's publish behaviour, not the peg, and there are
+///      `Floating` feeds in this repo that the same condition reached. Do not use this axis as a staleness oracle.
 ///      An axis that predicts which feeds a class of failure reaches is an axis worth having. (It is not STORED: see
 ///      the derivation note on {AccrualKind} — `AssetKindRegistry` computes it from the NAV's `pegToleranceBps`.)
 /// @author KPK
@@ -58,8 +63,8 @@ enum PegKind {
 ///      stored as `Appreciating`, the pair reads back `Pegged + Appreciating` — because the peg is computed from that
 ///      tolerance. What changed is WHERE such a state comes from: it can only arise from a real pricing decision on the
 ///      NAV, never from a mistyped classification, and it is then a true report of the NAV's own configuration rather
-///      than a second opinion contradicting it. Pinned by
-///      `test_peggedAppreciating_arisesOnlyFromAPegToleranceNotFromAClaim`.
+///      than a second opinion contradicting it. (No test pins this: it is a property of where the value comes from, not
+///      a branch the registry can be made to take — the registry stores no peg to assert against.)
 ///
 ///      **`Pegged + Rebasing` remains real and REACHABLE.** An aToken for USDC has a growing balance at a $1 price and
 ///      carries a peg tolerance, so it derives `Pegged` and stores `Rebasing`. No aToken is registered today; the first

@@ -4,9 +4,9 @@ Everything is deployed and configured by a single **deployer EOA** (private key 
 
 Deployment order (per chain unless noted):
 
-**01** (implementations, once across chains) → **02** (proxies + init) → **03** (price feeds; asset registration is a separate `script/manage/RegisterAssets.s.sol` step) → **04** (balance adapters) → **05** (bridge adapters, CREATE2 same-address) → **06** (configure: register balance + meta-adapters, reconcile meta-instances, authorize bridge adapters + wire `trustedRemoteAdapter`) → **07** (transfer admin to the security council — last of the role handoff) → **08** (asset-kind registry; see below — **order-independent**, run it any time after the assets config carries the kind fields).
+**01** (implementations, once across chains) → **02** (proxies + init) → **03** (price feeds; asset registration is a separate `script/manage/RegisterAssets.s.sol` step) → **04** (balance adapters) → **05** (bridge adapters, CREATE2 same-address) → **06** (configure: register balance + meta-adapters, reconcile meta-instances, authorize bridge adapters + wire `trustedRemoteAdapter`) → **07** (transfer admin to the security council — last of the role handoff) . **08** (asset-kind registry) is **PRIVILEGED and must run BEFORE 07** — see below; the pipeline is therefore **01 → 02 → 03 → 04 → 05 → 06 → 08 → 07**.
 
-`07` is the last step that touches the NAV/Bridge **proxies**, and it is still what ends the deployer's control over them. It is no longer the last script in the directory: `08` deploys its own standalone contract with its own roles and is not coupled to `07` in either direction. Run `08` before or after `07` — but do not skip it, or the `AssetKindRegistry` simply does not exist on that chain and nothing in the pipeline says so.
+`07` is the last step that touches the NAV/Bridge **proxies**, and it is still what ends the deployer's control over them. It is no longer the last script in the directory: `08` deploys its own standalone contract, but it is **not** order-independent: it grants the registry `MANAGER` on the NAV, which needs `DEFAULT_ADMIN` — a role `07` hands to the council. **`08` must run BEFORE `07`.** Do not skip it either, or the `AssetKindRegistry` does not exist on that chain and nothing in the pipeline says so.
 
 ## Role model
 
@@ -85,15 +85,15 @@ DEPLOYER_EOA=0xYourDeployer \
 forge script script/deploy/07_TransferAdminToSecurityCouncil.s.sol --chain-id 1 --broadcast --account $DEPLOYER_NAME
 ```
 
-## 08_DeployAssetKindRegistry.s.sol (order-independent)
+## 08_DeployAssetKindRegistry.s.sol (PRIVILEGED — must run BEFORE 07)
 
 Deploys the per-chain `AssetKindRegistry` and classifies every asset in `nav-config/assets-and-price-feeds/<chainId>.json` on the two-axis taxonomy — `PegKind { Pegged, Floating }` × `AccrualKind { None, Rebasing, Appreciating }`.
 
-**Not coupled to `07`, in either direction.** It deploys a standalone contract with its own roles and never touches the NAV/Bridge proxies, so it can run before or after the council handoff. It is listed last only because it was added last.
+**Order-dependent: `08` MUST run before `07`.** It grants the registry `MANAGER` on the NAV, and `grantRole` needs `DEFAULT_ADMIN` — which `07` transfers to the security-council Safe while also revoking the deployer's `MANAGER` (`07:97`). Run it after `07` and both the grant and `setAssetKinds` revert; `08` is EOA-broadcast only, with no Safe path. It is numbered last because it was added last, not because it runs last.
 
 **A pin regeneration IS owed for this feature, though not by this script.** `AssetKindRegistry`'s presence under `src/` tipped the `via_ir` whole-program stack margin and forced an extraction in `PriceFeedLib`, moving its pin `0xfc6AE534…` → `0x49C18627665562F4bEbae5208BA6eF7428039614`. `NAVRegistryLib` is unchanged. Do not conclude from "08 touches neither library" that nothing needs repinning.
 
-**Fail-closed: it aborts unless EVERY configured asset carries a valid `pegKind` and `accrualKind` string.** Absent or unrecognized values are not defaulted, not skipped and not warned about — a default classification is indistinguishable from a real one once it is on-chain, so the only safe place to notice the gap is before the transaction. A revert here is the guard working. Values are strings rather than integers so a stale integer cannot silently re-map if an enum ever gains a member.
+**Fail-closed: it aborts unless EVERY configured asset carries a valid `accrualKind` string.** (There is no `pegKind` in config — the peg axis is derived on-chain from the NAV's `pegToleranceBps`.) Absent or unrecognized values are not defaulted, not skipped and not warned about — a default classification is indistinguishable from a real one once it is on-chain, so the only safe place to notice the gap is before the transaction. A revert here is the guard working. Values are strings rather than integers so a stale integer cannot silently re-map if an enum ever gains a member.
 
 **Idempotent.** Re-running re-classifies the existing registry instead of deploying a second one, so it composes with the "re-run the numbered sequence" pattern like every other step.
 
@@ -112,7 +112,7 @@ Consequences worth stating, because earlier revisions of this file said the oppo
 
 ### Registering an asset: use the registry, not the NAV
 
-`AssetKindRegistry.registerAsset(asset, priceFeed, priceType, chainlinkHeartbeat, pegKind, accrualKind)` registers on the NAV **and** classifies, atomically, in one call — the same arguments you used on the NAV plus two, at a different address. `unregisterAsset(asset)` is symmetric. If either half reverts, neither takes effect.
+`AssetKindRegistry.registerAsset(asset, priceFeed, priceType, chainlinkHeartbeat, accrualKind)` registers on the NAV **and** classifies, atomically, in one call — the same arguments you used on the NAV plus one, at a different address. `unregisterAsset(asset)` is symmetric. If either half reverts, neither takes effect.
 
 Calling `NAVCalculator.registerAsset` directly still works and is deliberately not blocked. Whether it *should* is a deploy-time role decision: revoking `MANAGER` from humans on the NAV makes the facade the only path and the "always classified" invariant structural rather than conventional. That choice is left to the operator — the code does not force it, so the registry is not a required dependency for asset registration unless you decide it should be.
 

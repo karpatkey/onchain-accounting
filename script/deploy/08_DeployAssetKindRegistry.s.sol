@@ -4,9 +4,12 @@ pragma solidity ^0.8.28;
 import {BaseDeployScript} from "../utils/BaseDeployScript.sol";
 import {ConfigReader} from "../utils/ConfigReader.sol";
 import {console2} from "forge-std/console2.sol";
+import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol";
 
 import {AssetKindRegistry} from "../../src/nav/AssetKindRegistry.sol";
 import {AccrualKind} from "../../src/utils/AssetKind.sol";
+// forge-lint: disable-next-line(unaliased-plain-import)
+import "../../src/constants.sol";
 
 /// @title 08_DeployAssetKindRegistry
 /// @author KPK
@@ -25,8 +28,20 @@ import {AccrualKind} from "../../src/utils/AssetKind.sol";
 ///      enum ever gains a member, while an unknown string cannot be mistaken for a valid one. The string -> enum
 ///      mapping lives in {ConfigReader} so production and any harness share one source of truth.
 ///
-///      Independent of the NAV stack: this SCRIPT references neither `PriceFeedLib` nor `NAVRegistryLib`, so it does not
-///      gate — or get gated by — a NAV redeploy. Run it any time after the assets config exists.
+///      **⚠️ THIS IS A PRIVILEGED STEP, AND IT MUST RUN BEFORE `07`.** It does not merely deploy and configure: it
+///      calls `NAV.grantRole(MANAGER, registry)`, because the facade forwards to `NAV.registerAsset` and the NAV gates
+///      on ITS `msg.sender` — the registry contract, not the operator. Without that grant the facade is dead code.
+///
+///      **The ordering is a hard dependency, and here is the reason so nobody "tidies" it back:** `grantRole` requires
+///      `DEFAULT_ADMIN` on the NAV, and `07_TransferAdminToSecurityCouncil` hands that to the security-council Safe and
+///      revokes the deployer's `MANAGER` (`07:97`). Run `08` after `07` and it reverts twice over — the grant for lack
+///      of admin, and `setAssetKinds` for lack of MANAGER. `08` is EOA-broadcast only; there is no Safe path. So the
+///      rule is not "07 is last" but **"07 is the last step of the ROLE HANDOFF; every step needing deployer privileges,
+///      `08` included, must precede it."** An earlier revision of this file and seven other doc sites claimed `08` was
+///      order-independent. It is not.
+///
+///      Independent of the NAV *stack*: this script references neither `PriceFeedLib` nor `NAVRegistryLib`, so it does
+///      not gate — or get gated by — a NAV redeploy. Run it any time after the assets config exists and before `07`.
 ///
 ///      **But do not read that as "no pin regeneration is owed".** The FEATURE moves `PriceFeedLib`'s pin
 ///      (`0xfc6AE534…` → `0x49C18627665562F4bEbae5208BA6eF7428039614`): `AssetKindRegistry`'s presence under `src/`
@@ -130,18 +145,31 @@ contract DeployAssetKindRegistry is BaseDeployScript {
 
         vm.startBroadcast();
 
+        address nav = ConfigReader.readDeployedAddress(vm, chainId, "NAVCalculatorProxy");
+        if (nav == address(0)) revert NavCalculatorNotDeployed(chainId);
+
         AssetKindRegistry registry;
         if (existing != address(0)) {
             registry = AssetKindRegistry(existing);
             console2.log("AssetKindRegistry already deployed at:", existing);
         } else {
-            // The registry takes only the NAV address: it has NO roles of its own and gates every write on
-            // `NAV.hasRole(MANAGER, msg.sender)`. So there is nothing to grant here, nothing to hand over to the
-            // council later, and no second governance surface to keep in sync — authority is exactly the NAV's MANAGER
-            // set. The deployer can classify in this same run because it already holds the NAV's MANAGER.
-            address nav = ConfigReader.readDeployedAddress(vm, chainId, "NAVCalculatorProxy");
-            if (nav == address(0)) revert NavCalculatorNotDeployed(chainId);
+            // The registry takes only the NAV address: it keeps no roles of its OWN and gates every write on
+            // `NAV.hasRole(MANAGER, msg.sender)`, so authority is exactly the NAV's MANAGER set. The deployer can
+            // classify in this same run because it already holds that role.
             registry = new AssetKindRegistry(nav);
+        }
+
+        // ⚠️ **THE REGISTRY MUST HOLD `MANAGER` ON THE NAV, OR THE FACADE IS DEAD CODE.** `registerAsset` forwards to
+        // `NAV.registerAsset`, and the NAV gates on ITS `msg.sender` — which on that hop is the registry contract, not
+        // the operator. Without this grant every call to the atomic facade reverts `NotAuthorized()`, and review caught
+        // exactly that: the facade shipped non-functional because the unit-test NAV mock had no role gate, so 28 green
+        // tests could not see it. The mock now gates, and `test_facadeRevertsIfRegistryLacksNavManager` pins this.
+        //
+        // Idempotent: `grantRole` on an address that already holds the role is a no-op in OpenZeppelin
+        // `AccessControl`, so a re-run costs one cheap call rather than reverting.
+        if (!IAccessControl(nav).hasRole(MANAGER, address(registry))) {
+            IAccessControl(nav).grantRole(MANAGER, address(registry));
+            console2.log("Granted NAV MANAGER to AssetKindRegistry:", address(registry));
         }
 
         // Re-classification is permitted and event-emitting by design, so this runs on both paths.

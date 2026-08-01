@@ -165,8 +165,10 @@ forge script script/deploy/06_Configure.s.sol --chain-id $CHAIN_ID --account $DE
 DEPLOYER_EOA=0xYourDeployerEOA \
 forge script script/deploy/07_TransferAdminToSecurityCouncil.s.sol --chain-id $CHAIN_ID --account $DEPLOYER_NAME --broadcast
 
-# 08 — asset-kind registry (order-independent; run before or after 07, but do not skip it).
-# Fail-closed: aborts unless every configured asset carries a valid pegKind + accrualKind.
+# 08 — asset-kind registry. PRIVILEGED: grants the registry MANAGER on the NAV, so it MUST run BEFORE 07
+#      (grantRole needs DEFAULT_ADMIN, which 07 hands to the council). Do not skip it.
+# Fail-closed: aborts unless every configured asset carries a valid accrualKind.
+# PRIVILEGED + ORDER-DEPENDENT: grants the registry MANAGER on the NAV, so it MUST run before 07.
 PERSIST_DEPLOYMENTS=1 \
 forge script script/deploy/08_DeployAssetKindRegistry.s.sol --chain-id $CHAIN_ID --account $DEPLOYER_NAME --broadcast
 ```

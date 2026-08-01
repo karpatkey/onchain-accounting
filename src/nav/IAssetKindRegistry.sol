@@ -10,13 +10,14 @@ import {IPrices} from "src/prices/IPrices.sol";
 ///         ({AccrualKind}) — plus the ATOMIC write facade for registering an asset and classifying it in one call.
 /// @dev **Only ONE axis is stored.** `AccrualKind` is state; `PegKind` is DERIVED on read from the NAV's
 ///      `pegToleranceBps`, the switch that enables the absolute-$1 price guard. So there is exactly one authority on
-///      whether an asset is worth $1, and a classification that contradicts the pricing layer is not merely detectable
-///      — it is unwriteable. `getAssetKind` still returns both axes, so callers see a complete classification.
+///      whether an asset is worth $1, and a STORED peg claim contradicting the pricing layer is not merely detectable — it is
+///      unwriteable, because there is no stored peg. (The narrower true statement: an operator CAN still produce a
+///      `Pegged + Appreciating` reading by setting a peg tolerance on an appreciating asset — see {AccrualKind}.) `getAssetKind` still returns both axes, so callers see a complete classification.
 ///
 ///      **The facade is the point.** {registerAsset} takes the kinds as parameters of the register action, stores them,
 ///      and forwards to `NAVCalculator.registerAsset` in the same transaction; {unregisterAsset} is symmetric. So a
 ///      registered asset is always classified by construction. Callers use the same arguments they used on the NAV plus
-///      two, and call this address instead.
+///      ONE (the accrual axis), and call this address instead.
 ///
 ///      **No roles.** Implementations gate on `NAV.hasRole(MANAGER, msg.sender)` — authority is exactly the NAV's
 ///      MANAGER set, and this contract has no admin, manager or owner of its own.
@@ -29,9 +30,12 @@ import {IPrices} from "src/prices/IPrices.sol";
 ///      **⚠️ Implementations revert with errors this interface does NOT declare, so this ABI is not a complete error
 ///      set.** A consumer generating handlers from `IAssetKindRegistry` alone cannot decode them:
 ///      - `InvalidArguments()` — from `src/errors.sol`, a shared repo-wide error. Thrown by BOTH setters when
-///        `asset == address(0)`, and by the constructor when either role holder is `address(0)`. Selector:
+///        `asset == address(0)` — including through {registerAsset}, which calls the same internal setter — and by the
+///        constructor when `nav` is `address(0)`. Selector:
 ///        `bytes4(keccak256("InvalidArguments()"))`.
 ///      - `NotAuthorized()` — from `src/errors.sol`, thrown by the `NAV.hasRole(MANAGER, …)` gate on every mutator.
+///        Note the NAV can ALSO revert its own `NotAuthorized()` on the forwarded hop if the REGISTRY has not been
+///        granted `MANAGER` on it (`08` does this); the two are indistinguishable by selector.
 ///        Implementations hold no `AccessControl`, so the OpenZeppelin role errors do NOT appear here.
 ///
 ///      This note lives on the interface declaration rather than beside the error list because a NatSpec block that
@@ -58,7 +62,7 @@ interface IAssetKindRegistry {
     /// @notice Registers an asset on the NAV **and** classifies it, atomically, in one call. Gated on the NAV's
     ///         `MANAGER`. This is the intended entry point for adding an asset.
     /// @dev The first four parameters are forwarded verbatim to `NAVCalculator.registerAsset`; the two kind parameters
-    ///      are stored here. There is no `try`/`catch` on this path, so if EITHER half reverts the whole transaction
+    ///      is stored here. There is no `try`/`catch` on this path, so if EITHER half reverts the whole transaction
     ///      reverts and neither the registration nor the classification takes effect.
     ///
     ///      Calling `NAVCalculator.registerAsset` directly remains possible for any MANAGER and is not prevented in
@@ -85,7 +89,7 @@ interface IAssetKindRegistry {
     ///      registered asset. That error is not declared in this interface; see the contract-level note.
     function setAssetKind(address asset, AccrualKind accrualKind) external;
 
-    /// @notice Classifies many assets in one call. MANAGER-gated. All three arrays must be the same length.
+    /// @notice Classifies many assets in one call. MANAGER-gated. Both arrays must be the same length.
     /// @dev Reverts {KindArrayLengthMismatch} if the lengths differ, and `InvalidArguments()` on the first
     ///      `address(0)` entry. An empty batch is a no-op, not an error.
     function setAssetKinds(address[] calldata assets, AccrualKind[] calldata accrualKinds) external;

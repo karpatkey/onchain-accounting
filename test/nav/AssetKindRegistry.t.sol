@@ -10,8 +10,9 @@ import {IPrices} from "src/prices/IPrices.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/constants.sol";
 
-/// @notice Minimal `NAVCalculator` stand-in. The registry needs exactly two things from the NAV — `hasRole` (its ONLY
-///         authority source) and the register/unregister entry points it forwards to — so the mock provides those and
+/// @notice Minimal `NAVCalculator` stand-in. The registry needs THREE things from the NAV — `hasRole` (its only
+///         authority source), `getAssetPricing` (the peg derivation's input) and the register/unregister entry points
+///         it forwards to — so the mock provides those and
 ///         records the forwarded calls, which is what lets a test prove the forward actually happened.
 contract MockNav {
     mapping(bytes32 => mapping(address => bool)) private _roles;
@@ -22,9 +23,14 @@ contract MockNav {
 
     error MockNavRegisterReverted();
     error MockNavUnregisterReverted();
+    error MockNavNotAuthorized();
 
     function grant(bytes32 role, address who) external {
         _roles[role][who] = true;
+    }
+
+    function revoke(bytes32 role, address who) external {
+        _roles[role][who] = false;
     }
 
     function hasRole(bytes32 role, address who) external view returns (bool) {
@@ -51,12 +57,20 @@ contract MockNav {
         revertOnUnregister = v;
     }
 
+    /// @dev ⚠️ **These MUST gate on MANAGER, exactly as the real `NAVCalculator` does.** An earlier version of this mock
+    ///      authorised every caller, and that single omission hid a fatal bug through 28 green tests and a 5/5 mutation
+    ///      matrix: the facade forwards to `NAV.registerAsset`, the real NAV gates on ITS `msg.sender` — the REGISTRY,
+    ///      not the operator — and nothing granted the registry that role, so every facade call reverted on-chain while
+    ///      the suite reported success. A mock that is more permissive than production makes the tests structurally
+    ///      unable to see an authority defect. If you relax this, you reintroduce that blindness.
     function registerAsset(address asset, address, IPrices.PriceType, uint256) external {
+        if (!_roles[MANAGER][msg.sender]) revert MockNavNotAuthorized();
         if (revertOnRegister) revert MockNavRegisterReverted();
         registered.push(asset);
     }
 
     function unregisterAsset(address asset) external {
+        if (!_roles[MANAGER][msg.sender]) revert MockNavNotAuthorized();
         if (revertOnUnregister) revert MockNavUnregisterReverted();
         unregistered.push(asset);
     }
@@ -93,6 +107,8 @@ contract AssetKindRegistryTest is Test {
         nav = new MockNav();
         nav.grant(MANAGER, manager);
         registry = new AssetKindRegistry(address(nav));
+        // Mirrors `08_DeployAssetKindRegistry`: the registry must hold MANAGER on the NAV or its forwards revert.
+        nav.grant(MANAGER, address(registry));
     }
 
     /// @dev Stores the accrual axis. The peg axis is NOT settable — use {_pegged} to move the NAV tolerance the
@@ -110,6 +126,29 @@ contract AssetKindRegistryTest is Test {
     // ============================================================
     // The atomic facade — register+classify as ONE call
     // ============================================================
+
+    /// @dev **The test that was missing, and whose absence shipped a non-functional facade.** The registry must hold
+    ///      `MANAGER` on the NAV, because the forwarded `NAV.registerAsset` gates on the REGISTRY as `msg.sender`, not
+    ///      on the operator. Revoke that grant and the facade must fail — if this test ever passes without the grant,
+    ///      either the mock has stopped gating or the NAV no longer checks, and both mean the suite has gone blind to
+    ///      an authority defect again.
+    ///
+    ///      Note the operator is still a NAV MANAGER throughout: this isolates the REGISTRY's privilege specifically,
+    ///      which is the hop that was missing.
+    function test_facadeRevertsIfRegistryLacksNavManager() public {
+        nav.revoke(MANAGER, address(registry));
+        _pegged(USDC);
+
+        vm.prank(manager);
+        vm.expectRevert(MockNav.MockNavNotAuthorized.selector);
+        registry.registerAsset(USDC, address(0xFEED), IPrices.PriceType.Chainlink, 3600, AccrualKind.None);
+
+        vm.prank(manager);
+        vm.expectRevert(MockNav.MockNavNotAuthorized.selector);
+        registry.unregisterAsset(USDC);
+
+        assertEq(nav.registeredCount(), 0, "nothing may reach the NAV without the registry's own role");
+    }
 
     /// @dev The whole point of the contract: one call registers on the NAV AND classifies, so a registered asset is
     ///      always classified. Asserts BOTH halves landed, and that the NAV received the forward (not just that the
@@ -242,8 +281,10 @@ contract AssetKindRegistryTest is Test {
     ///      {test_wstETHIsFloatingNotPegged} is: it records the intended classification next to the reasoning, where a
     ///      future author will look.
     ///
-    ///      The ONLY machine check of the ruling is `08_DeployAssetKindRegistry`'s `Pegged` ⇔ `pegToleranceBps > 0`
-    ///      assertion, which runs against the real config at deploy time and aborts on disagreement.
+    ///      **There is no machine check of the ruling any more, and that is by design rather than an oversight.** An
+    ///      earlier revision cited `08`'s `Pegged` ⇔ `pegToleranceBps > 0` assertion here; that guard was deleted when
+    ///      the peg axis became derived, because with one authority there is no second value to disagree with. What
+    ///      replaced the check is stronger than a check: the contradiction is no longer expressible in config.
     function test_sDAIIsFloatingNotPegged_becauseYieldBearingMeansNoPeg() public {
         _set(SDAI, AccrualKind.Appreciating);
         _assertKind(SDAI, PegKind.Floating, AccrualKind.Appreciating);
@@ -272,8 +313,8 @@ contract AssetKindRegistryTest is Test {
     /// @dev wstETH is `Floating`, and this is the axis's definitional edge. `Pegged` means pegged to the NAV's QUOTE
     ///      asset (USD), not "rigidly related to something": wstETH tracks stETH tightly but its USD price moves with
     ///      ETH. Getting this backwards would invert the operational property the axis exists to predict — a
-    ///      zero-heartbeat-margin staleness condition reaches pegged feeds and not floating ones, because a floating
-    ///      asset's divergence threshold fires long before its heartbeat lapses.
+    ///      zero-heartbeat-margin staleness condition tends to reach heartbeat-driven feeds, which pegged assets more
+    ///      often are. A correlation with the feed's publish behaviour, not a law about the peg — see {PegKind}.
     function test_wstETHIsFloatingNotPegged() public {
         _set(WSTETH, AccrualKind.Appreciating);
         (PegKind p,) = registry.getAssetKind(WSTETH);
@@ -340,7 +381,9 @@ contract AssetKindRegistryTest is Test {
         // EVERY index on BOTH axes. Asserting only `pegs[0]` and `accruals[1]` left the batch copy loop effectively
         // untested: element 0's expected `pegKind` is `Pegged`, the ZERO value, so an implementation that ignored
         // storage and wrote a constant `PegKind.Pegged` into every slot satisfied the whole suite. That was verified
-        // by running a mutant — `pegKinds[i] = PegKind.Pegged;` — against this file: 20/20 passed.
+        // by running a mutant — `pegKinds[i] = PegKind.Pegged;` — against the 20-test version of this file that then
+        // existed: 20/20 passed. That count describes a state this file is no longer in (it has grown, and the peg axis
+        // is no longer stored at all), and is kept only as the reason these assertions are index-complete.
         assertEq(uint8(pegs[0]), uint8(PegKind.Pegged));
         assertEq(uint8(pegs[1]), uint8(PegKind.Floating));
         assertEq(uint8(accruals[0]), uint8(AccrualKind.None));
@@ -444,8 +487,9 @@ contract AssetKindRegistryTest is Test {
         _assertKind(USDC, PegKind.Pegged, AccrualKind.None);
     }
 
-    /// @dev The registry exposes no role surface at all. If this ever stops compiling because `hasRole`/`grantRole`
-    ///      exist again, the delegated-authority design has been reverted and the docstrings describing it are wrong.
+    /// @dev Pins that the NAV is the registry's only authority source. **This does NOT detect roles being re-added** —
+    ///      an earlier docstring claimed it would stop compiling if `hasRole`/`grantRole` reappeared, which is untrue:
+    ///      adding them would not affect this assertion at all. Treat it as documentation of the design, not a tripwire.
     function test_registryHasNoLocalRoleSurface() public view {
         assertEq(address(registry.NAV()), address(nav), "the NAV is the only authority source");
     }

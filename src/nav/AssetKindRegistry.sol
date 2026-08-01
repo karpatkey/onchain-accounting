@@ -59,8 +59,15 @@ import "src/constants.sol";
 ///      still overflowing `NAVCalculator`. If kinds are ever wanted inside the NAV, the documented price is moving the
 ///      verbose label block out to a lens contract first.
 ///
-///      **This contract has NO ROLES OF ITS OWN, deliberately.** It holds no `AccessControl`, no admin, no manager,
-///      and no owner. Every mutator gates on `NAV.hasRole(MANAGER, msg.sender)`, so authority is exactly the NAV's
+///      **⚠️ "No roles of its own" is NOT "unprivileged". Read both halves.** This contract holds no `AccessControl`,
+///      no admin, no manager and no owner — but it DOES hold `MANAGER` **on the NAV**, granted by
+///      `08_DeployAssetKindRegistry`, because {registerAsset} forwards to `NAVCalculator.registerAsset` and the NAV
+///      gates on the registry as `msg.sender`. So a bug in this contract can register or unregister assets.
+///
+///      That is the price of the atomic one-call flow, accepted deliberately rather than discovered: it is a smaller
+///      surface than a second `AccessControl` with its own admin to keep in sync, but it is not zero, and nothing here
+///      should be read as claiming the system gained a privilege-free component. The ownerless design removed this
+///      contract's own role surface; it did not remove privilege from the system. Every mutator gates on `NAV.hasRole(MANAGER, msg.sender)`, so authority is exactly the NAV's
 ///      MANAGER set — ONE set of humans for the whole system, rather than a second contract with its own governance to
 ///      keep in sync. That also means there is nothing here to escalate, hand over, or renounce: no admin can grant
 ///      itself write access, no Safe handover is owed for this contract, and no sequence of renouncements can freeze
@@ -99,8 +106,11 @@ contract AssetKindRegistry is IAssetKindRegistry {
     ///         {PriceFeedLib}'s absolute-$1 guard.
     /// @dev **This is why there is only one authority on peggedness.** A stored `PegKind` would be a second copy of a
     ///      fact the NAV already holds, and two copies of one fact diverge — that is not hypothetical, it already
-    ///      happened once in this feature's own documentation. Deriving does not make the divergence easier to catch;
-    ///      it makes the contradictory sentence **unwriteable**.
+    ///      happened once in this feature's own documentation. Deriving does not make the divergence easier to catch; it
+    ///      makes the contradictory CLAIM unwriteable — there is no stored peg with which to assert one. It does NOT
+    ///      make every odd pair unreachable: a peg tolerance on an appreciating asset still reads back
+    ///      `Pegged + Appreciating`, but that is a true report of the NAV's configuration rather than a second opinion
+    ///      contradicting it.
     ///
     ///      Reads through `IPrices`, not `INAVCalculator`: `INAVCalculator is IBalances` and does NOT inherit `IPrices`,
     ///      so the pricing getter is only reachable via that interface. It is an already-existing external selector, so

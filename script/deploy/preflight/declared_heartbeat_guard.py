@@ -444,7 +444,24 @@ def refresh(allow_shrink: bool = False, fetch=None) -> int:
     regressions: list[tuple[str, list[str]]] = []  # addresses that stopped resolving / stopped being used
     for chain_id, fn in DIRECTORY_FILES.items():
         prev_ent = prev_chains.get(chain_id) or {}
-        refs = {str(r["address"]).lower() for r in registered_feeds(chain_id)}
+        try:
+            rows = registered_feeds(chain_id)
+        except Exception as e:  # noqa: BLE001 - matches findings(); an unenumerable chain is not an empty one
+            rows = [{"address": "-", "config_error": repr(e)}]
+        # A config-error row carries a FILENAME in `address`, not a feed address. It must never reach
+        # `refs` — and more importantly, a chain whose config cannot be read has an UNKNOWN reference set,
+        # so refresh cannot tell a genuine delisting from an unreadable file. That is a non-waivable
+        # failure, not a shrink: guessing here would delete entries that are still referenced.
+        cfg_errs = [r for r in rows if r.get("config_error")]
+        if cfg_errs:
+            failures.append((chain_id, f"config unreadable ({cfg_errs[0]['config_error']}) — the set of "
+                                       f"referenced addresses is unknown"))
+            if prev_ent:
+                out["chains"][chain_id] = prev_ent
+                total += len(prev_ent)
+                carried.append((chain_id, "config unreadable"))
+            continue
+        refs = {str(r["address"]).lower() for r in rows}
         if not refs:
             # Config references nothing on this chain. Dropping its block is a legitimate, config-driven
             # shrink — but never a SILENT one: it is a deletion of committed data, so it needs the same
@@ -857,6 +874,33 @@ def self_test() -> int:
         print(f"  [{'PASS' if rc_carry and unchanged_carry else 'FAIL'}] --allow-shrink does NOT launder "
               f"carried-forward entries when a fetch matches nothing")
         ok = ok and bool(rc_carry) and unchanged_carry
+
+        # An UNREADABLE config must block refresh outright. Its reference set is unknown, so treating it
+        # as "references nothing" would delete entries that are still in use — and the synthetic
+        # config-error row carries a FILENAME in `address`, which must never be mistaken for a feed.
+        def _rf_badcfg(cid):
+            if str(cid) == "137":
+                return [{"asset": "(config)", "role": "file", "address": "137.json",
+                         "heartbeat": None, "config_error": "not valid JSON: simulated", "where": "x"}]
+            return _real_rf(cid)
+
+        registered_feeds = _rf_badcfg
+        # A FRESH buffer, and the assertion is on the REASON, not merely on the exit code. Blocking for
+        # some other reason would let this arm pass while the filename still leaked into `refs` — which
+        # is exactly what happened to the first draft of this arm.
+        cfgbuf = io.StringIO()
+        try:
+            with contextlib.redirect_stdout(cfgbuf), contextlib.redirect_stderr(cfgbuf):
+                rc_badcfg = refresh(fetch=_full)
+                unchanged_badcfg = SNAPSHOT.read_text() == before
+        finally:
+            registered_feeds = _real_rf
+        said_why = "config unreadable" in cfgbuf.getvalue()
+        leaked = "137.json" in cfgbuf.getvalue().replace("config unreadable", "")
+        good = bool(rc_badcfg) and unchanged_badcfg and said_why and not leaked
+        print(f"  [{'PASS' if good else 'FAIL'}] an unreadable config blocks refresh() AS a config error "
+              f"(not as 'references nothing'), and its filename never reaches the address set")
+        ok = ok and good
 
         # A mapped chain whose config yields no addresses must not be deleted SILENTLY.
         def _rf_noref(cid):

@@ -53,7 +53,7 @@ asset*, so the argument does not rest on a claim a reader can falsify from confi
 |---|---|---|---|---|
 | `Pegged` | `None` | USDC | ✅ 6 chains | `Stablecoin` — unambiguous |
 | `Pegged` | `Rebasing` | **aUSDC** *(illustrative)* | ❌ **empty — no aToken registered, but REACHABLE** | **stablecoin AND yield-bearing AND rebasing — pick one** |
-| `Pegged` | `Appreciating` | — | ❌ **empty — arguably UNREACHABLE** *(see below)* | *(no member to misclassify)* |
+| `Pegged` | `Appreciating` | — | ❌ **empty — cannot be *asserted*, but reachable** *(see below)* | *(no member to misclassify)* |
 | `Floating` | `None` | WETH | ✅ 6 chains | `Standard` — unambiguous |
 | `Floating` | `Rebasing` | **stETH** | ✅ mainnet | **yield-bearing AND rebasing — pick one** |
 | `Floating` | `Appreciating` | **wstETH**, sUSDS, sGHO, sUSDe, sDAI | ✅ wstETH 5 chains; sUSDS/sGHO/sUSDe mainnet; sDAI Gnosis | **yield-bearing, NOT rebasing — inexpressible** |
@@ -76,10 +76,14 @@ false dichotomy over the same axis.
 - **`Pegged + Rebasing` is genuinely REACHABLE** — an aToken for USDC has a growing balance at a $1
   price. It is unoccupied only because no aToken is registered; the first such registration legitimately
   occupies it.
-- **`Pegged + Appreciating` is arguably UNREACHABLE**, not merely unoccupied. `Appreciating` is exactly
-  the mechanism that makes an asset unpeggable: if the redemption **rate** grows while the **balance** is
-  static, the USD price must rise above $1 — which is precisely what "not pegged" means. If you believe
-  you have found a member, you have probably found a `Floating + Appreciating` asset.
+- **`Pegged + Appreciating` cannot be ASSERTED — which is not the same as being unreachable.** Because the
+  peg axis is derived rather than stored, there is no parameter with which to *claim* an appreciating asset
+  is pegged; the contradiction that used to be expressible in config is now unwriteable. That is the real
+  gain. But the cell **remains reachable**: if an operator sets a non-zero `pegToleranceBps` on an asset
+  stored as `Appreciating`, the pair reads back `Pegged + Appreciating`, because the peg is computed from
+  that tolerance. What changed is *where such a state can come from* — only ever from a real pricing
+  decision on the NAV, never from a mistyped classification — and it is then a **true report of the NAV's
+  own configuration** rather than a second opinion contradicting it.
 
 That distinction is why the two rows must not be collapsed into one "empty" note: one is a
 forward-compatibility slot to be filled, the other is a contradiction to be caught.
@@ -90,10 +94,19 @@ fundamental value is $1". Across the seven configured chains it is set on exactl
 stablecoins (on mainnet: USDC, USDS, USDT, DAI, GHO, USDe, RLUSD, crvUSD). **No yield-bearing wrapper
 carries it** — not sDAI, sGHO, sUSDe, sUSDS or syrupUSDC. The absence of a peg tolerance is the
 discriminator, and it holds for every one of them.
-`08_DeployAssetKindRegistry` **will** assert that the two authorities agree (`Pegged` ⇔
-`pegToleranceBps > 0`) so they cannot silently diverge again — but that guard ships with **#241 and does
-not exist on `main` today**. Until it lands, the peg-tolerance config is the only authority, and the
-agreement is maintained by review rather than enforced by code.
+**There is exactly one authority, so there is nothing to cross-check.** The peg axis is **derived, not
+stored** — `pegKind(asset)` is computed on read as `pegToleranceBps > 0` (implemented in
+`AssetKindRegistry` on **PR #241**, still unmerged; neither it nor the registry is on `main` today). A
+classification contradicting the pricing layer is therefore not merely detectable — **the contradictory
+sentence is unwriteable**, because there is no parameter in which to write it.
+
+**Recorded as a decision rather than a mechanism, deliberately.** An earlier revision of this paragraph
+said a guard in `08_DeployAssetKindRegistry` *would* assert that the two authorities agree. #241 has since
+**deleted** that guard, and deleting it was the stronger move: a guard against a state the design cannot
+express is dead code that reads as protection. The durable fact is the **decision** — one authority, peg
+derived from peg tolerance — not which script carries which check. That distinction is why this paragraph
+now states the decision: the mechanism changed within hours of the previous revision, and the decision did
+not.
 
 **`Pegged + Rebasing` is empty today, and that strengthens the case rather than weakening it.** aUSDC is
 listed as an illustration of the cell, not as evidence of current occupancy — no aToken is registered
@@ -257,8 +270,9 @@ planning against headroom that does not exist.
   asset needs two values decided instead of one, both documented, both verified at review, and the two
   can be set inconsistently in ways one enum makes impossible. The judgement is that four occupied cells
   plus one reachable-and-imminent empty one justify the second axis, not that the second axis is cheap.
-  (The sixth cell, `Pegged + Appreciating`, is arguably unreachable and carries no weight in that
-  judgement — it was counted as occupied before the classification was corrected.)
+  (The sixth cell, `Pegged + Appreciating`, cannot be *asserted* — the peg axis is derived, so there is no
+  parameter in which to claim it — and carries no weight in that judgement. It was counted as occupied
+  before the classification was corrected.)
 - Consumers stop maintaining private token-to-category tables, and stop silently disagreeing about
   aUSDC and sDAI.
 - The classification is **quote-relative**; documentation must say so, or a reader takes

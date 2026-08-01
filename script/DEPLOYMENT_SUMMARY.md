@@ -38,7 +38,8 @@ This deployment system uses an **EOA deployer** (`--broadcast`) with **CREATE2 d
 | `04_DeployBalanceAdapters.s.sol` | Deploy balance adapters incl. meta-adapters (per-chain, config-driven) | Adapter addresses in config |
 | `05_DeployBridgeAdapters.s.sol` | Deploy bridge adapters (CCIP, Across, Stargate, CCTP, Gnosis, Superchain; per-chain) | Adapter addresses in config |
 | `06_Configure.s.sol` | **EOA broadcast** (deployer holds admin+MANAGER): `addBalanceAdapters` for each deployed plain adapter + `addMetaBalanceAdapter` then `addMetaInstances`/`removeMetaInstances` for meta-adapters + authorize bridge adapters + authorize bridge accounts (`authorizeAccount`) + register bridge assets (`registerAsset`) from `bridge-escrow/<chainId>.json`. Idempotent / re-runnable. | On-chain config txs |
-| `07_TransferAdminToSecurityCouncil.s.sol` | **EOA broadcast, run LAST**: grant DEFAULT_ADMIN + MANAGER to `addresses.securityCouncil` (Safe) on both proxies, revoke/renounce the deployer's roles. | On-chain role handoff |
+| `07_TransferAdminToSecurityCouncil.s.sol` | **EOA broadcast, last of the role handoff**: grant DEFAULT_ADMIN + MANAGER to `addresses.securityCouncil` (Safe) on both proxies, revoke/renounce the deployer's roles. Does **not** cover `AssetKindRegistry` (08) — that contract stays EOA-governed. | On-chain role handoff |
+| `08_DeployAssetKindRegistry.s.sol` | Deploy the per-chain `AssetKindRegistry` and classify every configured asset on the two-axis taxonomy (`PegKind` × `AccrualKind`). **Order-independent** — not coupled to 07, moves neither library pin, never touches the proxies. **Fail-closed**: aborts unless every asset carries a valid `pegKind` + `accrualKind` string. Idempotent / re-runnable. | Registry address in config |
 
 ### Upgrade Scripts (`script/upgrade/`)
 

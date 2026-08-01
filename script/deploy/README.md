@@ -1,10 +1,12 @@
 # Deploy Scripts
 
-Everything is deployed and configured by a single **deployer EOA** (private key + `--broadcast`). No Safe executes any deploy/config transaction. The deployer EOA holds `DEFAULT_ADMIN_ROLE` + `MANAGER` throughout, and the **final** step (`07`) hands `DEFAULT_ADMIN_ROLE` + `MANAGER` to the **security-council Safe** and renounces the deployer's roles. The council Safe is the end-state governance admin (future upgrades go through it via `script/upgrade/*`, which still emit Safe-TX batches).
+Everything is deployed and configured by a single **deployer EOA** (private key + `--broadcast`). No Safe executes any deploy/config transaction. The deployer EOA holds `DEFAULT_ADMIN_ROLE` + `MANAGER` throughout, and the **final role-handoff** step (`07`) hands `DEFAULT_ADMIN_ROLE` + `MANAGER` to the **security-council Safe** and renounces the deployer's roles. The council Safe is the end-state governance admin (future upgrades go through it via `script/upgrade/*`, which still emit Safe-TX batches).
 
 Deployment order (per chain unless noted):
 
-**01** (implementations, once across chains) → **02** (proxies + init) → **03** (price feeds; asset registration is a separate `script/manage/RegisterAssets.s.sol` step) → **04** (balance adapters) → **05** (bridge adapters, CREATE2 same-address) → **06** (configure: register balance + meta-adapters, reconcile meta-instances, authorize bridge adapters + wire `trustedRemoteAdapter`) → **07** (transfer admin to the security council, last).
+**01** (implementations, once across chains) → **02** (proxies + init) → **03** (price feeds; asset registration is a separate `script/manage/RegisterAssets.s.sol` step) → **04** (balance adapters) → **05** (bridge adapters, CREATE2 same-address) → **06** (configure: register balance + meta-adapters, reconcile meta-instances, authorize bridge adapters + wire `trustedRemoteAdapter`) → **07** (transfer admin to the security council — last of the role handoff) → **08** (asset-kind registry; see below — **order-independent**, run it any time after the assets config carries the kind fields).
+
+`07` is the last step that touches the NAV/Bridge **proxies**, and it is still what ends the deployer's control over them. It is no longer the last script in the directory: `08` deploys its own standalone contract with its own roles and is not coupled to `07` in either direction. Run `08` before or after `07` — but do not skip it, or the `AssetKindRegistry` simply does not exist on that chain and nothing in the pipeline says so.
 
 ## Role model
 
@@ -70,7 +72,7 @@ Run by the deployer EOA (holds admin + MANAGER). It is config-driven and idempot
 forge script script/deploy/06_Configure.s.sol --chain-id 1 --broadcast --account $DEPLOYER_NAME
 ```
 
-## 07_TransferAdminToSecurityCouncil.s.sol (run LAST)
+## 07_TransferAdminToSecurityCouncil.s.sol (last of the role handoff)
 
 Grants `DEFAULT_ADMIN_ROLE` + `MANAGER` to `addresses.securityCouncil` on both proxies (`NAVCalculator`, `BridgeEscrow`), revokes `MANAGER` from the deployer, and renounces the deployer's `DEFAULT_ADMIN_ROLE`.
 
@@ -81,6 +83,23 @@ After this the council Safe is the sole admin/manager on the proxies **and** the
 ```bash
 DEPLOYER_EOA=0xYourDeployer \
 forge script script/deploy/07_TransferAdminToSecurityCouncil.s.sol --chain-id 1 --broadcast --account $DEPLOYER_NAME
+```
+
+## 08_DeployAssetKindRegistry.s.sol (order-independent)
+
+Deploys the per-chain `AssetKindRegistry` and classifies every asset in `nav-config/assets-and-price-feeds/<chainId>.json` on the two-axis taxonomy — `PegKind { Pegged, Floating }` × `AccrualKind { None, Rebasing, Appreciating }`.
+
+**Not coupled to `07`, in either direction.** It deploys a standalone contract with its own roles, touches neither library pin, and never touches the NAV/Bridge proxies — so it can run before or after the council handoff. It is listed last only because it was added last.
+
+**Fail-closed: it aborts unless EVERY configured asset carries a valid `pegKind` and `accrualKind` string.** Absent or unrecognized values are not defaulted, not skipped and not warned about — a default classification is indistinguishable from a real one once it is on-chain, so the only safe place to notice the gap is before the transaction. A revert here is the guard working. Values are strings rather than integers so a stale integer cannot silently re-map if an enum ever gains a member.
+
+**Idempotent.** Re-running re-classifies the existing registry instead of deploying a second one, so it composes with the "re-run the numbered sequence" pattern like every other step.
+
+**⚠️ The registry is NOT handed off to the council.** `07` has no notion of this contract, so `DEFAULT_ADMIN_ROLE` and `MANAGER` both stay with the deployer EOA — and since chain configs set `admin` and `manager` to that same EOA, it is one key. Nothing consumes the registry yet; before anything does, either add it to `07` or make the EOA-governed end state a documented decision.
+
+```bash
+PERSIST_DEPLOYMENTS=1 \
+forge script script/deploy/08_DeployAssetKindRegistry.s.sol --chain-id 1 --broadcast --account $DEPLOYER_NAME
 ```
 
 > Note: `PERSIST_DEPLOYMENTS=1` gates the top-level impl/proxy address writes (`saveDeployedAddress` in 01/01_2/02/02_2) to the deployments file `script/config/deployments/{chainId}.json` — without it those only log. The per-adapter writes in 04 (`balanceAdapters.<Name>`) and 05 (`bridgeAdapters.<Name>`) go through `ConfigReader.writeAdapterAddress` and are NOT gated by this flag — they write on every run. Governance after handoff (upgrades) is council-Safe-driven via `script/upgrade/*`, which still produce Safe-TX JSON batches.

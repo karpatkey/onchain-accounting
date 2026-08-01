@@ -136,8 +136,22 @@ contract AssetKindRegistryTest is Test {
 
         assertEq(pegs.length, 2);
         assertEq(accruals.length, 2);
+        // EVERY index on BOTH axes. Asserting only `pegs[0]` and `accruals[1]` left the batch copy loop effectively
+        // untested: element 0's expected `pegKind` is `Pegged`, the ZERO value, so an implementation that ignored
+        // storage and wrote a constant `PegKind.Pegged` into every slot satisfied the whole suite. That was verified
+        // by running a mutant — `pegKinds[i] = PegKind.Pegged;` — against this file: 20/20 passed.
         assertEq(uint8(pegs[0]), uint8(PegKind.Pegged));
+        assertEq(uint8(pegs[1]), uint8(PegKind.Floating));
+        assertEq(uint8(accruals[0]), uint8(AccrualKind.None));
         assertEq(uint8(accruals[1]), uint8(AccrualKind.Appreciating));
+
+        // Structural belt-and-braces: the batch must stay index-aligned with the single-asset read, which IS
+        // well covered (all six matrix cells). This makes the batch path unable to diverge from it silently.
+        for (uint256 i; i < assets.length; ++i) {
+            (PegKind p, AccrualKind a) = registry.getAssetKind(assets[i]);
+            assertEq(uint8(pegs[i]), uint8(p));
+            assertEq(uint8(accruals[i]), uint8(a));
+        }
     }
 
     /// @dev A batch is all-or-nothing, naming the FIRST gap. Zero-filling the gaps would hand the caller precisely
@@ -177,14 +191,26 @@ contract AssetKindRegistryTest is Test {
         _assertKind(STETH, PegKind.Floating, AccrualKind.Rebasing);
     }
 
+    /// @dev BOTH arms of `length != pegKinds.length || length != accrualKinds.length`. Testing only the `pegKinds`
+    ///      arm left the `accrualKinds` arm dead: deleting it still passed the suite, while an over-long
+    ///      `accrualKinds` would then be silently truncated to `assets.length` instead of rejected.
     function test_setAssetKinds_revertsOnLengthMismatch() public {
         address[] memory assets = new address[](2);
-        PegKind[] memory pegs = new PegKind[](1);
-        AccrualKind[] memory accruals = new AccrualKind[](2);
 
+        // pegKinds too short
         vm.prank(manager);
         vm.expectRevert(abi.encodeWithSelector(IAssetKindRegistry.KindArrayLengthMismatch.selector, 2, 1, 2));
-        registry.setAssetKinds(assets, pegs, accruals);
+        registry.setAssetKinds(assets, new PegKind[](1), new AccrualKind[](2));
+
+        // accrualKinds too short
+        vm.prank(manager);
+        vm.expectRevert(abi.encodeWithSelector(IAssetKindRegistry.KindArrayLengthMismatch.selector, 2, 2, 1));
+        registry.setAssetKinds(assets, new PegKind[](2), new AccrualKind[](1));
+
+        // accrualKinds too LONG — the truncation case, not just the short one
+        vm.prank(manager);
+        vm.expectRevert(abi.encodeWithSelector(IAssetKindRegistry.KindArrayLengthMismatch.selector, 2, 2, 3));
+        registry.setAssetKinds(assets, new PegKind[](2), new AccrualKind[](3));
     }
 
     // ============================================================
@@ -199,14 +225,43 @@ contract AssetKindRegistryTest is Test {
         registry.setAssetKind(USDC, PegKind.Pegged, AccrualKind.None);
     }
 
-    /// @dev Separation of duties: the admin administers ROLES and cannot classify. If this ever passes, the admin has
-    ///      silently gained write access to portfolio metadata.
-    function test_adminCannotClassify() public {
+    /// @dev The admin holding ONLY `DEFAULT_ADMIN_ROLE` is not authorized on `setAssetKind` — the role check itself.
+    ///      That is all this proves, and the name says so.
+    ///
+    ///      **It is NOT proof of separation of duties, and must never be cited as such.** See
+    ///      {test_adminCanSelfGrantManager_soSeparationIsProceduralNotEnforced} directly below for why: the admin can
+    ///      grant itself `MANAGER` and then classify. This test only shows it cannot do so *without* taking that step.
+    function test_adminRoleAloneIsNotAuthorizedToClassify() public {
         vm.prank(admin);
         vm.expectRevert(
             abi.encodeWithSelector(IAccessControl.AccessControlUnauthorizedAccount.selector, admin, MANAGER)
         );
         registry.setAssetKind(USDC, PegKind.Pegged, AccrualKind.None);
+    }
+
+    /// @dev Pins the ACTUAL privilege boundary, so no reader mistakes the test above for an enforced separation.
+    ///      `AssetKindRegistry` uses stock OZ `AccessControl` with no `_setRoleAdmin` override, so `MANAGER`'s role
+    ///      admin is `DEFAULT_ADMIN_ROLE`: the admin self-grants and classifies in two calls, one block, no timelock
+    ///      and no second party. The separation is therefore PROCEDURAL, not ENFORCED.
+    ///
+    ///      This is not hypothetical on the live deployment. `script/config/chains/1.json` sets `admin` and `manager`
+    ///      to the SAME deployer EOA, and `08_DeployAssetKindRegistry` passes `(chain.admin, msg.sender)` — so both
+    ///      roles land on one key and even the procedural separation does not exist until the roles are split.
+    ///
+    ///      If this test ever FAILS, role administration has been tightened (an override, a timelock, a renounce),
+    ///      which is a deliberate change — update the docstrings that describe the boundary rather than this test.
+    function test_adminCanSelfGrantManager_soSeparationIsProceduralNotEnforced() public {
+        assertFalse(registry.hasRole(MANAGER, admin));
+
+        vm.prank(admin);
+        registry.grantRole(MANAGER, admin);
+        assertTrue(registry.hasRole(MANAGER, admin));
+
+        vm.prank(admin);
+        registry.setAssetKind(USDC, PegKind.Floating, AccrualKind.Appreciating);
+
+        // Classified by the admin alone, with no involvement from the configured manager.
+        _assertKind(USDC, PegKind.Floating, AccrualKind.Appreciating);
     }
 
     function test_batchSetAndClear_areManagerGated() public {

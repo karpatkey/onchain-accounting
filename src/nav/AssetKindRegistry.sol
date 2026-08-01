@@ -47,8 +47,14 @@ contract AssetKindRegistry is AccessControl, IAssetKindRegistry {
 
     mapping(address asset => AssetKinds kinds) private _kinds;
 
-    /// @param admin   Receives `DEFAULT_ADMIN_ROLE` (role administration only — cannot classify).
-    /// @param manager Receives `MANAGER` (classification writes).
+    /// @param admin   Receives `DEFAULT_ADMIN_ROLE` — role administration. **This is not a classification-proof
+    ///                role.** Stock OZ `AccessControl` with no `_setRoleAdmin` override makes `DEFAULT_ADMIN_ROLE` the
+    ///                role admin of `MANAGER`, so this holder can grant itself `MANAGER` and classify in two calls.
+    ///                The separation of duties is PROCEDURAL, not ENFORCED — do not rely on it as a control. Pinned by
+    ///                `test_adminCanSelfGrantManager_soSeparationIsProceduralNotEnforced`.
+    /// @param manager Receives `MANAGER` (classification writes). `08_DeployAssetKindRegistry` passes the deployer EOA
+    ///                here so it can classify in the same deploy run, and chain 1's config sets `admin` and `manager`
+    ///                to that same EOA — so on a fresh deploy both roles sit on ONE key until they are split.
     constructor(address admin, address manager) {
         if (admin == address(0) || manager == address(0)) revert InvalidArguments();
         _grantRole(DEFAULT_ADMIN_ROLE, admin);

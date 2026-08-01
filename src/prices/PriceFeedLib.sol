@@ -873,12 +873,18 @@ library PriceFeedLib {
     }
 
     /// @dev Enrichment loop for `computeNavAndPositions`, extracted purely to stay under the `via_ir` stack limit.
-    ///      That function keeps five storage pointers plus the quote-asset info live across its whole body, and
-    ///      the inlined `_buildStaleAssets` / `_buildIrregularAssets` loops contribute their own counters; folding
+    ///      That function keeps five storage pointers plus the quote-asset info live across its whole body; folding
     ///      this loop's locals (`i`, `balance`, `registered`, `feed`, `length`, `totalValue`) in on top put it one
     ///      slot over ("Variable _mpos_1 is 1 too deep in the stack"). Behaviour is byte-for-byte the same as the
     ///      inline loop — do not re-inline it. Note the limit is reached only in a WHOLE-PROJECT compile, so an
     ///      incremental `forge build` will not reproduce a regression here; use `forge clean && forge build`.
+    ///
+    ///      **Historical note, so the reason is not mistaken for the current shape.** This note used to cite the
+    ///      "inlined `_buildStaleAssets` / `_buildIrregularAssets` loops" as part of the load. They are no longer
+    ///      invoked from this caller's frame — {_assignHealthArrays} now holds all three health-array calls in its own
+    ///      frame, which is the second extraction this function has needed for the same limit. The stack pressure that
+    ///      justifies keeping `_enrichAll` separate is therefore the five storage pointers plus this loop's own
+    ///      locals, NOT the health-array builders. Do not read the removal of that clause as headroom.
     function _enrichAll(
         INAVCalculator.PositionBalance[] memory allPositions,
         PriceFeedCache[] memory priceFeeds,

@@ -560,6 +560,14 @@ library ConfigReader {
     }
 
     /// @dev Reads a string field off an asset entry, returning "" when the asset or the field is absent.
+    /// @dev **Asset symbols must not contain a `.`** — the JSON path is built by concatenation, so a symbol like
+    ///      `USDC.e` yields `.USDC.e.pegKind`, which resolves as `USDC` -> `e` -> `pegKind` and misses. This
+    ///      constraint is pre-existing and shared by every path-building reader in this file (`readAssetAddress`,
+    ///      the feed and monitor paths), and no configured chain trips it today: the only non-alphanumeric symbol in
+    ///      any `assets-and-price-feeds/*.json` is `ETH+` on chain 1, and `+` is not a path metacharacter (verified).
+    ///      Recorded here specifically because `08_DeployAssetKindRegistry` is the first caller that turns a lookup
+    ///      miss into a hard abort, so a dotted symbol would surface as a confusing "kind missing" rather than as
+    ///      the unreachable-path bug it actually is. Gnosis already uses `USDCe`, not `USDC.e`; keep it that way.
     function _readAssetString(Vm vm, uint256 chainId, string memory symbol, string memory field)
         private
         view

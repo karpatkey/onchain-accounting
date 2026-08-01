@@ -40,24 +40,40 @@ contract AssetKindConfigParsingTest is Test {
         assertEq(uint8(appreciating), uint8(AccrualKind.Appreciating));
     }
 
-    /// @dev Every enum member must be reachable from config. If a member is ever added without a string mapping, it
-    ///      becomes unsettable and this count assertion is what notices.
+    /// @dev Every enum member must be reachable from config. If a member is ever added without a string mapping it
+    ///      becomes unsettable, and this test is what notices.
+    ///
+    ///      **Two assertions per axis, and the pairing is the point.** The `valid` loop proves every string in the
+    ///      list maps to a member. The `type(E).max` assertion proves the list is not SHORT — i.e. that no member
+    ///      exists without a string. Only the second one catches "a member was added and nobody added its string",
+    ///      which is the regression the docstring promises: a hardcoded list checked against a hardcoded count grows
+    ///      neither when the enum grows, so it stays green through exactly the change it claims to catch.
     function test_everyEnumMemberIsReachableFromAString() public pure {
-        uint8 pegReached;
         string[2] memory pegStrings = ["Pegged", "Floating"];
+        uint8 pegReached;
         for (uint256 i; i < pegStrings.length; ++i) {
             (, bool valid) = ConfigReader.pegKindFromString(pegStrings[i]);
             if (valid) ++pegReached;
         }
-        assertEq(pegReached, 2, "both PegKind members reachable");
+        assertEq(pegReached, pegStrings.length, "every listed PegKind string must map to a member");
+        assertEq(
+            pegStrings.length,
+            uint256(uint8(type(PegKind).max)) + 1,
+            "a PegKind member has no config string - add it here and to ConfigReader.pegKindFromString"
+        );
 
-        uint8 accrualReached;
         string[3] memory accrualStrings = ["None", "Rebasing", "Appreciating"];
+        uint8 accrualReached;
         for (uint256 i; i < accrualStrings.length; ++i) {
             (, bool valid) = ConfigReader.accrualKindFromString(accrualStrings[i]);
             if (valid) ++accrualReached;
         }
-        assertEq(accrualReached, 3, "all three AccrualKind members reachable");
+        assertEq(accrualReached, accrualStrings.length, "every listed AccrualKind string must map to a member");
+        assertEq(
+            accrualStrings.length,
+            uint256(uint8(type(AccrualKind).max)) + 1,
+            "an AccrualKind member has no config string - add it here and to ConfigReader.accrualKindFromString"
+        );
     }
 
     // ============================================================
@@ -120,14 +136,45 @@ contract AssetKindConfigParsingTest is Test {
         assertFalse(accrualValid);
     }
 
-    /// @dev An asset that exists in a real chain config but has no kind fields must also read invalid. This is the
-    ///      state every chain is in until the classification data lands, and it is the guard that makes the deploy
-    ///      abort rather than write defaults. It keeps passing once the data lands, because the symbol asked for here
-    ///      is deliberately one that does not exist.
-    function test_assetWithoutKindFieldsIsInvalid() public view {
+    /// @dev An asset ENTRY that is absent entirely reads invalid. Named for what it actually does: the symbol asked
+    ///      for does not exist in chain 1's config, so this is the absent-entry case, NOT the "entry present, kind
+    ///      fields absent" case — that one is
+    ///      {test_assetPresentButKindFieldAbsentIsInvalid}, which needs a fixture to stay true after the data lands.
+    function test_absentAssetEntryIsInvalid() public view {
         (, bool pegValid) = ConfigReader.readAssetPegKind(vm, 1, "NOT_A_REAL_SYMBOL");
         assertFalse(pegValid, "missing asset entry must read as invalid");
         (, bool accrualValid) = ConfigReader.readAssetAccrualKind(vm, 1, "NOT_A_REAL_SYMBOL");
         assertFalse(accrualValid);
+    }
+
+    /// @dev The realistic config mistake, which nothing covered before: the asset entry EXISTS and one axis is filled
+    ///      in while its sibling is forgotten. Half-classified must read invalid on the missing axis — otherwise the
+    ///      deploy would classify the asset using a defaulted `AccrualKind.None`, which is a real, plausible value.
+    ///
+    ///      Uses a throwaway fixture rather than a real symbol on purpose: asserting against live config would flip
+    ///      from invalid to valid the moment the classification data lands, so the test would be pinning the absence
+    ///      of the data rather than the behaviour of the reader. Fixture is removed BEFORE the assertions so a failure
+    ///      never leaves it behind — same discipline as `BridgeEscrowConfigRehearsal.fork.t.sol`.
+    function test_assetPresentButKindFieldAbsentIsInvalid() public {
+        uint256 fixtureChainId = 987_654_322;
+        string memory path = string(
+            abi.encodePacked(
+                vm.projectRoot(),
+                "/script/config/nav-config/assets-and-price-feeds/",
+                vm.toString(fixtureChainId),
+                ".json"
+            )
+        );
+        // USDC is present, has an address, has `pegKind` — and no `accrualKind`.
+        vm.writeFile(path, '{"USDC":{"address":"0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48","pegKind":"Pegged"}}');
+
+        (PegKind peg, bool pegValid) = ConfigReader.readAssetPegKind(vm, fixtureChainId, "USDC");
+        (, bool accrualValid) = ConfigReader.readAssetAccrualKind(vm, fixtureChainId, "USDC");
+
+        vm.removeFile(path);
+
+        assertTrue(pegValid, "the axis that IS configured must read valid");
+        assertEq(uint8(peg), uint8(PegKind.Pegged));
+        assertFalse(accrualValid, "the absent sibling axis must read invalid, not default to None");
     }
 }

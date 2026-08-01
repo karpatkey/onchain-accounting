@@ -627,7 +627,7 @@
   },
   "OETH": {
     "address": "0x856c4Efb76C1D1AE02e20CEB03A2A6a08b0b8dC3",
-    "$kindComment": "Origin ETH; rebasing to holders. Priced via a market OETH/ETH cross-rate.",
+    "$kindComment": "Origin ETH; rebasing to holders, priced via a market OETH/ETH cross-rate. accrualKind describes the TOKEN, not this system's positions: Origin's OToken auto-migrates CONTRACT holders to non-rebasing on their first balance-changing interaction, and that has already happened to a registered account here - ACCOUNT_11 (0x0EFcCBb9E2C09Ea29551879bd9Da32362b32fc89) carries nonRebasingCreditsPerToken = 1e18 with rebaseState = NotSet, i.e. auto-classified with nobody opting out. So do NOT infer balance growth for a Safe's OETH position from Rebasing. No registered account held OETH when this was measured (mainnet block 25656631; 36% of OETH supply was non-rebasing).",
     "pegKind": "Floating",
     "accrualKind": "Rebasing",
     "priceFeeds": [

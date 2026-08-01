@@ -64,9 +64,10 @@ false dichotomy over the same axis.
 
 > **Amended — the `Pegged + Appreciating` row originally read `sUSDS, sDAI | ✅ mainnet, Gnosis`.**
 > That classification was **overruled after this ADR merged**: a yield-bearing wrapper has no peg, so
-> sUSDS, sGHO, sUSDe and sDAI are `Floating + Appreciating`. `src/utils/AssetKind.sol` was corrected to
-> match. The row is preserved as empty rather than deleted, because the cell itself is still part of the
-> argument — see immediately below. Recorded rather than silently rewritten: this ADR taught the
+> sUSDS, sGHO, sUSDe and sDAI are `Floating + Appreciating`. `src/utils/AssetKind.sol` carries the
+> corrected classification — on **PR #241, which is not yet merged**; neither that file nor the registry
+> is on `main` today. The row is preserved as empty rather than deleted, because the cell itself is
+> still part of the argument — see immediately below. Recorded rather than silently rewritten: this ADR taught the
 > overruled classification for as long as it stood, and a reader who acted on it deserves to know it
 > changed rather than to conclude they misread it.
 
@@ -89,8 +90,10 @@ fundamental value is $1". Across the seven configured chains it is set on exactl
 stablecoins (on mainnet: USDC, USDS, USDT, DAI, GHO, USDe, RLUSD, crvUSD). **No yield-bearing wrapper
 carries it** — not sDAI, sGHO, sUSDe, sUSDS or syrupUSDC. The absence of a peg tolerance is the
 discriminator, and it holds for every one of them.
-`08_DeployAssetKindRegistry` asserts the two authorities agree (`Pegged` ⇔ `pegToleranceBps > 0`), so
-they can never silently diverge again.
+`08_DeployAssetKindRegistry` **will** assert that the two authorities agree (`Pegged` ⇔
+`pegToleranceBps > 0`) so they cannot silently diverge again — but that guard ships with **#241 and does
+not exist on `main` today**. Until it lands, the peg-tolerance config is the only authority, and the
+agreement is maintained by review rather than enforced by code.
 
 **`Pegged + Rebasing` is empty today, and that strengthens the case rather than weakening it.** aUSDC is
 listed as an illustration of the cell, not as evidence of current occupancy — no aToken is registered

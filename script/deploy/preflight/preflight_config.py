@@ -58,10 +58,17 @@ def _load_json(p, chain_id: int) -> dict:
     if not p.exists():
         return {}
     try:
-        return json.loads(p.read_text())
+        v = json.loads(p.read_text())
     except json.JSONDecodeError as e:
         _CONFIG_ERRORS.setdefault(int(chain_id), []).append(f"{p.name}: {e}")
         return {}
+    if not isinstance(v, dict):
+        # A top-level list/string/null parses fine but is not a config object. Returning it would make
+        # every downstream `.items()`/`.get()` raise far from the cause, or quietly read as empty.
+        _CONFIG_ERRORS.setdefault(int(chain_id), []).append(
+            f"{p.name}: top level is {type(v).__name__}, expected an object")
+        return {}
+    return v
 
 
 def cfg(sub: str, chain_id: int) -> dict:
@@ -528,37 +535,50 @@ def main() -> int:
         # REMAINING chain — and it discarded the findings already computed for this one, including the
         # declared-heartbeat guard's own "config could not be parsed" ERROR. The failure is now contained
         # to its chain and reported as an ERROR, so the run still covers the others and still fails.
+        findings, k, degraded = [], None, False
         try:
-            findings = check_chain(cid)
+            # EVERYTHING that reads config for this chain goes inside the guard, including `counts` and
+            # `chain_config`. Two earlier versions of this containment were defeated by a call left one
+            # line outside it, so the rule now is: nothing that can raise on config touches `cid` after
+            # this block. `findings` is APPENDED to, never reassigned — reassigning discarded every
+            # deploy-blocking finding check_chain had already computed.
+            findings += check_chain(cid)
             k = counts(cid)
-            # counts() re-reads config through the same guarded loaders, so anything it discovers is
-            # recorded AFTER check_chain already reported. Drain again or it is silently dropped.
+            name = c.chain_config(cid).get("name", "?")
+            # counts()/chain_config re-read config through the same guarded loaders, so anything they
+            # discover is recorded AFTER check_chain reported. Drain again or it is silently dropped.
             findings += drain_config_errors(cid)
         except Exception as e:  # noqa: BLE001 - a chain that cannot be checked is not a chain that passed
-            # `counts` is inside the guard too: it re-reads the same config files, so leaving it outside
-            # let the very failure this handler exists for escape one line later.
-            findings = [(ERROR, f"chain {cid} could NOT be checked ({e!r}) — this chain has NO preflight "
-                                f"coverage; that is not the same as clean.")]
-            k = {"metaAdapters": 0, "metaInstances": 0, "plainAdapters": 0, "customFeeds": 0, "assets": 0}
-            # The snapshot-staleness signal is emitted ONCE per process. If this chain consumed it and
-            # then died, nothing would re-emit it and the whole run would silently lose that signal —
-            # so re-arm it for the next chain.
+            degraded = True
+            findings += drain_config_errors(cid)   # keep the filename and parse error, not just the type
+            findings.append((ERROR, f"chain {cid} could NOT be fully checked ({e!r}) — its coverage is "
+                                    f"INCOMPLETE; that is not the same as clean."))
+            if k is None:
+                k = {"metaAdapters": 0, "metaInstances": 0, "plainAdapters": 0, "customFeeds": 0,
+                     "assets": 0}
+            name = "?"
+            # The staleness signal is emitted once per process. Re-arm ONLY if this chain is the one that
+            # consumed it — re-arming unconditionally makes a later chain emit it a second time.
             try:
                 import declared_heartbeat_guard as _dhg
 
-                _dhg._reset_snapshot_findings_once()
+                if any("days old" in m for _s, m in findings):
+                    _dhg._reset_snapshot_findings_once()
             except Exception:  # noqa: BLE001 - best effort; never let re-arming break the loop
                 pass
         for key, v in k.items():
             totals[key] += v
-        report[str(cid)] = {"name": c.chain_config(cid).get("name", "?"),
+        report[str(cid)] = {"name": name,
                             "counts": k,
+                            # Marked, so a zeroed row cannot be mistaken for a chain that really
+                            # configures nothing when reconciling the runbook's totals.
+                            "countsDegraded": degraded,
                             "findings": [{"severity": s, "message": m} for s, m in findings]}
         errs = [x for x in findings if x[0] == ERROR]
         warns = [x for x in findings if x[0] == WARN]
         n_err += len(errs)
         n_warn += len(warns)
-        head = (f"  {cid:8} {c.chain_config(cid).get('name','?'):16} "
+        head = (f"  {cid:8} {name:16} "
                 f"meta={k['metaAdapters']:<3} inst={k['metaInstances']:<4} "
                 f"plain={k['plainAdapters']:<3} feeds={k['customFeeds']:<3} assets={k['assets']:<3}")
         print(head + (f"  {len(errs)} ERROR {len(warns)} WARN" if findings else "  clean"))

@@ -232,13 +232,25 @@ def registered_feeds(chain_id: str) -> list[dict]:
                     # An address with an UNUSABLE heartbeat is emitted, not dropped. Silently skipping
                     # it would leave the feed unchecked while the run still reads as full coverage.
                     if not isinstance(fd, dict):
+                        out.append({"asset": sym, "role": f"{kind}[{i}]", "address": "-",
+                                    "heartbeat": None,
+                                    "where": f"nav-config/assets-and-price-feeds/{chain_id}.json",
+                                    "no_address": f"the entry is {type(fd).__name__}, not an object, so "
+                                                  f"it cannot be read"})
                         continue
                     if not fd.get("address"):
                         # A `type: Custom` entry names its feed (`"feed": "wstETH"`) instead of carrying
-                        # an address — the address lives in the deployment record. That shape is COVERED,
-                        # via the custom feed's rate leg in the deploy config below, so it must stay
-                        # silent here. Reporting it flagged 41 correct entries and would have been pure
-                        # cry-wolf. Anything else with no address genuinely cannot be looked up.
+                        # an address — the address lives in the deployment record. Silent here, for two
+                        # DIFFERENT reasons, and the distinction matters because an earlier version of
+                        # this comment asserted the first reason for all of them and was wrong for half:
+                        #   * 21 of the 41 have a Chainlink rate leg in the deploy config, which THIS
+                        #     axis checks directly as a `rate leg (...)` row.
+                        #   * the other 20 (wstETH, eETH, rETH, sUSDS, sGHO, …) have NO Chainlink leg at
+                        #     all — they read an on-chain exchange rate — so this axis genuinely does not
+                        #     apply, and their heartbeat is governed by the derived-vs-base invariant in
+                        #     `preflight_config.heartbeat_findings` (ADR 0019) instead.
+                        # Reporting them flagged 41 correct entries: pure cry-wolf. Anything with no
+                        # address AND no named custom feed genuinely cannot be looked up.
                         if not (fd.get("type") == "Custom" and fd.get("feed")):
                             out.append({"asset": sym, "role": f"{kind}[{i}]", "address": "-",
                                         "heartbeat": None,
@@ -246,7 +258,7 @@ def registered_feeds(chain_id: str) -> list[dict]:
                                         "no_address": "the entry has no `address` and does not name a "
                                                       "custom `feed`, so there is nothing to look up"})
                         continue
-                    if fd.get("address"):
+                    if True:  # address present: the branch above `continue`s when it is not
                         out.append({"asset": sym, "role": f"{kind}[{i}]",
                                     "address": fd["address"],
                                     "heartbeat": _int_or_none(fd.get("heartbeat")),
@@ -512,7 +524,12 @@ _SNAPSHOT_FINDINGS_EMITTED = False
 
 
 def _reset_snapshot_findings_once() -> None:
-    """Test seam: re-arm `snapshot_findings_once` so an arm can assert both the emit AND the dedupe."""
+    """Re-arm `snapshot_findings_once`.
+
+    Used by the self-test to assert both the emit and the dedupe, AND by `preflight_config`'s per-chain
+    error handler: the staleness signal is emitted once per process, so a chain that consumed it and then
+    failed would take that signal down for the whole run unless the latch is re-armed.
+    """
     global _SNAPSHOT_FINDINGS_EMITTED
     _SNAPSHOT_FINDINGS_EMITTED = False
 
@@ -616,7 +633,8 @@ def refresh(allow_shrink: bool = False, fetch=None) -> int:
         # `refs` — and more importantly, a chain whose config cannot be read has an UNKNOWN reference set,
         # so refresh cannot tell a genuine delisting from an unreadable file. That is a non-waivable
         # failure, not a shrink: guessing here would delete entries that are still referenced.
-        rows = [r for r in rows if not r.get("unpaired_heartbeat")]   # no address to fetch
+        rows = [r for r in rows                                        # neither has an address to fetch
+                if not r.get("unpaired_heartbeat") and not r.get("no_address")]
         cfg_errs = [r for r in rows if r.get("config_error")]
         if cfg_errs:
             failures.append((chain_id, f"config unreadable ({cfg_errs[0]['config_error']}) — the set of "
@@ -685,7 +703,11 @@ def refresh(allow_shrink: bool = False, fetch=None) -> int:
     # refreshed" as a failure: leaving it in under a today `fetched` stamp would re-certify data this
     # run never fetched. If config no longer references it, dropping it is a legitimate shrink.
     for cid in sorted(set(prev_chains) - set(DIRECTORY_FILES), key=str):
-        if registered_feeds(cid):
+        try:
+            _still_referenced = bool(registered_feeds(cid))
+        except Exception:  # noqa: BLE001 - same containment the main loop uses; unknown != unreferenced
+            _still_referenced = True   # cannot tell -> keep the data and block, never delete on a guess
+        if _still_referenced:
             out["chains"][cid] = prev_chains[cid]
             total += len(prev_chains[cid])
             carried.append((cid, "no DIRECTORY_FILES entry — cannot be refreshed; add one"))

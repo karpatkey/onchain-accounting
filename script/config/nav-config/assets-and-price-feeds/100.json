@@ -53,7 +53,7 @@
   },
   "wstETH": {
     "address": "0x6C76971f98945AE98dD7d4DFcA8711ebea946eA6",
-    "$kindComment": "Wrapped stETH; balance static, priced stEthPerToken x ETH/USD (per feed config). The appreciating half of the stETH pair.",
+    "$kindComment": "Wrapped stETH; balance static, its stETH redemption rate grows. The appreciating half of the stETH pair. Priced here via a Chainlink wstETH/ETH exchange-rate feed (per feed config) - the stEthPerToken path is mainnet-only.",
     "pegKind": "Floating",
     "accrualKind": "Appreciating",
     "priceFeeds": [
@@ -80,7 +80,7 @@
   },
   "sDAI": {
     "address": "0xaf204776c7245bF4147c2612BF6e5972Ee483701",
-    "$kindComment": "ERC-4626 share of DAI earning the DSR; balance static, redemption rate grows.",
+    "$kindComment": "Savings xDAI - ERC-4626 share over WXDAI earning the Gnosis savings rate; balance static, redemption rate grows. Not mainnet sDAI: the underlying is WXDAI (per feed config) and there is no DSR on Gnosis.",
     "pegKind": "Pegged",
     "accrualKind": "Appreciating",
     "priceFeeds": [

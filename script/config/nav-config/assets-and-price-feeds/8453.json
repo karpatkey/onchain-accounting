@@ -41,7 +41,7 @@
   },
   "wstETH": {
     "address": "0xc1CBa3fCea344f92D9239c08C0568f6F2F0ee452",
-    "$kindComment": "Wrapped stETH; balance static, priced stEthPerToken x ETH/USD (per feed config). The appreciating half of the stETH pair.",
+    "$kindComment": "Wrapped stETH; balance static, its stETH redemption rate grows. The appreciating half of the stETH pair. Priced here via a Chainlink wstETH/ETH exchange-rate feed (per feed config) - the stEthPerToken path is mainnet-only.",
     "pegKind": "Floating",
     "accrualKind": "Appreciating",
     "divergenceToleranceBps": 250,

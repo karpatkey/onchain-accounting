@@ -31,7 +31,7 @@ script/config/
 │   ├── bridge-adapters/<chainId>.json            #   { "<AdapterName>": { "enabled", "initialize": {…}, "remoteChains":[…] } } — read by 05/06
 │   └── bridge-escrow/<chainId>.json              #   { "accounts":[…], "assets": { "<SYMBOL>": "0x…" } } — read by 06 (authorizeAccount + registerAsset)
 └── nav-config/                                   # WHAT TO REGISTER/ADD ON NAV — read by RegisterAssets + 06_Configure
-    ├── assets-and-price-feeds/<chainId>.json     #   { "<SYMBOL>": { "address", "priceFeeds": [ {type, address|feed, heartbeat} ] } }
+    ├── assets-and-price-feeds/<chainId>.json     #   { "<SYMBOL>": { "address", "pegKind", "accrualKind", "priceFeeds": [ {type, address|feed, heartbeat} ] } }
     ├── balance-adapters/<chainId>.json           #   PLAIN adapters to add: { "<AdapterName>": { "enabled" } }
     └── meta-balance-adapters/<chainId>.json      #   META adapters to add: { "<AdapterName>": { "enabled", "instances":[…] | "instancesRaw":[…] } }
 ```
@@ -73,7 +73,7 @@ There is no `deployed` field here — deployed addresses are written to `deploym
 
 ## nav-config/assets-and-price-feeds/<chainId>.json — Assets to register on NAV
 
-Lists every asset of interest, keyed by symbol (e.g. `"WETH"`, `"wstETH"`), with its token `address`, a **single-primary** `priceFeeds[]`, and (optionally) a `monitorFeeds[]` list plus divergence/peg tolerances. The **list of symbols to process** is derived from this file's keys via `ConfigReader.getAssetSymbols(vm, chainId)` — no hardcoded list; add a symbol by adding its object to this JSON.
+Lists every asset of interest, keyed by symbol (e.g. `"WETH"`, `"wstETH"`), with its token `address`, its **required** `pegKind` + `accrualKind` classification, a **single-primary** `priceFeeds[]`, and (optionally) a `monitorFeeds[]` list plus divergence/peg tolerances. The **list of symbols to process** is derived from this file's keys via `ConfigReader.getAssetSymbols(vm, chainId)` — no hardcoded list; add a symbol by adding its object to this JSON.
 
 The NAV **prices each asset off its single primary feed** (`priceFeeds[0]`, registered via `registerAsset`) — there is no pricing fallback. Any additional feeds go in `monitorFeeds[]`: they NEVER price the NAV, they are read only to detect divergence. When the primary diverges from **any single** healthy monitor by more than `divergenceToleranceBps` (worst-case, not an average), or (when `pegToleranceBps` is set) the primary deviates from $1 by more than that, NAVCalculator flags the asset `irregular` (a signal, not a revert). `getPriceDivergence` also exposes the monitor median and whether the primary sits above or below it. See the divergence design in `PriceFeedLib` / `INAVCalculator.PriceFeedData`.
 
@@ -83,6 +83,9 @@ Example structure (top-level keys are symbols — no chainId wrapper):
 {
   "wstETH": {
     "address": "0x7f39C581F595B53c5cb19bD0b3f8dA6c935E2Ca0",
+    "$kindComment": "Wrapped stETH; balance static, its stETH redemption rate grows.",
+    "pegKind": "Floating",
+    "accrualKind": "Appreciating",
     "divergenceToleranceBps": 250,
     "priceFeeds": [
       { "type": "Custom", "feed": "wstETH", "heartbeat": 86400 }
@@ -93,6 +96,8 @@ Example structure (top-level keys are symbols — no chainId wrapper):
   },
   "USDC": {
     "address": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+    "pegKind": "Pegged",
+    "accrualKind": "None",
     "pegToleranceBps": 100,
     "divergenceToleranceBps": 50,
     "priceFeeds": [
@@ -106,6 +111,11 @@ Example structure (top-level keys are symbols — no chainId wrapper):
 ```
 
 - **address**: Token contract address.
+- **pegKind** / **accrualKind**: **REQUIRED on every asset.** The two orthogonal classification axes read by `08_DeployAssetKindRegistry` via `ConfigReader.readAssetPegKind` / `readAssetAccrualKind`. Parsing is **fail-closed with no default**: an absent, empty or unrecognized value aborts that chain's `08` deploy rather than defaulting, because a defaulted classification is indistinguishable from a real one once it is on-chain. **Add both keys whenever you add an asset here.**
+  - `pegKind`: `"Pegged"` | `"Floating"`. `Pegged` means pegged to the NAV's **quote asset (USD)** — not "pegged to something". So `USDC`/`USDT`/`DAI`/`GHO` are `Pegged`, while **`wstETH` is `Floating`** (rigidly related to stETH, but its USD price moves with ETH). A EUR-pegged stablecoin is `Floating` under this rule. The axis predicts a real operational property: a zero-heartbeat-margin staleness condition bites `Pegged` feeds and not `Floating` ones, since a floating asset's divergence threshold fires long before its heartbeat lapses.
+  - `accrualKind`: `"None"` | `"Rebasing"` | `"Appreciating"`. `Rebasing` = the **balance** grows (stETH, aTokens). `Appreciating` = the **exchange rate** grows while the balance is static (sDAI, wstETH, ERC-4626 shares). `None` = neither; value moves only with market price. A token whose yield accrues only through a separate wrapper is `None` (DAI vs sDAI, USDe vs sUSDe).
+  - Values are **strings, not integers, deliberately**: a stale integer silently re-maps if an enum gains a member, whereas an unknown string cannot be mistaken for a valid one. The string→enum mapping lives in `ConfigReader` so production and tests share one source of truth.
+- **$kindComment**: Optional justification for the pair above, used where the answer is non-obvious (any accrual, or a flagged judgement call). A separate key from `$comment` so a pre-existing comment is not clobbered. **Keep it true for THIS chain** — do not copy a mainnet justification onto an L2 entry whose pricing mechanism differs.
 - **priceFeeds**: The **single** primary feed (array with exactly one entry), used by `registerAsset` to price the asset. An asset with no oracle uses an empty `priceFeeds: []`. Entry fields (`type` / `address` / `feed` / `heartbeat`) are as below.
 - **monitorFeeds**: Optional ordered array of divergence-only feeds (same entry fields). Registered via `addMonitorFeed`; every entry must report 8 decimals (USD-comparable to the primary). Requires `divergenceToleranceBps` to be set. These are the former ADR-0009 redundancy feeds — they no longer price the NAV, they only feed the divergence check.
 - **divergenceToleranceBps**: Basis-point threshold for the **worst-case** deviation between the primary and any single healthy monitor (not an average — a real split can't be masked). Required when `monitorFeeds` is non-empty (must be in `(0, 10000]`). Calibrate by comparison type: **fundamental-vs-market** (a Custom-feed primary watched by a market monitor, e.g. wstETH/weETH/ezETH) uses **250 bps** (real spread expected); **market-vs-market** (a Chainlink primary vs a second market feed, e.g. ETH/USDC/WBTC Chainlink-vs-API3/Redstone) uses **50 bps** (same quantity, ~30× calm-market noise).

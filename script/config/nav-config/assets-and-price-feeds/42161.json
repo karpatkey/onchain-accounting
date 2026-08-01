@@ -41,7 +41,7 @@
   },
   "wstETH": {
     "address": "0x5979d7b546e38e414f7e9822514be443a4800529",
-    "$kindComment": "Wrapped stETH; balance static, priced stEthPerToken x ETH/USD (per feed config). The appreciating half of the stETH pair.",
+    "$kindComment": "Wrapped stETH; balance static, its stETH redemption rate grows. The appreciating half of the stETH pair. Priced here via a Chainlink wstETH/ETH exchange-rate feed (per feed config) - the stEthPerToken path is mainnet-only.",
     "pegKind": "Floating",
     "accrualKind": "Appreciating",
     "divergenceToleranceBps": 250,
@@ -84,7 +84,7 @@
   },
   "ezETH": {
     "address": "0x2416092f143378750bb29b79eD961ab195CcEea5",
-    "$kindComment": "Renzo ezETH; rate from RestakeManager (per feed config).",
+    "$kindComment": "Renzo ezETH; rate from xRenzoDeposit on Arbitrum (per feed config) - RestakeManager is the mainnet path.",
     "pegKind": "Floating",
     "accrualKind": "Appreciating",
     "divergenceToleranceBps": 250,
@@ -105,7 +105,7 @@
   },
   "rsETH": {
     "address": "0x4186BFC76E2E237523CBC30FD220FE055156b41F",
-    "$kindComment": "Kelp rsETH; rate from rateProvider (per feed config).",
+    "$kindComment": "Kelp rsETH; priced via a Chainlink rsETH/ETH exchange-rate feed (per feed config) - the rateProvider path is mainnet-only.",
     "pegKind": "Floating",
     "accrualKind": "Appreciating",
     "divergenceToleranceBps": 250,
@@ -181,7 +181,7 @@
   },
   "syrupUSDC": {
     "address": "0x41CA7586cC1311807B4605fBB748a3B8862b42b5",
-    "$kindComment": "Maple syrupUSDC share, USDC underlying; priced via convertToAssets (per feed config).",
+    "$kindComment": "Maple syrupUSDC share, USDC underlying; priced via a Chainlink syrupUSDC/USDC exchange-rate feed (per feed config) - the convertToAssets path is mainnet-only.",
     "pegKind": "Pegged",
     "accrualKind": "Appreciating",
     "priceFeeds": [

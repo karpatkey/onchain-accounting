@@ -80,7 +80,7 @@
   },
   "weETH": {
     "address": "0xCd5fE23C85820F7B72D0926FC9b05b43E359b7ee",
-    "$kindComment": "Wrapped eETH; balance static, own rate feed. The appreciating half of the eETH pair.",
+    "$kindComment": "Wrapped eETH; balance static, its eETH redemption rate grows. The appreciating half of the eETH pair. Priced here by reading the token's own getRate() on-chain - a pure-fundamental feed with no oracle rate leg (the L2s instead use a Chainlink weETH/eETH exchange-rate feed).",
     "pegKind": "Floating",
     "accrualKind": "Appreciating",
     "divergenceToleranceBps": 250,

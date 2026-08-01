@@ -63,7 +63,7 @@
   },
   "weETH": {
     "address": "0x35751007a407ca6FEFfE80b3cB397736D2cf4dbe",
-    "$kindComment": "Wrapped eETH; balance static, own rate feed. The appreciating half of the eETH pair.",
+    "$kindComment": "Wrapped eETH; balance static, its eETH redemption rate grows. Priced here via a Chainlink weETH/eETH exchange-rate feed (per feed config) - the token's own getRate() is the mainnet path, and eETH itself is not a registered asset on this chain.",
     "pegKind": "Floating",
     "accrualKind": "Appreciating",
     "divergenceToleranceBps": 250,

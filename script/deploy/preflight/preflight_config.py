@@ -194,6 +194,19 @@ def heartbeat_findings(chain_id: int, assets: dict, dep_feeds: dict) -> list[tup
     return f
 
 
+def drain_config_errors(chain_id: int) -> list[tuple[str, str]]:
+    """Pop and format every parse failure recorded for this chain since the last drain.
+
+    A DRAIN rather than a read, and called from more than one place, because the recording happens
+    wherever `cfg`/`dcfg` are called — including `counts()`, which main() runs AFTER check_chain has
+    already reported. Reporting at a single point would silently drop anything recorded later, which is
+    the same failure class this containment exists to fix.
+    """
+    return [(ERROR, f"config file {msg} — could not be parsed, so whatever it governs on chain "
+                    f"{chain_id} has NO preflight coverage. That is not the same as clean.")
+            for msg in _CONFIG_ERRORS.pop(int(chain_id), [])]
+
+
 def check_chain(chain_id: int) -> list[tuple[str, str]]:
     """Returns [(severity, message)] for one chain, plus an ERROR per config file that failed to parse.
 
@@ -203,9 +216,7 @@ def check_chain(chain_id: int) -> list[tuple[str, str]]:
     """
     _CONFIG_ERRORS.pop(int(chain_id), None)
     f = _check_chain(chain_id)
-    for msg in _CONFIG_ERRORS.get(int(chain_id), []):
-        f.append((ERROR, f"config file {msg} — could not be parsed, so whatever it governs on chain "
-                         f"{chain_id} has NO preflight coverage. That is not the same as clean."))
+    f += drain_config_errors(chain_id)
     return f
 
 
@@ -520,6 +531,9 @@ def main() -> int:
         try:
             findings = check_chain(cid)
             k = counts(cid)
+            # counts() re-reads config through the same guarded loaders, so anything it discovers is
+            # recorded AFTER check_chain already reported. Drain again or it is silently dropped.
+            findings += drain_config_errors(cid)
         except Exception as e:  # noqa: BLE001 - a chain that cannot be checked is not a chain that passed
             # `counts` is inside the guard too: it re-reads the same config files, so leaving it outside
             # let the very failure this handler exists for escape one line later.

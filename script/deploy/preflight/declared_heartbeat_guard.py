@@ -44,7 +44,7 @@ purpose — that is the to-measure queue, and an honest one. Do not convert a WA
 actually measuring it.
 
 usage:
-  python3 declared_heartbeat_guard.py                # check every chain with a snapshot entry
+  python3 declared_heartbeat_guard.py                # check every chain the CONFIG registers feeds for
   python3 declared_heartbeat_guard.py 1 8453
   python3 declared_heartbeat_guard.py --self-test    # prove the guard, incl. by mutation
   python3 declared_heartbeat_guard.py --refresh      # re-fetch the declared-heartbeat snapshot (needs network)
@@ -65,6 +65,12 @@ WARN = "WARN"
 
 # Refuse to trust a snapshot older than this without saying so. Chainlink can re-tune a feed's heartbeat.
 SNAPSHOT_STALE_DAYS = 180
+
+# The same logic applied to the ALLOWLIST's own evidence. An exemption is a measurement, and a
+# measurement ages exactly like the snapshot does — publisher behaviour drifts, and a feed that was
+# deviation-active two years ago need not be today. Warning on a stale snapshot while treating a
+# two-year-old exemption as permanent would be the same blind spot wearing a different hat.
+MEASUREMENT_STALE_DAYS = 365
 
 # Chainlink reference-data-directory filenames, per chain id.
 DIRECTORY_FILES = {
@@ -190,8 +196,14 @@ def registered_feeds(chain_id: str) -> list[dict]:
     if nav.exists():
         try:
             assets = json.loads(nav.read_text()) or {}
-        except json.JSONDecodeError:
+        except json.JSONDecodeError as e:
+            # NOT swallowed into {}. An unparseable config would otherwise yield zero rows, and zero rows
+            # is indistinguishable from "this chain has no feeds" — so a corrupt config would report a
+            # clean chain. Emitted as a row so `_row_findings` turns it into an ERROR.
             assets = {}
+            out.append({"asset": "(config)", "role": "file", "address": str(nav.name),
+                        "heartbeat": None, "config_error": f"not valid JSON: {e}",
+                        "where": f"nav-config/assets-and-price-feeds/{chain_id}.json"})
         for sym, entry in assets.items():
             if not isinstance(entry, dict):
                 continue
@@ -209,8 +221,11 @@ def registered_feeds(chain_id: str) -> list[dict]:
     if dep.exists():
         try:
             feeds = json.loads(dep.read_text()) or {}
-        except json.JSONDecodeError:
+        except json.JSONDecodeError as e:
             feeds = {}
+            out.append({"asset": "(config)", "role": "file", "address": str(dep.name),
+                        "heartbeat": None, "config_error": f"not valid JSON: {e}",
+                        "where": f"contracts-deployment-config/custom-price-feeds/{chain_id}.json"})
         for name, v in feeds.items():
             if not isinstance(v, dict):
                 continue
@@ -235,6 +250,11 @@ def _row_findings(chain_id: str, r: dict, declared: dict) -> list[tuple[str, str
     # the moment someone flips `enabled`. Surfaced rather than filtered, so the queue stays honest.
     off = " (NOTE: this custom feed is currently enabled=false, so it will not be deployed yet — lower "\
           "priority, but it will bite the moment it is enabled.)" if r.get("enabled") is False else ""
+    if r.get("config_error"):
+        # The config file itself could not be read. ERROR, because the chain cannot be audited at all
+        # and "no rows" would otherwise read exactly like "no feeds configured".
+        return [(ERROR, f"config file {r['address']} could not be parsed ({r['config_error']}). This "
+                        f"chain has NO declared-heartbeat coverage — that is not the same as clean.")]
     if r.get("heartbeat") is None:
         # Enumerated but unusable. Reported, never skipped: a feed this axis cannot check must not be
         # indistinguishable from one it checked and cleared.
@@ -298,7 +318,17 @@ def findings(chain_id: str, snapshot: dict | None = None) -> list[tuple[str, str
     snap = snapshot if snapshot is not None else load_snapshot()
     declared = (snap.get("chains") or {}).get(str(chain_id), {})
     f: list[tuple[str, str]] = []
-    for r in registered_feeds(str(chain_id)):
+    # ENUMERATION is contained too, not just each row. `registered_feeds` reads config files whose shape
+    # it does not control; if it raises here the `for` header never binds and the whole chain's coverage
+    # is lost through preflight_config's fail-soft handler — the per-row containment below would never
+    # get the chance to run.
+    try:
+        rows = registered_feeds(str(chain_id))
+    except Exception as e:  # noqa: BLE001 - a chain that cannot be enumerated must not read as clean
+        return [(ERROR, f"chain {chain_id}: could NOT enumerate registered feeds ({e!r}), so this chain "
+                        f"has NO declared-heartbeat coverage. Fix the config shape; an unenumerable "
+                        f"chain is not a clean one.")]
+    for r in rows:
         # CONTAINMENT, per row. One malformed row must never discard the verdicts already computed for
         # this chain. Without this, a single KeyError propagated out of findings(), and preflight_config's
         # fail-soft `except Exception` collapsed the WHOLE chain — including a deploy-blocking ERROR it
@@ -343,6 +373,16 @@ def snapshot_findings_once(snap: dict | None = None) -> list[tuple[str, str]]:
     out = snapshot_age_findings(snap if snap is not None else load_snapshot())
     _SNAPSHOT_FINDINGS_EMITTED = True
     return out
+
+
+def _measurement_age_days(measured) -> int | None:
+    """Age in days of an allowlist entry's `measured` date, or None if it cannot be parsed."""
+    from datetime import date
+    try:
+        y, m, d = (int(x) for x in str(measured).split("-"))
+        return (date.today() - date(y, m, d)).days
+    except Exception:  # noqa: BLE001 - an unparseable date is reported by the caller, not raised
+        return None
 
 
 def snapshot_age_findings(snap: dict) -> list[tuple[str, str]]:
@@ -399,13 +439,19 @@ def refresh(allow_shrink: bool = False, fetch=None) -> int:
     out = {"$comment": prev_snap.get("$comment", ""), "source": DIRECTORY_BASE,
            "fetched": date.today().isoformat(), "chains": {}}
     total = 0
-    failures: list[tuple[str, str]] = []
-    regressions: list[tuple[str, list[str]]] = []
+    failures: list[tuple[str, str]] = []          # could not fetch at all
+    carried: list[tuple[str, str]] = []           # entries in `out` that were NOT fetched this run
+    regressions: list[tuple[str, list[str]]] = []  # addresses that stopped resolving / stopped being used
     for chain_id, fn in DIRECTORY_FILES.items():
+        prev_ent = prev_chains.get(chain_id) or {}
         refs = {str(r["address"]).lower() for r in registered_feeds(chain_id)}
         if not refs:
+            # Config references nothing on this chain. Dropping its block is a legitimate, config-driven
+            # shrink — but never a SILENT one: it is a deletion of committed data, so it needs the same
+            # explicit acceptance as any other shrink.
+            if prev_ent:
+                regressions.append((chain_id, sorted(prev_ent)))
             continue
-        prev_ent = prev_chains.get(chain_id) or {}
         try:
             cat = fetch(fn)
         except Exception as e:  # noqa: BLE001 - a fetch failure must not look like "no feeds"
@@ -414,6 +460,7 @@ def refresh(allow_shrink: bool = False, fetch=None) -> int:
             if prev_ent:
                 out["chains"][chain_id] = prev_ent
                 total += len(prev_ent)
+                carried.append((chain_id, "fetch failed"))
             continue
         idx: dict[str, dict] = {}
         for rec in cat:
@@ -425,7 +472,10 @@ def refresh(allow_shrink: bool = False, fetch=None) -> int:
         for a in sorted(refs):
             rec = idx.get(a)
             hb = rec.get("heartbeat") if rec else None
-            if isinstance(hb, (int, float)) and hb:
+            # 0 is RECORDED, not dropped. A deviation-only feed genuinely declares no heartbeat cadence,
+            # and `rh > 0` then makes the margin rule silent for it — the correct outcome. Dropping it
+            # would instead report a catalogued Chainlink feed as "not a Chainlink feed", which is false.
+            if isinstance(hb, (int, float)) and not isinstance(hb, bool):
                 ent[a] = {"name": rec.get("name"), "declaredHeartbeat": int(hb),
                           "threshold": rec.get("threshold"), "feedCategory": rec.get("feedCategory")}
         # A REGRESSION is an address that resolved before, is STILL referenced by config, and resolves no
@@ -438,10 +488,12 @@ def refresh(allow_shrink: bool = False, fetch=None) -> int:
             out["chains"][chain_id] = ent
             total += len(ent)
         elif prev_ent:
-            # Fetch succeeded, nothing matched. Keep the previous block rather than deleting the chain's
-            # whole comparison basis; `regressed` above has already flagged it for the refusal below.
+            # Fetch succeeded, nothing matched (e.g. a renamed catalogue field). Keep the previous block
+            # rather than deleting the chain's whole comparison basis — but mark it CARRIED, because it
+            # was not fetched this run and must not be stamped with today's date.
             out["chains"][chain_id] = prev_ent
             total += len(prev_ent)
+            carried.append((chain_id, "fetch matched no referenced address"))
         print(f"  chain {chain_id}: {len(ent)} of {len(refs)} referenced addresses have a declared heartbeat")
 
     # A chain the previous snapshot covers but DIRECTORY_FILES does not is never visited by the loop
@@ -454,28 +506,33 @@ def refresh(allow_shrink: bool = False, fetch=None) -> int:
         if registered_feeds(cid):
             out["chains"][cid] = prev_chains[cid]
             total += len(prev_chains[cid])
-            failures.append((cid, "no DIRECTORY_FILES entry — cannot be refreshed; add one so this "
-                                 "chain's declared heartbeats stay current"))
+            carried.append((cid, "no DIRECTORY_FILES entry — cannot be refreshed; add one"))
+        elif prev_chains[cid]:
+            regressions.append((cid, sorted(prev_chains[cid])))
 
-    # `allow_shrink` accepts a genuine DELISTING. It deliberately does NOT bypass a FAILURE: a fetch that
-    # never happened cannot be stamped fresh, and forcing one through would write carried-over entries
-    # under a today `fetched` date — precisely the laundering this function exists to prevent, just
-    # behind a flag. So failures always block; only regressions are waivable.
-    if failures or (regressions and not allow_shrink):
+    # THE RULE, stated once: `out` may contain ONLY entries fetched in this run. Anything CARRIED forward
+    # was not, so stamping it with today's date would re-certify unfetched data — the laundering this
+    # function exists to prevent. Failures and carries therefore always block and are NOT waivable; no
+    # flag can make unfetched data fresh. `allow_shrink` waives only a SHRINK — addresses that genuinely
+    # stopped resolving or stopped being referenced — which is a real editorial decision, not a lie
+    # about freshness.
+    if failures or carried or (regressions and not allow_shrink):
         print("\nREFUSING TO WRITE — the snapshot would be degraded, and a degraded snapshot stamped with "
               "today's date silently defeats the staleness guard:", file=sys.stderr)
         for cid, err in failures:
             print(f"  chain {cid}: fetch FAILED — {err}", file=sys.stderr)
+        for cid, why in carried:
+            print(f"  chain {cid}: entries would be CARRIED FORWARD unfetched ({why})", file=sys.stderr)
         for cid, addrs in regressions:
             shown = ", ".join(a[:10] + "…" for a in addrs[:5]) + (" …" if len(addrs) > 5 else "")
-            print(f"  chain {cid}: {len(addrs)} still-referenced address(es) no longer resolve — {shown}",
-                  file=sys.stderr)
+            print(f"  chain {cid}: {len(addrs)} address(es) would be dropped — {shown}", file=sys.stderr)
         print(f"\n{SNAPSHOT.name} left UNCHANGED, so its `fetched` date stays honest and staleness keeps "
               f"firing.", file=sys.stderr)
-        if failures:
-            print("--allow-shrink does NOT bypass a failed fetch — data that was never fetched cannot be "
-                  "stamped fresh. Re-run when every source is reachable.", file=sys.stderr)
-        elif regressions:
+        if failures or carried:
+            print("--allow-shrink does NOT bypass this: data that was never fetched cannot be stamped "
+                  "fresh. Re-run when every source is reachable and the catalogue still matches.",
+                  file=sys.stderr)
+        else:
             print("Pass --allow-shrink to accept this as a genuine delisting.", file=sys.stderr)
         return 1
 
@@ -489,10 +546,11 @@ def self_test() -> int:
     snapshot (read-only), then re-assert the signal-integrity properties found missing in review."""
     import contextlib
     import io
+    import tempfile
 
     # Declared once, up front: several arms below rebind these module globals to drive synthetic input,
     # and Python requires the declaration to precede any use within this scope.
-    global registered_feeds, REPO
+    global registered_feeds, REPO, SNAPSHOT
 
     ok = True
 
@@ -597,6 +655,14 @@ def self_test() -> int:
             print(f"  [PASS] allowlist ({cid},{addr[:10]}…) {ev.get('asset')} genuinely needs the exemption "
                   f"(registered {reg} <= declared {rec['declaredHeartbeat']}), evidence "
                   f"{ev.get('breaches')} breaches / {ev.get('intervals')} intervals, measured {ev.get('measured')}")
+            age = _measurement_age_days(ev.get("measured"))
+            if age is None:
+                print(f"  [WARN] allowlist ({cid},{addr[:10]}…) has an unparseable `measured` date "
+                      f"({ev.get('measured')!r}) — the evidence cannot be aged.")
+            elif age > MEASUREMENT_STALE_DAYS:
+                print(f"  [WARN] allowlist ({cid},{addr[:10]}…) evidence is {age} days old "
+                      f"(>{MEASUREMENT_STALE_DAYS}). Publisher cadence drifts; re-measure before "
+                      f"continuing to rely on this exemption.")
 
     # ----------------------------------------------------------------------------------------------
     # REGRESSION ARMS for the defects found reviewing this PR. Each was verified to FAIL against the
@@ -640,7 +706,6 @@ def self_test() -> int:
     # otherwise an unchecked feed is indistinguishable from a checked-and-clean one. Driven against a
     # synthetic config tree (tempdir) because the real config contains zero such rows, so an arm reading
     # the committed config would pass whether or not the fix is present.
-    import tempfile
     _real_repo = REPO
     with tempfile.TemporaryDirectory() as _td:
         _d = Path(_td) / "script/config/nav-config/assets-and-price-feeds"
@@ -659,16 +724,66 @@ def self_test() -> int:
           f"not silently skipped")
     ok = ok and bool(_rows) and bool(_reported)
 
+    # An unparseable config file must be an ERROR, not zero rows. Zero rows reads exactly like "this
+    # chain has no feeds", so a corrupt config would report a clean chain.
+    with tempfile.TemporaryDirectory() as _td3:
+        _d3 = Path(_td3) / "script/config/nav-config/assets-and-price-feeds"
+        _d3.mkdir(parents=True)
+        (_d3 / "1.json").write_text("{ not valid json ")
+        REPO = Path(_td3)
+        try:
+            _bad_cfg = findings("1", {"fetched": "2026-08-01", "chains": {"1": {}}})
+        finally:
+            REPO = _real_repo
+    _cfg_err = [m for lvl, m in _bad_cfg if lvl == ERROR and "could not be parsed" in m]
+    print(f"  [{'PASS' if _cfg_err else 'FAIL'}] an unparseable config file is an ERROR, not a clean chain")
+    ok = ok and bool(_cfg_err)
+
+    # Enumeration is contained: if registered_feeds raises, the chain must report NO COVERAGE, not vanish
+    # through preflight_config's fail-soft handler.
+    _rf_real = registered_feeds
+    registered_feeds = lambda cid: (_ for _ in ()).throw(TypeError("malformed config shape"))  # noqa: E731
+    try:
+        _enum = findings("1", {"fetched": "2026-08-01", "chains": {}})
+    except Exception:
+        _enum = []
+    finally:
+        registered_feeds = _rf_real
+    _enum_err = [m for lvl, m in _enum if lvl == ERROR and "could NOT enumerate" in m]
+    print(f"  [{'PASS' if _enum_err else 'FAIL'}] a chain that cannot be ENUMERATED reports an ERROR "
+          f"instead of raising out of findings()")
+    ok = ok and bool(_enum_err)
+
     # The run's scope must come from CONFIG, so a degraded snapshot cannot shrink what gets audited.
-    cfg_ids = configured_chain_ids()
-    snap_only = sorted(({"fetched": "x", "chains": {}}.get("chains") or {}), key=int)
-    print(f"  [{'PASS' if cfg_ids else 'FAIL'}] chain scope comes from config "
-          f"({len(cfg_ids)} chains), not from the snapshot's own keys (which would give "
-          f"{len(snap_only)} on an empty snapshot and print a clean verdict)")
-    ok = ok and bool(cfg_ids)
+    # Driven against a SYNTHETIC config tree whose chain set differs from the real snapshot's, so the arm
+    # actually distinguishes the two sources. (A previous version of this arm asserted only that
+    # configured_chain_ids() was non-empty, which passed with or without the fix — it proved nothing.)
+    with tempfile.TemporaryDirectory() as _td2:
+        _d2 = Path(_td2) / "script/config/nav-config/assets-and-price-feeds"
+        _d2.mkdir(parents=True)
+        for _c in ("42", "43"):
+            (_d2 / f"{_c}.json").write_text("{}")
+        REPO = Path(_td2)
+        try:
+            _scope = configured_chain_ids()
+        finally:
+            REPO = _real_repo
+    _snap_chains = sorted(load_snapshot().get("chains") or {}, key=int)
+    _differs = _scope == ["42", "43"] and _scope != _snap_chains
+    print(f"  [{'PASS' if _differs else 'FAIL'}] chain scope is derived from the CONFIG tree ({_scope}), "
+          f"not from the snapshot's own keys ({len(_snap_chains)} chains)")
+    ok = ok and _differs
 
     # refresh() must never leave a degraded snapshot behind, and must say so in its exit code.
-    before = SNAPSHOT.read_text() if SNAPSHOT.exists() else None
+    # The refresh arms below WRITE the snapshot. They are pointed at a throwaway COPY in a tempdir
+    # rather than the committed file, so no failure path — not an assertion, not a crash, not a
+    # concurrent second run of this self-test — can leave the tracked file modified.
+    _real_snapshot = SNAPSHOT
+    _snap_dir = tempfile.TemporaryDirectory()
+    _tmp_snap = Path(_snap_dir.name) / _real_snapshot.name
+    _tmp_snap.write_text(_real_snapshot.read_text())
+    SNAPSHOT = _tmp_snap
+    before = SNAPSHOT.read_text()
     try:
         def _boom(fn):
             raise OSError("simulated network failure")
@@ -693,7 +808,7 @@ def self_test() -> int:
         # not vanish on a SUCCESSFUL refresh. The per-chain loop never visits such a chain, so the
         # regression check above is blind to it — this arm is the only thing covering that route.
         planted = json.loads(before)
-        unmapped_id = next(c for c in ("130", "8217", "324") if c not in DIRECTORY_FILES)
+        unmapped_id = next((c for c in ("130", "8217", "324") if c not in DIRECTORY_FILES), "130")
         planted["chains"][unmapped_id] = {"0x" + "cc" * 20: {"name": "P / USD", "declaredHeartbeat": 3600}}
         planted_text = json.dumps(planted, indent=2) + "\n"
         SNAPSHOT.write_text(planted_text)
@@ -733,17 +848,43 @@ def self_test() -> int:
               f"behind a flag")
         ok = ok and bool(rc_forced) and unchanged_forced
 
+        # ...nor via the CARRY-FORWARD route: a fetch that succeeds but matches nothing also leaves
+        # unfetched entries in the output, and --allow-shrink must not stamp those fresh either.
+        with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(buf):
+            rc_carry = refresh(allow_shrink=True,
+                               fetch=lambda fn: [{"proxyAddress": "0x" + "11" * 20, "name": "X / USD"}])
+            unchanged_carry = SNAPSHOT.read_text() == before
+        print(f"  [{'PASS' if rc_carry and unchanged_carry else 'FAIL'}] --allow-shrink does NOT launder "
+              f"carried-forward entries when a fetch matches nothing")
+        ok = ok and bool(rc_carry) and unchanged_carry
+
+        # A mapped chain whose config yields no addresses must not be deleted SILENTLY.
+        def _rf_noref(cid):
+            return [] if str(cid) == "137" else _real_rf(cid)
+
+        registered_feeds = _rf_noref
+        try:
+            with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(buf):
+                rc_noref = refresh(fetch=_full)
+                unchanged_noref = SNAPSHOT.read_text() == before
+        finally:
+            registered_feeds = _real_rf
+        print(f"  [{'PASS' if rc_noref and unchanged_noref else 'FAIL'}] a mapped chain whose config "
+              f"yields no addresses is not deleted silently (needs --allow-shrink)")
+        ok = ok and bool(rc_noref) and unchanged_noref
+
     finally:
-        # A self-test must never be able to dirty the working tree, even if an arm above regresses.
-        if before is not None and SNAPSHOT.read_text() != before:
-            SNAPSHOT.write_text(before)
-            print("  [note] snapshot restored after the refresh arms")
+        # Restore the module global no matter what, and drop the tempdir. The committed file was never
+        # a write target, so there is nothing in the working tree to repair.
+        SNAPSHOT = _real_snapshot
+        _snap_dir.cleanup()
     return 0 if ok else 1
 
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("chains", nargs="*", help="chain ids (default: all in the snapshot)")
+    ap.add_argument("chains", nargs="*",
+                    help="chain ids (default: every chain the config registers feeds for — NOT the snapshot's own chain list, so a degraded snapshot cannot shrink the audit)")
     ap.add_argument("--self-test", action="store_true")
     ap.add_argument("--refresh", action="store_true")
     ap.add_argument("--allow-shrink", action="store_true",
@@ -757,8 +898,16 @@ def main() -> int:
     snap = load_snapshot()
     # Scope from CONFIG, never from the snapshot's own keys — see configured_chain_ids. A chain the
     # snapshot has no entry for still gets checked, and reports every feed as "no declared heartbeat"
-    # rather than vanishing from the run.
-    ids = a.chains or configured_chain_ids() or sorted((snap.get("chains") or {}), key=int)
+    # rather than vanishing from the run. There is deliberately NO snapshot-derived fallback: falling
+    # back would restore the exact behaviour this scope rule exists to prevent, and it would do so
+    # precisely when the config tree is unreadable — i.e. when the guard is least trustworthy.
+    ids = a.chains or configured_chain_ids()
+    if not ids:
+        print("ERROR: no chain config found under script/config/{nav-config/assets-and-price-feeds,"
+              "contracts-deployment-config/custom-price-feeds}. Refusing to fall back to the snapshot's "
+              "own chain list, which would let a degraded snapshot choose its own scope and report a "
+              "clean verdict over whatever it still contains.", file=sys.stderr)
+        return 1
     report, errors = {}, 0
     # Same entry point the integrated path uses, so the two cannot report different things. Exported to
     # --json as well: a consumer that only reads the JSON would otherwise miss staleness entirely, which

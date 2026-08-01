@@ -13,7 +13,7 @@ The ordered procedure these support is [`../REDEPLOY_RUNBOOK.md`](../REDEPLOY_RU
 | `diff_snapshots.py` | diffs two snapshots; addresses are expected to move, shape is not |
 | `bytecode_audit.py` | proves every deployed address does (or does not) run code from the current build |
 | `preflight_config.py` | validates every per-chain config the deploy reads, before a tx is sent |
-| `declared_heartbeat_guard.py` | asserts every registered heartbeat EXCEEDS its provider's declared cadence; also runs inside `preflight_config.py`. `--refresh` re-fetches the committed snapshot, `--self-test` proves the guard |
+| `declared_heartbeat_guard.py` | flags registered heartbeats that do NOT exceed the provider's declared cadence — WARN for an unmeasured one, ERROR only for a broken exemption; also runs inside `preflight_config.py`. `--refresh` re-fetches the committed snapshot, `--self-test` proves the guard |
 | `chainlink_declared_heartbeats.json` | committed snapshot of each feed's provider-declared heartbeat; regenerate with `declared_heartbeat_guard.py --refresh` |
 | `reset_deployment_records.py` | archives + clears the deployment records so `03`/`04` actually redeploy |
 | `deployer_balances.py` | deployer-EOA balance vs estimated gas per chain; emits a top-up list |

@@ -219,10 +219,11 @@ Earlier revisions of this document quoted <span class="addr">0x8b7e4fA9…</span
 tree it was measured on and is now superseded.</p>
 <div class="note redeploy">
 <p><span class="chip redeploy">Deploy held</span> <strong>Treat both values above as correct-for-now, not deploy-final.</strong>
-The deploy is <strong>held</strong> — not blocked — while a further feature is attempted first: a two-axis per-asset
-classification, <code>PegKind{Pegged, Floating}</code> and <code>AccrualKind{None, Rebasing, Appreciating}</code>.</p>
+The deploy is <strong>held</strong> — not blocked — while a further feature ships first: a two-axis per-asset
+classification, <code>PegKind{Pegged, Floating}</code> and <code>AccrualKind{None, Rebasing, Appreciating}</code>. Its shape is
+now settled — a standalone <code>AssetKindRegistry</code>, see below — so what remains is delivery, not feasibility.</p>
 <p><strong>If it lands it is a <code>src/</code> change, so the pins are regenerated again</strong> against whatever tree actually
-ships, and <span class="addr">0xfc6AE534…</span> should be expected to move. Whether <code>NAVRegistryLib</code> holds again
+ships, and <span class="addr">0xfc6AE534…</span> moves with it. Whether <code>NAVRegistryLib</code> holds again
 is an open question and must be measured, not assumed from its having held here.</p>
 <p><span class="chip blocker">Confirmed — it will move</span> <strong><code>PriceFeedLib</code>'s pin
 <em>will</em> move again. <span class="addr">0xfc6AE534…</span> is current-for-main and will not be the deploy-final
@@ -305,13 +306,14 @@ true here and still yields one moved pin and one held.</p>
 not build, it consumes artifacts from the Build job, which draws on a repo-wide sticky cache. A clean local build on that same
 tree yielded a different value entirely.</p>
 <p><strong>Never act on that failure message.</strong> Regenerating pins against a stale artifact is the one irreversible mistake
-available here — and the reason the rule survives even now that the pins are settled is that the next reading of a stale
+available here — and the reason the rule survives every regeneration is that the next reading of a stale
 artifact will look exactly as authoritative as this one did.</p>
 <p><span class="chip verified">Mechanism established — no longer open</span> An earlier revision left this marked
 <em>Open</em>, on the grounds that the original route required <code>dynamic_test_linking</code> (deleted in #156) so the
 persistence was unexplained. That is superseded by the sticky-disk finding immediately below, which accounts for it without
-<code>dynamic_test_linking</code>: the compile <em>scope</em>, not the linking mode, is what varies. Combined with #234 having
-settled the values, the pin question is closed.</p>
+<code>dynamic_test_linking</code>: the compile <em>scope</em>, not the linking mode, is what varies. <strong>What is closed is the
+<em>mechanism</em> question — why a stale reading persisted — not the pin <em>values</em>.</strong> Those reopened: see the
+confirmation above that <code>PriceFeedLib</code>'s pin moves again with the <code>AssetKindRegistry</code> work.</p>
 </div>
 
 <div class="note verified">
@@ -835,7 +837,8 @@ rather than a rounding one: acting on the old wording would have produced the sa
 <code>ezETHCrossRateMarket</code>, from #216's fail-closed guard meeting #224's guard-less feed. Verified that the feed remains
 <code>enabled</code>, so the 41 / mainnet-26 counts are unaffected.</li>
 <li><strong>Stale-pin note's <em>Open</em> chip resolved.</strong> It contradicted the sticky-disk mechanism explained directly
-beneath it, and #234 has since closed the question outright.</li>
+beneath it. What #234 closed is the <em>mechanism</em> question, not the pin values — those move again with the
+<code>AssetKindRegistry</code> work, per the first bullet of this list.</li>
 </ul>
 <p><span class="chip judge">Judgement</span> <strong>Three PriceFeedLib values have appeared in this document across its
 revisions, each correct when measured.</strong> That is not a documentation failure so much as evidence for the rule the document

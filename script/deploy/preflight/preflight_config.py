@@ -47,6 +47,10 @@ REQUIRED_CHAIN_FIELDS = ["chainId", "name", "rpc", "explorer", "chainlinkSequenc
                          "nativeTokenSymbol"]
 REQUIRED_ROLES = ["admin", "manager", "securityCouncil"]
 
+# The only values `ConfigReader.accrualKindFromString` recognises. Case-exact: it compares whole
+# strings, so "none" or "REBASING" are unrecognised, not lenient matches.
+ACCRUAL_KINDS = ("None", "Rebasing", "Appreciating")
+
 
 class ConfigParseError(ValueError):
     """A per-chain config file could not be read as a config object."""
@@ -377,6 +381,14 @@ def _check_chain(chain_id: int) -> list[tuple[str, str]]:
             continue
         if not c.is_address(entry.get("address")):
             f.append((ERROR, f"asset '{sym}' has an invalid address: {entry.get('address')!r}"))
+        kind = entry.get("accrualKind")
+        if kind not in ACCRUAL_KINDS:
+            f.append((ERROR, f"asset '{sym}' has accrualKind={kind!r} — must be exactly one of "
+                             f"{list(ACCRUAL_KINDS)}. 08_DeployAssetKindRegistry is fail-closed "
+                             f"with no default, so an absent, empty, mis-cased or unrecognised "
+                             f"value aborts this chain's deploy. Note ConfigReader does no "
+                             f"field-set validation: a misspelled KEY (accrualkind, accrual_kind) "
+                             f"is silently ignored and reaches the deploy as absent."))
         feeds = entry.get("priceFeeds", []) or []
         if not feeds:
             f.append((ERROR, f"asset '{sym}' has no priceFeeds — registerAsset requires one"))

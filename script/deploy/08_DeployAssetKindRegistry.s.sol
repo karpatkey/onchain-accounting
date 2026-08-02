@@ -15,7 +15,14 @@ import "../../src/constants.sol";
 /// @author KPK
 /// @notice Deploys the per-chain {AssetKindRegistry} and classifies every asset in
 ///         `nav-config/assets-and-price-feeds/<chainId>.json` in a single batch call.
-/// @dev **Fail-closed at deploy time, deliberately.** Every configured asset MUST carry a valid `accrualKind` string.
+/// @dev ⚠️ **NO FAILURE BRANCH IN THIS SCRIPT IS EXERCISED BY ANY TEST.** Not this step's config guards, not the
+///      registry-binding check, not the code-length check — nothing instantiates or runs `08` in `test/`, `script/test/`
+///      or `script/deploy/preflight/`. Every guard below is therefore a branch that was reasoned about and never
+///      executed, and on this PR two of four such guards had wrong failure paths for precisely that reason. **Treat
+///      every guard in this file as unverified**, and prefer documenting a hazard here over adding a fifth unexercised
+///      check. Branch coverage for `08` is tracked as a follow-up.
+///
+///      **Fail-closed at deploy time, deliberately.** Every configured asset MUST carry a valid `accrualKind` string.
 ///      (There is no `pegKind` in config: the peg axis is DERIVED on read from the NAV's `pegToleranceBps`, so it cannot
 ///      be configured, cannot disagree with the pricing layer, and needs no cross-check here. An earlier revision of
 ///      this script asserted `Pegged` ⇔ `pegToleranceBps > 0`; that guard is deleted rather than kept "just in case",
@@ -76,12 +83,17 @@ contract DeployAssetKindRegistry is BaseDeployScript {
     ///         present-but-zero one.
     error AssetAddressZero(string symbol);
 
-    /// @notice Thrown when the deployment record names an `AssetKindRegistry` address that has no code — the signature
-    ///         of a run whose first transaction never landed while the cheatcode-written record did. Recovery: clear
-    ///         the `AssetKindRegistry` key from `script/config/deployments/<chainId>.json` and re-run.
-    /// @dev Checked BEFORE the `NAV()` read on purpose. Without it, the high-level call to a codeless address reverts at
-    ///      the `extcodesize` precheck with an empty reason, so {RegistryBoundToDifferentNav} — a correct guard — never
-    ///      gets to report anything and the operator sees no cause at all.
+    /// @notice Thrown when the deployment record names an `AssetKindRegistry` address that has no code.
+    /// @dev Checked BEFORE the `NAV()` read, and that ordering is load-bearing: without it, reading `NAV()` off a
+    ///      codeless address reverts with an EMPTY reason in the calling frame, so {RegistryBoundToDifferentNav} — a
+    ///      correct guard — never gets to report anything and the operator sees no cause at all.
+    ///
+    ///      **No remedy is prescribed here, deliberately.** Two different situations reach this branch — a run whose
+    ///      first transaction never landed while the cheatcode-written record did, and a non-forked dry run against a
+    ///      chain whose registry is genuinely live (a fresh local EVM has no code at that address) — and this guard
+    ///      cannot tell them apart. An earlier revision prescribed "clear the key and re-run", which is right for the
+    ///      first and would DELETE A LIVE DEPLOYMENT RECORD in the second. A guard may only prescribe a remedy for a
+    ///      cause it can actually identify; this one identifies a symptom. Diagnose the cause before acting.
     error RecordedRegistryHasNoCode(address recorded, uint256 chainId);
 
     /// @notice Thrown when the recorded `AssetKindRegistry` is bound to a different `NAVCalculator` than the one this
@@ -97,6 +109,17 @@ contract DeployAssetKindRegistry is BaseDeployScript {
         uint256 chainId = block.chainid;
 
         string[] memory symbols = ConfigReader.getAssetSymbols(vm, chainId);
+        // ⚠️ **KNOWN HAZARD, NOT GUARDED HERE. Do not run `08` on a chain with no assets config.** `getAssetSymbols`
+        // returns empty both for "no assets" and for "no config file at all" (`_readOrEmpty` yields `"{}"`), and 18 of
+        // the 25 chains carrying a deployments record have no assets config. On those, this step deploys the registry,
+        // GRANTS IT `MANAGER` ON THE NAV, records it, classifies nothing, and exits 0 — a privileged empty contract from
+        // a step whose stated contract is fail-closed, because the per-asset guards below are vacuously satisfied by an
+        // empty loop.
+        //
+        // An abort was written and then REMOVED rather than shipped: it would be a fifth guard in a file where no
+        // failure branch is executed by any test, and two of the four already here had wrong failure paths for exactly
+        // that reason. Escalated as a follow-up with the `08` branch-coverage work rather than papered over with an
+        // unverified check.
         console2.log("AssetKindRegistry: classifying assets:", symbols.length);
 
         // Resolve and VALIDATE the whole set before deploying anything, so a config gap costs nothing but a revert.
@@ -166,6 +189,12 @@ contract DeployAssetKindRegistry is BaseDeployScript {
 
         address nav = ConfigReader.readDeployedAddress(vm, chainId, "NAVCalculatorProxy");
         if (nav == address(0)) revert NavCalculatorNotDeployed(chainId);
+        // ⚠️ NOT GUARDED, deliberately: `nav` comes from the SAME cheatcode-written record as the registry address, so
+        // it too can name a codeless address, and `hasRole` returns a bool so the failure is the same empty-reason
+        // revert. A `nav.code.length` check was written and then REMOVED rather than shipped — every guard added to this
+        // file is a branch no test executes (see the coverage note on the contract), and on this PR two of four such
+        // guards had wrong failure paths for exactly that reason. Documented instead of guarded, so the next person
+        // decides with the cost visible.
 
         AssetKindRegistry registry;
         if (existing != address(0)) {
@@ -179,12 +208,14 @@ contract DeployAssetKindRegistry is BaseDeployScript {
             // causes this — it reuses the recorded registry rather than deploying one bound to the new proxy.
             // ⚠️ **The code check MUST come before the `NAV()` read, and this ordering is the fix.** The deployment
             // record is written by a CHEATCODE during local execution (`saveDeployedAddress` -> `vm.writeJson`), so it
-            // lands whether or not TX1 (`new AssetKindRegistry`) actually broadcasts. If TX1 fails, the record names an
-            // address with NO CODE — and `registry.NAV()` is a high-level call returning data, so Solidity's
-            // `extcodesize` precheck reverts it with NO reason string, in the calling frame, before any guard below can
-            // speak. The step is then stuck until someone hand-edits the file the repo treats as the single source of
-            // truth for deployed addresses. A named error is the difference between a five-minute fix and an
-            // archaeology session.
+            // lands whether or not TX1 (`new AssetKindRegistry`) actually broadcasts — leaving the record able to name
+            // an address with no code.
+            //
+            // Reading `NAV()` off such an address reverts with an EMPTY reason, in the calling frame, before any guard
+            // below can speak. That OUTCOME is what makes the ordering load-bearing, and it is all this comment
+            // asserts: an earlier revision explained it via an `extcodesize` precheck, which is backwards — since solc
+            // 0.8.10 a call that expects return data SKIPS that check. Stating the outcome and not the codegen is
+            // deliberate; the outcome is what the ordering depends on, and it is the part that was verified.
             if (existing.code.length == 0) revert RecordedRegistryHasNoCode(existing, chainId);
             address boundNav = address(registry.NAV());
             if (boundNav != nav) revert RegistryBoundToDifferentNav(existing, boundNav, nav);

@@ -269,21 +269,21 @@ contract AssetKindRegistryTest is Test {
     ///      must still work — the registry is a dumb map and must not silently reinterpret what a MANAGER wrote — but
     ///      pointing a real symbol at it would pin a classification the pricing layer contradicts.
     function test_allSixCombinationsRoundTrip() public {
-        address unreachableCellProbe = makeAddr("pegged-appreciating-has-no-real-member");
+        address memberlessCellProbe = makeAddr("pegged-appreciating-has-no-real-member");
 
         _pegged(USDC);
         _set(USDC, AccrualKind.None);
         _pegged(AUSDC);
         _set(AUSDC, AccrualKind.Rebasing);
-        _pegged(unreachableCellProbe);
-        _set(unreachableCellProbe, AccrualKind.Appreciating);
+        _pegged(memberlessCellProbe);
+        _set(memberlessCellProbe, AccrualKind.Appreciating);
         _set(WETH, AccrualKind.None);
         _set(STETH, AccrualKind.Rebasing);
         _set(WSTETH, AccrualKind.Appreciating);
 
         _assertKind(USDC, PegKind.Pegged, AccrualKind.None);
         _assertKind(AUSDC, PegKind.Pegged, AccrualKind.Rebasing);
-        _assertKind(unreachableCellProbe, PegKind.Pegged, AccrualKind.Appreciating);
+        _assertKind(memberlessCellProbe, PegKind.Pegged, AccrualKind.Appreciating);
         _assertKind(WETH, PegKind.Floating, AccrualKind.None);
         _assertKind(STETH, PegKind.Floating, AccrualKind.Rebasing);
         _assertKind(WSTETH, PegKind.Floating, AccrualKind.Appreciating);
@@ -297,8 +297,9 @@ contract AssetKindRegistryTest is Test {
     ///      wstETH's `divergenceToleranceBps` + monitors, and sDAI is configured on Gnosis rather than mainnet.
     ///
     ///      **⚠️ This is a DOCUMENTATION test, not a machine check of the ruling, and must not be cited as one.** Every
-    ///      value it asserts is written by the test two lines earlier, and nothing in THIS repo classifies sDAI — the
-    ///      classification data lives in the sibling config PR. So no mutation of the production code fails this test
+    ///      value it asserts is written by the test two lines earlier, so it pins the intent rather than the data. (The
+    ///      config now lives on `main` — chain 100 carries `sDAI.accrualKind = "Appreciating"` — but this test writes
+    ///      its own values and never reads it, which is why it remains documentation rather than a check.) So no mutation of the production code fails this test
     ///      that `test_allSixCombinationsRoundTrip` would not already catch. It is kept for the same reason
     ///      {test_wstETHIsFloatingNotPegged} is: it records the intended classification next to the reasoning, where a
     ///      future author will look.

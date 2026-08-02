@@ -22,8 +22,9 @@ import {IPrices} from "src/prices/IPrices.sol";
 ///      **No roles.** Implementations gate on `NAV.hasRole(MANAGER, msg.sender)` — authority is exactly the NAV's
 ///      MANAGER set, and this contract has no admin, manager or owner of its own.
 /// @dev **Fail-closed by design.** There is no default classification. Reading an asset that has not been classified
-///      REVERTS {AssetNotClassified} rather than returning the zero value, because `PegKind.Pegged` +
-///      `AccrualKind.None` is a plausible-looking answer that is wrong for most assets — a silent default here would
+///      REVERTS {AssetNotClassified} rather than returning a default, because `AccrualKind.None` is a
+///      plausible-looking answer that is wrong for many assets (and note the peg half is DERIVED, so an unguarded read
+///      would report `Floating` for an unconfigured asset, not `Pegged`) — a silent default here would
 ///      be indistinguishable from real data, which is the failure mode the repo's fail-closed guards exist to avoid.
 ///      Callers that need to probe without reverting use {isClassified}.
 ///

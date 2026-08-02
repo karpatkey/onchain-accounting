@@ -146,6 +146,6 @@ contract AssetKindConfigParsingTest is Test {
 
         vm.removeFile(path);
 
-        assertFalse(accrualValid, "the absent sibling axis must read invalid, not default to None");
+        assertFalse(accrualValid, "an absent accrualKind must read invalid, not default to None");
     }
 }

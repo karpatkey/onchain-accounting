@@ -1413,7 +1413,9 @@ library PriceFeedLib {
     ///      {_enrichAll} exists, and load-bearing for the same reason. Those callers keep five storage pointers plus
     ///      `nav` (and, in the positions variant, `positions`) live across their whole body, and THREE sequential
     ///      builder calls each re-established `assetIndex` / `registeredAssets` / `priceFeeds` as live in the CALLER's
-    ///      frame. Collapsing them into one call is what keeps the caller inside the stack limit.
+    ///      frame. Collapsing them into one call is what resolved the overflow AT THAT TREE — stated in the past tense
+    ///      deliberately, because the paragraph below records that the present-tense version was measured and found
+    ///      false.
     ///
     ///      **Prefer not to re-inline these three assignments — but be precise about why, because the stronger version
     ///      of this warning was MEASURED AND FOUND FALSE.** This note used to say re-inlining "reproduces

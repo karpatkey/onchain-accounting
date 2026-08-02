@@ -46,7 +46,9 @@ import "../../src/constants.sol";
 ///
 ///      **But do not read that as "no pin regeneration is owed".** The FEATURE moves `PriceFeedLib`'s pin
 ///      (`0xfc6AE534…` → `0x49C18627665562F4bEbae5208BA6eF7428039614`): `AssetKindRegistry`'s presence under `src/`
-///      tipped the `via_ir` whole-program stack margin and forced the `PriceFeedLib._assignHealthArrays` extraction.
+///      coincided with the `via_ir` whole-program stack margin being reached, which prompted the
+///      `PriceFeedLib._assignHealthArrays` extraction (the causal half is no longer demonstrable on a cold build; the
+///      pin move is measured and stands).
 ///      `NAVRegistryLib` is genuinely unchanged. See the note on {AssetKindRegistry}.
 ///
 ///      Re-running is safe — the step is idempotent and re-classifies an existing registry rather than deploying a

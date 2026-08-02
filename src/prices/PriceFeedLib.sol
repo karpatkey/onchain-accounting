@@ -1415,13 +1415,22 @@ library PriceFeedLib {
     ///      builder calls each re-established `assetIndex` / `registeredAssets` / `priceFeeds` as live in the CALLER's
     ///      frame. Collapsing them into one call is what keeps the caller inside the stack limit.
     ///
-    ///      **Do not re-inline these three assignments.** Doing so reproduces
-    ///      `Variable _mpos_1 is 1 too deep in the stack` in `computeNavAndPositions`. Critically, that failure appears
-    ///      ONLY in a whole-project compile: Foundry hands all of `src` + `test` + `script` to a single solc
-    ///      invocation, so `via_ir` allocates stack across the entire program and the margin here depends on code with
-    ///      nothing to do with this file — adding an unrelated contract under `src/` is enough to tip it. An
-    ///      incremental `forge build` will not reproduce it, and neither will CI's Build job off a warm cache. Verify
-    ///      with `forge clean && forge build --force`.
+    ///      **Prefer not to re-inline these three assignments — but be precise about why, because the stronger version
+    ///      of this warning was MEASURED AND FOUND FALSE.** This note used to say re-inlining "reproduces
+    ///      `Variable _mpos_1 is 1 too deep in the stack`". A cold `forge clean && forge build --force` with both call
+    ///      sites re-inlined **compiled successfully** (exit 0), so re-inlining is NOT currently rejected by the
+    ///      compiler and that claim was unsupported. What can be shown:
+    ///
+    ///      - the extraction was made when the margin WAS tight, and it is what resolved the overflow at that tree;
+    ///      - the margin is whole-program: Foundry hands all of `src` + `test` + `script` to a single solc invocation,
+    ///        so `via_ir` allocates stack across the entire program and the headroom here depends on code with nothing
+    ///        to do with this file — adding an unrelated contract under `src/` has been enough to tip it before;
+    ///      - so today's success is a property of today's tree, not a licence. It can regress without any change to
+    ///        this file, and an incremental `forge build` will not show it — nor will CI's Build job off a warm cache.
+    ///        Only `forge clean && forge build --force` will.
+    ///
+    ///      The extraction also stands on its own merits independently of the stack: it shrank `PriceFeedLib` by 69
+    ///      bytes. Keep it. Just do not cite a compile error that does not currently occur as the reason.
     function _assignHealthArrays(
         INAVCalculator.NAV memory nav,
         mapping(address => uint256) storage assetIndex,

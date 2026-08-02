@@ -39,8 +39,11 @@ import "src/constants.sol";
 ///      not the parameter count. The facade therefore lives HERE and costs `NAVCalculator` **zero** bytes.
 ///
 ///      **It DOES move a library pin, and the earlier claim that it moved neither was wrong.** Not through any
-///      dependency — nothing here references `PriceFeedLib` — but because this contract's mere PRESENCE under `src/`
-///      tipped the `via_ir` whole-program stack margin and forced the {PriceFeedLib._assignHealthArrays} extraction.
+///      dependency — nothing here references `PriceFeedLib` — but because adding this contract under `src/` coincided
+///      with the `via_ir` whole-program stack margin being reached, which is what prompted the
+///      {PriceFeedLib._assignHealthArrays} extraction. (Stated as "forced" in an earlier revision. A cold build with
+///      the extraction reverted now compiles, so the causal claim is not currently demonstrable — the pin move below
+///      is, and is measured.)
 ///      That moved `PriceFeedLib` from `0xfc6AE534…` to `0x49C18627665562F4bEbae5208BA6eF7428039614` (it shrank 69
 ///      bytes, 18,585 -> 18,516). `NAVRegistryLib` is genuinely unchanged and byte-identical. A pin regeneration IS
 ///      owed for this feature — do not read "costs NAVCalculator zero bytes" as "costs nothing".

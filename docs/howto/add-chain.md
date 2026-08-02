@@ -95,9 +95,10 @@ Edit `script/config/nav-config/assets-and-price-feeds/<newChainId>.json`. Add a 
 >
 > Full semantics live in [`script/config/CONFIG_GUIDE.md`](../../script/config/CONFIG_GUIDE.md). The key is
 > consumed by `08_DeployAssetKindRegistry`; if you need to know whether a given checkout has that step, ask
-> the checkout — `git ls-tree HEAD script/deploy/08_DeployAssetKindRegistry.s.sol` — rather than trusting a
-> date written in this file. Set the key either way: where the consumer is absent it costs nothing, and
-> where it is present, omitting it aborts the deploy.
+> the checkout — `git ls-tree HEAD script/deploy/08_DeployAssetKindRegistry.s.sol`, which prints a line if
+> present and nothing if absent (append `| grep -q .` if you want the exit code to carry the answer; bare
+> `ls-tree` exits `0` either way) — rather than trusting a date written in this file. Set the key either
+> way: where the consumer is absent it costs nothing, and where it is present, omitting it aborts the deploy.
 
 For any custom price feed on this chain (sDAI, wstETH, etc.), add the deploy config under `script/config/contracts-deployment-config/custom-price-feeds/<newChainId>.json` keyed by feed name with `{ "enabled", "constructor" }`, then reference it from the asset via a `{ "type": "Custom", "feed": "<name>", "heartbeat": ... }` entry in that asset's `priceFeeds`. The feed's on-chain address is resolved post-deploy from `script/config/deployments/<newChainId>.json` (`.customPriceFeeds.<name>`). Many will use the `_L2_Price` variant — see [`src/prices/PRICE_ADAPTERS.md`](../../src/prices/PRICE_ADAPTERS.md) §8 for the right contract.
 

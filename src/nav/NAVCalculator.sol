@@ -182,6 +182,19 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
     }
 
     /// @inheritdoc INAVCalculator
+    /// @dev ⚠️ **THIS FIELD NOW DOES TWO JOBS. READ BEFORE ZEROING IT.** `pegToleranceBps` is both a *threshold* ("flag
+    ///      drift beyond this") and a *switch* ("this asset should be worth $1 — guard it"), because `AssetKindRegistry`
+    ///      derives `PegKind` from it: non-zero means `Pegged`, zero means `Floating`. Retuning a non-zero threshold
+    ///      (say 100 -> 250) leaves the classification alone; it is CROSSING ZERO that flips it. So the two jobs are
+    ///      independent everywhere except at that boundary — which is precisely where the trap below lives.
+    ///
+    ///      **The trap:** zeroing the tolerance on a genuine stablecoin for an OPERATIONAL reason — a feed too noisy to
+    ///      guard, say — silently reclassifies that asset as `Floating`. Nothing reverts, nothing logs a warning, and
+    ///      every off-chain consumer stops believing it is a stablecoin.
+    ///
+    ///      **The rule:** disabling the $1 guard on an asset that really is pegged needs its OWN field, not a zeroed
+    ///      tolerance. No asset needs that today; the point is that the first one to need it must not get it by
+    ///      accident. Adding that field is the correct fix — reaching for zero here is not.
     function setPegTolerance(address asset, uint32 pegToleranceBps) external {
         _requireManager();
         _requireAssetExists(asset);

@@ -176,12 +176,19 @@ forge script script/deploy/05_DeployBridgeAdapters.s.sol --chain-id $CHAIN_ID --
 #      still enforce the split on-chain (addBalanceAdapters reverts for a meta-adapter, and vice-versa).
 forge script script/deploy/06_Configure.s.sol --chain-id $CHAIN_ID --account $DEPLOYER_NAME --broadcast
 
-# 07 — LAST: hand DEFAULT_ADMIN + MANAGER to the security council Safe, renounce the deployer's roles
+# 08 — asset-kind registry. PRIVILEGED, and it MUST run BEFORE 07: it calls NAV.grantRole(MANAGER, registry), which
+#      needs the DEFAULT_ADMIN that 07 hands to the council. Fail-closed — aborts unless every configured asset
+#      carries a valid accrualKind. Do not skip it, or no AssetKindRegistry exists on this chain.
+PERSIST_DEPLOYMENTS=1 \
+forge script script/deploy/08_DeployAssetKindRegistry.s.sol --chain-id $CHAIN_ID --account $DEPLOYER_NAME --broadcast
+
+# 07 — LAST: the role handoff. Hand DEFAULT_ADMIN + MANAGER to the security council Safe, renounce the deployer's
+#      roles. Everything needing deployer privileges, 08 included, must already have run.
 DEPLOYER_EOA=0xYourDeployerEOA \
 forge script script/deploy/07_TransferAdminToSecurityCouncil.s.sol --chain-id $CHAIN_ID --account $DEPLOYER_NAME --broadcast
 ```
 
-Each script reads from `script/config/chains/<chainId>.json` plus the relevant per-concern, per-chain file — `03` reads `contracts-deployment-config/custom-price-feeds/<chainId>.json`, `04` reads `contracts-deployment-config/balance-adapters/<chainId>.json` + `contracts-deployment-config/meta-balance-adapters/<chainId>.json`, `05` reads `contracts-deployment-config/bridge-adapters/<chainId>.json`, `RegisterAssets` reads `nav-config/assets-and-price-feeds/<chainId>.json`, and `06` reads `nav-config/balance-adapters/<chainId>.json` + `nav-config/meta-balance-adapters/<chainId>.json` + `contracts-deployment-config/bridge-escrow/<chainId>.json` (accounts + assets) — and writes deployed addresses to `script/config/deployments/<chainId>.json` (the `03`/`04`/`05` per-feed/per-adapter writes happen on every run; the `01`/`02` impl/proxy writes require `PERSIST_DEPLOYMENTS=1`). Re-running is safe: already-deployed addresses are skipped.
+Each script reads from `script/config/chains/<chainId>.json` plus the relevant per-concern, per-chain file — `03` reads `contracts-deployment-config/custom-price-feeds/<chainId>.json`, `04` reads `contracts-deployment-config/balance-adapters/<chainId>.json` + `contracts-deployment-config/meta-balance-adapters/<chainId>.json`, `05` reads `contracts-deployment-config/bridge-adapters/<chainId>.json`, `RegisterAssets` reads `nav-config/assets-and-price-feeds/<chainId>.json`, and `06` reads `nav-config/balance-adapters/<chainId>.json` + `nav-config/meta-balance-adapters/<chainId>.json` + `contracts-deployment-config/bridge-escrow/<chainId>.json` (accounts + assets) — and writes deployed addresses to `script/config/deployments/<chainId>.json` (the `03`/`04`/`05` per-feed/per-adapter writes happen on every run; the `01`/`02` impl/proxy writes require `PERSIST_DEPLOYMENTS=1` — **and so do `04`'s three `*Assistant` contracts and `08`'s registry, which are top-level keys written through the gated `saveDeployedAddress`, so run those steps with the flag or their addresses are not recorded and a re-run deploys duplicates**). Re-running is safe: already-deployed addresses are skipped.
 
 For chains where some scripts are no-ops (e.g., a chain with no bridge adapters), the relevant deploys produce no actions and exit cleanly.
 

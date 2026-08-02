@@ -3,6 +3,7 @@ pragma solidity ^0.8.28;
 
 import {Vm} from "forge-std/Vm.sol";
 import {stdJson} from "forge-std/StdJson.sol";
+import {AccrualKind} from "src/utils/AssetKind.sol";
 import {IPrices} from "../../src/prices/IPrices.sol";
 
 /// @title ConfigReader
@@ -514,6 +515,58 @@ library ConfigReader {
         if (_equals(t, "Redstone")) return (IPrices.PriceType.Redstone, true);
         if (_equals(t, "API3")) return (IPrices.PriceType.API3, true);
         return (IPrices.PriceType.Chainlink, false);
+    }
+
+    /// @notice Maps an asset's config `accrualKind` string to the on-chain enum. `valid` is false for an absent, empty
+    ///         or unrecognized value — there is NO default, deliberately.
+    /// @dev Strings rather than integers on purpose: a stale integer silently re-maps if the enum ever gains a member,
+    ///      whereas an unknown string fails loudly. This is the ONLY asset-kind reader — there is deliberately no peg
+    ///      counterpart, because the peg axis is derived on-chain from the NAV's `pegToleranceBps`. (An earlier revision
+    ///      of this line pointed at a `readAssetPegKind` that has since been deleted.)
+    function readAssetAccrualKind(Vm vm, uint256 chainId, string memory symbol)
+        internal
+        view
+        returns (AccrualKind kind, bool valid)
+    {
+        return accrualKindFromString(_readAssetString(vm, chainId, symbol, "accrualKind"));
+    }
+
+    /// @notice Shared `accrualKind` string -> enum mapping. `valid` is false for an empty/unrecognized value.
+    /// @dev `internal` rather than `private` so tests exercise the exact mapping production uses, instead of a
+    ///      re-implementation that could drift from it.
+    ///
+    ///      **There is deliberately NO `pegKind` reader.** The peg axis is DERIVED on-chain from the NAV's
+    ///      `pegToleranceBps`, so it is not configurable and must not appear in config. A reader for it was deleted
+    ///      rather than left dead: the next person adding an asset would find a parser for `pegKind`, infer the key is
+    ///      supported, write it, and nothing would reject it — which is exactly how a deleted concept comes back as a
+    ///      second authority. ⚠️ Note this file silently IGNORES unknown per-asset keys (every reader is a targeted
+    ///      `keyExistsJson` lookup; nothing validates the field set), so a stale `pegKind` in a config file will be
+    ///      quietly skipped rather than rejected. Flagged, not fixed here.
+    function accrualKindFromString(string memory k) internal pure returns (AccrualKind kind, bool valid) {
+        if (_equals(k, "None")) return (AccrualKind.None, true);
+        if (_equals(k, "Rebasing")) return (AccrualKind.Rebasing, true);
+        if (_equals(k, "Appreciating")) return (AccrualKind.Appreciating, true);
+        return (AccrualKind.None, false);
+    }
+
+    /// @dev Reads a string field off an asset entry, returning "" when the asset or the field is absent.
+    /// @dev **Asset symbols must not contain a `.`** — the JSON path is built by concatenation, so a symbol like
+    ///      `USDC.e` yields `.USDC.e.accrualKind`, which resolves as `USDC` -> `e` -> `accrualKind` and misses. This
+    ///      constraint is pre-existing and shared by every path-building reader in this file (`readAssetAddress`,
+    ///      the feed and monitor paths), and no configured chain trips it today: the only non-alphanumeric symbol in
+    ///      any `assets-and-price-feeds/*.json` is `ETH+` on chain 1, and `+` is not a path metacharacter (verified).
+    ///      Recorded here specifically because `08_DeployAssetKindRegistry` is the first caller that turns a lookup
+    ///      miss into a hard abort, so a dotted symbol would surface as a confusing "kind missing" rather than as
+    ///      the unreachable-path bug it actually is. Gnosis already uses `USDCe`, not `USDC.e`; keep it that way.
+    function _readAssetString(Vm vm, uint256 chainId, string memory symbol, string memory field)
+        private
+        view
+        returns (string memory)
+    {
+        string memory json = _readOrEmpty(vm, _navAssetsPath(vm, chainId));
+        string memory jsonPath = string(abi.encodePacked(".", symbol, ".", field));
+        if (!vm.keyExistsJson(json, jsonPath)) return "";
+        return vm.parseJsonString(json, jsonPath);
     }
 
     /// @notice Reads an asset's token address ("" if absent).

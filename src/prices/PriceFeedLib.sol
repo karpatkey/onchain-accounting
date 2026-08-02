@@ -886,8 +886,9 @@ library PriceFeedLib {
     ///      **Historical note, so the reason is not mistaken for the current shape.** This note used to cite the
     ///      "inlined `_buildStaleAssets` / `_buildIrregularAssets` loops" as part of the load. They are no longer
     ///      invoked from this caller's frame — {_assignHealthArrays} now holds all three health-array calls in its own
-    ///      frame — the second extraction `computeNav` / `computeNavAndPositions` have needed for this limit, the first
-    ///      being this function. (The extraction is out of THOSE callers, not out of `_enrichAll`.) The stack pressure that
+    ///      frame. That is the second extraction made for this limit; `_enrichAll` — called only from
+    ///      `computeNavAndPositions` — was the first. Both are extracted OUT of their callers, not out of each other.
+    ///      The stack pressure that
     ///      justifies keeping `_enrichAll` separate is therefore the five storage pointers plus this loop's own
     ///      locals, NOT the health-array builders. Do not read the removal of that clause as headroom.
     function _enrichAll(

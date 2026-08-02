@@ -14,7 +14,7 @@ import {IPrices} from "src/prices/IPrices.sol";
 ///      unwriteable, because there is no stored peg. (The narrower true statement: an operator CAN still produce a
 ///      `Pegged + Appreciating` reading by setting a peg tolerance on an appreciating asset — see {AccrualKind}.) `getAssetKind` still returns both axes, so callers see a complete classification.
 ///
-///      **The facade is the point.** {registerAsset} takes the kinds as parameters of the register action, stores them,
+///      **The facade is the point.** {registerAsset} takes the accrual kind as a parameter of the register action, stores it,
 ///      and forwards to `NAVCalculator.registerAsset` in the same transaction; {unregisterAsset} is symmetric. So a
 ///      registered asset is always classified by construction. Callers use the same arguments they used on the NAV plus
 ///      ONE (the accrual axis), and call this address instead.
@@ -61,8 +61,8 @@ interface IAssetKindRegistry {
 
     /// @notice Registers an asset on the NAV **and** classifies it, atomically, in one call. Gated on the NAV's
     ///         `MANAGER`. This is the intended entry point for adding an asset.
-    /// @dev The first four parameters are forwarded verbatim to `NAVCalculator.registerAsset`; the two kind parameters
-    ///      is stored here. There is no `try`/`catch` on this path, so if EITHER half reverts the whole transaction
+    /// @dev The first four parameters are forwarded verbatim to `NAVCalculator.registerAsset`; the single kind
+    ///      parameter is stored here. There is no `try`/`catch` on this path, so if EITHER half reverts the whole transaction
     ///      reverts and neither the registration nor the classification takes effect.
     ///
     ///      Calling `NAVCalculator.registerAsset` directly remains possible for any MANAGER and is not prevented in

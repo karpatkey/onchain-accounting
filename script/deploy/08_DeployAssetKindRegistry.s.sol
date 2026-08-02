@@ -34,8 +34,9 @@ import "../../src/constants.sol";
 ///
 ///      **The ordering is a hard dependency, and here is the reason so nobody "tidies" it back:** `grantRole` requires
 ///      `DEFAULT_ADMIN` on the NAV, and `07_TransferAdminToSecurityCouncil` hands that to the security-council Safe and
-///      revokes the deployer's `MANAGER` (`07:97`). Run `08` after `07` and it reverts twice over — the grant for lack
-///      of admin, and `setAssetKinds` for lack of MANAGER. `08` is EOA-broadcast only; there is no Safe path. So the
+///      revokes the deployer's `MANAGER` (`07:97`). Run `08` after `07` and it reverts: `setAssetKinds` always, for lack
+///      of MANAGER, plus the grant itself on a FIRST run, for lack of admin. (On a re-run the registry already holds the
+///      role, so the guarded grant is skipped and only `setAssetKinds` fails — "reverts twice over" was over-stated.) `08` is EOA-broadcast only; there is no Safe path. So the
 ///      rule is not "07 is last" but **"07 is the last step of the ROLE HANDOFF; every step needing deployer privileges,
 ///      `08` included, must precede it."** An earlier revision of this file and seven other doc sites claimed `08` was
 ///      order-independent. It is not.
@@ -73,6 +74,14 @@ contract DeployAssetKindRegistry is BaseDeployScript {
     ///         present-but-zero one.
     error AssetAddressZero(string symbol);
 
+    /// @notice Thrown when the registry does not hold `MANAGER` on the NAV after this run. Post-flight assertion: the
+    ///         grant is the only thing that makes the atomic facade work, and nothing else in the run would notice.
+    error RegistryManagerGrantMissing(address registry, address nav);
+
+    /// @notice Thrown when the recorded `AssetKindRegistry` is bound to a different `NAVCalculator` than the one this
+    ///         run resolved. Deploy a fresh registry against the new NAV rather than granting it a role it cannot use.
+    error RegistryBoundToDifferentNav(address registry, address boundNav, address expectedNav);
+
     /// @notice Thrown when the chain has no recorded `NAVCalculatorProxy`. The registry takes the NAV address in its
     ///         constructor and derives ALL of its authority from it, so deploying against `address(0)` would produce a
     ///         registry nobody can write to — caught here rather than on-chain.
@@ -80,7 +89,6 @@ contract DeployAssetKindRegistry is BaseDeployScript {
 
     function run() public override {
         uint256 chainId = block.chainid;
-        ConfigReader.ChainConfig memory chain = ConfigReader.readChainConfig(vm, chainId);
 
         string[] memory symbols = ConfigReader.getAssetSymbols(vm, chainId);
         console2.log("AssetKindRegistry: classifying assets:", symbols.length);
@@ -151,6 +159,15 @@ contract DeployAssetKindRegistry is BaseDeployScript {
         AssetKindRegistry registry;
         if (existing != address(0)) {
             registry = AssetKindRegistry(existing);
+            // ⚠️ **The recorded registry must be bound to THIS NAV before it is handed that NAV's `MANAGER`.** The
+            // registry's `NAV` is immutable, but the deployment record's `NAVCalculatorProxy` is not — a NAV redeploy
+            // moves it while the `AssetKindRegistry` key stays put (this repo has redeployed the NAV before). Re-running
+            // `08` then grants the NEW NAV's `MANAGER` to a registry still pointing at the OLD proxy, and the run
+            // completes GREEN: `setAssetKinds` gates on the OLD NAV's roles, so it succeeds, the facade writes to the
+            // wrong NAV, and the new NAV has given away `MANAGER` for nothing. The idempotency guard above is what
+            // causes this — it reuses the recorded registry rather than deploying one bound to the new proxy.
+            address boundNav = address(registry.NAV());
+            if (boundNav != nav) revert RegistryBoundToDifferentNav(existing, boundNav, nav);
             console2.log("AssetKindRegistry already deployed at:", existing);
         } else {
             // The registry takes only the NAV address: it keeps no roles of its OWN and gates every write on
@@ -175,6 +192,14 @@ contract DeployAssetKindRegistry is BaseDeployScript {
         // Re-classification is permitted and event-emitting by design, so this runs on both paths.
         if (assets.length > 0) {
             registry.setAssetKinds(assets, accrualKinds);
+        }
+
+        // Post-flight check on the one thing that makes the facade functional. **`setAssetKinds` succeeding does NOT
+        // prove the grant landed** — that call gates on the OPERATOR's `MANAGER`, not the registry's — so without this
+        // the script can exit 0 with a dead facade, in a repo whose own rule is never to trust a deploy script's exit
+        // code. Asserted rather than logged, because a log line is not a gate.
+        if (!IAccessControl(nav).hasRole(MANAGER, address(registry))) {
+            revert RegistryManagerGrantMissing(address(registry), nav);
         }
 
         vm.stopBroadcast();

@@ -16,10 +16,19 @@ import "../../src/constants.sol";
 /// @notice Deploys the per-chain {AssetKindRegistry} and classifies every asset in
 ///         `nav-config/assets-and-price-feeds/<chainId>.json` in a single batch call.
 /// @dev ⚠️ **NO FAILURE BRANCH IN THIS SCRIPT IS EXERCISED BY ANY TEST.** Not this step's config guards, not the
-///      registry-binding check, not the code-length check — nothing instantiates or runs `08` in `test/`, `script/test/`
-///      or `script/deploy/preflight/`. Every guard below is therefore a branch that was reasoned about and never
-///      executed, and on this PR two of four such guards had wrong failure paths for precisely that reason. **Treat
-///      every guard in this file as unverified**, and prefer documenting a hazard here over adding a fifth unexercised
+///      registry-binding check, not the code-length check: nothing in `test/` or `script/test/` instantiates this script
+///      or calls `run()`, so no input that should trip a guard is ever fed to one.
+///
+///      **That is a claim about branch coverage, and it is NOT a claim that nobody checks `08`.** The preflight gate
+///      does: `script/deploy/preflight/verify_step.py` step `1.8` verifies the ON-CHAIN OUTCOME after a real deploy —
+///      that the registry is recorded, has code, is bound to the recorded proxy, holds `MANAGER` on the NAV, and that a
+///      sample of assets is actually classified. That is real coverage of the *result*, and it is what would catch the
+///      `grantRole`-succeeds/`setAssetKinds`-fails asymmetry in production.
+///
+///      The gap is narrower and specific: **verifying an outcome after the fact is not the same as executing a failure
+///      branch.** Every guard below is a branch that was reasoned about and never run, and on the PR that added them two
+///      of four had wrong failure paths for precisely that reason. **Treat every guard in this file as unverified**, and
+///      prefer documenting a hazard here over adding a fifth unexercised
 ///      check. Branch coverage for `08` is tracked as a follow-up.
 ///
 ///      **Fail-closed at deploy time, deliberately.** Every configured asset MUST carry a valid `accrualKind` string.

@@ -50,9 +50,11 @@ Add a top-level entry keyed by `<SYMBOL>`:
 > asset is `Pegged` exactly when it carries a `pegToleranceBps > 0`. Nothing validates the field set, so a
 > stray `pegKind` would be **silently ignored** rather than rejected.
 >
-> Full semantics live in [`script/config/CONFIG_GUIDE.md`](../../script/config/CONFIG_GUIDE.md) — note that
-> its `accrualKind` section, like the key's consumer (`08_DeployAssetKindRegistry` and the `AccrualKind`
-> enum), lands with the AssetKindRegistry change (**#241/#242**) and is not on `main` today.
+> Full semantics live in [`script/config/CONFIG_GUIDE.md`](../../script/config/CONFIG_GUIDE.md). The key is
+> consumed by `08_DeployAssetKindRegistry`; if you need to know whether a given checkout has that step, ask
+> the checkout — `git ls-tree HEAD script/deploy/08_DeployAssetKindRegistry.s.sol`, which prints a line if
+> present and nothing if absent (append `| grep -q .` if you want the exit code to carry the answer; bare
+> `ls-tree` exits `0` either way) — rather than trusting a date written in this file.
 
 Rules:
 - Each entry's `type` ∈ `{Chainlink, Custom, Redstone, API3}`.

@@ -25,7 +25,7 @@ contract NAVCalculatorAssetKindTest is SuperTest {
         // The registry derives ALL of its authority from the NAV, so it is constructed against this NAV and then
         // granted MANAGER on it — the same wiring `08_DeployAssetKindRegistry` performs.
         registry = new AssetKindRegistry(address(nav));
-        vm.prank(navCalculatorAdmin);
+        vm.prank(admin);
         nav.grantRole(MANAGER, address(registry));
     }
 

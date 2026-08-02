@@ -104,6 +104,8 @@ PERSIST_DEPLOYMENTS=1 \
 forge script script/deploy/08_DeployAssetKindRegistry.s.sol --chain-id 1 --broadcast --account $DEPLOYER_NAME
 ```
 
+**Verify the grant after broadcasting — the exit code will not.** A first run dispatches three transactions: deploy, `grantRole(MANAGER, registry)`, then `setAssetKinds`. If the grant fails while `setAssetKinds` succeeds, you get a fully classified registry whose facade is dead, and the script still exits `0`; nothing inside `08` can detect it. Gate on `python3 script/deploy/preflight/verify_step.py 1.8` rather than on the exit status.
+
 ### The registry has no owner — nothing to hand over
 
 `AssetKindRegistry` holds **no roles of its own**: no `AccessControl`, no admin, no manager. Every write gates on `NAV.hasRole(MANAGER, msg.sender)`, so authority is exactly the NAV's MANAGER set — one set of humans for the whole system, and one fewer governance surface to keep in sync.

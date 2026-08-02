@@ -76,6 +76,14 @@ contract DeployAssetKindRegistry is BaseDeployScript {
     ///         present-but-zero one.
     error AssetAddressZero(string symbol);
 
+    /// @notice Thrown when the deployment record names an `AssetKindRegistry` address that has no code — the signature
+    ///         of a run whose first transaction never landed while the cheatcode-written record did. Recovery: clear
+    ///         the `AssetKindRegistry` key from `script/config/deployments/<chainId>.json` and re-run.
+    /// @dev Checked BEFORE the `NAV()` read on purpose. Without it, the high-level call to a codeless address reverts at
+    ///      the `extcodesize` precheck with an empty reason, so {RegistryBoundToDifferentNav} — a correct guard — never
+    ///      gets to report anything and the operator sees no cause at all.
+    error RecordedRegistryHasNoCode(address recorded, uint256 chainId);
+
     /// @notice Thrown when the recorded `AssetKindRegistry` is bound to a different `NAVCalculator` than the one this
     ///         run resolved. Deploy a fresh registry against the new NAV rather than granting it a role it cannot use.
     error RegistryBoundToDifferentNav(address registry, address boundNav, address expectedNav);
@@ -169,6 +177,15 @@ contract DeployAssetKindRegistry is BaseDeployScript {
             // completes GREEN: `setAssetKinds` gates on the OLD NAV's roles, so it succeeds, the facade writes to the
             // wrong NAV, and the new NAV has given away `MANAGER` for nothing. The idempotency guard above is what
             // causes this — it reuses the recorded registry rather than deploying one bound to the new proxy.
+            // ⚠️ **The code check MUST come before the `NAV()` read, and this ordering is the fix.** The deployment
+            // record is written by a CHEATCODE during local execution (`saveDeployedAddress` -> `vm.writeJson`), so it
+            // lands whether or not TX1 (`new AssetKindRegistry`) actually broadcasts. If TX1 fails, the record names an
+            // address with NO CODE — and `registry.NAV()` is a high-level call returning data, so Solidity's
+            // `extcodesize` precheck reverts it with NO reason string, in the calling frame, before any guard below can
+            // speak. The step is then stuck until someone hand-edits the file the repo treats as the single source of
+            // truth for deployed addresses. A named error is the difference between a five-minute fix and an
+            // archaeology session.
+            if (existing.code.length == 0) revert RecordedRegistryHasNoCode(existing, chainId);
             address boundNav = address(registry.NAV());
             if (boundNav != nav) revert RegistryBoundToDifferentNav(existing, boundNav, nav);
             console2.log("AssetKindRegistry already deployed at:", existing);

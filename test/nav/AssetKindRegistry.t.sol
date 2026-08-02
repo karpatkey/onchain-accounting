@@ -148,6 +148,28 @@ contract AssetKindRegistryTest is Test {
         registry.unregisterAsset(USDC);
 
         assertEq(nav.registeredCount(), 0, "nothing may reach the NAV without the registry's own role");
+
+        // **The deploy hazard's JOINT state, which no test could previously express.** The suite pinned "facade dead"
+        // and "classification works" separately and never together — so the exact outcome of `grantRole` failing while
+        // `setAssetKinds` succeeds (a fully classified registry whose facade is dead, script exiting 0) was not
+        // representable in any test. These two assertions make it representable: with the registry's NAV role revoked,
+        // classification STILL SUCCEEDS, because `setAssetKinds` gates on the OPERATOR's role, not the registry's.
+        //
+        // That asymmetry is the hazard in one line. If this ever starts reverting, the two paths have been coupled and
+        // the deploy failure mode has changed shape — re-read `08`'s three-transaction note before "fixing" this test.
+        vm.prank(manager);
+        registry.setAssetKinds(_one(USDC), _one(AccrualKind.None));
+        assertTrue(registry.isClassified(USDC), "classification succeeds while the facade is dead - the hazard state");
+    }
+
+    function _one(address a) private pure returns (address[] memory out) {
+        out = new address[](1);
+        out[0] = a;
+    }
+
+    function _one(AccrualKind k) private pure returns (AccrualKind[] memory out) {
+        out = new AccrualKind[](1);
+        out[0] = k;
     }
 
     /// @dev The whole point of the contract: one call registers on the NAV AND classifies, so a registered asset is

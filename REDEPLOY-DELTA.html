@@ -235,6 +235,18 @@ assignments in <code>computeNav</code> / <code>computeNavAndPositions</code> int
 helper is added <em>inside</em> the library and nothing is moved out of it</strong> — the library gains a function and its own
 source changes, even though the classification itself never enters the NAV. Whether <code>NAVRegistryLib</code> holds against
 the final merged tree is still unmeasured.</p>
+<p><span class="chip redeploy">Measured on #241's tree — still not deploy-final</span> <strong>The value #241 currently
+produces is <span class="addr">0x49C18627665562F4bEbae5208BA6eF7428039614</span></strong> — <code>PriceFeedLib</code> shrinks
+69 bytes, 18,585 → 18,516. It has now held across <strong>five</strong> commits on that branch
+(<span class="mono">7aef70ec</span>, <span class="mono">7a89e13e</span>, <span class="mono">72c73769</span>,
+<span class="mono">96578cfc</span>, <span class="mono">e19dae59</span>), and <code>NAVRegistryLib</code> stayed at
+<span class="addr">0x5f5D054E…</span> throughout. <strong>Record it as the expected value, not the settled one.</strong>
+#241 and #242 are both still open, the regeneration runs last against the merged tree, and a value stable across five
+commits of one branch says nothing about a tree that does not exist yet. An earlier revision of this document deliberately
+omitted this figure on the grounds that publishing a non-final pin is the trap the document is about; it is included now
+because five stable measurements are useful to a deployer <em>provided the label travels with them</em> — which is the
+same bargain the two superseded values above are recorded under. <em>Not verified in this pass:</em> reproducing it needs a
+clean whole-program build, which was not run here.</p>
 <p><span class="chip judge">Judgement</span> <strong>An earlier revision of this note reasoned that if the classification could
 not go into the NAV, then <span class="mono">6e5fa2e9</span> might turn out to be the shipping tree and both values might stand.
 That was wrong, and the way it was wrong is worth keeping.</strong> It inferred "the feature is not in the NAV" ⇒ "the NAV's tree
@@ -276,12 +288,43 @@ point at the same outcome for different reasons, and only the second survives a 
 one.</strong> +367 versus 68 is a measurement; breaking a struct ABI that 27 immutable, already-deployed adapters are compiled
 against is a coordinated redeploy of the adapter set. The two are not on the same scale, so "A is the one that fits" would have
 been the wrong conclusion to draw from A's absence from the byte column.</p>
+
+<p><span class="chip verified">Ruling — a yield-bearing wrapper has no peg</span> <strong>Every
+<code>Pegged + Appreciating</code> row was reclassified to <code>Floating + Appreciating</code>.</strong> Seven rows moved —
+<code>sUSDe</code>, <code>sUSDS</code>, <code>syrupUSDC</code>, <code>RWIV</code> and <code>sGHO</code> on mainnet,
+<code>sDAI</code> on Gnosis, <code>syrupUSDC</code> on Arbitrum. The reasoning: an asset whose redemption rate grows is not
+worth $1 and is not expected to be, which is what "not pegged" means. Verified against #242: of the 27 `Appreciating` rows
+across all seven chains, <strong>27 are now <code>Floating</code> and none is <code>Pegged</code></strong>.</p>
+<p><strong>The two empty cells are empty for DIFFERENT reasons, and a reader who collapses them loses the argument.</strong>
+<code>Pegged + Rebasing</code> is empty but genuinely <strong>REACHABLE</strong> — an aToken for USDC has a growing balance
+at a $1 price, and the first such registration legitimately occupies it. <code>Pegged + Appreciating</code> is now empty and
+arguably <strong>UNREACHABLE</strong> — the mechanism that fills it is the same one that breaks the peg. One is a
+forward-compatibility slot to fill; the other is a contradiction to catch. <span class="chip judge">Judgement</span> ADR 0023
+shipped teaching the overruled classification and was corrected by <strong>#243</strong>; it mattered because an ADR is read
+<em>before</em> classifying a new asset, and <code>Pegged + Appreciating</code> is a valid string pair that a fail-closed
+guard rejecting only <em>unknown</em> strings would accept.</p>
+<p><span class="chip info">Classification ruling — OETH stays <code>Rebasing</code></span> <code>OETH</code> keeps
+<code>accrualKind: Rebasing</code> with a recorded <code>$kindComment</code>, because the axis classifies the <em>token</em>,
+not this system's positions — Origin's OToken auto-migrates <em>contract</em> holders to non-rebasing, so the balance held by
+a Safe does not in fact grow. Recorded rather than "corrected" so the next reader does not flip it back on the same
+observation.</p>
 </div>
 
 <div class="note blocker">
 <p><span class="chip blocker">Deploy still held</span> <strong>The hold now waits on the
 <code>AssetKindRegistry</code>, so that the NAV and the registry ship as a single event</strong> rather than leaving a window in
 which the NAV is new and the classification has nowhere to live.</p>
+<p><span class="chip redeploy">Ruling — the registry ships EOA-owned, deliberately</span> <strong>The
+<code>AssetKindRegistry</code> <em>will be</em> deployed EOA-owned for this deploy, and the security-council Safe handover is a
+later, <strong>MANUAL, unscripted</strong> step.</strong> Per <code>08_DeployAssetKindRegistry</code> on <strong>PR #241,
+which is not yet merged</strong> — neither that script nor the registry is on <code>main</code> today — both
+<code>DEFAULT_ADMIN_ROLE</code> and <code>MANAGER</code> land on the deployer EOA, which every chain config names as both
+<code>addresses.admin</code> and <code>addresses.manager</code>.
+<code>07_TransferAdminToSecurityCouncil</code> <strong>deliberately does not know this contract exists</strong>, and there is no
+<code>08</code> or <code>09</code> step on <code>main</code> at all — so nothing in the numbered sequence will hand it over, and
+nothing will warn that it has not been handed over. <span class="chip judge">Judgement</span> It rides with the same deferred step-07 Safe-handoff work already excluded from
+this wave, so this is one decision rather than a new one. The consequence to carry: <strong>after the deploy the registry is
+governed by one EOA key on every chain, and the only thing that changes that is a human remembering to.</strong></p>
 <p><strong>One live consequence, and it is not cosmetic: OETH reports <span class="mono">$0</span> every 24 hours until the
 deploy happens.</strong> The heartbeat fix exists in main but cannot reach production ahead of the deploy —
 <code>RATE_HEARTBEAT</code> is an <code>immutable</code> in the deployed feed, so correcting it takes a <em>new contract</em>, not a
@@ -848,6 +891,31 @@ revisions, each correct when measured.</strong> That is not a documentation fail
 already states: a pin is a fact about a tree, and writing one down converts it into a claim about the deploy that only a clean
 build against the final tree can license.</p>
 
+<h4>Third amendment pass — three merges, and the peg ruling</h4>
+<ul class="tight">
+<li><strong>Main moved three times, all pin-neutral.</strong> <span class="mono">85e4524e</span> →
+<span class="mono">8a108910</span> (#240, the pin retraction that produced this document's current pin section) →
+<span class="mono">44bf91e8</span> (#243, the ADR 0023 correction) → <span class="mono">d4621960</span> (#239, the
+declared-heartbeat preflight guard). None touches <code>src/</code>, <code>foundry.toml</code> or
+<code>script/utils/LibraryPins.sol</code>, so neither pin moves and no regeneration input changed.</li>
+<li><strong>The peg ruling — <code>Pegged + Appreciating</code> is now empty.</strong> Seven rows reclassified to
+<code>Floating + Appreciating</code>; a yield-bearing wrapper has no peg. ADR 0023 had shipped teaching the overruled
+version and was corrected by #243. The two empty cells are <em>not</em> interchangeable — see the classification note above.</li>
+<li><strong>Two rulings that change deploy behaviour.</strong> The <code>AssetKindRegistry</code> ships <strong>EOA-owned
+deliberately</strong>, with a manual, unscripted Safe handover later and no <code>09</code> step to prompt it; and
+<code>OETH</code> keeps <code>accrualKind: Rebasing</code> because the axis classifies the token rather than this system's
+positions. Both are per unmerged #241/#242; neither the registry nor <code>08</code> is on <code>main</code> today.</li>
+<li><strong>The expected PriceFeedLib value is now recorded</strong> —
+<span class="addr">0x49C18627…</span>, stable across five commits on #241 — and explicitly <em>not</em> deploy-final. An
+earlier revision withheld it deliberately; the reversal and its reason are stated at the pin note above rather than left
+for a reader to notice.</li>
+<li><strong>Still open, unchanged by any of this:</strong> #241 and #242 are both <strong>unmerged</strong>; the pin
+regeneration runs <em>last</em>, against the merged tree, gated on one clean whole-program build; and
+<code>REDEPLOY_RUNBOOK.md</code> still omits <code>PERSIST_DEPLOYMENTS=1</code> at step <strong>1.6</strong> (which deploys
+the four assistants and records none of them) and still has <strong>no <code>08</code> step</strong>, so an operator
+following it would never deploy the registry at all. Both are known and deliberately held as deploy-time work.</li>
+</ul>
+
 <p><strong>Not established.</strong> No new ADRs were added in this range (<code>docs/decisions/</code> gained no files), so ADR 0019 and
 others cited predate the baseline and are referenced rather than introduced. Per-family on-chain deployment dating could not
 be determined from the repository; anything depending on it is marked as judgement. Behavioural claims are taken from the diff
@@ -855,8 +923,9 @@ and PR bodies — where a rationale reflects reasoning rather than measurement i
 <span class="chip judge">Judgement</span> chip.</p>
 
 <p class="foot">Generated against main <span class="mono">0ed42e74</span>; amended 2026-07-31 against
-<span class="mono">f04d2d6f</span>, then again against <span class="mono">6e5fa2e9</span> once #232, #233 and #234 had merged —
-see <em>Amendments after first publication</em> for both passes. Pin values read from
+<span class="mono">f04d2d6f</span>, then against <span class="mono">6e5fa2e9</span> once #232, #233 and #234 had merged, and
+again 2026-08-01 against <span class="mono">d4621960</span> once #240, #243 and #239 had merged —
+see <em>Amendments after first publication</em> for all three passes. Pin values read from
 <code>script/utils/LibraryPins.sol</code> and <code>foundry.toml [libraries]</code> on main, not from a CI reading. Documentation
 only — no contract, config or test was modified, so this document is itself pin-neutral.</p>
 

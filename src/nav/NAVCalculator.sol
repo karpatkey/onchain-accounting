@@ -13,6 +13,8 @@ import {IPositionDescribable} from "src/balances/IPositionDescribable.sol";
 import {INAVCalculator} from "./INAVCalculator.sol";
 import {NAVRegistryLib} from "./NAVRegistryLib.sol";
 import {AddressCheckLib} from "src/utils/AddressCheckLib.sol";
+import {IAssetKindRegistry} from "./IAssetKindRegistry.sol";
+import {PegKind, AccrualKind} from "src/utils/AssetKind.sol";
 
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/errors.sol";
@@ -57,7 +59,17 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
     mapping(address asset => uint256) private _assetIndex;
 
     /// @notice Gap for upgradeability (reserve storage for new state in upgrades)
-    uint256[50] private _gap;
+    /// @dev Was `[50]`. One slot was taken for {assetKindRegistry} below, which is declared AFTER this array on
+    ///      purpose: shrinking the gap and appending keeps every pre-existing slot at the index it already had, so
+    ///      this is upgrade-safe on the deployed proxies. Declaring the new variable BEFORE the gap would have
+    ///      shifted the gap and corrupted nothing today but would break the next append.
+    uint256[49] private _gap;
+
+    /// @notice The per-chain {AssetKindRegistry} this NAV reads asset kinds from. Zero until set.
+    /// @dev Occupies the slot released from `_gap`. Settable (not immutable) because the NAV is a UUPS proxy that is
+    ///      already deployed on 24 chains: an immutable would require a new implementation AND could not be
+    ///      initialized without a new `initialize`, which is set-once and would force a new proxy.
+    IAssetKindRegistry public assetKindRegistry;
 
     //
     // Constructor
@@ -205,6 +217,30 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
         _requireManager();
         _requireAssetExists(asset);
         _setPegTolerance(asset, pegToleranceBps);
+    }
+
+    /// @notice Points this NAV at the chain's {AssetKindRegistry}. MANAGER-gated.
+    /// @dev Re-settable on purpose: the registry is a plain (non-proxy) contract, so replacing it is a redeploy plus
+    ///      this call. Rejects `address(0)` — an unset registry makes {getAssetKind} revert, and clearing it by
+    ///      accident would look like a registry outage rather than a config change.
+    function setAssetKindRegistry(address registry) external {
+        _requireManager();
+        if (registry == address(0)) revert InvalidArguments();
+        assetKindRegistry = IAssetKindRegistry(registry);
+    }
+
+    /// @notice One asset's two-axis classification, read through this NAV so callers need a single entry point.
+    /// @dev Forwards to {AssetKindRegistry}. Returns the ENUMS rather than raw `uint8`s: solc inserts range
+    ///      validation on every enum decoded from returndata, which measured 179 bytes more than a `(uint8, uint8)`
+    ///      signature — paid deliberately for a typed ABI, and affordable only because the verbose read path was
+    ///      moved into `PriceFeedLib` first.
+    ///
+    ///      Fail-closed by inheritance, not by re-implementation: the registry reverts `AssetNotClassified` for an
+    ///      unclassified asset and this does not soften that into a default. If no registry is set, the call to
+    ///      `address(0)` reverts — deliberately louder than returning `(Pegged, None)`, which is a real
+    ///      classification and would be indistinguishable from a configured answer.
+    function getAssetKind(address asset) external view returns (PegKind, AccrualKind) {
+        return assetKindRegistry.getAssetKind(asset);
     }
 
     /// @inheritdoc INAVCalculator
@@ -449,7 +485,7 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
         returns (INAVCalculator.VerbosePosition[] memory)
     {
         _validateQuoteAsset(quoteAsset);
-        return _toVerbose(_computePositions(account, address(0), quoteAsset));
+        return PriceFeedLib.toVerbose(_computePositions(account, address(0), quoteAsset));
     }
 
     /// @inheritdoc INAVCalculator
@@ -460,7 +496,7 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
     {
         _validateQuoteAsset(quoteAsset);
         _validateAssetFilter(asset);
-        return _toVerbose(_computePositions(account, asset, quoteAsset));
+        return PriceFeedLib.toVerbose(_computePositions(account, asset, quoteAsset));
     }
 
     /// @inheritdoc INAVCalculator
@@ -486,7 +522,7 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
             _isSequencerDown(),
             _nativeTokenSymbol
         );
-        verboseNav.positions = _toVerbose(positions);
+        verboseNav.positions = PriceFeedLib.toVerbose(positions);
     }
 
     /// @notice Shared entry point for the (filtered) position read path. Keeps the long PriceFeedLib argument
@@ -512,206 +548,12 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
         );
     }
 
-    /// @notice Enriches a Position[] with human-readable labels from IPositionDescribable on each adapter.
-    function _toVerbose(INAVCalculator.Position[] memory pos)
-        internal
-        view
-        returns (INAVCalculator.VerbosePosition[] memory verbose)
-    {
-        uint256 len = pos.length;
-        verbose = new INAVCalculator.VerbosePosition[](len);
-        // protocolName() takes no args, so its calldata is identical for every position — encode it once.
-        bytes memory protocolNameCall = abi.encodeCall(IPositionDescribable.protocolName, ());
-        // protocolName() returns a per-adapter constant, and positions are grouped by adapter (PriceFeedLib
-        // concatenates each adapter's positions contiguously), so cache the last adapter's name and only
-        // re-staticcall when the adapter changes — one protocolName() call per distinct adapter, not per position.
-        // positionLabels() varies by positionId, so it stays per-position.
-        address prevAdapter;
-        string memory prevName;
-        for (uint256 i = 0; i < len; i++) {
-            address adapter = pos[i].balanceAdapter;
-            if (i == 0 || adapter != prevAdapter) {
-                prevName = _safeString(adapter, protocolNameCall);
-                prevAdapter = adapter;
-            }
-            // Labels are derived lazily from positionId (display only, off the NAV hot path) via a fail-open,
-            // gas-capped staticcall — an adapter that doesn't implement positionLabels yields an empty array.
-            // Field-by-field assignment (not a VerbosePosition literal, which would deep-copy the 17-field Position
-            // as one expression) keeps this loop under the via_ir stack limit.
-            verbose[i].position = pos[i];
-            verbose[i].protocolName = prevName;
-            verbose[i].labels =
-                _safeStringArray(adapter, abi.encodeCall(IPositionDescribable.positionLabels, (pos[i].positionId)));
-        }
-    }
-
-    /// @notice Gas stipend for the `decodeStringArray` shim (see `_safeStringArray`). Generous for any legitimate
-    ///         label array (a handful of short strings decode in well under this) yet small enough that a
-    ///         pathological declared length OOGs within a bounded budget instead of starving the verbose read.
-    uint256 private constant _LABEL_DECODE_GAS = 1_000_000;
-
-    /// @notice Gas stipend for the outer `protocolName()` staticcall. Every `protocolName()` in this repo is a
-    ///         `pure` constant string, so this is orders of magnitude more than a real one needs; it exists to
-    ///         bound a broken or hostile adapter, not to fit a legitimate read.
-    uint256 private constant _NAME_READ_GAS = 100_000;
-
-    /// @notice Gas stipend for the outer `positionLabels()` staticcall. An order of magnitude above
-    ///         {_NAME_READ_GAS} because a legitimate label leaf does real work: the joined multi-token leaves
-    ///         (`_joinTokenSymbols` over a Balancer pool, `CurvePoolLib.coinSymbols` over an 8-coin pool) make
-    ///         several `LabelLib` reads plus the pool reads that enumerate them. It is charged **per position**,
-    ///         not per read path, so it is deliberately not larger: a portfolio of N positions makes N of these
-    ///         calls in one frame, and the stipend times N is what a broken adapter can cost the verbose read.
-    uint256 private constant _LABEL_READ_GAS = 1_000_000;
-
-    /// @notice Bytes of `protocolName()` returndata copied into this frame: two ABI head words plus 256 bytes of
-    ///         payload, matching `LabelLib`'s own metadata window. A longer name yields "".
-    uint256 private constant _NAME_RETURN_BYTES = 320;
-
-    /// @notice Bytes of `positionLabels()` returndata copied into this frame. A typical reply — a category plus a
-    ///         leaf — is a few hundred bytes. The worst legitimate one is a joined multi-token leaf, whose
-    ///         symbols are each capped at `LabelLib.MAX_METADATA_BYTES`; at eight tokens that is ~2.4 KB encoded,
-    ///         inside this window.
-    ///
-    ///         **The token count is protocol-supplied, not capped, on the Balancer side.**
-    ///         `CurvePoolLib.coinSymbols` stops at 8 coins, but `MetaBalanceAdapter._joinTokenSymbols` iterates
-    ///         whatever the pool reports, and Balancer V2 permits up to 50 tokens. Live symbols are short, so
-    ///         nothing deployed approaches this — but the honest bound is the sum of the symbol lengths, not a
-    ///         token count, and a pool with many long symbols would cross it. A reply that does exceed the window
-    ///         is truncated, fails to decode and yields no labels: display degrades, NAV does not move.
-    uint256 private constant _LABELS_RETURN_BYTES = 4096;
-
     /// @notice Most elements a `positionLabels()` reply may decode to before it is rejected as implausible.
     /// @dev The output-side companion to {_LABELS_RETURN_BYTES}: see {decodeStringArray} for why bounding the
     ///      input alone does not bound what comes back. Every `positionLabels` in this repo returns a category
     ///      and at most a couple of leaves, so this is many times the real maximum while still being far below
     ///      the count an aliased-offset blob needs to be worth building.
     uint256 private constant _MAX_LABEL_ELEMENTS = 8;
-
-    /// @notice Staticcall bounded in BOTH directions — a gas stipend on the callee and a fixed output window on
-    ///         the reply — returning the success flag and the bytes actually copied.
-    /// @dev Both bounds are load-bearing and neither substitutes for the other. Same shape as `LabelLib`'s
-    ///      metadata reader, for the same two reasons:
-    ///
-    ///      - **The stipend** bounds what the callee spends. Uncapped, a callee that loops takes 63/64 of
-    ///        everything this frame holds, and in `_toVerbose` that frame is the whole verbose read — so one
-    ///        broken adapter costs every position's labels and, past a point, the read itself. Note also that a
-    ///        raw staticcall assigning `(bool, bytes memory)` `returndatacopy`s a revert payload, which a
-    ///        parameterless `catch {}` does not: on the failure path the uncapped raw form is the expensive one,
-    ///        reaching ~1e9 gas against a callee that returns megabytes.
-    ///      - **The output window** bounds what this frame copies, which a stipend alone does not. A ~200 KB
-    ///        reply costs the callee only ~95k of memory expansion — well inside any stipend here — while the
-    ///        caller pays `returndatacopy` plus its own monotonically growing memory, charged outside the stipend
-    ///        and quadratic in the frame's total. `_toVerbose` reads `positionLabels` once per position in a
-    ///        single frame, so that total is exactly the cost that matters: eight such replies in one verbose
-    ///        read cost ~8.9M gas without the window and under 3M with it, and the gap widens with position
-    ///        count. An explicit output size makes the per-read cost flat instead.
-    ///
-    ///      `returndatasize()` is reported untruncated, so callers bound their head validation on what was
-    ///      actually copied (`ret.length`), never on what the callee claimed to send.
-    /// @param target The contract to probe.
-    /// @param callData The encoded call.
-    /// @param gasStipend Maximum gas forwarded to `target`.
-    /// @param maxReturnBytes Maximum bytes copied into this frame's memory, whatever the callee returns.
-    /// @return ok The raw staticcall success flag.
-    /// @return ret The copied returndata, truncated to `maxReturnBytes`.
-    function _boundedRead(address target, bytes memory callData, uint256 gasStipend, uint256 maxReturnBytes)
-        private
-        view
-        returns (bool ok, bytes memory ret)
-    {
-        // Discard the reply at the call (`outsize = 0`), then copy back only what is both present and wanted.
-        // Allocating `maxReturnBytes` up front instead would charge this frame for the worst case on every read,
-        // however small the real reply: `_toVerbose` reads once per position in a SINGLE frame, memory cost is
-        // quadratic in that frame's total, and the honest path would pay it. Copying after the fact keeps the
-        // ceiling while charging only the actual size.
-        uint256 size;
-        assembly ("memory-safe") {
-            ok := staticcall(gasStipend, target, add(callData, 0x20), mload(callData), 0x00, 0x00)
-            // `returndatasize()` is the untruncated size — the bound below is on what we choose to take.
-            size := returndatasize()
-            if gt(size, maxReturnBytes) { size := maxReturnBytes }
-        }
-        // A failed call's payload is discarded by both callers, so do not pay to carry it. `_toVerbose` runs this
-        // once per position in a single frame and Solidity never reclaims memory, so copying revert data would
-        // accumulate across the whole position list for something no one reads.
-        if (!ok) return (false, ret);
-        ret = new bytes(size);
-        assembly ("memory-safe") {
-            returndatacopy(add(ret, 0x20), 0x00, size)
-        }
-    }
-
-    /// @notice Fully fail-open string read: staticcalls `target` and returns the decoded string only when the
-    ///         returndata is a well-formed ABI string, otherwise "".
-    /// @dev A plain `try/catch` only catches a reverting call — it does NOT catch a *successful* call whose
-    ///      returndata cannot be decoded into `string` (e.g. a non-contract returning empty data, or a contract
-    ///      returning a malformed/short blob), which would revert the whole verbose read. This validates the
-    ///      ABI envelope (canonical 0x20 offset + length within bounds) before decoding so the decode itself can
-    ///      never revert on bounds. (Bounds, not cost — see the inline note at the guard.)
-    ///
-    ///      **The bound is the RAW declared length, not `ceil32` of it.** A memory-source `abi.decode` bounds on
-    ///      the declared length itself: it needs `64 + strLen <= ret.length`, and reads exactly `strLen` bytes
-    ///      (under cancun, an `mcopy` of precisely that many). Verified on solc 0.8.34 / via_ir / cancun —
-    ///      `offset = 0x20`, `strLen = 5`, `ret.length = 69` decodes to a 5-character name rather than reverting.
-    ///      A `ceil32` bound would be *stricter* than `abi.decode`, rejecting the band
-    ///      `64 + strLen <= ret.length < 64 + ceil32(strLen)` — a reply declaring a length whose payload is
-    ///      delivered unpadded — and a guard stricter than the thing it protects is a silent drop, not safety.
-    ///      solc and vyper always pad an encoded `string` to a word, so that band is reachable only from a
-    ///      hand-rolled assembly return or a non-solc toolchain; matching `abi.decode` exactly is still the
-    ///      guard worth having.
-    ///
-    ///      Cost is a separate concern from bounds, and is handled separately: {_boundedRead} caps both what the
-    ///      target may spend ({_NAME_READ_GAS}) and what this frame copies ({_NAME_RETURN_BYTES}). The head
-    ///      validation is what makes the decode total; the stipend and the output window are what make its cost
-    ///      total.
-    function _safeString(address target, bytes memory callData) private view returns (string memory) {
-        (bool ok, bytes memory ret) = _boundedRead(target, callData, _NAME_READ_GAS, _NAME_RETURN_BYTES);
-        if (!ok || ret.length < 64) return ""; // need at least offset(32) + length(32)
-        uint256 offset;
-        uint256 strLen;
-        assembly {
-            offset := mload(add(ret, 0x20))
-            strLen := mload(add(ret, 0x40))
-        }
-        // Canonical ABI string: offset == 0x20 and the declared body fits inside the returndata. `ret.length >= 64`
-        // is guaranteed by the early return above, so the subtraction cannot underflow. This is exactly the bound
-        // `abi.decode` itself applies, so the decode below cannot revert on bounds.
-        //
-        // That is a bounds claim, not a cost one: it buys that the decode can never allocate beyond what the
-        // target actually delivered, and nothing about what the target may spend or send. Cost is bounded
-        // separately and unconditionally by `_boundedRead` — `ret.length` is at most {_NAME_RETURN_BYTES}
-        // however large the reply was, so `strLen` is bounded by that too, and an over-long name (or a reply
-        // whose payload lands outside the copied window) simply yields "".
-        if (offset != 0x20 || strLen > ret.length - 64) return "";
-        return abi.decode(ret, (string));
-    }
-
-    /// @notice Fail-open `string[]` read for `positionLabels`: staticcalls `target` and decodes a `string[]`,
-    ///         returning an empty array on a failed/short call or any decode failure rather than reverting the
-    ///         whole verbose read. A `string[]` has nested offsets/lengths that are impractical to validate
-    ///         inline (as `_safeString` does for a flat string), so the possibly-reverting `abi.decode` is
-    ///         isolated behind a try/catch — which needs an external call boundary (`decodeStringArray`).
-    /// @dev Three bounds, one per thing an adapter can spend on this frame's behalf; none of them covers what
-    ///      the other two do:
-    ///      1. {_LABEL_DECODE_GAS} on the shim — returndata declaring a huge `string[]` length forces unbounded
-    ///         memory expansion inside `abi.decode` and burns ~63/64 of the remaining gas before reverting. The
-    ///         declared array length is independent of the returndata size, which is why `_safeString`'s head
-    ///         validation has no analogue here and the decode must be isolated instead.
-    ///      2. {_LABEL_READ_GAS} on the call — the shim's cap says nothing about `positionLabels` itself, which
-    ///         can loop and never return.
-    ///      3. {_LABELS_RETURN_BYTES} on the reply — a gas stipend alone leaves the `returndatacopy` this frame
-    ///         pays unbounded; see {_boundedRead}.
-    ///      Together they contain a broken adapter to its own positions' labels, which then come back `[]`.
-    ///      Legitimate label arrays are far inside all three.
-    function _safeStringArray(address target, bytes memory callData) private view returns (string[] memory) {
-        (bool ok, bytes memory ret) = _boundedRead(target, callData, _LABEL_READ_GAS, _LABELS_RETURN_BYTES);
-        if (!ok || ret.length < 64) return new string[](0); // need at least offset(32) + length(32)
-        try this.decodeStringArray{gas: _LABEL_DECODE_GAS}(ret) returns (string[] memory arr) {
-            return arr;
-        } catch {
-            return new string[](0);
-        }
-    }
 
     /// @notice External ABI-decode shim so `_safeStringArray` can wrap a possibly-reverting `abi.decode` in
     ///         try/catch (try/catch requires an external call). Internal-only: reverts unless the caller is

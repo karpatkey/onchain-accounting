@@ -184,8 +184,9 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
     /// @inheritdoc INAVCalculator
     /// @dev ⚠️ **THIS FIELD NOW DOES TWO JOBS. READ BEFORE ZEROING IT.** `pegToleranceBps` is both a *threshold* ("flag
     ///      drift beyond this") and a *switch* ("this asset should be worth $1 — guard it"), because `AssetKindRegistry`
-    ///      derives `PegKind` from it: non-zero means `Pegged`, zero means `Floating`. You cannot change the threshold
-    ///      without also moving the switch.
+    ///      derives `PegKind` from it: non-zero means `Pegged`, zero means `Floating`. Retuning a non-zero threshold
+    ///      (say 100 -> 250) leaves the classification alone; it is CROSSING ZERO that flips it. So the two jobs are
+    ///      independent everywhere except at that boundary — which is precisely where the trap below lives.
     ///
     ///      **The trap:** zeroing the tolerance on a genuine stablecoin for an OPERATIONAL reason — a feed too noisy to
     ///      guard, say — silently reclassifies that asset as `Floating`. Nothing reverts, nothing logs a warning, and

@@ -76,10 +76,6 @@ contract DeployAssetKindRegistry is BaseDeployScript {
     ///         present-but-zero one.
     error AssetAddressZero(string symbol);
 
-    /// @notice Thrown when the registry does not hold `MANAGER` on the NAV after this run. Post-flight assertion: the
-    ///         grant is the only thing that makes the atomic facade work, and nothing else in the run would notice.
-    error RegistryManagerGrantMissing(address registry, address nav);
-
     /// @notice Thrown when the recorded `AssetKindRegistry` is bound to a different `NAVCalculator` than the one this
     ///         run resolved. Deploy a fresh registry against the new NAV rather than granting it a role it cannot use.
     error RegistryBoundToDifferentNav(address registry, address boundNav, address expectedNav);
@@ -118,11 +114,16 @@ contract DeployAssetKindRegistry is BaseDeployScript {
             // a script correct on its own terms rather than by virtue of how `forge script` sequences work.
             //
             // That state IS still reachable one stage later, and precision matters more here than reassurance: once
-            // broadcast begins, `new AssetKindRegistry` and `setAssetKinds` are dispatched as two sequential txs, so if
-            // the second never lands — gas, RPC failure, an operator interrupt, a reorg — the registry exists
-            // unclassified and its address is already recorded. The idempotent re-run recovers it, which is why this is
-            // tolerable rather than fatal. **Verify after broadcasting that classification actually landed;** do not
-            // read this guard as making that check unnecessary.
+            // broadcast begins, a first run dispatches **THREE** sequential transactions — `new AssetKindRegistry`,
+            // `grantRole(MANAGER, registry)`, then `setAssetKinds`. (The `NAV()` and `hasRole` reads are `STATICCALL`s
+            // and are not broadcast. An earlier revision of this comment said TWO; it predated the grant.) Any of the
+            // three can fail alone, so there are two distinct partial states:
+            //   - `setAssetKinds` never lands -> registry deployed and recorded but UNCLASSIFIED. The idempotent re-run
+            //     recovers it, so this one is tolerable.
+            //   - **`grantRole` never lands while `setAssetKinds` does** -> a fully classified registry whose facade is
+            //     DEAD, with the script exiting 0. This is the worse state, it is the one the earlier comment omitted,
+            //     and nothing in this script can detect it.
+            // **Verify after broadcasting that BOTH the classification and the grant landed.**
             if (assets[i] == address(0)) revert AssetAddressZero(symbol);
 
             (AccrualKind accrual, bool accrualValid) = ConfigReader.readAssetAccrualKind(vm, chainId, symbol);
@@ -196,13 +197,20 @@ contract DeployAssetKindRegistry is BaseDeployScript {
             registry.setAssetKinds(assets, accrualKinds);
         }
 
-        // Post-flight check on the one thing that makes the facade functional. **`setAssetKinds` succeeding does NOT
-        // prove the grant landed** — that call gates on the OPERATOR's `MANAGER`, not the registry's — so without this
-        // the script can exit 0 with a dead facade, in a repo whose own rule is never to trust a deploy script's exit
-        // code. Asserted rather than logged, because a log line is not a gate.
-        if (!IAccessControl(nav).hasRole(MANAGER, address(registry))) {
-            revert RegistryManagerGrantMissing(address(registry), nav);
-        }
+        // ⚠️ **VERIFY THE GRANT AFTER BROADCASTING. This script cannot do it for you, and an earlier revision wrongly
+        // claimed otherwise.** That revision asserted `hasRole(MANAGER, registry)` here. The assertion was dead code
+        // that read as protection, for two independent reasons:
+        //   1. it ran during LOCAL execution, before any transaction was sent (see the note above — `vm.startBroadcast`
+        //      only RECORDS), so it could not observe whether the grant LANDED on-chain, which is the failure it named;
+        //   2. it was near-tautological anyway — 14 lines after `if (!hasRole) grantRole(...)`, `hasRole` is true unless
+        //      OZ's `_grantRole` ran without setting the bit, which it cannot. A wrong role constant was invisible too,
+        //      since the grant and the check read the same `MANAGER`.
+        // It was removed rather than reworded, on this PR's own stated principle: a guard against a state the design
+        // cannot express is dead code that reads as protection. That is exactly why `PegKindContradictsPegTolerance` was
+        // deleted, and keeping this one would have been the same mistake with the opposite sign.
+        //
+        // The real protection is post-broadcast: read `hasRole(MANAGER, <registry>)` on the NAV and confirm it is true.
+        // Until you do, a run that exits 0 has NOT demonstrated a working facade.
 
         vm.stopBroadcast();
 

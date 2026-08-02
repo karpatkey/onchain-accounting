@@ -79,6 +79,8 @@ def collect_config_errors():
 
 def _bad_config(p, why: str) -> dict:
     # A set, not a list: the same file is read more than once per chain (`_check_chain`, then `counts`),
+    # and errors are keyed by COLLECTING SCOPE, not by chain — which is why `_load_json` takes no
+    # chain_id. A signature implying per-chain keying is what made the two-scope duplication easy to miss.
     # and appending per read inflated the run's headline ERROR count by however many times the file
     # happened to be opened — a count a pre-deploy gate is reconciled against.
     if _COLLECTING is None:
@@ -87,7 +89,7 @@ def _bad_config(p, why: str) -> dict:
     return {}
 
 
-def _load_json(p, chain_id: int) -> dict:
+def _load_json(p) -> dict:
     if not p.exists():
         return {}
     try:
@@ -102,11 +104,11 @@ def _load_json(p, chain_id: int) -> dict:
 
 
 def cfg(sub: str, chain_id: int) -> dict:
-    return _load_json(c.NAV_CONFIG_DIR / sub / f"{chain_id}.json", chain_id)
+    return _load_json(c.NAV_CONFIG_DIR / sub / f"{chain_id}.json")
 
 
 def dcfg(sub: str, chain_id: int) -> dict:
-    return _load_json(c.CONTRACTS_CONFIG_DIR / sub / f"{chain_id}.json", chain_id)
+    return _load_json(c.CONTRACTS_CONFIG_DIR / sub / f"{chain_id}.json")
 
 
 def enabled_keys(d: dict) -> list[str]:
@@ -237,16 +239,42 @@ def _config_error_findings(chain_id: int, msgs) -> list[tuple[str, str]]:
             for msg in sorted(msgs)]
 
 
-def check_chain(chain_id: int) -> list[tuple[str, str]]:
-    """Returns [(severity, message)] for one chain, plus an ERROR per config file that failed to parse.
+def chain_report(chain_id: int) -> tuple[list[tuple[str, str]], dict, str, bool]:
+    """Everything `main` needs for one chain — findings, counts, name — gathered in ONE collecting scope.
 
-    Wraps `_check_chain` so the unparseable-file ERRORs are appended on EVERY exit path — `_check_chain`
-    returns early for an adapter-less chain, and an earlier version of this containment attached them at
-    one return only, which silently dropped them for exactly the chains that take the short path.
+    ONE SCOPE PER CHAIN, not one per call site. Each scope carries its own dedupe set, so running
+    `_check_chain` and `counts` in separate scopes let the same unparseable file be reported once by each:
+    measured on chain 137 with `137.json = []`, three ERRORs of which two were identical. Deduping per read
+    and then formatting per scope moves the duplication rather than removing it.
+
+    FORMATTED INSIDE THE `with`, deliberately. If `_check_chain` records a parse error and *then* raises,
+    an exit through the exception would skip a `_config_error_findings` call placed after the block, losing
+    the filename and leaving only the exception type — actionable detail gone from the one message that
+    names which file to fix.
+
+    Raises nothing: a chain that cannot be checked is reported as an ERROR, never as an absence.
     """
+    f: list[tuple[str, str]] = []
+    k: dict | None = None
+    name, degraded = "?", False
     with collect_config_errors() as errs:
-        f = _check_chain(chain_id)
-    return f + _config_error_findings(chain_id, errs)
+        try:
+            f = _check_chain(chain_id)
+            k = counts(chain_id)
+            name = c.chain_config(chain_id).get("name", "?")
+        except Exception as e:  # noqa: BLE001 - a chain that cannot be checked is not a chain that passed
+            degraded = True
+            f.append((ERROR, f"chain {chain_id} could NOT be fully checked ({e!r}) — its coverage is "
+                             f"INCOMPLETE; that is not the same as clean."))
+        f += _config_error_findings(chain_id, errs)
+    if k is None:
+        k = {"metaAdapters": 0, "metaInstances": 0, "plainAdapters": 0, "customFeeds": 0, "assets": 0}
+    return f, k, name, degraded
+
+
+def check_chain(chain_id: int) -> list[tuple[str, str]]:
+    """The findings for one chain. See `chain_report` for why the scope covers `counts` as well."""
+    return chain_report(chain_id)[0]
 
 
 def _check_chain(chain_id: int) -> list[tuple[str, str]]:
@@ -550,7 +578,7 @@ def self_test() -> int:
     _MC = [1, 10, 8453]
 
     def _emissions(where, idx):
-        real_counts, real_enabled, real_check = counts, enabled_keys, check_chain
+        real_counts, real_enabled, real_report = counts, enabled_keys, chain_report
         real_resolve = c.resolve_chains
         import declared_heartbeat_guard as _g
         real_age = _g.snapshot_age_findings
@@ -564,11 +592,16 @@ def self_test() -> int:
             globals()["counts"] = lambda cid: (_ for _ in ()).throw(
                 RuntimeError("matrix")) if where == "after" and cid == _MC[idx] else real_counts(cid)
 
-            def _cc(cid):
+            # Patch the seam `main` ACTUALLY CALLS. This arm used to wrap `check_chain`; when the
+            # single-scope fix moved main() onto `chain_report`, that wrapper stopped being reached and
+            # the arm passed against a known-bad mutation — vacuous, in the very test written to stop a
+            # signal defect landing green. Anchoring on the wrong seam is the same class of error as
+            # under-dimensioning the input: the scenario is never reached, so every variant looks correct.
+            def _cr(cid):
                 state["cid"] = cid
-                return real_check(cid)
+                return real_report(cid)
 
-            globals()["check_chain"] = _cc
+            globals()["chain_report"] = _cr
             c.resolve_chains = lambda a: (_MC, "matrix")
             buf = _io.StringIO()
             with _ctx.redirect_stdout(buf), _ctx.redirect_stderr(buf):
@@ -584,7 +617,7 @@ def self_test() -> int:
             return buf.getvalue().count("MATRIX-STALE")
         finally:
             globals()["counts"], globals()["enabled_keys"] = real_counts, real_enabled
-            globals()["check_chain"] = real_check
+            globals()["chain_report"] = real_report
             c.resolve_chains = real_resolve
             _g.snapshot_age_findings = real_age
             _g._reset_snapshot_findings_once()
@@ -642,35 +675,13 @@ def main() -> int:
     report["snapshot"] = [{"severity": s_, "message": m_} for s_, m_ in snapshot_findings]
 
     for cid in chains:
-        # One chain must not be able to kill the run. `cfg`/`dcfg` call json.loads without a guard, so a
-        # single unparseable config file used to raise straight out of check_chain and abort every
-        # REMAINING chain — and it discarded the findings already computed for this one, including the
-        # declared-heartbeat guard's own "config could not be parsed" ERROR. The failure is now contained
-        # to its chain and reported as an ERROR, so the run still covers the others and still fails.
-        findings, k, degraded = [], None, False
-        try:
-            # EVERYTHING that reads config for this chain goes inside the guard, including `counts` and
-            # `chain_config`. Two earlier versions of this containment were defeated by a call left one
-            # line outside it, so the rule now is: nothing that can raise on config touches `cid` after
-            # this block. `findings` is APPENDED to, never reassigned — reassigning discarded every
-            # deploy-blocking finding check_chain had already computed.
-            findings += check_chain(cid)
-            # counts()/chain_config re-read config through the same loaders, so they get their own
-            # collecting scope — outside one they would RAISE, which is the contract other importers want.
-            with collect_config_errors() as errs:
-                k = counts(cid)
-                name = c.chain_config(cid).get("name", "?")
-            findings += _config_error_findings(cid, errs)
-        except Exception as e:  # noqa: BLE001 - a chain that cannot be checked is not a chain that passed
-            degraded = True
-            findings.append((ERROR, f"chain {cid} could NOT be fully checked ({e!r}) — its coverage is "
-                                    f"INCOMPLETE; that is not the same as clean."))
-            if k is None:
-                k = {"metaAdapters": 0, "metaInstances": 0, "plainAdapters": 0, "customFeeds": 0,
-                     "assets": 0}
-            name = "?"
-            # No staleness re-arm here, deliberately: the signal is emitted above the loop, so a chain
-            # that fails cannot consume, duplicate or lose it.
+        # One chain must not be able to kill the run, and everything that reads config for it lives in ONE
+        # collecting scope inside `chain_report` — findings, counts and chain name together. Two earlier
+        # versions of this containment were defeated by a call left just outside the guard, and a third
+        # split the work across two scopes, which duplicated every parse error instead of deduping it.
+        # No staleness handling here, deliberately: that signal is emitted once above the loop, so a chain
+        # that fails cannot consume, duplicate or lose it.
+        findings, k, name, degraded = chain_report(cid)
         for key, v in k.items():
             totals[key] += v
         report[str(cid)] = {"name": name,

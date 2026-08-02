@@ -303,12 +303,17 @@ def registered_feeds(chain_id: str) -> list[dict]:
                         # an address — the address lives in the deployment record. Silent here, for two
                         # DIFFERENT reasons, and the distinction matters because an earlier version of
                         # this comment asserted the first reason for all of them and was wrong for half:
-                        #   * 21 of the 41 have a Chainlink rate leg in the deploy config, which THIS
-                        #     axis checks directly as a `rate leg (...)` row.
+                        #   * 21 of the 41 have a Chainlink rate leg in the deploy config, whose
+                        #     CONSTRUCTOR heartbeat this axis checks as a `rate leg (...)` row. Their
+                        #     NAV-SIDE heartbeat — the one on this very entry — is NOT checked by anything.
                         #   * the other 20 (wstETH, eETH, rETH, sUSDS, sGHO, …) have NO Chainlink leg at
-                        #     all — they read an on-chain exchange rate — so this axis genuinely does not
-                        #     apply, and their heartbeat is governed by the derived-vs-base invariant in
-                        #     `preflight_config.heartbeat_findings` (ADR 0019) instead.
+                        #     all — they read an on-chain exchange rate — so this axis does not apply.
+                        # Do NOT read the second bullet as "covered elsewhere": the derived-vs-base axis
+                        # does NOT close that gap either (see the module docstring — it asserts
+                        # derived >= base and treats LST feeds at 86400 against WETH's 3600 as correct).
+                        # Silence here means NOT EXAMINED, never examined-and-fine. This comment has now
+                        # been wrong twice about what this exemption covers; it is load-bearing, because
+                        # it is what the next reader will trust instead of re-deriving.
                         # Reporting them flagged 41 correct entries: pure cry-wolf. Anything with no
                         # address AND no named custom feed genuinely cannot be looked up.
                         if not (fd.get("type") == "Custom" and fd.get("feed")):
@@ -345,12 +350,20 @@ def registered_feeds(chain_id: str) -> list[dict]:
             # checking a third of them. Every `<stem>Heartbeat` is paired with the address-valued key
             # that shares its stem; a heartbeat with no such partner is REPORTED, never dropped.
             hb_keys = sorted(k for k in ctor if k.endswith("Heartbeat"))
-            if not hb_keys and _is_address(ctor.get("yToXFeed")):
-                # An address with NO heartbeat key at all. Discovery is driven by heartbeat keys, so this
+            if not hb_keys and isinstance(ctor.get("yToXFeed"), str):
+                # A rate leg with NO heartbeat key at all. Discovery is driven by heartbeat keys, so this
                 # shape would otherwise vanish entirely — the silent drop this module exists to prevent.
-                out.append({"asset": name, "role": "rate leg (yToXFeed)", "address": ctor["yToXFeed"],
-                            "heartbeat": None, "heartbeat_raw": None, "enabled": bool(v.get("enabled")),
-                            "where": f"contracts-deployment-config/custom-price-feeds/{chain_id}.json"})
+                # Gating this on `_is_address` was itself a silent drop: a malformed `yToXFeed` was
+                # counted by the census (which sees a string) and enumerated by nobody, so it fell through
+                # the invariant's own crack. Emit the row either way and let `_row_findings` judge it.
+                _leg = {"asset": name, "role": "rate leg (yToXFeed)", "address": ctor["yToXFeed"],
+                        "heartbeat": None, "heartbeat_raw": None, "enabled": bool(v.get("enabled")),
+                        "where": f"contracts-deployment-config/custom-price-feeds/{chain_id}.json"}
+                if not _is_address(ctor["yToXFeed"]):
+                    _leg = {**_leg, "address": "-",
+                            "unpaired_heartbeat": f"`yToXFeed` is {ctor['yToXFeed']!r}, which is not an "
+                                                  f"address, so no rate leg could be identified"}
+                out.append(_leg)
             for hb_key in hb_keys:
                 stem = hb_key[: -len("Heartbeat")]
                 # An EMPTY stem (a key named exactly "Heartbeat") would prefix-match every key in the
@@ -1116,12 +1129,25 @@ def self_test() -> int:
             "NoHb": {"priceFeeds": [{"address": "0x" + "cc" * 20}]},
             "NotDict": {"priceFeeds": ["nonsense"]},
             "NamedCustom": {"priceFeeds": [{"type": "Custom", "feed": "x", "heartbeat": 86400}]},
+            # An address-less entry that is NOT a named custom feed. Absent from both trees, the branch
+            # that reports it could be disabled with this invariant still green — found by the
+            # branch-space mutation matrix, and the same blind spot R2 named, one branch over.
+            "Headless": {"priceFeeds": [{"type": "Chainlink", "heartbeat": 86400}]},
         }))
         _d6 = Path(_td6) / "script/config/contracts-deployment-config/custom-price-feeds"
         _d6.mkdir(parents=True)
         (_d6 / "1.json").write_text(json.dumps({
             "x": {"enabled": True, "constructor": {"aToBChainlink": "0x" + "dd" * 20,
-                                                   "aToBHeartbeat": 3600}}}))
+                                                   "aToBHeartbeat": 3600}},
+            # A rate leg with an ADDRESS and NO `*Heartbeat` key at all. This shape exists in no committed
+            # config, so without it here the census's `or` fallback never evaluates and the enumerator
+            # branch handling it — the one whose comment calls it "the silent drop this module exists to
+            # prevent" — is invisible to every arm. Disabling that branch used to leave the suite green.
+            # The invariant could not see the exact thing it was added to see, for want of one fixture.
+            "legNoHeartbeat": {"enabled": True,
+                               "constructor": {"yToXFeed": "0x" + "ee" * 20}},
+            # ...and the same shape with a non-address `yToXFeed`, which must NOT be counted as a leg.
+            "legBadAddress": {"enabled": True, "constructor": {"yToXFeed": "not-an-address"}}}))
         REPO = Path(_td6)
         try:
             _sc = coverage_census("1")

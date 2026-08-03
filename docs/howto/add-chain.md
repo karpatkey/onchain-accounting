@@ -68,20 +68,37 @@ The repo no longer keeps a single `assets.json` or `balance-adapters.json` keyed
 | `script/config/contracts-deployment-config/meta-balance-adapters/<newChainId>.json` | `{ "<AdapterName>": { "enabled", "constructor": {…} } }` — **meta** adapters to **deploy** (no instances here) | `04_DeployBalanceAdapters.s.sol` |
 | `script/config/contracts-deployment-config/bridge-adapters/<newChainId>.json` | `{ "<AdapterName>": { "enabled", "initialize": {…} } }` — bridge adapters to **deploy** | `05_DeployBridgeAdapters.s.sol` |
 | `script/config/contracts-deployment-config/bridge-escrow/<newChainId>.json` | `{ "accounts": [ … ], "assets": { "<SYMBOL>": "0x…" } }` — accounts to authorize + assets to register on `BridgeEscrow` | `06_Configure.s.sol` → `authorizeAccount` + `registerAsset` |
-| `script/config/nav-config/assets-and-price-feeds/<newChainId>.json` | `{ "<SYMBOL>": { "address", "priceFeeds": [ … ] } }` — assets to **register** | `RegisterAssets.s.sol` |
+| `script/config/nav-config/assets-and-price-feeds/<newChainId>.json` | `{ "<SYMBOL>": { "address", "accrualKind", "priceFeeds": [ … ] } }` — assets to **register** | `RegisterAssets.s.sol` |
 | `script/config/nav-config/balance-adapters/<newChainId>.json` | `{ "<AdapterName>": { "enabled" } }` — **plain** adapters to add on NAV | `06_Configure.s.sol` → `addBalanceAdapters` |
 | `script/config/nav-config/meta-balance-adapters/<newChainId>.json` | `{ "<AdapterName>": { "enabled", "instances": […] \| "instancesRaw": […] } }` — **meta** adapters to add on NAV | `06_Configure.s.sol` → `addMetaBalanceAdapter` + add/removeMetaInstances |
 
 ### 3.1 Assets and price feeds
 
-Edit `script/config/nav-config/assets-and-price-feeds/<newChainId>.json`. Add a top-level entry for every asset you want priced on this chain. Each asset has an `address` and a `priceFeeds` array. Each feed entry has a `type` (`Chainlink` / `Custom` / `Redstone` / `API3`) and a `heartbeat`; Chainlink/Redstone/API3 feeds give an `address`, while a `Custom` feed references a deployed adapter by name (`"feed": "<name>"`). The **first** feed in the array registers the asset (`registerAsset`); any **additional** feeds are wired with `addPriceFeed`.
+Edit `script/config/nav-config/assets-and-price-feeds/<newChainId>.json`. Add a top-level entry for every asset you want priced on this chain. Each asset has an `address`, an `accrualKind` and a `priceFeeds` array. Each feed entry has a `type` (`Chainlink` / `Custom` / `Redstone` / `API3`) and a `heartbeat`; Chainlink/Redstone/API3 feeds give an `address`, while a `Custom` feed references a deployed adapter by name (`"feed": "<name>"`). The **first** feed in the array registers the asset (`registerAsset`); any **additional** feeds are wired with `addPriceFeed`.
 
 ```json
 {
-  "ETH":  { "address": "0xEee...EEeE", "priceFeeds": [ { "type": "Chainlink", "address": "0x...", "heartbeat": 3600 } ] },
-  "USDC": { "address": "0x...",         "priceFeeds": [ { "type": "Chainlink", "address": "0x...", "heartbeat": 86400 } ] }
+  "ETH":  { "address": "0xEee...EEeE", "accrualKind": "None",         "priceFeeds": [ { "type": "Chainlink", "address": "0x...", "heartbeat": 3600 } ] },
+  "USDC": { "address": "0x...",        "accrualKind": "None",         "priceFeeds": [ { "type": "Chainlink", "address": "0x...", "heartbeat": 86400 } ] },
+  "wstETH": { "address": "0x...",      "accrualKind": "Appreciating", "priceFeeds": [ { "type": "Custom", "feed": "wstETH", "heartbeat": 86400 } ] }
 }
 ```
+
+> **`accrualKind` is REQUIRED on every asset, with no default.** Exactly one of `"None"` | `"Rebasing"` |
+> `"Appreciating"`, case-sensitive — an absent, empty or unrecognized value **aborts that chain's `08` deploy**
+> rather than defaulting, because a defaulted classification is indistinguishable from a real one once it is
+> on-chain. Rule of thumb: balance grows → `Rebasing`; exchange rate grows → `Appreciating`; neither → `None`.
+>
+> **There is deliberately NO `pegKind` key — do not add one.** The peg axis is *derived*, not stored: an asset
+> is `Pegged` exactly when it carries a `pegToleranceBps > 0`. Nothing validates the field set, so a stray
+> `pegKind` would be **silently ignored** rather than rejected.
+>
+> Full semantics live in [`script/config/CONFIG_GUIDE.md`](../../script/config/CONFIG_GUIDE.md). The key is
+> consumed by `08_DeployAssetKindRegistry`; if you need to know whether a given checkout has that step, ask
+> the checkout — `git ls-tree HEAD script/deploy/08_DeployAssetKindRegistry.s.sol`, which prints a line if
+> present and nothing if absent (append `| grep -q .` if you want the exit code to carry the answer; bare
+> `ls-tree` exits `0` either way) — rather than trusting a date written in this file. Set the key either
+> way: where the consumer is absent it costs nothing, and where it is present, omitting it aborts the deploy.
 
 For any custom price feed on this chain (sDAI, wstETH, etc.), add the deploy config under `script/config/contracts-deployment-config/custom-price-feeds/<newChainId>.json` keyed by feed name with `{ "enabled", "constructor" }`, then reference it from the asset via a `{ "type": "Custom", "feed": "<name>", "heartbeat": ... }` entry in that asset's `priceFeeds`. The feed's on-chain address is resolved post-deploy from `script/config/deployments/<newChainId>.json` (`.customPriceFeeds.<name>`). Many will use the `_L2_Price` variant — see [`src/prices/PRICE_ADAPTERS.md`](../../src/prices/PRICE_ADAPTERS.md) §8 for the right contract.
 
@@ -161,12 +178,19 @@ forge script script/deploy/05_DeployBridgeAdapters.s.sol --chain-id $CHAIN_ID --
 #      still enforce the split on-chain (addBalanceAdapters reverts for a meta-adapter, and vice-versa).
 forge script script/deploy/06_Configure.s.sol --chain-id $CHAIN_ID --account $DEPLOYER_NAME --broadcast
 
-# 07 — LAST: hand DEFAULT_ADMIN + MANAGER to the security council Safe, renounce the deployer's roles
+# 08 — asset-kind registry. PRIVILEGED, and it MUST run BEFORE 07: it calls NAV.grantRole(MANAGER, registry), which
+#      needs the DEFAULT_ADMIN that 07 hands to the council. Fail-closed — aborts unless every configured asset
+#      carries a valid accrualKind. Do not skip it, or no AssetKindRegistry exists on this chain.
+PERSIST_DEPLOYMENTS=1 \
+forge script script/deploy/08_DeployAssetKindRegistry.s.sol --chain-id $CHAIN_ID --account $DEPLOYER_NAME --broadcast
+
+# 07 — LAST: the role handoff. Hand DEFAULT_ADMIN + MANAGER to the security council Safe, renounce the deployer's
+#      roles. Everything needing deployer privileges, 08 included, must already have run.
 DEPLOYER_EOA=0xYourDeployerEOA \
 forge script script/deploy/07_TransferAdminToSecurityCouncil.s.sol --chain-id $CHAIN_ID --account $DEPLOYER_NAME --broadcast
 ```
 
-Each script reads from `script/config/chains/<chainId>.json` plus the relevant per-concern, per-chain file — `03` reads `contracts-deployment-config/custom-price-feeds/<chainId>.json`, `04` reads `contracts-deployment-config/balance-adapters/<chainId>.json` + `contracts-deployment-config/meta-balance-adapters/<chainId>.json`, `05` reads `contracts-deployment-config/bridge-adapters/<chainId>.json`, `RegisterAssets` reads `nav-config/assets-and-price-feeds/<chainId>.json`, and `06` reads `nav-config/balance-adapters/<chainId>.json` + `nav-config/meta-balance-adapters/<chainId>.json` + `contracts-deployment-config/bridge-escrow/<chainId>.json` (accounts + assets) — and writes deployed addresses to `script/config/deployments/<chainId>.json` (the `03`/`04`/`05` per-feed/per-adapter writes happen on every run; the `01`/`02` impl/proxy writes require `PERSIST_DEPLOYMENTS=1`). Re-running is safe: already-deployed addresses are skipped.
+Each script reads from `script/config/chains/<chainId>.json` plus the relevant per-concern, per-chain file — `03` reads `contracts-deployment-config/custom-price-feeds/<chainId>.json`, `04` reads `contracts-deployment-config/balance-adapters/<chainId>.json` + `contracts-deployment-config/meta-balance-adapters/<chainId>.json`, `05` reads `contracts-deployment-config/bridge-adapters/<chainId>.json`, `RegisterAssets` reads `nav-config/assets-and-price-feeds/<chainId>.json`, and `06` reads `nav-config/balance-adapters/<chainId>.json` + `nav-config/meta-balance-adapters/<chainId>.json` + `contracts-deployment-config/bridge-escrow/<chainId>.json` (accounts + assets) — and writes deployed addresses to `script/config/deployments/<chainId>.json` (the `03`/`04`/`05` per-feed/per-adapter writes happen on every run; the `01`/`02` impl/proxy writes require `PERSIST_DEPLOYMENTS=1` — **and so do `04`'s three `*Assistant` contracts and `08`'s registry, which are top-level keys written through the gated `saveDeployedAddress`, so run those steps with the flag or their addresses are not recorded and a re-run deploys duplicates**). Re-running is safe: already-deployed addresses are skipped.
 
 For chains where some scripts are no-ops (e.g., a chain with no bridge adapters), the relevant deploys produce no actions and exit cleanly.
 

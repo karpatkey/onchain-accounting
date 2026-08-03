@@ -52,15 +52,61 @@ asset*, so the argument does not rest on a claim a reader can falsify from confi
 | `PegKind` | `AccrualKind` | Example | Occupied today | Under the flat enum |
 |---|---|---|---|---|
 | `Pegged` | `None` | USDC | ✅ 6 chains | `Stablecoin` — unambiguous |
-| `Pegged` | `Rebasing` | **aUSDC** *(illustrative)* | ❌ **empty — no aToken registered** | **stablecoin AND yield-bearing AND rebasing — pick one** |
-| `Pegged` | `Appreciating` | sUSDS, sDAI | ✅ mainnet, Gnosis | **stablecoin AND yield-bearing, NOT rebasing — pick one** |
+| `Pegged` | `Rebasing` | **aUSDC** *(illustrative)* | ❌ **empty — no aToken registered, but REACHABLE** | **stablecoin AND yield-bearing AND rebasing — pick one** |
+| `Pegged` | `Appreciating` | — | ❌ **empty — cannot be *asserted*, but reachable** *(see below)* | *(no member to misclassify)* |
 | `Floating` | `None` | WETH | ✅ 6 chains | `Standard` — unambiguous |
 | `Floating` | `Rebasing` | **stETH** | ✅ mainnet | **yield-bearing AND rebasing — pick one** |
-| `Floating` | `Appreciating` | **wstETH** | ✅ 5 chains | **yield-bearing, NOT rebasing — inexpressible** |
+| `Floating` | `Appreciating` | **wstETH**, sUSDS, sGHO, sUSDe, sDAI | ✅ wstETH 5 chains; sUSDS/sGHO/sUSDe mainnet; sDAI Gnosis | **yield-bearing, NOT rebasing — inexpressible** |
 
-Three of the six need an arbitrary primary choice, and the sixth cannot be expressed at all: wstETH is
+Two of the six need an arbitrary primary choice, and a third cannot be expressed at all: wstETH is
 yield-bearing but not rebasing, and `YieldBearing` vs `Rebasing` gives no way to say so — they are a
 false dichotomy over the same axis.
+
+> **Amended — the `Pegged + Appreciating` row originally read `sUSDS, sDAI | ✅ mainnet, Gnosis`.**
+> That classification was **overruled after this ADR merged**: a yield-bearing wrapper has no peg, so
+> sUSDS, sGHO, sUSDe and sDAI are `Floating + Appreciating`. `src/utils/AssetKind.sol` carries the
+> corrected classification — on **PR #241, which is not yet merged**; neither that file nor the registry
+> is on `main` today. The row is preserved as empty rather than deleted, because the cell itself is
+> still part of the argument — see immediately below. Recorded rather than silently rewritten: this ADR taught the
+> overruled classification for as long as it stood, and a reader who acted on it deserves to know it
+> changed rather than to conclude they misread it.
+
+**The two empty cells are empty for DIFFERENT reasons, and conflating them loses the argument.**
+
+- **`Pegged + Rebasing` is genuinely REACHABLE** — an aToken for USDC has a growing balance at a $1
+  price. It is unoccupied only because no aToken is registered; the first such registration legitimately
+  occupies it.
+- **`Pegged + Appreciating` cannot be ASSERTED — which is not the same as being unreachable.** Because the
+  peg axis is derived rather than stored, there is no parameter with which to *claim* an appreciating asset
+  is pegged; the contradiction that used to be expressible in config is now unwriteable. That is the real
+  gain. But the cell **remains reachable**: if an operator sets a non-zero `pegToleranceBps` on an asset
+  stored as `Appreciating`, the pair reads back `Pegged + Appreciating`, because the peg is computed from
+  that tolerance. What changed is *where such a state can come from* — only ever from a real pricing
+  decision on the NAV, never from a mistyped classification — and it is then a **true report of the NAV's
+  own configuration** rather than a second opinion contradicting it.
+
+That distinction is why the two rows must not be collapsed into one "empty" note: one is a
+forward-compatibility slot to be filled, the other is a contradiction to be caught.
+
+**This is not a judgement call, and the pricing layer already encodes it.** `PriceFeedLib`'s absolute peg
+guard is enabled per-asset by a non-zero `pegToleranceBps`, described there as set "only on assets whose
+fundamental value is $1". Across the seven configured chains it is set on exactly **25** rows — the true
+stablecoins (on mainnet: USDC, USDS, USDT, DAI, GHO, USDe, RLUSD, crvUSD). **No yield-bearing wrapper
+carries it** — not sDAI, sGHO, sUSDe, sUSDS or syrupUSDC. The absence of a peg tolerance is the
+discriminator, and it holds for every one of them.
+**There is exactly one authority, so there is nothing to cross-check.** The peg axis is **derived, not
+stored** — `pegKind(asset)` is computed on read as `pegToleranceBps > 0` (implemented in
+`AssetKindRegistry` on **PR #241**, still unmerged; neither it nor the registry is on `main` today). A
+classification contradicting the pricing layer is therefore not merely detectable — **the contradictory
+sentence is unwriteable**, because there is no parameter in which to write it.
+
+**Recorded as a decision rather than a mechanism, deliberately.** An earlier revision of this paragraph
+said a guard in `08_DeployAssetKindRegistry` *would* assert that the two authorities agree. #241 has since
+**deleted** that guard, and deleting it was the stronger move: a guard against a state the design cannot
+express is dead code that reads as protection. The durable fact is the **decision** — one authority, peg
+derived from peg tolerance — not which script carries which check. That distinction is why this paragraph
+now states the decision: the mechanism changed within hours of the previous revision, and the decision did
+not.
 
 **`Pegged + Rebasing` is empty today, and that strengthens the case rather than weakening it.** aUSDC is
 listed as an illustration of the cell, not as evidence of current occupancy — no aToken is registered
@@ -82,7 +128,8 @@ aToken `Rebasing` and every consumer filtering on `Stablecoin` would drop it fro
 with no error. Tag it `Stablecoin` and every consumer watching for rebase-driven deltas would treat its
 yield as an anomaly. Each inherits a decision it did not make and cannot see. Two axes require no such
 choice: it is `Pegged` **and** `Rebasing`, and both consumers get a true answer. The same applies today,
-not hypothetically, to sUSDS and stETH — each occupies a cell that a flat enum can only half-describe.
+not hypothetically, to sUSDS and stETH — stETH occupies a cell a flat enum can only half-describe, and
+sUSDS one it cannot express at all.
 
 **For a future reader:** the pressure to collapse this back to one enum will recur, because one enum is
 smaller and reads more simply. Check the table above against the then-registered asset set first. The
@@ -221,8 +268,11 @@ planning against headroom that does not exist.
 
 - **Two enums to document and keep consistent, not one** — a real cost, not a free choice. Every new
   asset needs two values decided instead of one, both documented, both verified at review, and the two
-  can be set inconsistently in ways one enum makes impossible. The judgement is that five occupied cells
+  can be set inconsistently in ways one enum makes impossible. The judgement is that four occupied cells
   plus one reachable-and-imminent empty one justify the second axis, not that the second axis is cheap.
+  (The sixth cell, `Pegged + Appreciating`, cannot be *asserted* — the peg axis is derived, so there is no
+  parameter in which to claim it — and carries no weight in that judgement. It was counted as occupied
+  before the classification was corrected.)
 - Consumers stop maintaining private token-to-category tables, and stop silently disagreeing about
   aUSDC and sDAI.
 - The classification is **quote-relative**; documentation must say so, or a reader takes

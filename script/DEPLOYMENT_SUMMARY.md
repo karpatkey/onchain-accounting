@@ -1,6 +1,6 @@
 # Deployment System Summary
 
-> **⚠️ Deployment is now EOA-only.** A single **deployer EOA** runs every step (`forge script … --broadcast`); no Safe executes any deploy/config transaction. The deployer holds `DEFAULT_ADMIN_ROLE` + `MANAGER` through deploy/config, and the final step `07_TransferAdminToSecurityCouncil.s.sol` hands those roles to the **security-council Safe** (`addresses.securityCouncil`) and renounces the deployer's. The council Safe is the end-state admin and drives post-deploy **upgrades** via `script/upgrade/*` (which still emit Safe-TX batches). **`script/deploy/README.md` is the authoritative, up-to-date procedure** — the Safe-TX-bundle steps described in some sections below are historical and superseded for deployment/configuration (`SafeTxBuilder` is retained only for the council's governance/upgrade scripts).
+> **⚠️ Deployment is now EOA-only.** A single **deployer EOA** runs every step (`forge script … --broadcast`); no Safe executes any deploy/config transaction. The deployer holds `DEFAULT_ADMIN_ROLE` + `MANAGER` through deploy/config, and the final ROLE-HANDOFF step `07_TransferAdminToSecurityCouncil.s.sol` hands those roles to the **security-council Safe** (`addresses.securityCouncil`) and renounces the deployer's. The council Safe is the end-state admin and drives post-deploy **upgrades** via `script/upgrade/*` (which still emit Safe-TX batches). **`script/deploy/README.md` is the authoritative, up-to-date procedure** — the Safe-TX-bundle steps described in some sections below are historical and superseded for deployment/configuration (`SafeTxBuilder` is retained only for the council's governance/upgrade scripts).
 
 > **Status — deployed across 24 chains.** The Onchain Accounting System (NAV) is live: **7 chains fully configured** (custom price feeds + balance adapters) and **17 with the NAV implementation + proxy** only. Deployed addresses live in `script/config/deployments/{chainId}.json` (the only place addresses live; broadcast logs are not committed) and are mirrored in [`script/deploy/DEPLOYED_ADDRESSES.md`](deploy/DEPLOYED_ADDRESSES.md). The `PriceFeedLib` / `NAVRegistryLib` library pins are build config (not per-chain deployed addresses).
 >
@@ -11,7 +11,7 @@
 
 ## ✅ What Has Been Implemented
 
-This deployment system uses an **EOA deployer** (`--broadcast`) with **CREATE2 deterministic addresses** across multiple chains, handing admin to a security-council Safe at the end (step 07).
+This deployment system uses an **EOA deployer** (`--broadcast`) with **CREATE2 deterministic addresses** across multiple chains, handing admin to a security-council Safe at the end (step 07). Note `07` is the last step that touches the NAV/Bridge **proxies**, not the last script: `08` (asset-kind registry) is **PRIVILEGED and must run BEFORE 07** — it grants the registry `MANAGER` on the NAV, which needs the `DEFAULT_ADMIN` that `07` hands away. The registry keeps no roles of its OWN (it derives authority from `NAV.hasRole(MANAGER, …)`), but it does hold MANAGER on the NAV, so "ownerless" does not mean unprivileged.
 
 ### Core Infrastructure
 
@@ -38,7 +38,8 @@ This deployment system uses an **EOA deployer** (`--broadcast`) with **CREATE2 d
 | `04_DeployBalanceAdapters.s.sol` | Deploy balance adapters incl. meta-adapters (per-chain, config-driven) | Adapter addresses in config |
 | `05_DeployBridgeAdapters.s.sol` | Deploy bridge adapters (CCIP, Across, Stargate, CCTP, Gnosis, Superchain; per-chain) | Adapter addresses in config |
 | `06_Configure.s.sol` | **EOA broadcast** (deployer holds admin+MANAGER): `addBalanceAdapters` for each deployed plain adapter + `addMetaBalanceAdapter` then `addMetaInstances`/`removeMetaInstances` for meta-adapters + authorize bridge adapters + authorize bridge accounts (`authorizeAccount`) + register bridge assets (`registerAsset`) from `bridge-escrow/<chainId>.json`. Idempotent / re-runnable. | On-chain config txs |
-| `07_TransferAdminToSecurityCouncil.s.sol` | **EOA broadcast, run LAST**: grant DEFAULT_ADMIN + MANAGER to `addresses.securityCouncil` (Safe) on both proxies, revoke/renounce the deployer's roles. | On-chain role handoff |
+| `07_TransferAdminToSecurityCouncil.s.sol` | **EOA broadcast, last of the role handoff**: grant DEFAULT_ADMIN + MANAGER to `addresses.securityCouncil` (Safe) on both proxies, revoke/renounce the deployer's roles. **Does not cover `AssetKindRegistry` (08), and does not need to** — that contract has no roles of its own; it gates on `NAV.hasRole(MANAGER, …)`, so handing off the NAV hands off the registry with it. | On-chain role handoff |
+| `08_DeployAssetKindRegistry.s.sol` | Deploy the per-chain `AssetKindRegistry` and classify every configured asset on the two-axis taxonomy (`PegKind` × `AccrualKind`). **PRIVILEGED, and must run BEFORE 07** — it grants the registry MANAGER on the NAV (needs `DEFAULT_ADMIN`, which 07 hands away) — so it DOES make a state-changing call on the NAV proxy, though it never upgrades or reconfigures one (it does not itself move a library pin, though the feature as a whole moves `PriceFeedLib`'s). **Fail-closed**: aborts unless every asset carries a valid `accrualKind` string (no `pegKind` in config — the peg axis is derived from the NAV). Idempotent / re-runnable — **requires `PERSIST_DEPLOYMENTS=1`**, since the skip-if-deployed guard reads the record that flag gates. Registry has NO roles of its own — authority is the NAV's MANAGER set, so no separate handover exists. Also provides the atomic `registerAsset(…, accrualKind)` facade, and **grants the registry `MANAGER` on the NAV** — so it is a privileged step and must run BEFORE `07`. | Registry address in config |
 
 ### Upgrade Scripts (`script/upgrade/`)
 
@@ -303,7 +304,7 @@ script/verify/verify-all.sh
 ## Key Features
 
 ### ✅ Security
-- **EOA deploy, Safe end-state** - Deploy/config (`01`–`07`) run from the deployer EOA; `07` hands `DEFAULT_ADMIN_ROLE` + `MANAGER` to the security-council Safe and renounces the deployer's roles
+- **EOA deploy, Safe end-state** - Deploy/config (`01`–`08`) run from the deployer EOA; `07` hands `DEFAULT_ADMIN_ROLE` + `MANAGER` to the security-council Safe and renounces the deployer's roles
 - **Canonical CREATE2** - Deterministic addresses via the canonical deployer (`0x4e59...`); a placeholder impl keeps proxy addresses identical across chains
 - **Role-Based Access** - `DEFAULT_ADMIN_ROLE` (admin) and `MANAGER` roles
 - **Upgrade Authorization** - Only admin can authorize upgrades (post-handoff, the council Safe)
@@ -326,7 +327,7 @@ script/verify/verify-all.sh
 ### ✅ Safe Transaction Integration (governance only)
 - The post-handoff scripts under `script/manage/` and `script/upgrade/` generate Safe-compatible JSON files
 - Import directly into Safe UI; batch transactions for efficiency
-- The deploy/config scripts (`01`–`07`) do **not** emit Safe TX JSON — they broadcast from the deployer EOA
+- The deploy/config scripts (`01`–`08`) do **not** emit Safe TX JSON — they broadcast from the deployer EOA
 
 ## Adapter Types
 
@@ -403,7 +404,7 @@ script/config/deployments/
 
 ### Safe Transactions (`safe-transactions/`)
 
-The deploy/config scripts (`01`–`07`) all broadcast from the deployer EOA and do **not** emit Safe-TX JSON. Safe transactions are produced only by the post-handoff governance scripts under `script/manage/` and `script/upgrade/`, for the council Safe to execute:
+The deploy/config scripts (`01`–`08`) all broadcast from the deployer EOA and do **not** emit Safe-TX JSON. Safe transactions are produced only by the post-handoff governance scripts under `script/manage/` and `script/upgrade/`, for the council Safe to execute:
 
 ```
 safe-transactions/
@@ -435,7 +436,7 @@ Note: Proxy deploy + init is done via EOA in `02_DeployProxies.s.sol` (no Safe T
 ### Manual Configuration Needed
 1. **Edit `script/config/chains/{chainId}.json`** for each chain: set `addresses.securityCouncil`, `addresses.admin`, `addresses.manager` (and optionally `chainlinkSequencerFeed`, `nativeTokenSymbol` for NAVCalculator)
 2. **Enable adapters** by setting `"enabled": true` in the relevant `contracts-deployment-config/{custom-price-feeds,balance-adapters,meta-balance-adapters,bridge-adapters}/{chainId}.json` files as needed
-3. **Execute Safe transactions** via Safe UI — only for **post-handoff governance** (`script/manage/`, `script/upgrade/`); deploy/config (`01`–`07`) is EOA broadcast, not Safe.
+3. **Execute Safe transactions** via Safe UI — only for **post-handoff governance** (`script/manage/`, `script/upgrade/`); deploy/config (`01`–`08`) is EOA broadcast, not Safe.
 4. No Create2Deployer step; canonical deployer is used. Config is updated by scripts when addresses are saved (no separate “update” step).
 
 ### Manual Execution Required
@@ -451,7 +452,8 @@ Note: Proxy deploy + init is done via EOA in `02_DeployProxies.s.sol` (no Safe T
 4. **Deploy adapters** - Run scripts 03–05 with adapters enabled in the `contracts-deployment-config/` files; broadcast to deploy adapter contracts.
 5. **Configure adapters** - Run `06_Configure.s.sol` with `--broadcast --account` (deployer EOA holds admin+MANAGER): adds balance adapters, sets meta-instances, authorizes bridge adapters, authorizes bridge accounts, and registers bridge assets (the last two from `bridge-escrow/<chainId>.json` — required for `depositAndBridge` to work). Idempotent.
 6. **Verify** - Run `VerifyEtherscan.s.sol` (or `script/verify/verify-all.sh`) to check and submit `forge verify-contract` for each deployed contract.
-7. **Transfer admin** - Run `07_TransferAdminToSecurityCouncil.s.sol` last: hands DEFAULT_ADMIN + MANAGER to the council Safe and renounces the deployer's roles.
+7. **Asset-kind registry** - Run `08_DeployAssetKindRegistry.s.sol` with `PERSIST_DEPLOYMENTS=1`. **Runs BEFORE `07`** (it grants the registry MANAGER on the NAV, which needs the `DEFAULT_ADMIN` that `07` transfers away) and **do not skip it**, or no `AssetKindRegistry` exists on the chain and nothing in the pipeline says so. Fail-closed: aborts unless every configured asset carries a valid `accrualKind`.
+8. **Transfer admin** - Run `07_TransferAdminToSecurityCouncil.s.sol` as the last ROLE-HANDOFF step: hands DEFAULT_ADMIN + MANAGER to the council Safe and renounces the deployer's roles.
 
 ## What You Need to Do to Deploy NAVCalculator and BridgeEscrow
 

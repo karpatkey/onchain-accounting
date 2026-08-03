@@ -116,9 +116,15 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
 
         // A code-less `asset` must fail HERE, and with an error that names the problem. `NAVRegistryLib.
         // registerAsset` probes `IERC20Metadata(asset).decimals()` behind a `try`/`catch` that reads as if it
-        // covered this — it does not: a high-level call to a code-less address reverts at the `extcodesize`
-        // precheck, which fires in the CALLING frame before the call is made, so `catch` never sees it and the
-        // revert reaches the MANAGER with empty returndata. (This is the one place a `code.length` guard is not
+        // covered this — it does not. The OUTCOME is what matters and is unchanged: `catch` never sees it, and the
+        // revert reaches the MANAGER with empty returndata.
+        //
+        // The mechanism, stated correctly because an earlier version of this comment had it backwards: it is NOT an
+        // `extcodesize` precheck. `decimals()` expects return data, and since solc 0.8.10 that is precisely the
+        // condition under which the existence check is SKIPPED (the pin is 0.8.34). The call therefore SUCCEEDS
+        // against a code-less address, returning nothing, and the failure surfaces afterwards in the calling frame
+        // when the empty returndata cannot be decoded — which `try`/`catch` does not catch, because it guards the
+        // call and not the decoding of what the call returned. (This is the one place a `code.length` guard is not
         // dead code — in front of a LOW-level staticcall it would be, because that succeeds against a code-less
         // address rather than reverting.)
         //
@@ -182,6 +188,19 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
     }
 
     /// @inheritdoc INAVCalculator
+    /// @dev ⚠️ **THIS FIELD NOW DOES TWO JOBS. READ BEFORE ZEROING IT.** `pegToleranceBps` is both a *threshold* ("flag
+    ///      drift beyond this") and a *switch* ("this asset should be worth $1 — guard it"), because `AssetKindRegistry`
+    ///      derives `PegKind` from it: non-zero means `Pegged`, zero means `Floating`. Retuning a non-zero threshold
+    ///      (say 100 -> 250) leaves the classification alone; it is CROSSING ZERO that flips it. So the two jobs are
+    ///      independent everywhere except at that boundary — which is precisely where the trap below lives.
+    ///
+    ///      **The trap:** zeroing the tolerance on a genuine stablecoin for an OPERATIONAL reason — a feed too noisy to
+    ///      guard, say — silently reclassifies that asset as `Floating`. Nothing reverts, nothing logs a warning, and
+    ///      every off-chain consumer stops believing it is a stablecoin.
+    ///
+    ///      **The rule:** disabling the $1 guard on an asset that really is pegged needs its OWN field, not a zeroed
+    ///      tolerance. No asset needs that today; the point is that the first one to need it must not get it by
+    ///      accident. Adding that field is the correct fix — reaching for zero here is not.
     function setPegTolerance(address asset, uint32 pegToleranceBps) external {
         _requireManager();
         _requireAssetExists(asset);

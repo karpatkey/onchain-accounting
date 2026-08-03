@@ -49,7 +49,7 @@ import chainlib as c
 import preflight_config as pc
 import reset_deployment_records as rd
 
-STEPS = ["1.1", "1.2", "1.3", "1.4", "1.5", "1.6", "1.7"]
+STEPS = ["1.1", "1.2", "1.3", "1.4", "1.5", "1.6", "1.7", "1.8"]
 STEP_TITLE = {
     "1.1": "deployment record cleared",
     "1.2": "01_2 — libraries + NAV implementation",
@@ -58,6 +58,7 @@ STEP_TITLE = {
     "1.5": "RegisterAssets — assets on the new NAV",
     "1.6": "04 — balance adapters + assistants",
     "1.7": "06 — registration + meta-instance reconcile",
+    "1.8": "08 — asset-kind registry: MANAGER grant AND classification",
 }
 
 IMPL_SLOT = "0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc"
@@ -569,10 +570,92 @@ def step_1_7(k: Chk, rec: dict, exp: dict, url, base, tag) -> None:
               f"counts — a duplicate coordinate in config collapses in the set comparison above")
 
 
-CHECKS = {"1.1": step_1_1, "1.2": step_1_2, "1.3": step_1_3, "1.4": step_1_4,
-          "1.5": step_1_5, "1.6": step_1_6, "1.7": step_1_7}
+# How many configured assets to sample for classification. Bounded because this is one eth_call each and
+# the point is to detect "setAssetKinds never landed", which is all-or-nothing per batch — not to audit
+# every asset's kind, which `08 --verify` and the registry's own tests do.
+ASSET_KIND_SAMPLE = 8
 
-NEEDS_RPC = {"1.2", "1.3", "1.4", "1.5", "1.6", "1.7"}
+
+def step_1_8(k: Chk, rec: dict, exp: dict, url, base, tag) -> None:
+    """08 WILL deploy an AssetKindRegistry, grant it MANAGER on the NAV, and classify the assets.
+
+    WRITTEN IN THE FUTURE TENSE ON PURPOSE. As of `main` = c056414c, neither
+    `script/deploy/08_DeployAssetKindRegistry.s.sol` nor `src/nav/AssetKindRegistry.sol` exists —
+    `git ls-tree origin/main` returns nothing for either path. They ship with PR #241, still open. This
+    post-condition lands first so the step cannot arrive without a gate in front of it.
+
+    WHAT IT DEFENDS, and why a comment could not. 08's broadcast dispatches THREE sequential
+    transactions — `new AssetKindRegistry`, `grantRole(MANAGER, registry)`, `setAssetKinds` — and they can
+    diverge. The dangerous divergence is silent: if `grantRole` never lands while `setAssetKinds` does,
+    the result is a FULLY CLASSIFIED registry whose facade is dead, because every registry write gates on
+    `NAV.hasRole(MANAGER, msg.sender)`. The script still exits 0, and nothing inside 08 can detect it
+    afterwards. 08's own docstring says "verify after broadcasting that BOTH the classification and the
+    grant landed" — this is the thing that does that.
+
+    THE TWO HALVES ARE ASSERTED JOINTLY, deliberately. Pinning them separately is exactly what lets the
+    partial state through: classification is the half that SUCCEEDS, so on its own it reads as a clean
+    deploy, and the grant is the half that dies quietly. A check that can be satisfied by either one
+    alone would pass on the precise state this exists to catch.
+
+    AN ABSENT REGISTRY IS A SKIP, NOT A FAIL — and never a silent one. 08 is a late step that many chains
+    will legitimately not have run; failing here would turn `verify_step all` red everywhere, which is
+    the cry-wolf failure that gets a gate bypassed rather than satisfied. It is reported as INFO so the
+    absence is visible and cannot be mistaken for a pass. ONE CASE THIS CANNOT SEE, stated so nobody
+    assumes otherwise: a real `--broadcast` without `PERSIST_DEPLOYMENTS=1` deploys a live registry and
+    records no address, so there is nothing here to check.
+    """
+    registry = rec.get("AssetKindRegistry")
+    if not c.is_address(registry):
+        k.info.append("step 1.8 asserts NOTHING on this chain: no `AssetKindRegistry` in the deployment "
+                      "record, i.e. 08 has not run here (or ran without PERSIST_DEPLOYMENTS=1, which "
+                      "deploys a live registry and records nothing — invisible to this check)")
+        return
+    proxy = rec.get("NAVCalculatorProxy")
+    if not url or not k.require(c.is_address(proxy), "no NAVCalculatorProxy in the record"):
+        return
+    if not k.require(code_at(url, registry), f"AssetKindRegistry {registry} has NO code on-chain"):
+        return
+
+    # The registry must be bound to the NAV it was handed MANAGER on. 08 records the address before the
+    # grant, so a re-run against a NEW proxy can otherwise grant the new NAV's MANAGER to a registry
+    # still pointing at the old one — a live facade writing to the wrong NAV.
+    bound = call1(url, registry, "NAV()", "address")
+    k.require(lower(bound) == lower(proxy),
+              f"AssetKindRegistry {registry} is bound to NAV {bound}, not the recorded proxy {proxy} — "
+              f"it would hold MANAGER on one NAV while forwarding writes to another")
+
+    # HALF 1 — the half that dies silently.
+    granted = has_role(url, proxy, MANAGER_ROLE, registry)
+    k.require(granted,
+              f"AssetKindRegistry {registry} does NOT hold MANAGER on the NAV — every registry write "
+              f"gates on `NAV.hasRole(MANAGER, msg.sender)`, so the facade is DEAD. `grantRole` is the "
+              f"2nd of 08's three transactions and its failure does not stop the 3rd")
+
+    # HALF 2 — the half that succeeds, and therefore the half that makes a broken deploy look fine.
+    want = sorted({lower(e.get("address"))
+                   for e in pc.cfg("assets-and-price-feeds", k.chain_id).values()
+                   if isinstance(e, dict) and c.is_address(e.get("address"))})
+    sample = want[:ASSET_KIND_SAMPLE]
+    unclassified = [a for a in sample if not is_classified(url, registry, a)]
+    k.require(not unclassified,
+              f"{len(unclassified)} of {len(sample)} sampled asset(s) are NOT classified: "
+              f"{unclassified[:4]} — `setAssetKinds` is the 3rd of 08's three transactions")
+
+    # THE JOINT STATEMENT. Named explicitly because the combination is the hazard, and because a reader
+    # seeing only the grant failure above may not realise the classification SUCCEEDING is what makes it
+    # dangerous rather than obviously broken.
+    if not granted and not unclassified:
+        k.fail.append(
+            f"PARTIAL STATE — this is the exact divergence 08 cannot detect in itself: the registry is "
+            f"fully classified ({len(sample)}/{len(sample)} sampled) but holds NO MANAGER, so 08 exited 0 "
+            f"having produced a complete-looking registry with a dead facade. Re-run 08: the guarded "
+            f"grant is idempotent and the re-run will land it")
+
+
+CHECKS = {"1.1": step_1_1, "1.2": step_1_2, "1.3": step_1_3, "1.4": step_1_4,
+          "1.5": step_1_5, "1.6": step_1_6, "1.7": step_1_7, "1.8": step_1_8}
+
+NEEDS_RPC = {"1.2", "1.3", "1.4", "1.5", "1.6", "1.7", "1.8"}
 
 
 # ---------------------------------------------------------------------------
@@ -592,6 +675,11 @@ def code_at(url: str, addr: str) -> bool:
 def call1(url: str, to: str, sig: str, ret: str):
     raw = c.eth_call(url, to, sel(sig))
     return abi_decode([ret], bytes.fromhex(raw[2:]))[0]
+
+
+def is_classified(url: str, registry: str, asset: str) -> bool:
+    data = sel("isClassified(address)") + abi_encode(["address"], [asset.lower()]).hex()
+    return int(c.eth_call(url, registry, data), 16) == 1
 
 
 def has_role(url: str, proxy: str, role: bytes, who: str) -> bool:

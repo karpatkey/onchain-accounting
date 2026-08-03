@@ -29,6 +29,7 @@ Add a top-level entry keyed by `<SYMBOL>`:
 ```json
 "WBTC": {
   "address": "0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599",
+  "accrualKind": "None",
   "priceFeeds": [
     {
       "type": "Chainlink",
@@ -38,6 +39,22 @@ Add a top-level entry keyed by `<SYMBOL>`:
   ]
 }
 ```
+
+> **`accrualKind` is REQUIRED on every asset, with no default** — exactly one of `"None"` | `"Rebasing"` |
+> `"Appreciating"`, case-sensitive. An absent, empty or unrecognized value **aborts that chain's `08`
+> deploy** rather than defaulting. Balance grows → `Rebasing`; exchange rate grows → `Appreciating`;
+> neither → `None`. Most assets you add a feed for are `"None"`; a yield-bearing wrapper (sDAI, wstETH,
+> sUSDe) is `"Appreciating"`.
+>
+> **There is deliberately NO `pegKind` key — do not add one.** The peg axis is *derived*, not stored: an
+> asset is `Pegged` exactly when it carries a `pegToleranceBps > 0`. Nothing validates the field set, so a
+> stray `pegKind` would be **silently ignored** rather than rejected.
+>
+> Full semantics live in [`script/config/CONFIG_GUIDE.md`](../../script/config/CONFIG_GUIDE.md). The key is
+> consumed by `08_DeployAssetKindRegistry`; if you need to know whether a given checkout has that step, ask
+> the checkout — `git ls-tree HEAD script/deploy/08_DeployAssetKindRegistry.s.sol`, which prints a line if
+> present and nothing if absent (append `| grep -q .` if you want the exit code to carry the answer; bare
+> `ls-tree` exits `0` either way) — rather than trusting a date written in this file.
 
 Rules:
 - Each entry's `type` ∈ `{Chainlink, Custom, Redstone, API3}`.
@@ -261,6 +278,7 @@ Second, the asset entry — `script/config/nav-config/assets-and-price-feeds/<ch
 {
   "MYASSET": {
     "address": "0x...",
+    "accrualKind": "Appreciating",
     "priceFeeds": [
       {
         "type": "Custom",

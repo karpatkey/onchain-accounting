@@ -339,6 +339,10 @@ library PriceFeedLib {
 
         // Absolute peg guard: primary vs $1 (= 10**NAV_DECIMALS). Enabled per-asset by a non-zero peg tolerance
         // (set only on assets whose fundamental value is $1, i.e. stablecoins). Independent of monitors.
+        //
+        // NOTE: `pegToleranceBps` has a SECOND consumer off this path — `AssetKindRegistry` derives `PegKind` from it
+        // (non-zero => Pegged). So it is not purely a local pricing knob any more; zeroing it also reclassifies the
+        // asset. See the warning on `NAVCalculator.setPegTolerance`.
         if (ap.pegToleranceBps > 0 && !primaryStale && primaryPrice8 > 0) {
             int256 one = int256(10 ** uint256(NAV_DECIMALS));
             int256 pegDiff = primaryPrice8 - one;
@@ -695,9 +699,7 @@ library PriceFeedLib {
         address[] memory assetsWithPositions = _extractUniqueAssets(allPositions);
         PriceFeedCache[] memory priceFeeds =
             _buildPriceFeedCache(priceOracles, monitorFeeds, assetPricing, assetsWithPositions, sequencerDown);
-        nav.stalePriceAssets = _buildStaleAssets(assetIndex, registeredAssets, priceFeeds);
-        nav.irregularPriceAssets = _buildIrregularAssets(assetIndex, registeredAssets, priceFeeds);
-        nav.monitorsUnhealthyPriceAssets = _buildMonitorsUnhealthyAssets(assetIndex, registeredAssets, priceFeeds);
+        _assignHealthArrays(nav, assetIndex, registeredAssets, priceFeeds);
 
         nav.value = _sumPositionValues(assetIndex, registeredAssets, allPositions, priceFeeds, quoteInfo);
     }
@@ -868,21 +870,27 @@ library PriceFeedLib {
         address[] memory assetsWithPositions = _extractUniqueAssets(allPositions);
         PriceFeedCache[] memory priceFeeds =
             _buildPriceFeedCache(priceOracles, monitorFeeds, assetPricing, assetsWithPositions, sequencerDown);
-        nav.stalePriceAssets = _buildStaleAssets(assetIndex, registeredAssets, priceFeeds);
-        nav.irregularPriceAssets = _buildIrregularAssets(assetIndex, registeredAssets, priceFeeds);
-        nav.monitorsUnhealthyPriceAssets = _buildMonitorsUnhealthyAssets(assetIndex, registeredAssets, priceFeeds);
+        _assignHealthArrays(nav, assetIndex, registeredAssets, priceFeeds);
 
         (positions, nav.value) =
             _enrichAll(allPositions, priceFeeds, quoteInfo, quoteAssetIrregular, assetIndex, registeredAssets);
     }
 
     /// @dev Enrichment loop for `computeNavAndPositions`, extracted purely to stay under the `via_ir` stack limit.
-    ///      That function keeps five storage pointers plus the quote-asset info live across its whole body, and
-    ///      the inlined `_buildStaleAssets` / `_buildIrregularAssets` loops contribute their own counters; folding
+    ///      That function keeps five storage pointers plus the quote-asset info live across its whole body; folding
     ///      this loop's locals (`i`, `balance`, `registered`, `feed`, `length`, `totalValue`) in on top put it one
     ///      slot over ("Variable _mpos_1 is 1 too deep in the stack"). Behaviour is byte-for-byte the same as the
     ///      inline loop — do not re-inline it. Note the limit is reached only in a WHOLE-PROJECT compile, so an
     ///      incremental `forge build` will not reproduce a regression here; use `forge clean && forge build`.
+    ///
+    ///      **Historical note, so the reason is not mistaken for the current shape.** This note used to cite the
+    ///      "inlined `_buildStaleAssets` / `_buildIrregularAssets` loops" as part of the load. They are no longer
+    ///      invoked from this caller's frame — {_assignHealthArrays} now holds all three health-array calls in its own
+    ///      frame. That is the second extraction made for this limit; `_enrichAll` — called only from
+    ///      `computeNavAndPositions` — was the first. Both are extracted OUT of their callers, not out of each other.
+    ///      The stack pressure that
+    ///      justifies keeping `_enrichAll` separate is therefore the five storage pointers plus this loop's own
+    ///      locals, NOT the health-array builders. Do not read the removal of that clause as headroom.
     function _enrichAll(
         INAVCalculator.PositionBalance[] memory allPositions,
         PriceFeedCache[] memory priceFeeds,
@@ -1398,6 +1406,42 @@ library PriceFeedLib {
         for (uint256 i = 0; i < irregularLength; i++) {
             irregularAssets[i] = _getRegisteredAsset(assetIndex, registeredAssets, irregularAddrs[i]);
         }
+    }
+
+    /// @notice Builds all THREE per-asset health arrays and assigns them onto `nav`.
+    /// @dev Exists to relieve `via_ir` stack pressure in {computeNav} / {computeNavAndPositions} — the same reason
+    ///      {_enrichAll} exists, and load-bearing for the same reason. Those callers keep five storage pointers plus
+    ///      `nav` (and, in the positions variant, `positions`) live across their whole body, and THREE sequential
+    ///      builder calls each re-established `assetIndex` / `registeredAssets` / `priceFeeds` as live in the CALLER's
+    ///      frame. Collapsing them into one call is what resolved the overflow AT THAT TREE — stated in the past tense
+    ///      deliberately, because the paragraph below records that the present-tense version was measured and found
+    ///      false.
+    ///
+    ///      **Prefer not to re-inline these three assignments — but be precise about why, because the stronger version
+    ///      of this warning was MEASURED AND FOUND FALSE.** This note used to say re-inlining "reproduces
+    ///      `Variable _mpos_1 is 1 too deep in the stack`". A cold `forge clean && forge build --force` with both call
+    ///      sites re-inlined **compiled successfully** (exit 0), so re-inlining is NOT currently rejected by the
+    ///      compiler and that claim was unsupported. What can be shown:
+    ///
+    ///      - the extraction was made when the margin WAS tight, and it is what resolved the overflow at that tree;
+    ///      - the margin is whole-program: Foundry hands all of `src` + `test` + `script` to a single solc invocation,
+    ///        so `via_ir` allocates stack across the entire program and the headroom here depends on code with nothing
+    ///        to do with this file — adding an unrelated contract under `src/` has been enough to tip it before;
+    ///      - so today's success is a property of today's tree, not a licence. It can regress without any change to
+    ///        this file, and an incremental `forge build` will not show it — nor will CI's Build job off a warm cache.
+    ///        Only `forge clean && forge build --force` will.
+    ///
+    ///      The extraction also stands on its own merits independently of the stack: it shrank `PriceFeedLib` by 69
+    ///      bytes. Keep it. Just do not cite a compile error that does not currently occur as the reason.
+    function _assignHealthArrays(
+        INAVCalculator.NAV memory nav,
+        mapping(address => uint256) storage assetIndex,
+        INAVCalculator.Asset[] storage registeredAssets,
+        PriceFeedCache[] memory priceFeeds
+    ) private view {
+        nav.stalePriceAssets = _buildStaleAssets(assetIndex, registeredAssets, priceFeeds);
+        nav.irregularPriceAssets = _buildIrregularAssets(assetIndex, registeredAssets, priceFeeds);
+        nav.monitorsUnhealthyPriceAssets = _buildMonitorsUnhealthyAssets(assetIndex, registeredAssets, priceFeeds);
     }
 
     /// @notice Collects the assets whose monitors are all unreadable — configured, but none of them answered — from

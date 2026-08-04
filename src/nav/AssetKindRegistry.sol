@@ -200,11 +200,10 @@ contract AssetKindRegistry is IAssetKindRegistry {
     }
 
     /// @inheritdoc IAssetKindRegistry
-    function setAssetKinds(
-        address[] calldata assets,
-        AccrualKind[] calldata accrualKinds,
-        string[][] calldata labels
-    ) external onlyNavManager {
+    function setAssetKinds(address[] calldata assets, AccrualKind[] calldata accrualKinds, string[][] calldata labels)
+        external
+        onlyNavManager
+    {
         uint256 length = assets.length;
         if (length != accrualKinds.length) {
             revert KindArrayLengthMismatch(length, accrualKinds.length);

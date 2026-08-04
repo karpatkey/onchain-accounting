@@ -747,9 +747,7 @@ contract AssetKindRegistryTest is Test {
             tooMany[i] = "x";
         }
         vm.prank(manager);
-        vm.expectRevert(
-            abi.encodeWithSelector(IAssetKindRegistry.TooManyAssetLabels.selector, USDC, max + 1, max)
-        );
+        vm.expectRevert(abi.encodeWithSelector(IAssetKindRegistry.TooManyAssetLabels.selector, USDC, max + 1, max));
         registry.setAssetKind(USDC, AccrualKind.None, tooMany);
     }
 
@@ -768,9 +766,7 @@ contract AssetKindRegistryTest is Test {
         uint256 max = registry.MAX_ASSET_LABEL_BYTES();
         string memory tooLong = _repeat("a", max + 1);
         vm.prank(manager);
-        vm.expectRevert(
-            abi.encodeWithSelector(IAssetKindRegistry.AssetLabelTooLong.selector, USDC, 0, max + 1, max)
-        );
+        vm.expectRevert(abi.encodeWithSelector(IAssetKindRegistry.AssetLabelTooLong.selector, USDC, 0, max + 1, max));
         registry.setAssetKind(USDC, AccrualKind.None, _labels(tooLong));
     }
 
@@ -859,12 +855,7 @@ contract AssetKindRegistryTest is Test {
     function test_registerAsset_writesLabelsAtomicallyWithTheClassification() public {
         vm.prank(manager);
         registry.registerAsset(
-            WSTETH,
-            address(0xFEED),
-            IPrices.PriceType.Chainlink,
-            3600,
-            AccrualKind.Appreciating,
-            _labels("Lido", "LST")
+            WSTETH, address(0xFEED), IPrices.PriceType.Chainlink, 3600, AccrualKind.Appreciating, _labels("Lido", "LST")
         );
 
         _assertKind(WSTETH, PegKind.Floating, AccrualKind.Appreciating);

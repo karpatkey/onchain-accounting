@@ -148,11 +148,8 @@ interface IAssetKindRegistry {
     /// @dev Reverts {KindArrayLengthMismatch} or {LabelArrayLengthMismatch} if the lengths differ, and
     ///      `InvalidArguments()` on the first `address(0)` entry. An empty batch is a no-op, not an error. Any inner
     ///      `labels[i]` may be empty, which leaves that asset's labels untouched.
-    function setAssetKinds(
-        address[] calldata assets,
-        AccrualKind[] calldata accrualKinds,
-        string[][] calldata labels
-    ) external;
+    function setAssetKinds(address[] calldata assets, AccrualKind[] calldata accrualKinds, string[][] calldata labels)
+        external;
 
     /// @notice Removes an asset's classification, so subsequent reads fail closed again. MANAGER-gated.
     /// @dev Reverts {AssetNotClassified} if the asset had no classification to remove.

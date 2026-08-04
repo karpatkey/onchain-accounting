@@ -7,6 +7,7 @@ import {console2} from "forge-std/console2.sol";
 import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol";
 
 import {AssetKindRegistry} from "../../src/nav/AssetKindRegistry.sol";
+import {NAVCalculator} from "../../src/nav/NAVCalculator.sol";
 import {AccrualKind} from "../../src/utils/AssetKind.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "../../src/constants.sol";
@@ -20,10 +21,17 @@ import "../../src/constants.sol";
 ///      or calls `run()`, so no input that should trip a guard is ever fed to one.
 ///
 ///      **That is a claim about branch coverage, and it is NOT a claim that nobody checks `08`.** The preflight gate
-///      does: `script/deploy/preflight/verify_step.py` step `1.8` verifies the ON-CHAIN OUTCOME after a real deploy —
-///      that the registry is recorded, has code, is bound to the recorded proxy, holds `MANAGER` on the NAV, and that a
-///      sample of assets is actually classified. That is real coverage of the *result*, and it is what would catch the
-///      `grantRole`-succeeds/`setAssetKinds`-fails asymmetry in production.
+///      does: `script/deploy/preflight/verify_step.py` step `1.4` verifies the ON-CHAIN OUTCOME after a real deploy —
+///      that the registry is recorded, has code, is bound to the recorded proxy, holds `MANAGER` on the NAV, that the
+///      **NAV points BACK at it**, and that a sample of assets is actually classified. That is real coverage of the
+///      *result*, and it is what would catch the `grantRole`-succeeds/`setAssetKinds`-fails asymmetry in production.
+///
+///      ⚠️ **The NAV-points-back assertion is new, and its absence was a live defect rather than a hypothetical.**
+///      `NAVCalculator.setAssetKindRegistry` shipped with the read surface and was called by NOTHING outside tests —
+///      not this script, not the runbook, not the gate. Every deploy therefore left the NAV's pointer at
+///      `address(0)` and every `getAssetInfo` call reverting, while all five of the other checks passed. A gate that
+///      is green while the feature is dead is the failure this step exists to prevent, so the pointer is now both
+///      SET here and ASSERTED there.
 ///
 ///      The gap is narrower and specific: **verifying an outcome after the fact is not the same as executing a failure
 ///      branch.** Every guard below is a branch that was reasoned about and never run, and on the PR that added them two
@@ -44,9 +52,12 @@ import "../../src/constants.sol";
 ///      enum ever gains a member, while an unknown string cannot be mistaken for a valid one. The string -> enum
 ///      mapping lives in {ConfigReader} so production and any harness share one source of truth.
 ///
-///      **⚠️ THIS IS A PRIVILEGED STEP, AND IT MUST RUN BEFORE `07`.** It does not merely deploy and configure: it
-///      calls `NAV.grantRole(MANAGER, registry)`, because the facade forwards to `NAV.registerAsset` and the NAV gates
-///      on ITS `msg.sender` — the registry contract, not the operator. Without that grant the facade is dead code.
+///      **⚠️ THIS IS A PRIVILEGED STEP, AND IT MUST RUN BEFORE `07`.** It does not merely deploy and configure: it makes
+///      TWO privileged calls on the NAV, one for each direction of a link that is not symmetric —
+///      `setAssetKindRegistry(registry)` so the NAV can READ, and `grantRole(MANAGER, registry)` so the facade can
+///      WRITE. Without the grant the facade is dead code; without the pointer every read reverts. Each is invisible
+///      from inside the other contract, which is exactly how the pointer came to be missing for the whole life of the
+///      feature.
 ///
 ///      **The ordering is a hard dependency, and here is the reason so nobody "tidies" it back:** `grantRole` requires
 ///      `DEFAULT_ADMIN` on the NAV, and `07_TransferAdminToSecurityCouncil` hands that to the security-council Safe and
@@ -154,16 +165,31 @@ contract DeployAssetKindRegistry is BaseDeployScript {
             // a script correct on its own terms rather than by virtue of how `forge script` sequences work.
             //
             // That state IS still reachable one stage later, and precision matters more here than reassurance: once
-            // broadcast begins, a first run dispatches **THREE** sequential transactions — `new AssetKindRegistry`,
-            // `grantRole(MANAGER, registry)`, then `setAssetKinds`. (The `NAV()` and `hasRole` reads are `STATICCALL`s
-            // and are not broadcast. An earlier revision of this comment said TWO; it predated the grant.) Any of the
-            // three can fail alone, so there are two distinct partial states:
+            // broadcast begins, a first run dispatches **FOUR** sequential transactions —
+            //   1. `new AssetKindRegistry`
+            //   2. `setAssetKindRegistry(registry)`   on the NAV  (wires NAV -> registry, the READ direction)
+            //   3. `grantRole(MANAGER, registry)`     on the NAV  (wires registry -> NAV, the WRITE direction)
+            //   4. `setAssetKinds(...)`               on the registry
+            // (The `NAV()`, `hasRole` and `assetKindRegistry` reads are `STATICCALL`s and are not broadcast. Earlier
+            // revisions of this comment said TWO and then THREE; the first predated the grant, the second predated the
+            // pointer. **Keep this count honest — it is the only place these transactions are enumerated, so an
+            // unnamed one is invisible in the single document that exists to make them visible.**)
+            //
+            // Any of the four can fail alone, giving three distinct partial states:
             //   - `setAssetKinds` never lands -> registry deployed and recorded but UNCLASSIFIED. The idempotent re-run
             //     recovers it, so this one is tolerable.
             //   - **`grantRole` never lands while `setAssetKinds` does** -> a fully classified registry whose facade is
-            //     DEAD, with the script exiting 0. This is the worse state, it is the one the earlier comment omitted,
-            //     and nothing in this script can detect it.
-            // **Verify after broadcasting that BOTH the classification and the grant landed.**
+            //     DEAD, with the script exiting 0. Nothing in this script can detect it.
+            //   - **`setAssetKindRegistry` never lands** -> everything looks complete and every NAV read REVERTS. This
+            //     is the state every deploy was in before this transaction existed, because nothing called it.
+            //
+            // The pointer is dispatched FIRST of the three post-deploy transactions for exactly this reason: a
+            // broadcast is sequential, so an earlier failure tends to prevent the later ones, and the states that
+            // survive a partial failure are then visibly incomplete rather than complete-looking and broken.
+            //
+            // **Verify after broadcasting that ALL THREE landed — the pointer, the grant and the classification.**
+            // `verify_step.py` step 1.4 asserts all three; the pointer check compares by EQUALITY against the recorded
+            // registry, so a stale pointer left by a previous run fails rather than passing as merely non-zero.
             if (assets[i] == address(0)) revert AssetAddressZero(symbol);
 
             (AccrualKind accrual, bool accrualValid) = ConfigReader.readAssetAccrualKind(vm, chainId, symbol);
@@ -234,6 +260,28 @@ contract DeployAssetKindRegistry is BaseDeployScript {
             // `NAV.hasRole(MANAGER, msg.sender)`, so authority is exactly the NAV's MANAGER set. The deployer can
             // classify in this same run because it already holds that role.
             registry = new AssetKindRegistry(nav);
+        }
+
+        // ⚠️ **THE NAV MUST POINT BACK AT THE REGISTRY, OR THE READ SURFACE IS DEAD ON ARRIVAL.** This is the mirror
+        // image of the grant below, and it was MISSING entirely until a session writing documentation went looking for
+        // what a caller actually gets. `setAssetKindRegistry` existed on `NAVCalculator` from the day the read surface
+        // shipped and was called by NOTHING outside tests — no deploy script, no runbook line, no preflight gate. So
+        // every deploy left `assetKindRegistry == address(0)` and `getAssetInfo` reverting.
+        //
+        // **The two directions are NOT symmetric and were assumed to be.** The grant below wires registry -> NAV so the
+        // facade can WRITE. This wires NAV -> registry so the NAV can READ. Each is invisible from inside the other
+        // contract, which is why the omission survived #257, its own PR, and two independent reviews.
+        //
+        // **Ordered FIRST of the three post-deploy transactions, deliberately.** A broadcast is sequential, so an
+        // earlier failure tends to prevent the later ones. Putting the pointer last would maximise the odds of the
+        // worst state — a fully granted, fully classified registry that the NAV still cannot read, which looks complete
+        // and is broken. Putting it first means the states that survive a partial failure are visibly incomplete.
+        //
+        // Guarded and compared by EQUALITY, not against zero: a re-run against a NAV already pointing at a DIFFERENT
+        // (stale) registry must re-point it, and a non-zero check would wave that through.
+        if (address(NAVCalculator(nav).assetKindRegistry()) != address(registry)) {
+            NAVCalculator(nav).setAssetKindRegistry(address(registry));
+            console2.log("Pointed NAV at AssetKindRegistry:", address(registry));
         }
 
         // ⚠️ **THE REGISTRY MUST HOLD `MANAGER` ON THE NAV, OR THE FACADE IS DEAD CODE.** `registerAsset` forwards to

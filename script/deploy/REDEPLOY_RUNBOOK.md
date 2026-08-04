@@ -647,10 +647,42 @@ here. It is written up now because the runbook previously had no `08` step at al
 it to the end would finish a deploy having never deployed the registry, with nothing reporting a gap:
 `verify_step.py`'s `STEPS` list ends at `1.7` and has no gate for it either.
 
+#### What this step broadcasts — FOUR transactions, and BOTH directions of the link
+
+| # | transaction | target | wires |
+|---|---|---|---|
+| 1 | `new AssetKindRegistry(nav)` | — | — |
+| 2 | **`setAssetKindRegistry(registry)`** | **NAV** | **NAV → registry: the READ direction** |
+| 3 | `grantRole(MANAGER, registry)` | NAV | registry → NAV: the WRITE direction |
+| 4 | `setAssetKinds(assets, kinds)` | registry | — |
+
+> **⚠️ TRANSACTION 2 IS NEW, AND ITS ABSENCE WAS A LIVE DEFECT, NOT A HYPOTHETICAL.**
+> `NAVCalculator.setAssetKindRegistry` shipped with the read surface and was called by **nothing** outside
+> tests — no deploy script, no runbook line, no preflight gate. Every deploy therefore finished with the
+> NAV's `assetKindRegistry` at `address(0)` and **every `getAssetInfo` call reverting**, while every other
+> check passed. It was found by a session writing documentation, because it had to say what a caller
+> actually gets.
+>
+> **The two directions are not symmetric and were assumed to be.** Transaction 3 lets the registry WRITE to
+> the NAV. Transaction 2 lets the NAV READ the registry. Each is invisible from inside the other contract,
+> which is how one of them went missing for the whole life of the feature.
+>
+> Transaction 2 is dispatched **first** of the three post-deploy calls on purpose: a broadcast is sequential,
+> so an earlier failure tends to prevent the later ones, and the partial states that survive are then
+> visibly incomplete rather than complete-looking and dead on the read side.
+>
+> **Verify all three landed** — `verify_step.py 1.4` asserts the pointer, the grant and the classification.
+> The pointer is compared by **equality** against the recorded registry, so a stale pointer from a previous
+> run fails rather than passing as merely non-zero.
+>
+> `RegisterAssets` (1.6) also refuses to run against a NAV that does not point back, so a missed transaction
+> 2 stops at the next step instead of surviving to production.
+
 > **⚠️ IT MUST RUN BEFORE `07`, AND THE REASON MATTERS MORE THAN THE ORDER.** `08` is a **privileged** step:
-> it calls `NAV.grantRole(MANAGER, registry)`, because the registry facade forwards to `NAV.registerAsset`
-> and the NAV gates on **its** `msg.sender` — the registry contract, not the operator. Without that grant
-> the facade is dead code.
+> it makes **two** privileged calls on the NAV — `setAssetKindRegistry` and `grantRole(MANAGER, registry)`.
+> The grant is needed because the registry facade forwards to `NAV.registerAsset` and the NAV gates on
+> **its** `msg.sender` — the registry contract, not the operator. Without the grant the facade is dead code;
+> without the pointer every read reverts.
 >
 > `grantRole` requires `DEFAULT_ADMIN` on the NAV, and `07_TransferAdminToSecurityCouncil` hands that to the
 > security-council Safe **and revokes the deployer's `MANAGER`**. Run `08` after `07` and it reverts:
@@ -667,9 +699,13 @@ deliberately excluded from this deploy (see *What is not yet deployed*), so noth
 early. The constraint binds the **later, manual** council handover: whoever eventually runs `07` must
 confirm `08` has already run on that chain, because afterwards there is no non-Safe path to grant the role.
 
-Placement is otherwise flexible. `08` references neither `PriceFeedLib` nor `NAVRegistryLib`, so it does not
-gate — and is not gated by — the NAV redeploy; it needs only the new proxy (1.3) and the assets config to
-exist. It is listed here, after `1.7`, because that is the latest point that is still safely before `07`.
+**Placement is NO LONGER flexible, and this changed with the labels work.** `08` still references neither
+`PriceFeedLib` nor `NAVRegistryLib`, so it does not gate — and is not gated by — the NAV redeploy. But it must
+now run **before `RegisterAssets` (1.6)**, not merely before `07`: an asset's primary registration is routed
+through `AssetKindRegistry.registerAsset`, and registration is the only moment an asset's labels can ever be
+written. Run `08` late and `RegisterAssets` aborts with `AssetKindRegistryNotDeployed` — deliberately, rather
+than falling back to `NAVCalculator.registerAsset`, which would succeed while permanently costing every asset
+in that run its labels.
 
 > **Do not read "independent of the NAV stack" as "no pin regeneration is owed".** The *feature* moves
 > `PriceFeedLib`'s pin — the registry's arrival under `src/` coincided with the `via_ir` whole-program stack

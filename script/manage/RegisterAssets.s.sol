@@ -44,6 +44,20 @@ contract RegisterAssets is BaseDeployScript {
     ///      degradation this repo's fail-closed guards exist to prevent.
     error AssetKindRegistryNotDeployed(uint256 chainId);
 
+    /// @notice The NAV does not point back at the recorded `AssetKindRegistry`.
+    /// @dev **An ordering error like {AssetKindRegistryNotDeployed}, but a subtler one: the registry EXISTS and the
+    ///      write direction may be wired, while the READ direction is not.** `08` sets this pointer; if that
+    ///      transaction alone failed, registration here would still succeed and every `getAssetInfo` call would revert
+    ///      forever afterwards.
+    ///
+    ///      Stopping here is not this script's own need — it can register perfectly well through a registry the NAV
+    ///      cannot read. It stops because this is the NEXT step after `08`, so it is the earliest place a missed
+    ///      pointer becomes loud instead of silent, in the same way a dead facade now blocks at the first asset.
+    ///
+    ///      Not a guard for an unreachable state: `08` writes the pointer, but `08` is four sequential broadcast
+    ///      transactions and any of them can fail alone. This is reachable exactly when one did.
+    error NavNotPointedAtAssetKindRegistry(address nav, address pointsAt, address expected);
+
     /// @notice An asset's `accrualKind` is missing or unrecognised in config.
     /// @dev Registration now carries the classification, so a bad kind stops the batch here rather than being
     ///      discovered later by `08`. There is deliberately no default — see `ConfigReader.accrualKindFromString`.
@@ -56,6 +70,15 @@ contract RegisterAssets is BaseDeployScript {
         // Resolved BEFORE planning: `_planFeedActs` encodes a primary registration against this address, so it has to
         // exist by the time the first action is built. `08_DeployAssetKindRegistry` writes the record.
         assetKindRegistry = readDeployedAddress("AssetKindRegistry");
+        // Both directions of the link are checked before planning, because both are required for the result to be
+        // usable and only one of them is required for this script to SUCCEED. Registration would work against a NAV
+        // that cannot read the registry; the deploy would then be complete, green, and dead on the read side.
+        if (assetKindRegistry != address(0)) {
+            address pointsAt = address(NAVCalculator(navProxy).assetKindRegistry());
+            if (pointsAt != assetKindRegistry) {
+                revert NavNotPointedAtAssetKindRegistry(navProxy, pointsAt, assetKindRegistry);
+            }
+        }
         string[] memory symbols = ConfigReader.getAssetSymbols(vm, currentChainId);
 
         console2.log("\n=== Register Assets (from assets.json) ===");

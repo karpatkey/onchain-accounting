@@ -584,9 +584,9 @@ def step_asset_kind_registry(k: Chk, rec: dict, exp: dict, url, base, tag) -> No
     `git ls-tree origin/main` returns nothing for either path. They ship with PR #241, still open. This
     post-condition lands first so the step cannot arrive without a gate in front of it.
 
-    WHAT IT DEFENDS, and why a comment could not. 08's broadcast dispatches THREE sequential
-    transactions — `new AssetKindRegistry`, `grantRole(MANAGER, registry)`, `setAssetKinds` — and they can
-    diverge. The dangerous divergence is silent: if `grantRole` never lands while `setAssetKinds` does,
+    WHAT IT DEFENDS, and why a comment could not. 08's broadcast dispatches FOUR sequential
+    transactions — `new AssetKindRegistry`, `setAssetKindRegistry(registry)`, `grantRole(MANAGER, registry)`,
+    `setAssetKinds` — and they can diverge. The dangerous divergence is silent: if `grantRole` never lands while `setAssetKinds` does,
     the result is a FULLY CLASSIFIED registry whose facade is dead, because every registry write gates on
     `NAV.hasRole(MANAGER, msg.sender)`. The script still exits 0, and nothing inside 08 can detect it
     afterwards. 08's own docstring says "verify after broadcasting that BOTH the classification and the
@@ -624,6 +624,36 @@ def step_asset_kind_registry(k: Chk, rec: dict, exp: dict, url, base, tag) -> No
               f"AssetKindRegistry {registry} is bound to NAV {bound}, not the recorded proxy {proxy} — "
               f"it would hold MANAGER on one NAV while forwarding writes to another")
 
+    # HALF 0 — the READ direction, and the one that was missing entirely.
+    #
+    # Read off the NAV, not inferred from the registry's side. The whole defect is that the two directions
+    # were assumed symmetric and are not: `registry.NAV()` above proves the registry knows the NAV, and says
+    # NOTHING about whether the NAV knows the registry. `setAssetKindRegistry` shipped with the read surface
+    # and was called by nothing outside tests — no deploy script, no runbook line, no gate — so every deploy
+    # left this slot at address(0) and every `getAssetInfo` reverting, while all the checks below passed.
+    #
+    # Compared by EQUALITY, not against zero. A re-run against a NAV still pointing at a PREVIOUS registry is
+    # the likeliest way to be wrong here, and a non-zero check waves exactly that through.
+    pointed = call1(url, proxy, "assetKindRegistry()", "address")
+    points_back = c.is_address(pointed) and lower(pointed) == lower(registry)
+    if not c.is_address(pointed):
+        # `is_address` is False for address(0) as well as for an unreadable reply, and BOTH mean the read
+        # surface is dead — so they share a verdict. The message names both causes rather than asserting
+        # one, because this check cannot tell them apart and guessing is how a guard prescribes the wrong
+        # remedy (the #241 lesson: a guard may only prescribe for a cause it can identify).
+        k.require(False,
+                  f"the NAV {proxy} has NO usable AssetKindRegistry — `assetKindRegistry()` returned "
+                  f"{pointed!r}. Either it was never set (address(0)) or the getter is unreadable at this "
+                  f"address. Either way EVERY `getAssetInfo` call REVERTS and the read surface is dead on "
+                  f"arrival. `setAssetKindRegistry` is the 1st of 08's three post-deploy transactions; "
+                  f"re-run 08 — the guarded call is idempotent")
+    else:
+        k.require(points_back,
+                  f"the NAV {proxy} points at AssetKindRegistry {pointed}, NOT the recorded {registry} — a "
+                  f"STALE pointer from a previous run. This is WORSE than an unset pointer: reads resolve "
+                  f"against the wrong registry and ANSWER, with whatever that one was classified with, "
+                  f"rather than reverting. Re-run 08")
+
     # HALF 1 — the half that dies silently.
     granted = has_role(url, proxy, MANAGER_ROLE, registry)
     k.require(granted,
@@ -650,6 +680,17 @@ def step_asset_kind_registry(k: Chk, rec: dict, exp: dict, url, base, tag) -> No
             f"fully classified ({len(sample)}/{len(sample)} sampled) but holds NO MANAGER, so 08 exited 0 "
             f"having produced a complete-looking registry with a dead facade. Re-run 08: the guarded "
             f"grant is idempotent and the re-run will land it")
+
+    # THE MIRROR-IMAGE PARTIAL STATE, named separately because it reads completely differently to an
+    # operator. Above, writes are dead and reads work. Here, writes work and READS are dead: assets can be
+    # registered and classified all day while every consumer of `getAssetInfo` gets a revert. That is the
+    # state every deploy of this feature was in until the pointer transaction existed.
+    if not points_back and granted and not unclassified:
+        k.fail.append(
+            f"PARTIAL STATE — the WRITE direction is wired and the READ direction is not: the registry "
+            f"holds MANAGER and is fully classified ({len(sample)}/{len(sample)} sampled), but the NAV "
+            f"points at {pointed} instead of {registry}. Writes succeed, every `getAssetInfo` fails. "
+            f"Re-run 08: the guarded `setAssetKindRegistry` is idempotent")
 
 
 # ⚠️ **Step NUMBERS are positions in the runbook and they MOVE; the checks are bound to MEANING, not position.**

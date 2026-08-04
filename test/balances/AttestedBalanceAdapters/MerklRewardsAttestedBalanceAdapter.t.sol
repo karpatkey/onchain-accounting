@@ -237,6 +237,12 @@ contract MerklRewardsAttestedBalanceAdapterTest is BalanceAdapterTestBase {
             proof: new bytes32[](0),
             campaigns: new MerklRewardsAttestedBalanceAdapter.CampaignShare[](0)
         });
+        // The event attributes the actual caller (stranger), not the beneficiary user (alice) — this is the
+        // off-chain monitoring hook for a third-party (potentially griefing) submitter on a permissionless write.
+        vm.expectEmit(true, true, true, true, address(adapter));
+        emit MerklRewardsAttestedBalanceAdapter.AllocationCached(
+            alice, address(arb), stranger, 100 ether, leaf, uint64(block.timestamp), 0
+        );
         vm.prank(stranger);
         adapter.submitProofs(alice, allocs);
 
@@ -340,9 +346,9 @@ contract MerklRewardsAttestedBalanceAdapterTest is BalanceAdapterTestBase {
         bytes32 leaf = _leaf(alice, address(arb), 100 ether);
         distributor.setRoot(leaf);
 
-        vm.expectEmit(true, true, false, true, address(adapter));
+        vm.expectEmit(true, true, true, true, address(adapter));
         emit MerklRewardsAttestedBalanceAdapter.AllocationCached(
-            alice, address(arb), 100 ether, leaf, uint64(block.timestamp), 0
+            alice, address(arb), address(this), 100 ether, leaf, uint64(block.timestamp), 0
         );
         _submitOne(alice, address(arb), 100 ether, new bytes32[](0));
     }

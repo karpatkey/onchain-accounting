@@ -163,9 +163,14 @@ contract MerklRewardsAttestedBalanceAdapter is IAttestedBalanceAdapter, IPositio
     // Events
     //
 
+    /// @notice Emitted on every `(user, token)` upsert.
+    /// @param submitter The caller that fed this allocation (`msg.sender`). Recorded for off-chain
+    ///                  attribution/monitoring ONLY — submission is permissionless, so this is NOT an
+    ///                  authorization check and carries no privilege; integrity comes from the merkle proof.
     event AllocationCached(
         address indexed user,
         address indexed token,
+        address indexed submitter,
         uint256 cumulativeAmount,
         bytes32 root,
         uint64 submittedAt,
@@ -594,7 +599,7 @@ contract MerklRewardsAttestedBalanceAdapter is IAttestedBalanceAdapter, IPositio
             _campaigns[user][token].push(campaigns[i]);
         }
 
-        emit AllocationCached(user, token, cumulativeAmount, root, a.submittedAt, nCampaigns);
+        emit AllocationCached(user, token, msg.sender, cumulativeAmount, root, a.submittedAt, nCampaigns);
     }
 
     /// @dev Delete a user's entire cached allocation set (storage only, no event). Used by the stale-gated

@@ -229,18 +229,33 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
         assetKindRegistry = IAssetKindRegistry(registry);
     }
 
-    /// @notice One asset's two-axis classification, read through this NAV so callers need a single entry point.
-    /// @dev Forwards to {AssetKindRegistry}. Returns the ENUMS rather than raw `uint8`s: solc inserts range
+    /// @notice Everything this system publishes about one asset — both classification axes and its display labels — in
+    ///         a single call, read through this NAV so callers need one entry point and one round trip.
+    /// @dev **This REPLACED `getAssetKind`, which shipped days earlier and was never deployed.** Combining the two
+    ///      reads rather than adding a second getter is what makes it affordable: replacing DISPLACES a selector
+    ///      instead of adding one, measured at **+87 bytes** against a **+182** floor for any forwarding read at all,
+    ///      where adding `getAssetLabels` alongside `getAssetKind` cost +202 and keeping all three cost +479. The shape
+    ///      that best matches "the NAV is the single point of entry" was also the cheapest, which is the opposite of
+    ///      the usual trade and worth saying out loud.
+    ///
+    ///      Forwards to {AssetKindRegistry}. Returns the ENUMS rather than raw `uint8`s: solc inserts range
     ///      validation on every enum decoded from returndata, which measured 179 bytes more than a `(uint8, uint8)`
     ///      signature — paid deliberately for a typed ABI, and affordable only because the verbose read path was
     ///      moved into `PriceFeedLib` first.
     ///
     ///      Fail-closed by inheritance, not by re-implementation: the registry reverts `AssetNotClassified` for an
     ///      unclassified asset and this does not soften that into a default. If no registry is set, the call to
-    ///      `address(0)` reverts — deliberately louder than returning `(Pegged, None)`, which is a real
+    ///      `address(0)` reverts — deliberately louder than returning `(Pegged, None, [])`, which is a real
     ///      classification and would be indistinguishable from a configured answer.
-    function getAssetKind(address asset) external view returns (PegKind, AccrualKind) {
-        return assetKindRegistry.getAssetKind(asset);
+    ///
+    ///      **`labels` is NOT bounded here, and that is deliberate rather than overlooked.** {_MAX_LABEL_ELEMENTS}
+    ///      guards `positionLabels()` replies from arbitrary, permissionlessly-deployed balance adapters read over a
+    ///      low-level `staticcall`. This is a high-level call to a MANAGER-configured registry that enforces
+    ///      `MAX_ASSET_LABELS` on the WRITE side, so the bound already exists where it can be enforced once rather
+    ///      than re-checked on every read — and a second cap here would cost bytes to defend against an address the
+    ///      same MANAGER chose.
+    function getAssetInfo(address asset) external view returns (PegKind, AccrualKind, string[] memory) {
+        return assetKindRegistry.getAssetInfo(asset);
     }
 
     /// @inheritdoc INAVCalculator

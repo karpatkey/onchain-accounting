@@ -28,8 +28,12 @@ import "src/constants.sol";
 ///      appears, this note should be the first thing revisited.
 ///
 ///      **Why it is its own contract and not part of the NAV. Not preference — measured, twice, for two different
-///      questions.** `NAVCalculator` sits at 24,508 of 24,576 bytes: **68 bytes** of EIP-170 headroom (re-measured, not
-///      inherited).
+///      questions.** `NAVCalculator` sits at **24,074 of 24,576 bytes: 502 bytes** of EIP-170 headroom (measured on
+///      this tree, not inherited). ⚠️ This line read "24,508 / 68 bytes" and was already stale before the labels work
+///      touched it — the `_toVerbose` extraction into `PriceFeedLib` had since returned ~520 bytes. The measurements
+///      BELOW are historical, taken against the 68-byte tree, and are left as they were: they are what the decision
+///      was made on, and re-stating them against today's headroom would be inventing numbers nobody measured. Read
+///      them as "why this is not in the NAV", not as current margins.
 ///
 ///      *Question 1 — could the NAV hold the atomic register+classify facade?* **No, by a wide margin.** The FLOOR for
 ///      any NAV-side version is **+123 B**: one immutable registry address plus a single external call, with no
@@ -45,8 +49,11 @@ import "src/constants.sol";
 ///      the extraction reverted now compiles, so the causal claim is not currently demonstrable — the pin move below
 ///      is, and is measured.)
 ///      That moved `PriceFeedLib` from `0xfc6AE534…` to `0x49C18627665562F4bEbae5208BA6eF7428039614` (it shrank 69
-///      bytes, 18,585 -> 18,516). `NAVRegistryLib` is genuinely unchanged and byte-identical. A pin regeneration IS
-///      owed for this feature — do not read "costs NAVCalculator zero bytes" as "costs nothing".
+///      bytes, 18,585 -> 18,516). ⚠️ `0x49C18627…` is what that PR measured, NOT the current value — the library has
+///      moved again since and reads `0xcD6F52F4b5F2e563993d1966C27E7E322281Bb26` on this tree. Take the current
+///      address from a clean build at regeneration time, never from this sentence. `NAVRegistryLib` is genuinely
+///      unchanged and byte-identical. A pin regeneration IS owed — do not read "costs NAVCalculator zero bytes" as
+///      "costs nothing".
 ///
 ///      *Question 2 — could the NAV hold the kinds as READ surface (a field on an existing struct)?* Also no. Measured
 ///      separately, and recorded so nobody re-attempts it: two fields on the shared `Asset` struct cost **+189 B** (and
@@ -94,6 +101,32 @@ contract AssetKindRegistry is IAssetKindRegistry {
 
     mapping(address asset => AssetKinds kinds) private _kinds;
 
+    /// @notice One asset's display labels, in significant order. Free text; nothing on-chain parses it.
+    /// @dev Kept in its OWN mapping rather than inside {AssetKinds}, because the two have different lifetimes on
+    ///      purpose: {clearAssetKind} and {unregisterAsset} `delete _kinds[asset]`, and labels must survive that —
+    ///      otherwise clear-then-reclassify would be an edit path and the write-once rule would hold only for the
+    ///      shortest route. Packing them into the struct would delete them by accident.
+    ///
+    ///      There is no separate `labelled` sentinel and none is needed: `length == 0` is exactly "no labels", which is
+    ///      a legitimate state rather than an absent one, so an empty list and an unset list are the same thing by
+    ///      design and nothing has to tell them apart.
+    mapping(address asset => string[] labels) private _labels;
+
+    /// @notice Most labels one asset may carry.
+    /// @dev Mirrors `NAVCalculator`'s `_MAX_LABEL_ELEMENTS = 8` on the READ side, at half the value because these are
+    ///      hand-written config rather than an adapter's reply. The read-side cap exists because an unbounded
+    ///      `string[]` return expands quadratically in the reader's frame; an unbounded per-asset list hands a caller
+    ///      the same hazard from the other direction, so the bound belongs on the write side too.
+    ///
+    ///      **Public so tooling can read the real bound instead of duplicating it.** That is the #248 lesson — a rule
+    ///      that lives only in the config tooling drifts from the rule the chain enforces, and the chain wins.
+    uint256 public constant MAX_ASSET_LABELS = 4;
+
+    /// @notice Longest one label may be, in BYTES (not characters — a multi-byte glyph costs more than one).
+    /// @dev One EVM word. Keeps per-label storage a single slot and predictable, and no legitimate display label is
+    ///      longer. Public for the same reason as {MAX_ASSET_LABELS}.
+    uint256 public constant MAX_ASSET_LABEL_BYTES = 32;
+
     /// @notice The `NAVCalculator` this registry fronts. Source of truth for BOTH the asset registry and authority.
     INAVCalculator public immutable NAV;
 
@@ -135,13 +168,15 @@ contract AssetKindRegistry is IAssetKindRegistry {
         address priceFeed,
         IPrices.PriceType priceType,
         uint256 chainlinkHeartbeat,
-        AccrualKind accrualKind
+        AccrualKind accrualKind,
+        string[] calldata labels
     ) external onlyNavManager {
-        // Kind first, then the NAV call. Ordering is deliberate: this contract's state is written before the external
-        // call, and `NAV.registerAsset` reaches into the asset for `decimals()`/`symbol()`, so a hostile token cannot
-        // observe this registry mid-update. Atomicity does not depend on the order — there is no `try`/`catch`
-        // anywhere on this path, so if EITHER half reverts the whole transaction reverts and neither takes effect.
+        // Kind and labels first, then the NAV call. Ordering is deliberate: this contract's state is written before the
+        // external call, and `NAV.registerAsset` reaches into the asset for `decimals()`/`symbol()`, so a hostile token
+        // cannot observe this registry mid-update. Atomicity does not depend on the order — there is no `try`/`catch`
+        // anywhere on this path, so if ANY part reverts the whole transaction reverts and none of it takes effect.
         _setAssetKind(asset, accrualKind);
+        _setAssetLabels(asset, labels);
         NAV.registerAsset(asset, priceFeed, priceType, chainlinkHeartbeat);
     }
 
@@ -159,18 +194,29 @@ contract AssetKindRegistry is IAssetKindRegistry {
     }
 
     /// @inheritdoc IAssetKindRegistry
-    function setAssetKind(address asset, AccrualKind accrualKind) external onlyNavManager {
+    function setAssetKind(address asset, AccrualKind accrualKind, string[] calldata labels) external onlyNavManager {
         _setAssetKind(asset, accrualKind);
+        _setAssetLabels(asset, labels);
     }
 
     /// @inheritdoc IAssetKindRegistry
-    function setAssetKinds(address[] calldata assets, AccrualKind[] calldata accrualKinds) external onlyNavManager {
+    function setAssetKinds(
+        address[] calldata assets,
+        AccrualKind[] calldata accrualKinds,
+        string[][] calldata labels
+    ) external onlyNavManager {
         uint256 length = assets.length;
         if (length != accrualKinds.length) {
             revert KindArrayLengthMismatch(length, accrualKinds.length);
         }
+        // Checked separately from the kinds, and BEFORE the loop, so a short label array is named as such rather than
+        // surfacing as an out-of-bounds panic partway through a batch that has already written some rows.
+        if (length != labels.length) {
+            revert LabelArrayLengthMismatch(length, labels.length);
+        }
         for (uint256 i; i < length; ++i) {
             _setAssetKind(assets[i], accrualKinds[i]);
+            _setAssetLabels(assets[i], labels[i]);
         }
     }
 
@@ -207,6 +253,18 @@ contract AssetKindRegistry is IAssetKindRegistry {
     }
 
     /// @inheritdoc IAssetKindRegistry
+    function getAssetLabels(address asset) external view returns (string[] memory) {
+        return _labels[asset];
+    }
+
+    /// @inheritdoc IAssetKindRegistry
+    function getAssetInfo(address asset) external view returns (PegKind, AccrualKind, string[] memory) {
+        AssetKinds memory kinds = _kinds[asset];
+        if (!kinds.classified) revert AssetNotClassified(asset);
+        return (_derivePegKind(asset), kinds.accrualKind, _labels[asset]);
+    }
+
+    /// @inheritdoc IAssetKindRegistry
     function isClassified(address asset) external view returns (bool) {
         return _kinds[asset].classified;
     }
@@ -221,5 +279,84 @@ contract AssetKindRegistry is IAssetKindRegistry {
         // indexers replaying the log would hold a peg that the chain no longer agrees with — a fresh divergence of
         // exactly the kind deriving was chosen to eliminate. Consumers read the peg; they do not replay it.
         emit AssetKindSet(asset, accrualKind);
+    }
+
+    /// @dev **The write-once rule, and the whole of it: you can fill a blank, never change a value.**
+    ///
+    ///      An EMPTY `labels` is a no-op, not a clear. That is load-bearing in two directions at once. It lets
+    ///      re-classification work — an operator fixing an `AccrualKind` passes no labels and the asset keeps the ones
+    ///      it has — and it lets an asset registered without labels be labelled later, without the re-registration
+    ///      round trip that a stricter reading would force. A write of DIFFERENT labels over existing ones REVERTS; it
+    ///      is never silently ignored, because an operator who believes they have corrected a typo and has not is
+    ///      worse off than one who gets an error. Re-supplying the SAME labels is a no-op — see the comment on the
+    ///      comparison below for why that is required rather than merely convenient.
+    ///
+    ///      **Note what this does NOT do: it does not clear labels, ever, and there is no function that does.**
+    ///      Combined with {clearAssetKind} and {unregisterAsset} leaving `_labels` alone, that is what makes the rule
+    ///      hold rather than merely describe the happy path — otherwise clear-then-reclassify would be an edit, and
+    ///      "labels cannot be changed" would be true only of the shortest route. Repair is a registry REPLACEMENT:
+    ///      deploy a new one, re-classify, one `setAssetKindRegistry` call on the NAV. See {IAssetKindRegistry.getAssetLabels}.
+    ///
+    ///      **All three bounds are enforced HERE, in the setter, not only in preflight.** #248 is the standing
+    ///      precedent for what happens when validation lives in config tooling alone: nothing enforced `accrualKind`,
+    ///      and the gap was invisible until someone went looking. Tooling that wants the same bounds reads
+    ///      {MAX_ASSET_LABELS} and {MAX_ASSET_LABEL_BYTES} off this contract rather than restating them.
+    function _setAssetLabels(address asset, string[] calldata labels) private {
+        uint256 length = labels.length;
+        // An empty argument means "leave them alone". Returning BEFORE the already-set check is what makes
+        // re-classification of a labelled asset possible at all.
+        if (length == 0) return;
+
+        // **Re-supplying the SAME labels is a no-op; supplying DIFFERENT ones reverts.** Not a softening of the
+        // write-once rule — it is what makes the rule compatible with the rest of the system. `08` is idempotent by
+        // contract, and re-running it is the documented recovery for a batch that never landed; under a rule that
+        // rejected every second write, the first re-run after labels reached config would revert the WHOLE batch and
+        // take the recovery path with it. Comparing content keeps the guard pointed at the thing worth guarding: a
+        // caller trying to CHANGE a label still gets a revert, never a silent no-op, because an operator who believes
+        // they have fixed a typo and has not is worse off than one who gets an error.
+        if (_labels[asset].length != 0) {
+            if (_labelsEqual(asset, labels)) return;
+            revert AssetLabelsAlreadySet(asset);
+        }
+
+        if (length > MAX_ASSET_LABELS) revert TooManyAssetLabels(asset, length, MAX_ASSET_LABELS);
+
+        for (uint256 i; i < length; ++i) {
+            uint256 labelBytes = bytes(labels[i]).length;
+            // An empty LIST is legitimate; an empty ELEMENT is not. It renders as nothing while still occupying an
+            // ordered slot, so it silently shifts the meaning of every label after it — and order is significant here
+            // (index 0 is the protocol, later indices narrow to the product).
+            if (labelBytes == 0) revert EmptyAssetLabel(asset, i);
+            if (labelBytes > MAX_ASSET_LABEL_BYTES) {
+                revert AssetLabelTooLong(asset, i, labelBytes, MAX_ASSET_LABEL_BYTES);
+            }
+        }
+
+        // Validate first, then write. To be accurate about WHY, because the obvious justification is wrong and was
+        // written here first: this is NOT what prevents a partial write. A revert anywhere in this function rolls the
+        // whole transaction back, so writing before validating would leave exactly the same state — a mutation that
+        // moves this assignment above the loop is behaviourally EQUIVALENT and no test can distinguish it. What the
+        // ordering actually buys is not paying for an `SSTORE` that is about to be discarded, and a body that reads in
+        // the order it reasons. The real guarantee that a rejected list leaves nothing behind comes from EVM revert
+        // semantics, not from this line's position.
+        _labels[asset] = labels;
+        emit AssetLabelsSet(asset, labels);
+    }
+
+    /// @dev Whether `labels` is element-for-element identical to what `asset` already holds. Compares CONTENT, not a
+    ///      digest of the whole array, so it short-circuits on the first difference and never builds a memory copy of
+    ///      the stored list.
+    ///
+    ///      Order-sensitive on purpose: the label list is an ordered description (index 0 is the protocol, later
+    ///      indices narrow to the product), so a re-ordering is a different description and must be rejected as a
+    ///      change rather than accepted as a permutation of the same thing.
+    function _labelsEqual(address asset, string[] calldata labels) private view returns (bool) {
+        string[] storage stored = _labels[asset];
+        uint256 length = labels.length;
+        if (stored.length != length) return false;
+        for (uint256 i; i < length; ++i) {
+            if (keccak256(bytes(stored[i])) != keccak256(bytes(labels[i]))) return false;
+        }
+        return true;
     }
 }

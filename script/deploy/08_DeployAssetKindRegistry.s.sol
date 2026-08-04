@@ -134,6 +134,11 @@ contract DeployAssetKindRegistry is BaseDeployScript {
         // Resolve and VALIDATE the whole set before deploying anything, so a config gap costs nothing but a revert.
         address[] memory assets = new address[](symbols.length);
         AccrualKind[] memory accrualKinds = new AccrualKind[](symbols.length);
+        // Labels ride the SAME transaction as the classification rather than arriving in one of their own, and this
+        // script is the reason. It already dispatches three sequential transactions whose silent divergence is the
+        // hazard documented at length below; a fourth would add a "labels never landed" partial state to exactly the
+        // step that cannot detect the three it already has. Atomic with the kind, or not at all.
+        string[][] memory labels = new string[][](symbols.length);
 
         for (uint256 i; i < symbols.length; ++i) {
             string memory symbol = symbols[i];
@@ -169,6 +174,12 @@ contract DeployAssetKindRegistry is BaseDeployScript {
             (AccrualKind accrual, bool accrualValid) = ConfigReader.readAssetAccrualKind(vm, chainId, symbol);
             if (!accrualValid) revert AssetKindMissingOrInvalid(symbol, "accrualKind");
             accrualKinds[i] = accrual;
+
+            // No validity flag and no abort, unlike the line above: an absent `labels` key yields an empty array,
+            // which the registry accepts as a legitimate "this asset has no labels". Bounds (count, per-label length,
+            // non-emptiness) are enforced ON-CHAIN by `AssetKindRegistry`, so a bad row reverts the batch with a named
+            // error rather than being re-checked here — a second copy of the rule in tooling is the #248 failure mode.
+            labels[i] = ConfigReader.readAssetLabels(vm, chainId, symbol);
         }
 
         // Idempotent, like every sibling step (`03`'s per-feed guards, `04`'s adapters and assistants): re-run it and
@@ -250,8 +261,19 @@ contract DeployAssetKindRegistry is BaseDeployScript {
         }
 
         // Re-classification is permitted and event-emitting by design, so this runs on both paths.
+        //
+        // ⚠️ **Labels are WRITE-ONCE, so a re-run behaves differently for them than for the kinds — but it still
+        // re-runs.** Re-running against an existing registry silently re-writes every `accrualKind`. Labels are
+        // compared instead: identical content is a no-op, so the idempotent re-run this step advertises survives
+        // labels reaching config. Supplying DIFFERENT labels for an asset that already has them REVERTS
+        // `AssetLabelsAlreadySet`, and it takes the whole batch with it — there is no `try`/`catch` on this path.
+        //
+        // So: **editing a label in config and re-running `08` is not a repair, it is an abort.** Changing a label that
+        // has already landed on-chain means REPLACING the registry — deploy a new one, re-classify into it, and point
+        // the NAV at it with the MANAGER-gated `setAssetKindRegistry`. Adding labels to an asset that had none is
+        // fine and is exactly what a re-run is for.
         if (assets.length > 0) {
-            registry.setAssetKinds(assets, accrualKinds);
+            registry.setAssetKinds(assets, accrualKinds, labels);
         }
 
         // ⚠️ **VERIFY THE GRANT AFTER BROADCASTING. This script cannot do it for you, and an earlier revision wrongly

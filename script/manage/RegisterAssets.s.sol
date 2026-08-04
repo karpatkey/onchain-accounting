@@ -7,6 +7,8 @@ import {ConfigReader} from "../utils/ConfigReader.sol";
 import {NAVCalculator} from "../../src/nav/NAVCalculator.sol";
 import {INAVCalculator} from "../../src/nav/INAVCalculator.sol";
 import {IPrices} from "../../src/prices/IPrices.sol";
+import {IAssetKindRegistry} from "../../src/nav/IAssetKindRegistry.sol";
+import {AccrualKind} from "../../src/utils/AssetKind.sol";
 import {console2} from "forge-std/console2.sol";
 
 /// @title RegisterAssets
@@ -27,10 +29,33 @@ contract RegisterAssets is BaseDeployScript {
 
     address private constant NATIVE_SENTINEL = address(0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE);
 
+    /// @notice `AssetKindRegistry` for this chain, resolved once in {run}. An asset's PRIMARY registration is routed
+    ///         through it so the asset is registered, classified and labelled in ONE transaction.
+    /// @dev Zero when `08_DeployAssetKindRegistry` has not run. That is a hard stop for any asset that still needs
+    ///      registering — see {AssetKindRegistryNotDeployed}.
+    address private assetKindRegistry;
+
+    /// @notice No `AssetKindRegistry` is recorded for this chain, but at least one asset still needs its primary
+    ///         registration.
+    /// @dev **This is an ordering error, not a config error: run `08_DeployAssetKindRegistry` first.** Labels can be
+    ///      written ONLY by `AssetKindRegistry.registerAsset`, and only at registration — an asset registered directly
+    ///      on the NAV can never be labelled afterwards. Falling back to `NAVCalculator.registerAsset` would therefore
+    ///      "succeed" while permanently costing every asset in this run its labels, which is exactly the silent
+    ///      degradation this repo's fail-closed guards exist to prevent.
+    error AssetKindRegistryNotDeployed(uint256 chainId);
+
+    /// @notice An asset's `accrualKind` is missing or unrecognised in config.
+    /// @dev Registration now carries the classification, so a bad kind stops the batch here rather than being
+    ///      discovered later by `08`. There is deliberately no default — see `ConfigReader.accrualKindFromString`.
+    error AssetAccrualKindMissingOrInvalid(string symbol);
+
     function run() public override {
         setUp();
 
         address navProxy = readDeployedAddress("NAVCalculatorProxy");
+        // Resolved BEFORE planning: `_planFeedActs` encodes a primary registration against this address, so it has to
+        // exist by the time the first action is built. `08_DeployAssetKindRegistry` writes the record.
+        assetKindRegistry = readDeployedAddress("AssetKindRegistry");
         string[] memory symbols = ConfigReader.getAssetSymbols(vm, currentChainId);
 
         console2.log("\n=== Register Assets (from assets.json) ===");
@@ -69,7 +94,7 @@ contract RegisterAssets is BaseDeployScript {
             bytes[] memory acts = _planAsset(symbols[i], navProxy);
             if (acts.length > 0) console2.log("  wiring", symbols[i], acts.length);
             for (uint256 k = 0; k < acts.length; k++) {
-                batch[j++] = SafeTxBuilder.call(navProxy, 0, acts[k]);
+                batch[j++] = SafeTxBuilder.call(_targetFor(acts[k], navProxy), 0, acts[k]);
             }
         }
 
@@ -154,8 +179,20 @@ contract RegisterAssets is BaseDeployScript {
 
             if (!registered && resolvableIdx == 0) {
                 // Primary = first resolvable feed; we verified above that feed[0] resolves, so this IS config feed[0].
+                //
+                // ⚠️ **Routed through `AssetKindRegistry`, NOT `NAVCalculator`, and that is load-bearing.** The
+                // registry forwards to `NAVCalculator.registerAsset` in the same transaction, so the asset is
+                // registered, classified and LABELLED atomically. Registration is the only moment labels can ever be
+                // written; an asset registered directly on the NAV is unlabellable for as long as it stays
+                // registered. The batch is mixed-target by design — every other action below still points at the NAV.
                 uint256 hb = vm.parseUint(ConfigReader.readAssetFeedHeartbeat(vm, currentChainId, symbol, i));
-                tmp[n++] = abi.encodeCall(NAVCalculator.registerAsset, (asset, feed, pt, hb));
+                if (assetKindRegistry == address(0)) revert AssetKindRegistryNotDeployed(currentChainId);
+                (AccrualKind accrual, bool accrualValid) = ConfigReader.readAssetAccrualKind(vm, currentChainId, symbol);
+                if (!accrualValid) revert AssetAccrualKindMissingOrInvalid(symbol);
+                tmp[n++] = abi.encodeCall(
+                    IAssetKindRegistry.registerAsset,
+                    (asset, feed, pt, hb, accrual, ConfigReader.readAssetLabels(vm, currentChainId, symbol))
+                );
             } else if (registered && resolvableIdx < onChainFeeds) {
                 // Already present on-chain (added in a prior run) — skip to avoid a duplicate addPriceFeed.
             } else {
@@ -296,6 +333,28 @@ contract RegisterAssets is BaseDeployScript {
         }
         vm.stopBroadcast();
         console2.log("[OK] Broadcast", batch.length, "tx(s); all feeds wired.");
+    }
+
+    /// @notice Which contract an action is addressed to. Every action goes to the NAV except a primary registration,
+    ///         which goes to `AssetKindRegistry` so the asset is registered, classified and labelled in one call.
+    /// @dev **The batch is mixed-target, and every layer it passes through carries the target PER TRANSACTION rather
+    ///      than once for the batch** — verified rather than assumed, because until this change every action pointed
+    ///      at the NAV and a batch-wide field would have been indistinguishable from a per-transaction one:
+    ///        - the Safe-tx JSON: `SafeTxBuilder.writeSafeTx` emits `"to"` inside its per-transaction loop;
+    ///        - the MultiSend encoding: `to` is packed as 20 bytes per transaction, per the MultiSend standard;
+    ///        - the EOA broadcast: `_broadcastManagerMultiSend` calls `batch[i].to`, dispatching each individually.
+    ///
+    ///      Dispatching on the SELECTOR rather than on the planner's position keeps this correct if the plan order
+    ///      ever changes: the two registration calls have different signatures — `registerAsset(address,address,
+    ///      uint8,uint256)` on the NAV versus the registry's six-parameter form — so the selector is unambiguous.
+    function _targetFor(bytes memory action, address navProxy) private view returns (address) {
+        if (action.length < 4) return navProxy;
+        bytes4 sel;
+        // The first word of a `bytes` in memory is its length, so the payload starts at +32.
+        assembly {
+            sel := mload(add(action, 32))
+        }
+        return sel == IAssetKindRegistry.registerAsset.selector ? assetKindRegistry : navProxy;
     }
 
     function _hasNoCode(address asset) private view returns (bool) {

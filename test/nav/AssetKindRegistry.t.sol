@@ -2,6 +2,7 @@
 pragma solidity ^0.8;
 
 import {Test} from "forge-std/Test.sol";
+import {Vm} from "forge-std/Vm.sol";
 import {AssetKindRegistry} from "src/nav/AssetKindRegistry.sol";
 import {IAssetKindRegistry} from "src/nav/IAssetKindRegistry.sol";
 import {PegKind, AccrualKind} from "src/utils/AssetKind.sol";
@@ -115,24 +116,13 @@ contract AssetKindRegistryTest is Test {
     ///      derivation reads.
     function _set(address asset, AccrualKind a) internal {
         vm.prank(manager);
-        registry.setAssetKind(asset, a, _noLabels());
-    }
-
-    /// @dev Classifies AND labels in one call, the shape production uses.
-    function _set(address asset, AccrualKind a, string[] memory labels) internal {
-        vm.prank(manager);
-        registry.setAssetKind(asset, a, labels);
+        registry.setAssetKind(asset, a);
     }
 
     /// @dev The empty label list every kind-focused test passes. An empty argument means "leave the labels alone", so
     ///      these tests stay about the axis they are testing.
     function _noLabels() internal pure returns (string[] memory) {
         return new string[](0);
-    }
-
-    /// @dev `n` empty label rows for the batch setter's third array.
-    function _noLabelRows(uint256 n) internal pure returns (string[][] memory) {
-        return new string[][](n);
     }
 
     /// @dev A one-element label list.
@@ -198,7 +188,7 @@ contract AssetKindRegistryTest is Test {
         // That asymmetry is the hazard in one line. If this ever starts reverting, the two paths have been coupled and
         // the deploy failure mode has changed shape — re-read `08`'s three-transaction note before "fixing" this test.
         vm.prank(manager);
-        registry.setAssetKinds(_one(USDC), _one(AccrualKind.None), _noLabelRows(1));
+        registry.setAssetKinds(_one(USDC), _one(AccrualKind.None));
         assertTrue(registry.isClassified(USDC), "classification succeeds while the facade is dead - the hazard state");
     }
 
@@ -491,7 +481,7 @@ contract AssetKindRegistryTest is Test {
         accruals[1] = AccrualKind.Rebasing;
 
         vm.prank(manager);
-        registry.setAssetKinds(assets, accruals, _noLabelRows(assets.length));
+        registry.setAssetKinds(assets, accruals);
 
         _assertKind(USDC, PegKind.Pegged, AccrualKind.None);
         _assertKind(STETH, PegKind.Floating, AccrualKind.Rebasing);
@@ -509,12 +499,12 @@ contract AssetKindRegistryTest is Test {
         // accrualKinds too SHORT
         vm.prank(manager);
         vm.expectRevert(abi.encodeWithSelector(IAssetKindRegistry.KindArrayLengthMismatch.selector, 2, 1));
-        registry.setAssetKinds(assets, new AccrualKind[](1), _noLabelRows(2));
+        registry.setAssetKinds(assets, new AccrualKind[](1));
 
         // accrualKinds too LONG
         vm.prank(manager);
         vm.expectRevert(abi.encodeWithSelector(IAssetKindRegistry.KindArrayLengthMismatch.selector, 2, 3));
-        registry.setAssetKinds(assets, new AccrualKind[](3), _noLabelRows(2));
+        registry.setAssetKinds(assets, new AccrualKind[](3));
     }
 
     // ============================================================
@@ -524,7 +514,7 @@ contract AssetKindRegistryTest is Test {
     function test_setAssetKind_isManagerGated() public {
         vm.prank(stranger);
         vm.expectRevert(NotAuthorized.selector);
-        registry.setAssetKind(USDC, AccrualKind.None, _noLabels());
+        registry.setAssetKind(USDC, AccrualKind.None);
     }
 
     /// @dev **Authority is DELEGATED to the NAV, and this is the test that proves it.** The registry holds no roles of
@@ -540,13 +530,13 @@ contract AssetKindRegistryTest is Test {
 
         vm.prank(late);
         vm.expectRevert(NotAuthorized.selector);
-        registry.setAssetKind(USDC, AccrualKind.None, _noLabels());
+        registry.setAssetKind(USDC, AccrualKind.None);
 
         nav.grant(MANAGER, late); // nothing touches the registry
 
         _pegged(USDC);
         vm.prank(late);
-        registry.setAssetKind(USDC, AccrualKind.None, _noLabels());
+        registry.setAssetKind(USDC, AccrualKind.None);
         _assertKind(USDC, PegKind.Pegged, AccrualKind.None);
     }
 
@@ -560,7 +550,7 @@ contract AssetKindRegistryTest is Test {
     function test_batchSetAndClear_areManagerGated() public {
         vm.prank(stranger);
         vm.expectRevert(NotAuthorized.selector);
-        registry.setAssetKinds(new address[](0), new AccrualKind[](0), _noLabelRows(0));
+        registry.setAssetKinds(new address[](0), new AccrualKind[](0));
 
         vm.prank(stranger);
         vm.expectRevert(NotAuthorized.selector);
@@ -572,7 +562,7 @@ contract AssetKindRegistryTest is Test {
     function test_zeroAddressRejected() public {
         vm.prank(manager);
         vm.expectRevert(InvalidArguments.selector);
-        registry.setAssetKind(address(0), AccrualKind.None, _noLabels());
+        registry.setAssetKind(address(0), AccrualKind.None);
     }
 
     /// @dev A registry pointed at `address(0)` would derive its authority from nothing, so every write would revert and
@@ -626,111 +616,115 @@ contract AssetKindRegistryTest is Test {
     }
 
     // ============================================================
-    // Display labels — write-once, ordered, free text
+    // Display labels — set at REGISTRATION, and only there
     //
-    // The rule in one line: **you can fill a blank, never change a value.** Every branch below exists because that
-    // sentence has three distinct failure modes (a change, a re-supply, a fill-later) and prose cannot tell you
-    // which one a given implementation actually implements.
+    // The rule in one line: **registration is the only chance.** Every branch below exists because that sentence has
+    // failure modes prose cannot distinguish — a setter that quietly accepts labels, a re-registration that cannot
+    // replace them, an unregister that leaves them behind — and each one is the difference between a repair that
+    // works and a repair that silently does nothing.
+    //
+    // Note what is NOT here any more, deliberately: the fill-a-blank tests, the identical-content no-op, and the
+    // write-once guard's reverts. They covered behaviour that no longer exists. `setAssetKind`/`setAssetKinds` do not
+    // take labels, so nothing can rewrite them and there is no guard left to exercise.
     // ============================================================
+
+    /// @dev Registers `asset` through the facade with `labels`, the only path that can write them.
+    function _register(address asset, AccrualKind a, string[] memory labels) internal {
+        vm.prank(manager);
+        registry.registerAsset(asset, address(0xFEED), IPrices.PriceType.Chainlink, 3600, a, labels);
+    }
 
     /// @dev The happy path, asserted per INDEX rather than by membership. Order is significant — index 0 is the
     ///      protocol, later indices narrow to the product — so a list with the right elements in the wrong order is a
     ///      different description, not the same one.
-    function test_labels_areStoredInSignificantOrder() public {
-        _set(WSTETH, AccrualKind.Appreciating, _labels("Lido", "LST"));
+    function test_labels_areStoredInSignificantOrderAtRegistration() public {
+        _register(WSTETH, AccrualKind.Appreciating, _labels("Lido", "LST"));
+        _assertLabels(WSTETH, _labels("Lido", "LST"));
+        _assertKind(WSTETH, PegKind.Floating, AccrualKind.Appreciating);
+        assertEq(nav.registeredCount(), 1, "the NAV forward happened");
+    }
+
+    /// @dev **Registration is the ONLY writer, and this is the test that fails if anyone adds a second one.**
+    ///      `setAssetKind` cannot carry labels — the compiler enforces the signature — so what is asserted here is the
+    ///      consequence: re-classifying an unlabelled asset leaves it unlabelled, with no way to change that.
+    function test_labels_setAssetKindCannotIntroduceThem() public {
+        _set(AUSDC, AccrualKind.Rebasing); // classified, never registered through the facade
+        assertEq(registry.getAssetLabels(AUSDC).length, 0, "classification does not label");
+
+        _set(AUSDC, AccrualKind.Appreciating); // re-classify
+        assertEq(registry.getAssetLabels(AUSDC).length, 0, "re-classification does not label either");
+    }
+
+    /// @dev An asset registered with no labels stays unlabelled. This is the cost of the ruling, asserted rather than
+    ///      described: there is no later opportunity, because there is no setter.
+    function test_labels_anAssetRegisteredWithoutThemStaysUnlabelled() public {
+        _register(USDC, AccrualKind.None, _noLabels());
+        assertEq(registry.getAssetLabels(USDC).length, 0);
+
+        _set(USDC, AccrualKind.Rebasing);
+        assertEq(registry.getAssetLabels(USDC).length, 0, "no path adds them afterwards");
+    }
+
+    /// @dev **The repair path, demonstrated end to end rather than asserted.** A wrong label is fixed by unregistering
+    ///      and re-registering. That only works because {unregisterAsset} DROPS the labels — if they survived, the
+    ///      re-registration would meet labels already set and, since `registerAsset` is the only writer, could never
+    ///      replace them. The repair would be a silent no-op and the typo permanent.
+    ///
+    ///      This is also what makes a write-once guard unnecessary: `_labels` is empty whenever a facade registration
+    ///      succeeds.
+    function test_labels_repairIsUnregisterThenReRegister() public {
+        _register(WSTETH, AccrualKind.Appreciating, _labels("Lido", "LTS")); // typo, as shipped
+        _assertLabels(WSTETH, _labels("Lido", "LTS"));
+
+        vm.prank(manager);
+        registry.unregisterAsset(WSTETH);
+        assertEq(registry.getAssetLabels(WSTETH).length, 0, "unregister drops the labels");
+
+        _register(WSTETH, AccrualKind.Appreciating, _labels("Lido", "LST")); // corrected
         _assertLabels(WSTETH, _labels("Lido", "LST"));
     }
 
-    /// @dev **An empty argument means "leave them alone", not "clear them".** This is what makes re-classification
-    ///      possible at all: an operator correcting an `AccrualKind` on a labelled asset passes no labels, and the
-    ///      labels survive. Without this branch, every kind correction would silently wipe the display name.
-    function test_labels_emptyArgumentPreservesExistingLabels() public {
-        _set(SDAI, AccrualKind.Appreciating, _labels("Sky", "Savings"));
-        _set(SDAI, AccrualKind.Rebasing); // re-classify, no labels supplied
-        _assertLabels(SDAI, _labels("Sky", "Savings"));
-        _assertKind(SDAI, PegKind.Floating, AccrualKind.Rebasing);
+    /// @dev The off-chain half of the on-chain change. An indexer that never sees a clear keeps serving labels for an
+    ///      asset the NAV no longer knows about.
+    function test_labels_unregisterEmitsAssetLabelsCleared() public {
+        _register(USDC, AccrualKind.None, _labels("Circle", "Stablecoin"));
+
+        vm.expectEmit(true, false, false, false);
+        emit IAssetKindRegistry.AssetLabelsCleared(USDC);
+        vm.prank(manager);
+        registry.unregisterAsset(USDC);
     }
 
-    /// @dev **The "fill a blank" half of the rule, which is the half that makes it not-immutable.** An asset can be
-    ///      registered bare and labelled later, without the unregister/re-register round trip a stricter reading
-    ///      would force — and that round trip would take the asset's price feeds with it, which is why the softer
-    ///      rule was chosen.
-    function test_labels_canBeAddedToAnAssetThatHasNone() public {
-        _set(AUSDC, AccrualKind.Rebasing);
-        _assertLabels(AUSDC, _noLabels());
+    /// @dev Guarded, so an asset that never had labels does not emit a misleading clear. Asserted by recording logs
+    ///      rather than by `expectEmit`, which can only assert presence.
+    function test_labels_unregisterDoesNotEmitWhenThereWereNone() public {
+        _register(USDC, AccrualKind.None, _noLabels());
 
-        _set(AUSDC, AccrualKind.Rebasing, _labels("Aave v3", "Supply"));
-        _assertLabels(AUSDC, _labels("Aave v3", "Supply"));
+        vm.recordLogs();
+        vm.prank(manager);
+        registry.unregisterAsset(USDC);
+
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        for (uint256 i; i < logs.length; ++i) {
+            assertTrue(
+                logs[i].topics[0] != IAssetKindRegistry.AssetLabelsCleared.selector, "no clear for an unlabelled asset"
+            );
+        }
     }
 
-    /// @dev **The "never change a value" half.** A DIFFERENT non-empty list over existing labels reverts. It is not
-    ///      silently ignored: an operator who believes they have corrected a typo and has not is worse off than one
-    ///      who gets an error.
-    function test_labels_revertOnChangingAnExistingValue() public {
-        _set(WETH, AccrualKind.None, _labels("Lido", "LST"));
+    /// @dev **`clearAssetKind` does NOT drop labels, and the asymmetry with {unregisterAsset} is the point.** Labels
+    ///      are tied to REGISTRATION, not classification: this ends the classification while the asset stays
+    ///      registered on the NAV, so its labels still describe a live asset. The two look interchangeable from
+    ///      outside and are not.
+    function test_labels_surviveClearAssetKindBecauseTheAssetIsStillRegistered() public {
+        _register(USDC, AccrualKind.None, _labels("Circle", "Stablecoin"));
 
         vm.prank(manager);
-        vm.expectRevert(abi.encodeWithSelector(IAssetKindRegistry.AssetLabelsAlreadySet.selector, WETH));
-        registry.setAssetKind(WETH, AccrualKind.None, _labels("Lido", "Staking"));
+        registry.clearAssetKind(USDC);
 
-        _assertLabels(WETH, _labels("Lido", "LST"));
-    }
-
-    /// @dev **Re-supplying IDENTICAL labels is a no-op, and this is required rather than merely convenient.**
-    ///      `08_DeployAssetKindRegistry` is idempotent by contract and re-running it is the documented recovery for a
-    ///      classification batch that never landed. Under a rule that rejected every second write, the first re-run
-    ///      after labels reached config would revert the WHOLE batch — taking the recovery path with it. This test is
-    ///      the one that fails if someone "hardens" the guard back to rejecting any second write.
-    function test_labels_reSupplyingIdenticalLabelsIsANoOp() public {
-        _set(STETH, AccrualKind.Rebasing, _labels("Lido", "LST"));
-        _set(STETH, AccrualKind.Rebasing, _labels("Lido", "LST")); // must not revert
-        _assertLabels(STETH, _labels("Lido", "LST"));
-    }
-
-    /// @dev The equality check is ORDER-SENSITIVE, so a permutation counts as a change. The list is an ordered
-    ///      description, not a set: `["LST", "Lido"]` renders differently from `["Lido", "LST"]`, so accepting it as
-    ///      "the same labels" would let a real edit through the write-once guard.
-    function test_labels_reorderingIsAChangeNotAPermutation() public {
-        _set(WSTETH, AccrualKind.Appreciating, _labels("Lido", "LST"));
-
-        vm.prank(manager);
-        vm.expectRevert(abi.encodeWithSelector(IAssetKindRegistry.AssetLabelsAlreadySet.selector, WSTETH));
-        registry.setAssetKind(WSTETH, AccrualKind.Appreciating, _labels("LST", "Lido"));
-    }
-
-    /// @dev **Every index is compared, not just the first — and this test exists because the one above does not prove
-    ///      that.** A permutation of two elements also differs at index 0, so a comparison that checked only the first
-    ///      element would still reject it and the reorder test would still pass. A mutant that did exactly that
-    ///      SURVIVED the matrix until this case was added. Here index 0 is identical and the difference is at the
-    ///      last index, so nothing short of a full element-wise comparison rejects it.
-    function test_labels_comparisonChecksEveryIndexNotJustTheFirst() public {
-        string[] memory stored = new string[](3);
-        stored[0] = "Aave v3";
-        stored[1] = "Core";
-        stored[2] = "Savings";
-        _set(AUSDC, AccrualKind.Rebasing, stored);
-
-        string[] memory lastDiffers = new string[](3);
-        lastDiffers[0] = "Aave v3";
-        lastDiffers[1] = "Core";
-        lastDiffers[2] = "Supply";
-
-        vm.prank(manager);
-        vm.expectRevert(abi.encodeWithSelector(IAssetKindRegistry.AssetLabelsAlreadySet.selector, AUSDC));
-        registry.setAssetKind(AUSDC, AccrualKind.Rebasing, lastDiffers);
-
-        // And the stored list is untouched by the rejected attempt.
-        _assertLabels(AUSDC, stored);
-    }
-
-    /// @dev A shorter prefix of the stored list is a change, not a match. Guards the length arm of the comparison —
-    ///      without it, comparing only the supplied elements would accept a truncation.
-    function test_labels_aPrefixOfTheStoredListIsAChange() public {
-        _set(SDAI, AccrualKind.Appreciating, _labels("Sky", "Savings"));
-
-        vm.prank(manager);
-        vm.expectRevert(abi.encodeWithSelector(IAssetKindRegistry.AssetLabelsAlreadySet.selector, SDAI));
-        registry.setAssetKind(SDAI, AccrualKind.Appreciating, _labels("Sky"));
+        assertFalse(registry.isClassified(USDC), "classification gone");
+        _assertLabels(USDC, _labels("Circle", "Stablecoin"));
+        assertEq(nav.unregisteredCount(), 0, "and the asset was never unregistered");
     }
 
     // ---- bounds, enforced in the SETTER (not only in preflight — #248 is the precedent) ----
@@ -748,7 +742,7 @@ contract AssetKindRegistryTest is Test {
         }
         vm.prank(manager);
         vm.expectRevert(abi.encodeWithSelector(IAssetKindRegistry.TooManyAssetLabels.selector, USDC, max + 1, max));
-        registry.setAssetKind(USDC, AccrualKind.None, tooMany);
+        registry.registerAsset(USDC, address(0xFEED), IPrices.PriceType.Chainlink, 3600, AccrualKind.None, tooMany);
     }
 
     /// @dev The boundary from the accepting side. A cap tested only from above passes even if it is off by one.
@@ -758,38 +752,39 @@ contract AssetKindRegistryTest is Test {
         for (uint256 i; i < max; ++i) {
             atMax[i] = "x";
         }
-        _set(USDC, AccrualKind.None, atMax);
+        _register(USDC, AccrualKind.None, atMax);
         assertEq(registry.getAssetLabels(USDC).length, max);
     }
 
     function test_labels_revertOnOverlongLabel() public {
         uint256 max = registry.MAX_ASSET_LABEL_BYTES();
-        string memory tooLong = _repeat("a", max + 1);
+        string[] memory tooLong = _labels(_repeat("a", max + 1));
         vm.prank(manager);
         vm.expectRevert(abi.encodeWithSelector(IAssetKindRegistry.AssetLabelTooLong.selector, USDC, 0, max + 1, max));
-        registry.setAssetKind(USDC, AccrualKind.None, _labels(tooLong));
+        registry.registerAsset(USDC, address(0xFEED), IPrices.PriceType.Chainlink, 3600, AccrualKind.None, tooLong);
     }
 
     /// @dev The accepting side of the same boundary.
     function test_labels_acceptExactlyTheMaximumLength() public {
         uint256 max = registry.MAX_ASSET_LABEL_BYTES();
         string memory atMax = _repeat("a", max);
-        _set(USDC, AccrualKind.None, _labels(atMax));
+        _register(USDC, AccrualKind.None, _labels(atMax));
         _assertLabels(USDC, _labels(atMax));
     }
 
-    /// @dev Length is in BYTES, not characters. A four-glyph multi-byte string can exceed a 32-byte bound, and the
-    ///      error must report the byte count — otherwise an operator reading "33 > 32" about a 9-character label has
-    ///      no idea what to shorten.
+    /// @dev Length is in BYTES, not characters. A short multi-byte string can exceed a 32-byte bound, and the error
+    ///      must report the byte count — otherwise an operator reading "33 > 32" about an 11-character label has no
+    ///      idea what to shorten.
     function test_labels_lengthIsMeasuredInBytesNotCharacters() public {
-        // "€" is 3 bytes in UTF-8; 11 of them is 33 bytes but only 11 characters.
-        string memory euros = _repeat(unicode"€", 11);
+        string memory euros = _repeat(unicode"€", 11); // 3 bytes each = 33 bytes, 11 characters
         assertEq(bytes(euros).length, 33, "precondition: 33 bytes");
 
         uint256 max = registry.MAX_ASSET_LABEL_BYTES();
         vm.prank(manager);
         vm.expectRevert(abi.encodeWithSelector(IAssetKindRegistry.AssetLabelTooLong.selector, USDC, 0, 33, max));
-        registry.setAssetKind(USDC, AccrualKind.None, _labels(euros));
+        registry.registerAsset(
+            USDC, address(0xFEED), IPrices.PriceType.Chainlink, 3600, AccrualKind.None, _labels(euros)
+        );
     }
 
     /// @dev An empty LIST is legitimate; an empty ELEMENT is not. It renders as nothing while still occupying an
@@ -797,76 +792,16 @@ contract AssetKindRegistryTest is Test {
     function test_labels_revertOnEmptyElement() public {
         vm.prank(manager);
         vm.expectRevert(abi.encodeWithSelector(IAssetKindRegistry.EmptyAssetLabel.selector, USDC, 1));
-        registry.setAssetKind(USDC, AccrualKind.None, _labels("Aave v3", ""));
-    }
-
-    /// @dev **Validation happens before ANY write, so a rejected list leaves nothing behind.** This matters more here
-    ///      than it would elsewhere: labels are write-once, so a partial write would be both indistinguishable from a
-    ///      deliberately shorter list and unrepairable without replacing the registry.
-    function test_labels_aRejectedListWritesNothing() public {
-        vm.prank(manager);
-        vm.expectRevert(abi.encodeWithSelector(IAssetKindRegistry.EmptyAssetLabel.selector, USDC, 1));
-        registry.setAssetKind(USDC, AccrualKind.None, _labels("Aave v3", ""));
-
-        assertEq(registry.getAssetLabels(USDC).length, 0, "nothing partially written");
-        // And the blank is still fillable — the failed attempt did not consume the one write.
-        _set(USDC, AccrualKind.None, _labels("Aave v3", "Savings"));
-        _assertLabels(USDC, _labels("Aave v3", "Savings"));
-    }
-
-    // ---- lifetime: labels outlive the classification ----
-
-    /// @dev **This is what makes write-once actually hold rather than merely describe the happy path.** If clearing
-    ///      dropped labels, `clearAssetKind` followed by `setAssetKind` would be an edit path and "labels cannot be
-    ///      changed" would be true only of the shortest route.
-    function test_labels_surviveClearAssetKind() public {
-        _set(USDC, AccrualKind.None, _labels("Circle", "Stablecoin"));
-
-        vm.prank(manager);
-        registry.clearAssetKind(USDC);
-        assertFalse(registry.isClassified(USDC), "precondition: classification gone");
-        _assertLabels(USDC, _labels("Circle", "Stablecoin"));
-
-        // Re-classifying with DIFFERENT labels still reverts — the clear did not reopen the write.
-        vm.prank(manager);
-        vm.expectRevert(abi.encodeWithSelector(IAssetKindRegistry.AssetLabelsAlreadySet.selector, USDC));
-        registry.setAssetKind(USDC, AccrualKind.None, _labels("Circle", "USD"));
-    }
-
-    /// @dev The same property through the symmetric facade. `unregisterAsset` deletes the kind and forwards to the
-    ///      NAV; it must not take the labels with it, for the same reason.
-    function test_labels_surviveUnregisterAsset() public {
-        vm.prank(manager);
         registry.registerAsset(
-            USDC, address(0xFEED), IPrices.PriceType.Chainlink, 3600, AccrualKind.None, _labels("Circle", "Stablecoin")
+            USDC, address(0xFEED), IPrices.PriceType.Chainlink, 3600, AccrualKind.None, _labels("Aave v3", "")
         );
-
-        vm.prank(manager);
-        registry.unregisterAsset(USDC);
-        assertFalse(registry.isClassified(USDC), "precondition: classification gone");
-        _assertLabels(USDC, _labels("Circle", "Stablecoin"));
     }
 
-    // ---- the facade and the batch ----
-
-    /// @dev Labels ride the atomic facade rather than arriving in a call of their own — see {IAssetKindRegistry} for
-    ///      why (a separate setter would make `08` a FOUR-transaction script and add a "labels never landed" partial
-    ///      state to the step whose docstring is mostly about the three it already has).
-    function test_registerAsset_writesLabelsAtomicallyWithTheClassification() public {
-        vm.prank(manager);
-        registry.registerAsset(
-            WSTETH, address(0xFEED), IPrices.PriceType.Chainlink, 3600, AccrualKind.Appreciating, _labels("Lido", "LST")
-        );
-
-        _assertKind(WSTETH, PegKind.Floating, AccrualKind.Appreciating);
-        _assertLabels(WSTETH, _labels("Lido", "LST"));
-        assertEq(nav.registeredCount(), 1, "the NAV forward happened");
-    }
-
-    /// @dev Atomicity in the direction that matters: a bad LABEL aborts the registration too. There is no `try`/`catch`
-    ///      on this path, so the asset is not registered on the NAV, is not classified, and has no labels — one
-    ///      failure, one all-or-nothing outcome.
-    function test_registerAsset_aBadLabelAbortsTheWholeRegistration() public {
+    /// @dev **A bad label aborts the whole registration**, not just the labelling. There is no `try`/`catch` on this
+    ///      path, so the asset is not registered on the NAV, not classified, and has no labels — one failure, one
+    ///      all-or-nothing outcome. That matters more here than elsewhere: a half-applied registration would leave an
+    ///      asset registered and permanently unlabellable.
+    function test_labels_aBadLabelAbortsTheWholeRegistration() public {
         vm.prank(manager);
         vm.expectRevert(abi.encodeWithSelector(IAssetKindRegistry.EmptyAssetLabel.selector, WSTETH, 0));
         registry.registerAsset(
@@ -876,70 +811,10 @@ contract AssetKindRegistryTest is Test {
         assertFalse(registry.isClassified(WSTETH), "not classified");
         assertEq(registry.getAssetLabels(WSTETH).length, 0, "no labels");
         assertEq(nav.registeredCount(), 0, "the NAV forward did not happen");
-    }
 
-    function test_setAssetKinds_writesPerRowLabels() public {
-        address[] memory assets = new address[](2);
-        assets[0] = USDC;
-        assets[1] = WSTETH;
-        AccrualKind[] memory accruals = new AccrualKind[](2);
-        accruals[0] = AccrualKind.None;
-        accruals[1] = AccrualKind.Appreciating;
-        string[][] memory labels = new string[][](2);
-        labels[0] = _labels("Circle", "Stablecoin");
-        labels[1] = _labels("Lido", "LST");
-
-        vm.prank(manager);
-        registry.setAssetKinds(assets, accruals, labels);
-
-        _assertLabels(USDC, _labels("Circle", "Stablecoin"));
+        // And the asset can still be registered properly afterwards — the failed attempt consumed nothing.
+        _register(WSTETH, AccrualKind.Appreciating, _labels("Lido", "LST"));
         _assertLabels(WSTETH, _labels("Lido", "LST"));
-    }
-
-    /// @dev A row may be empty inside a non-empty batch — that asset simply keeps whatever labels it has (none, here).
-    ///      Without this, adding one asset's labels would force restating every other asset's.
-    function test_setAssetKinds_anEmptyRowLeavesThatAssetUntouched() public {
-        _set(USDC, AccrualKind.None, _labels("Circle", "Stablecoin"));
-
-        address[] memory assets = new address[](2);
-        assets[0] = USDC;
-        assets[1] = WSTETH;
-        AccrualKind[] memory accruals = new AccrualKind[](2);
-        accruals[0] = AccrualKind.None;
-        accruals[1] = AccrualKind.Appreciating;
-        string[][] memory labels = new string[][](2);
-        labels[0] = _noLabels();
-        labels[1] = _labels("Lido", "LST");
-
-        vm.prank(manager);
-        registry.setAssetKinds(assets, accruals, labels);
-
-        _assertLabels(USDC, _labels("Circle", "Stablecoin"));
-        _assertLabels(WSTETH, _labels("Lido", "LST"));
-    }
-
-    /// @dev BOTH arms of the label-array length check, mirroring the kind array's. The long case matters as much as
-    ///      the short one: without the check an over-long `labels` would be silently truncated to `assets.length`
-    ///      rather than rejected.
-    function test_setAssetKinds_revertsOnLabelArrayLengthMismatch() public {
-        address[] memory assets = new address[](2);
-
-        vm.prank(manager);
-        vm.expectRevert(abi.encodeWithSelector(IAssetKindRegistry.LabelArrayLengthMismatch.selector, 2, 1));
-        registry.setAssetKinds(assets, new AccrualKind[](2), _noLabelRows(1));
-
-        vm.prank(manager);
-        vm.expectRevert(abi.encodeWithSelector(IAssetKindRegistry.LabelArrayLengthMismatch.selector, 2, 3));
-        registry.setAssetKinds(assets, new AccrualKind[](2), _noLabelRows(3));
-    }
-
-    /// @dev The kind mismatch is reported BEFORE the label mismatch when both are wrong. Pinned so the two errors
-    ///      cannot silently swap and send an operator to the wrong config column.
-    function test_setAssetKinds_reportsTheKindMismatchFirstWhenBothAreWrong() public {
-        address[] memory assets = new address[](2);
-        vm.prank(manager);
-        vm.expectRevert(abi.encodeWithSelector(IAssetKindRegistry.KindArrayLengthMismatch.selector, 2, 1));
-        registry.setAssetKinds(assets, new AccrualKind[](1), _noLabelRows(3));
     }
 
     // ---- the read surface ----
@@ -952,7 +827,7 @@ contract AssetKindRegistryTest is Test {
 
     function test_getAssetInfo_returnsAllThreeFields() public {
         _pegged(USDC);
-        _set(USDC, AccrualKind.None, _labels("Circle", "Stablecoin"));
+        _register(USDC, AccrualKind.None, _labels("Circle", "Stablecoin"));
 
         (PegKind peg, AccrualKind accrual, string[] memory labels) = registry.getAssetInfo(USDC);
         assertEq(uint8(peg), uint8(PegKind.Pegged));
@@ -972,8 +847,8 @@ contract AssetKindRegistryTest is Test {
     /// @dev Labels for one asset must not be visible from another. Cheap to assert, and the failure it guards against
     ///      — a mapping keyed on something other than the asset — would be invisible in every single-asset test.
     function test_labels_areIndependentPerAsset() public {
-        _set(USDC, AccrualKind.None, _labels("Circle", "Stablecoin"));
-        _set(WSTETH, AccrualKind.Appreciating, _labels("Lido", "LST"));
+        _register(USDC, AccrualKind.None, _labels("Circle", "Stablecoin"));
+        _register(WSTETH, AccrualKind.Appreciating, _labels("Lido", "LST"));
 
         _assertLabels(USDC, _labels("Circle", "Stablecoin"));
         _assertLabels(WSTETH, _labels("Lido", "LST"));
@@ -984,7 +859,9 @@ contract AssetKindRegistryTest is Test {
     function test_labels_writeIsManagerGated() public {
         vm.prank(stranger);
         vm.expectRevert(NotAuthorized.selector);
-        registry.setAssetKind(USDC, AccrualKind.None, _labels("Circle"));
+        registry.registerAsset(
+            USDC, address(0xFEED), IPrices.PriceType.Chainlink, 3600, AccrualKind.None, _labels("Circle")
+        );
     }
 
     /// @dev Builds `n` copies of `unit`. Used for the byte-length boundaries so the numbers are derived from the

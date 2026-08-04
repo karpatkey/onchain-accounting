@@ -455,12 +455,26 @@ threshold with no recorded baseline cannot detect drift.
 1.1  clear the deployment record
 1.2  01_2_DeployNAVImplementation     libraries + NAV impl        PERSIST_DEPLOYMENTS=1
 1.3  02_2_DeployNAVProxy              new proxy + ERC20Default    PERSIST_DEPLOYMENTS=1
-1.4  03_DeployPriceFeeds              41 custom feeds             <- BEFORE RegisterAssets
-1.5  RegisterAssets                   assets + feeds on the NAV
-1.6  04_DeployBalanceAdapters         adapters + assistants       PERSIST_DEPLOYMENTS=1  <- assistants
-1.7  06_Configure                     register + reconcile
-1.8  08_DeployAssetKindRegistry       asset kinds (#241)          <- MUST precede 07
+1.4  08_DeployAssetKindRegistry       registry + MANAGER grant    <- MOVED, must precede 1.6
+1.5  03_DeployPriceFeeds              41 custom feeds             <- BEFORE RegisterAssets
+1.6  RegisterAssets                   assets + feeds + kinds + LABELS, via the registry
+1.7  04_DeployBalanceAdapters         adapters + assistants       PERSIST_DEPLOYMENTS=1  <- assistants
+1.8  06_Configure                     register + reconcile
 ```
+
+⚠️ **`08` MOVED from last to 1.4, and the move is load-bearing rather than cosmetic.** An asset's PRIMARY
+registration is now routed through `AssetKindRegistry.registerAsset`, which registers, classifies and LABELS in
+one transaction. Registration is the only moment labels can ever be written, so the registry must exist — and must
+already hold `MANAGER` on the NAV — before `RegisterAssets` runs. Run them in the old order and `RegisterAssets`
+aborts with `AssetKindRegistryNotDeployed`; it does **not** fall back to `NAVCalculator.registerAsset`, because
+that would succeed while permanently costing every asset in the run its labels.
+
+Its "must precede `07`" constraint is unchanged and now trivially satisfied: `07` revokes the deployer's `MANAGER`,
+and `08` needs it. Moving `08` earlier strengthens that ordering rather than weakening it — there is now more, not
+less, between the two.
+
+`verify_step.py`'s step numbers moved with it: the asset-kind-registry gate is now **1.4**, and the checks are keyed
+to semantic function names so a renumber cannot silently point a step at the wrong body.
 
 This **differs from the original plan**, which had `RegisterAssets` before `03`. That order is wrong:
 `RegisterAssets` resolves each `Custom` feed from `deployments/<id>.json .customPriceFeeds.<name>`
@@ -621,138 +635,7 @@ alternative out, before proposing a smaller deploy.
 *Chains 130, 143, 146, 196, 204, 480, 999, 5000, 9745, 16661, 42220, 43111, 43114, 57073, 59144,
 80094, 534352 are finished here.*
 
-### 1.4 `03_DeployPriceFeeds` — 41 custom feeds
-
-```bash
-forge script script/deploy/03_DeployPriceFeeds.s.sol $BROADCAST
-```
-
-Chains 1 (26), 42161 (8), 8453 (4), 100 (3) only. Each feed's constructor takes the NAV proxy
-address, held as `INAVCalculator public immutable NAV` (ADR 0019) — which is precisely why a new
-proxy invalidates every existing feed.
-
-> **THE COUNT IS 41, AND IT IS NO LONGER PENDING ANYTHING.** Both PRs it was waiting on have merged,
-> so the earlier figures of 39 and 40 are both stale. Re-measured against the merged tree 2026-07-30
-> with `preflight_config.py`: **mainnet 26, arbitrum 8, base 4, gnosis 3 = 41.**
->
-> | PR | merged | effect on the count |
-> | --- | --- | --- |
-> | **#199** (stETH primary becomes fundamental) | 2026-07-29 | deploys a **stETH primary** (`stETHFundamental`) and demotes `stETHCrossRate` to a monitor: mainnet 24 → **25** |
-> | **#224** (ezETH market monitor) | 2026-07-30 | adds `ezETHCrossRateMarket` so ezETH's depeg check can fire: mainnet 25 → **26** |
->
-> Both have their `03_DeployPriceFeeds.s.sol` call sites in place — `_deployEEth("stETHFundamental")`
-> (`03:147`), `_deployCrossRateMonitor("stETHCrossRate")` (`03:153`) and
-> `_deployCrossRateMonitor("ezETHCrossRateMarket")` (`03:230`) — verified against the merged tree, so
-> `03` deploys all 26 mainnet entries and nothing is skipped as `primary feed unresolved`.
->
-> Keep taking the number from the tooling rather than from here: `preflight_config.py` prints the
-> configured total and `verify_step.py 1.4` compares against it, so both follow config automatically.
-> This paragraph is the thing that goes stale — as it just did, twice.
->
-> **The three dead feed contracts are a separate matter and change the count by ZERO.**
-> `cbETH_CustomPriceFeed`, `ETHPlus_CustomPriceFeed` and `sDAI_CustomPriceFeed` are deployed on no chain
-> and enabled in no config (`cbETH`/`sDAI` are not config keys at all; `ETHPlus` is present on mainnet
-> with `enabled: false`). All three call sites are `isAdapterEnabled`-gated (`03:98`, `03:153`, `03:183`)
-> and a missing key reads as false, so the branches are never taken — and they stay unreached after step
-> 1.1, since clearing the record removes only the skip-guard short-circuit, not the enablement gate.
-> #199 deletes the sDAI contract; that is dead-code removal, not a count change. An earlier audit note
-> suggested dropping all three would make the redeploy 36 instances; it would not, because they were
-> never among the 39. Verified against both the deployment records and the enabled config 2026-07-29.
-
-- **Precondition:** 1.1 cleared `customPriceFeeds.*`; 1.3 wrote the NEW `NAVCalculatorProxy`.
-- **Post-condition:** `python3 script/deploy/preflight/verify_step.py 1.4` — the feed count matches
-  the table above, every feed has code, and every feed's `NAV()` immutable points at the **new** proxy.
-  That last one is the check that matters: a feed is otherwise indistinguishable from a correct one
-  while still pricing against the abandoned NAV.
-
-### 1.5 `RegisterAssets` — assets + feeds on the new NAV
-
-```bash
-mkdir -p safe-transactions        # REQUIRED — see below
-FOUNDRY_PROFILE=slow forge script script/manage/RegisterAssets.s.sol $BROADCAST
-```
-
-`FOUNDRY_PROFILE=slow` (16 GiB) is required on mainnet — 43 assets otherwise `MemoryOOG`.
-
-`safe-transactions/` must exist: the script ends by writing a Safe-TX batch there, and if the
-directory is missing it aborts with
-`vm.writeJson: failed to open file ".../safe-transactions/1-register-assets.json"` **after** the
-on-chain registrations have already been broadcast. The chain state is fine and the script is
-idempotent, but the run reports failure. The directory is not in the repo, so create it once per
-checkout.
-
-- **Precondition:** **1.4 done** — Custom feeds resolve through
-  `deployments/<id>.json .customPriceFeeds.<name>`, and without them 20 of mainnet's 43 assets are
-  silently skipped (see the authoritative order at the top of section 1).
-- **Post-condition:** `python3 script/deploy/preflight/verify_step.py 1.5` — `getAssetCount()` equals
-  the configured count (43 / 11 / 11 / 6 / 11 / 5 / 6 for chains 1 / 42161 / 8453 / 10 / 100 / 137 /
-  56) **and** the registered address set equals the configured one, so one asset silently substituted
-  for another cannot pass on the count alone.
-
-### 1.6 `04_DeployBalanceAdapters` — adapters + assistants
-
-```bash
-PERSIST_DEPLOYMENTS=1 forge script script/deploy/04_DeployBalanceAdapters.s.sol $BROADCAST
-```
-
-Deploys plain + meta adapters via plain `new` (CREATE), then the delegatecall assistants, whose
-`immutable ADAPTER` must point at the **new** assisted adapters.
-
-> **The flag is REQUIRED here, and this step is the reason.** Adapters record either way; the four
-> `*Assistant` addresses do not — see the persistence note under the common flags above. Without it you get
-> four live assistant contracts on chain and four empty `*Assistant` keys in the record, with exit code 0.
-> The addresses are recoverable (stdout prints each one twice, and `broadcast/…/run-latest.json` records
-> every CREATE), and the cheapest repair is simply re-running this step **with** the flag — adapters
-> short-circuit as already-deployed, so only the assistants redeploy. But the ops team whitelists these on
-> the Roles modifier by reading them out of the record, so an unrecorded assistant is an assistant nobody
-> can be handed.
->
-> **If `verify_step.py 1.6` says an assistant is missing, read its hint sceptically.** It reports
-> *"`04` skips an assistant whose key is already populated, so check 1.1 cleared it"* — which names the
-> wrong cause for this failure. Check whether the flag was set on this step **before** re-litigating 1.1.
-
-- **Precondition:** 1.1 cleared `balanceAdapters.*` **and** the three `*Assistant` keys.
-- **Post-condition:** `python3 script/deploy/preflight/verify_step.py 1.6` — adapter count per chain
-  = 27 / 8 / 7 / 4 / 3 / 2 / 1 for 1 / 42161 / 8453 / 100 / 10 / 137 / 56 (ERC20Default included),
-  every adapter has code, and **each assistant's `ADAPTER()` resolves to its paired assisted adapter**.
-  Run it on chains 1 and 100: against the live stack it reproduces all four orphaned pairings from
-  2.1, so a clean report here is the proof the swap was rebuilt rather than inherited.
-
-### 1.7 `06_Configure` — register adapters, reconcile meta instances
-
-```bash
-forge script script/deploy/06_Configure.s.sol $BROADCAST
-```
-
-Idempotent and reconciling; safe to re-run. If a chain hits an RPC nonce race, re-run just this step
-with `--slow`.
-
-`06` also configures `BridgeEscrow`, but it reads `BridgeEscrowProxy` from the deployment record
-(`06:31`) and **no chain has one** — so it logs `WARNING: BridgeEscrow not deployed, skipping Bridge
-configuration` (`06:37`) and skips the entire bridge block. The deferred bridge is therefore not
-touched at all by this step, not merely touched idempotently.
-
-- **Precondition:** 1.5 and 1.6 done.
-- **Post-condition:** `python3 script/deploy/preflight/verify_step.py 1.7` — `getAdapterCount()`
-  matches 1.6, every recorded adapter reports `isAdapterRegistered`, nothing is registered that is not
-  in the record, and each meta adapter's `getMetaInstances()` **set equals** its configured coordinate
-  set, summing to the total in the meta-instance table at the top of this document (**110** as
-  reconciled 2026-07-29). The per-chain breakdown lives in that table only — it is not repeated here,
-  so there is one place to correct if config changes.
-
-> **Watch for the silent skip.** `06` does `if (deployed == address(0)) continue;` (`06:113` for
-> meta, same shape for plain), so an adapter that failed to deploy is skipped **without an error**.
-> Always assert the post-condition counts; never trust the exit status alone. Running
-> `python3 script/deploy/preflight/preflight_config.py` beforehand catches the config-side causes.
-
-> **Operator check during re-registration (from #172).** Verify each registered instance resolves as
-> intended rather than silently masking a misconfiguration. In particular, Aave V3 exposes two
-> DataProviders; registering both double-counts positions. `verify_step.py 1.7` compares instance
-> **sets**, not counts, so a wrong-but-same-sized instance set fails — but it compares against
-> *config*, so it cannot tell you the config itself named the wrong DataProvider. That judgement stays
-> human.
-
-### 1.8 `08_DeployAssetKindRegistry` — asset kinds (ships with #241, **not on `main` today**)
+### 1.4 `08_DeployAssetKindRegistry` — asset kinds (ships with #241, **not on `main` today**)
 
 ```bash
 PERSIST_DEPLOYMENTS=1 forge script script/deploy/08_DeployAssetKindRegistry.s.sol $BROADCAST
@@ -803,6 +686,137 @@ exist. It is listed here, after `1.7`, because that is the latest point that is 
   REG=$(jq -r '.AssetKindRegistry' script/config/deployments/$CID.json)
   cast call $PROXY 'hasRole(bytes32,address)(bool)' $(cast keccak "MANAGER") $REG --rpc-url $RPC   # true
   ```
+
+### 1.5 `03_DeployPriceFeeds` — 41 custom feeds
+
+```bash
+forge script script/deploy/03_DeployPriceFeeds.s.sol $BROADCAST
+```
+
+Chains 1 (26), 42161 (8), 8453 (4), 100 (3) only. Each feed's constructor takes the NAV proxy
+address, held as `INAVCalculator public immutable NAV` (ADR 0019) — which is precisely why a new
+proxy invalidates every existing feed.
+
+> **THE COUNT IS 41, AND IT IS NO LONGER PENDING ANYTHING.** Both PRs it was waiting on have merged,
+> so the earlier figures of 39 and 40 are both stale. Re-measured against the merged tree 2026-07-30
+> with `preflight_config.py`: **mainnet 26, arbitrum 8, base 4, gnosis 3 = 41.**
+>
+> | PR | merged | effect on the count |
+> | --- | --- | --- |
+> | **#199** (stETH primary becomes fundamental) | 2026-07-29 | deploys a **stETH primary** (`stETHFundamental`) and demotes `stETHCrossRate` to a monitor: mainnet 24 → **25** |
+> | **#224** (ezETH market monitor) | 2026-07-30 | adds `ezETHCrossRateMarket` so ezETH's depeg check can fire: mainnet 25 → **26** |
+>
+> Both have their `03_DeployPriceFeeds.s.sol` call sites in place — `_deployEEth("stETHFundamental")`
+> (`03:147`), `_deployCrossRateMonitor("stETHCrossRate")` (`03:153`) and
+> `_deployCrossRateMonitor("ezETHCrossRateMarket")` (`03:230`) — verified against the merged tree, so
+> `03` deploys all 26 mainnet entries and nothing is skipped as `primary feed unresolved`.
+>
+> Keep taking the number from the tooling rather than from here: `preflight_config.py` prints the
+> configured total and `verify_step.py 1.4` compares against it, so both follow config automatically.
+> This paragraph is the thing that goes stale — as it just did, twice.
+>
+> **The three dead feed contracts are a separate matter and change the count by ZERO.**
+> `cbETH_CustomPriceFeed`, `ETHPlus_CustomPriceFeed` and `sDAI_CustomPriceFeed` are deployed on no chain
+> and enabled in no config (`cbETH`/`sDAI` are not config keys at all; `ETHPlus` is present on mainnet
+> with `enabled: false`). All three call sites are `isAdapterEnabled`-gated (`03:98`, `03:153`, `03:183`)
+> and a missing key reads as false, so the branches are never taken — and they stay unreached after step
+> 1.1, since clearing the record removes only the skip-guard short-circuit, not the enablement gate.
+> #199 deletes the sDAI contract; that is dead-code removal, not a count change. An earlier audit note
+> suggested dropping all three would make the redeploy 36 instances; it would not, because they were
+> never among the 39. Verified against both the deployment records and the enabled config 2026-07-29.
+
+- **Precondition:** 1.1 cleared `customPriceFeeds.*`; 1.3 wrote the NEW `NAVCalculatorProxy`.
+- **Post-condition:** `python3 script/deploy/preflight/verify_step.py 1.4` — the feed count matches
+  the table above, every feed has code, and every feed's `NAV()` immutable points at the **new** proxy.
+  That last one is the check that matters: a feed is otherwise indistinguishable from a correct one
+  while still pricing against the abandoned NAV.
+
+### 1.6 `RegisterAssets` — assets + feeds on the new NAV
+
+```bash
+mkdir -p safe-transactions        # REQUIRED — see below
+FOUNDRY_PROFILE=slow forge script script/manage/RegisterAssets.s.sol $BROADCAST
+```
+
+`FOUNDRY_PROFILE=slow` (16 GiB) is required on mainnet — 43 assets otherwise `MemoryOOG`.
+
+`safe-transactions/` must exist: the script ends by writing a Safe-TX batch there, and if the
+directory is missing it aborts with
+`vm.writeJson: failed to open file ".../safe-transactions/1-register-assets.json"` **after** the
+on-chain registrations have already been broadcast. The chain state is fine and the script is
+idempotent, but the run reports failure. The directory is not in the repo, so create it once per
+checkout.
+
+- **Precondition:** **1.4 done** — Custom feeds resolve through
+  `deployments/<id>.json .customPriceFeeds.<name>`, and without them 20 of mainnet's 43 assets are
+  silently skipped (see the authoritative order at the top of section 1).
+- **Post-condition:** `python3 script/deploy/preflight/verify_step.py 1.5` — `getAssetCount()` equals
+  the configured count (43 / 11 / 11 / 6 / 11 / 5 / 6 for chains 1 / 42161 / 8453 / 10 / 100 / 137 /
+  56) **and** the registered address set equals the configured one, so one asset silently substituted
+  for another cannot pass on the count alone.
+
+### 1.7 `04_DeployBalanceAdapters` — adapters + assistants
+
+```bash
+PERSIST_DEPLOYMENTS=1 forge script script/deploy/04_DeployBalanceAdapters.s.sol $BROADCAST
+```
+
+Deploys plain + meta adapters via plain `new` (CREATE), then the delegatecall assistants, whose
+`immutable ADAPTER` must point at the **new** assisted adapters.
+
+> **The flag is REQUIRED here, and this step is the reason.** Adapters record either way; the four
+> `*Assistant` addresses do not — see the persistence note under the common flags above. Without it you get
+> four live assistant contracts on chain and four empty `*Assistant` keys in the record, with exit code 0.
+> The addresses are recoverable (stdout prints each one twice, and `broadcast/…/run-latest.json` records
+> every CREATE), and the cheapest repair is simply re-running this step **with** the flag — adapters
+> short-circuit as already-deployed, so only the assistants redeploy. But the ops team whitelists these on
+> the Roles modifier by reading them out of the record, so an unrecorded assistant is an assistant nobody
+> can be handed.
+>
+> **If `verify_step.py 1.6` says an assistant is missing, read its hint sceptically.** It reports
+> *"`04` skips an assistant whose key is already populated, so check 1.1 cleared it"* — which names the
+> wrong cause for this failure. Check whether the flag was set on this step **before** re-litigating 1.1.
+
+- **Precondition:** 1.1 cleared `balanceAdapters.*` **and** the three `*Assistant` keys.
+- **Post-condition:** `python3 script/deploy/preflight/verify_step.py 1.6` — adapter count per chain
+  = 27 / 8 / 7 / 4 / 3 / 2 / 1 for 1 / 42161 / 8453 / 100 / 10 / 137 / 56 (ERC20Default included),
+  every adapter has code, and **each assistant's `ADAPTER()` resolves to its paired assisted adapter**.
+  Run it on chains 1 and 100: against the live stack it reproduces all four orphaned pairings from
+  2.1, so a clean report here is the proof the swap was rebuilt rather than inherited.
+
+### 1.8 `06_Configure` — register adapters, reconcile meta instances
+
+```bash
+forge script script/deploy/06_Configure.s.sol $BROADCAST
+```
+
+Idempotent and reconciling; safe to re-run. If a chain hits an RPC nonce race, re-run just this step
+with `--slow`.
+
+`06` also configures `BridgeEscrow`, but it reads `BridgeEscrowProxy` from the deployment record
+(`06:31`) and **no chain has one** — so it logs `WARNING: BridgeEscrow not deployed, skipping Bridge
+configuration` (`06:37`) and skips the entire bridge block. The deferred bridge is therefore not
+touched at all by this step, not merely touched idempotently.
+
+- **Precondition:** 1.5 and 1.6 done.
+- **Post-condition:** `python3 script/deploy/preflight/verify_step.py 1.7` — `getAdapterCount()`
+  matches 1.6, every recorded adapter reports `isAdapterRegistered`, nothing is registered that is not
+  in the record, and each meta adapter's `getMetaInstances()` **set equals** its configured coordinate
+  set, summing to the total in the meta-instance table at the top of this document (**110** as
+  reconciled 2026-07-29). The per-chain breakdown lives in that table only — it is not repeated here,
+  so there is one place to correct if config changes.
+
+> **Watch for the silent skip.** `06` does `if (deployed == address(0)) continue;` (`06:113` for
+> meta, same shape for plain), so an adapter that failed to deploy is skipped **without an error**.
+> Always assert the post-condition counts; never trust the exit status alone. Running
+> `python3 script/deploy/preflight/preflight_config.py` beforehand catches the config-side causes.
+
+> **Operator check during re-registration (from #172).** Verify each registered instance resolves as
+> intended rather than silently masking a misconfiguration. In particular, Aave V3 exposes two
+> DataProviders; registering both double-counts positions. `verify_step.py 1.7` compares instance
+> **sets**, not counts, so a wrong-but-same-sized instance set fails — but it compares against
+> *config*, so it cannot tell you the config itself named the wrong DataProvider. That judgement stays
+> human.
 
 ### 1.9 Chain-specific workarounds
 

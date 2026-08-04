@@ -103,9 +103,10 @@ contract AssetKindRegistry is IAssetKindRegistry {
 
     /// @notice One asset's display labels, in significant order. Free text; nothing on-chain parses it.
     /// @dev Kept in its OWN mapping rather than inside {AssetKinds}, because the two have different lifetimes on
-    ///      purpose: {clearAssetKind} and {unregisterAsset} `delete _kinds[asset]`, and labels must survive that —
-    ///      otherwise clear-then-reclassify would be an edit path and the write-once rule would hold only for the
-    ///      shortest route. Packing them into the struct would delete them by accident.
+    ///      purpose. Labels are tied to REGISTRATION: written by {registerAsset}, dropped by {unregisterAsset}, and
+    ///      left alone by {clearAssetKind}, which ends only the classification while the asset stays registered on the
+    ///      NAV. Packing them into the struct would tie them to the classification instead and make
+    ///      `delete _kinds[asset]` drop them by accident.
     ///
     ///      There is no separate `labelled` sentinel and none is needed: `length == 0` is exactly "no labels", which is
     ///      a legitimate state rather than an absent one, so an empty list and an unset list are the same thing by
@@ -190,32 +191,34 @@ contract AssetKindRegistry is IAssetKindRegistry {
             delete _kinds[asset];
             emit AssetKindCleared(asset);
         }
+        // **Labels go with the registration, and this line is what makes the documented repair work at all.** A wrong
+        // label is fixed by unregistering and re-registering the asset. If labels outlived unregistration, the
+        // re-registration would meet labels that are already set — and since {registerAsset} is the only writer, it
+        // could never replace them. The repair would silently be a no-op and the wrong label permanent.
+        //
+        // Guarded rather than unconditional so an asset that never had labels does not emit a misleading event.
+        // Contrast {clearAssetKind}, which leaves labels ALONE: that ends the classification while the asset stays
+        // registered, and label lifetime is registration lifetime, not classification lifetime.
+        if (_labels[asset].length != 0) {
+            delete _labels[asset];
+            emit AssetLabelsCleared(asset);
+        }
         NAV.unregisterAsset(asset);
     }
 
     /// @inheritdoc IAssetKindRegistry
-    function setAssetKind(address asset, AccrualKind accrualKind, string[] calldata labels) external onlyNavManager {
+    function setAssetKind(address asset, AccrualKind accrualKind) external onlyNavManager {
         _setAssetKind(asset, accrualKind);
-        _setAssetLabels(asset, labels);
     }
 
     /// @inheritdoc IAssetKindRegistry
-    function setAssetKinds(address[] calldata assets, AccrualKind[] calldata accrualKinds, string[][] calldata labels)
-        external
-        onlyNavManager
-    {
+    function setAssetKinds(address[] calldata assets, AccrualKind[] calldata accrualKinds) external onlyNavManager {
         uint256 length = assets.length;
         if (length != accrualKinds.length) {
             revert KindArrayLengthMismatch(length, accrualKinds.length);
         }
-        // Checked separately from the kinds, and BEFORE the loop, so a short label array is named as such rather than
-        // surfacing as an out-of-bounds panic partway through a batch that has already written some rows.
-        if (length != labels.length) {
-            revert LabelArrayLengthMismatch(length, labels.length);
-        }
         for (uint256 i; i < length; ++i) {
             _setAssetKind(assets[i], accrualKinds[i]);
-            _setAssetLabels(assets[i], labels[i]);
         }
     }
 
@@ -280,21 +283,28 @@ contract AssetKindRegistry is IAssetKindRegistry {
         emit AssetKindSet(asset, accrualKind);
     }
 
-    /// @dev **The write-once rule, and the whole of it: you can fill a blank, never change a value.**
+    /// @dev Writes `asset`'s display labels. Called from {registerAsset} and NOWHERE ELSE — that is the whole of the
+    ///      rule, and it is enforced by there being no other caller rather than by a check inside this function.
     ///
-    ///      An EMPTY `labels` is a no-op, not a clear. That is load-bearing in two directions at once. It lets
-    ///      re-classification work — an operator fixing an `AccrualKind` passes no labels and the asset keeps the ones
-    ///      it has — and it lets an asset registered without labels be labelled later, without the re-registration
-    ///      round trip that a stricter reading would force. A write of DIFFERENT labels over existing ones REVERTS; it
-    ///      is never silently ignored, because an operator who believes they have corrected a typo and has not is
-    ///      worse off than one who gets an error. Re-supplying the SAME labels is a no-op — see the comment on the
-    ///      comparison below for why that is required rather than merely convenient.
+    ///      **Registration is the only chance.** Labels are fixed when the asset enters the system, for parity with
+    ///      the balance adapters, whose `positionLabels()` are fixed when the adapter is deployed and editable by no
+    ///      role. Letting an asset gain labels after registration would demand the same editability for adapters. See
+    ///      {IAssetKindRegistry.registerAsset}.
     ///
-    ///      **Note what this does NOT do: it does not clear labels, ever, and there is no function that does.**
-    ///      Combined with {clearAssetKind} and {unregisterAsset} leaving `_labels` alone, that is what makes the rule
-    ///      hold rather than merely describe the happy path — otherwise clear-then-reclassify would be an edit, and
-    ///      "labels cannot be changed" would be true only of the shortest route. Repair is a registry REPLACEMENT:
-    ///      deploy a new one, re-classify, one `setAssetKindRegistry` call on the NAV. See {IAssetKindRegistry.getAssetLabels}.
+    ///      **An empty `labels` writes nothing and is not an error.** An asset may legitimately have none;
+    ///      `positionLabels()` returns empty arrays legitimately too. Since this runs only at registration, "empty"
+    ///      means the asset is registered unlabelled and stays that way until it is unregistered and registered again.
+    ///
+    ///      **There is deliberately NO write-once guard here, and adding one would be a defect rather than belt-and-
+    ///      braces.** It would be unreachable on the intended path — {unregisterAsset} deletes `_labels`, and
+    ///      {registerAsset} can only succeed for an asset the NAV does not already hold, so `_labels[asset]` is empty
+    ///      whenever this runs through the facade. But it would be REACHED on a real one: an asset unregistered
+    ///      DIRECTLY on the NAV, bypassing this contract, leaves its labels behind here, and a later re-registration
+    ///      through the facade would then hit the guard and either revert or keep the stale labels. Overwriting is the
+    ///      correct behaviour for that path, because registration is what defines an asset's labels.
+    ///
+    ///      An earlier revision carried that guard plus an identical-content comparison, both needed only because
+    ///      labels could once be supplied by `setAssetKind`/`setAssetKinds`. They no longer can, so both are gone.
     ///
     ///      **All three bounds are enforced HERE, in the setter, not only in preflight.** #248 is the standing
     ///      precedent for what happens when validation lives in config tooling alone: nothing enforced `accrualKind`,
@@ -302,22 +312,7 @@ contract AssetKindRegistry is IAssetKindRegistry {
     ///      {MAX_ASSET_LABELS} and {MAX_ASSET_LABEL_BYTES} off this contract rather than restating them.
     function _setAssetLabels(address asset, string[] calldata labels) private {
         uint256 length = labels.length;
-        // An empty argument means "leave them alone". Returning BEFORE the already-set check is what makes
-        // re-classification of a labelled asset possible at all.
         if (length == 0) return;
-
-        // **Re-supplying the SAME labels is a no-op; supplying DIFFERENT ones reverts.** Not a softening of the
-        // write-once rule — it is what makes the rule compatible with the rest of the system. `08` is idempotent by
-        // contract, and re-running it is the documented recovery for a batch that never landed; under a rule that
-        // rejected every second write, the first re-run after labels reached config would revert the WHOLE batch and
-        // take the recovery path with it. Comparing content keeps the guard pointed at the thing worth guarding: a
-        // caller trying to CHANGE a label still gets a revert, never a silent no-op, because an operator who believes
-        // they have fixed a typo and has not is worse off than one who gets an error.
-        if (_labels[asset].length != 0) {
-            if (_labelsEqual(asset, labels)) return;
-            revert AssetLabelsAlreadySet(asset);
-        }
-
         if (length > MAX_ASSET_LABELS) revert TooManyAssetLabels(asset, length, MAX_ASSET_LABELS);
 
         for (uint256 i; i < length; ++i) {
@@ -331,43 +326,11 @@ contract AssetKindRegistry is IAssetKindRegistry {
             }
         }
 
-        // Validate, then write. Being precise about what that does and does not buy, because this comment has now
-        // been wrong in BOTH directions and the second error was subtler than the first.
-        //
-        // Against the LOOP above, the ordering is behaviourally irrelevant: every exit from that loop reverts, and a
-        // revert rolls the whole transaction back, so hoisting this assignment above it leaves identical observable
-        // state. That mutation is EQUIVALENT and no test can distinguish it — which is why the mutation matrix records
-        // it as a deliberate survivor rather than a coverage gap. What the ordering buys there is not paying for an
-        // `SSTORE` that is about to be discarded, plus a body that reads in the order it reasons.
-        //
-        // ⚠️ **That equivalence is scoped to the loop and does NOT generalise to "writing before validating".** One
-        // line higher it is false, and dangerously so. Hoist this assignment above the write-once check and, on a
-        // FIRST write, `_labels[asset].length != 0` becomes true, `_labelsEqual` compares the value just written
-        // against itself, returns true, and the function RETURNS EARLY. Revert semantics cannot rescue a path that
-        // never reverts: `MAX_ASSET_LABELS`, the empty-element check and the byte-length check are all skipped, an
-        // over-long or empty label is stored permanently under a write-once rule, and `AssetLabelsSet` never fires.
-        //
-        // So the guarantee that a REJECTED list leaves nothing behind does come from EVM revert semantics rather than
-        // from this line's position — but only for the checks that precede it. Moving it above the early-returning
-        // check converts a guard into a no-op. Keep this assignment last.
+        // Validate, then write. The ordering is behaviourally irrelevant against the loop above — every exit from it
+        // reverts, and a revert rolls the whole transaction back — so a mutant that hoists this line is EQUIVALENT and
+        // the matrix records it as a deliberate survivor. What it buys is not paying for an `SSTORE` that is about to
+        // be discarded, plus a body that reads in the order it reasons.
         _labels[asset] = labels;
         emit AssetLabelsSet(asset, labels);
-    }
-
-    /// @dev Whether `labels` is element-for-element identical to what `asset` already holds. Compares CONTENT, not a
-    ///      digest of the whole array, so it short-circuits on the first difference and never builds a memory copy of
-    ///      the stored list.
-    ///
-    ///      Order-sensitive on purpose: the label list is an ordered description (index 0 is the protocol, later
-    ///      indices narrow to the product), so a re-ordering is a different description and must be rejected as a
-    ///      change rather than accepted as a permutation of the same thing.
-    function _labelsEqual(address asset, string[] calldata labels) private view returns (bool) {
-        string[] storage stored = _labels[asset];
-        uint256 length = labels.length;
-        if (stored.length != length) return false;
-        for (uint256 i; i < length; ++i) {
-            if (keccak256(bytes(stored[i])) != keccak256(bytes(labels[i]))) return false;
-        }
-        return true;
     }
 }

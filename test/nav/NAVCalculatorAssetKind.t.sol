@@ -47,6 +47,19 @@ contract NAVCalculatorAssetKindTest is SuperTest {
         l[1] = b;
     }
 
+    /// @dev Labels can only be written at REGISTRATION, so a label test needs an asset the NAV does not already
+    ///      hold — `usdc`/`weth`/`dai` are registered by `setupAll`, and re-registering one reverts. This mints a
+    ///      fresh token with its own feed and registers it THROUGH the facade, which is the only path that labels.
+    function _registerLabelled(string[] memory labels) internal returns (address token) {
+        Mock_ERC20 t20 = new Mock_ERC20("LBL", 18);
+        Mock_PriceOracleChainlink feed = new Mock_PriceOracleChainlink("LBL", 100_000_000, 8);
+        vm.prank(navCalculatorManager);
+        registry.registerAsset(
+            address(t20), address(feed), IPrices.PriceType.Chainlink, type(uint256).max, AccrualKind.None, labels
+        );
+        return address(t20);
+    }
+
     // ============================================================
     // setAssetKindRegistry
     // ============================================================
@@ -93,7 +106,7 @@ contract NAVCalculatorAssetKindTest is SuperTest {
         nav.setAssetKindRegistry(address(registry));
 
         vm.prank(navCalculatorManager);
-        registry.setAssetKind(address(weth), AccrualKind.Appreciating, _noLabels());
+        registry.setAssetKind(address(weth), AccrualKind.Appreciating);
 
         (PegKind peg, AccrualKind accrual,) = nav.getAssetInfo(address(weth));
         // WETH carries no `pegToleranceBps` here, so the derived axis is Floating — this also proves the NAV is
@@ -135,11 +148,10 @@ contract NAVCalculatorAssetKindTest is SuperTest {
         vm.prank(navCalculatorManager);
         nav.setAssetKindRegistry(address(registry));
 
-        vm.prank(navCalculatorManager);
-        registry.setAssetKind(address(usdc), AccrualKind.None, _labels("Circle", "Stablecoin"));
+        address token = _registerLabelled(_labels("Circle", "Stablecoin"));
 
-        (PegKind navPeg, AccrualKind navAccrual, string[] memory navLabels) = nav.getAssetInfo(address(usdc));
-        (PegKind regPeg, AccrualKind regAccrual, string[] memory regLabels) = registry.getAssetInfo(address(usdc));
+        (PegKind navPeg, AccrualKind navAccrual, string[] memory navLabels) = nav.getAssetInfo(token);
+        (PegKind regPeg, AccrualKind regAccrual, string[] memory regLabels) = registry.getAssetInfo(token);
         assertEq(uint8(navPeg), uint8(regPeg));
         assertEq(uint8(navAccrual), uint8(regAccrual));
         assertEq(navLabels.length, regLabels.length);
@@ -160,10 +172,9 @@ contract NAVCalculatorAssetKindTest is SuperTest {
         vm.prank(navCalculatorManager);
         nav.setAssetKindRegistry(address(registry));
 
-        vm.prank(navCalculatorManager);
-        registry.setAssetKind(address(weth), AccrualKind.None, _labels("Aave v3", "Savings"));
+        address token = _registerLabelled(_labels("Aave v3", "Savings"));
 
-        (,, string[] memory labels) = nav.getAssetInfo(address(weth));
+        (,, string[] memory labels) = nav.getAssetInfo(token);
         assertEq(labels.length, 2);
         assertEq(labels[0], "Aave v3", "index 0 is the protocol");
         assertEq(labels[1], "Savings", "index 1 narrows to the product");
@@ -178,7 +189,7 @@ contract NAVCalculatorAssetKindTest is SuperTest {
         nav.setAssetKindRegistry(address(registry));
 
         vm.prank(navCalculatorManager);
-        registry.setAssetKind(address(weth), AccrualKind.Appreciating, _noLabels());
+        registry.setAssetKind(address(weth), AccrualKind.Appreciating);
 
         (PegKind peg, AccrualKind accrual, string[] memory labels) = nav.getAssetInfo(address(weth));
         assertEq(labels.length, 0, "no labels is an answer, not a failure");
@@ -202,7 +213,7 @@ contract NAVCalculatorAssetKindTest is SuperTest {
         nav.setAssetKindRegistry(address(registry));
 
         vm.prank(navCalculatorManager);
-        registry.setAssetKind(address(weth), AccrualKind.Appreciating, _noLabels());
+        registry.setAssetKind(address(weth), AccrualKind.Appreciating);
 
         // Classified, so the OLD getter would have succeeded had it still been routed. A revert here therefore means
         // "no such function", not "no such asset" — which is what makes the assertion about the ABI and not the data.

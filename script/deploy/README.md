@@ -4,7 +4,7 @@ Everything is deployed and configured by a single **deployer EOA** (private key 
 
 Deployment order (per chain unless noted):
 
-**01** (implementations, once across chains) → **02** (proxies + init) → **03** (price feeds; asset registration is a separate `script/manage/RegisterAssets.s.sol` step) → **04** (balance adapters) → **05** (bridge adapters, CREATE2 same-address) → **06** (configure: register balance + meta-adapters, reconcile meta-instances, authorize bridge adapters + wire `trustedRemoteAdapter`) → **07** (transfer admin to the security council — last of the role handoff) . **08** (asset-kind registry) is **PRIVILEGED and must run BEFORE 07** — see below; the pipeline is therefore **01 → 02 → 03 → 04 → 05 → 06 → 08 → 07**.
+**01** (implementations, once across chains) → **02** (proxies + init) → **03** (price feeds; asset registration is a separate `script/manage/RegisterAssets.s.sol` step) → **04** (balance adapters) → **05** (bridge adapters, CREATE2 same-address) → **06** (configure: register balance + meta-adapters, reconcile meta-instances, authorize bridge adapters + wire `trustedRemoteAdapter`) → **07** (transfer admin to the security council — last of the role handoff) . **08** (asset-kind registry) is **PRIVILEGED and must run BEFORE 07** — see below; the pipeline is therefore **01 → 02 → 08 → 03 → `RegisterAssets` → 04 → 05 → 06 → 07**. ⚠️ **`08` moved ahead of asset registration:** an asset's primary registration is routed through `AssetKindRegistry.registerAsset` so it is registered, classified and LABELLED atomically, and registration is the only moment labels can be written — so the registry must exist and hold `MANAGER` before `RegisterAssets` runs.
 
 `07` is the last step that touches the NAV/Bridge **proxies**, and it is still what ends the deployer's control over them. It is no longer the last script in the directory: `08` deploys its own standalone contract, but it is **not** order-independent: it grants the registry `MANAGER` on the NAV, which needs `DEFAULT_ADMIN` — a role `07` hands to the council. **`08` must run BEFORE `07`.** Do not skip it either, or the `AssetKindRegistry` does not exist on that chain and nothing in the pipeline says so.
 
@@ -49,7 +49,7 @@ forge script script/deploy/02_DeployProxies.s.sol --chain-id 1 --broadcast --acc
 
 ## 03_DeployPriceFeeds.s.sol + asset registration
 
-Deploys the custom price-feed adapter contracts only (chain-branched, enabled per `contracts-deployment-config/custom-price-feeds/<chainId>.json`). It does **not** register assets/feeds on `NAVCalculator` — that is a separate EOA step run by the deployer-as-MANAGER via `script/manage/RegisterAssets.s.sol` (first feed per asset through `registerAsset`, any additional feeds through `addPriceFeed`).
+Deploys the custom price-feed adapter contracts only (chain-branched, enabled per `contracts-deployment-config/custom-price-feeds/<chainId>.json`). It does **not** register assets/feeds on `NAVCalculator` — that is a separate EOA step run by the deployer-as-MANAGER via `script/manage/RegisterAssets.s.sol` (first feed per asset through **`AssetKindRegistry.registerAsset`**, which forwards to the NAV and carries the asset's kind and labels; any additional feeds through `addPriceFeed` on the NAV directly, so the batch is mixed-target by design).
 
 ## 04_DeployBalanceAdapters.s.sol
 
@@ -114,7 +114,7 @@ Consequences worth stating, because earlier revisions of this file said the oppo
 
 ### Registering an asset: use the registry, not the NAV
 
-`AssetKindRegistry.registerAsset(asset, priceFeed, priceType, chainlinkHeartbeat, accrualKind)` registers on the NAV **and** classifies, atomically, in one call — the same arguments you used on the NAV plus one, at a different address. `unregisterAsset(asset)` is symmetric. If either half reverts, neither takes effect.
+`AssetKindRegistry.registerAsset(asset, priceFeed, priceType, chainlinkHeartbeat, accrualKind, labels)` registers on the NAV **and** classifies **and** labels, atomically, in one call — the same arguments you used on the NAV plus two, at a different address. It is not one entry point among several: **`registerAsset` is the ONLY place labels can ever be written.** `setAssetKind`/`setAssetKinds` take no labels and there is no `setAssetLabels`, for parity with the balance adapters, whose `positionLabels()` are fixed at deployment and editable by no role. An asset registered without labels has none until it is unregistered and registered again — which is also the repair path for a wrong label, and `unregisterAsset` drops the labels precisely so that repair works. `unregisterAsset(asset)` is symmetric. If either half reverts, neither takes effect.
 
 Calling `NAVCalculator.registerAsset` directly still works and is deliberately not blocked. Whether it *should* is a deploy-time role decision: revoking `MANAGER` from humans on the NAV makes the facade the only path and the "always classified" invariant structural rather than conventional. That choice is left to the operator — the code does not force it, so the registry is not a required dependency for asset registration unless you decide it should be.
 

@@ -292,7 +292,7 @@ contract MerklRewardsAttestedBalanceAdapter is IAttestedBalanceAdapter, IPositio
     /// @dev Stale-gated **bulk** GC: reverts `AllocationStillLive` on the first of `account`'s tokens that still
     ///      contributes to NAV, so a live set can never be suppressed — it clears only when the whole set is dead
     ///      (every token already reads 0: stale root or fully claimed). Reverts `NothingToClear` if nothing is cached.
-    function clearAccount(address account) external {
+    function clearAccount(address account) external override {
         if (account == address(0)) revert InvalidArguments();
         address[] memory toks = _userTokens[account];
         if (toks.length == 0) revert NothingToClear();

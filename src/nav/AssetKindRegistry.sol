@@ -331,13 +331,25 @@ contract AssetKindRegistry is IAssetKindRegistry {
             }
         }
 
-        // Validate first, then write. To be accurate about WHY, because the obvious justification is wrong and was
-        // written here first: this is NOT what prevents a partial write. A revert anywhere in this function rolls the
-        // whole transaction back, so writing before validating would leave exactly the same state — a mutation that
-        // moves this assignment above the loop is behaviourally EQUIVALENT and no test can distinguish it. What the
-        // ordering actually buys is not paying for an `SSTORE` that is about to be discarded, and a body that reads in
-        // the order it reasons. The real guarantee that a rejected list leaves nothing behind comes from EVM revert
-        // semantics, not from this line's position.
+        // Validate, then write. Being precise about what that does and does not buy, because this comment has now
+        // been wrong in BOTH directions and the second error was subtler than the first.
+        //
+        // Against the LOOP above, the ordering is behaviourally irrelevant: every exit from that loop reverts, and a
+        // revert rolls the whole transaction back, so hoisting this assignment above it leaves identical observable
+        // state. That mutation is EQUIVALENT and no test can distinguish it — which is why the mutation matrix records
+        // it as a deliberate survivor rather than a coverage gap. What the ordering buys there is not paying for an
+        // `SSTORE` that is about to be discarded, plus a body that reads in the order it reasons.
+        //
+        // ⚠️ **That equivalence is scoped to the loop and does NOT generalise to "writing before validating".** One
+        // line higher it is false, and dangerously so. Hoist this assignment above the write-once check and, on a
+        // FIRST write, `_labels[asset].length != 0` becomes true, `_labelsEqual` compares the value just written
+        // against itself, returns true, and the function RETURNS EARLY. Revert semantics cannot rescue a path that
+        // never reverts: `MAX_ASSET_LABELS`, the empty-element check and the byte-length check are all skipped, an
+        // over-long or empty label is stored permanently under a write-once rule, and `AssetLabelsSet` never fires.
+        //
+        // So the guarantee that a REJECTED list leaves nothing behind does come from EVM revert semantics rather than
+        // from this line's position — but only for the checks that precede it. Moving it above the early-returning
+        // check converts a guard into a no-op. Keep this assignment last.
         _labels[asset] = labels;
         emit AssetLabelsSet(asset, labels);
     }

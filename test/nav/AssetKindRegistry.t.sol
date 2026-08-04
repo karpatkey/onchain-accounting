@@ -684,6 +684,38 @@ contract AssetKindRegistryTest is Test {
         _assertLabels(WSTETH, _labels("Lido", "LST"));
     }
 
+    /// @dev **The orphaned-labels path, RUN rather than reasoned about — this is the test that justifies DELETING the
+    ///      write-once check.** An argument for removing a guard has to be exercised for exactly the same reason a
+    ///      guard does; otherwise the deletion rests on reasoning alone, which is the failure mode #241/#253 exist to
+    ///      record.
+    ///
+    ///      `unregisterAsset` on the facade drops the labels, but the NAV can also be unregistered DIRECTLY by any
+    ///      MANAGER — the facade is the intended path, not an enforced one. That route never touches this contract, so
+    ///      the labels are left behind, orphaned. A later re-registration through the facade then meets a non-empty
+    ///      `_labels[asset]`.
+    ///
+    ///      With a write-once check that call would revert (or, if written to skip instead, silently keep labels
+    ///      describing the PREVIOUS registration). Neither is right: registration is what defines an asset's labels,
+    ///      so the new registration's labels must win. Overwriting is the correct behaviour, and it is only correct
+    ///      because the guard is gone.
+    function test_labels_reRegistrationOverwritesLabelsOrphanedByADirectNavUnregister() public {
+        _register(WSTETH, AccrualKind.Appreciating, _labels("Lido", "LST"));
+        _assertLabels(WSTETH, _labels("Lido", "LST"));
+
+        // Bypass the facade entirely: unregister straight on the NAV, as a MANAGER may.
+        vm.prank(manager);
+        nav.unregisterAsset(WSTETH);
+
+        // The registry never saw it, so the labels are still here — orphaned, describing an asset the NAV no longer
+        // holds. This assertion is the precondition the whole argument depends on; without it the rest is vacuous.
+        _assertLabels(WSTETH, _labels("Lido", "LST"));
+        assertEq(nav.unregisteredCount(), 1, "precondition: the NAV-side unregister happened");
+
+        // Re-register through the facade with DIFFERENT labels. No revert, and the new labels win.
+        _register(WSTETH, AccrualKind.Appreciating, _labels("Lido", "Staking"));
+        _assertLabels(WSTETH, _labels("Lido", "Staking"));
+    }
+
     /// @dev The off-chain half of the on-chain change. An indexer that never sees a clear keeps serving labels for an
     ///      asset the NAV no longer knows about.
     function test_labels_unregisterEmitsAssetLabelsCleared() public {

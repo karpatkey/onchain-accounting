@@ -45,7 +45,7 @@ is where they are derived and which is the authoritative one if the two ever dis
 
 #### Meta instances: **110**, reconciled from config and confirmed on-chain (2026-07-29)
 
-This number is what tells you at step 1.7 whether `06_Configure`'s reconciliation succeeded, so it is
+This number is what tells you at step 1.8 whether `06_Configure`'s reconciliation succeeded, so it is
 settled here rather than at execution time. Three figures had been circulating — 104, 110 and 113.
 
 | chain | enabled meta adapters | `instances` | `instancesRaw` | total |

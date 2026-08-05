@@ -41,6 +41,10 @@
     "address": "0x7f39C581F595B53c5cb19bD0b3f8dA6c935E2Ca0",
     "$kindComment": "Wrapped stETH; balance static, priced stEthPerToken x ETH/USD (per feed config). The appreciating half of the stETH pair.",
     "accrualKind": "Appreciating",
+    "labels": [
+      "Lido",
+      "LST"
+    ],
     "divergenceToleranceBps": 250,
     "priceFeeds": [
       {
@@ -66,6 +70,10 @@
     "address": "0x35fA164735182de50811E8e2E824cFb9B6118ac2",
     "$kindComment": "ether.fi eETH; priced 1.0 x ETH/USD (per feed config), yield delivered as balance growth. Wrapper is weETH.",
     "accrualKind": "Rebasing",
+    "labels": [
+      "ether.fi",
+      "LRT"
+    ],
     "priceFeeds": [
       {
         "type": "Custom",
@@ -78,6 +86,10 @@
     "address": "0xCd5fE23C85820F7B72D0926FC9b05b43E359b7ee",
     "$kindComment": "Wrapped eETH; balance static, its eETH redemption rate grows. The appreciating half of the eETH pair. Priced here by reading the token's own getRate() on-chain - a pure-fundamental feed with no oracle rate leg (the L2s instead use a Chainlink weETH/eETH exchange-rate feed).",
     "accrualKind": "Appreciating",
+    "labels": [
+      "ether.fi",
+      "LRT"
+    ],
     "divergenceToleranceBps": 250,
     "priceFeeds": [
       {
@@ -98,6 +110,10 @@
     "address": "0xae78736Cd615f374D3085123A210448E74Fc6393",
     "$kindComment": "Rocket Pool rETH; exchange rate grows, balance static.",
     "accrualKind": "Appreciating",
+    "labels": [
+      "Rocket Pool",
+      "LST"
+    ],
     "divergenceToleranceBps": 250,
     "priceFeeds": [
       {
@@ -118,6 +134,10 @@
     "address": "0xE72B141DF173b999AE7c1aDcbF60Cc9833Ce56a8",
     "$kindComment": "Reserve RToken, basket of ETH LSTs. Measured on-chain 2026-07-31: basketsNeeded/totalSupply = 4162.403/3806.244 = 1.0936 (>1) and no rebase() entry point, so the balance is static and value accrues through the redemption rate. That single sample shows the level, not the trend, though the ratio is monotone in practice: measured 1.0912985 -> 1.0929479 -> 1.0935725 at blocks 25508413/25608413/25658413, rising across both an issuance and a redemption leg because basketsNeeded moves proportionally with supply. It can still fall on a collateral haircut.",
     "accrualKind": "Appreciating",
+    "labels": [
+      "Reserve",
+      "RToken"
+    ],
     "priceFeeds": [
       {
         "type": "Chainlink",
@@ -130,6 +150,10 @@
     "address": "0xbf5495Efe5DB9ce00f80364C8B423567e58d2110",
     "$kindComment": "Renzo ezETH; rate from RestakeManager (per feed config).",
     "accrualKind": "Appreciating",
+    "labels": [
+      "Renzo",
+      "LRT"
+    ],
     "divergenceToleranceBps": 250,
     "priceFeeds": [
       {
@@ -156,6 +180,10 @@
     "address": "0xA1290d69c65A6Fe4DF752f95823fae25cB99e5A7",
     "$kindComment": "Kelp rsETH; rate from rateProvider (per feed config).",
     "accrualKind": "Appreciating",
+    "labels": [
+      "Kelp DAO",
+      "LRT"
+    ],
     "priceFeeds": [
       {
         "type": "Custom",
@@ -168,6 +196,10 @@
     "address": "0xA35b1B31Ce002FBF2058D22F30f95D405200A15b",
     "$kindComment": "Stader ETHx; rate from stakePoolsManager (per feed config).",
     "accrualKind": "Appreciating",
+    "labels": [
+      "Stader",
+      "LST"
+    ],
     "divergenceToleranceBps": 250,
     "priceFeeds": [
       {
@@ -189,6 +221,10 @@
     "address": "0xf1C9acDc66974dFB6dEcB12aA385b9cD01190E38",
     "$kindComment": "StakeWise osETH; rate from osTokenVaultController (per feed config).",
     "accrualKind": "Appreciating",
+    "labels": [
+      "StakeWise V3",
+      "LST"
+    ],
     "divergenceToleranceBps": 250,
     "priceFeeds": [
       {
@@ -209,6 +245,10 @@
   "USDC": {
     "address": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
     "accrualKind": "None",
+    "labels": [
+      "Circle",
+      "Stablecoin"
+    ],
     "pegToleranceBps": 100,
     "divergenceToleranceBps": 50,
     "priceFeeds": [
@@ -230,6 +270,10 @@
     "address": "0x1aBaEA1f7C830bD89Acc67eC4af516284b1bC33c",
     "$kindComment": "FLAG: EUR fiat-backed, so it is hard-pegged but NOT to the NAV's quote asset - its USD price moves with EUR/USD. That is why it carries NO pegToleranceBps: a $1 guard would fire constantly. Do not add one.",
     "accrualKind": "None",
+    "labels": [
+      "Circle",
+      "Stablecoin"
+    ],
     "priceFeeds": [
       {
         "type": "Chainlink",
@@ -241,6 +285,10 @@
   "BAL": {
     "address": "0xba100000625a3754423978a60c9317c58a424e3D",
     "accrualKind": "None",
+    "labels": [
+      "Balancer",
+      "Governance"
+    ],
     "priceFeeds": [
       {
         "type": "Chainlink",
@@ -252,6 +300,10 @@
   "RPL": {
     "address": "0xD33526068D116cE69F19A9ee46F0bd304F21A51f",
     "accrualKind": "None",
+    "labels": [
+      "Rocket Pool",
+      "Governance"
+    ],
     "priceFeeds": [
       {
         "type": "Chainlink",
@@ -264,6 +316,10 @@
     "address": "0xae7ab96520DE3A18E5e111B5EaAb095312D7fE84",
     "$kindComment": "Lido staked ETH; stETH/ETH held at 1.0 by the redemption invariant (per feed config) and yield delivered as balance growth.",
     "accrualKind": "Rebasing",
+    "labels": [
+      "Lido",
+      "LST"
+    ],
     "divergenceToleranceBps": 250,
     "$comment": "Finding #1: stETH was the only ETH-LST whose PRIMARY was a market feed, while wstETH and eETH - the same underlying claim - are priced fundamental. During a stETH discount the two disagreed by the full discount and irregularPriceAssets flagged wstETH but not stETH, which reads backwards. Primary is now the fundamental unit-rate feed; the market stETH/ETH cross-rate is retained as a monitor so divergenceBps becomes meaningful for stETH for the first time. Heartbeat stays 86400 to match wstETH/weETH/eETH; it is looser than WETH's 3600 base, which is safe because NavBaseUsdLib inherits the base's own staleness verdict regardless, so a looser derived heartbeat cannot over-report.",
     "priceFeeds": [
@@ -290,6 +346,10 @@
     "address": "0x8c1BEd5b9a0928467c9B1341Da1D7BD5e10b6549",
     "$kindComment": "Liquid Collective lsETH; Chainlink 'LsETH / ETH Exchange Rate' (per feed config).",
     "accrualKind": "Appreciating",
+    "labels": [
+      "Liquid Collective",
+      "LST"
+    ],
     "priceFeeds": [
       {
         "type": "Custom",
@@ -301,6 +361,10 @@
   "CRV": {
     "address": "0xD533a949740bb3306d119CC777fa900bA034cd52",
     "accrualKind": "None",
+    "labels": [
+      "Curve",
+      "Governance"
+    ],
     "priceFeeds": [
       {
         "type": "Chainlink",
@@ -312,6 +376,10 @@
   "CVX": {
     "address": "0x4e3FBD56CD56c3e72c1403e103b45Db9da5B9D2B",
     "accrualKind": "None",
+    "labels": [
+      "Convex",
+      "Governance"
+    ],
     "priceFeeds": [
       {
         "type": "Chainlink",
@@ -323,6 +391,10 @@
   "USDS": {
     "address": "0xdC035D45d973E3EC169d2276DDab16f1e407384F",
     "accrualKind": "None",
+    "labels": [
+      "Sky",
+      "Stablecoin"
+    ],
     "pegToleranceBps": 100,
     "priceFeeds": [
       {
@@ -335,6 +407,10 @@
   "USDT": {
     "address": "0xdAC17F958D2ee523a2206206994597C13D831ec7",
     "accrualKind": "None",
+    "labels": [
+      "Tether",
+      "Stablecoin"
+    ],
     "pegToleranceBps": 100,
     "divergenceToleranceBps": 50,
     "priceFeeds": [
@@ -355,6 +431,10 @@
   "DAI": {
     "address": "0x6B175474E89094C44Da98b954EedeAC495271d0F",
     "accrualKind": "None",
+    "labels": [
+      "Sky",
+      "Stablecoin"
+    ],
     "pegToleranceBps": 100,
     "priceFeeds": [
       {
@@ -367,6 +447,10 @@
   "GHO": {
     "address": "0x40D16FC0246aD3160Ccc09B8D0D3A2cD28aE6C2f",
     "accrualKind": "None",
+    "labels": [
+      "Aave V3",
+      "Stablecoin"
+    ],
     "pegToleranceBps": 100,
     "priceFeeds": [
       {
@@ -379,6 +463,10 @@
   "USDe": {
     "address": "0x4c9EDD5852cd905f086C759E8383e09bff1E68B3",
     "accrualKind": "None",
+    "labels": [
+      "Ethena",
+      "Synthetic Dollar"
+    ],
     "pegToleranceBps": 100,
     "divergenceToleranceBps": 50,
     "priceFeeds": [
@@ -400,6 +488,10 @@
     "address": "0x9D39A5DE30e57443BfF2A8307A4256c8797A3497",
     "$kindComment": "Staked USDe share; balance static, rate grows with funding yield.",
     "accrualKind": "Appreciating",
+    "labels": [
+      "Ethena",
+      "Savings"
+    ],
     "divergenceToleranceBps": 250,
     "priceFeeds": [
       {
@@ -424,6 +516,10 @@
   "RLUSD": {
     "address": "0x8292Bb45bf1Ee4d140127049757C2E0fF06317eD",
     "accrualKind": "None",
+    "labels": [
+      "Ripple",
+      "Stablecoin"
+    ],
     "pegToleranceBps": 100,
     "priceFeeds": [
       {
@@ -436,6 +532,10 @@
   "crvUSD": {
     "address": "0xf939E0A03FB07F59A73314E73794Be0E57ac1b4E",
     "accrualKind": "None",
+    "labels": [
+      "Curve",
+      "Stablecoin"
+    ],
     "pegToleranceBps": 100,
     "priceFeeds": [
       {
@@ -449,6 +549,10 @@
     "address": "0xa3931d71877C0E7a3148CB7Eb4463524FEc27fbD",
     "$kindComment": "ERC-4626 share of USDS; balance static, rate grows.",
     "accrualKind": "Appreciating",
+    "labels": [
+      "Sky",
+      "Savings"
+    ],
     "$comment": "Finding #8: heartbeat raised 82800 -> 86400 to match its own base asset USDS. Post-ADR-0019 this feed's latestRoundData().updatedAt IS the USDS/USD feed's timestamp (ERC4626VaultRatePriceFeed._compute -> NavBaseUsdLib.baseUsd), and _selectFeedCore gates that timestamp against the heartbeat registered HERE. So a derived feed gated tighter than its base cannot prevent a stale price - it can only manufacture a stale verdict while the base is still fresh. Measured on the USDS/USD aggregator 0x592700e4FcDd674dC54d2681DED3B63f54F63f9A over 58 days (61 intervals, rounds 2483-2544): the publisher is heartbeat-driven on a ~23h cadence and 59 of 61 intervals overshot 82800 by a median 24s (max 72s), so sUSDS was priced $0 and listed in stalePriceAssets for ~23s a day, on 97% of days, while USDS itself never went stale (max gap 82872 < 86400). 86400 restores the same 3600s of margin the base carries. sUSDS has a single primary feed, so there is no second feed to rescue the read. Do NOT tighten the reverse direction (wstETH/stETH/lsETH/weETH/eETH/OETH/LDO at 86400 over WETH's 3600): a looser derived heartbeat cannot over-report, because NavBaseUsdLib inherits the base's own staleness verdict regardless.",
     "priceFeeds": [
       {
@@ -462,6 +566,10 @@
     "address": "0x80ac24aA929eaF5013f6436cdA2a7ba190f5Cc0b",
     "$kindComment": "Maple syrupUSDC share, USDC underlying; priced via convertToAssets (per feed config).",
     "accrualKind": "Appreciating",
+    "labels": [
+      "Maple",
+      "Savings"
+    ],
     "priceFeeds": [
       {
         "type": "Custom",
@@ -474,6 +582,10 @@
     "address": "0xCafEaa466736ac01e0AC9CA72644BeF348694731",
     "$kindComment": "Nexus Mutual RWI Vault - ERC-4626 share, USDC underlying; priced USDC/USD x convertToAssets (per feed config).",
     "accrualKind": "Appreciating",
+    "labels": [
+      "Nexus Mutual",
+      "Vault"
+    ],
     "priceFeeds": [
       {
         "type": "Custom",
@@ -486,6 +598,10 @@
     "address": "0xE1753F2e00940cC31213dd92013cF019DFE4ca1d",
     "$kindComment": "Aave sGHO savings vault - ERC-4626 share, GHO underlying; priced GHO/USD x convertToAssets (per feed config).",
     "accrualKind": "Appreciating",
+    "labels": [
+      "Aave V3",
+      "Savings"
+    ],
     "priceFeeds": [
       {
         "type": "Custom",
@@ -497,6 +613,10 @@
   "AAVE": {
     "address": "0x7Fc66500c84A76Ad7e9c93437bFc5Ac33E2DDaE9",
     "accrualKind": "None",
+    "labels": [
+      "Aave",
+      "Governance"
+    ],
     "priceFeeds": [
       {
         "type": "Chainlink",
@@ -508,6 +628,10 @@
   "UNI": {
     "address": "0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984",
     "accrualKind": "None",
+    "labels": [
+      "Uniswap",
+      "Governance"
+    ],
     "priceFeeds": [
       {
         "type": "Chainlink",
@@ -519,6 +643,10 @@
   "LDO": {
     "address": "0x5A98FcBEA516Cf06857215779Fd812CA3beF1B32",
     "accrualKind": "None",
+    "labels": [
+      "Lido",
+      "Governance"
+    ],
     "priceFeeds": [
       {
         "type": "Custom",
@@ -530,6 +658,10 @@
   "EIGEN": {
     "address": "0xec53bF9167f50cDEB3Ae105f56099aaaB9061F83",
     "accrualKind": "None",
+    "labels": [
+      "EigenLayer",
+      "Governance"
+    ],
     "divergenceToleranceBps": 50,
     "priceFeeds": [
       {
@@ -549,6 +681,10 @@
   "COMP": {
     "address": "0xc00e94Cb662C3520282E6f5717214004A7f26888",
     "accrualKind": "None",
+    "labels": [
+      "Compound",
+      "Governance"
+    ],
     "priceFeeds": [
       {
         "type": "Chainlink",
@@ -560,6 +696,10 @@
   "WBTC": {
     "address": "0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599",
     "accrualKind": "None",
+    "labels": [
+      "BitGo",
+      "Wrapped Bitcoin"
+    ],
     "divergenceToleranceBps": 50,
     "priceFeeds": [
       {
@@ -579,6 +719,10 @@
   "ENS": {
     "address": "0xC18360217D8F7Ab5e7c516566761Ea12Ce7F9D72",
     "accrualKind": "None",
+    "labels": [
+      "ENS",
+      "Governance"
+    ],
     "priceFeeds": [
       {
         "type": "Chainlink",
@@ -591,6 +735,10 @@
     "address": "0x856c4Efb76C1D1AE02e20CEB03A2A6a08b0b8dC3",
     "$kindComment": "Origin ETH; rebasing to holders, priced via a market OETH/ETH cross-rate. accrualKind describes the TOKEN, not this system's positions: Origin's OToken auto-migrates CONTRACT holders to non-rebasing on their first balance-changing interaction, and that has already happened to a registered account here - ACCOUNT_11 (0x0EFcCBb9E2C09Ea29551879bd9Da32362b32fc89) carries nonRebasingCreditsPerToken = 1e18 with rebaseState = NotSet, i.e. auto-classified with nobody opting out. So do NOT infer balance growth for a Safe's OETH position from Rebasing. No registered account held OETH when this was measured (mainnet block 25656631; 36% of OETH supply was non-rebasing).",
     "accrualKind": "Rebasing",
+    "labels": [
+      "Origin",
+      "LST"
+    ],
     "priceFeeds": [
       {
         "type": "Custom",
@@ -603,6 +751,10 @@
     "address": "0xE95A203B1a91a908F9B9CE46459d101078c2c3cb",
     "$kindComment": "Ankr ankrETH; priced ETH/USD / ankrETH.ratio() (per feed config).",
     "accrualKind": "Appreciating",
+    "labels": [
+      "Ankr",
+      "LST"
+    ],
     "priceFeeds": [
       {
         "type": "Custom",
@@ -614,6 +766,10 @@
   "NXM": {
     "address": "0xd7c49CEE7E9188cCa6AD8FF264C1DA2e69D4Cf3B",
     "accrualKind": "None",
+    "labels": [
+      "Nexus Mutual",
+      "Membership"
+    ],
     "priceFeeds": [
       {
         "type": "Custom",
@@ -625,6 +781,10 @@
   "wNXM": {
     "address": "0x0d438F3b5175Bebc262bF23753C1E53d03432bDE",
     "accrualKind": "None",
+    "labels": [
+      "Nexus Mutual",
+      "Membership"
+    ],
     "priceFeeds": [
       {
         "type": "Custom",
@@ -637,6 +797,10 @@
   "cbBTC": {
     "address": "0xcbB7C0000aB88B473b1F5aFd9ef808440eED33Bf",
     "accrualKind": "None",
+    "labels": [
+      "Coinbase",
+      "Wrapped Bitcoin"
+    ],
     "divergenceToleranceBps": 50,
     "priceFeeds": [
       {

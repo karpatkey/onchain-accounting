@@ -41,6 +41,10 @@
     "address": "0x1F32b1c2345538c0c6f582fCB022739c4A194Ebb",
     "$kindComment": "Wrapped stETH; balance static, its stETH redemption rate grows. The appreciating half of the stETH pair (stETH itself is not a registered asset on this chain). Priced here off a Chainlink wstETH/USD market feed (per feed config) - the stEthPerToken path is mainnet-only.",
     "accrualKind": "Appreciating",
+    "labels": [
+      "Lido",
+      "LST"
+    ],
     "priceFeeds": [
       {
         "type": "Chainlink",
@@ -52,6 +56,10 @@
   "USDC": {
     "address": "0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85",
     "accrualKind": "None",
+    "labels": [
+      "Circle",
+      "Stablecoin"
+    ],
     "divergenceToleranceBps": 50,
     "pegToleranceBps": 100,
     "priceFeeds": [
@@ -72,6 +80,10 @@
   "USDT": {
     "address": "0x94b008aA00579c1307B0EF2c499aD98a8ce58e58",
     "accrualKind": "None",
+    "labels": [
+      "Tether",
+      "Stablecoin"
+    ],
     "divergenceToleranceBps": 50,
     "pegToleranceBps": 100,
     "priceFeeds": [
@@ -92,6 +104,10 @@
   "COMP": {
     "address": "0x7e7d4467112689329f7E06571eD0E8CbAd4910eE",
     "accrualKind": "None",
+    "labels": [
+      "Compound",
+      "Governance"
+    ],
     "priceFeeds": [
       {
         "type": "Chainlink",

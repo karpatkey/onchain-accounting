@@ -279,6 +279,19 @@ before the bump is stale on arrival.
 
 ### 0.3 Regenerate BOTH library pins — last, in its own commit
 
+> ✅ **DONE.** Measured against the merged tree at `f837f076` from a cold `forge clean && forge build --force`
+> (937 s) with `git submodule status` reporting **zero** mismatches:
+>
+> | library | pinned | |
+> |---|---|---|
+> | `PriceFeedLib` | `0xcD6F52F4b5F2e563993d1966C27E7E322281Bb26` | moved from `0xfc6AE534…` |
+> | `NAVRegistryLib` | `0x5f5D054E021A53E1DEF54B3Bda3c939ccD14fd90` | **unchanged — measured, not assumed** |
+>
+> Derived twice by independent paths that agreed: the suite's own
+> `vm.computeCreate2Address(computeSalt(name,1), keccak256(type(Lib).creationCode), …)`, and a separate
+> keccak/CREATE2 computation over the built artifact. All four assertions in `LibraryPinConsistency.t.sol`
+> pass on the regenerated tree.
+
 Own PR, own commit, computed against the **final merged tree** — which already includes the
 `DeploySalts.NAV_PROXY` bump from 0.2 (merged in #180 ahead of the regen for this reason). Never in the same commit as a source change — that is exactly how `6b7e4851` wrote a
 stale-from-birth pin.
@@ -707,21 +720,19 @@ written. Run `08` late and `RegisterAssets` aborts with `AssetKindRegistryNotDep
 than falling back to `NAVCalculator.registerAsset`, which would succeed while permanently costing every asset
 in that run its labels.
 
-> **Do not read "independent of the NAV stack" as "no pin regeneration is owed".** The *feature* moves
-> `PriceFeedLib`'s pin — the registry's arrival under `src/` coincided with the `via_ir` whole-program stack
-> margin being reached, which prompted the `PriceFeedLib._assignHealthArrays` extraction. The regeneration
-> gate under *Sequencing* applies unchanged.
+> **The pin regeneration this feature owed has been DONE — see 0.3.** The registry's arrival under `src/`
+> coincided with the `via_ir` whole-program stack margin being reached, which prompted the
+> `PriceFeedLib._assignHealthArrays` extraction and moved that library's pin. Both pins are now measured
+> against the merged tree; `NAVRegistryLib` did not move.
 
 - **Precondition:** #241 merged; 1.3 done (the registry is granted a role on the **new** proxy); the chain's
   `nav-config/assets-and-price-feeds/<CID>.json` carries a valid `accrualKind` on **every** asset — it is
   fail-closed with no default, so one missing or misspelled value aborts that chain's run.
-- **Post-condition:** no `verify_step.py` gate exists for this step yet. Until one does, assert by hand that
-  the registry is recorded, has code, and **holds `MANAGER` on the new NAV** — the last is the one that
-  silently makes the facade dead if it is missing:
-  ```bash
-  REG=$(jq -r '.AssetKindRegistry' script/config/deployments/$CID.json)
-  cast call $PROXY 'hasRole(bytes32,address)(bool)' $(cast keccak "MANAGER") $REG --rpc-url $RPC   # true
-  ```
+- **Post-condition:** `python3 script/deploy/preflight/verify_step.py 1.4` — asserts the registry is recorded,
+  has code, is bound to the recorded proxy, **holds `MANAGER` on the new NAV** (without which the facade is
+  dead on writes) and that **the NAV points BACK at it** (without which every read reverts), plus a sampled
+  classification. An earlier revision of this line said no gate existed; it does, and it covers both
+  directions of the link.
 
 ### 1.5 `03_DeployPriceFeeds` — 41 custom feeds
 

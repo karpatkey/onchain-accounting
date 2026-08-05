@@ -134,8 +134,6 @@ An asset wires in a deployed feed by name via a `"type":"Custom","feed":"<feedNa
     "enabled": true,
     "constructor": {
       "wstEth": "0x7f39C581F595B53c5cb19bD0b3f8dA6c935E2Ca0",
-      "stEthToEthChainlinkOracle": "0x86392dC19c0b719886221c78AB11eb8Cf5c52812",
-      "stEthToEthChainlinkHeartbeat": "86400",
       "baseAsset": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
     }
   }

@@ -63,7 +63,7 @@ Counted from `script/config/nav-config/meta-balance-adapters/<chainId>.json`, ta
 with `enabled: true` and summing `instances` + `instancesRaw`. Two independent confirmations: the
 deduplicated count is also 110 (no coordinate repeats within an adapter, so `06` cannot revert
 `DuplicateMetaInstance`), and unique `(chain, coordinate)` pairs across *all* adapters is also 110
-(no coordinate is claimed by two adapters on one chain). **`verify_step.py 1.7` then compared each
+(no coordinate is claimed by two adapters on one chain). **`verify_step.py 1.8` then compared each
 adapter's on-chain `getMetaInstances()` against config as a SET on all 7 configured chains and passed
 — so config and the live NAV agree exactly, not merely in total.**
 
@@ -78,7 +78,7 @@ adapter's on-chain `getMetaInstances()` against config as a SET on all 7 configu
   predates the config split in `f4873617` and should be treated as retired, not reconciled.
 
 Do not re-derive this by hand on deploy day. `preflight_config.py` prints the configured total and
-`verify_step.py 1.7` asserts it per adapter against the chain; if a future config change moves the
+`verify_step.py 1.8` asserts it per adapter against the chain; if a future config change moves the
 number, those two move with it and this table is the thing that goes stale.
 
 ### Why this is a NEW PROXY and not an implementation upgrade
@@ -498,7 +498,7 @@ BROADCAST="--rpc-url $RPC --broadcast --account my-deployer --password-file <pwf
 
 > **`PERSIST_DEPLOYMENTS=1` is mandatory on steps 1.2 and 1.3.** `BaseDeployScript.sol:33` gates the
 > top-level address writes on it. Without it `01_2`/`02_2` only *log* the new library, impl and proxy
-> addresses; `script/config/deployments/<CID>.json` keeps the OLD ones, and steps 1.4–1.7 then build
+> addresses; `script/config/deployments/<CID>.json` keeps the OLD ones, and steps 1.5–1.8 then build
 > feeds against the old NAV and register adapters on the old proxy. Nothing errors.
 > **`PERSIST_DEPLOYMENTS=1` is also mandatory on 1.6 — and the reason is a split inside one script.**
 > The per-**adapter** writes in `03`/`04` are NOT gated: they go through `ConfigReader.writeAdapterAddress`
@@ -748,7 +748,7 @@ proxy invalidates every existing feed.
 > `03` deploys all 26 mainnet entries and nothing is skipped as `primary feed unresolved`.
 >
 > Keep taking the number from the tooling rather than from here: `preflight_config.py` prints the
-> configured total and `verify_step.py 1.4` compares against it, so both follow config automatically.
+> configured total and `verify_step.py 1.5` compares against it, so both follow config automatically.
 > This paragraph is the thing that goes stale — as it just did, twice.
 >
 > **The three dead feed contracts are a separate matter and change the count by ZERO.**
@@ -762,7 +762,7 @@ proxy invalidates every existing feed.
 > never among the 39. Verified against both the deployment records and the enabled config 2026-07-29.
 
 - **Precondition:** 1.1 cleared `customPriceFeeds.*`; 1.3 wrote the NEW `NAVCalculatorProxy`.
-- **Post-condition:** `python3 script/deploy/preflight/verify_step.py 1.4` — the feed count matches
+- **Post-condition:** `python3 script/deploy/preflight/verify_step.py 1.5` — the feed count matches
   the table above, every feed has code, and every feed's `NAV()` immutable points at the **new** proxy.
   That last one is the check that matters: a feed is otherwise indistinguishable from a correct one
   while still pricing against the abandoned NAV.
@@ -786,7 +786,7 @@ checkout.
 - **Precondition:** **1.4 done** — Custom feeds resolve through
   `deployments/<id>.json .customPriceFeeds.<name>`, and without them 20 of mainnet's 43 assets are
   silently skipped (see the authoritative order at the top of section 1).
-- **Post-condition:** `python3 script/deploy/preflight/verify_step.py 1.5` — `getAssetCount()` equals
+- **Post-condition:** `python3 script/deploy/preflight/verify_step.py 1.6` — `getAssetCount()` equals
   the configured count (43 / 11 / 11 / 6 / 11 / 5 / 6 for chains 1 / 42161 / 8453 / 10 / 100 / 137 /
   56) **and** the registered address set equals the configured one, so one asset silently substituted
   for another cannot pass on the count alone.
@@ -809,12 +809,12 @@ Deploys plain + meta adapters via plain `new` (CREATE), then the delegatecall as
 > the Roles modifier by reading them out of the record, so an unrecorded assistant is an assistant nobody
 > can be handed.
 >
-> **If `verify_step.py 1.6` says an assistant is missing, read its hint sceptically.** It reports
+> **If `verify_step.py 1.7` says an assistant is missing, read its hint sceptically.** It reports
 > *"`04` skips an assistant whose key is already populated, so check 1.1 cleared it"* — which names the
 > wrong cause for this failure. Check whether the flag was set on this step **before** re-litigating 1.1.
 
 - **Precondition:** 1.1 cleared `balanceAdapters.*` **and** the three `*Assistant` keys.
-- **Post-condition:** `python3 script/deploy/preflight/verify_step.py 1.6` — adapter count per chain
+- **Post-condition:** `python3 script/deploy/preflight/verify_step.py 1.7` — adapter count per chain
   = 27 / 8 / 7 / 4 / 3 / 2 / 1 for 1 / 42161 / 8453 / 100 / 10 / 137 / 56 (ERC20Default included),
   every adapter has code, and **each assistant's `ADAPTER()` resolves to its paired assisted adapter**.
   Run it on chains 1 and 100: against the live stack it reproduces all four orphaned pairings from
@@ -835,7 +835,7 @@ configuration` (`06:37`) and skips the entire bridge block. The deferred bridge 
 touched at all by this step, not merely touched idempotently.
 
 - **Precondition:** 1.5 and 1.6 done.
-- **Post-condition:** `python3 script/deploy/preflight/verify_step.py 1.7` — `getAdapterCount()`
+- **Post-condition:** `python3 script/deploy/preflight/verify_step.py 1.8` — `getAdapterCount()`
   matches 1.6, every recorded adapter reports `isAdapterRegistered`, nothing is registered that is not
   in the record, and each meta adapter's `getMetaInstances()` **set equals** its configured coordinate
   set, summing to the total in the meta-instance table at the top of this document (**110** as
@@ -849,7 +849,7 @@ touched at all by this step, not merely touched idempotently.
 
 > **Operator check during re-registration (from #172).** Verify each registered instance resolves as
 > intended rather than silently masking a misconfiguration. In particular, Aave V3 exposes two
-> DataProviders; registering both double-counts positions. `verify_step.py 1.7` compares instance
+> DataProviders; registering both double-counts positions. `verify_step.py 1.8` compares instance
 > **sets**, not counts, so a wrong-but-same-sized instance set fails — but it compares against
 > *config*, so it cannot tell you the config itself named the wrong DataProvider. That judgement stays
 > human.
@@ -1136,6 +1136,6 @@ to the new proxy. The old stack keeps answering until they do; nothing needs unr
 | `RegisterAssets` logs `[skip] primary feed unresolved (deploy it first)` | it ran before `03`, so Custom feeds are not in the record | run `03` first; re-run `RegisterAssets` (idempotent) and confirm `getAssetCount()` |
 | `vm.writeJson: failed to open .../safe-transactions/<id>-register-assets.json` | the directory does not exist; on-chain writes already succeeded | `mkdir -p safe-transactions`, re-run |
 | addresses differ per chain that should be identical | a chain ran with a different build or submodule set | 0.4, then rebuild and redeploy that chain — `verify_step.py 1.2`/`1.3` compares across chains and names the odd one out |
-| an assistant's `ADAPTER()` is not its paired adapter | the `*Assistant` key was not cleared, so `04` skipped the redeploy | clear it (1.1), re-run 1.6, re-check with `verify_step.py 1.6` |
+| an assistant's `ADAPTER()` is not its paired adapter | the `*Assistant` key was not cleared, so `04` skipped the redeploy | clear it (1.1), re-run 1.7, re-check with `verify_step.py 1.7` |
 | hyperevm impl deploy "exceeds block gas limit" | small blocks | enable big blocks (1.9) |
 | hemi tx rejected on price | fee floor | raise `--with-gas-price` (1.9) |

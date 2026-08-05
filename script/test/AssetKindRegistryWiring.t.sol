@@ -22,6 +22,13 @@ import "src/constants.sol";
 ///      introduced the getter, the PR that replaced it, and two independent reviews, because the two directions of the
 ///      NAV↔registry link are invisible from inside either contract.
 ///
+///      **What this harness does NOT cover, stated with an accurate count.** `08` declares **SIX** guards —
+///      `AssetKindMissingOrInvalid`, `AssetAddressMissing`, `AssetAddressZero`, `RecordedRegistryHasNoCode`,
+///      `RegistryBoundToDifferentNav` and `NavCalculatorNotDeployed` — and this file reaches **none** of them: it
+///      exercises the happy path and asserts the wiring outcome. So it NARROWS #253; it does not close it. An earlier
+///      revision of this note said "four", which understated the remaining gap — the same failure as overstating
+///      coverage, only politer.
+///
 ///      **Nothing could have caught it, because `08`'s `run()` had never been executed by any test.** The only
 ///      script-side coverage was `AssetKindConfigParsing.t.sol`, which by its own docstring exercises `ConfigReader`'s
 ///      mapping rather than the script. So the rule this repo applies to guards — a branch that has never run is

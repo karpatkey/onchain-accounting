@@ -33,7 +33,7 @@ python3 reset_deployment_records.py --apply --tag pre-redeploy
 
 # … deploy per the runbook, gating each step on its post-condition …
 python3 verify_step.py 1.2                        # after 01_2, before 02_2
-python3 verify_step.py 1.3                        # … and so on through 1.7
+python3 verify_step.py 1.3                        # … and so on through 1.8
 
 # after the deploy
 forge clean && forge build

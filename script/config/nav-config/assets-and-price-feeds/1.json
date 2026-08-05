@@ -181,7 +181,7 @@
     "$kindComment": "Kelp rsETH; rate from rateProvider (per feed config).",
     "accrualKind": "Appreciating",
     "labels": [
-      "Kelp",
+      "Kelp DAO",
       "LRT"
     ],
     "priceFeeds": [
@@ -222,7 +222,7 @@
     "$kindComment": "StakeWise osETH; rate from osTokenVaultController (per feed config).",
     "accrualKind": "Appreciating",
     "labels": [
-      "StakeWise",
+      "StakeWise V3",
       "LST"
     ],
     "divergenceToleranceBps": 250,
@@ -448,7 +448,7 @@
     "address": "0x40D16FC0246aD3160Ccc09B8D0D3A2cD28aE6C2f",
     "accrualKind": "None",
     "labels": [
-      "Aave v3",
+      "Aave V3",
       "Stablecoin"
     ],
     "pegToleranceBps": 100,
@@ -599,7 +599,7 @@
     "$kindComment": "Aave sGHO savings vault - ERC-4626 share, GHO underlying; priced GHO/USD x convertToAssets (per feed config).",
     "accrualKind": "Appreciating",
     "labels": [
-      "Aave v3",
+      "Aave V3",
       "Savings"
     ],
     "priceFeeds": [

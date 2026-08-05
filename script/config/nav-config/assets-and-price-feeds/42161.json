@@ -115,7 +115,7 @@
     "$kindComment": "Kelp rsETH; priced via a Chainlink rsETH/ETH exchange-rate feed (per feed config) - the rateProvider path is mainnet-only.",
     "accrualKind": "Appreciating",
     "labels": [
-      "Kelp",
+      "Kelp DAO",
       "LRT"
     ],
     "divergenceToleranceBps": 250,
@@ -186,7 +186,7 @@
     "address": "0x7dfF72693f6A4149b17e7C6314655f6A9F7c8B33",
     "accrualKind": "None",
     "labels": [
-      "Aave v3",
+      "Aave V3",
       "Stablecoin"
     ],
     "pegToleranceBps": 100,

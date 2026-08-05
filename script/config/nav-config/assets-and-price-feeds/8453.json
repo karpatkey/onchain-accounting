@@ -154,7 +154,7 @@
     "address": "0x6Bb7a212910682DCFdbd5BCBb3e28FB4E8da10Ee",
     "accrualKind": "None",
     "labels": [
-      "Aave v3",
+      "Aave V3",
       "Stablecoin"
     ],
     "pegToleranceBps": 100,

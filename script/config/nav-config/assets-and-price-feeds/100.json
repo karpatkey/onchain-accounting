@@ -16,7 +16,7 @@
     "$kindComment": "StakeWise osGNO on Gnosis; rate-based, GNO underlying which itself floats.",
     "accrualKind": "Appreciating",
     "labels": [
-      "StakeWise",
+      "StakeWise V3",
       "LST"
     ],
     "priceFeeds": [
@@ -104,7 +104,7 @@
     "address": "0xfc421aD3C883Bf9E7C4f42dE845C4e4405799e73",
     "accrualKind": "None",
     "labels": [
-      "Aave v3",
+      "Aave V3",
       "Stablecoin"
     ],
     "pegToleranceBps": 100,

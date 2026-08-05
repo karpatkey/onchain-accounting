@@ -174,9 +174,9 @@ interface IAssetKindRegistry {
     /// @notice One asset's display labels, in significant order. Never reverts — an unlabelled or unclassified asset
     ///         returns an empty array.
     /// @dev **Order is meaningful and the list is not a set.** Index 0 is the protocol or issuer; later indices narrow
-    ///      to the product or kind — `["Aave v3", "Savings"]`, `["Lido", "LST"]`. This mirrors the house rule stated in
-    ///      `ProtocolNames.sol`: `protocolName()` names the PROTOCOL, never the product, and what distinguishes the
-    ///      product is `positionLabels()`. The content is FREE TEXT; nothing on-chain parses it.
+    ///      to the product or kind — `["Aave V3", "Savings"]`, `["Lido", "LST"]`. That broad-to-narrow ORDER is how
+    ///      `protocolName()` and `positionLabels()` compose, but the CONTENT differs: these labels carry the protocol
+    ///      at index 0, which `positionLabels()` never does. The content is FREE TEXT; nothing on-chain parses it.
     ///
     ///      **An empty result is a legitimate answer, not an error.** `positionLabels()` already returns empty arrays
     ///      legitimately, so this has precedent — an asset with no labels is unlabelled, not misconfigured, and this

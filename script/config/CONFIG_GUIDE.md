@@ -55,8 +55,6 @@ Deployable custom price feed adapters (e.g. sUSDS, wstETH), keyed by feed name, 
     "enabled": true,
     "constructor": {
       "wstEth": "0x7f39C581F595B53c5cb19bD0b3f8dA6c935E2Ca0",
-      "stEthToEthChainlinkOracle": "0x86392dC19c0b719886221c78AB11eb8Cf5c52812",
-      "stEthToEthChainlinkHeartbeat": "86400",
       "baseAsset": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
     }
   }
@@ -419,7 +417,7 @@ Add a per-chain `{newChainId}.json` file in **each** of the nine concern folders
 2. Create `script/config/contracts-deployment-config/custom-price-feeds/{newChainId}.json` with the chain's custom price feeds to deploy (`enabled` + `constructor`).
 3. Create `script/config/contracts-deployment-config/balance-adapters/{newChainId}.json` (plain adapters to deploy) and `script/config/contracts-deployment-config/meta-balance-adapters/{newChainId}.json` (meta adapters to deploy), each with `enabled` + `constructor`; set `enabled: true` for desired adapters.
    Also create `script/config/contracts-deployment-config/bridge-adapters/{newChainId}.json` with the chain's bridge adapters to deploy (`enabled` + `initialize` args + a `remoteChains` array of the remote chain ids whose sibling adapter to trust; standard chain ids, not protocol selectors/domains/eids), and `script/config/contracts-deployment-config/bridge-escrow/{newChainId}.json` with the escrow's post-deploy config (`accounts[]` to authorize + `assets.<SYMBOL>` logical-symbol→local-token map to register).
-4. Create `script/config/nav-config/assets-and-price-feeds/{newChainId}.json` with the chain's assets (`address` + **required `accrualKind`** + `priceFeeds[]`). Omitting `accrualKind` will abort that chain's `08` deploy once #241 lands — it is fail-closed with no default.
+4. Create `script/config/nav-config/assets-and-price-feeds/{newChainId}.json` with the chain's assets (`address` + **required `accrualKind`** + `priceFeeds[]`). Omitting `accrualKind` aborts that chain's `08` deploy — it is fail-closed with no default. `preflight_config.py` rejects it before that, so run preflight rather than discovering it mid-deploy.
 5. Create `script/config/nav-config/balance-adapters/{newChainId}.json` (plain adapters to register) and `script/config/nav-config/meta-balance-adapters/{newChainId}.json` (meta adapters to register, with `instances`/`instancesRaw`).
 6. Create an empty state file `script/config/deployments/{newChainId}.json` (deployed addresses are written here by the scripts).
 7. Run deployment scripts.
@@ -469,7 +467,7 @@ If you have the old `chain-config.json` and `dev-input.json`:
 If you have the older chainId-keyed `assets.json` and `balance-adapters.json` (a single file keyed by chainId), migrate each to the per-concern, per-chain layout (strip the chainId wrapper — the filename is now the chain):
 
 1. Deployed addresses stay in `script/config/deployments/<chainId>.json` (unchanged).
-2. From `assets.json` `<chainId>.assets` → `script/config/nav-config/assets-and-price-feeds/<chainId>.json` (top-level keys = symbols, each `address` + **required `accrualKind`** + `priceFeeds[]`). A migrated row without `accrualKind` will abort `08` once #241 lands.
+2. From `assets.json` `<chainId>.assets` → `script/config/nav-config/assets-and-price-feeds/<chainId>.json` (top-level keys = symbols, each `address` + **required `accrualKind`** + `priceFeeds[]`). A migrated row without `accrualKind` aborts `08`, and `preflight_config.py` rejects it before any transaction is sent.
 3. From `assets.json` `<chainId>.customPriceFeeds` → `script/config/contracts-deployment-config/custom-price-feeds/<chainId>.json` (`enabled` + `constructor`).
 4. From `balance-adapters.json` `<chainId>.<adapter>` `enabled` + `constructor` → `script/config/contracts-deployment-config/balance-adapters/<chainId>.json` (plain) / `script/config/contracts-deployment-config/meta-balance-adapters/<chainId>.json` (meta).
 5. Register the plain adapters in `script/config/nav-config/balance-adapters/<chainId>.json` (`{ "enabled": true }`).

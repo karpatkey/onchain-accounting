@@ -567,6 +567,50 @@ def self_test() -> int:
               cfg("assets-and-price-feeds", 1)["wstETH"]["priceFeeds"][0]["heartbeat"]
               == real_assets["wstETH"]["priceFeeds"][0]["heartbeat"] != 1800)
 
+    # THE accrualKind REQUIREMENT. The check reads `entry.get("accrualKind")` and tests membership of
+    # ACCRUAL_KINDS, so a MISSING key arrives as Python `None` and fails the same membership test an
+    # invalid string fails. That is correct — but it holds by a property of `.get`, not by anything
+    # asserted, and the obvious "tidying" edit (`entry.get("accrualKind", "None")`) would silently
+    # default every unclassified asset to a REAL classification and leave the value arms below green.
+    # Verified by mutation: that edit fails exactly the two arms below that name absence, and no others.
+    #
+    # Mutation is on an in-memory deep copy and `cfg` is restored in `finally`, for the same reason the
+    # heartbeat arm above does it: `script/config` is the record of what production runs.
+    print("accrualKind requirement, mutated against the real mainnet config:")
+    real_cfg = globals()["cfg"]
+    real_assets_ak = real_cfg("assets-and-price-feeds", 1)
+    if not real_assets_ak or "WETH" not in real_assets_ak:
+        check("mainnet assets readable for the accrualKind arm", False)
+    else:
+        def _ak_errs(mutate) -> list[str]:
+            mutated = copy.deepcopy(real_assets_ak)
+            mutate(mutated)
+            globals()["cfg"] = lambda sub, cid: (
+                mutated if (sub == "assets-and-price-feeds" and cid == 1) else real_cfg(sub, cid))
+            try:
+                return [m for m in errs(_check_chain(1)) if "accrualKind" in m and "'WETH'" in m]
+            finally:
+                globals()["cfg"] = real_cfg
+
+        # The clean case first. Without it the arms below are vacuous: a check that flagged EVERY asset
+        # would pass all five mutations and still be worthless.
+        check("WETH carries a legal accrualKind in the real config (arm is not vacuous)",
+              _ak_errs(lambda a: None) == [])
+        check("a MISSING accrualKind key is rejected",
+              len(_ak_errs(lambda a: a["WETH"].pop("accrualKind"))) == 1)
+        check("a misspelled KEY ('accrualkind') is rejected — the real key reads as absent",
+              len(_ak_errs(lambda a: a["WETH"].__setitem__(
+                  "accrualkind", a["WETH"].pop("accrualKind")))) == 1)
+        check("an out-of-vocabulary VALUE is rejected",
+              len(_ak_errs(lambda a: a["WETH"].__setitem__("accrualKind", "Accruing"))) == 1)
+        check("a mis-cased VALUE is rejected (comparison is case-exact)",
+              len(_ak_errs(lambda a: a["WETH"].__setitem__("accrualKind", "appreciating"))) == 1)
+        check("an EMPTY-STRING value is rejected, not treated as absent-and-defaulted",
+              len(_ak_errs(lambda a: a["WETH"].__setitem__("accrualKind", ""))) == 1)
+        check("the real config on disk was not modified by the accrualKind arm",
+              real_cfg("assets-and-price-feeds", 1)["WETH"].get("accrualKind")
+              == real_assets_ak["WETH"].get("accrualKind") is not None)
+
     # THE SNAPSHOT-STALENESS FAILURE MATRIX. The correct answer is exactly ONE emission in every cell.
     # This path had no arm at all, in either direction, which is how two successive wrong placements —
     # one duplicating the warning, one LOSING it — both shipped on a fully green suite. The dimension the

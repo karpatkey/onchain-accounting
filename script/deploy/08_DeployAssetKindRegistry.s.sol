@@ -71,12 +71,12 @@ import "../../src/constants.sol";
 ///      Independent of the NAV *stack*: this script references neither `PriceFeedLib` nor `NAVRegistryLib`, so it does
 ///      not gate — or get gated by — a NAV redeploy. Run it any time after the assets config exists and before `07`.
 ///
-///      **But do not read that as "no pin regeneration is owed".** The FEATURE moves `PriceFeedLib`'s pin
-///      (`0xfc6AE534…` → `0x49C18627665562F4bEbae5208BA6eF7428039614`): `AssetKindRegistry`'s presence under `src/`
-///      coincided with the `via_ir` whole-program stack margin being reached, which prompted the
-///      `PriceFeedLib._assignHealthArrays` extraction (the causal half is no longer demonstrable on a cold build; the
-///      pin move is measured and stands).
-///      `NAVRegistryLib` is genuinely unchanged. See the note on {AssetKindRegistry}.
+///      **The pin regeneration this feature owed HAS BEEN DONE.** `AssetKindRegistry`'s arrival under `src/` moved
+///      `PriceFeedLib`'s pin — its presence coincided with the `via_ir` whole-program stack margin being reached,
+///      which prompted the `PriceFeedLib._assignHealthArrays` extraction (the causal half is no longer demonstrable
+///      on a cold build; the pin move is measured and stands). `PriceFeedLib` is now pinned at `0xcD6F52F4…` and
+///      `NAVRegistryLib` did not move. See the note on {AssetKindRegistry}, and take the authoritative values from
+///      `foundry.toml` / `LibraryPins`, never from prose.
 ///
 ///      Re-running is safe — the step is idempotent and re-classifies an existing registry rather than deploying a
 ///      second one — **but only with `PERSIST_DEPLOYMENTS=1`**, since the skip guard reads the record that flag gates.

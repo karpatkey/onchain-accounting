@@ -49,11 +49,12 @@ import "src/constants.sol";
 ///      the extraction reverted now compiles, so the causal claim is not currently demonstrable — the pin move below
 ///      is, and is measured.)
 ///      That moved `PriceFeedLib` from `0xfc6AE534…` to `0x49C18627665562F4bEbae5208BA6eF7428039614` (it shrank 69
-///      bytes, 18,585 -> 18,516). ⚠️ `0x49C18627…` is what that PR measured, NOT the current value — the library has
-///      moved again since and reads `0xcD6F52F4b5F2e563993d1966C27E7E322281Bb26` on this tree. Take the current
-///      address from a clean build at regeneration time, never from this sentence. `NAVRegistryLib` is genuinely
-///      unchanged and byte-identical. A pin regeneration IS owed — do not read "costs NAVCalculator zero bytes" as
-///      "costs nothing".
+///      bytes, 18,585 -> 18,516). ⚠️ Both of those are HISTORICAL readings, kept because they record why the pin
+///      moved — neither is the pinned value. **The regeneration that was owed has now been done:** `PriceFeedLib` is
+///      pinned at `0xcD6F52F4b5F2e563993d1966C27E7E322281Bb26`, measured from a cold `forge clean && forge build
+///      --force` with every submodule at its recorded revision. `NAVRegistryLib` did NOT move and holds at
+///      `0x5f5D054E…` — measured, not assumed. Do not take a pin from this sentence either: `foundry.toml` and
+///      {LibraryPins} are the only authorities, and `LibraryPinConsistency.t.sol` is what proves they match the tree.
 ///
 ///      *Question 2 — could the NAV hold the kinds as READ surface (a field on an existing struct)?* Also no. Measured
 ///      separately, and recorded so nobody re-attempts it: two fields on the shared `Asset` struct cost **+189 B** (and

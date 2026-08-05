@@ -80,9 +80,10 @@ contract AssetKindRegistryGuardsTest is Test {
     }
 
     function _assetsPath(uint256 id) internal view returns (string memory) {
-        return string(
-            abi.encodePacked(root, "/script/config/nav-config/assets-and-price-feeds/", vm.toString(id), ".json")
-        );
+        return
+            string(
+                abi.encodePacked(root, "/script/config/nav-config/assets-and-price-feeds/", vm.toString(id), ".json")
+            );
     }
 
     function _deploymentsPath(uint256 id) internal view returns (string memory) {
@@ -169,11 +170,8 @@ contract AssetKindRegistryGuardsTest is Test {
     ///      missing-key check first, which is what makes it a distinct branch rather than a rephrasing of it.
     function test_guard_assetAddressZero_whenAddressKeyIsPresentButZero() public {
         uint256 id = CHAIN_ADDR_ZERO;
-        DeployAssetKindRegistry s = _arm(
-            id,
-            '{"USDC":{"address":"0x0000000000000000000000000000000000000000","accrualKind":"None"}}',
-            "{}"
-        );
+        DeployAssetKindRegistry s =
+            _arm(id, '{"USDC":{"address":"0x0000000000000000000000000000000000000000","accrualKind":"None"}}', "{}");
 
         _runExpectingRevert(
             s, id, abi.encodeWithSelector(DeployAssetKindRegistry.AssetAddressZero.selector, "USDC"), "AssetAddressZero"
@@ -232,7 +230,11 @@ contract AssetKindRegistryGuardsTest is Test {
             string(abi.encodePacked('{"USDC":{"address":"', vm.toString(USDC), '","accrualKind":"None"}}')),
             string(
                 abi.encodePacked(
-                    '{"NAVCalculatorProxy":"', vm.toString(NAV_A), '","AssetKindRegistry":"', vm.toString(codeless), '"}'
+                    '{"NAVCalculatorProxy":"',
+                    vm.toString(NAV_A),
+                    '","AssetKindRegistry":"',
+                    vm.toString(codeless),
+                    '"}'
                 )
             )
         );
@@ -313,7 +315,11 @@ contract AssetKindRegistryGuardsTest is Test {
             _deploymentsPath(id),
             string(
                 abi.encodePacked(
-                    '{"NAVCalculatorProxy":"', vm.toString(NAV_A), '","AssetKindRegistry":"', vm.toString(codeless), '"}'
+                    '{"NAVCalculatorProxy":"',
+                    vm.toString(NAV_A),
+                    '","AssetKindRegistry":"',
+                    vm.toString(codeless),
+                    '"}'
                 )
             )
         );

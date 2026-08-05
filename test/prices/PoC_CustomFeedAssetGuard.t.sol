@@ -19,6 +19,12 @@ import {NotAuthorized} from "src/errors.sol";
 ///         with an `immutable`; a third-party feed need not. Used to test whether the registration-time guard in
 ///         `PriceFeedLib._validateFeedSupportInternal` is a runtime invariant or only an admission check.
 contract MutableUnderlyingFeed is ICustomPriceFeed {
+    /// @notice Declared so registration's circularity gate can read it; see {INavSourcedPriceFeed}.
+    /// @dev `address(0)` — no NAV dependency, so registration's circularity gate accepts it. A custom feed that
+    ///      cannot answer this at all is rejected (`IPrices.CustomFeedBaseUnreadable`), which is why a mock that
+    ///      gets registered has to declare it.
+    address public constant BASE_ASSET = address(0);
+
     address private _underlying;
     uint256 private _price;
     uint8 private immutable _dec;

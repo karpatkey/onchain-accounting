@@ -9,6 +9,12 @@ contract Mock_CustomPriceFeed is ICustomPriceFeed {
     string name;
     address addressSupported;
     uint256 price;
+    /// @notice The NAV-sourced base this feed claims, read by registration's circularity gate.
+    /// @dev Defaults to `address(0)` — "no NAV dependency" — which is what a plain mock is, and which the gate always
+    ///      accepts. Deliberately SETTABLE, unlike the `immutable` the interface requires of a real feed: making it
+    ///      circular after construction is how a test drives {IPrices-CustomFeedBaseCircular}, and flipping it after a
+    ///      successful registration is how a test shows the gate is an admission check rather than a live invariant.
+    address public BASE_ASSET;
     uint8 internal _decimals;
     uint256 internal _updatedAt;
     uint256 internal _heartbeat = 3600; // governing-leg heartbeat reported by governingFeedFreshness
@@ -23,6 +29,10 @@ contract Mock_CustomPriceFeed is ICustomPriceFeed {
 
     function setPrice(uint256 _price) external {
         price = _price;
+    }
+
+    function setBaseAsset(address baseAsset_) external {
+        BASE_ASSET = baseAsset_;
     }
 
     function setHeartbeat(uint256 heartbeat_) external {

@@ -158,6 +158,27 @@ interface IPrices {
     /// @param feedAsset The asset the feed actually prices, per its own `underlyingAssetSupported()`.
     error CustomFeedAssetMismatch(address asset, address feed, address feedAsset);
 
+    /// @notice Error when a `Custom` feed is being registered for the very asset it reads its own `base/USD` price
+    /// for — i.e. the feed's {INavSourcedPriceFeed-BASE_ASSET} equals the asset being registered.
+    /// @dev A NAV-sourced custom feed prices its asset as `rate × base/USD` and reads that `base/USD` back out of
+    /// THIS NAV (`NavBaseUsdLib` → `getPriceData(BASE_ASSET)`; ADR 0019). If the base IS the asset, pricing the asset
+    /// re-enters the same feed and recurses until the call stack is exhausted. The read still returns a price — the
+    /// selector's per-feed `try`/`catch` swallows the depth failure and moves on — so the only symptom is that every
+    /// read of that asset, and of everything priced from it, burns gas proportional to ~1024 nested `STATICCALL`
+    /// frames. See the circularity invariant in {NavBaseUsdLib}.
+    /// @param asset The asset the feed is being registered for.
+    /// @param feed The custom feed address.
+    error CustomFeedBaseCircular(address asset, address feed);
+
+    /// @notice Error when a `Custom` feed does not answer {INavSourcedPriceFeed-BASE_ASSET}, so its NAV dependency
+    /// cannot be established at registration.
+    /// @dev Unreadable means REJECT, deliberately. The failure being closed is unbounded recursion, so "the base
+    /// could not be read" must not be allowed to mean "the base is fine". A feed with no NAV dependency states that
+    /// by answering `address(0)`; a feed that cannot answer at all is one whose base cannot be ruled out.
+    /// @param asset The asset the feed is being registered for.
+    /// @param feed The custom feed address.
+    error CustomFeedBaseUnreadable(address asset, address feed);
+
     /// @notice Error when a monitor feed is already registered for an asset.
     error MonitorFeedAlreadyRegistered(address asset, address feed);
 
@@ -198,7 +219,9 @@ interface IPrices {
     /// latestRoundData reports a non-positive answer, a zero updatedAt, or a future timestamp; reverts
     /// InvalidPriceOracleType for an unsupported price type. For `Custom` feeds it additionally reverts
     /// CustomFeedAssetMismatch when the feed's own `underlyingAssetSupported()` is not `underlyingAsset` — a custom
-    /// feed prices exactly one asset and must be registered for that asset.
+    /// feed prices exactly one asset and must be registered for that asset — plus CustomFeedBaseUnreadable when the
+    /// feed does not answer {INavSourcedPriceFeed-BASE_ASSET}, and CustomFeedBaseCircular when that base IS
+    /// `underlyingAsset` (which would make pricing the asset re-enter the same feed).
     /// @param underlyingAsset The address of the token.
     /// @param priceFeed The address of the price feed.
     /// @param priceType The type of the price feed.

@@ -15,6 +15,10 @@
     "address": "0xF490c80aAE5f2616d3e3BDa2483E30C4CB21d1A0",
     "$kindComment": "StakeWise osGNO on Gnosis; rate-based, GNO underlying which itself floats.",
     "accrualKind": "Appreciating",
+    "labels": [
+      "StakeWise",
+      "LST"
+    ],
     "priceFeeds": [
       {
         "type": "Custom",
@@ -51,6 +55,10 @@
     "address": "0x6C76971f98945AE98dD7d4DFcA8711ebea946eA6",
     "$kindComment": "Wrapped stETH; balance static, its stETH redemption rate grows. The appreciating half of the stETH pair (stETH itself is not a registered asset on this chain). Priced here via a Chainlink wstETH/ETH exchange-rate feed (per feed config) - the stEthPerToken path is mainnet-only.",
     "accrualKind": "Appreciating",
+    "labels": [
+      "Lido",
+      "LST"
+    ],
     "priceFeeds": [
       {
         "type": "Custom",
@@ -62,6 +70,10 @@
   "USDCe": {
     "address": "0x2a22f9c3b484c3629090FeED35F17Ff8F88f76F0",
     "accrualKind": "None",
+    "labels": [
+      "Circle",
+      "Stablecoin"
+    ],
     "pegToleranceBps": 100,
     "priceFeeds": [
       {
@@ -76,6 +88,10 @@
     "address": "0xaf204776c7245bF4147c2612BF6e5972Ee483701",
     "$kindComment": "Savings xDAI - ERC-4626 share over WXDAI earning the Gnosis savings rate; balance static, redemption rate grows. Not mainnet sDAI: the underlying is WXDAI (per feed config) and there is no DSR on Gnosis.",
     "accrualKind": "Appreciating",
+    "labels": [
+      "Sky",
+      "Savings"
+    ],
     "priceFeeds": [
       {
         "type": "Custom",
@@ -87,6 +103,10 @@
   "GHO": {
     "address": "0xfc421aD3C883Bf9E7C4f42dE845C4e4405799e73",
     "accrualKind": "None",
+    "labels": [
+      "Aave v3",
+      "Stablecoin"
+    ],
     "pegToleranceBps": 100,
     "priceFeeds": [
       {
@@ -99,6 +119,10 @@
   "GNO": {
     "address": "0x9C58BAcC331c9aa871AFD802DB6379a98e80CEdb",
     "accrualKind": "None",
+    "labels": [
+      "Gnosis",
+      "Governance"
+    ],
     "priceFeeds": [
       {
         "type": "Chainlink",
@@ -111,6 +135,10 @@
     "address": "0xcB444e90D8198415266c6a2724b7900fb12FC56E",
     "$kindComment": "FLAG: EUR stablecoin on Gnosis - hard-pegged, but to EUR and not to the NAV's quote asset, so its USD price moves with EUR/USD. Carries NO pegToleranceBps for the same reason as EURC; do not add one.",
     "accrualKind": "None",
+    "labels": [
+      "Monerium",
+      "Stablecoin"
+    ],
     "priceFeeds": [
       {
         "type": "Chainlink",
@@ -123,6 +151,10 @@
   "USDT": {
     "address": "0x4ECaBa5870353805a9F068101A40E0f32ed605C6",
     "accrualKind": "None",
+    "labels": [
+      "Tether",
+      "Stablecoin"
+    ],
     "pegToleranceBps": 100,
     "priceFeeds": [
       {

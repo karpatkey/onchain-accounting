@@ -28,8 +28,12 @@ import "src/constants.sol";
 ///      appears, this note should be the first thing revisited.
 ///
 ///      **Why it is its own contract and not part of the NAV. Not preference — measured, twice, for two different
-///      questions.** `NAVCalculator` sits at 24,508 of 24,576 bytes: **68 bytes** of EIP-170 headroom (re-measured, not
-///      inherited).
+///      questions.** `NAVCalculator` sits at **24,074 of 24,576 bytes: 502 bytes** of EIP-170 headroom (measured on
+///      this tree, not inherited). ⚠️ This line read "24,508 / 68 bytes" and was already stale before the labels work
+///      touched it — the `_toVerbose` extraction into `PriceFeedLib` had since returned ~520 bytes. The measurements
+///      BELOW are historical, taken against the 68-byte tree, and are left as they were: they are what the decision
+///      was made on, and re-stating them against today's headroom would be inventing numbers nobody measured. Read
+///      them as "why this is not in the NAV", not as current margins.
 ///
 ///      *Question 1 — could the NAV hold the atomic register+classify facade?* **No, by a wide margin.** The FLOOR for
 ///      any NAV-side version is **+123 B**: one immutable registry address plus a single external call, with no
@@ -45,8 +49,11 @@ import "src/constants.sol";
 ///      the extraction reverted now compiles, so the causal claim is not currently demonstrable — the pin move below
 ///      is, and is measured.)
 ///      That moved `PriceFeedLib` from `0xfc6AE534…` to `0x49C18627665562F4bEbae5208BA6eF7428039614` (it shrank 69
-///      bytes, 18,585 -> 18,516). `NAVRegistryLib` is genuinely unchanged and byte-identical. A pin regeneration IS
-///      owed for this feature — do not read "costs NAVCalculator zero bytes" as "costs nothing".
+///      bytes, 18,585 -> 18,516). ⚠️ `0x49C18627…` is what that PR measured, NOT the current value — the library has
+///      moved again since and reads `0xcD6F52F4b5F2e563993d1966C27E7E322281Bb26` on this tree. Take the current
+///      address from a clean build at regeneration time, never from this sentence. `NAVRegistryLib` is genuinely
+///      unchanged and byte-identical. A pin regeneration IS owed — do not read "costs NAVCalculator zero bytes" as
+///      "costs nothing".
 ///
 ///      *Question 2 — could the NAV hold the kinds as READ surface (a field on an existing struct)?* Also no. Measured
 ///      separately, and recorded so nobody re-attempts it: two fields on the shared `Asset` struct cost **+189 B** (and
@@ -94,6 +101,33 @@ contract AssetKindRegistry is IAssetKindRegistry {
 
     mapping(address asset => AssetKinds kinds) private _kinds;
 
+    /// @notice One asset's display labels, in significant order. Free text; nothing on-chain parses it.
+    /// @dev Kept in its OWN mapping rather than inside {AssetKinds}, because the two have different lifetimes on
+    ///      purpose. Labels are tied to REGISTRATION: written by {registerAsset}, dropped by {unregisterAsset}, and
+    ///      left alone by {clearAssetKind}, which ends only the classification while the asset stays registered on the
+    ///      NAV. Packing them into the struct would tie them to the classification instead and make
+    ///      `delete _kinds[asset]` drop them by accident.
+    ///
+    ///      There is no separate `labelled` sentinel and none is needed: `length == 0` is exactly "no labels", which is
+    ///      a legitimate state rather than an absent one, so an empty list and an unset list are the same thing by
+    ///      design and nothing has to tell them apart.
+    mapping(address asset => string[] labels) private _labels;
+
+    /// @notice Most labels one asset may carry.
+    /// @dev Mirrors `NAVCalculator`'s `_MAX_LABEL_ELEMENTS = 8` on the READ side, at half the value because these are
+    ///      hand-written config rather than an adapter's reply. The read-side cap exists because an unbounded
+    ///      `string[]` return expands quadratically in the reader's frame; an unbounded per-asset list hands a caller
+    ///      the same hazard from the other direction, so the bound belongs on the write side too.
+    ///
+    ///      **Public so tooling can read the real bound instead of duplicating it.** That is the #248 lesson — a rule
+    ///      that lives only in the config tooling drifts from the rule the chain enforces, and the chain wins.
+    uint256 public constant MAX_ASSET_LABELS = 4;
+
+    /// @notice Longest one label may be, in BYTES (not characters — a multi-byte glyph costs more than one).
+    /// @dev One EVM word. Keeps per-label storage a single slot and predictable, and no legitimate display label is
+    ///      longer. Public for the same reason as {MAX_ASSET_LABELS}.
+    uint256 public constant MAX_ASSET_LABEL_BYTES = 32;
+
     /// @notice The `NAVCalculator` this registry fronts. Source of truth for BOTH the asset registry and authority.
     INAVCalculator public immutable NAV;
 
@@ -135,13 +169,15 @@ contract AssetKindRegistry is IAssetKindRegistry {
         address priceFeed,
         IPrices.PriceType priceType,
         uint256 chainlinkHeartbeat,
-        AccrualKind accrualKind
+        AccrualKind accrualKind,
+        string[] calldata labels
     ) external onlyNavManager {
-        // Kind first, then the NAV call. Ordering is deliberate: this contract's state is written before the external
-        // call, and `NAV.registerAsset` reaches into the asset for `decimals()`/`symbol()`, so a hostile token cannot
-        // observe this registry mid-update. Atomicity does not depend on the order — there is no `try`/`catch`
-        // anywhere on this path, so if EITHER half reverts the whole transaction reverts and neither takes effect.
+        // Kind and labels first, then the NAV call. Ordering is deliberate: this contract's state is written before the
+        // external call, and `NAV.registerAsset` reaches into the asset for `decimals()`/`symbol()`, so a hostile token
+        // cannot observe this registry mid-update. Atomicity does not depend on the order — there is no `try`/`catch`
+        // anywhere on this path, so if ANY part reverts the whole transaction reverts and none of it takes effect.
         _setAssetKind(asset, accrualKind);
+        _setAssetLabels(asset, labels);
         NAV.registerAsset(asset, priceFeed, priceType, chainlinkHeartbeat);
     }
 
@@ -154,6 +190,18 @@ contract AssetKindRegistry is IAssetKindRegistry {
         if (_kinds[asset].classified) {
             delete _kinds[asset];
             emit AssetKindCleared(asset);
+        }
+        // **Labels go with the registration, and this line is what makes the documented repair work at all.** A wrong
+        // label is fixed by unregistering and re-registering the asset. If labels outlived unregistration, the
+        // re-registration would meet labels that are already set — and since {registerAsset} is the only writer, it
+        // could never replace them. The repair would silently be a no-op and the wrong label permanent.
+        //
+        // Guarded rather than unconditional so an asset that never had labels does not emit a misleading event.
+        // Contrast {clearAssetKind}, which leaves labels ALONE: that ends the classification while the asset stays
+        // registered, and label lifetime is registration lifetime, not classification lifetime.
+        if (_labels[asset].length != 0) {
+            delete _labels[asset];
+            emit AssetLabelsCleared(asset);
         }
         NAV.unregisterAsset(asset);
     }
@@ -207,6 +255,18 @@ contract AssetKindRegistry is IAssetKindRegistry {
     }
 
     /// @inheritdoc IAssetKindRegistry
+    function getAssetLabels(address asset) external view returns (string[] memory) {
+        return _labels[asset];
+    }
+
+    /// @inheritdoc IAssetKindRegistry
+    function getAssetInfo(address asset) external view returns (PegKind, AccrualKind, string[] memory) {
+        AssetKinds memory kinds = _kinds[asset];
+        if (!kinds.classified) revert AssetNotClassified(asset);
+        return (_derivePegKind(asset), kinds.accrualKind, _labels[asset]);
+    }
+
+    /// @inheritdoc IAssetKindRegistry
     function isClassified(address asset) external view returns (bool) {
         return _kinds[asset].classified;
     }
@@ -221,5 +281,56 @@ contract AssetKindRegistry is IAssetKindRegistry {
         // indexers replaying the log would hold a peg that the chain no longer agrees with — a fresh divergence of
         // exactly the kind deriving was chosen to eliminate. Consumers read the peg; they do not replay it.
         emit AssetKindSet(asset, accrualKind);
+    }
+
+    /// @dev Writes `asset`'s display labels. Called from {registerAsset} and NOWHERE ELSE — that is the whole of the
+    ///      rule, and it is enforced by there being no other caller rather than by a check inside this function.
+    ///
+    ///      **Registration is the only chance.** Labels are fixed when the asset enters the system, for parity with
+    ///      the balance adapters, whose `positionLabels()` are fixed when the adapter is deployed and editable by no
+    ///      role. Letting an asset gain labels after registration would demand the same editability for adapters. See
+    ///      {IAssetKindRegistry.registerAsset}.
+    ///
+    ///      **An empty `labels` writes nothing and is not an error.** An asset may legitimately have none;
+    ///      `positionLabels()` returns empty arrays legitimately too. Since this runs only at registration, "empty"
+    ///      means the asset is registered unlabelled and stays that way until it is unregistered and registered again.
+    ///
+    ///      **There is deliberately NO write-once guard here, and adding one would be a defect rather than belt-and-
+    ///      braces.** It would be unreachable on the intended path — {unregisterAsset} deletes `_labels`, and
+    ///      {registerAsset} can only succeed for an asset the NAV does not already hold, so `_labels[asset]` is empty
+    ///      whenever this runs through the facade. But it would be REACHED on a real one: an asset unregistered
+    ///      DIRECTLY on the NAV, bypassing this contract, leaves its labels behind here, and a later re-registration
+    ///      through the facade would then hit the guard and either revert or keep the stale labels. Overwriting is the
+    ///      correct behaviour for that path, because registration is what defines an asset's labels.
+    ///
+    ///      An earlier revision carried that guard plus an identical-content comparison, both needed only because
+    ///      labels could once be supplied by `setAssetKind`/`setAssetKinds`. They no longer can, so both are gone.
+    ///
+    ///      **All three bounds are enforced HERE, in the setter, not only in preflight.** #248 is the standing
+    ///      precedent for what happens when validation lives in config tooling alone: nothing enforced `accrualKind`,
+    ///      and the gap was invisible until someone went looking. Tooling that wants the same bounds reads
+    ///      {MAX_ASSET_LABELS} and {MAX_ASSET_LABEL_BYTES} off this contract rather than restating them.
+    function _setAssetLabels(address asset, string[] calldata labels) private {
+        uint256 length = labels.length;
+        if (length == 0) return;
+        if (length > MAX_ASSET_LABELS) revert TooManyAssetLabels(asset, length, MAX_ASSET_LABELS);
+
+        for (uint256 i; i < length; ++i) {
+            uint256 labelBytes = bytes(labels[i]).length;
+            // An empty LIST is legitimate; an empty ELEMENT is not. It renders as nothing while still occupying an
+            // ordered slot, so it silently shifts the meaning of every label after it — and order is significant here
+            // (index 0 is the protocol, later indices narrow to the product).
+            if (labelBytes == 0) revert EmptyAssetLabel(asset, i);
+            if (labelBytes > MAX_ASSET_LABEL_BYTES) {
+                revert AssetLabelTooLong(asset, i, labelBytes, MAX_ASSET_LABEL_BYTES);
+            }
+        }
+
+        // Validate, then write. The ordering is behaviourally irrelevant against the loop above — every exit from it
+        // reverts, and a revert rolls the whole transaction back — so a mutant that hoists this line is EQUIVALENT and
+        // the matrix records it as a deliberate survivor. What it buys is not paying for an `SSTORE` that is about to
+        // be discarded, plus a body that reads in the order it reasons.
+        _labels[asset] = labels;
+        emit AssetLabelsSet(asset, labels);
     }
 }

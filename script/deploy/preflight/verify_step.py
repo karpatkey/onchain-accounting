@@ -27,7 +27,7 @@ USAGE
   python3 verify_step.py 1.2                  # one step, the whole redeploy scope
   python3 verify_step.py 1.3 1 42161          # one step, named chains
   python3 verify_step.py all 1                # every step, one chain
-  python3 verify_step.py 1.7 --json out.json
+  python3 verify_step.py 1.8 --json out.json
   python3 verify_step.py all 1 --rpc-url http://127.0.0.1:8545   # against the fork rehearsal
 
 Exit status is 0 only when every check on every chain passed. `--allow-partial` downgrades an
@@ -54,11 +54,11 @@ STEP_TITLE = {
     "1.1": "deployment record cleared",
     "1.2": "01_2 — libraries + NAV implementation",
     "1.3": "02_2 — new proxy + ERC20Default",
-    "1.4": "03 — custom price feeds",
-    "1.5": "RegisterAssets — assets on the new NAV",
-    "1.6": "04 — balance adapters + assistants",
-    "1.7": "06 — registration + meta-instance reconcile",
-    "1.8": "08 — asset-kind registry: MANAGER grant AND classification",
+    "1.4": "08 — asset-kind registry: MANAGER grant AND classification",
+    "1.5": "03 — custom price feeds",
+    "1.6": "RegisterAssets — assets on the new NAV (registers THROUGH the registry)",
+    "1.7": "04 — balance adapters + assistants",
+    "1.8": "06 — registration + meta-instance reconcile",
 }
 
 IMPL_SLOT = "0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc"
@@ -225,7 +225,7 @@ class Chk:
 # Per-step checks
 # ---------------------------------------------------------------------------
 
-def step_1_1(k: Chk, rec: dict, exp: dict, url, base, tag) -> None:
+def step_record_cleared(k: Chk, rec: dict, exp: dict, url, base, tag) -> None:
     """The record must be cleared, the bridge must NOT be, and a rollback must exist."""
     # `reset_deployment_records.py` writes "" rather than deleting, because
     # `ConfigReader._readAddrOrZero` (ConfigReader.sol:216) requires `vm.keyExists` first and
@@ -264,7 +264,7 @@ def step_1_1(k: Chk, rec: dict, exp: dict, url, base, tag) -> None:
                           f"archive/{tag}/{k.chain_id}.json")
 
 
-def step_1_2(k: Chk, rec: dict, exp: dict, url, base, tag) -> None:
+def step_impl_and_libraries(k: Chk, rec: dict, exp: dict, url, base, tag) -> None:
     """Both libraries and the NAV implementation, at the pinned addresses, with code."""
     pins, pin_problems = read_pins()
     for p in pin_problems:
@@ -297,7 +297,7 @@ def step_1_2(k: Chk, rec: dict, exp: dict, url, base, tag) -> None:
                               f"if the pin regen genuinely did not move it, otherwise 01_2 no-op'd")
 
 
-def step_1_3(k: Chk, rec: dict, exp: dict, url, base, tag) -> None:
+def step_new_proxy(k: Chk, rec: dict, exp: dict, url, base, tag) -> None:
     """The new proxy: fresh address, correct impl, version 1, roles on the deployer, fresh ERC20Default."""
     proxy = rec.get("NAVCalculatorProxy")
     if not k.require(c.is_address(proxy),
@@ -360,12 +360,12 @@ def step_1_3(k: Chk, rec: dict, exp: dict, url, base, tag) -> None:
                  f"deploy, so this was not supposed to happen yet")
 
 
-def step_1_4(k: Chk, rec: dict, exp: dict, url, base, tag) -> None:
+def step_custom_price_feeds(k: Chk, rec: dict, exp: dict, url, base, tag) -> None:
     """Every configured custom feed deployed, with code, pointing at the NEW proxy."""
     feeds = populated(rec.get("customPriceFeeds"))
     # Names, not just cardinality — a stale record key surviving a rename, or one feed substituted
-    # for another, keeps the count intact. 1.4 is the only step covering feeds, and a swapped
-    # monitor feed is not caught by 1.5 either, since RegisterAssets registers off the primary.
+    # for another, keeps the count intact. 1.5 is the only step covering feeds, and a swapped
+    # monitor feed is not caught by 1.6 either, since RegisterAssets registers off the primary.
     want = set(pc.enabled_keys(pc.dcfg("custom-price-feeds", k.chain_id)))
     got = set(feeds)
     missing, extra = sorted(want - got), sorted(got - want)
@@ -434,7 +434,7 @@ def step_1_4(k: Chk, rec: dict, exp: dict, url, base, tag) -> None:
                   f"the NAV address is an immutable (ADR 0019), so it must be redeployed")
 
 
-def step_1_5(k: Chk, rec: dict, exp: dict, url, base, tag) -> None:
+def step_register_assets(k: Chk, rec: dict, exp: dict, url, base, tag) -> None:
     """The configured asset set registered on the new NAV — by identity, not just by count."""
     proxy = rec.get("NAVCalculatorProxy")
     if not url or not k.require(c.is_address(proxy), "no NAVCalculatorProxy in the record"):
@@ -455,7 +455,7 @@ def step_1_5(k: Chk, rec: dict, exp: dict, url, base, tag) -> None:
     k.require(not extra, f"{len(extra)} registered asset(s) are not in config: {extra[:6]}")
 
 
-def step_1_6(k: Chk, rec: dict, exp: dict, url, base, tag) -> None:
+def step_balance_adapters(k: Chk, rec: dict, exp: dict, url, base, tag) -> None:
     """Every adapter deployed, plus an assistant correctly paired to each assisted adapter."""
     adapters = populated(rec.get("balanceAdapters"))
     # +1 for ERC20Default, which every chain gets from initialize() rather than from config.
@@ -467,7 +467,7 @@ def step_1_6(k: Chk, rec: dict, exp: dict, url, base, tag) -> None:
 
     # NAMES, not just cardinality. preflight_config errors on "enabled in nav-config but absent from
     # deploy-config" and only warns on the reverse, so a chain can have one adapter missing and a
-    # different one extra — same count, wrong set, and 04 deployed the wrong one. 1.7 catches it
+    # different one extra — same count, wrong set, and 04 deployed the wrong one. 1.8 catches it
     # only afterwards and only because 06 declines to register the unconfigured adapter.
     want_names = {"ERC20Default"}
     want_names |= set(pc.enabled_keys(pc.cfg("balance-adapters", k.chain_id)))
@@ -505,7 +505,7 @@ def step_1_6(k: Chk, rec: dict, exp: dict, url, base, tag) -> None:
                   f"(the live PR #141 orphan failure)")
 
 
-def step_1_7(k: Chk, rec: dict, exp: dict, url, base, tag) -> None:
+def step_configure(k: Chk, rec: dict, exp: dict, url, base, tag) -> None:
     """Registration on the NAV, and meta-instance sets equal to config."""
     proxy = rec.get("NAVCalculatorProxy")
     if not url or not k.require(c.is_address(proxy), "no NAVCalculatorProxy in the record"):
@@ -576,7 +576,7 @@ def step_1_7(k: Chk, rec: dict, exp: dict, url, base, tag) -> None:
 ASSET_KIND_SAMPLE = 8
 
 
-def step_1_8(k: Chk, rec: dict, exp: dict, url, base, tag) -> None:
+def step_asset_kind_registry(k: Chk, rec: dict, exp: dict, url, base, tag) -> None:
     """08 WILL deploy an AssetKindRegistry, grant it MANAGER on the NAV, and classify the assets.
 
     WRITTEN IN THE FUTURE TENSE ON PURPOSE. As of `main` = c056414c, neither
@@ -584,9 +584,9 @@ def step_1_8(k: Chk, rec: dict, exp: dict, url, base, tag) -> None:
     `git ls-tree origin/main` returns nothing for either path. They ship with PR #241, still open. This
     post-condition lands first so the step cannot arrive without a gate in front of it.
 
-    WHAT IT DEFENDS, and why a comment could not. 08's broadcast dispatches THREE sequential
-    transactions — `new AssetKindRegistry`, `grantRole(MANAGER, registry)`, `setAssetKinds` — and they can
-    diverge. The dangerous divergence is silent: if `grantRole` never lands while `setAssetKinds` does,
+    WHAT IT DEFENDS, and why a comment could not. 08's broadcast dispatches FOUR sequential
+    transactions — `new AssetKindRegistry`, `setAssetKindRegistry(registry)`, `grantRole(MANAGER, registry)`,
+    `setAssetKinds` — and they can diverge. The dangerous divergence is silent: if `grantRole` never lands while `setAssetKinds` does,
     the result is a FULLY CLASSIFIED registry whose facade is dead, because every registry write gates on
     `NAV.hasRole(MANAGER, msg.sender)`. The script still exits 0, and nothing inside 08 can detect it
     afterwards. 08's own docstring says "verify after broadcasting that BOTH the classification and the
@@ -606,7 +606,7 @@ def step_1_8(k: Chk, rec: dict, exp: dict, url, base, tag) -> None:
     """
     registry = rec.get("AssetKindRegistry")
     if not c.is_address(registry):
-        k.info.append("step 1.8 asserts NOTHING on this chain: no `AssetKindRegistry` in the deployment "
+        k.info.append("step 1.4 asserts NOTHING on this chain: no `AssetKindRegistry` in the deployment "
                       "record, i.e. 08 has not run here (or ran without PERSIST_DEPLOYMENTS=1, which "
                       "deploys a live registry and records nothing — invisible to this check)")
         return
@@ -623,6 +623,36 @@ def step_1_8(k: Chk, rec: dict, exp: dict, url, base, tag) -> None:
     k.require(lower(bound) == lower(proxy),
               f"AssetKindRegistry {registry} is bound to NAV {bound}, not the recorded proxy {proxy} — "
               f"it would hold MANAGER on one NAV while forwarding writes to another")
+
+    # HALF 0 — the READ direction, and the one that was missing entirely.
+    #
+    # Read off the NAV, not inferred from the registry's side. The whole defect is that the two directions
+    # were assumed symmetric and are not: `registry.NAV()` above proves the registry knows the NAV, and says
+    # NOTHING about whether the NAV knows the registry. `setAssetKindRegistry` shipped with the read surface
+    # and was called by nothing outside tests — no deploy script, no runbook line, no gate — so every deploy
+    # left this slot at address(0) and every `getAssetInfo` reverting, while all the checks below passed.
+    #
+    # Compared by EQUALITY, not against zero. A re-run against a NAV still pointing at a PREVIOUS registry is
+    # the likeliest way to be wrong here, and a non-zero check waves exactly that through.
+    pointed = call1(url, proxy, "assetKindRegistry()", "address")
+    points_back = c.is_address(pointed) and lower(pointed) == lower(registry)
+    if not c.is_address(pointed):
+        # `is_address` is False for address(0) as well as for an unreadable reply, and BOTH mean the read
+        # surface is dead — so they share a verdict. The message names both causes rather than asserting
+        # one, because this check cannot tell them apart and guessing is how a guard prescribes the wrong
+        # remedy (the #241 lesson: a guard may only prescribe for a cause it can identify).
+        k.require(False,
+                  f"the NAV {proxy} has NO usable AssetKindRegistry — `assetKindRegistry()` returned "
+                  f"{pointed!r}. Either it was never set (address(0)) or the getter is unreadable at this "
+                  f"address. Either way EVERY `getAssetInfo` call REVERTS and the read surface is dead on "
+                  f"arrival. `setAssetKindRegistry` is the 1st of 08's three post-deploy transactions; "
+                  f"re-run 08 — the guarded call is idempotent")
+    else:
+        k.require(points_back,
+                  f"the NAV {proxy} points at AssetKindRegistry {pointed}, NOT the recorded {registry} — a "
+                  f"STALE pointer from a previous run. This is WORSE than an unset pointer: reads resolve "
+                  f"against the wrong registry and ANSWER, with whatever that one was classified with, "
+                  f"rather than reverting. Re-run 08")
 
     # HALF 1 — the half that dies silently.
     granted = has_role(url, proxy, MANAGER_ROLE, registry)
@@ -651,9 +681,31 @@ def step_1_8(k: Chk, rec: dict, exp: dict, url, base, tag) -> None:
             f"having produced a complete-looking registry with a dead facade. Re-run 08: the guarded "
             f"grant is idempotent and the re-run will land it")
 
+    # THE MIRROR-IMAGE PARTIAL STATE, named separately because it reads completely differently to an
+    # operator. Above, writes are dead and reads work. Here, writes work and READS are dead: assets can be
+    # registered and classified all day while every consumer of `getAssetInfo` gets a revert. That is the
+    # state every deploy of this feature was in until the pointer transaction existed.
+    if not points_back and granted and not unclassified:
+        k.fail.append(
+            f"PARTIAL STATE — the WRITE direction is wired and the READ direction is not: the registry "
+            f"holds MANAGER and is fully classified ({len(sample)}/{len(sample)} sampled), but the NAV "
+            f"points at {pointed} instead of {registry}. Writes succeed, every `getAssetInfo` fails. "
+            f"Re-run 08: the guarded `setAssetKindRegistry` is idempotent")
 
-CHECKS = {"1.1": step_1_1, "1.2": step_1_2, "1.3": step_1_3, "1.4": step_1_4,
-          "1.5": step_1_5, "1.6": step_1_6, "1.7": step_1_7, "1.8": step_1_8}
+
+# ⚠️ **Step NUMBERS are positions in the runbook and they MOVE; the checks are bound to MEANING, not position.**
+# `08_DeployAssetKindRegistry` moved from 1.8 to 1.4 when labels became registration-only: the registry must exist,
+# and must hold MANAGER on the NAV, BEFORE `RegisterAssets` runs, because an asset's primary registration is now
+# routed through it and registration is the only moment labels can be written.
+#
+# The dead-facade gate travels with it. `step_asset_kind_registry` is the mechanical check for the
+# `grantRole`-never-landed hazard (a fully classified registry whose facade reverts, with `08` exiting 0), and it is
+# now MORE load-bearing than before: under the old order a dead facade was merely undetected, whereas now it also
+# blocks every subsequent asset registration. Naming the functions semantically is what stops a renumber from
+# silently pointing a number at the wrong body — the failure the old positional names invited.
+CHECKS = {"1.1": step_record_cleared, "1.2": step_impl_and_libraries, "1.3": step_new_proxy,
+          "1.4": step_asset_kind_registry, "1.5": step_custom_price_feeds, "1.6": step_register_assets,
+          "1.7": step_balance_adapters, "1.8": step_configure}
 
 NEEDS_RPC = {"1.2", "1.3", "1.4", "1.5", "1.6", "1.7", "1.8"}
 

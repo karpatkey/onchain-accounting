@@ -45,7 +45,7 @@ is where they are derived and which is the authoritative one if the two ever dis
 
 #### Meta instances: **110**, reconciled from config and confirmed on-chain (2026-07-29)
 
-This number is what tells you at step 1.7 whether `06_Configure`'s reconciliation succeeded, so it is
+This number is what tells you at step 1.8 whether `06_Configure`'s reconciliation succeeded, so it is
 settled here rather than at execution time. Three figures had been circulating — 104, 110 and 113.
 
 | chain | enabled meta adapters | `instances` | `instancesRaw` | total |
@@ -63,7 +63,7 @@ Counted from `script/config/nav-config/meta-balance-adapters/<chainId>.json`, ta
 with `enabled: true` and summing `instances` + `instancesRaw`. Two independent confirmations: the
 deduplicated count is also 110 (no coordinate repeats within an adapter, so `06` cannot revert
 `DuplicateMetaInstance`), and unique `(chain, coordinate)` pairs across *all* adapters is also 110
-(no coordinate is claimed by two adapters on one chain). **`verify_step.py 1.7` then compared each
+(no coordinate is claimed by two adapters on one chain). **`verify_step.py 1.8` then compared each
 adapter's on-chain `getMetaInstances()` against config as a SET on all 7 configured chains and passed
 — so config and the live NAV agree exactly, not merely in total.**
 
@@ -78,7 +78,7 @@ adapter's on-chain `getMetaInstances()` against config as a SET on all 7 configu
   predates the config split in `f4873617` and should be treated as retired, not reconciled.
 
 Do not re-derive this by hand on deploy day. `preflight_config.py` prints the configured total and
-`verify_step.py 1.7` asserts it per adapter against the chain; if a future config change moves the
+`verify_step.py 1.8` asserts it per adapter against the chain; if a future config change moves the
 number, those two move with it and this table is the thing that goes stale.
 
 ### Why this is a NEW PROXY and not an implementation upgrade
@@ -455,12 +455,26 @@ threshold with no recorded baseline cannot detect drift.
 1.1  clear the deployment record
 1.2  01_2_DeployNAVImplementation     libraries + NAV impl        PERSIST_DEPLOYMENTS=1
 1.3  02_2_DeployNAVProxy              new proxy + ERC20Default    PERSIST_DEPLOYMENTS=1
-1.4  03_DeployPriceFeeds              41 custom feeds             <- BEFORE RegisterAssets
-1.5  RegisterAssets                   assets + feeds on the NAV
-1.6  04_DeployBalanceAdapters         adapters + assistants       PERSIST_DEPLOYMENTS=1  <- assistants
-1.7  06_Configure                     register + reconcile
-1.8  08_DeployAssetKindRegistry       asset kinds (#241)          <- MUST precede 07
+1.4  08_DeployAssetKindRegistry       registry + MANAGER grant    <- MOVED, must precede 1.6
+1.5  03_DeployPriceFeeds              41 custom feeds             <- BEFORE RegisterAssets
+1.6  RegisterAssets                   assets + feeds + kinds + LABELS, via the registry
+1.7  04_DeployBalanceAdapters         adapters + assistants       PERSIST_DEPLOYMENTS=1  <- assistants
+1.8  06_Configure                     register + reconcile
 ```
+
+⚠️ **`08` MOVED from last to 1.4, and the move is load-bearing rather than cosmetic.** An asset's PRIMARY
+registration is now routed through `AssetKindRegistry.registerAsset`, which registers, classifies and LABELS in
+one transaction. Registration is the only moment labels can ever be written, so the registry must exist — and must
+already hold `MANAGER` on the NAV — before `RegisterAssets` runs. Run them in the old order and `RegisterAssets`
+aborts with `AssetKindRegistryNotDeployed`; it does **not** fall back to `NAVCalculator.registerAsset`, because
+that would succeed while permanently costing every asset in the run its labels.
+
+Its "must precede `07`" constraint is unchanged and now trivially satisfied: `07` revokes the deployer's `MANAGER`,
+and `08` needs it. Moving `08` earlier strengthens that ordering rather than weakening it — there is now more, not
+less, between the two.
+
+`verify_step.py`'s step numbers moved with it: the asset-kind-registry gate is now **1.4**, and the checks are keyed
+to semantic function names so a renumber cannot silently point a step at the wrong body.
 
 This **differs from the original plan**, which had `RegisterAssets` before `03`. That order is wrong:
 `RegisterAssets` resolves each `Custom` feed from `deployments/<id>.json .customPriceFeeds.<name>`
@@ -484,7 +498,7 @@ BROADCAST="--rpc-url $RPC --broadcast --account my-deployer --password-file <pwf
 
 > **`PERSIST_DEPLOYMENTS=1` is mandatory on steps 1.2 and 1.3.** `BaseDeployScript.sol:33` gates the
 > top-level address writes on it. Without it `01_2`/`02_2` only *log* the new library, impl and proxy
-> addresses; `script/config/deployments/<CID>.json` keeps the OLD ones, and steps 1.4–1.7 then build
+> addresses; `script/config/deployments/<CID>.json` keeps the OLD ones, and steps 1.5–1.8 then build
 > feeds against the old NAV and register adapters on the old proxy. Nothing errors.
 > **`PERSIST_DEPLOYMENTS=1` is also mandatory on 1.6 — and the reason is a split inside one script.**
 > The per-**adapter** writes in `03`/`04` are NOT gated: they go through `ConfigReader.writeAdapterAddress`
@@ -621,7 +635,95 @@ alternative out, before proposing a smaller deploy.
 *Chains 130, 143, 146, 196, 204, 480, 999, 5000, 9745, 16661, 42220, 43111, 43114, 57073, 59144,
 80094, 534352 are finished here.*
 
-### 1.4 `03_DeployPriceFeeds` — 41 custom feeds
+### 1.4 `08_DeployAssetKindRegistry` — asset kinds (ships with #241, **not on `main` today**)
+
+```bash
+PERSIST_DEPLOYMENTS=1 forge script script/deploy/08_DeployAssetKindRegistry.s.sol $BROADCAST
+```
+
+**This step does not exist yet.** `08_DeployAssetKindRegistry.s.sol` and `src/nav/AssetKindRegistry.sol`
+land with **PR #241**, which is unmerged — verify with `git ls-tree origin/main` before running anything
+here. It is written up now because the runbook previously had no `08` step at all, so an operator following
+it to the end would finish a deploy having never deployed the registry, with nothing reporting a gap:
+`verify_step.py`'s `STEPS` list ends at `1.7` and has no gate for it either.
+
+#### What this step broadcasts — FOUR transactions, and BOTH directions of the link
+
+| # | transaction | target | wires |
+|---|---|---|---|
+| 1 | `new AssetKindRegistry(nav)` | — | — |
+| 2 | **`setAssetKindRegistry(registry)`** | **NAV** | **NAV → registry: the READ direction** |
+| 3 | `grantRole(MANAGER, registry)` | NAV | registry → NAV: the WRITE direction |
+| 4 | `setAssetKinds(assets, kinds)` | registry | — |
+
+> **⚠️ TRANSACTION 2 IS NEW, AND ITS ABSENCE WAS A LIVE DEFECT, NOT A HYPOTHETICAL.**
+> `NAVCalculator.setAssetKindRegistry` shipped with the read surface and was called by **nothing** outside
+> tests — no deploy script, no runbook line, no preflight gate. Every deploy therefore finished with the
+> NAV's `assetKindRegistry` at `address(0)` and **every `getAssetInfo` call reverting**, while every other
+> check passed. It was found by a session writing documentation, because it had to say what a caller
+> actually gets.
+>
+> **The two directions are not symmetric and were assumed to be.** Transaction 3 lets the registry WRITE to
+> the NAV. Transaction 2 lets the NAV READ the registry. Each is invisible from inside the other contract,
+> which is how one of them went missing for the whole life of the feature.
+>
+> Transaction 2 is dispatched **first** of the three post-deploy calls on purpose: a broadcast is sequential,
+> so an earlier failure tends to prevent the later ones, and the partial states that survive are then
+> visibly incomplete rather than complete-looking and dead on the read side.
+>
+> **Verify all three landed** — `verify_step.py 1.4` asserts the pointer, the grant and the classification.
+> The pointer is compared by **equality** against the recorded registry, so a stale pointer from a previous
+> run fails rather than passing as merely non-zero.
+>
+> `RegisterAssets` (1.6) also refuses to run against a NAV that does not point back, so a missed transaction
+> 2 stops at the next step instead of surviving to production.
+
+> **⚠️ IT MUST RUN BEFORE `07`, AND THE REASON MATTERS MORE THAN THE ORDER.** `08` is a **privileged** step:
+> it makes **two** privileged calls on the NAV — `setAssetKindRegistry` and `grantRole(MANAGER, registry)`.
+> The grant is needed because the registry facade forwards to `NAV.registerAsset` and the NAV gates on
+> **its** `msg.sender` — the registry contract, not the operator. Without the grant the facade is dead code;
+> without the pointer every read reverts.
+>
+> `grantRole` requires `DEFAULT_ADMIN` on the NAV, and `07_TransferAdminToSecurityCouncil` hands that to the
+> security-council Safe **and revokes the deployer's `MANAGER`**. Run `08` after `07` and it reverts:
+> `setAssetKinds` always, for lack of MANAGER, plus the grant itself on a first run, for lack of admin. `08`
+> is EOA-broadcast only — there is no Safe path to fall back on.
+>
+> So the rule is **not** "07 is last". It is **"`07` is the last step of the ROLE HANDOFF, and every step
+> needing deployer privileges — `08` included — must precede it."** Stated with its reason attached because
+> an ordering rule without one is one somebody tidies back later; an earlier revision of `08` itself, and
+> seven other doc sites, claimed it was order-independent. It is not.
+
+**In THIS wave the constraint is satisfied for free, which is exactly why it is easy to lose.** Step `07` is
+deliberately excluded from this deploy (see *What is not yet deployed*), so nothing here can run it too
+early. The constraint binds the **later, manual** council handover: whoever eventually runs `07` must
+confirm `08` has already run on that chain, because afterwards there is no non-Safe path to grant the role.
+
+**Placement is NO LONGER flexible, and this changed with the labels work.** `08` still references neither
+`PriceFeedLib` nor `NAVRegistryLib`, so it does not gate — and is not gated by — the NAV redeploy. But it must
+now run **before `RegisterAssets` (1.6)**, not merely before `07`: an asset's primary registration is routed
+through `AssetKindRegistry.registerAsset`, and registration is the only moment an asset's labels can ever be
+written. Run `08` late and `RegisterAssets` aborts with `AssetKindRegistryNotDeployed` — deliberately, rather
+than falling back to `NAVCalculator.registerAsset`, which would succeed while permanently costing every asset
+in that run its labels.
+
+> **Do not read "independent of the NAV stack" as "no pin regeneration is owed".** The *feature* moves
+> `PriceFeedLib`'s pin — the registry's arrival under `src/` coincided with the `via_ir` whole-program stack
+> margin being reached, which prompted the `PriceFeedLib._assignHealthArrays` extraction. The regeneration
+> gate under *Sequencing* applies unchanged.
+
+- **Precondition:** #241 merged; 1.3 done (the registry is granted a role on the **new** proxy); the chain's
+  `nav-config/assets-and-price-feeds/<CID>.json` carries a valid `accrualKind` on **every** asset — it is
+  fail-closed with no default, so one missing or misspelled value aborts that chain's run.
+- **Post-condition:** no `verify_step.py` gate exists for this step yet. Until one does, assert by hand that
+  the registry is recorded, has code, and **holds `MANAGER` on the new NAV** — the last is the one that
+  silently makes the facade dead if it is missing:
+  ```bash
+  REG=$(jq -r '.AssetKindRegistry' script/config/deployments/$CID.json)
+  cast call $PROXY 'hasRole(bytes32,address)(bool)' $(cast keccak "MANAGER") $REG --rpc-url $RPC   # true
+  ```
+
+### 1.5 `03_DeployPriceFeeds` — 41 custom feeds
 
 ```bash
 forge script script/deploy/03_DeployPriceFeeds.s.sol $BROADCAST
@@ -646,7 +748,7 @@ proxy invalidates every existing feed.
 > `03` deploys all 26 mainnet entries and nothing is skipped as `primary feed unresolved`.
 >
 > Keep taking the number from the tooling rather than from here: `preflight_config.py` prints the
-> configured total and `verify_step.py 1.4` compares against it, so both follow config automatically.
+> configured total and `verify_step.py 1.5` compares against it, so both follow config automatically.
 > This paragraph is the thing that goes stale — as it just did, twice.
 >
 > **The three dead feed contracts are a separate matter and change the count by ZERO.**
@@ -660,12 +762,12 @@ proxy invalidates every existing feed.
 > never among the 39. Verified against both the deployment records and the enabled config 2026-07-29.
 
 - **Precondition:** 1.1 cleared `customPriceFeeds.*`; 1.3 wrote the NEW `NAVCalculatorProxy`.
-- **Post-condition:** `python3 script/deploy/preflight/verify_step.py 1.4` — the feed count matches
+- **Post-condition:** `python3 script/deploy/preflight/verify_step.py 1.5` — the feed count matches
   the table above, every feed has code, and every feed's `NAV()` immutable points at the **new** proxy.
   That last one is the check that matters: a feed is otherwise indistinguishable from a correct one
   while still pricing against the abandoned NAV.
 
-### 1.5 `RegisterAssets` — assets + feeds on the new NAV
+### 1.6 `RegisterAssets` — assets + feeds on the new NAV
 
 ```bash
 mkdir -p safe-transactions        # REQUIRED — see below
@@ -684,12 +786,12 @@ checkout.
 - **Precondition:** **1.4 done** — Custom feeds resolve through
   `deployments/<id>.json .customPriceFeeds.<name>`, and without them 20 of mainnet's 43 assets are
   silently skipped (see the authoritative order at the top of section 1).
-- **Post-condition:** `python3 script/deploy/preflight/verify_step.py 1.5` — `getAssetCount()` equals
+- **Post-condition:** `python3 script/deploy/preflight/verify_step.py 1.6` — `getAssetCount()` equals
   the configured count (43 / 11 / 11 / 6 / 11 / 5 / 6 for chains 1 / 42161 / 8453 / 10 / 100 / 137 /
   56) **and** the registered address set equals the configured one, so one asset silently substituted
   for another cannot pass on the count alone.
 
-### 1.6 `04_DeployBalanceAdapters` — adapters + assistants
+### 1.7 `04_DeployBalanceAdapters` — adapters + assistants
 
 ```bash
 PERSIST_DEPLOYMENTS=1 forge script script/deploy/04_DeployBalanceAdapters.s.sol $BROADCAST
@@ -707,18 +809,18 @@ Deploys plain + meta adapters via plain `new` (CREATE), then the delegatecall as
 > the Roles modifier by reading them out of the record, so an unrecorded assistant is an assistant nobody
 > can be handed.
 >
-> **If `verify_step.py 1.6` says an assistant is missing, read its hint sceptically.** It reports
+> **If `verify_step.py 1.7` says an assistant is missing, read its hint sceptically.** It reports
 > *"`04` skips an assistant whose key is already populated, so check 1.1 cleared it"* — which names the
 > wrong cause for this failure. Check whether the flag was set on this step **before** re-litigating 1.1.
 
 - **Precondition:** 1.1 cleared `balanceAdapters.*` **and** the three `*Assistant` keys.
-- **Post-condition:** `python3 script/deploy/preflight/verify_step.py 1.6` — adapter count per chain
+- **Post-condition:** `python3 script/deploy/preflight/verify_step.py 1.7` — adapter count per chain
   = 27 / 8 / 7 / 4 / 3 / 2 / 1 for 1 / 42161 / 8453 / 100 / 10 / 137 / 56 (ERC20Default included),
   every adapter has code, and **each assistant's `ADAPTER()` resolves to its paired assisted adapter**.
   Run it on chains 1 and 100: against the live stack it reproduces all four orphaned pairings from
   2.1, so a clean report here is the proof the swap was rebuilt rather than inherited.
 
-### 1.7 `06_Configure` — register adapters, reconcile meta instances
+### 1.8 `06_Configure` — register adapters, reconcile meta instances
 
 ```bash
 forge script script/deploy/06_Configure.s.sol $BROADCAST
@@ -733,7 +835,7 @@ configuration` (`06:37`) and skips the entire bridge block. The deferred bridge 
 touched at all by this step, not merely touched idempotently.
 
 - **Precondition:** 1.5 and 1.6 done.
-- **Post-condition:** `python3 script/deploy/preflight/verify_step.py 1.7` — `getAdapterCount()`
+- **Post-condition:** `python3 script/deploy/preflight/verify_step.py 1.8` — `getAdapterCount()`
   matches 1.6, every recorded adapter reports `isAdapterRegistered`, nothing is registered that is not
   in the record, and each meta adapter's `getMetaInstances()` **set equals** its configured coordinate
   set, summing to the total in the meta-instance table at the top of this document (**110** as
@@ -747,62 +849,10 @@ touched at all by this step, not merely touched idempotently.
 
 > **Operator check during re-registration (from #172).** Verify each registered instance resolves as
 > intended rather than silently masking a misconfiguration. In particular, Aave V3 exposes two
-> DataProviders; registering both double-counts positions. `verify_step.py 1.7` compares instance
+> DataProviders; registering both double-counts positions. `verify_step.py 1.8` compares instance
 > **sets**, not counts, so a wrong-but-same-sized instance set fails — but it compares against
 > *config*, so it cannot tell you the config itself named the wrong DataProvider. That judgement stays
 > human.
-
-### 1.8 `08_DeployAssetKindRegistry` — asset kinds (ships with #241, **not on `main` today**)
-
-```bash
-PERSIST_DEPLOYMENTS=1 forge script script/deploy/08_DeployAssetKindRegistry.s.sol $BROADCAST
-```
-
-**This step does not exist yet.** `08_DeployAssetKindRegistry.s.sol` and `src/nav/AssetKindRegistry.sol`
-land with **PR #241**, which is unmerged — verify with `git ls-tree origin/main` before running anything
-here. It is written up now because the runbook previously had no `08` step at all, so an operator following
-it to the end would finish a deploy having never deployed the registry, with nothing reporting a gap:
-`verify_step.py`'s `STEPS` list ends at `1.7` and has no gate for it either.
-
-> **⚠️ IT MUST RUN BEFORE `07`, AND THE REASON MATTERS MORE THAN THE ORDER.** `08` is a **privileged** step:
-> it calls `NAV.grantRole(MANAGER, registry)`, because the registry facade forwards to `NAV.registerAsset`
-> and the NAV gates on **its** `msg.sender` — the registry contract, not the operator. Without that grant
-> the facade is dead code.
->
-> `grantRole` requires `DEFAULT_ADMIN` on the NAV, and `07_TransferAdminToSecurityCouncil` hands that to the
-> security-council Safe **and revokes the deployer's `MANAGER`**. Run `08` after `07` and it reverts:
-> `setAssetKinds` always, for lack of MANAGER, plus the grant itself on a first run, for lack of admin. `08`
-> is EOA-broadcast only — there is no Safe path to fall back on.
->
-> So the rule is **not** "07 is last". It is **"`07` is the last step of the ROLE HANDOFF, and every step
-> needing deployer privileges — `08` included — must precede it."** Stated with its reason attached because
-> an ordering rule without one is one somebody tidies back later; an earlier revision of `08` itself, and
-> seven other doc sites, claimed it was order-independent. It is not.
-
-**In THIS wave the constraint is satisfied for free, which is exactly why it is easy to lose.** Step `07` is
-deliberately excluded from this deploy (see *What is not yet deployed*), so nothing here can run it too
-early. The constraint binds the **later, manual** council handover: whoever eventually runs `07` must
-confirm `08` has already run on that chain, because afterwards there is no non-Safe path to grant the role.
-
-Placement is otherwise flexible. `08` references neither `PriceFeedLib` nor `NAVRegistryLib`, so it does not
-gate — and is not gated by — the NAV redeploy; it needs only the new proxy (1.3) and the assets config to
-exist. It is listed here, after `1.7`, because that is the latest point that is still safely before `07`.
-
-> **Do not read "independent of the NAV stack" as "no pin regeneration is owed".** The *feature* moves
-> `PriceFeedLib`'s pin — the registry's arrival under `src/` coincided with the `via_ir` whole-program stack
-> margin being reached, which prompted the `PriceFeedLib._assignHealthArrays` extraction. The regeneration
-> gate under *Sequencing* applies unchanged.
-
-- **Precondition:** #241 merged; 1.3 done (the registry is granted a role on the **new** proxy); the chain's
-  `nav-config/assets-and-price-feeds/<CID>.json` carries a valid `accrualKind` on **every** asset — it is
-  fail-closed with no default, so one missing or misspelled value aborts that chain's run.
-- **Post-condition:** no `verify_step.py` gate exists for this step yet. Until one does, assert by hand that
-  the registry is recorded, has code, and **holds `MANAGER` on the new NAV** — the last is the one that
-  silently makes the facade dead if it is missing:
-  ```bash
-  REG=$(jq -r '.AssetKindRegistry' script/config/deployments/$CID.json)
-  cast call $PROXY 'hasRole(bytes32,address)(bool)' $(cast keccak "MANAGER") $REG --rpc-url $RPC   # true
-  ```
 
 ### 1.9 Chain-specific workarounds
 
@@ -1086,6 +1136,6 @@ to the new proxy. The old stack keeps answering until they do; nothing needs unr
 | `RegisterAssets` logs `[skip] primary feed unresolved (deploy it first)` | it ran before `03`, so Custom feeds are not in the record | run `03` first; re-run `RegisterAssets` (idempotent) and confirm `getAssetCount()` |
 | `vm.writeJson: failed to open .../safe-transactions/<id>-register-assets.json` | the directory does not exist; on-chain writes already succeeded | `mkdir -p safe-transactions`, re-run |
 | addresses differ per chain that should be identical | a chain ran with a different build or submodule set | 0.4, then rebuild and redeploy that chain — `verify_step.py 1.2`/`1.3` compares across chains and names the odd one out |
-| an assistant's `ADAPTER()` is not its paired adapter | the `*Assistant` key was not cleared, so `04` skipped the redeploy | clear it (1.1), re-run 1.6, re-check with `verify_step.py 1.6` |
+| an assistant's `ADAPTER()` is not its paired adapter | the `*Assistant` key was not cleared, so `04` skipped the redeploy | clear it (1.1), re-run 1.7, re-check with `verify_step.py 1.7` |
 | hyperevm impl deploy "exceeds block gas limit" | small blocks | enable big blocks (1.9) |
 | hemi tx rejected on price | fee floor | raise `--with-gas-price` (1.9) |

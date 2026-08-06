@@ -1875,10 +1875,22 @@ library PriceFeedLib {
     ///      A: each passes every check here — `underlyingAssetSupported()` matches its own asset, and neither base
     ///      equals the asset it is registered for. Both legs register cleanly through the normal MANAGER path, **in
     ///      either order**, because this function receives only `(token, priceFeed)` and never reads the registry;
-    ///      there is no "second leg trips it" ordering to rely on. The cost is the same as the self-base case it does
-    ///      catch: measured at 7,728,726 gas versus a 50,361-gas control (~153x), returning the CORRECT price while
-    ///      burning the gas — and a three-hop cycle costs 7,732,962, because the drain is the 63/64 call-gas
-    ///      forwarding rule, not the loop body. Cycle length is irrelevant.
+    ///      there is no "second leg trips it" ordering to rely on.
+    ///
+    ///      **CYCLE LENGTH DOES NOT MATTER, AND NEITHER DOES DEPTH.** Swept on a real proxy at a fixed 8,000,000-gas
+    ///      budget, ring sizes 2/3/4/5/6 all cost an IDENTICAL 7,732,849 gas. What the cost actually tracks is the
+    ///      CALLER'S BUDGET: sweeping the budget at a fixed ring size gives 0.49M/0.92M/1.94M/3.87M/7.73M/15.45M
+    ///      for 0.5M/1M/2M/4M/8M/16M supplied — a flat ~96.6% of whatever is offered, against a no-cycle control
+    ///      that stays at ~14k regardless. That is the 63/64 call-gas forwarding rule: every level forwards all but
+    ///      1/64 of what it holds and the recursion runs until the gas is gone, so the loop body and the number of
+    ///      distinct assets in the ring are both irrelevant. "How deep can it go" is therefore the wrong question —
+    ///      the answer is "as deep as the gas you supplied allows", and the bill is a fraction of the budget rather
+    ///      than any fixed figure.
+    ///
+    ///      Below roughly 1M gas the read does not merely get expensive, it FAILS (`ok == false` at a 0.5M budget):
+    ///      the 1/64 the outermost frame retains is no longer enough to finish the healthy feed after the `catch`.
+    ///      So "returns the correct price while burning the gas" is itself budget-dependent — it holds for a
+    ///      generous `eth_call`, not for a gas-constrained on-chain caller, which simply reverts.
     ///
     ///      Not enforced on chain because the only on-chain fix is an ordering-dependent scan of the registry, and
     ///      that scan cannot answer NO reliably: a base with no custom feed today can acquire one tomorrow, so it

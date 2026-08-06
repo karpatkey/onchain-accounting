@@ -136,7 +136,7 @@
     "accrualKind": "Appreciating",
     "labels": [
       "Reserve",
-      "RToken"
+      "LST"
     ],
     "priceFeeds": [
       {
@@ -768,7 +768,7 @@
     "accrualKind": "None",
     "labels": [
       "Nexus Mutual",
-      "Membership"
+      "Governance"
     ],
     "priceFeeds": [
       {
@@ -783,7 +783,7 @@
     "accrualKind": "None",
     "labels": [
       "Nexus Mutual",
-      "Membership"
+      "Governance"
     ],
     "priceFeeds": [
       {

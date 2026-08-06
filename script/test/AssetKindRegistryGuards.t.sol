@@ -2,8 +2,15 @@
 pragma solidity ^0.8;
 
 import {Test} from "forge-std/Test.sol";
+import {UnsafeUpgrades} from "openzeppelin-foundry-upgrades/Upgrades.sol";
 import {DeployAssetKindRegistry} from "script/deploy/08_DeployAssetKindRegistry.s.sol";
 import {AssetKindRegistry} from "src/nav/AssetKindRegistry.sol";
+import {NAVCalculator} from "src/nav/NAVCalculator.sol";
+import {ConfigReader} from "script/utils/ConfigReader.sol";
+import {LibraryPins} from "script/utils/LibraryPins.sol";
+import {AccrualKind} from "src/utils/AssetKind.sol";
+// forge-lint: disable-next-line(unaliased-plain-import)
+import "src/constants.sol";
 
 /// @title AssetKindRegistryGuardsTest
 /// @notice **Branch coverage for every guard `08_DeployAssetKindRegistry` declares — issue #253.** Each of the six
@@ -44,12 +51,32 @@ import {AssetKindRegistry} from "src/nav/AssetKindRegistry.sol";
 ///      Comparing full returndata is exactly as strict as `expectRevert` with encoded arguments — selector and
 ///      arguments both — while being impossible to strand.
 ///
-///      **No `NAVCalculator` is deployed here, and that is not a shortcut.** Every one of these six branches is reached
-///      before the script touches the NAV as a contract: three revert inside the config loop, one on the recorded
-///      address being zero, and two on the recorded registry alone. `AssetKindRegistry`'s constructor rejects only
-///      `address(0)`, so a registry can be bound to an arbitrary non-zero address to reach
-///      {RegistryBoundToDifferentNav}. The happy path — which does need a real NAV, real libraries and a real proxy —
-///      is covered by `AssetKindRegistryWiring.t.sol`; this file deliberately covers only what that one does not.
+///      **Two tests demonstrate the HARM, not merely the revert — and the distinction is the point of this file.**
+///      A test that reaches a guard and asserts the error proves the guard FIRES. It does not prove the guard
+///      PREVENTS anything: if the fixture is too poor to get past the guard's line, the run would have aborted anyway
+///      and the test would fail for an incidental reason. Two of these six had exactly that weakness, so they now run
+///      against a REAL `NAVCalculator` and assert the post-state the guard exists to protect:
+///        - {AssetKindMissingOrInvalid} — the harm is that the asset would be SILENTLY classified `AccrualKind.None`,
+///          which `ConfigReader` is asserted to return for an unrecognised string, so the misclassification is shown
+///          to be real rather than argued. The test then asserts nothing was wired.
+///        - {RegistryBoundToDifferentNav} — the harm is a run that completes GREEN while granting the NEW NAV's
+///          `MANAGER` to a registry that writes to the OLD one. The test asserts that grant did NOT happen.
+///      The other four are left asserting the revert, deliberately; see the note on diagnostic guards below.
+///
+///      **Three of the six are DIAGNOSTIC, not load-bearing, and dressing them up would hide that.** Mutation testing
+///      (see the PR that added this file) showed that deleting {AssetAddressMissing}, {AssetAddressZero} or
+///      {NavCalculatorNotDeployed} does not change the OUTCOME — the run still aborts. It changes the DIAGNOSIS: a
+///      `vm.parseAddress` cheatcode error, or an anonymous `InvalidArguments()` from the registry constructor,
+///      instead of an error naming the offending config row. That matches their documented intent, and asserting the
+///      revert identity is therefore the correct and complete test for them. Adding post-state assertions to those
+///      three would imply they prevent an outcome they do not.
+///
+///      **No `NAVCalculator` is deployed for the other four, and that is not a shortcut.** Those branches are reached
+///      before the script touches the NAV as a contract: {AssetAddressMissing} and {AssetAddressZero} revert inside
+///      the config loop, {NavCalculatorNotDeployed} on the recorded address being zero, and {RecordedRegistryHasNoCode}
+///      on the recorded registry alone — for which a codeless marker address is not merely sufficient but required.
+///      The happy path — which also needs a real NAV, real libraries and a real proxy — is covered by
+///      `AssetKindRegistryWiring.t.sol`; this file deliberately covers only what that one does not.
 contract AssetKindRegistryGuardsTest is Test {
     /// @dev Distinct from `AssetKindConfigParsing` (987_654_321/322) and `AssetKindRegistryWiring` (987_654_331/332).
     uint256 internal constant CHAIN_ADDR_MISSING = 987_654_341;
@@ -63,7 +90,11 @@ contract AssetKindRegistryGuardsTest is Test {
     /// @dev Cast rather than checksummed literals: these are arbitrary non-zero markers, and the point is that they
     ///      are DIFFERENT from each other, not that they resemble real proxies.
     address internal constant NAV_A = address(uint160(0xA1));
-    address internal constant NAV_B = address(uint160(0xB2));
+
+    /// @dev `vm.startBroadcast()` with no argument executes subsequent calls as forge's default sender, so THAT is
+    ///      the address the script acts as — not this test contract. It must therefore hold the NAV roles `08` uses.
+    ///      Same constant, and same reason, as `AssetKindRegistryWiring.t.sol`.
+    address internal constant BROADCASTER = 0x1804c8AB1F12E6bbf3894d4083f33e07309d1f38;
 
     string internal root;
 
@@ -132,6 +163,27 @@ contract AssetKindRegistryGuardsTest is Test {
         if (vm.exists(_deploymentsPath(id))) vm.removeFile(_deploymentsPath(id));
     }
 
+    /// @dev Deploys a REAL `NAVCalculator` behind a UUPS proxy, with {BROADCASTER} holding `DEFAULT_ADMIN` and
+    ///      `MANAGER`. Needed only by the two harm-demonstrating tests: `08` grants a role on this NAV and points it
+    ///      at the registry, so a codeless marker address cannot show whether either actually happened.
+    ///
+    ///      The `vm.etch` calls are PROVISIONING, not pinning: `NAVCalculator` is pre-linked against two libraries at
+    ///      the deterministic CREATE2 addresses in `foundry.toml [libraries]`, and a bare test EVM has no code there,
+    ///      so `initialize` would DELEGATECALL into nothing. No pin value is read, written or asserted.
+    function _deployRealNav() internal returns (NAVCalculator navProxy) {
+        vm.etch(LibraryPins.PRICE_FEED_LIB, vm.deployCode("PriceFeedLib.sol:PriceFeedLib").code);
+        vm.etch(LibraryPins.NAV_REGISTRY_LIB, vm.deployCode("NAVRegistryLib.sol:NAVRegistryLib").code);
+
+        address impl = address(new NAVCalculator());
+        navProxy = NAVCalculator(
+            UnsafeUpgrades.deployUUPSProxy(
+                impl, abi.encodeCall(NAVCalculator.initialize, (BROADCASTER, address(0), "ETH"))
+            )
+        );
+        vm.prank(BROADCASTER);
+        navProxy.grantRole(MANAGER, BROADCASTER);
+    }
+
     /// @dev Calls `run()`, cleans up UNCONDITIONALLY, then asserts. See the contract docstring for why the cleanup
     ///      cannot be allowed to sit behind an assertion. `expected` is the full ABI-encoded custom error, so this
     ///      checks the selector AND every argument — a bare "it reverted" would pass on an unrelated config failure,
@@ -139,12 +191,21 @@ contract AssetKindRegistryGuardsTest is Test {
     function _runExpectingRevert(DeployAssetKindRegistry s, uint256 id, bytes memory expected, string memory what)
         internal
     {
-        (bool ok, bytes memory ret) = address(s).call(abi.encodeCall(DeployAssetKindRegistry.run, ()));
-
-        _cleanup(id);
+        (bool ok, bytes memory ret) = _runCapturing(s, id);
 
         assertFalse(ok, string(abi.encodePacked(what, ": run() was expected to revert and did not")));
         assertEq(ret, expected, what);
+    }
+
+    /// @dev As {_runExpectingRevert}, but hands the outcome back instead of asserting on it. The two harm-
+    ///      demonstrating tests use this so they can assert the POST-STATE **first** and the revert identity second.
+    ///      Order matters: if the guard is deleted the run completes, and a leading "it did not revert" assertion
+    ///      would fail before the harm assertions ever execute — leaving the test failing for a bookkeeping reason
+    ///      rather than naming the damage. Asserting the state first means a deleted guard fails with
+    ///      "the NEW NAV must NOT have granted MANAGER…", which is the finding, not the symptom.
+    function _runCapturing(DeployAssetKindRegistry s, uint256 id) internal returns (bool ok, bytes memory ret) {
+        (ok, ret) = address(s).call(abi.encodeCall(DeployAssetKindRegistry.run, ()));
+        _cleanup(id);
     }
 
     // ============================================================
@@ -181,17 +242,41 @@ contract AssetKindRegistryGuardsTest is Test {
     /// @dev `AssetKindMissingOrInvalid` — a valid address but an out-of-vocabulary `accrualKind`. Asserts the FIELD
     ///      argument too (`"accrualKind"`), because that string is the only thing telling an operator which key to fix
     ///      and nothing else in the suite would notice if it changed.
-    function test_guard_assetKindMissingOrInvalid_whenAccrualKindIsOutOfVocabulary() public {
+    function test_guard_assetKindMissingOrInvalid_preventsSilentClassificationAsNone() public {
         uint256 id = CHAIN_KIND_INVALID;
+        NAVCalculator nav = _deployRealNav();
+
         DeployAssetKindRegistry s = _arm(
             id,
             string(abi.encodePacked('{"USDC":{"address":"', vm.toString(USDC), '","accrualKind":"Accruing"}}')),
-            "{}"
+            string(abi.encodePacked('{"NAVCalculatorProxy":"', vm.toString(address(nav)), '"}'))
         );
 
-        _runExpectingRevert(
-            s,
-            id,
+        // THE HARM, shown rather than argued: the parser's fallback for an unrecognised string is `None` — which is
+        // also a REAL classification (USDC, WETH are legitimately `None`). So without the guard the bad row is not
+        // dropped or defaulted-and-flagged; it is written as a value indistinguishable from a correct one.
+        (AccrualKind fallbackKind, bool valid) = ConfigReader.readAssetAccrualKind(vm, id, "USDC");
+        assertFalse(valid, "fixture precondition: 'Accruing' must be out of vocabulary");
+        assertEq(
+            uint256(fallbackKind),
+            uint256(AccrualKind.None),
+            "the value that would be silently written without this guard is AccrualKind.None"
+        );
+
+        (bool ok, bytes memory ret) = _runCapturing(s, id);
+
+        // THE CONSEQUENCE, asserted BEFORE the revert identity so a deleted guard fails here and names the damage:
+        // the deploy did not proceed, so nothing was classified and nothing was wired. Delete the guard and the
+        // script deploys the registry, points the NAV at it and writes USDC as `None`.
+        assertEq(
+            address(nav.assetKindRegistry()),
+            address(0),
+            "guard must abort BEFORE any registry is deployed, wired or asked to classify USDC as None"
+        );
+
+        assertFalse(ok, "AssetKindMissingOrInvalid: run() was expected to revert and did not");
+        assertEq(
+            ret,
             abi.encodeWithSelector(DeployAssetKindRegistry.AssetKindMissingOrInvalid.selector, "USDC", "accrualKind"),
             "AssetKindMissingOrInvalid"
         );
@@ -255,13 +340,16 @@ contract AssetKindRegistryGuardsTest is Test {
     ///
     ///      Asserting all three arguments matters here: a guard that reported the right selector with the wrong pair
     ///      of addresses would send an operator to the wrong contract.
-    function test_guard_registryBoundToDifferentNav_whenTheNavWasRedeployedUnderIt() public {
+    function test_guard_registryBoundToDifferentNav_preventsGrantingTheNewNavsManagerToAStaleRegistry() public {
         uint256 id = CHAIN_REGISTRY_WRONG_NAV;
 
-        // Bound to NAV_A; the record below says the current proxy is NAV_B.
-        AssetKindRegistry stale = new AssetKindRegistry(NAV_A);
-        assertGt(address(stale).code.length, 0, "fixture precondition: recorded registry must HAVE code");
-        assertEq(address(stale.NAV()), NAV_A, "fixture precondition: registry must be bound to NAV_A");
+        // Two REAL NAVs: the one the registry was built against, and the one a redeploy has since put in the record.
+        NAVCalculator oldNav = _deployRealNav();
+        NAVCalculator newNav = _deployRealNav();
+        assertTrue(address(oldNav) != address(newNav), "fixture precondition: the two NAVs must differ");
+
+        AssetKindRegistry stale = new AssetKindRegistry(address(oldNav));
+        assertEq(address(stale.NAV()), address(oldNav), "fixture precondition: registry is bound to the OLD NAV");
 
         DeployAssetKindRegistry s = _arm(
             id,
@@ -269,7 +357,7 @@ contract AssetKindRegistryGuardsTest is Test {
             string(
                 abi.encodePacked(
                     '{"NAVCalculatorProxy":"',
-                    vm.toString(NAV_B),
+                    vm.toString(address(newNav)),
                     '","AssetKindRegistry":"',
                     vm.toString(address(stale)),
                     '"}'
@@ -277,11 +365,30 @@ contract AssetKindRegistryGuardsTest is Test {
             )
         );
 
-        _runExpectingRevert(
-            s,
-            id,
+        (bool ok, bytes memory ret) = _runCapturing(s, id);
+
+        // THE CONSEQUENCE, and this is the dangerous one, asserted BEFORE the revert identity: without the guard the
+        // run completes GREEN — `setAssetKinds` gates on the OLD NAV's roles, so it succeeds — while the NEW NAV has
+        // handed `MANAGER` to a registry that writes somewhere else. Authority pointed at the wrong contract, with a
+        // zero exit code. These two assertions are what fail if the guard is deleted.
+        assertFalse(
+            newNav.hasRole(MANAGER, address(stale)),
+            "the NEW NAV must NOT have granted MANAGER to a registry bound to the OLD NAV"
+        );
+        assertEq(
+            address(newNav.assetKindRegistry()),
+            address(0),
+            "the NEW NAV must NOT have been pointed at a registry that writes to the OLD NAV"
+        );
+
+        assertFalse(ok, "RegistryBoundToDifferentNav: run() was expected to revert and did not");
+        assertEq(
+            ret,
             abi.encodeWithSelector(
-                DeployAssetKindRegistry.RegistryBoundToDifferentNav.selector, address(stale), NAV_A, NAV_B
+                DeployAssetKindRegistry.RegistryBoundToDifferentNav.selector,
+                address(stale),
+                address(oldNav),
+                address(newNav)
             ),
             "RegistryBoundToDifferentNav"
         );

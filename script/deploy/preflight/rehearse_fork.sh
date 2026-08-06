@@ -2,7 +2,20 @@
 # Rehearse the full from-scratch NAV deploy against a LOCAL anvil fork.
 #
 # Runs the real script sequence with the real config, in the RUNBOOK's order:
-#   01_2 -> 02_2 -> 03 -> RegisterAssets -> 04 -> 06
+#   01_2 -> 02_2 -> 08 -> 03 -> RegisterAssets -> 04 -> 06
+#
+# ⚠️ `08` MUST come before `RegisterAssets`, and this script did NOT run it at all until the rehearsal
+# caught that. An asset's PRIMARY registration is routed through `AssetKindRegistry.registerAsset` so
+# the asset is registered, classified and LABELLED atomically — and registration is the only moment
+# labels can ever be written. Without the registry deployed, `RegisterAssets` aborts
+# `AssetKindRegistryNotDeployed`, deliberately, rather than falling back to `NAVCalculator.registerAsset`
+# (which would succeed while permanently costing every asset in the run its labels).
+#
+# The header used to claim "THE RUNBOOK ORDER" while encoding the pre-#259 one. That CLAIM was the
+# defect, not just the list beneath it: a preflight gate running a different sequence from the runbook
+# is not a gate. When `08` moved to runbook step 1.4, the runbook, `README` and `verify_step.py` were
+# updated and this executable was not.
+#
 # `RegisterAssets` MUST come after `03`: it resolves each Custom feed from
 # `deployments/<id>.json .customPriceFeeds.<name>` (RegisterAssets.s.sol:19), so run earlier it logs
 # `[skip] primary feed unresolved (deploy it first)` and skipped 20 of mainnet's 43 assets when this
@@ -232,10 +245,14 @@ run_step() {
 }
 
 FAILED=0
-# THE RUNBOOK ORDER. `03` before `RegisterAssets` is load-bearing, not cosmetic — see the header.
+# THE RUNBOOK ORDER. Two orderings here are load-bearing, not cosmetic — see the header:
+#   * `08` before `RegisterAssets` — registration is routed through the registry, and it is the only
+#     moment labels can be written. Omitting it aborts `RegisterAssets` (which is the guard working).
+#   * `03` before `RegisterAssets` — Custom feeds must resolve, or 20 of 43 assets silently skip.
 # `01` is intentionally absent (it deploys an unwanted BridgeEscrow impl; it now HAS the pin assertions).
 run_step 01_2_DeployNAVImplementation script/deploy/01_2_DeployNAVImplementation.s.sol || FAILED=1
 run_step 02_2_DeployNAVProxy        script/deploy/02_2_DeployNAVProxy.s.sol        || FAILED=1
+run_step 08_DeployAssetKindRegistry script/deploy/08_DeployAssetKindRegistry.s.sol || FAILED=1
 run_step 03_DeployPriceFeeds        script/deploy/03_DeployPriceFeeds.s.sol        || FAILED=1
 run_step RegisterAssets             script/manage/RegisterAssets.s.sol             || FAILED=1
 run_step 04_DeployBalanceAdapters   script/deploy/04_DeployBalanceAdapters.s.sol   || FAILED=1

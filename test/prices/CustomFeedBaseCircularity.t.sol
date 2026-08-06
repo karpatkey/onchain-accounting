@@ -6,7 +6,7 @@ import {UUPSUpgradeable} from "@openzeppelin/contracts/proxy/utils/UUPSUpgradeab
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 
 import {SuperTest} from "test/SuperTest.sol";
-import {Mock_ERC20} from "test/mocks/tokens.sol";
+import {Mock_ERC20, Mock_ERC4626} from "test/mocks/tokens.sol";
 import {Mock_PriceOracleChainlink} from "test/mocks/price_oracles.sol";
 
 import {NAVCalculator} from "src/nav/NAVCalculator.sol";
@@ -14,6 +14,16 @@ import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IPrices} from "src/prices/IPrices.sol";
 import {ICustomPriceFeed} from "src/prices/ICustomPriceFeed.sol";
 import {INavSourcedPriceFeed} from "src/prices/INavSourcedPriceFeed.sol";
+
+// The REAL feed types. Every `Custom` feed in this repo roots in one of four places — `BaseCustomPriceFeed`,
+// `ERC4626VaultRatePriceFeed`, `TwoFeedChainlinkPriceFeed`, or a standalone — and three of those are `abstract`, so
+// each root is represented here by a concrete in-repo subclass. These are imported so
+// {CustomFeedBaseCircularityTest-test_realFeedTypesAnswerBaseAsset} probes the shipped contracts rather than a mock.
+import {wstETH_CustomPriceFeed} from "src/prices/protocols/wstETH_CustomPriceFeed.sol";
+import {sUSDe_CustomPriceFeed} from "src/prices/protocols/sUSDe_CustomPriceFeed.sol";
+import {stETH_CustomPriceFeed} from "src/prices/protocols/stETH_CustomPriceFeed.sol";
+import {ankrETH_CustomPriceFeed} from "src/prices/protocols/ankrETH_CustomPriceFeed.sol";
+import {ETHPlus_CustomPriceFeed} from "src/prices/protocols/ETHPlus_CustomPriceFeed.sol";
 
 // =============================================================================
 // Feed fixtures
@@ -353,14 +363,95 @@ contract CustomFeedBaseCircularityTest is SuperTest {
         assertEq(nav.getPriceFeedCount(address(lst)), 1, "no-NAV-dependency feed registers");
     }
 
-    /// @notice Every real feed base answers `BASE_ASSET()`, so the guard admits them. Guards the rename hazard: if
-    ///         the getter is ever renamed, the raw-selector probe would silently start rejecting every feed.
-    function test_inRepoFeedBasesAnswerBaseAsset() public {
-        NavSourcedFeed good = new NavSourcedFeed(address(lst), address(nav), address(dai), 1e18);
-        (bool ok, bytes memory ret) =
-            address(good).staticcall(abi.encodeWithSelector(INavSourcedPriceFeed.BASE_ASSET.selector));
-        assertTrue(ok, "BASE_ASSET() must answer");
-        assertEq(ret.length, 32, "one ABI word");
-        assertEq(abi.decode(ret, (address)), address(dai), "and report the configured base");
+    /// @dev Probes `feed` exactly as `PriceFeedLib._validateFeedNotCircular` does — a RAW `staticcall` on the
+    ///      `BASE_ASSET()` selector, not a typed call — and returns the address it reports. Fails the test with
+    ///      `what` if the feed does not answer with one clean ABI word, which is the shape registration rejects as
+    ///      {IPrices-CustomFeedBaseUnreadable}.
+    ///
+    ///      Raw rather than `INavSourcedPriceFeed(feed).BASE_ASSET()` deliberately: a typed call would compile only
+    ///      against types that already declare the interface, so it could not observe a type that stopped declaring
+    ///      it. The raw selector is what production uses and is indifferent to the declaration.
+    function _probeBaseAsset(address feed, string memory what) internal view returns (address) {
+        (bool ok, bytes memory ret) = feed.staticcall(abi.encodeWithSelector(INavSourcedPriceFeed.BASE_ASSET.selector));
+        assertTrue(ok, string.concat(what, ": BASE_ASSET() must answer"));
+        assertEq(ret.length, 32, string.concat(what, ": must return exactly one ABI word"));
+        return abi.decode(ret, (address));
+    }
+
+    /// @notice Each of the four real feed roots, instantiated as a shipped concrete type, answers `BASE_ASSET()` with
+    ///         the value it was configured with — so registration admits them.
+    /// @dev **This replaces a test that asserted the same thing about a MOCK** (`NavSourcedFeed`, declared in this
+    ///      file), which could not fail for anything a real feed did — see issue #271. A mock proving the mock works
+    ///      is the failure mode; these are `new`-ed from `src/`.
+    ///
+    ///      **What this actually covers, stated narrowly.** A *rename* of `BASE_ASSET` is already a COMPILE error:
+    ///      all four roots declare `INavSourcedPriceFeed`, and a public state variable carrying `override` is what
+    ///      satisfies it, so dropping or renaming the member fails the build long before any test runs. The
+    ///      superseded docstring claimed to guard that hazard and did not; this one does not claim it either.
+    ///
+    ///      What is left, and is genuinely only reachable at runtime, is the residual case: **a root that DROPS
+    ///      `INavSourcedPriceFeed` from its inheritance list while keeping a differently-named variable.** That
+    ///      compiles cleanly and takes the compile-time protection with it, and every feed rooted in it silently
+    ///      becomes unregisterable. The raw-selector probe above is indifferent to the declaration, so it still sees
+    ///      the member's absence.
+    ///
+    ///      Three abstract roots are represented by concrete subclasses because the roots cannot be instantiated:
+    ///      `wstETH` (`BaseCustomPriceFeed`), `sUSDe` (`ERC4626VaultRatePriceFeed`), `stETH`
+    ///      (`CrossRateCustomPriceFeed` -> `TwoFeedChainlinkPriceFeed`). `ankrETH` is its own standalone root.
+    function test_realFeedTypesAnswerBaseAsset() public {
+        // BaseCustomPriceFeed, via wstETH.
+        assertEq(
+            _probeBaseAsset(address(new wstETH_CustomPriceFeed(address(lst), address(nav), address(dai))), "wstETH"),
+            address(dai),
+            "wstETH reports its configured base"
+        );
+
+        // ERC4626VaultRatePriceFeed, via sUSDe. The base MUST be the vault's own `asset()` (constructor-enforced),
+        // which is also why this root can never be configured circularly: the base is the underlying, never the share.
+        Mock_ERC4626 vault = new Mock_ERC4626("vSHARE", 18, address(dai), 1e18);
+        assertEq(
+            _probeBaseAsset(address(new sUSDe_CustomPriceFeed(address(vault), address(nav), address(dai))), "sUSDe"),
+            address(dai),
+            "sUSDe reports the vault underlying as its base"
+        );
+
+        // TwoFeedChainlinkPriceFeed (through CrossRateCustomPriceFeed), via stETH.
+        Mock_PriceOracleChainlink rateFeed = new Mock_PriceOracleChainlink("LST/ETH", 1e18, 18);
+        assertEq(
+            _probeBaseAsset(
+                address(new stETH_CustomPriceFeed(address(lst), address(rateFeed), 86_400, address(nav), address(dai))),
+                "stETH"
+            ),
+            address(dai),
+            "stETH reports its configured base"
+        );
+
+        // ankrETH — its own root, with BASE_ASSET as a plain immutable.
+        assertEq(
+            _probeBaseAsset(address(new ankrETH_CustomPriceFeed(address(lst), address(nav), address(dai))), "ankrETH"),
+            address(dai),
+            "ankrETH reports its configured base"
+        );
+    }
+
+    /// @notice `ETHPlus_CustomPriceFeed` answers `BASE_ASSET()` with EXACTLY `address(0)` — "no NAV dependency" —
+    ///         which is what makes it registrable.
+    /// @dev **Pinned separately because it is the one value #268 newly introduced, and the only one whose
+    ///      correctness is a VALUE rather than mere presence.** Every other root already exposed a public
+    ///      `BASE_ASSET` getter before that PR, which only added `override`; ETHPlus had no such member at all and
+    ///      gained `address public constant override BASE_ASSET = address(0)`.
+    ///
+    ///      A wrong constant here is NOT a compile error and NOT caught by anything else. If it were ever set to a
+    ///      real asset, ETHPlus would become unregisterable for that asset ({IPrices-CustomFeedBaseCircular}) while
+    ///      still compiling, still answering, and still passing every other test in this file — and ETH+ prices from
+    ///      the Reserve Protocol basket and never reads the NAV, so any non-zero value would also be a lie about the
+    ///      feed's actual dependency.
+    function test_ethPlusDeclaresNoNavDependency() public {
+        Mock_ERC20 ethPlus = new Mock_ERC20("ETH+", 18);
+        ETHPlus_CustomPriceFeed feed = new ETHPlus_CustomPriceFeed(address(ethPlus), 86_400);
+        assertEq(_probeBaseAsset(address(feed), "ETHPlus"), address(0), "ETHPlus must declare NO NAV dependency");
+
+        // And that value is what registration accepts: `address(0)` can never equal a registrable asset.
+        assertTrue(feed.BASE_ASSET() != address(ethPlus), "address(0) can never collide with the asset it prices");
     }
 }

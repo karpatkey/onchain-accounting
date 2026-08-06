@@ -2,6 +2,7 @@
 pragma solidity ^0.8.0;
 
 import {ICustomPriceFeed} from "src/prices/ICustomPriceFeed.sol";
+import {INavSourcedPriceFeed} from "src/prices/INavSourcedPriceFeed.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {NavBaseUsdLib} from "src/prices/NavBaseUsdLib.sol";
@@ -26,8 +27,18 @@ import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 ///      use BaseCustomPriceFeed.) Base/USD sourced from the NAV cancels cleanly when NAV is quoted in the base (see
 ///      {NavBaseUsdLib}, incl. the circularity invariant).
 /// @author KPK
+interface IankrETH {
+    /// @notice Amount of ankrETH per 1 ETH (18 decimals); decreases as staking rewards accrue.
+    function ratio() external view returns (uint256);
+}
+
+// NOTE: `IankrETH` is declared BEFORE the contract, not after it. `BASE_ASSET` is a public state variable carrying
+// `override` (it implements {INavSourcedPriceFeed}), and `forge fmt` mis-parses that: every top-level declaration
+// FOLLOWING such a variable gets indented as though it were nested, which fails the `forge fmt --check` CI gate.
+// Nothing may be appended after the contract in this file while that holds.
+
 /* solhint-disable var-name-mixedcase, contract-name-camelcase */
-contract ankrETH_CustomPriceFeed is ICustomPriceFeed {
+contract ankrETH_CustomPriceFeed is ICustomPriceFeed, INavSourcedPriceFeed {
     using Math for uint256;
 
     /// @notice ankrETH token address.
@@ -38,7 +49,7 @@ contract ankrETH_CustomPriceFeed is ICustomPriceFeed {
 
     /// @notice The base asset whose USD price is read from the NAV (e.g. WETH). Must be priced by DIRECT feeds on the
     ///         NAV — never by a NAV-sourced custom feed (see {NavBaseUsdLib} circularity invariant).
-    address public immutable BASE_ASSET;
+    address public immutable override BASE_ASSET;
 
     /// @notice Number of decimals the returned price is represented with — `NAV_DECIMALS` (8).
     uint8 private immutable _decimals;
@@ -116,9 +127,4 @@ contract ankrETH_CustomPriceFeed is ICustomPriceFeed {
     function supportsInterface(bytes4 interfaceId) external pure override returns (bool) {
         return interfaceId == type(ICustomPriceFeed).interfaceId || interfaceId == type(IERC165).interfaceId;
     }
-}
-
-interface IankrETH {
-    /// @notice Amount of ankrETH per 1 ETH (18 decimals); decreases as staking rewards accrue.
-    function ratio() external view returns (uint256);
 }

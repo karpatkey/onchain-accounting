@@ -8,6 +8,7 @@ import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
 import {IPrices} from "./IPrices.sol";
 import {ICustomPriceFeed} from "./ICustomPriceFeed.sol";
+import {INavSourcedPriceFeed} from "./INavSourcedPriceFeed.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
 import {IMetaBalanceAdapter} from "src/balances/IMetaBalanceAdapter.sol";
@@ -1823,6 +1824,7 @@ library PriceFeedLib {
             // lets a malformed feed revert rather than swallowing it.
             address feedAsset = ICustomPriceFeed(priceFeed).underlyingAssetSupported();
             if (feedAsset != token) revert IPrices.CustomFeedAssetMismatch(token, priceFeed, feedAsset);
+            _validateFeedNotCircular(token, priceFeed);
         } else if (
             priceType == IPrices.PriceType.Chainlink || priceType == IPrices.PriceType.Redstone
                 || priceType == IPrices.PriceType.API3
@@ -1837,6 +1839,56 @@ library PriceFeedLib {
         } else {
             revert IPrices.InvalidPriceOracleType();
         }
+    }
+
+    /// @notice Rejects a `Custom` feed whose NAV-sourced base asset is the very asset it is being registered for.
+    /// @dev **The failure.** A NAV-sourced custom feed prices its asset as `rate × base/USD` and reads the `base/USD`
+    ///      term back out of THIS NAV — `NavBaseUsdLib.baseUsd(NAV, BASE_ASSET)` → `getPriceData(BASE_ASSET)`
+    ///      (ADR 0019). The circularity invariant that makes this safe (`BASE_ASSET` must be priced by DIRECT feeds,
+    ///      never by a feed that calls back into the NAV) is stated in {NavBaseUsdLib} and held by CONVENTION only:
+    ///      `BASE_ASSET` is a constructor argument checked for nothing but ERC20-ness, and until this gate nothing
+    ///      on the registration path could even see it. Register such a feed for its own base and
+    ///      `getPriceData(token)` → feed → `getPriceData(token)` recurses until the ~1024 call-depth limit. The read
+    ///      still SUCCEEDS — `_selectFeedCore`'s per-feed `try`/`catch` swallows the depth failure and continues to
+    ///      the healthy feed — so there is no revert, no event and no wrong number to notice; the only symptom is
+    ///      that every read of that asset, and of every position priced from it, burns gas proportional to ~1024
+    ///      nested `STATICCALL` frames, forever.
+    /// @dev **Why here.** Registration is the chokepoint the NAV actually controls. A constructor assertion in the
+    ///      feed bases would bind only feeds deployed from this repo after that change — not an already-deployed
+    ///      feed, not a third-party one, and not anything a MANAGER registers later. Those are precisely the cases
+    ///      the invariant has to survive.
+    /// @dev **Why unreadable is a rejection.** `BASE_ASSET()` is probed with a raw `staticcall` because a feed that
+    ///      does not implement it must be distinguishable from one that does — but "we could not read it" is then
+    ///      deliberately NOT allowed to collapse into "it is fine", because the failure being closed is unbounded
+    ///      recursion. A feed with no NAV dependency at all declares that by answering `address(0)`, which passes
+    ///      (`address(0)` is never a registrable asset, so it can never equal `token`). Every in-repo custom feed
+    ///      answers: the three NAV-sourced bases and `ankrETH_CustomPriceFeed` expose `BASE_ASSET` as an immutable,
+    ///      and `ETHPlus_CustomPriceFeed` — which prices from the Reserve Protocol basket and never calls back into
+    ///      the NAV — declares it `address(0)`. A third-party feed must do likewise to be registrable; that
+    ///      requirement is the price of the guard being able to answer NO.
+    /// @dev **Scope — an admission check, not a runtime invariant**, exactly like the `underlyingAssetSupported()`
+    ///      binding above. It is read once, at registration, never on a read path. A feed with a MUTABLE base can
+    ///      pass here and recurse afterwards, and a hostile feed can re-enter the NAV without exposing a base at
+    ///      all — neither is what this closes. What it closes is the MISCONFIGURATION: a legitimate, honest feed
+    ///      pointed at its own base by a config typo, on a registration path driven from an EOA. It also does not
+    ///      catch a two-hop cycle (feed for A based on B, feed for B based on A); that needs an ordering-dependent
+    ///      registry scan, which cannot answer NO reliably — a base with no custom feed today can acquire one
+    ///      tomorrow — so it is deliberately left to review and the deploy-time preflight.
+    /// @dev No gas cap on the probe: this runs only on a MANAGER-authorized registration transaction, so a feed that
+    ///      burns the caller's gas here grieves only the caller, and it fails closed (the registration reverts).
+    function _validateFeedNotCircular(address token, address priceFeed) private view {
+        (bool ok, bytes memory ret) =
+            priceFeed.staticcall(abi.encodeWithSelector(INavSourcedPriceFeed.BASE_ASSET.selector));
+        // A missing function, a revert, or anything that is not a single ABI word is unreadable. Note a code-less
+        // target would return `ok == true` with empty returndata, which this also catches — though
+        // `AddressCheckLib.requireContract` above has already excluded that case.
+        if (!ok || ret.length != 32) revert IPrices.CustomFeedBaseUnreadable(token, priceFeed);
+        // Decode as uint256 and range-check by hand rather than `abi.decode(ret, (address))`: the ABI decoder
+        // reverts on a dirty upper 96 bits with empty returndata, which would surface to the MANAGER as an
+        // anonymous revert instead of a named error.
+        uint256 rawBase = abi.decode(ret, (uint256));
+        if (rawBase > type(uint160).max) revert IPrices.CustomFeedBaseUnreadable(token, priceFeed);
+        if (address(uint160(rawBase)) == token) revert IPrices.CustomFeedBaseCircular(token, priceFeed);
     }
 
     /// @notice Enriches a Position[] with human-readable labels from IPositionDescribable on each adapter.

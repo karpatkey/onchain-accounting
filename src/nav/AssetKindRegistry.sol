@@ -208,6 +208,29 @@ contract AssetKindRegistry is IAssetKindRegistry {
     }
 
     /// @inheritdoc IAssetKindRegistry
+    /// @dev **Both edge cases are rejected explicitly rather than left to fall out of `_setAssetLabels`.**
+    ///
+    ///      *Unregistered asset* → {AssetNotRegisteredForLabels}. Labels are registration-scoped, and the only thing
+    ///      that clears them is {unregisterAsset} — which calls `NAV.unregisterAsset` and therefore REVERTS for an
+    ///      asset the NAV does not hold. So labels written to an unregistered asset could never be cleared by any
+    ///      path on this contract: they would be permanent orphans. The guard is what stops this setter from
+    ///      manufacturing state the rest of the contract cannot reach.
+    ///
+    ///      *Empty array* → {EmptyAssetLabelSet}. `_setAssetLabels` treats an empty list as a silent no-op, which is
+    ///      right for {registerAsset} (an asset may legitimately have none) and wrong here: a caller asking to clear
+    ///      labels would get silence and believe it worked. Clearing is not a repair — it is what {unregisterAsset}
+    ///      does as part of ending a registration — so the setter refuses rather than pretending. This check sits in
+    ///      the setter, NOT in `_setAssetLabels`, so the registration path keeps its behaviour byte for byte.
+    ///
+    ///      The three content bounds ({MAX_ASSET_LABELS}, non-empty elements, {MAX_ASSET_LABEL_BYTES}) are inherited
+    ///      unchanged from `_setAssetLabels`, so a label set that could not be registered cannot be set either.
+    function setAssetLabels(address asset, string[] calldata labels) external onlyNavManager {
+        if (!NAV.isAssetRegistered(asset)) revert AssetNotRegisteredForLabels(asset);
+        if (labels.length == 0) revert EmptyAssetLabelSet(asset);
+        _setAssetLabels(asset, labels);
+    }
+
+    /// @inheritdoc IAssetKindRegistry
     function setAssetKind(address asset, AccrualKind accrualKind) external onlyNavManager {
         _setAssetKind(asset, accrualKind);
     }
@@ -284,17 +307,23 @@ contract AssetKindRegistry is IAssetKindRegistry {
         emit AssetKindSet(asset, accrualKind);
     }
 
-    /// @dev Writes `asset`'s display labels. Called from {registerAsset} and NOWHERE ELSE — that is the whole of the
-    ///      rule, and it is enforced by there being no other caller rather than by a check inside this function.
+    /// @dev Writes `asset`'s display labels. Two callers: {registerAsset} and {setAssetLabels}.
     ///
-    ///      **Registration is the only chance.** Labels are fixed when the asset enters the system, for parity with
-    ///      the balance adapters, whose `positionLabels()` are fixed when the adapter is deployed and editable by no
-    ///      role. Letting an asset gain labels after registration would demand the same editability for adapters. See
-    ///      {IAssetKindRegistry.registerAsset}.
+    ///      **Registration is no longer the only chance, and the parity argument that made it so has been retired
+    ///      deliberately.** Labels were originally fixed at registration for parity with the balance adapters, whose
+    ///      `positionLabels()` are fixed at deploy time and editable by no role. That parity was dropped on the
+    ///      grounds that the two are not the same kind of value: an adapter label is a compile-time constant OF THE
+    ///      CODE, while an asset label is operator-supplied DATA. Making the latter repairable does not imply making
+    ///      the former editable, and adapter labels remain redeploy-to-change. The repair this replaces was
+    ///      unregister-then-re-register, which also destroys every price feed, every monitor feed and the whole of
+    ///      `_assetPricing` (both tolerances) — up to five transactions on an EOA MANAGER with the asset absent from
+    ///      NAV in between.
     ///
-    ///      **An empty `labels` writes nothing and is not an error.** An asset may legitimately have none;
-    ///      `positionLabels()` returns empty arrays legitimately too. Since this runs only at registration, "empty"
-    ///      means the asset is registered unlabelled and stays that way until it is unregistered and registered again.
+    ///      **An empty `labels` writes nothing and is not an error — HERE.** An asset may legitimately have none, and
+    ///      `positionLabels()` returns empty arrays legitimately too, so registration accepts one silently.
+    ///      {setAssetLabels} rejects it instead, before calling this, because a caller asking a SETTER to clear and
+    ///      getting silence is a different and worse thing than a registration with nothing to say. This function's
+    ///      behaviour is unchanged.
     ///
     ///      **There is deliberately NO write-once guard here, and adding one would be a defect rather than belt-and-
     ///      braces.** It would be unreachable on the intended path — {unregisterAsset} deletes `_labels`, and

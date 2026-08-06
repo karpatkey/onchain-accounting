@@ -1870,10 +1870,47 @@ library PriceFeedLib {
     ///      binding above. It is read once, at registration, never on a read path. A feed with a MUTABLE base can
     ///      pass here and recurse afterwards, and a hostile feed can re-enter the NAV without exposing a base at
     ///      all — neither is what this closes. What it closes is the MISCONFIGURATION: a legitimate, honest feed
-    ///      pointed at its own base by a config typo, on a registration path driven from an EOA. It also does not
-    ///      catch a two-hop cycle (feed for A based on B, feed for B based on A); that needs an ordering-dependent
-    ///      registry scan, which cannot answer NO reliably — a base with no custom feed today can acquire one
-    ///      tomorrow — so it is deliberately left to review and the deploy-time preflight.
+    ///      pointed at its own base by a config typo, on a registration path driven from an EOA.
+    /// @dev **A MULTI-HOP CYCLE IS NOT CAUGHT, AND THAT IS DELIBERATE.** Feed for A based on B, feed for B based on
+    ///      A: each passes every check here — `underlyingAssetSupported()` matches its own asset, and neither base
+    ///      equals the asset it is registered for. Both legs register cleanly through the normal MANAGER path, **in
+    ///      either order**, because this function receives only `(token, priceFeed)` and never reads the registry;
+    ///      there is no "second leg trips it" ordering to rely on.
+    ///
+    ///      **CYCLE LENGTH DOES NOT MATTER, AND NEITHER DOES DEPTH.** Swept on a real proxy at a fixed 8,000,000-gas
+    ///      budget, ring sizes 2/3/4/5/6 all cost an IDENTICAL 7,732,849 gas. What the cost actually tracks is the
+    ///      CALLER'S BUDGET: sweeping the budget at a fixed ring size gives 0.49M/0.92M/1.94M/3.87M/7.73M/15.45M
+    ///      for 0.5M/1M/2M/4M/8M/16M supplied — a flat ~96.6% of whatever is offered, against a no-cycle control
+    ///      that stays at ~14k regardless. That is the 63/64 call-gas forwarding rule: every level forwards all but
+    ///      1/64 of what it holds and the recursion runs until the gas is gone, so the loop body and the number of
+    ///      distinct assets in the ring are both irrelevant. "How deep can it go" is therefore the wrong question —
+    ///      the answer is "as deep as the gas you supplied allows", and the bill is a fraction of the budget rather
+    ///      than any fixed figure.
+    ///
+    ///      Below roughly 1M gas the read does not merely get expensive, it FAILS (`ok == false` at a 0.5M budget):
+    ///      the 1/64 the outermost frame retains is no longer enough to finish the healthy feed after the `catch`.
+    ///      So "returns the correct price while burning the gas" is itself budget-dependent — it holds for a
+    ///      generous `eth_call`, not for a gas-constrained on-chain caller, which simply reverts.
+    ///
+    ///      Not enforced on chain because the only on-chain fix is an ordering-dependent scan of the registry, and
+    ///      that scan cannot answer NO reliably: a base with no custom feed today can acquire one tomorrow, so it
+    ///      would have to run on every registration in both directions and would STILL miss a cycle completed by a
+    ///      later registration. A check that cannot answer NO is the failure mode this whole guard exists to avoid.
+    ///
+    ///      It is instead unconstructible in configuration, and that is where it is enforced: a cycle of any length
+    ///      needs at least one base asset to itself be priced by a Custom primary, and **0 of the 41** configured
+    ///      Custom (asset, feed) pairs across all 7 chains have one — every base resolves to a Chainlink-only asset
+    ///      (WETH, USDC, GHO, USDS, USDe, GNO, WXDAI). `script/deploy/preflight/preflight_config.py` now makes that
+    ///      an ERROR rather than a property, so the config cannot drift into a cycle unnoticed. Re-derive both
+    ///      numbers with `python3 script/deploy/preflight/preflight_config.py --base-report` (see that file's
+    ///      `base_allowlist_findings` docstring). The related and STRICTLY WORSE gap is a base that is merely the
+    ///      WRONG asset rather than a cyclic one: it has no gas signature, no `stale` and no `irregular` — only a
+    ///      wrong number, at an ordinary 43,738-gas read. **35 of the 41** pairs rely on config correctness for it;
+    ///      the other 6 are the ERC-4626 family (`sUSDe`, `sUSDS`, `syrupUSDC`, `RWIV`, `sGHO`, `sXDAI`), whose
+    ///      constructor pins the base to `IERC4626(vault).asset()` and reverts `BaseAssetMismatch` otherwise. The
+    ///      preflight narrows the remaining 35 from "any of the 93 registered assets" to "a direct-priced base",
+    ///      but cannot tell WETH from USDC for an LST — there is no on-chain ground truth for what an LST's base
+    ///      ought to be, which is exactly why the ERC-4626 family can be pinned and the rest cannot.
     /// @dev No gas cap on the probe: this runs only on a MANAGER-authorized registration transaction, so a feed that
     ///      burns the caller's gas here grieves only the caller, and it fails closed (the registration reverts).
     function _validateFeedNotCircular(address token, address priceFeed) private view {

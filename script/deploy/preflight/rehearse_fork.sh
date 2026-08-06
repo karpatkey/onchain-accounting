@@ -183,7 +183,7 @@ rm -rf "script/deploy/preflight/archive/rehearsal-$$"
 echo "cleared deployments/${CHAIN_ID}.json (original archived in $WORK)"
 
 # --- per-step foundry profile ------------------------------------------------
-# The RUNBOOK requires step 1.5 (RegisterAssets) to run under FOUNDRY_PROFILE=slow on mainnet, and this
+# The RUNBOOK requires step 1.6 (RegisterAssets) to run under FOUNDRY_PROFILE=slow on mainnet, and this
 # script was ignoring that — every step ran on the default profile. It is not a throughput preference:
 # `[profile.slow]` raises gas_limit AND memory_limit from the default 1 GiB to 16 GiB precisely because
 # registering the full asset set in one call frame accumulates quadratic EVM memory-expansion cost

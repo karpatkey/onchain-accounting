@@ -380,7 +380,7 @@ chains under `NOT PRICED`, and exits non-zero. The estimate is deliberately **no
 compensate: a floor generous enough to cover gnosis over-states the cheap rollups by three to four
 orders of magnitude, and a 1 gwei floor was measured reporting `TOP UP` on 11 of 24 amply-funded
 chains. Funding on those chains has been confirmed sufficient out of band; the state exists so nobody
-later reads a green row as evidence the chain was checked. Hemi's fee floor (1.9) is the same species
+later reads a green row as evidence the chain was checked. Hemi's fee floor (1.10) is the same species
 with a known workaround.
 
 ### 0.7 Capture the pre-deploy production state — **irreplaceable, do it before anything else**
@@ -473,6 +473,7 @@ threshold with no recorded baseline cannot detect drift.
 1.6  RegisterAssets                   assets + feeds + kinds + LABELS, via the registry
 1.7  04_DeployBalanceAdapters         adapters + assistants       PERSIST_DEPLOYMENTS=1  <- assistants
 1.8  06_Configure                     register + reconcile
+1.9  DECISION: does the council keep MANAGER on the NAV?          <- decide BEFORE 07 runs
 ```
 
 ⚠️ **`08` MOVED from last to 1.4, and the move is load-bearing rather than cosmetic.** An asset's PRIMARY
@@ -648,7 +649,7 @@ alternative out, before proposing a smaller deploy.
 *Chains 130, 143, 146, 196, 204, 480, 999, 5000, 9745, 16661, 42220, 43111, 43114, 57073, 59144,
 80094, 534352 are finished here.*
 
-### 1.4 `08_DeployAssetKindRegistry` — asset kinds (ships with #241, **not on `main` today**)
+### 1.4 `08_DeployAssetKindRegistry` — asset kinds
 
 ```bash
 PERSIST_DEPLOYMENTS=1 forge script script/deploy/08_DeployAssetKindRegistry.s.sol $BROADCAST
@@ -727,7 +728,10 @@ in that run its labels.
 
 - **Precondition:** #241 merged; 1.3 done (the registry is granted a role on the **new** proxy); the chain's
   `nav-config/assets-and-price-feeds/<CID>.json` carries a valid `accrualKind` on **every** asset — it is
-  fail-closed with no default, so one missing or misspelled value aborts that chain's run.
+  fail-closed with no default, so one missing or misspelled value aborts that chain's run. `preflight_config.py`
+  rejects the same cases before any transaction is sent — a **missing** key, a misspelled key (which makes the
+  real one read as absent), an empty string, and a mis-cased or out-of-vocabulary value — so run preflight rather
+  than discovering it mid-deploy.
 - **Post-condition:** `python3 script/deploy/preflight/verify_step.py 1.4` — asserts the registry is recorded,
   has code, is bound to the recorded proxy, **holds `MANAGER` on the new NAV** (without which the facade is
   dead on writes) and that **the NAV points BACK at it** (without which every read reverts), plus a sampled
@@ -865,7 +869,114 @@ touched at all by this step, not merely touched idempotently.
 > *config*, so it cannot tell you the config itself named the wrong DataProvider. That judgement stays
 > human.
 
-### 1.9 Chain-specific workarounds
+### 1.9 DECISION — does the security council keep `MANAGER` on the NAV?
+
+**This is a choice, not a step. Nothing in the deploy makes it for you, and it is easiest to make here** —
+after `1.8`, before `07_TransferAdminToSecurityCouncil` runs.
+
+#### What is actually being decided
+
+`AssetKindRegistry` is ownerless: every write gates on `NAV.hasRole(MANAGER, msg.sender)`, and the registry
+itself holds `MANAGER` so it can forward into the NAV. But `NAVCalculator.registerAsset` is gated by nothing
+except `_requireManager()`. So `MANAGER` is simultaneously **the registry's permission to write** and **a
+human's permission to bypass the registry**.
+
+That leaves **two doors into "this asset is registered"**:
+
+| door | classification | labels |
+|---|---|---|
+| `AssetKindRegistry.registerAsset` — the facade | written, atomically | written, atomically |
+| `NAVCalculator.registerAsset` — direct | **none** | **none** |
+
+`AssetKindRegistry.sol:188` states the second case outright: an asset registered directly on the NAV *"has no
+kind"*.
+
+**So the invariant "no registered asset is unclassified" is STRUCTURAL only if the NAV's `MANAGER` set is exactly
+`{registry}`. Otherwise it is CONVENTIONAL** — upheld by whoever is at the keyboard.
+
+⚠️ **It bites harder than ordinary drift, because labels are write-once.** They can only be set at registration
+and there is no setter. An asset through the wrong door can therefore **never be labelled**; the only repair is
+`unregisterAsset` followed by re-registration through the facade — taking the asset out of the NAV and putting it
+back with its price feeds, to fix a display string.
+
+#### What `07` already does, which narrows the question
+
+`07_TransferAdminToSecurityCouncil` per target: grants `DEFAULT_ADMIN_ROLE` **and `MANAGER`** to
+`chainConfig.securityCouncil`, then revokes `MANAGER` from the deployer EOA and renounces the deployer's
+`DEFAULT_ADMIN_ROLE`.
+
+**The deployer is therefore already handled.** After `07` the `MANAGER` set on the NAV is
+`{AssetKindRegistry, securityCouncil}`, so the decision is only ever about **the council**.
+
+#### What revoking does and does not buy
+
+`NAVCalculator` uses stock `AccessControlUpgradeable` with **no `_setRoleAdmin` override**, so `DEFAULT_ADMIN_ROLE`
+is the role admin of `MANAGER` — and `07` grants the council `DEFAULT_ADMIN_ROLE`.
+
+**A council that has been revoked can therefore re-grant itself `MANAGER` at any time.** Revocation does not make
+the bypass impossible; it makes it a **deliberate, separately-authorised, on-chain-visible act** rather than a
+one-transaction routine operation. Read "structural" in that sense and not a stronger one.
+
+#### The cost of revoking — every function `MANAGER` gates on the NAV
+
+All 19 are on `NAVCalculator`; `Prices` and `Balances` declare no `MANAGER`-gated external functions of their own.
+A revoked council cannot call any of these without first re-granting itself the role:
+
+| area | functions |
+|---|---|
+| assets | `registerAsset` · `unregisterAsset` |
+| price feeds | `addPriceFeed` · `removePriceFeed` · `removePriceFeedAt` |
+| monitors | `addMonitorFeed` · `removeMonitorFeed` · `removeMonitorFeedAt` |
+| tolerances | `setDivergenceTolerance` · `setPegTolerance` |
+| balance adapters | `addBalanceAdapters` · `removeBalanceAdapters` |
+| meta adapters | `addMetaBalanceAdapter` · `addMetaInstances` · `removeMetaInstances` |
+| default adapter | `excludeAssetFromDefaultAdapter` · `includeAssetInDefaultAdapter` |
+| wiring | `setAssetKindRegistry` |
+| L2 | `setChainlinkL2SequencerGracePeriod` |
+
+Note `registerAsset` is the only one the facade covers. **Everything else in that table is ordinary NAV
+operations with no facade equivalent** — routine feed and adapter maintenance goes through `MANAGER` directly.
+That is the real cost, and it is why keeping the council's `MANAGER` may be the right answer.
+
+#### Check the current set
+
+The NAV uses `AccessControlUpgradeable`, **not** the `Enumerable` variant, so `getRoleMemberCount` /
+`getRoleMember` **do not exist** — the set cannot be read directly and must be reconstructed from events, then
+confirmed per address:
+
+```bash
+MANAGER=0xaf290d8680820aad922855f39b306097b20e28774d6c1ad35a20325630c3a02c
+
+# every address ever granted MANAGER on this proxy (3rd topic = account)
+cast logs --address $PROXY --from-block $DEPLOY_BLOCK --rpc-url $RPC \
+  'RoleGranted(bytes32,address,address)' $MANAGER
+# and every revocation, to net them off
+cast logs --address $PROXY --from-block $DEPLOY_BLOCK --rpc-url $RPC \
+  'RoleRevoked(bytes32,address,address)' $MANAGER
+
+# then confirm each survivor — this is the authoritative read, and it can answer false
+cast call $PROXY 'hasRole(bytes32,address)(bool)' $MANAGER $ADDR --rpc-url $RPC
+```
+
+The invariant is structural on a chain **iff** the only address returning `true` is that chain's recorded
+`AssetKindRegistry` — `cast call $PROXY 'assetKindRegistry()(address)' --rpc-url $RPC`.
+
+#### Revoke, if that is the decision
+
+Run **after** `07` (the council must already hold `DEFAULT_ADMIN_ROLE`, or there is nobody left who can grant
+anything), and execute from the council Safe, not the deployer:
+
+```bash
+cast send $PROXY 'revokeRole(bytes32,address)' $MANAGER $COUNCIL --rpc-url $RPC   # from the council Safe
+cast call $PROXY 'hasRole(bytes32,address)(bool)' $MANAGER $COUNCIL --rpc-url $RPC  # must now be false
+```
+
+**Do not revoke before `1.8`.** `06_Configure` broadcasts `addBalanceAdapters` / `addMetaBalanceAdapter` /
+`addMetaInstances` from the deployer EOA, all `MANAGER`-gated; revoking early aborts the chain's configuration.
+
+---
+
+### 1.10 Chain-specific workarounds
 
 - **hyperevm (999):** the NAV impl deploy is ~12.5M gas; HyperEVM's small blocks cap at ~3M. Enable
   "big blocks" (~30M) for the deployer via the Hyperliquid `evmUserModify` L1 action
@@ -1148,5 +1259,5 @@ to the new proxy. The old stack keeps answering until they do; nothing needs unr
 | `vm.writeJson: failed to open .../safe-transactions/<id>-register-assets.json` | the directory does not exist; on-chain writes already succeeded | `mkdir -p safe-transactions`, re-run |
 | addresses differ per chain that should be identical | a chain ran with a different build or submodule set | 0.4, then rebuild and redeploy that chain — `verify_step.py 1.2`/`1.3` compares across chains and names the odd one out |
 | an assistant's `ADAPTER()` is not its paired adapter | the `*Assistant` key was not cleared, so `04` skipped the redeploy | clear it (1.1), re-run 1.7, re-check with `verify_step.py 1.7` |
-| hyperevm impl deploy "exceeds block gas limit" | small blocks | enable big blocks (1.9) |
-| hemi tx rejected on price | fee floor | raise `--with-gas-price` (1.9) |
+| hyperevm impl deploy "exceeds block gas limit" | small blocks | enable big blocks (1.10) |
+| hemi tx rejected on price | fee floor | raise `--with-gas-price` (1.10) |

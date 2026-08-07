@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -77,10 +78,76 @@ PUBLIC_FALLBACK_RPC = {
 }
 
 
-DEFAULT_ENV_FILES = [
-    REPO.parent / "onchain-accounting" / ".env",
-    REPO.parent / "onchain-investment-vehicles" / ".env",
-]
+def _canonical_repo_root() -> Path | None:
+    """The MAIN clone's working tree, whatever this checkout's layout is.
+
+    `git rev-parse --git-common-dir` reports the main clone's `.git` from inside ANY worktree —
+    unlike `--git-dir`, which reports the per-worktree one — so this resolves for a worktree nested
+    at `<repo>/.claude/worktrees/<name>` as well as for a sibling one. Deriving the canonical clone
+    from `REPO.parent` instead (as this module used to) only worked for the sibling layout.
+
+    A normal checkout answers with a relative ``.git``; joining onto `REPO` handles that, and is a
+    no-op when the answer is absolute. Returns None when git is unavailable or `REPO` is not in a
+    repository at all, which is not an error — the sibling candidates still apply.
+    """
+    try:
+        out = subprocess.run(
+            ["git", "-C", str(REPO), "rev-parse", "--git-common-dir"],
+            capture_output=True, text=True, timeout=10, check=True,
+        ).stdout.strip()
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if not out:
+        return None
+    try:
+        return (REPO / out).resolve().parent
+    except OSError:
+        return None
+
+
+def _default_env_files() -> list[Path]:
+    """.env candidates in PRECEDENCE order — `load_env` uses `setdefault`, so the first wins.
+
+    `REPO / ".env"` leads: a worktree with a deliberately hand-placed .env must not be overridden
+    by the canonical clone's. It was absent from this list entirely before, so a worktree's own
+    .env was never read (in a normal checkout it coincides with the sibling probe, which is why
+    that went unnoticed). The sibling probes are kept as extra candidates; the OIV entry stays
+    sibling-derived because it is a separate repo git cannot discover from here.
+    """
+    candidates = [REPO / ".env"]
+    canonical = _canonical_repo_root()
+    if canonical is not None:
+        candidates.append(canonical / ".env")
+        # OIV is a separate repo git cannot discover, so it stays sibling-derived — but a sibling of
+        # the CANONICAL CLONE, not of REPO. Deriving it from REPO carries the same defect the OA
+        # probe had: from a nested worktree it points at
+        # `<repo>/.claude/worktrees/onchain-investment-vehicles`, so the OIV-only endpoints go
+        # missing exactly where the OA env does.
+        candidates += [
+            canonical.parent / "onchain-accounting" / ".env",
+            canonical.parent / "onchain-investment-vehicles" / ".env",
+        ]
+    # The original REPO-derived probes, kept as belt-and-braces: they still cover a canonical clone
+    # reached outside git (no git binary, REPO not in a repository). Deduped away otherwise.
+    candidates += [
+        REPO.parent / "onchain-accounting" / ".env",
+        REPO.parent / "onchain-investment-vehicles" / ".env",
+    ]
+    # In a normal checkout several candidates are the same file; keep the first occurrence of each.
+    seen: set[Path] = set()
+    unique: list[Path] = []
+    for path in candidates:
+        try:
+            key = path.resolve()
+        except OSError:
+            key = path
+        if key not in seen:
+            seen.add(key)
+            unique.append(path)
+    return unique
+
+
+DEFAULT_ENV_FILES = _default_env_files()
 
 
 def load_env(dotenv: Path | None = None) -> None:

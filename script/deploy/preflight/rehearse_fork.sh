@@ -92,13 +92,78 @@ cp -r script/config "$WORK/config-before"
 # AFTER broadcasting its on-chain registrations. The dir is gitignored, so a fresh checkout lacks it.
 mkdir -p safe-transactions
 
-# A git worktree has no .env of its own — fall back to the canonical clone and to the OIV env, the
-# same two files chainlib.load_env reads, so the tooling all sees one endpoint inventory.
-for ENVF in .env "$(dirname "$ROOT")/onchain-accounting/.env" \
-            "$(dirname "$ROOT")/onchain-investment-vehicles/.env"; do
-  [[ -f "$ENVF" ]] && { set -a; source "$ENVF"; set +a; }
+# --- .env resolution ---------------------------------------------------------
+# A git worktree has no .env of its own, so fall back to the canonical clone's — but ask GIT where
+# that clone is rather than deriving it from $ROOT. `git rev-parse --git-common-dir` returns the
+# MAIN clone's .git from inside ANY worktree (unlike --git-dir, which is the per-worktree one), so
+# it resolves for a worktree NESTED at <repo>/.claude/worktrees/<name> exactly as well as for a
+# sibling one. The previous `$(dirname "$ROOT")/onchain-accounting/.env` only ever hit when the
+# worktree happened to sit beside the main clone; from a nested worktree it probed
+# `.../worktrees/onchain-accounting/.env`, found nothing, and this script aborted on the
+# ALCHEMY_API_KEY check below. The sibling probes are KEPT as additional candidates — they cost
+# nothing and still cover a canonical clone whose directory was renamed — and the OIV env stays
+# sibling-derived because it is a genuinely separate repo that git cannot discover from here.
+#
+# Emitted in PRECEDENCE order, first wins. Kept as a function so the guard test can extract it
+# verbatim and drive each layout — see script/test/env-resolution-guards.test.sh.
+env_candidates() {
+  local root="$1" common canon
+  printf '%s\n' "$root/.env"
+  # Guarded: `git` may be absent, or $root may not be in a repo at all. Neither is fatal here.
+  if common="$(git -C "$root" rev-parse --git-common-dir 2>/dev/null)" && [[ -n "$common" ]]; then
+    # A normal checkout answers with a RELATIVE ".git"; a worktree answers absolute. Anchor the
+    # relative form to $root (which is what `git -C` made it relative to) before taking the parent.
+    [[ "$common" != /* ]] && common="$root/$common"
+    if canon="$(cd -- "$common/.." 2>/dev/null && pwd)"; then
+      printf '%s\n' "$canon/.env"
+      # OIV is a separate repo git cannot discover, so it stays sibling-derived — but a sibling of
+      # the CANONICAL CLONE, not of $root. Deriving it from $root has the same defect the OA probe
+      # had: from a nested worktree it points at `<repo>/.claude/worktrees/onchain-investment-…`,
+      # so the OIV-only endpoints silently went missing there too.
+      printf '%s\n' "$(dirname "$canon")/onchain-accounting/.env"
+      printf '%s\n' "$(dirname "$canon")/onchain-investment-vehicles/.env"
+    fi
+  fi
+  # The original $root-derived probes, kept as belt-and-braces: they still cover a canonical clone
+  # reached outside git (no git binary, $root not in a repo). In a normal checkout or a sibling
+  # worktree they duplicate the pair above and are deduped away.
+  printf '%s\n' "$(dirname "$root")/onchain-accounting/.env"
+  printf '%s\n' "$(dirname "$root")/onchain-investment-vehicles/.env"
+}
+
+# Read every candidate that exists — the union matters, since the OIV env carries endpoints for
+# chains the OA env has none for — but source them LAST-to-FIRST. `set -a; source` assigns
+# unconditionally, so the file sourced last is the one that sticks; reversing therefore makes the
+# FIRST candidate win. Precedence lands as local .env > canonical clone > OIV, which is what
+# chainlib.load_env already does via `os.environ.setdefault`. Sourcing forward (as this loop used
+# to) gave OIV the last word over the repo's own .env, and would now also let the canonical clone
+# silently override a deliberately hand-placed worktree .env.
+ENV_FOUND=()
+declare -A _env_seen=()
+while IFS= read -r ENVF; do
+  [[ -f "$ENVF" ]] || continue
+  ENVREAL="$(readlink -f -- "$ENVF" 2>/dev/null)" || ENVREAL=""
+  [[ -n "$ENVREAL" ]] || ENVREAL="$ENVF"
+  # In a normal checkout every candidate resolves to the same file; source it once.
+  [[ -n "${_env_seen[$ENVREAL]:-}" ]] && continue
+  _env_seen["$ENVREAL"]=1
+  ENV_FOUND+=("$ENVREAL")
+done < <(env_candidates "$ROOT")
+
+for (( i=${#ENV_FOUND[@]}-1; i>=0; i-- )); do
+  set -a; source "${ENV_FOUND[$i]}"; set +a
 done
-: "${ALCHEMY_API_KEY:?ALCHEMY_API_KEY must be set (checked .env, ../onchain-accounting/.env)}"
+
+if [[ -z "${ALCHEMY_API_KEY:-}" ]]; then
+  {
+    echo "REFUSING: ALCHEMY_API_KEY is not set. Candidates checked, in precedence order:"
+    while IFS= read -r ENVF; do
+      if [[ -f "$ENVF" ]]; then echo "  read    $ENVF"; else echo "  absent  $ENVF"; fi
+    done < <(env_candidates "$ROOT")
+    echo "Define it in one of the files above, or export it before running."
+  } >&2
+  exit 1
+fi
 FORK_URL="${MAINNET_URL:-https://eth-mainnet.g.alchemy.com/v2/${ALCHEMY_API_KEY}}"
 
 DEPLOYER="$(jq -r '.addresses.admin' "script/config/chains/${CHAIN_ID}.json")"

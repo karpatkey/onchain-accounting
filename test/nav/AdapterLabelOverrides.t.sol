@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: BUSL-1.1
-pragma solidity ^0.8.0;
+pragma solidity ^0.8;
 
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "test/SuperTest.sol";

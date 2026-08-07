@@ -1941,16 +1941,20 @@ library PriceFeedLib {
     ///      the same address every time.
     ///
     ///      ⚠️ **That does NOT make the change gas-negative, and an earlier revision of this note claimed it did.**
-    ///      Measured against a real no-registry baseline, not reasoned:
+    ///      Measured against a real no-registry baseline, not reasoned. ⚠️ **These are ILLUSTRATIVE readings, not
+    ///      CI-pinned constants** — the tests assert the ORDERING and an upper BOUND, never these exact values, and
+    ///      the figures drift with solc and EVM settings. They already drifted across runs of this very tree
+    ///      (~109.1k vs ~109.0k baseline, ~5.1k vs ~5.3k surcharge), which is precisely why nothing asserts them
+    ///      exactly. Read them as an order of magnitude:
     ///
-    ///        no registry 109,126  <  hit 111,799  <  miss 114,251   (single-adapter fixture)
+    ///        no registry ~109k  <  hit ~112k  <  miss ~114k   (single-adapter fixture)
     ///
-    ///      So the ordering is `no registry < hit < miss`. The override never pays for itself outright; it only claws
-    ///      back the one adapter staticcall it skips. **The MISS path is the common case — no adapter has an override
-    ///      today — so this is strictly more expensive than before this change.**
+    ///      So the ordering is `no registry < hit < miss`, and THAT is what is pinned. The override never pays for
+    ///      itself outright; it only claws back the one adapter staticcall it skips. **The MISS path is the common
+    ///      case — no adapter has an override today — so this is strictly more expensive than before this change.**
     ///
-    ///      Per-DISTINCT-ADAPTER surcharge, measured in-repo: ~5.3k for one adapter, ~10.7k for two. It scales with
-    ///      distinct adapters, not with positions. ⚠️ Two earlier revisions of this note quoted a "~9.6k cold, from
+    ///      Per-DISTINCT-ADAPTER surcharge, measured in-repo: ~5.3k for one adapter, ~10.7k for two — again
+    ///      approximate, and again only the SCALING is asserted. It scales with distinct adapters, not positions. ⚠️ Two earlier revisions of this note quoted a "~9.6k cold, from
     ///      an independent 20-adapter sweep" figure; that measurement was made outside this repo and NOTHING here
     ///      reproduces it, so it has been removed rather than left as an unverifiable number in a comment. Every
     ///      figure quoted above comes from a test in this tree. Real portfolios touch each adapter's mapping slot

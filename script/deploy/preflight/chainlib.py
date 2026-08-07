@@ -78,6 +78,39 @@ PUBLIC_FALLBACK_RPC = {
 }
 
 
+def _git(cwd: Path, *args: str) -> str | None:
+    """Run `git -C cwd <args>` and return stripped stdout, or None if it fails at all."""
+    try:
+        out = subprocess.run(
+            ["git", "-C", str(cwd), *args],
+            capture_output=True, text=True, timeout=10, check=True,
+        ).stdout.strip()
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return out or None
+
+
+def _is_worktree_top(path: Path) -> bool:
+    """True only when `path` is the TOP directory of a non-bare working tree.
+
+    git answers `rev-parse` from any directory INSIDE a repository, and that willingness is a trap:
+    without this check, a tree with no `.git` of its own that merely sits inside an ancestor repo
+    (a vendored or tarball copy) makes git walk UP and report the ANCESTOR, whose unrelated `.env`
+    is then read; and the parent of a bare repo is reported as a "clone" although it is not a
+    working tree at all.
+    """
+    if _git(path, "rev-parse", "--is-bare-repository") != "false":
+        return False
+    top = _git(path, "rev-parse", "--show-toplevel")
+    if not top:
+        return False
+    try:
+        # Resolved comparison: the checkout is legitimately reached via a symlink in some setups.
+        return Path(top).resolve() == path.resolve()
+    except OSError:
+        return False
+
+
 def _canonical_repo_root() -> Path | None:
     """The MAIN clone's working tree, whatever this checkout's layout is.
 
@@ -87,34 +120,35 @@ def _canonical_repo_root() -> Path | None:
     from `REPO.parent` instead (as this module used to) only worked for the sibling layout.
 
     A normal checkout answers with a relative ``.git``; joining onto `REPO` handles that, and is a
-    no-op when the answer is absolute. Returns None when git is unavailable or `REPO` is not in a
-    repository at all, which is not an error — the sibling candidates still apply.
+    no-op when the answer is absolute. Both `REPO` and the derived root are required to be genuine
+    working-tree tops — see `_is_worktree_top`. Returns None when git is unavailable, `REPO` is not
+    a repository top, or the result is not one, none of which is an error: the sibling candidates
+    still apply, exactly as before this fix.
     """
-    try:
-        out = subprocess.run(
-            ["git", "-C", str(REPO), "rev-parse", "--git-common-dir"],
-            capture_output=True, text=True, timeout=10, check=True,
-        ).stdout.strip()
-    except (OSError, subprocess.SubprocessError):
+    if not _is_worktree_top(REPO):
         return None
+    out = _git(REPO, "rev-parse", "--git-common-dir")
     if not out:
         return None
     try:
-        return (REPO / out).resolve().parent
+        canonical = (REPO / out).resolve().parent
     except OSError:
         return None
+    return canonical if _is_worktree_top(canonical) else None
 
 
 def _default_env_files() -> list[Path]:
     """.env candidates in PRECEDENCE order — `load_env` uses `setdefault`, so the first wins.
 
-    `REPO / ".env"` leads: a worktree with a deliberately hand-placed .env must not be overridden
-    by the canonical clone's. It was absent from this list entirely before, so a worktree's own
-    .env was never read (in a normal checkout it coincides with the sibling probe, which is why
-    that went unnoticed). The sibling probes are kept as extra candidates; the OIV entry stays
-    sibling-derived because it is a separate repo git cannot discover from here.
+    Only the PATHS change here; the ordering and precedence are deliberately identical to what this
+    list produced before, so a normal checkout and a sibling worktree resolve exactly what they
+    always did. `REPO / ".env"` is intentionally NOT added: in a sibling worktree it would be the
+    worktree's own file and would outrank the canonical clone's, which is a semantic change this
+    path-derivation fix has no business making. (A worktree's own .env is consequently still never
+    read here, unlike in rehearse_fork.sh, which has always read it. That asymmetry predates this
+    fix and is left alone on purpose.)
     """
-    candidates = [REPO / ".env"]
+    candidates: list[Path] = []
     canonical = _canonical_repo_root()
     if canonical is not None:
         candidates.append(canonical / ".env")

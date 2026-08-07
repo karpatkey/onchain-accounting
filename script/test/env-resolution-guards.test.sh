@@ -112,6 +112,25 @@ resolve_in() {
   )
 }
 
+chainlib_in() {
+  local root="$1" expr="$2"
+  # chainlib derives REPO as parents[3] of its own file, so it must sit at the real depth.
+  mkdir -p "$root/script/deploy/preflight"
+  cp "$CHAINLIB" "$root/script/deploy/preflight/chainlib.py"
+  ( cd "$root" && python3 -c "
+import sys, types, os, pathlib
+sys.modules.setdefault('requests', types.ModuleType('requests'))
+sys.path.insert(0, 'script/deploy/preflight')
+import chainlib
+existing = [p for p in chainlib.DEFAULT_ENV_FILES if p.exists()]
+for k in ('ALCHEMY_API_KEY','MAINNET_URL','OIV_ONLY_URL','LEAKED_ONLY','OUTER_ONLY'):
+    os.environ.pop(k, None)
+chainlib.load_env()
+print($expr)
+" 2>/dev/null || echo ERR )
+  rm -rf "$root/script"
+}
+
 echo "== layout proofs: the shipped resolution block =="
 # THE REGRESSION CASE. This is the one that aborted before the fix.
 check "nested worktree resolves ALCHEMY_API_KEY"  "canonical-sentinel" "$(resolve_in "$NESTED")"
@@ -135,6 +154,35 @@ done
 # nested layout changed and the git-derived candidate is no longer load-bearing.
 check "nested: sibling-derived probe is a dead path" "absent" \
       "$([[ -f "$(dirname "$NESTED")/onchain-accounting/.env" ]] && echo present || echo absent)"
+
+echo "== the git-derived candidate must be LOAD-BEARING, not a duplicate =="
+# The fixture above names the canonical clone literally `onchain-accounting`, which is realistic —
+# and is exactly why the cases above cannot, on their own, prove the git-derived candidate does any
+# work: it comes out byte-identical to the hardcoded-name sibling probe, so deleting it leaves them
+# green. This second fixture names the clone something else, so NOTHING that hardcodes the
+# directory name can find it and only `--git-common-dir` can. (The precedence cases below still use
+# the realistically-named clone, because their pre-fix replay depends on that name.)
+REN="$TMP/renamed/oa-canonical"
+mk "$REN"
+printf 'ALCHEMY_API_KEY=renamed-sentinel\n' > "$REN/.env"
+REN_SIB="$TMP/renamed/wt-sibling"
+git -C "$REN" worktree add -q --detach "$REN_SIB"
+REN_NEST="$REN/.claude/worktrees/nested"
+mkdir -p "$(dirname "$REN_NEST")"
+git -C "$REN" worktree add -q --detach "$REN_NEST"
+check "renamed clone, normal:  only git can find it" "renamed-sentinel" "$(resolve_in "$REN")"
+check "renamed clone, sibling: only git can find it" "renamed-sentinel" "$(resolve_in "$REN_SIB")"
+check "renamed clone, nested:  only git can find it" "renamed-sentinel" "$(resolve_in "$REN_NEST")"
+check "renamed clone: chainlib finds it too" "renamed-sentinel" \
+      "$(chainlib_in "$REN_NEST" "os.environ.get('ALCHEMY_API_KEY','<unset>')")"
+# Prove the premise: no directory named onchain-accounting exists anywhere near it, so a
+# name-hardcoding probe cannot possibly succeed and these four cases isolate the git-derived path.
+check "renamed clone: no name-hardcoded probe could hit" "0" \
+      "$( ( set -uo pipefail
+            n=0
+            for r in "$REN" "$REN_SIB" "$REN_NEST"; do
+              [[ -f "$(dirname "$r")/onchain-accounting/.env" ]] && n=$((n+1))
+            done; echo "$n" ) )"
 
 echo "== precedence: MUST be byte-identical to the pre-fix behaviour =="
 # This fix moves path derivation ONLY. Precedence is load-bearing: the OA and OIV .env files share
@@ -222,6 +270,56 @@ check "unresolvable root: no error under set -euo" "0" \
       "$( rc=0; ( set -euo pipefail; ROOT="$TMP/does/not/exist"; eval "$fn_src"; eval "$resolve_src" ) \
           >/dev/null 2>&1 || rc=$?; echo $rc )"
 
+# (5) A bare repo whose PARENT is itself a working tree — a dotfiles-managed $HOME is the ordinary
+#     case. `$canon` is then a genuine worktree top, so checking only that is NOT enough: the guard
+#     must confirm $canon OWNS the git dir it was derived from, or the dotfiles .env is sourced.
+H="$TMP/home"; mk "$H"
+printf 'ALCHEMY_API_KEY=leak\nDOTFILES_ONLY=yes\n' > "$H/.env"
+mk "$TMP/hsrc"
+git clone -q --bare "$TMP/hsrc" "$H/onchain-accounting.git" 2>/dev/null
+mkdir -p "$H/onchain-accounting"; printf 'ALCHEMY_API_KEY=canonical-sentinel\n' > "$H/onchain-accounting/.env"
+git -C "$H/onchain-accounting.git" worktree add -q --detach "$H/oa-main" 2>/dev/null
+check "bare repo inside a repo: no dotfiles leak" "<unset>" "$(resolve_in "$H/oa-main" DOTFILES_ONLY)"
+check "bare repo inside a repo: real key still resolves" "canonical-sentinel" "$(resolve_in "$H/oa-main")"
+check "chainlib: no dotfiles leak" "<unset>" \
+      "$(chainlib_in "$H/oa-main" "os.environ.get('DOTFILES_ONLY','<unset>')")"
+
+# (6) GIT_DIR exported. git sets it for hooks, so a rehearsal launched from one hits this. With it
+#     set and no GIT_WORK_TREE, `rev-parse --show-toplevel` echoes the cwd for ANY directory, which
+#     makes both guards vacuous unless the git environment is cleared for the discovery calls.
+E="$TMP/evil"; mk "$E"; printf 'ALCHEMY_API_KEY=evil\nEVIL_ONLY=yes\n' > "$E/.env"
+check "GIT_DIR set: no leak from the pointed-at repo" "<unset>" \
+      "$( GIT_DIR="$E/.git" resolve_in "$NESTED" EVIL_ONLY )"
+check "GIT_DIR set: canonical still resolves" "canonical-sentinel" \
+      "$( GIT_DIR="$E/.git" resolve_in "$NESTED" )"
+check "chainlib GIT_DIR set: no leak" "<unset>" \
+      "$( GIT_DIR="$E/.git" chainlib_in "$NESTED" "os.environ.get('EVIL_ONLY','<unset>')" )"
+
+# (7) `git init --separate-git-dir=<dir>` where <dir>'s parent is a working tree. This is the
+#     SUPPORTED way to relocate a git dir (it writes a `.git` file, not a symlink), and it reaches
+#     the same hole as (5) by a different route: --git-common-dir is absolute and elsewhere.
+SEP="$TMP/sepdir"; mk "$SEP/homeish"
+printf 'ALCHEMY_API_KEY=leak\nSEPDIR_ONLY=yes\n' > "$SEP/homeish/.env"
+mkdir -p "$SEP/work"
+git init -q --separate-git-dir="$SEP/homeish/oa.git" "$SEP/work/onchain-accounting"
+printf 'ALCHEMY_API_KEY=canonical-sentinel\n' > "$SEP/work/onchain-accounting/.env"
+check "separate-git-dir: no leak from the gitdir's parent" "<unset>" \
+      "$(resolve_in "$SEP/work/onchain-accounting" SEPDIR_ONLY)"
+check "chainlib separate-git-dir: no leak" "<unset>" \
+      "$(chainlib_in "$SEP/work/onchain-accounting" "os.environ.get('SEPDIR_ONLY','<unset>')")"
+
+# (8) A clone whose .git is a hand-made SYMLINK into an unrelated working tree. CHARACTERISATION
+#     ONLY, not mutation-proven: git never creates .git as a symlink, and the gitdir-ownership
+#     check in (5)/(7) rejects this regardless of whether the parent is taken lexically or after
+#     resolving. Kept to pin the behaviour, not counted as coverage for the lexical-parent choice.
+L="$TMP/linked/onchain-accounting"; mkdir -p "$TMP/linked"; mk "$L"
+printf 'ALCHEMY_API_KEY=canonical-sentinel\n' > "$L/.env"
+U="$TMP/unrelated"; mk "$U"; printf 'ALCHEMY_API_KEY=unrelated\nUNRELATED_ONLY=yes\n' > "$U/.env"
+mv "$L/.git" "$U/oa-gitdir" && ln -s "$U/oa-gitdir" "$L/.git"
+check "symlinked .git: no leak from the target's tree" "<unset>" "$(resolve_in "$L" UNRELATED_ONLY)"
+check "chainlib symlinked .git: no leak" "<unset>" \
+      "$(chainlib_in "$L" "os.environ.get('UNRELATED_ONLY','<unset>')")"
+
 echo "== hygiene =="
 
 # Dedupe: in a normal checkout the three OA candidates are one file, so the resolved set is exactly
@@ -234,8 +332,12 @@ check "normal clone dedupes 6 candidates to 2 files" "6->2" \
 # Must not error out under `set -e`/`set -u` when there is no repository at all — constraint (b).
 # The root is deliberately buried where NO sibling probe can hit: a `$TMP/norepo` would still find
 # $TMP/onchain-accounting and $TMP/onchain-investment-vehicles through the belt-and-braces probes,
-# leaving ENV_FOUND with 2 entries and the empty-array expansion — the thing that actually breaks
-# under `set -u` — never executed. Assert the emptiness explicitly so this cannot silently rot.
+# leaving ENV_FOUND with 2 entries, so the zero-candidate path would never run at all.
+#
+# Scope note: on bash >= 4.4 `"${arr[@]}"` on an empty array is already safe under `set -u`, so
+# these two cases do NOT detect removal of the `(( ${#ENV_FOUND[@]} > 0 ))` guard — that guard is
+# belt-and-braces for older bash. What they DO catch is any expansion that indexes the array
+# unguarded (e.g. `${ENV_FOUND[0]}`), which is mutation-proven.
 NOREPO="$TMP/isolated/deep/norepo"; mkdir -p "$NOREPO"
 rc=0
 ( set -euo pipefail; ROOT="$NOREPO"; eval "$fn_src"; eval "$resolve_src" ) >/dev/null 2>&1 || rc=$?
@@ -253,24 +355,6 @@ echo "== chainlib.py twin =="
 # These assert the RESOLVED VALUE and the EXISTING-FILE ORDER, not merely "the path appears
 # somewhere in the list" — the weaker form let a candidate be deleted, reordered, or the dedupe
 # removed with the suite still green.
-chainlib_in() {
-  local root="$1" expr="$2"
-  # chainlib derives REPO as parents[3] of its own file, so it must sit at the real depth.
-  mkdir -p "$root/script/deploy/preflight"
-  cp "$CHAINLIB" "$root/script/deploy/preflight/chainlib.py"
-  ( cd "$root" && python3 -c "
-import sys, types, os, pathlib
-sys.modules.setdefault('requests', types.ModuleType('requests'))
-sys.path.insert(0, 'script/deploy/preflight')
-import chainlib
-existing = [p for p in chainlib.DEFAULT_ENV_FILES if p.exists()]
-for k in ('ALCHEMY_API_KEY','MAINNET_URL','OIV_ONLY_URL','LEAKED_ONLY','OUTER_ONLY'):
-    os.environ.pop(k, None)
-chainlib.load_env()
-print($expr)
-" 2>/dev/null || echo ERR )
-  rm -rf "$root/script"
-}
 for layout in "nested:$NESTED" "sibling:$SIBLING" "normal:$CANON"; do
   name="${layout%%:*}"; root="${layout#*:}"
   # The key must actually RESOLVE — the property that matters, not list membership.

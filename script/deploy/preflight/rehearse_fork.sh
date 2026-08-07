@@ -122,28 +122,46 @@ env_candidates() {
   #   * a bare-repo-backed worktree (`git clone --bare` + `git worktree add`): --git-common-dir is
   #     the bare repo, whose parent is not a working tree at all — frequently $HOME, whose .env then
   #     gets sourced. Observed leaking a PRIVATE_KEY that way.
+  # Every discovery call runs with the git environment CLEARED. GIT_DIR / GIT_WORK_TREE make
+  # `rev-parse` answer about whatever they point at instead of about $d, which makes every check
+  # below vacuous — and git EXPORTS GIT_DIR to hooks, so this is reachable, not theoretical.
+  _g() { env -u GIT_DIR -u GIT_WORK_TREE -u GIT_COMMON_DIR git -C "$1" rev-parse "${@:2}" 2>/dev/null; }
+  # Absolute, symlink-resolved path, or failure. Never echoes empty on success.
+  _real() { cd -P -- "$1" 2>/dev/null && pwd -P; }
   _is_worktree_top() {
     local d="$1" top dreal treal
-    [[ "$(git -C "$d" rev-parse --is-bare-repository 2>/dev/null)" == "false" ]] || return 1
-    top="$(git -C "$d" rev-parse --show-toplevel 2>/dev/null)" && [[ -n "$top" ]] || return 1
+    [[ "$(_g "$d" --is-bare-repository)" == "false" ]] || return 1
+    top="$(_g "$d" --show-toplevel)" && [[ -n "$top" ]] || return 1
     # Resolve both before comparing — $root is legitimately a symlink in some checkouts — but with
     # `cd -P`, NOT `readlink -f`. readlink is absent on BSD/macOS, and on failure it prints NOTHING
     # and still exits 0 here, so an unresolvable path would compare "" == "" and the guard would
     # PASS precisely when it could not verify anything. `cd` fails loudly, so this fails closed.
-    dreal="$(cd -P -- "$d" 2>/dev/null && pwd -P)" && [[ -n "$dreal" ]] || return 1
-    treal="$(cd -P -- "$top" 2>/dev/null && pwd -P)" && [[ -n "$treal" ]] || return 1
+    dreal="$(_real "$d")" && [[ -n "$dreal" ]] || return 1
+    treal="$(_real "$top")" && [[ -n "$treal" ]] || return 1
     [[ "$dreal" == "$treal" ]]
+  }
+  # True only when $2 is the working tree that OWNS the git dir $1. Being *a* worktree top is not
+  # enough: a bare repo's parent directory is frequently itself a checked-out repo — a
+  # dotfiles-managed $HOME is the ordinary case — and that parent would otherwise be adopted as
+  # "the canonical clone" and have its .env sourced, which is the very leak this guard exists for.
+  _owns_gitdir() {
+    local gitdir="$1" cand="$2" cand_common a b
+    _is_worktree_top "$cand" || return 1
+    cand_common="$(_g "$cand" --git-common-dir)" && [[ -n "$cand_common" ]] || return 1
+    [[ "$cand_common" != /* ]] && cand_common="$cand/$cand_common"
+    a="$(_real "$gitdir")" && b="$(_real "$cand_common")" || return 1
+    [[ "$a" == "$b" ]]
   }
   printf '%s\n' "$root/.env"
   # Guarded: `git` may be absent, or $root may not be in a repo at all. Neither is fatal here.
   if _is_worktree_top "$root" \
-     && common="$(git -C "$root" rev-parse --git-common-dir 2>/dev/null)" && [[ -n "$common" ]]; then
+     && common="$(_g "$root" --git-common-dir)" && [[ -n "$common" ]]; then
     # A normal checkout answers with a RELATIVE ".git"; a worktree answers absolute. Anchor the
     # relative form to $root (which is what `git -C` made it relative to) before taking the parent.
     [[ "$common" != /* ]] && common="$root/$common"
     # $canon must itself be a real working tree of a repo — see _is_worktree_top above for the two
     # layouts where "$common/.." is some unrelated directory.
-    if canon="$(cd -- "$common/.." 2>/dev/null && pwd)" && _is_worktree_top "$canon"; then
+    if canon="$(cd -- "$common/.." 2>/dev/null && pwd)" && _owns_gitdir "$common" "$canon"; then
       printf '%s\n' "$canon/.env"
       # OIV is a separate repo git cannot discover, so it stays sibling-derived — but a sibling of
       # the CANONICAL CLONE, not of $root. Deriving it from $root has the same defect the OA probe

@@ -79,15 +79,40 @@ PUBLIC_FALLBACK_RPC = {
 
 
 def _git(cwd: Path, *args: str) -> str | None:
-    """Run `git -C cwd <args>` and return stripped stdout, or None if it fails at all."""
+    """Run `git -C cwd <args>` and return stripped stdout, or None if it fails at all.
+
+    The git environment is CLEARED: GIT_DIR / GIT_WORK_TREE make `rev-parse` answer about whatever
+    they point at rather than about `cwd`, which makes every check below vacuous — and git exports
+    GIT_DIR to hooks, so this is reachable rather than theoretical.
+    """
+    env = {k: v for k, v in os.environ.items()
+           if k not in ("GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR")}
     try:
         out = subprocess.run(
             ["git", "-C", str(cwd), *args],
-            capture_output=True, text=True, timeout=10, check=True,
+            capture_output=True, text=True, timeout=10, check=True, env=env,
         ).stdout.strip()
     except (OSError, subprocess.SubprocessError):
         return None
     return out or None
+
+
+def _owns_gitdir(gitdir: Path, candidate: Path) -> bool:
+    """True only when `candidate` is the working tree that OWNS `gitdir`.
+
+    Being *a* working-tree top is not enough: a bare repo's parent directory is frequently itself a
+    checked-out repo — a dotfiles-managed ``$HOME`` is the ordinary case — and that parent would
+    otherwise be adopted as "the canonical clone" and have its .env read first.
+    """
+    if not _is_worktree_top(candidate):
+        return False
+    common = _git(candidate, "rev-parse", "--git-common-dir")
+    if not common:
+        return False
+    try:
+        return (candidate / common).resolve() == gitdir.resolve()
+    except OSError:
+        return False
 
 
 def _is_worktree_top(path: Path) -> bool:
@@ -134,11 +159,13 @@ def _canonical_repo_root() -> Path | None:
     out = _git(REPO, "rev-parse", "--git-common-dir")
     if not out:
         return None
-    try:
-        canonical = (REPO / out).resolve().parent
-    except OSError:
-        return None
-    return canonical if _is_worktree_top(canonical) else None
+    common = REPO / out
+    # Take the parent LEXICALLY, mirroring the shell twin's logical `cd -- "$common/.."`.
+    # `.resolve().parent` would resolve symlinks across the whole path first, so a clone whose
+    # `.git` is a symlink to a relocated git dir would yield the TARGET's parent — an unrelated
+    # directory — instead of the clone. The two implementations must agree.
+    canonical = Path(os.path.normpath(str(common))).parent
+    return canonical if _owns_gitdir(common, canonical) else None
 
 
 def _default_env_files() -> list[Path]:

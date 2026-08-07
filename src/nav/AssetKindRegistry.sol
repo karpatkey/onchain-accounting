@@ -30,10 +30,13 @@ import "src/constants.sol";
 ///      earlier version justified the contract with "a consumer makes two calls and caches the kinds indefinitely";
 ///      that was never the point and is still not.
 ///
-///      The override half is deliberately the LESS privileged half: it never calls back into the NAV, so unlike
-///      {registerAsset} it needs no `MANAGER` grant on the NAV to function — only the `onlyNavManager` check on the
-///      caller. Adapters keep zero governance surface of their own; nothing here is added to them, and no deployed
-///      adapter is touched or redeployed by this feature.
+///      The override half is deliberately the LESS privileged half. Be precise about why, because an earlier revision
+///      of this paragraph overstated it as "never calls back into the NAV": it DOES call the NAV, twice — the
+///      `onlyNavManager` gate reads `hasRole`, and the setters read `isAdapterRegistered`. Both are `view`. What it
+///      never does is invoke a STATE-CHANGING NAV function, which is the property that matters: {registerAsset}
+///      forwards to `NAVCalculator.registerAsset` and therefore needs this contract to hold `MANAGER` on the NAV,
+///      whereas the overrides need no grant of any kind. Adapters keep zero governance surface of their own; nothing
+///      here is added to them, and no deployed adapter is touched or redeployed by this feature.
 ///
 ///      **Why it is its own contract and not part of the NAV. Not preference — measured, twice, for two different
 ///      questions.** `NAVCalculator` sits at **24,074 of 24,576 bytes: 502 bytes** of EIP-170 headroom (measured on

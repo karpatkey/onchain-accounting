@@ -1936,10 +1936,18 @@ library PriceFeedLib {
     ///      guarded the `protocolName()` staticcall — roughly one extra pair of reads per DISTINCT adapter, not per
     ///      position. On the real mainnet fixture that is a handful of adapters against 117 positions.
     ///
-    ///      **On a protocol-name hit the adapter staticcall is skipped entirely**, so an overridden adapter trades a
-    ///      cold `staticcall` to the adapter for a warm one to the registry (warm after the first adapter, since it
-    ///      is the same address every time). That direction is gas-NEGATIVE; the miss path pays two extra warm
-    ///      registry reads. Both are measured in `AdapterLabelOverrides.t.sol` rather than asserted here.
+    ///      **On a protocol-name hit the adapter staticcall is skipped**, so an overridden adapter trades one cold
+    ///      `staticcall` to the adapter for reads of the registry, which is warm after the first adapter since it is
+    ///      the same address every time.
+    ///
+    ///      ⚠️ **That does NOT make the change gas-negative, and an earlier revision of this note claimed it did.**
+    ///      Measured, not reasoned: a HIT costs 111,820 and a MISS 114,221 on the single-adapter fixture, so the hit
+    ///      is ~2.4k cheaper THAN A MISS — but both are dearer than having no registry at all, which an independent
+    ///      20-adapter sweep put at **+9,569 gas per distinct adapter** for the two registry reads. So the ordering is
+    ///      `no registry < hit < miss`: the override never pays for itself outright, it only claws back the one
+    ///      adapter call it skips. The MISS path is the common case — every adapter has no override today — and it is
+    ///      strictly more expensive than before this change.
+    ///      `AdapterLabelOverrides.t.sol::test_gas_registryLegIsBounded` is that measurement and bounds both paths.
     ///
     ///      **Fail-open, exactly like the adapter reads.** The registry is reached through the same {_safeString}
     ///      shim — gas-capped and output-windowed — so a broken, hostile or absent registry degrades to "no

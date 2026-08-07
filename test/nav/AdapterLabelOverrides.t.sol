@@ -62,6 +62,108 @@ contract NoLabelAdapter is Mock_CustomBalanceAdapter {
     }
 }
 
+/// @notice The `CapBalanceAdapter` shape: index 0 is a LITERAL, but a DIFFERENT literal per positionId. A per-adapter
+///         override cannot express that, which is why Cap is excluded.
+/// @dev Implements {IBalanceAdapter} directly rather than extending `Mock_CustomBalanceAdapter`, because that mock
+///      hardcodes `row.positionId = abi.encode(address(this))` for every row and its `getAdapterPositions` is not
+///      `virtual`. With one positionId shared by both legs, `positionLabels` would take the same branch twice and the
+///      test would assert nothing — the control assertion in the test below is what caught exactly that.
+contract PerPositionCategoryAdapter is IBalanceAdapter {
+    address private immutable SAVINGS_ASSET;
+    address private immutable STABLE_ASSET;
+
+    constructor(address savingsAsset, address stableAsset) {
+        SAVINGS_ASSET = savingsAsset;
+        STABLE_ASSET = stableAsset;
+    }
+
+    function supportsInterface(bytes4 interfaceId) external pure override returns (bool) {
+        return interfaceId == type(IBalanceAdapter).interfaceId || interfaceId == type(IERC165).interfaceId;
+    }
+
+    function underlyingAssetsSupported() public view override returns (address[] memory out) {
+        out = new address[](2);
+        out[0] = SAVINGS_ASSET;
+        out[1] = STABLE_ASSET;
+    }
+
+    function getAdapterBalanceForAsset(address, address) external pure override returns (uint256, bool) {
+        return (1e6, false);
+    }
+
+    function getAdapterBalances(address)
+        external
+        view
+        override
+        returns (address[] memory assets, uint256[] memory amounts, bool[] memory debts)
+    {
+        assets = underlyingAssetsSupported();
+        amounts = new uint256[](2);
+        amounts[0] = 1e6;
+        amounts[1] = 1e6;
+        debts = new bool[](2);
+    }
+
+    /// @dev Two rows, each carrying its OWN positionId — the property the shared mock cannot express.
+    function getAdapterPositions(address, address)
+        external
+        view
+        override
+        returns (INAVCalculator.PositionBalance[] memory positions)
+    {
+        positions = new INAVCalculator.PositionBalance[](2);
+        positions[0] = _row(SAVINGS_ASSET);
+        positions[1] = _row(STABLE_ASSET);
+    }
+
+    function _row(address asset) private view returns (INAVCalculator.PositionBalance memory row) {
+        row.balanceAsset = INAVCalculator.Asset({
+            asset: asset,
+            symbol: IERC20Metadata(asset).symbol(),
+            decimals: IERC20Metadata(asset).decimals()
+        });
+        row.balanceAdapter = address(this);
+        row.amount = 1e6;
+        row.isDebt = false;
+        row.positionId = abi.encode(asset);
+        row.positionKind = PositionKind.Supplied;
+    }
+
+    function protocolName() external pure returns (string memory) {
+        return "Cap";
+    }
+
+    function positionLabels(bytes calldata positionId) external view returns (string[] memory out) {
+        out = new string[](2);
+        if (abi.decode(positionId, (address)) == SAVINGS_ASSET) {
+            out[0] = "Savings";
+            out[1] = "stcUSD";
+        } else {
+            out[0] = "Stablecoin";
+            out[1] = "cUSD";
+        }
+    }
+}
+
+/// @notice A registry that reverts on every call, to prove the read path is fail-open against a NON-ZERO but broken
+///         registry — the case `address(0)` short-circuiting does not cover.
+contract RevertingRegistry {
+    fallback() external {
+        revert("registry down");
+    }
+}
+
+/// @notice A registry that returns a well-formed but absurdly long reply, to prove the output window holds.
+contract OverlongRegistry {
+    function getAdapterProtocolName(address) external pure returns (string memory) {
+        return string(new bytes(5000));
+    }
+
+    function getAdapterLabelCategory(address) external pure returns (string memory) {
+        return string(new bytes(5000));
+    }
+}
+
 abstract contract AdapterLabelOverridesBase is SuperTest {
     LabelledAdapter internal adapter;
 
@@ -359,6 +461,236 @@ contract AdapterLabelOverridesTest is AdapterLabelOverridesBase {
     function test_getters_returnEmptyWhenUnset() public view {
         assertEq(registry.getAdapterProtocolName(address(adapter)), "");
         assertEq(registry.getAdapterLabelCategory(address(adapter)), "");
+    }
+
+    // ------------------------------------------------------------------
+    // Per-adapter cache: the override must reach EVERY position, not just the first
+    // ------------------------------------------------------------------
+
+    /// @dev `toVerbose` fetches the overrides only when `adapter != prevAdapter` and reuses the cached values for the
+    ///      rest of that adapter's contiguous run. Every other test registers a one-asset adapter, so that branch is
+    ///      taken on every iteration and the cache-HIT path never runs. This registers a TWO-position adapter so the
+    ///      second position is served from the cache — a regression that reset or mis-scoped `prevCategory` after use
+    ///      would drop the override on positions 2..n of every real multi-instance meta-adapter and go unnoticed.
+    function test_override_appliesToEveryPositionOfTheSameAdapter() public {
+        LabelledAdapter multi = new LabelledAdapter("Multi Protocol", "Market", "leaf");
+        address[] memory assets = new address[](2);
+        assets[0] = address(usdc);
+        assets[1] = address(dai);
+        multi.setBalances(nav);
+        multi.setUnderlyingAssetsSupported(assets);
+        multi.setBalance(address(usdc), safe, 5 * 10 ** usdc.decimals(), false);
+        multi.setBalance(address(dai), safe, 5 * 10 ** dai.decimals(), false);
+        vm.prank(navCalculatorManager);
+        nav.addBalanceAdapters(aa(address(multi)));
+
+        vm.startPrank(navCalculatorManager);
+        registry.setAdapterProtocolName(address(multi), "Overridden Protocol");
+        registry.setAdapterLabelCategory(address(multi), "Lending Market");
+        vm.stopPrank();
+
+        INAVCalculator.VerbosePosition[] memory all = nav.getAccountPositionsVerbose(safe, address(0));
+        uint256 seen;
+        for (uint256 i = 0; i < all.length; i++) {
+            if (all[i].position.balanceAdapter != address(multi)) continue;
+            ++seen;
+            assertEq(all[i].protocolName, "Overridden Protocol", "name must apply to every position of the adapter");
+            assertEq(all[i].labels[0], "Lending Market", "category must apply to every position of the adapter");
+            assertEq(all[i].labels[1], "leaf", "leaf untouched on every position");
+        }
+        assertEq(seen, 2, "the adapter must have produced two positions, or the cache path was not exercised");
+    }
+
+    /// @dev The second documented exclusion, asserted rather than assumed. `CapBalanceAdapter` emits a DIFFERENT
+    ///      literal at index 0 per position, so one per-adapter override necessarily rewrites both legs. This is why
+    ///      Cap must not be given a category override, and it is a distinct reason from `ERC20DefaultBalanceAdapter`'s.
+    function test_categoryOverride_onPerPositionCategoryAdapter_rewritesBothLegs_documentedHazard() public {
+        PerPositionCategoryAdapter cap = new PerPositionCategoryAdapter(address(usdc), address(dai));
+        vm.prank(navCalculatorManager);
+        nav.addBalanceAdapters(aa(address(cap)));
+
+        // Baseline: the two legs genuinely carry different categories.
+        INAVCalculator.VerbosePosition[] memory all = nav.getAccountPositionsVerbose(safe, address(0));
+        string memory catA;
+        string memory catB;
+        for (uint256 i = 0; i < all.length; i++) {
+            if (all[i].position.balanceAdapter != address(cap)) continue;
+            if (bytes(catA).length == 0) catA = all[i].labels[0];
+            else catB = all[i].labels[0];
+        }
+        assertTrue(
+            keccak256(bytes(catA)) != keccak256(bytes(catB)), "control: this adapter's categories differ per position"
+        );
+
+        vm.prank(navCalculatorManager);
+        registry.setAdapterLabelCategory(address(cap), "Synthetic Dollar");
+
+        all = nav.getAccountPositionsVerbose(safe, address(0));
+        uint256 seen;
+        for (uint256 i = 0; i < all.length; i++) {
+            if (all[i].position.balanceAdapter != address(cap)) continue;
+            ++seen;
+            assertEq(all[i].labels[0], "Synthetic Dollar", "one override rewrites BOTH legs: the documented hazard");
+        }
+        assertEq(seen, 2);
+    }
+
+    // ------------------------------------------------------------------
+    // Fail-open against a NON-ZERO but broken registry
+    // ------------------------------------------------------------------
+
+    /// @dev `setAssetKindRegistry` rejects only `address(0)`, so a MANAGER can wire an EOA, a self-destructed
+    ///      contract, or a pre-override registry with no such selectors. The verbose read must degrade to "no
+    ///      override", never revert. The zero-address short-circuit does not cover any of these.
+    function test_revertingRegistry_failsOpenToTheAdapter() public {
+        // The deployment is hoisted ABOVE the prank on purpose: `vm.prank` applies to the next call OR CREATE, so
+        // `new` inside the pranked expression consumes it and the setter runs unpranked, reverting NotAuthorized.
+        address broken = address(new RevertingRegistry());
+        vm.prank(navCalculatorManager);
+        nav.setAssetKindRegistry(broken);
+
+        INAVCalculator.VerbosePosition memory v = _v();
+        assertEq(v.protocolName, "Mock Protocol", "a reverting registry must fall back to the adapter");
+        assertEq(v.labels[0], "Market");
+        assertEq(v.labels[1], "wstETH/USDC");
+    }
+
+    function test_eoaRegistry_failsOpenToTheAdapter() public {
+        vm.prank(navCalculatorManager);
+        nav.setAssetKindRegistry(makeAddr("not a contract"));
+
+        INAVCalculator.VerbosePosition memory v = _v();
+        assertEq(v.protocolName, "Mock Protocol", "a codeless registry must fall back to the adapter");
+        assertEq(v.labels[0], "Market");
+    }
+
+    /// @dev An over-long reply must be truncated by the output window, fail to decode, and yield "" — not revert and
+    ///      not blow up the frame.
+    function test_overlongRegistryReply_failsOpenToTheAdapter() public {
+        address overlong = address(new OverlongRegistry());
+        vm.prank(navCalculatorManager);
+        nav.setAssetKindRegistry(overlong);
+
+        INAVCalculator.VerbosePosition memory v = _v();
+        assertEq(v.protocolName, "Mock Protocol", "an over-long reply must degrade, not override");
+        assertEq(v.labels[0], "Market", "and must not replace the category either");
+    }
+
+    /// @dev Replacing the registry silently drops every override — the behaviour documented on
+    ///      {IAssetKindRegistry.clearAdapterProtocolName}. Pinned so the silence is a recorded property rather than a
+    ///      surprise: nothing reverts, and the label simply reverts to the adapter's own constant.
+    function test_replacingRegistry_silentlyDropsOverrides() public {
+        vm.prank(navCalculatorManager);
+        registry.setAdapterProtocolName(address(adapter), "Overridden Protocol");
+        assertEq(_v().protocolName, "Overridden Protocol");
+
+        address fresh = address(new AssetKindRegistry(address(nav)));
+        vm.prank(navCalculatorManager);
+        nav.setAssetKindRegistry(fresh);
+
+        assertEq(_v().protocolName, "Mock Protocol", "a fresh registry silently loses every override");
+    }
+
+    // ------------------------------------------------------------------
+    // Gas: the registry leg must stay bounded
+    // ------------------------------------------------------------------
+
+    /// @dev The honest measurement behind the docstring. The MISS path (no override) is the common case and is
+    ///      strictly more expensive than before, because it pays the registry reads on top of the adapter call. This
+    ///      bounds that surcharge rather than claiming it away, and it is the test the `PriceFeedLib.toVerbose`
+    ///      docstring points at.
+    function test_gas_registryLegIsBounded() public {
+        // Warm the read once so the comparison is not dominated by first-touch storage costs.
+        _v();
+
+        uint256 before = gasleft();
+        nav.getAccountPositionsVerbose(safe, address(0));
+        uint256 withRegistry = before - gasleft();
+
+        vm.prank(navCalculatorManager);
+        registry.setAdapterProtocolName(address(adapter), "Overridden Protocol");
+
+        before = gasleft();
+        nav.getAccountPositionsVerbose(safe, address(0));
+        uint256 withOverride = before - gasleft();
+
+        // Both must stay far inside the verbose read's own ceiling; the registry leg is two capped staticcalls per
+        // distinct adapter, so it cannot approach the 100k stipend it is bounded by.
+        assertLt(withRegistry, 1_000_000, "the miss path must stay bounded");
+        assertLt(withOverride, 1_000_000, "the hit path must stay bounded");
+        emit log_named_uint("verbose read gas, override MISS", withRegistry);
+        emit log_named_uint("verbose read gas, override HIT ", withOverride);
+    }
+
+    // ------------------------------------------------------------------
+    // Events
+    // ------------------------------------------------------------------
+
+    function test_setAdapterProtocolName_emits() public {
+        vm.expectEmit(true, false, false, true, address(registry));
+        emit IAssetKindRegistry.AdapterProtocolNameSet(address(adapter), "Overridden Protocol");
+        vm.prank(navCalculatorManager);
+        registry.setAdapterProtocolName(address(adapter), "Overridden Protocol");
+    }
+
+    function test_clearAdapterProtocolName_emits() public {
+        vm.prank(navCalculatorManager);
+        registry.setAdapterProtocolName(address(adapter), "Overridden Protocol");
+
+        vm.expectEmit(true, false, false, true, address(registry));
+        emit IAssetKindRegistry.AdapterProtocolNameCleared(address(adapter));
+        vm.prank(navCalculatorManager);
+        registry.clearAdapterProtocolName(address(adapter));
+    }
+
+    function test_setAdapterLabelCategory_emits() public {
+        vm.expectEmit(true, false, false, true, address(registry));
+        emit IAssetKindRegistry.AdapterLabelCategorySet(address(adapter), "Lending Market");
+        vm.prank(navCalculatorManager);
+        registry.setAdapterLabelCategory(address(adapter), "Lending Market");
+    }
+
+    function test_clearAdapterLabelCategory_emits() public {
+        vm.prank(navCalculatorManager);
+        registry.setAdapterLabelCategory(address(adapter), "Lending Market");
+
+        vm.expectEmit(true, false, false, true, address(registry));
+        emit IAssetKindRegistry.AdapterLabelCategoryCleared(address(adapter));
+        vm.prank(navCalculatorManager);
+        registry.clearAdapterLabelCategory(address(adapter));
+    }
+
+    // ------------------------------------------------------------------
+    // Validator parity: the category setter must be guarded exactly like the name setter
+    // ------------------------------------------------------------------
+
+    function test_RevertIf_clearAdapterLabelCategory_notManager() public {
+        vm.expectRevert(NotAuthorized.selector);
+        registry.clearAdapterLabelCategory(address(adapter));
+    }
+
+    function test_RevertIf_setAdapterLabelCategory_empty() public {
+        vm.prank(navCalculatorManager);
+        vm.expectRevert(abi.encodeWithSelector(IAssetKindRegistry.EmptyAdapterOverride.selector, address(adapter)));
+        registry.setAdapterLabelCategory(address(adapter), "");
+    }
+
+    function test_RevertIf_setAdapterLabelCategory_tooLong() public {
+        string memory tooLong = "123456789012345678901234567890123"; // 33 bytes
+        vm.prank(navCalculatorManager);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IAssetKindRegistry.AdapterOverrideTooLong.selector, address(adapter), uint256(33), uint256(32)
+            )
+        );
+        registry.setAdapterLabelCategory(address(adapter), tooLong);
+    }
+
+    function test_setAdapterLabelCategory_atMaxLength() public {
+        string memory exact = "12345678901234567890123456789012"; // 32 bytes
+        vm.prank(navCalculatorManager);
+        registry.setAdapterLabelCategory(address(adapter), exact);
+        assertEq(_v().labels[0], exact);
     }
 }
 

@@ -337,18 +337,40 @@ interface IAssetKindRegistry {
     /// @notice Removes `adapter`'s protocol-name override; its own `protocolName()` becomes authoritative again.
     /// @dev Reverts {AdapterOverrideNotSet} when there is nothing to clear. Not guarded on registration, so an
     ///      override outlives its adapter's deregistration and stays removable. Emits {AdapterProtocolNameCleared}.
+    ///
+    ///      ⚠️ **Overrides live in the registry, so `NAVCalculator.setAssetKindRegistry` silently drops all of
+    ///      them.** The registry is a plain, non-upgradeable contract, so replacing it means deploying a fresh one
+    ///      with empty override maps: every corrected label reverts to the adapter's own constant on the next read,
+    ///      with no revert, no event and no probe to notice. This is strictly quieter than the classification half,
+    ///      which fails CLOSED on the same operation ({getAssetKind} reverts `AssetNotClassified` for an asset the
+    ///      new registry has never seen), and the asymmetry is inherent rather than chosen: the read path MUST be
+    ///      fail-open, so "no override" and "override lost" are necessarily the same observation. **Re-applying the
+    ///      override set is part of replacing the registry**, and is not something the contracts can enforce.
     function clearAdapterProtocolName(address adapter) external;
 
     /// @notice Overrides segment 0 — the CATEGORY — of every `positionLabels()` reply from `adapter`, leaving every
     ///         deeper segment exactly as the adapter computed it.
-    /// @dev **Replaces index 0 and nothing else.** For the 32 adapters whose index 0 is a string literal (the whole
-    ///      meta family via `MetaBalanceAdapter._labels("Category", leaf)`, plus every plain and assisted adapter)
-    ///      that is precisely the category, and the computed leaf at index 1 is untouched and still read live.
+    /// @dev **Replaces index 0 and nothing else.** For the 31 adapters whose index 0 is a SINGLE string literal (the
+    ///      whole meta family via `MetaBalanceAdapter._labels("Category", leaf)`, plus most plain and assisted
+    ///      adapters) that is precisely the category, and the computed leaf at index 1 is untouched and still read
+    ///      live.
     ///
-    ///      **The one adapter this must not be used on is `ERC20DefaultBalanceAdapter`**, whose reply is a single
-    ///      element that IS the computed token symbol — an override there would replace the leaf, not a category.
-    ///      The mechanism cannot tell the two apart (it sees an array, not the source), so this exclusion is
-    ///      operational rather than enforced; it is asserted as a documented hazard in `AdapterLabelOverrides.t.sol`.
+    ///      **TWO of the 33 deployable adapters must NOT be given a category override, for two different reasons.**
+    ///      The override is keyed by ADAPTER, so it is only meaningful when index 0 is both a literal AND the same
+    ///      literal for every position that adapter emits. Two adapters break one half of that each:
+    ///
+    ///      1. `ERC20DefaultBalanceAdapter` — index 0 is not a category at all. Its reply is a single element that IS
+    ///         the computed token symbol, so an override replaces the leaf.
+    ///      2. `CapBalanceAdapter` — index 0 is a literal, but it VARIES BY POSITION: `"Savings"` for the stcUSD leg
+    ///         and `"Stablecoin"` for the cUSD leg (`CapBalanceAdapter.positionLabels`). A per-adapter override
+    ///         rewrites both, so correcting one leg silently corrupts the other. This is the case an earlier revision
+    ///         of this note missed by generalising from the first branch of that function; a per-adapter table simply
+    ///         cannot express a per-position category, and adding one would be the per-position bookkeeping this
+    ///         design exists to avoid.
+    ///
+    ///      The mechanism cannot detect either case — it sees an array, not the source — so both exclusions are
+    ///      operational rather than enforced, and both are asserted as documented hazards in
+    ///      `AdapterLabelOverrides.t.sol`.
     ///
     ///      A reply with NO segments is left empty rather than grown to one: an adapter that declined to describe a
     ///      position has no category to correct, and synthesising one would change the array's length rather than

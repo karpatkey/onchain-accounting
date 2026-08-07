@@ -26,8 +26,10 @@ WHAT IS CLEARED, AND WHAT IS NOT
 --------------------------------
 Cleared (the NAV stack — everything the redeploy replaces):
   PriceFeedLib, NavRegistryLib, NAVCalculatorImplementation, NAVCalculatorProxy,
-  every balanceAdapters.* entry (ERC20Default included — `02_2` rewrites it from the new
-  `initialize()`), every customPriceFeeds.* entry, and the three `*Assistant` entries.
+  AssetKindRegistry (see the note on CLEAR_TOP — `08` REUSES a recorded registry, and a reused one
+  stays bound to the old NAV), every balanceAdapters.* entry (ERC20Default included — `02_2`
+  rewrites it from the new `initialize()`), every customPriceFeeds.* entry, and the three
+  `*Assistant` entries.
 NOT cleared (the bridge stack is deferred and decoupled from the NAV):
   BridgeEscrowImplementation, BridgeEscrowProxy, every bridgeAdapters.* entry.
 
@@ -59,6 +61,16 @@ CLEAR_TOP = [
     "NavRegistryLib",
     "NAVCalculatorImplementation",
     "NAVCalculatorProxy",
+    # Must be cleared with the NAV, and for a sharper reason than "the redeploy replaces it".
+    # `08_DeployAssetKindRegistry` branches on `readDeployedAddress("AssetKindRegistry")`: a non-zero
+    # value makes it REUSE the recorded registry instead of deploying one. The registry's `NAV` is
+    # IMMUTABLE while `NAVCalculatorProxy` is not, so reusing it after a NAV redeploy grants the NEW
+    # NAV's MANAGER to a registry still bound to the OLD proxy — and the step completes GREEN, which
+    # `08`'s own header calls out as the failure this guard causes. In a rehearsal, where a fresh
+    # proxy is the entire point, that also means step `08` deploys nothing and the run reports
+    # success for a step it never exercised. Omitting this key was harmless only while it was absent
+    # from every deployment record; it stops being harmless the moment the redeploy writes one.
+    "AssetKindRegistry",
     "NexusMutualStakingPoolsAssistant",
     "EtherFiWithdrawalQueueAssistant",
     "StakeWiseV3ExitQueueAssistant",

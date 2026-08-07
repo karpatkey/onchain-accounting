@@ -101,6 +101,47 @@ check "FORK_URL is assigned exactly once, from the resolver" "1" \
 check "unresolvable chain aborts rather than falling back" "yes" \
       "$(sed -n '/^FORK_RPC_NOTE=/,/^fi$/p' "$TARGET" | grep -q 'exit 2' && echo yes || echo no)"
 
+echo "== (3) the reset must clear the key 08 branches on =="
+check "AssetKindRegistry is in CLEAR_TOP" "True" \
+      "$(py "import reset_deployment_records as r; print('AssetKindRegistry' in r.CLEAR_TOP)")"
+# 08 reuses a recorded registry instead of deploying one, so a surviving value makes the step a
+# no-op. Drive the real planner against a record where the key IS populated — the post-redeploy
+# state, which is when this fires (the key is absent from every record today).
+check "a populated key is cleared by the plan" "cleared" \
+      "$(py "
+import reset_deployment_records as r, chainlib as c, json, copy
+rec = c.deployment(1)
+tmp = copy.deepcopy(rec); tmp['AssetKindRegistry'] = '0x' + '11'*20
+p = c.DEPLOY_DIR / '1.json'; orig = p.read_text()
+try:
+    p.write_text(json.dumps(tmp, indent=2))
+    _, ch = r.plan_for(1)
+    print('cleared' if any(x.startswith('AssetKindRegistry') for x in ch) else 'SURVIVED')
+finally:
+    p.write_text(orig)")"
+# And the branch 08 takes must flip as a result.
+check "08 would deploy fresh after the reset" "DEPLOY-FRESH" \
+      "$(py "
+import reset_deployment_records as r, chainlib as c, json, copy
+rec = c.deployment(1)
+tmp = copy.deepcopy(rec); tmp['AssetKindRegistry'] = '0x' + '11'*20
+p = c.DEPLOY_DIR / '1.json'; orig = p.read_text()
+try:
+    p.write_text(json.dumps(tmp, indent=2))
+    out, _ = r.plan_for(1)
+    print('REUSE' if out.get('AssetKindRegistry') else 'DEPLOY-FRESH')
+finally:
+    p.write_text(orig)")"
+# The bridge stack must still be left alone — clearing it would be a different, worse bug.
+check "bridge keys still NOT cleared" "True" \
+      "$(py "
+import reset_deployment_records as r
+print(not ({'BridgeEscrowImplementation','BridgeEscrowProxy','bridgeAdapters'} & set(r.CLEAR_TOP)))")"
+# The planner must not mutate the record on disk.
+check "planning leaves the record untouched" "clean" \
+      "$(cd "$REPO_ROOT" && py "import reset_deployment_records as r; r.plan_for(1)" >/dev/null 2>&1
+         cd "$REPO_ROOT" && [[ -z "$(git status --porcelain -- script/config/deployments)" ]] && echo clean || echo DIRTY)"
+
 echo
 echo "passed=$pass failed=$fail"
 [[ $fail -eq 0 ]]

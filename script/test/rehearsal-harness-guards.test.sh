@@ -164,6 +164,22 @@ check "the refusal still lists .env candidates" "yes" \
       "$(sed -n '/^if \[\[ -z "\$FORK_URL" \]\]; then/,/^fi$/p' "$TARGET" \
          | grep -q 'env_candidates' && echo yes || echo no)"
 
+# The public fallback is KEPT deliberately, and its announcement is the property that makes keeping
+# it defensible — a fallback run is correct-by-announcement, not silent. Removing the fallback would
+# make chains 143/196/204/43111/16661 un-rehearsable entirely, trading a loud correct degradation
+# for no capability. So the banner is asserted, not assumed.
+BANNER_BLOCK="$(sed -n '/if \[\[ "\$FORK_RPC_NOTE" == public/,/^fi$/p' "$TARGET")"
+check "a public fallback raises a banner" "yes" \
+      "$([[ -n "$BANNER_BLOCK" ]] && echo yes || echo no)"
+check "the banner warns the deploy would fail" "yes" \
+      "$(grep -q 'DEPLOY would fail' <<<"$BANNER_BLOCK" && echo yes || echo no)"
+check "the banner reaches the step table too" "yes" \
+      "$(grep -q 'PUBLIC-FALLBACK' <<<"$BANNER_BLOCK" && echo yes || echo no)"
+# ...and must NOT fire for a normally-resolved endpoint, or every run screams.
+check "no banner for a normally resolved endpoint" "quiet" \
+      "$( FORK_RPC_NOTE="env MAINNET_URL"
+          [[ "$FORK_RPC_NOTE" == public\ fallback* ]] && echo BANNER || echo quiet )"
+
 echo "== (3) the reset must clear the key 08 branches on =="
 check "AssetKindRegistry is in CLEAR_TOP" "True" \
       "$(py "import reset_deployment_records as r; print('AssetKindRegistry' in r.CLEAR_TOP)")"

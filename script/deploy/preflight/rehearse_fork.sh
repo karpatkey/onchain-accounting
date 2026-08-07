@@ -328,7 +328,20 @@ if [[ -z "$FORK_URL" ]]; then
   } >&2
   exit 2
 fi
+# The announcement is the load-bearing property of keeping the public fallback at all: a fallback
+# run is CORRECT-BY-ANNOUNCEMENT, not silent, which is the line this whole script is about. A single
+# line in a long transcript is easy to skim past, so a fallback says so in a banner and repeats it in
+# the step table, where anyone reading the result will meet it.
 echo "fork endpoint for chain ${CHAIN_ID}: ${FORK_RPC_NOTE}"
+if [[ "$FORK_RPC_NOTE" == public\ fallback* ]]; then
+  echo "############################################################################"
+  echo "## PUBLIC FALLBACK IN USE for chain ${CHAIN_ID} — ${FORK_RPC_NOTE}"
+  echo "## The configured endpoint did NOT resolve. This rehearsal is running against"
+  echo "## a public RPC for the RIGHT chain, but the DEPLOY would fail in this same"
+  echo "## credential state. A green result here does NOT prove the deploy can run."
+  echo "############################################################################"
+  echo -e "fork-endpoint\t0\t0\tPUBLIC-FALLBACK" >> "$WORK/steps.tsv"
+fi
 
 DEPLOYER="$(jq -r '.addresses.admin' "script/config/chains/${CHAIN_ID}.json")"
 LIVE_PROXY="$(jq -r '.NAVCalculatorProxy // ""' "script/config/deployments/${CHAIN_ID}.json")"

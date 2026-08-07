@@ -224,14 +224,13 @@ interface IAssetKindRegistry {
     ///      getter deliberately does not revert the way {getAssetKind} does. That is the one place the two axes differ:
     ///      there is no defensible default classification, but "no labels" IS the honest answer.
     ///
-    ///      **Registration is the only chance.** Labels are written by {registerAsset} and by nothing else. An asset
-    ///      registered without them has none for as long as it stays registered — there is no setter, and adding one
-    ///      later is the change this design exists to refuse. See {registerAsset} for the adapter-parity reason.
+    ///      **Labels are written by {registerAsset} and replaced by {setAssetLabels}.** An asset registered without
+    ///      them stays unlabelled until {setAssetLabels} gives it some.
     ///
-    ///      **Repairing a wrong label means unregistering and re-registering the asset**, which drops the labels and
-    ///      lets the re-registration write new ones. That is a genuine cost, accepted knowingly: it takes the asset out
-    ///      of the NAV and puts it back with its price feeds, to fix a display string. It is not softened here because
-    ///      an operator needs to know the price before they need the reassurance.
+    ///      **Repairing a wrong label is one MANAGER call to {setAssetLabels}**, which leaves the asset's price feeds,
+    ///      monitor feeds and `_assetPricing` (both tolerances, and so the derived `PegKind`) untouched. This block
+    ///      previously sent readers to unregister-then-re-register instead, which is destructive — it drops all of
+    ///      that — and is now needed only to END a registration, never to fix a display string.
     function getAssetLabels(address asset) external view returns (string[] memory labels);
 
     /// @notice One asset's complete public description — both classification axes and its display labels — in a single

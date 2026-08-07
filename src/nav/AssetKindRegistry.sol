@@ -220,9 +220,15 @@ contract AssetKindRegistry is IAssetKindRegistry {
     ///      this contract holds: the facade's {unregisterAsset} then reverts inside `NAV.unregisterAsset`, and a later
     ///      re-registration through the facade with an empty array does not clear them either, because
     ///      `_setAssetLabels` returns early on an empty list. That state is reachable on the pre-setter code too, via
-    ///      {registerAsset} alone, so this change neither creates nor widens it — and the setter is now the one-call
-    ///      remedy for it, which did not exist before. `_setAssetLabels`'s own note on the absent write-once guard
-    ///      describes the same path from the other side.
+    ///      {registerAsset} alone, so this change neither creates nor widens it.
+    ///
+    ///      **Be precise about what the setter does and does not remedy — an earlier revision of this note was not.**
+    ///      While the asset is OUT of the NAV, {setAssetLabels} reverts {AssetNotRegisteredForLabels}; it is not a
+    ///      remedy for the stranded state itself, and `test_RevertIf_setAssetLabels_afterUnregistration` pins that.
+    ///      It remedies the SUCCESSOR state: once the asset is re-registered (through the facade, with an empty array
+    ///      that leaves the stale labels in place), one call replaces them — which is what previously could not be
+    ///      done. `_setAssetLabels`'s own note on the absent write-once guard describes the same path from the other
+    ///      side.
     ///
     ///      Two capabilities are genuinely NEW, both benign and both intentional: an asset registered directly on the
     ///      NAV and never classified can now be labelled (and stays clearable, because the facade's

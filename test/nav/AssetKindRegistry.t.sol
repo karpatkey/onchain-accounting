@@ -26,6 +26,7 @@ contract MockNav {
     error MockNavUnregisterReverted();
     error MockNavNotAuthorized();
     error MockNavAssetNotRegistered();
+    error MockNavAlreadyRegistered();
 
     function grant(bytes32 role, address who) external {
         _roles[role][who] = true;
@@ -68,6 +69,13 @@ contract MockNav {
     ///      unable to see an authority defect. If you relax this, you reintroduce that blindness.
     function registerAsset(address asset, address, IPrices.PriceType, uint256) external {
         if (!_roles[MANAGER][msg.sender]) revert MockNavNotAuthorized();
+        // Faithful to `NAVCalculator.registerAsset`, which reverts `InvalidArguments()` for an asset it already
+        // holds. `_setAssetLabels`'s justification for carrying no write-once guard rests on exactly that
+        // behaviour — "{registerAsset} can only succeed for an asset the NAV does not already hold, so
+        // `_labels[asset]` is empty whenever this runs through the facade" — and a mock without it cannot
+        // falsify that claim. Latent rather than live when added: no test re-registered without an intervening
+        // unregister, so nothing was vacuous. Added so nothing becomes vacuous later.
+        if (_isRegistered[asset]) revert MockNavAlreadyRegistered();
         if (revertOnRegister) revert MockNavRegisterReverted();
         registered.push(asset);
         _isRegistered[asset] = true;
@@ -639,12 +647,13 @@ contract AssetKindRegistryTest is Test {
     }
 
     // ============================================================
-    // Display labels — set at REGISTRATION, and only there
+    // Display labels — written at REGISTRATION, replaced by setAssetLabels
     //
-    // The rule in one line: **registration is the only chance.** Every branch below exists because that sentence has
-    // failure modes prose cannot distinguish — a setter that quietly accepts labels, a re-registration that cannot
-    // replace them, an unregister that leaves them behind — and each one is the difference between a repair that
-    // works and a repair that silently does nothing.
+    // The rule used to be "registration is the only chance", and these branches were written against it. They still
+    // earn their place: each covers a failure mode prose cannot distinguish — a classifier that quietly accepts
+    // labels, a re-registration that cannot replace them, an unregister that leaves them behind — and each is the
+    // difference between a repair that works and one that silently does nothing. The setter's own arms are in the
+    // `setAssetLabels` section below.
     //
     // Note what is NOT here any more, deliberately: the fill-a-blank tests, the identical-content no-op, and the
     // write-once guard's reverts. They covered behaviour that no longer exists. `setAssetKind`/`setAssetKinds` do not
@@ -678,8 +687,9 @@ contract AssetKindRegistryTest is Test {
         assertEq(registry.getAssetLabels(AUSDC).length, 0, "re-classification does not label either");
     }
 
-    /// @dev An asset registered with no labels stays unlabelled. This is the cost of the ruling, asserted rather than
-    ///      described: there is no later opportunity, because there is no setter.
+    /// @dev An asset registered with no labels stays unlabelled *through registration alone* — {registerAsset} is
+    ///      the only writer on this path, and an empty list is a silent no-op. {setAssetLabels} is what fills it in
+    ///      afterwards; `test_setAssetLabels_fillsInLabelsOnAnAssetRegisteredWithout` is the other half of this pair.
     function test_labels_anAssetRegisteredWithoutThemStaysUnlabelled() public {
         _register(USDC, AccrualKind.None, _noLabels());
         assertEq(registry.getAssetLabels(USDC).length, 0);
@@ -1001,6 +1011,24 @@ contract AssetKindRegistryTest is Test {
         string[] memory after_ = registry.getAssetLabels(WSTETH);
         assertEq(after_.length, 1, "shrunk to one");
         assertEq(after_[0], "x", "and it is the new value, not a truncated old one");
+
+        // GROW BACK, and this is the half that actually proves it. `getAssetLabels` returns only `length`
+        // elements, so residue past the new length is structurally invisible to the two assertions above — a
+        // mutant that truncates the length while leaving the dropped elements' payload slots populated passes
+        // them green. Re-growing to the full width re-reads those exact slots, so a stale tail surfaces as a
+        // wrong string rather than staying hidden.
+        string[] memory regrown = new string[](maxLabels);
+        for (uint256 i; i < maxLabels; ++i) {
+            regrown[i] = "n";
+        }
+        vm.prank(manager);
+        registry.setAssetLabels(WSTETH, regrown);
+
+        string[] memory back = registry.getAssetLabels(WSTETH);
+        assertEq(back.length, maxLabels, "regrown to full width");
+        for (uint256 i; i < maxLabels; ++i) {
+            assertEq(back[i], "n", "every re-grown slot holds the new value, not long-form residue");
+        }
     }
 
     /// @notice REFUSAL 1 — an asset the NAV does not hold. Labels are registration-scoped, and `unregisterAsset`

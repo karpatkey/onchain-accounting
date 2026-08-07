@@ -6,10 +6,10 @@
 #
 # ⚠️ `08` MUST come before `RegisterAssets`, and this script did NOT run it at all until the rehearsal
 # caught that. An asset's PRIMARY registration is routed through `AssetKindRegistry.registerAsset` so
-# the asset is registered, classified and LABELLED atomically — and registration is the only moment
-# labels can ever be written. Without the registry deployed, `RegisterAssets` aborts
-# `AssetKindRegistryNotDeployed`, deliberately, rather than falling back to `NAVCalculator.registerAsset`
-# (which would succeed while permanently costing every asset in the run its labels).
+# the asset is registered, classified and LABELLED atomically. Without the registry deployed,
+# `RegisterAssets` aborts `AssetKindRegistryNotDeployed`, deliberately, rather than falling back to
+# `NAVCalculator.registerAsset` (which would succeed while leaving the run's assets unclassified and
+# unlabelled — recoverable via `setAssetKinds`/`setAssetLabels`, but silently wrong until noticed).
 #
 # The header used to claim "THE RUNBOOK ORDER" while encoding the pre-#259 one. That CLAIM was the
 # defect, not just the list beneath it: a preflight gate running a different sequence from the runbook

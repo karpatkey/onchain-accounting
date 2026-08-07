@@ -37,11 +37,17 @@ contract RegisterAssets is BaseDeployScript {
 
     /// @notice No `AssetKindRegistry` is recorded for this chain, but at least one asset still needs its primary
     ///         registration.
-    /// @dev **This is an ordering error, not a config error: run `08_DeployAssetKindRegistry` first.** Labels can be
-    ///      written ONLY by `AssetKindRegistry.registerAsset`, and only at registration — an asset registered directly
-    ///      on the NAV can never be labelled afterwards. Falling back to `NAVCalculator.registerAsset` would therefore
-    ///      "succeed" while permanently costing every asset in this run its labels, which is exactly the silent
-    ///      degradation this repo's fail-closed guards exist to prevent.
+    /// @dev **This is an ordering error, not a config error: run `08_DeployAssetKindRegistry` first.** Only
+    ///      `AssetKindRegistry.registerAsset` registers, classifies and labels atomically. Falling back to
+    ///      `NAVCalculator.registerAsset` would "succeed" while leaving every asset in this run unclassified AND
+    ///      unlabelled — exactly the silent degradation this repo's fail-closed guards exist to prevent.
+    ///
+    ///      Both halves are now recoverable after the fact (`setAssetKinds`, `setAssetLabels`), so the cost is a
+    ///      batch of recovery transactions rather than the permanent loss an earlier revision of this note claimed.
+    ///      **That does not weaken the guard.** What it refuses is a run that reports success while producing a
+    ///      half-registered state nothing flags — and a reader tempted to relax it into a fallback should note that
+    ///      it is what caught the real step-order divergence between this script and the runbook during the fork
+    ///      rehearsal.
     error AssetKindRegistryNotDeployed(uint256 chainId);
 
     /// @notice The NAV does not point back at the recorded `AssetKindRegistry`.
@@ -205,9 +211,9 @@ contract RegisterAssets is BaseDeployScript {
                 //
                 // ⚠️ **Routed through `AssetKindRegistry`, NOT `NAVCalculator`, and that is load-bearing.** The
                 // registry forwards to `NAVCalculator.registerAsset` in the same transaction, so the asset is
-                // registered, classified and LABELLED atomically. Registration is the only moment labels can ever be
-                // written; an asset registered directly on the NAV is unlabellable for as long as it stays
-                // registered. The batch is mixed-target by design — every other action below still points at the NAV.
+                // registered, classified and LABELLED atomically — one transaction rather than three, with no window
+                // in which the NAV holds an asset the registry knows nothing about. The batch is mixed-target by
+                // design — every other action below still points at the NAV.
                 uint256 hb = vm.parseUint(ConfigReader.readAssetFeedHeartbeat(vm, currentChainId, symbol, i));
                 if (assetKindRegistry == address(0)) revert AssetKindRegistryNotDeployed(currentChainId);
                 (AccrualKind accrual, bool accrualValid) = ConfigReader.readAssetAccrualKind(vm, currentChainId, symbol);

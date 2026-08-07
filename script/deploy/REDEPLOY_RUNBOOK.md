@@ -478,10 +478,13 @@ threshold with no recorded baseline cannot detect drift.
 
 ⚠️ **`08` MOVED from last to 1.4, and the move is load-bearing rather than cosmetic.** An asset's PRIMARY
 registration is now routed through `AssetKindRegistry.registerAsset`, which registers, classifies and LABELS in
-one transaction. Registration is the only moment labels can ever be written, so the registry must exist — and must
-already hold `MANAGER` on the NAV — before `RegisterAssets` runs. Run them in the old order and `RegisterAssets`
-aborts with `AssetKindRegistryNotDeployed`; it does **not** fall back to `NAVCalculator.registerAsset`, because
-that would succeed while permanently costing every asset in the run its labels.
+one transaction, so the registry must exist — and must already hold `MANAGER` on the NAV — before `RegisterAssets`
+runs. Run them in the old order and `RegisterAssets` aborts with `AssetKindRegistryNotDeployed`; it does **not**
+fall back to `NAVCalculator.registerAsset`, because that would succeed while leaving every asset in the run both
+unclassified and unlabelled. Both are now repairable after the fact — `setAssetKinds` for the kinds,
+`setAssetLabels` for the labels — so the cost is a batch of recovery transactions and a window in which the
+registry disagrees with the NAV, NOT the permanent data loss earlier revisions of this note claimed. The guard
+still fails closed, because a silent partial registration is the thing worth refusing.
 
 Its "must precede `07`" constraint is unchanged and now trivially satisfied: `07` revokes the deployer's `MANAGER`,
 and `08` needs it. Moving `08` earlier strengthens that ordering rather than weakening it — there is now more, not
@@ -716,10 +719,10 @@ confirm `08` has already run on that chain, because afterwards there is no non-S
 **Placement is NO LONGER flexible, and this changed with the labels work.** `08` still references neither
 `PriceFeedLib` nor `NAVRegistryLib`, so it does not gate — and is not gated by — the NAV redeploy. But it must
 now run **before `RegisterAssets` (1.6)**, not merely before `07`: an asset's primary registration is routed
-through `AssetKindRegistry.registerAsset`, and registration is the only moment an asset's labels can ever be
-written. Run `08` late and `RegisterAssets` aborts with `AssetKindRegistryNotDeployed` — deliberately, rather
-than falling back to `NAVCalculator.registerAsset`, which would succeed while permanently costing every asset
-in that run its labels.
+through `AssetKindRegistry.registerAsset`, which registers, classifies and labels atomically. Run `08` late and
+`RegisterAssets` aborts with `AssetKindRegistryNotDeployed` — deliberately, rather than falling back to
+`NAVCalculator.registerAsset`, which would succeed while leaving that run's assets unclassified and unlabelled.
+Recoverable (`setAssetKinds` + `setAssetLabels`), but only once somebody notices.
 
 > **The pin regeneration this feature owed has been DONE — see 0.3.** The registry's arrival under `src/`
 > coincided with the `via_ir` whole-program stack margin being reached, which prompted the

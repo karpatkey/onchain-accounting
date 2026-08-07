@@ -539,8 +539,9 @@ library ConfigReader {
     ///      empty and `08` proceeds.
     ///
     ///      That is also what lets the labels for the 93 configured rows land as a separate, asset-by-asset reviewable
-    ///      change without holding up the contracts: every chain reads empty until its config gains the key, and the
-    ///      registry's write-once rule means those first non-empty writes are the ones that stick.
+    ///      change without holding up the contracts: every chain reads empty until its config gains the key. Those
+    ///      first non-empty writes are no longer the ones that necessarily stick — `AssetKindRegistry.setAssetLabels`
+    ///      can replace them — so a later config correction is a re-run plus a setter call, not a lost opportunity.
     ///
     ///      **This reader deliberately does NOT validate.** `AssetKindRegistry` enforces the count, per-label length
     ///      and non-emptiness on-chain, and re-checking them here would create a second copy of the rule that can drift

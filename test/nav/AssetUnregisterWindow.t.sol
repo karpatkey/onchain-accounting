@@ -7,6 +7,9 @@ import {Mock_ERC20} from "test/mocks/tokens.sol";
 import {Mock_CustomBalanceAdapter} from "test/mocks/balance_adapters.sol";
 import {Mock_PriceOracleChainlink} from "test/mocks/price_oracles.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
+import {AssetKindRegistry} from "src/nav/AssetKindRegistry.sol";
+import {AccrualKind} from "src/utils/AssetKind.sol";
+import {MANAGER} from "src/constants.sol";
 import {IPrices} from "src/prices/IPrices.sol";
 
 /// @title The unregister→re-register window, exercised
@@ -79,5 +82,60 @@ contract AssetUnregisterWindowTest is SuperTest {
 
         // The whole point, stated as an assertion rather than a log: a healthy-looking zero.
         assertLt(during.value, before.value, "the reported NAV collapsed while the account's holdings did not");
+    }
+
+    /// @notice The PR's headline claim, proved against a REAL `NAVCalculator` rather than a mock: correcting a label
+    ///         with {AssetKindRegistry-setAssetLabels} leaves the asset's pricing configuration untouched.
+    /// @dev This arm exists because the claim was otherwise only tested against `MockNav`, which holds no feed state
+    ///      at all — so nothing anywhere asserted the thing the change is FOR. The contrast with
+    ///      {test_midWindow_navReadWithPositionInUnregisteredAsset} above is the whole argument for the setter: the
+    ///      old repair path drops every one of these, this one drops none.
+    function test_setAssetLabels_leavesPricingConfigurationIntact() public {
+        AssetKindRegistry registry = new AssetKindRegistry(address(nav));
+        vm.prank(admin);
+        nav.grantRole(MANAGER, address(registry));
+
+        Mock_ERC20 lbl = new Mock_ERC20("LBL", 18);
+        address primary = address(new Mock_PriceOracleChainlink("L/USD", 1e8, 8));
+        address monitor = address(new Mock_PriceOracleChainlink("L/USD monitor", 1e8, 8));
+
+        string[] memory before_ = new string[](2);
+        before_[0] = "Protocol";
+        before_[1] = "TYPO";
+        vm.startPrank(navCalculatorManager);
+        registry.registerAsset(
+            address(lbl), primary, IPrices.PriceType.Chainlink, type(uint256).max, AccrualKind.None, before_
+        );
+        nav.setDivergenceTolerance(address(lbl), 250);
+        nav.setPegTolerance(address(lbl), 100);
+        nav.addMonitorFeed(address(lbl), monitor, IPrices.PriceType.Chainlink, 86_400);
+        vm.stopPrank();
+
+        uint256 feedsBefore = nav.getPriceFeedCount(address(lbl));
+        uint256 monitorsBefore = nav.getMonitorFeedCount(address(lbl));
+        IPrices.AssetPricing memory pricingBefore = nav.getAssetPricing(address(lbl));
+        (int256 priceBefore,,,) = nav.latestPrice(address(lbl));
+
+        string[] memory fixed_ = new string[](2);
+        fixed_[0] = "Protocol";
+        fixed_[1] = "CORRECT";
+        vm.prank(navCalculatorManager);
+        registry.setAssetLabels(address(lbl), fixed_);
+
+        assertEq(registry.getAssetLabels(address(lbl))[1], "CORRECT", "the label was actually corrected");
+        assertTrue(nav.isAssetRegistered(address(lbl)), "asset never left the NAV");
+        assertEq(nav.getPriceFeedCount(address(lbl)), feedsBefore, "price feeds intact");
+        assertEq(nav.getMonitorFeedCount(address(lbl)), monitorsBefore, "monitor feeds intact");
+        IPrices.AssetPricing memory pricingAfter = nav.getAssetPricing(address(lbl));
+        assertEq(
+            pricingAfter.divergenceToleranceBps, pricingBefore.divergenceToleranceBps, "divergence tolerance intact"
+        );
+        assertEq(
+            pricingAfter.pegToleranceBps,
+            pricingBefore.pegToleranceBps,
+            "peg tolerance intact - PegKind is derived from it"
+        );
+        (int256 priceAfter,,,) = nav.latestPrice(address(lbl));
+        assertEq(priceAfter, priceBefore, "the asset still prices identically");
     }
 }

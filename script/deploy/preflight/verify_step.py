@@ -694,9 +694,9 @@ def step_asset_kind_registry(k: Chk, rec: dict, exp: dict, url, base, tag) -> No
 
 
 # ⚠️ **Step NUMBERS are positions in the runbook and they MOVE; the checks are bound to MEANING, not position.**
-# `08_DeployAssetKindRegistry` moved from 1.8 to 1.4 when labels became registration-only: the registry must exist,
-# and must hold MANAGER on the NAV, BEFORE `RegisterAssets` runs, because an asset's primary registration is now
-# routed through it and registration is the only moment labels can be written.
+# `08_DeployAssetKindRegistry` moved from 1.8 to 1.4 when asset registration began routing through the facade: the
+# registry must exist, and must hold MANAGER on the NAV, BEFORE `RegisterAssets` runs, because an asset's primary
+# registration goes through it and is what classifies and labels the asset atomically.
 #
 # The dead-facade gate travels with it. `step_asset_kind_registry` is the mechanical check for the
 # `grantRole`-never-landed hazard (a fully classified registry whose facade reverts, with `08` exiting 0), and it is

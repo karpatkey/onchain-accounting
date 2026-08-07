@@ -21,11 +21,19 @@ import "src/constants.sol";
 ///      transaction, and {unregisterAsset} is exactly symmetric. So a registered asset is always classified, by
 ///      construction rather than by an operator remembering two calls.
 ///
-///      **To be blunt about what it is NOT for: nothing on-chain reads this registry.** There is no on-chain consumer
-///      today — every reference outside this file is a deploy script or a test. An earlier version of this docstring
-///      justified the contract with "a consumer makes two calls and caches the kinds indefinitely"; that was never the
-///      point and is not the point now. The value is the invariant on the write path. If an on-chain consumer ever
-///      appears, this note should be the first thing revisited.
+///      **There is now exactly ONE on-chain consumer, and this note is the revisit it asked for.** It previously read
+///      "nothing on-chain reads this registry", with the standing instruction that the first consumer to appear should
+///      be recorded here. That consumer is {PriceFeedLib.toVerbose}, which reads the two ADAPTER-override getters —
+///      {getAdapterProtocolName} and {getAdapterLabelCategory} — once per distinct adapter on the verbose read path.
+///      Note what did NOT change: the CLASSIFICATION half (the kinds and the per-asset labels) still has no on-chain
+///      reader, and its value remains the atomic register+classify invariant on the write path, not the read. An
+///      earlier version justified the contract with "a consumer makes two calls and caches the kinds indefinitely";
+///      that was never the point and is still not.
+///
+///      The override half is deliberately the LESS privileged half: it never calls back into the NAV, so unlike
+///      {registerAsset} it needs no `MANAGER` grant on the NAV to function — only the `onlyNavManager` check on the
+///      caller. Adapters keep zero governance surface of their own; nothing here is added to them, and no deployed
+///      adapter is touched or redeployed by this feature.
 ///
 ///      **Why it is its own contract and not part of the NAV. Not preference — measured, twice, for two different
 ///      questions.** `NAVCalculator` sits at **24,074 of 24,576 bytes: 502 bytes** of EIP-170 headroom (measured on
@@ -113,6 +121,22 @@ contract AssetKindRegistry is IAssetKindRegistry {
     ///      a legitimate state rather than an absent one, so an empty list and an unset list are the same thing by
     ///      design and nothing has to tell them apart.
     mapping(address asset => string[] labels) private _labels;
+
+    /// @notice One balance adapter's `protocolName()` override. Empty string means "no override".
+    /// @dev Keyed by ADAPTER, never by position. That is the whole reason this table is bounded: `protocolName()` is
+    ///      a per-adapter constant in all 13 of its definitions (`MetaBalanceAdapter.protocolName` folds
+    ///      `ProtocolNames.forProtocolId(_protocolId())` at compile time and no concrete meta-adapter overrides it),
+    ///      so one row per adapter covers every position that adapter can ever emit — ≤45 rows for the whole fleet,
+    ///      with nothing to re-write when `addMetaInstances` adds an instance.
+    mapping(address adapter => string name) private _adapterProtocolName;
+
+    /// @notice One balance adapter's override for segment 0 of `positionLabels()` — the CATEGORY. Empty means none.
+    /// @dev Also per-adapter, and for the same reason: the category is a string literal at every one of the 32 call
+    ///      sites that have one (`_labels("Market", leaf)`, `_addressLabels(pid, "Vault", false)`, …), while only the
+    ///      leaf varies per position. Kept in its own mapping rather than packed with the name above so each can be
+    ///      set and cleared independently — an operator correcting a protocol name usually has no reason to touch the
+    ///      category, and one mapping would make clearing either one require rewriting both.
+    mapping(address adapter => string category) private _adapterLabelCategory;
 
     /// @notice Most labels one asset may carry.
     /// @dev Mirrors `NAVCalculator`'s `_MAX_LABEL_ELEMENTS = 8` on the READ side, at half the value because these are
@@ -298,6 +322,63 @@ contract AssetKindRegistry is IAssetKindRegistry {
     }
 
     /// @inheritdoc IAssetKindRegistry
+    function setAdapterProtocolName(address adapter, string calldata name) external onlyNavManager {
+        _requireRegisteredAdapter(adapter);
+        _requireValidOverride(adapter, name);
+        _adapterProtocolName[adapter] = name;
+        emit AdapterProtocolNameSet(adapter, name);
+    }
+
+    /// @inheritdoc IAssetKindRegistry
+    function clearAdapterProtocolName(address adapter) external onlyNavManager {
+        if (bytes(_adapterProtocolName[adapter]).length == 0) revert AdapterOverrideNotSet(adapter);
+        delete _adapterProtocolName[adapter];
+        emit AdapterProtocolNameCleared(adapter);
+    }
+
+    /// @inheritdoc IAssetKindRegistry
+    function setAdapterLabelCategory(address adapter, string calldata category) external onlyNavManager {
+        _requireRegisteredAdapter(adapter);
+        _requireValidOverride(adapter, category);
+        _adapterLabelCategory[adapter] = category;
+        emit AdapterLabelCategorySet(adapter, category);
+    }
+
+    /// @inheritdoc IAssetKindRegistry
+    function clearAdapterLabelCategory(address adapter) external onlyNavManager {
+        if (bytes(_adapterLabelCategory[adapter]).length == 0) revert AdapterOverrideNotSet(adapter);
+        delete _adapterLabelCategory[adapter];
+        emit AdapterLabelCategoryCleared(adapter);
+    }
+
+    /// @inheritdoc IAssetKindRegistry
+    function getAdapterProtocolName(address adapter) external view returns (string memory) {
+        return _adapterProtocolName[adapter];
+    }
+
+    /// @inheritdoc IAssetKindRegistry
+    function getAdapterLabelCategory(address adapter) external view returns (string memory) {
+        return _adapterLabelCategory[adapter];
+    }
+
+    /// @dev Setters only — see {IAssetKindRegistry.AdapterNotRegistered} for why the clearers deliberately skip this.
+    ///      `isAdapterRegistered` is an O(1) mapping read on the NAV, so this costs one `staticcall` on a MANAGER
+    ///      write path and nothing at all on the read path.
+    function _requireRegisteredAdapter(address adapter) private view {
+        if (!NAV.isAdapterRegistered(adapter)) revert AdapterNotRegistered(adapter);
+    }
+
+    /// @dev Both overrides share one validator because they are the same kind of value: a short display string that
+    ///      lands in the same breadcrumb, read through the same fixed copy window in {PriceFeedLib}.
+    function _requireValidOverride(address adapter, string calldata value) private pure {
+        uint256 len = bytes(value).length;
+        // `""` is the read path's MISS sentinel, so storing one would read back as absence — see
+        // {IAssetKindRegistry.EmptyAdapterOverride}.
+        if (len == 0) revert EmptyAdapterOverride(adapter);
+        if (len > MAX_ASSET_LABEL_BYTES) revert AdapterOverrideTooLong(adapter, len, MAX_ASSET_LABEL_BYTES);
+    }
+
+    /// @inheritdoc IAssetKindRegistry
     function getAssetLabels(address asset) external view returns (string[] memory) {
         return _labels[asset];
     }
@@ -333,7 +414,16 @@ contract AssetKindRegistry is IAssetKindRegistry {
     ///      `positionLabels()` are fixed at deploy time and editable by no role. That parity was dropped on the
     ///      grounds that the two are not the same kind of value: an adapter label is a compile-time constant OF THE
     ///      CODE, while an asset label is operator-supplied DATA. Making the latter repairable does not imply making
-    ///      the former editable, and adapter labels remain redeploy-to-change. The repair this replaces was
+    ///      the former editable.
+    ///
+    ///      ⚠️ **The trailing half of that argument — "and adapter labels remain redeploy-to-change" — is no longer
+    ///      true, and the distinction above survives only in a narrowed form.** {setAdapterProtocolName} and
+    ///      {setAdapterLabelCategory} now make an adapter's two CONSTANT segments correctable without a redeploy.
+    ///      What still holds, and is the line that matters, is that only the constants moved: the computed LEAF is
+    ///      untouched and still derived live on every read, because 21 of the 33 deployable adapters build it from
+    ///      on-chain state and a stored table has no finite key for a computed value. So an adapter label is still
+    ///      not operator-supplied data in general — only the part of it that was already a literal is. The repair
+    ///      this replaces was
     ///      unregister-then-re-register, which also destroys every price feed, every monitor feed and the whole of
     ///      `_assetPricing` (both tolerances) — up to five transactions on an EOA MANAGER with the asset absent from
     ///      NAV in between.

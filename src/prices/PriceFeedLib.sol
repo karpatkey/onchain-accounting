@@ -10,6 +10,7 @@ import {IPrices} from "./IPrices.sol";
 import {ICustomPriceFeed} from "./ICustomPriceFeed.sol";
 import {INavSourcedPriceFeed} from "./INavSourcedPriceFeed.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
+import {IAssetKindRegistry} from "src/nav/IAssetKindRegistry.sol";
 import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
 import {IMetaBalanceAdapter} from "src/balances/IMetaBalanceAdapter.sol";
 import {IPositionDescribable} from "src/balances/IPositionDescribable.sol";
@@ -1928,8 +1929,31 @@ library PriceFeedLib {
         if (address(uint160(rawBase)) == token) revert IPrices.CustomFeedBaseCircular(token, priceFeed);
     }
 
-    /// @notice Enriches a Position[] with human-readable labels from IPositionDescribable on each adapter.
-    function toVerbose(INAVCalculator.Position[] memory pos)
+    /// @notice Enriches a Position[] with human-readable labels from IPositionDescribable on each adapter, with the
+    ///         `AssetKindRegistry`'s per-adapter operator overrides taking precedence over the adapter's own reply.
+    /// @dev **The overrides ride the EXISTING per-adapter cache, which is what makes them affordable.** Both are
+    ///      per-adapter constants, so they are fetched in the same `adapter != prevAdapter` branch that already
+    ///      guarded the `protocolName()` staticcall — roughly one extra pair of reads per DISTINCT adapter, not per
+    ///      position. On the real mainnet fixture that is a handful of adapters against 117 positions.
+    ///
+    ///      **On a protocol-name hit the adapter staticcall is skipped entirely**, so an overridden adapter trades a
+    ///      cold `staticcall` to the adapter for a warm one to the registry (warm after the first adapter, since it
+    ///      is the same address every time). That direction is gas-NEGATIVE; the miss path pays two extra warm
+    ///      registry reads. Both are measured in `AdapterLabelOverrides.t.sol` rather than asserted here.
+    ///
+    ///      **Fail-open, exactly like the adapter reads.** The registry is reached through the same {_safeString}
+    ///      shim — gas-capped and output-windowed — so a broken, hostile or absent registry degrades to "no
+    ///      override" instead of reverting the verbose read. `registry == address(0)` (a NAV deployed before `08`
+    ///      wires one) short-circuits before any call rather than relying on that degradation.
+    ///
+    ///      **Only segment 0 of the labels is replaced.** The computed leaf at index 1 and everything below it stay
+    ///      exactly as the adapter derived them, live, on this call. See {IAssetKindRegistry.setAdapterLabelCategory}
+    ///      for why the leaf is deliberately not overridable at all.
+    /// @param pos The positions to enrich.
+    /// @param registry The chain's `AssetKindRegistry`, or `address(0)` when none is wired. Passed in rather than
+    ///        read from storage because this library is reached by DELEGATECALL and has no view of `NAVCalculator`'s
+    ///        layout; passing it also avoids a second registry pointer on a contract with 502 bytes of headroom.
+    function toVerbose(INAVCalculator.Position[] memory pos, address registry)
         external
         view
         returns (INAVCalculator.VerbosePosition[] memory verbose)
@@ -1941,24 +1965,55 @@ library PriceFeedLib {
         // protocolName() returns a per-adapter constant, and positions are grouped by adapter (PriceFeedLib
         // concatenates each adapter's positions contiguously), so cache the last adapter's name and only
         // re-staticcall when the adapter changes — one protocolName() call per distinct adapter, not per position.
-        // positionLabels() varies by positionId, so it stays per-position.
+        // positionLabels() varies by positionId, so it stays per-position; its CATEGORY does not, so the category
+        // override is cached here alongside the name.
         address prevAdapter;
         string memory prevName;
+        string memory prevCategory;
         for (uint256 i = 0; i < len; i++) {
             address adapter = pos[i].balanceAdapter;
             if (i == 0 || adapter != prevAdapter) {
-                prevName = _safeString(adapter, protocolNameCall);
+                (prevName, prevCategory) = _adapterOverrides(registry, adapter);
+                // Only ask the adapter when no override answered. Skipping the staticcall is the point: it is the
+                // 100k-stipend cold call this whole branch exists to ration.
+                if (bytes(prevName).length == 0) prevName = _safeString(adapter, protocolNameCall);
                 prevAdapter = adapter;
             }
             // Labels are derived lazily from positionId (display only, off the NAV hot path) via a fail-open,
             // gas-capped staticcall — an adapter that doesn't implement positionLabels yields an empty array.
             // Field-by-field assignment (not a VerbosePosition literal, which would deep-copy the 17-field Position
-            // as one expression) keeps this loop under the via_ir stack limit.
+            // as one expression) keeps this loop under the via_ir stack limit — which is also why the category is
+            // applied in place on `verbose[i].labels` rather than through a local.
             verbose[i].position = pos[i];
             verbose[i].protocolName = prevName;
             verbose[i].labels =
                 _safeStringArray(adapter, abi.encodeCall(IPositionDescribable.positionLabels, (pos[i].positionId)));
+            // Replace the category and NOTHING else. An empty reply is left empty — an adapter that described no
+            // segments has no category to correct, and growing the array would change its length rather than
+            // override a value.
+            if (bytes(prevCategory).length != 0 && verbose[i].labels.length != 0) {
+                verbose[i].labels[0] = prevCategory;
+            }
         }
+    }
+
+    /// @notice Reads one adapter's operator overrides from the registry, fail-open to `("", "")`.
+    /// @dev Two separate flat-`string` getters rather than one packed tuple, on purpose: it reuses {_safeString}'s
+    ///      already-audited head validation verbatim instead of hand-rolling a two-string tuple decoder, which is the
+    ///      shape most likely to get a bounds check subtly wrong. The second call is cheap — the registry address is
+    ///      warm after the first adapter, and both replies are a single 32-byte-capped word of payload.
+    ///
+    ///      `""` is an unambiguous miss: the setters reject the empty string, so a stored override is never empty and
+    ///      an empty reply can only mean "unset", "no registry", or "unreadable" — all of which take the same
+    ///      fall-back-to-the-adapter path.
+    function _adapterOverrides(address registry, address adapter)
+        private
+        view
+        returns (string memory name, string memory category)
+    {
+        if (registry == address(0)) return ("", "");
+        name = _safeString(registry, abi.encodeCall(IAssetKindRegistry.getAdapterProtocolName, (adapter)));
+        category = _safeString(registry, abi.encodeCall(IAssetKindRegistry.getAdapterLabelCategory, (adapter)));
     }
 
     /// @notice Gas stipend for the `decodeStringArray` shim (see `_safeStringArray`). Generous for any legitimate

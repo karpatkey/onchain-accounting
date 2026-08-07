@@ -83,11 +83,56 @@ interface IAssetKindRegistry {
     ///      asset the NAV no longer knows about.
     event AssetLabelsCleared(address indexed asset);
 
+    /// @notice Emitted when a balance adapter's `protocolName()` override is written or replaced.
+    /// @dev The payload is the full replacement string, never a delta. Absence of an override is not observable from
+    ///      this event alone — pair it with {AdapterProtocolNameCleared}.
+    event AdapterProtocolNameSet(address indexed adapter, string name);
+
+    /// @notice Emitted when a balance adapter's `protocolName()` override is removed and the adapter's own reply
+    ///         becomes authoritative again.
+    event AdapterProtocolNameCleared(address indexed adapter);
+
+    /// @notice Emitted when a balance adapter's label-category override (segment 0 of `positionLabels()`) is written
+    ///         or replaced.
+    event AdapterLabelCategorySet(address indexed adapter, string category);
+
+    /// @notice Emitted when a balance adapter's label-category override is removed.
+    event AdapterLabelCategoryCleared(address indexed adapter);
+
     /// @notice The asset has no classification.
     /// @dev Thrown on the READ path ({getAssetKind}, {getAssetKinds}) so reads fail closed rather than defaulting, AND
     ///      on the WRITE path by {clearAssetKind} when the asset was never classified. Both, deliberately — clearing
     ///      something that is not there is a config mistake worth surfacing, not a no-op.
     error AssetNotClassified(address asset);
+
+    /// @notice A SETTER was called for an address the NAV does not hold as a balance adapter.
+    /// @dev Guards the setters only, never the clearers. An override on a typo'd address is dead data that no read
+    ///      path would ever consult, so it would fail silently — exactly the class of mistake
+    ///      {AssetNotRegisteredForLabels} exists to catch on the asset side. Both plain and meta adapters set the
+    ///      NAV's registration map (`NAVRegistryLib._registerAdapter` is shared by `addBalanceAdapters` and
+    ///      `addMetaBalanceAdapter`), so this accepts every adapter family.
+    ///
+    ///      **Deliberately NOT on the clearers.** Guarding those would strand an override whose adapter has since
+    ///      been unregistered: unreadable, yet impossible to remove. That is the stranding hazard the asset-label
+    ///      path documents at {AssetNotRegisteredForLabels}, avoided here rather than reproduced.
+    error AdapterNotRegistered(address adapter);
+
+    /// @notice A label override was supplied as the empty string.
+    /// @dev `""` is the MISS sentinel on the read path — {PriceFeedLib} treats an empty reply as "no override" and
+    ///      falls back to the adapter. So storing one would be a write that reads back as absence, and a caller
+    ///      trying to clear via `set(adapter, "")` would get silence instead of the clear it asked for. Use
+    ///      {AssetKindRegistry.clearAdapterProtocolName} / {AssetKindRegistry.clearAdapterLabelCategory} instead.
+    error EmptyAdapterOverride(address adapter);
+
+    /// @notice A label override is longer than {AssetKindRegistry.MAX_ASSET_LABEL_BYTES}.
+    /// @dev `length` is in BYTES, not characters. Shares the asset-label bound because it is the same kind of value
+    ///      rendered in the same breadcrumb, and because the read path's copy window is sized for it.
+    error AdapterOverrideTooLong(address adapter, uint256 length, uint256 max);
+
+    /// @notice A clearer was called for an adapter that has no override of that kind.
+    /// @dev Reverts rather than no-oping, matching {clearAssetKind}: clearing something that is not there is a config
+    ///      mistake worth surfacing.
+    error AdapterOverrideNotSet(address adapter);
 
     /// @notice Error when {setAssetLabels} is called for an asset the NAV does not hold.
     /// @dev Named distinctly from the shared `AssetNotRegistered(string)` in `src/errors.sol`, which this contract
@@ -254,4 +299,75 @@ interface IAssetKindRegistry {
 
     /// @notice Whether `asset` has a classification. The non-reverting probe for {getAssetKind}.
     function isClassified(address asset) external view returns (bool);
+
+    // ---------------------------------------------------------------------------------------------------------------
+    // Balance-adapter display overrides
+    //
+    // A ≤45-row, per-ADAPTER table that lets an operator correct the two label segments that are compile-time
+    // CONSTANTS of an adapter — its protocol name and its label category — without redeploying and re-registering it.
+    //
+    // **What this deliberately does NOT cover: the label LEAF.** 21 of the 33 deployable adapters derive their leaf
+    // from live on-chain state (`UniswapV3PoolsMetaBalanceAdapter` builds `"WETH/USDC 0.05%"` from live `token0()` /
+    // `token1()` / `fee()` probes; `FluidVaultsMetaBalanceAdapter` reads `vaultInfo` plus the registered-asset array).
+    // A table cannot hold a computed value: it would freeze a derivation that IS the feature, would need a fresh write
+    // on every `addMetaInstances` call or the new instance would silently fall back, and could not fix the actual
+    // failure mode anyway — a wrong leaf means the DERIVATION is wrong across every instance, which a per-row override
+    // masks one row at a time. The leaf therefore stays computed, always, and these overrides are keyed by ADAPTER
+    // rather than by position precisely so that no per-position bookkeeping exists to drift.
+    // ---------------------------------------------------------------------------------------------------------------
+
+    /// @notice Overrides what `getAccountPositionsVerbose` reports as `protocolName` for every position of `adapter`.
+    /// @dev Additive: with no override set, the read path staticcalls the adapter exactly as before, so **no deployed
+    ///      adapter is touched or redeployed**. Gated on the NAV's `MANAGER`. Reverts {AdapterNotRegistered} for an
+    ///      address the NAV does not hold, {EmptyAdapterOverride} for `""` (the miss sentinel), and
+    ///      {AdapterOverrideTooLong} beyond {AssetKindRegistry.MAX_ASSET_LABEL_BYTES}. Emits {AdapterProtocolNameSet}.
+    ///
+    ///      ⚠️ **This can break an invariant the code alone previously guaranteed, and nothing on-chain stops it.**
+    ///      {IPositionDescribable.protocolName} requires every adapter sharing a `ProtocolIds` protocol id to return
+    ///      the SAME string, because consumers group configured adapters by it — the failure it prevents is an adapter
+    ///      splitting itself out into a phantom sibling protocol. `test/ProtocolNameConsistency.t.sol` pins that over
+    ///      adapter CODE and is unaffected by this override, which is precisely the gap: overriding one adapter of a
+    ///      protocol and not its siblings re-creates the phantom-sibling split at the DISPLAY layer, where that test
+    ///      cannot see it. This registry cannot check it either — it holds no view of any adapter's protocol id.
+    ///      **When a protocol has several adapters, override all of them or none.**
+    /// @param adapter The balance adapter whose positions should report `name`.
+    /// @param name The replacement protocol name, e.g. "Aave V3".
+    function setAdapterProtocolName(address adapter, string calldata name) external;
+
+    /// @notice Removes `adapter`'s protocol-name override; its own `protocolName()` becomes authoritative again.
+    /// @dev Reverts {AdapterOverrideNotSet} when there is nothing to clear. Not guarded on registration, so an
+    ///      override outlives its adapter's deregistration and stays removable. Emits {AdapterProtocolNameCleared}.
+    function clearAdapterProtocolName(address adapter) external;
+
+    /// @notice Overrides segment 0 — the CATEGORY — of every `positionLabels()` reply from `adapter`, leaving every
+    ///         deeper segment exactly as the adapter computed it.
+    /// @dev **Replaces index 0 and nothing else.** For the 32 adapters whose index 0 is a string literal (the whole
+    ///      meta family via `MetaBalanceAdapter._labels("Category", leaf)`, plus every plain and assisted adapter)
+    ///      that is precisely the category, and the computed leaf at index 1 is untouched and still read live.
+    ///
+    ///      **The one adapter this must not be used on is `ERC20DefaultBalanceAdapter`**, whose reply is a single
+    ///      element that IS the computed token symbol — an override there would replace the leaf, not a category.
+    ///      The mechanism cannot tell the two apart (it sees an array, not the source), so this exclusion is
+    ///      operational rather than enforced; it is asserted as a documented hazard in `AdapterLabelOverrides.t.sol`.
+    ///
+    ///      A reply with NO segments is left empty rather than grown to one: an adapter that declined to describe a
+    ///      position has no category to correct, and synthesising one would change the array's length rather than
+    ///      override a value.
+    /// @param adapter The balance adapter whose label category should be replaced.
+    /// @param category The replacement category, e.g. "Lending Market".
+    function setAdapterLabelCategory(address adapter, string calldata category) external;
+
+    /// @notice Removes `adapter`'s label-category override; its own segment 0 becomes authoritative again.
+    /// @dev Reverts {AdapterOverrideNotSet} when there is nothing to clear. Emits {AdapterLabelCategoryCleared}.
+    function clearAdapterLabelCategory(address adapter) external;
+
+    /// @notice `adapter`'s protocol-name override, or `""` when none is set.
+    /// @dev `""` is the miss sentinel the read path keys on, and is unambiguous because the setter rejects it.
+    ///      **This is the selector {PriceFeedLib} staticcalls** on the verbose read path — changing its signature
+    ///      changes that call site.
+    function getAdapterProtocolName(address adapter) external view returns (string memory name);
+
+    /// @notice `adapter`'s label-category override, or `""` when none is set.
+    /// @dev Same miss-sentinel contract as {getAdapterProtocolName}, and likewise read by {PriceFeedLib}.
+    function getAdapterLabelCategory(address adapter) external view returns (string memory category);
 }

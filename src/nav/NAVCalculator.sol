@@ -500,7 +500,7 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
         returns (INAVCalculator.VerbosePosition[] memory)
     {
         _validateQuoteAsset(quoteAsset);
-        return PriceFeedLib.toVerbose(_computePositions(account, address(0), quoteAsset));
+        return PriceFeedLib.toVerbose(_computePositions(account, address(0), quoteAsset), address(assetKindRegistry));
     }
 
     /// @inheritdoc INAVCalculator
@@ -511,7 +511,7 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
     {
         _validateQuoteAsset(quoteAsset);
         _validateAssetFilter(asset);
-        return PriceFeedLib.toVerbose(_computePositions(account, asset, quoteAsset));
+        return PriceFeedLib.toVerbose(_computePositions(account, asset, quoteAsset), address(assetKindRegistry));
     }
 
     /// @inheritdoc INAVCalculator
@@ -537,7 +537,7 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
             _isSequencerDown(),
             _nativeTokenSymbol
         );
-        verboseNav.positions = PriceFeedLib.toVerbose(positions);
+        verboseNav.positions = PriceFeedLib.toVerbose(positions, address(assetKindRegistry));
     }
 
     /// @notice Shared entry point for the (filtered) position read path. Keeps the long PriceFeedLib argument

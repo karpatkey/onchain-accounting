@@ -171,15 +171,12 @@ def _canonical_repo_root() -> Path | None:
 def _default_env_files() -> list[Path]:
     """.env candidates in PRECEDENCE order — `load_env` uses `setdefault`, so the first wins.
 
-    Only the PATHS change here; the ordering and precedence are deliberately identical to what this
-    list produced before, so a normal checkout and a sibling worktree resolve exactly what they
-    always did. `REPO / ".env"` is intentionally NOT added: in a sibling worktree it would be the
-    worktree's own file and would outrank the canonical clone's, which is a semantic change this
-    path-derivation fix has no business making. (A worktree's own .env is consequently still never
-    read here, unlike in rehearse_fork.sh, which has always read it. That asymmetry predates this
-    fix and is left alone on purpose.)
+    `REPO / ".env"` leads, matching `env_candidates` in rehearse_fork.sh exactly — the two must
+    produce the SAME ordered list, or "one endpoint inventory" is untrue again the moment a worktree
+    carries its own .env. (The previous PR deliberately left this asymmetry alone because changing
+    precedence was out of its scope; unifying precedence is the whole point of this one.)
     """
-    candidates: list[Path] = []
+    candidates: list[Path] = [REPO / ".env"]
     canonical = _canonical_repo_root()
     if canonical is not None:
         candidates.append(canonical / ".env")
@@ -216,7 +213,20 @@ DEFAULT_ENV_FILES = _default_env_files()
 
 
 def load_env(dotenv: Path | None = None) -> None:
-    """Load KEY=VALUE lines from .env files into os.environ without overriding what is already set."""
+    """Load KEY=VALUE lines from .env files into os.environ.
+
+    THE PRECEDENCE RULE, identical to `load_env_files` in `rehearse_fork.sh`:
+    read every candidate in order; the FIRST writer of a key wins, and a value already in the
+    environment beats every file. Files therefore UNION — load-bearing, because the OIV env carries
+    endpoints for 19 chains this repo's own .env has none for — while the earliest source of any one
+    key decides it. Precedence: environment > local .env > canonical clone > OIV.
+
+    The shell twin used to `source` forward, so its LAST file won and OIV outranked this repo's own
+    .env, giving a different answer from this function on 5 of the 6 keys the files share —
+    MAINNET_URL among them, which is what the rehearsal forks. Keeping the rule stated and
+    implemented explicitly on both sides is the point: the drift happened precisely because one side
+    got its precedence from `source` order and the other from `setdefault`.
+    """
     for path in ([dotenv] if dotenv else DEFAULT_ENV_FILES):
         if not path or not path.exists():
             continue
@@ -225,7 +235,12 @@ def load_env(dotenv: Path | None = None) -> None:
             if not line or line.startswith("#") or "=" not in line:
                 continue
             k, v = line.split("=", 1)
-            os.environ.setdefault(k.strip(), v.strip().strip('"').strip("'"))
+            k, v = k.strip(), v.strip()
+            # ONE matching pair of surrounding quotes — not `.strip('"').strip("'")`, which peels
+            # any number from either end independently and cannot be mirrored exactly in shell.
+            if len(v) >= 2 and v[0] == v[-1] and v[0] in ("'", '"'):
+                v = v[1:-1]
+            os.environ.setdefault(k, v)
 
 
 def all_chain_ids() -> list[int]:

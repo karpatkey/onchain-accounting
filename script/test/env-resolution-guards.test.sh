@@ -26,6 +26,8 @@ CHAINLIB="$REPO_ROOT/script/deploy/preflight/chainlib.py"
 # The block runs from `ENV_FOUND=()` to the `fi` closing the source loop, both at column 0.
 fn_src="$(sed -n '/^env_candidates() {/,/^}/p' "$TARGET")"
 [[ -n "$fn_src" ]] || { echo "could not extract env_candidates from $TARGET" >&2; exit 1; }
+load_src="$(sed -n '/^load_env_files() {/,/^}/p' "$TARGET")"
+[[ -n "$load_src" ]] || { echo "could not extract load_env_files from $TARGET" >&2; exit 1; }
 resolve_src="$(sed -n '/^ENV_FOUND=()/,/^fi$/p' "$TARGET")"
 [[ -n "$resolve_src" ]] || { echo "could not extract the resolution block from $TARGET" >&2; exit 1; }
 # A silently-truncated or runaway extraction would make every case below vacuous, so assert the
@@ -37,7 +39,7 @@ while IFS= read -r anchor; do
 done <<'ANCHORS'
 ENV_FOUND=()
 env_candidates "$ROOT"
-set -a; source
+load_env_files
 ANCHORS
 grep -qx 'fi' <<<"$resolve_src" || {
   echo "extracted block does not end at the closing 'fi' — the sed range has drifted" >&2; exit 1; }
@@ -107,6 +109,7 @@ resolve_in() {
     ROOT="$root"
     unset ALCHEMY_API_KEY MAINNET_URL OIV_ONLY_URL
     eval "$fn_src"
+    eval "$load_src"
     eval "$resolve_src"
     printf '%s' "${!var:-<unset>}"
   )
@@ -184,37 +187,36 @@ check "renamed clone: no name-hardcoded probe could hit" "0" \
               [[ -f "$(dirname "$r")/onchain-accounting/.env" ]] && n=$((n+1))
             done; echo "$n" ) )"
 
-echo "== precedence: MUST be byte-identical to the pre-fix behaviour =="
-# This fix moves path derivation ONLY. Precedence is load-bearing: the OA and OIV .env files share
-# 6 keys and disagree on 5 of them, MAINNET_URL included — and MAINNET_URL is the endpoint anvil
-# forks from. A silent flip here would repoint the rehearsal at a different RPC for the sibling and
-# normal layouts, which is what everyone uses today. So the shipped order is asserted against a
-# faithful replay of the ORIGINAL loop, not against a hand-written expectation.
-prefix_original() {
-  # The pre-fix loop, verbatim: forward `source`, so the LAST file wins.
-  local root="$1" var="$2"
-  ( set -uo pipefail
-    unset ALCHEMY_API_KEY MAINNET_URL OIV_ONLY_URL
-    cd "$root" || exit 1
-    for ENVF in .env "$(dirname "$root")/onchain-accounting/.env" \
-                "$(dirname "$root")/onchain-investment-vehicles/.env"; do
-      [[ -f "$ENVF" ]] && { set -a; source "$ENVF"; set +a; }
-    done
-    printf '%s' "${!var:-<unset>}" )
-}
-# In the two layouts that WORKED before, new and old must agree key-for-key.
-for layout in "sibling:$SIBLING" "normal:$CANON"; do
-  name="${layout%%:*}"; root="${layout#*:}"
-  for var in ALCHEMY_API_KEY MAINNET_URL OIV_ONLY_URL; do
-    check "$name/$var: unchanged vs pre-fix" "$(prefix_original "$root" "$var")" "$(resolve_in "$root" "$var")"
-  done
+echo "== precedence: FIRST wins, and bash must agree with chainlib =="
+# The invariant asserted here CHANGED deliberately. It used to be "byte-identical to the pre-fix
+# behaviour", which pinned bash to forward-`source` (LAST file wins -> OIV) while chainlib used
+# `setdefault` (FIRST wins -> OA). The two therefore disagreed on 5 of the 6 keys the real .env
+# files share, MAINNET_URL among them — the endpoint the rehearsal forks — so the script's own
+# "one endpoint inventory" claim was false. The rule is now FIRST-wins on both sides, stated
+# explicitly rather than emerging from `source` order versus `setdefault`.
+#
+# Precedence, highest first: environment > local .env > canonical clone > OIV. Union still applies,
+# so a key only OIV defines still arrives.
+check "first wins: canonical outranks OIV on a shared key" "from-canonical" \
+      "$(resolve_in "$NESTED" MAINNET_URL)"
+check "union: an OIV-only key still merges in" "from-oiv" "$(resolve_in "$NESTED" OIV_ONLY_URL)"
+# A value already exported beats every file — the `setdefault` half of the rule. `source` did not do
+# this, so an operator's `FOO=... rehearse_fork.sh` used to be silently overridden by a .env.
+check "environment outranks every file" "from-the-shell" \
+      "$( ( set -uo pipefail; export MAINNET_URL=from-the-shell; ROOT="$NESTED"
+            eval "$fn_src"; eval "$load_src"; eval "$resolve_src"; printf '%s' "$MAINNET_URL" ) )"
+# A local .env outranks the canonical clone (it is earlier in candidate order).
+printf 'MAINNET_URL=from-local\n' > "$NESTED/.env"
+check "local .env outranks the canonical clone" "from-local" "$(resolve_in "$NESTED" MAINNET_URL)"
+rm -f "$NESTED/.env"
+
+# THE CROSS-IMPLEMENTATION INVARIANT. This is the assertion the divergence would have had to break:
+# every key, resolved through the shipped bash parser and through chainlib.load_env, must match.
+for var in ALCHEMY_API_KEY MAINNET_URL OIV_ONLY_URL; do
+  b="$(resolve_in "$NESTED" "$var")"
+  p="$(chainlib_in "$NESTED" "os.environ.get('$var','<unset>')")"
+  check "bash == chainlib for $var" "$b" "$p"
 done
-# OIV keeps the last word on a shared key, exactly as before. (chainlib.load_env disagrees — it is
-# setdefault, so first wins there. That inconsistency predates this fix and is deliberately NOT
-# reconciled here; doing so would change which RPC the deploy tooling uses.)
-check "OIV still outranks OA on a shared key" "from-oiv" "$(resolve_in "$NESTED" MAINNET_URL)"
-# The union still matters: OIV carries endpoints the OA env has none for.
-check "OIV-only vars still merge in" "from-oiv" "$(resolve_in "$NESTED" OIV_ONLY_URL)"
 
 echo "== git must not be trusted from a non-worktree-top =="
 # Two layouts where git answers rev-parse for a DIFFERENT repo than the caller means. Both must
@@ -267,7 +269,7 @@ check "readlink unavailable: bare-backed still no leak" "<unset>" \
       "$( PATH="$STUB:$PATH" resolve_in "$B/oa-main" LEAKED_ONLY )"
 # ...and a genuinely unresolvable root must still not error out.
 check "unresolvable root: no error under set -euo" "0" \
-      "$( rc=0; ( set -euo pipefail; ROOT="$TMP/does/not/exist"; eval "$fn_src"; eval "$resolve_src" ) \
+      "$( rc=0; ( set -euo pipefail; ROOT="$TMP/does/not/exist"; eval "$fn_src"; eval "$load_src"; eval "$resolve_src" ) \
           >/dev/null 2>&1 || rc=$?; echo $rc )"
 
 # (5) A bare repo whose PARENT is itself a working tree — a dotfiles-managed $HOME is the ordinary
@@ -326,7 +328,7 @@ echo "== hygiene =="
 # {OA .env, OIV .env} — two entries from six candidates. Sourcing the same file repeatedly would be
 # harmless but would make the error listing lie about what was read.
 check "normal clone dedupes 6 candidates to 2 files" "6->2" \
-      "$( ( set -uo pipefail; ROOT="$CANON"; eval "$fn_src"; eval "$resolve_src"
+      "$( ( set -uo pipefail; ROOT="$CANON"; eval "$fn_src"; eval "$load_src"; eval "$resolve_src"
             echo "$(env_candidates "$CANON" | wc -l)->${#ENV_FOUND[@]}" ) )"
 
 # Must not error out under `set -e`/`set -u` when there is no repository at all — constraint (b).
@@ -340,10 +342,10 @@ check "normal clone dedupes 6 candidates to 2 files" "6->2" \
 # unguarded (e.g. `${ENV_FOUND[0]}`), which is mutation-proven.
 NOREPO="$TMP/isolated/deep/norepo"; mkdir -p "$NOREPO"
 rc=0
-( set -euo pipefail; ROOT="$NOREPO"; eval "$fn_src"; eval "$resolve_src" ) >/dev/null 2>&1 || rc=$?
+( set -euo pipefail; ROOT="$NOREPO"; eval "$fn_src"; eval "$load_src"; eval "$resolve_src" ) >/dev/null 2>&1 || rc=$?
 check "outside a git repo: no error under set -euo" "0" "$rc"
 check "outside a git repo: ENV_FOUND really is empty" "0" \
-      "$( ( set -uo pipefail; ROOT="$NOREPO"; eval "$fn_src"; eval "$resolve_src"; echo "${#ENV_FOUND[@]}" ) )"
+      "$( ( set -uo pipefail; ROOT="$NOREPO"; eval "$fn_src"; eval "$load_src"; eval "$resolve_src"; echo "${#ENV_FOUND[@]}" ) )"
 # And no candidate may exist there at all, or the case above is testing the wrong thing.
 check "outside a git repo: zero candidates exist" "0" \
       "$( ( set -uo pipefail; eval "$fn_src"

@@ -178,19 +178,53 @@ env_candidates() {
   printf '%s\n' "$(dirname "$root")/onchain-investment-vehicles/.env"
 }
 
-# Source every candidate that exists, in order — the union matters, since the OIV env carries
-# endpoints for 19 chains the OA env has none for.
+# THE PRECEDENCE RULE, stated once and implemented identically here and in `chainlib.load_env`:
 #
-# The ORDER AND PRECEDENCE HERE ARE DELIBERATELY UNCHANGED from before this fix. `set -a; source`
-# assigns unconditionally, so the last file sourced wins, which means OIV outranks the OA env on
-# the 6 keys they share. That is NOT what chainlib.load_env does — it uses `os.environ.setdefault`,
-# so the FIRST file wins there — and the two disagree on 5 real keys, MAINNET_URL among them, which
-# is the endpoint anvil forks from below. Reconciling them changes which RPC the rehearsal and the
-# five chainlib-backed preflight tools actually use, so it is deliberately NOT bundled into a fix
-# whose whole point is that it only moves path derivation. Left as-is on purpose; see the PR.
+#   Read every candidate that exists, in candidate order. The FIRST writer of a key wins, and a
+#   value already present in the environment beats every file. Files therefore UNION — which is
+#   load-bearing, since the OIV env carries endpoints for 19 chains the OA env has none for — while
+#   the earliest source of any single key decides it. Precedence: environment > local .env >
+#   canonical clone > OIV.
 #
-# The dedupe below is semantically neutral (re-sourcing a file is idempotent) and exists so the
-# error listing reports what was really read rather than the same file three times.
+# This replaces `set -a; source`, under which the LAST file assigned unconditionally and so OIV
+# outranked this repo's own .env, while chainlib's `os.environ.setdefault` gave the opposite answer.
+# The two disagreed on 5 of the 6 keys the files share — MAINNET_URL among them, which is what anvil
+# forks from — so the "so the tooling all sees one endpoint inventory" claim above was simply false.
+# It is true now. The rule is EXPLICIT in both implementations rather than emergent from `source`
+# order versus `setdefault`, because that emergence is exactly how the two drifted apart unnoticed.
+#
+# NOTE this repoints the rehearsal: keys the two files disagree on now resolve to the ONCHAIN-
+# ACCOUNTING value, where this script previously used the onchain-investment-vehicles one. See the PR.
+#
+# Parsing is deliberate too. `source` executed the file, so a .env could run arbitrary shell and
+# could silently override a variable the operator had exported on the command line. Both files are
+# plain KEY=VALUE (verified: no `export`, no expansions, no substitutions, no continuations), so
+# they are parsed, not executed.
+load_env_files() {
+  local f line k v
+  for f in "$@"; do
+    [[ -f "$f" ]] || continue
+    while IFS= read -r line || [[ -n "$line" ]]; do
+      line="${line#"${line%%[![:space:]]*}"}"                 # ltrim
+      [[ -z "$line" || "$line" == '#'* || "$line" != *=* ]] && continue
+      k="${line%%=*}"; v="${line#*=}"
+      k="${k%"${k##*[![:space:]]}"}"                          # rtrim key
+      [[ "$k" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || continue
+      v="${v#"${v%%[![:space:]]*}"}"; v="${v%"${v##*[![:space:]]}"}"
+      # One matching pair of surrounding quotes, the same rule chainlib applies.
+      if (( ${#v} >= 2 )); then
+        [[ "${v:0:1}" == '"'  && "${v: -1}" == '"'  ]] && v="${v:1:${#v}-2}"
+        [[ "${v:0:1}" == "'"  && "${v: -1}" == "'"  ]] && v="${v:1:${#v}-2}"
+      fi
+      # setdefault: SET, not merely non-empty — an explicitly exported empty value still wins.
+      [[ -v "$k" ]] && continue
+      export "$k=$v"
+    done < "$f"
+  done
+}
+
+# The dedupe below keeps the error listing honest about what was really read, and with first-wins
+# it is no longer merely cosmetic: a file read twice would still only ever set a key once.
 ENV_FOUND=()
 declare -A _env_seen=()
 while IFS= read -r ENVF; do
@@ -204,9 +238,7 @@ while IFS= read -r ENVF; do
 done < <(env_candidates "$ROOT")
 
 if (( ${#ENV_FOUND[@]} > 0 )); then
-  for ENVF in "${ENV_FOUND[@]}"; do
-    set -a; source "$ENVF"; set +a
-  done
+  load_env_files "${ENV_FOUND[@]}"
 fi
 
 if [[ -z "${ALCHEMY_API_KEY:-}" ]]; then

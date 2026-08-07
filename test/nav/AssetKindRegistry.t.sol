@@ -26,7 +26,6 @@ contract MockNav {
     error MockNavUnregisterReverted();
     error MockNavNotAuthorized();
     error MockNavAssetNotRegistered();
-    error MockNavAlreadyRegistered();
 
     function grant(bytes32 role, address who) external {
         _roles[role][who] = true;
@@ -70,12 +69,13 @@ contract MockNav {
     function registerAsset(address asset, address, IPrices.PriceType, uint256) external {
         if (!_roles[MANAGER][msg.sender]) revert MockNavNotAuthorized();
         // Faithful to `NAVCalculator.registerAsset`, which reverts `InvalidArguments()` for an asset it already
-        // holds. `_setAssetLabels`'s justification for carrying no write-once guard rests on exactly that
-        // behaviour — "{registerAsset} can only succeed for an asset the NAV does not already hold, so
-        // `_labels[asset]` is empty whenever this runs through the facade" — and a mock without it cannot
-        // falsify that claim. Latent rather than live when added: no test re-registered without an intervening
-        // unregister, so nothing was vacuous. Added so nothing becomes vacuous later.
-        if (_isRegistered[asset]) revert MockNavAlreadyRegistered();
+        // holds — and it reverts with THAT error, not a mock-specific one, so a test asserting the production
+        // selector cannot pass here for the wrong reason. `_setAssetLabels`'s justification for carrying no
+        // write-once guard rests on exactly this behaviour — "{registerAsset} can only succeed for an asset the
+        // NAV does not already hold, so `_labels[asset]` is empty whenever this runs through the facade" — and a
+        // mock without it cannot falsify that claim. Latent rather than live when added: no test re-registered
+        // without an intervening unregister, so nothing was vacuous. Added so nothing becomes vacuous later.
+        if (_isRegistered[asset]) revert InvalidArguments();
         if (revertOnRegister) revert MockNavRegisterReverted();
         registered.push(asset);
         _isRegistered[asset] = true;

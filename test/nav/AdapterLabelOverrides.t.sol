@@ -118,9 +118,7 @@ contract PerPositionCategoryAdapter is IBalanceAdapter {
 
     function _row(address asset) private view returns (INAVCalculator.PositionBalance memory row) {
         row.balanceAsset = INAVCalculator.Asset({
-            asset: asset,
-            symbol: IERC20Metadata(asset).symbol(),
-            decimals: IERC20Metadata(asset).decimals()
+            asset: asset, symbol: IERC20Metadata(asset).symbol(), decimals: IERC20Metadata(asset).decimals()
         });
         row.balanceAdapter = address(this);
         row.amount = 1e6;

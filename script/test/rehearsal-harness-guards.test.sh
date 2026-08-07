@@ -134,30 +134,47 @@ check "AssetKindRegistry is in CLEAR_TOP" "True" \
 # state, which is when this fires (the key is absent from every record today).
 check "a populated key is cleared by the plan" "cleared" \
       "$(py "
-import reset_deployment_records as r, chainlib as c, json, copy
+import reset_deployment_records as r, chainlib as c, json, copy, tempfile, pathlib, shutil
+# Work on a COPY. `script/config/deployments/1.json` is the only record of what production runs;
+# an interrupt mid-test must not be able to leave a fabricated address in it.
 rec = c.deployment(1)
 tmp = copy.deepcopy(rec); tmp['AssetKindRegistry'] = '0x' + '11'*20
-p = c.DEPLOY_DIR / '1.json'; orig = p.read_text()
-try:
-    p.write_text(json.dumps(tmp, indent=2))
-    _, ch = r.plan_for(1)
-    print('cleared' if any(x.startswith('AssetKindRegistry') for x in ch) else 'SURVIVED')
-finally:
-    p.write_text(orig)")"
+d = pathlib.Path(tempfile.mkdtemp())
+(d / '1.json').write_text(json.dumps(tmp, indent=2))
+c.DEPLOY_DIR = d
+_, ch = r.plan_for(1)
+shutil.rmtree(d, ignore_errors=True)
+print('cleared' if any(x.startswith('AssetKindRegistry') for x in ch) else 'SURVIVED')")"
 # And the branch 08 takes must flip as a result.
 check "08 would deploy fresh after the reset" "DEPLOY-FRESH" \
       "$(py "
-import reset_deployment_records as r, chainlib as c, json, copy
+import reset_deployment_records as r, chainlib as c, json, copy, tempfile, pathlib, shutil
 rec = c.deployment(1)
 tmp = copy.deepcopy(rec); tmp['AssetKindRegistry'] = '0x' + '11'*20
-p = c.DEPLOY_DIR / '1.json'; orig = p.read_text()
-try:
-    p.write_text(json.dumps(tmp, indent=2))
-    out, _ = r.plan_for(1)
-    print('REUSE' if out.get('AssetKindRegistry') else 'DEPLOY-FRESH')
-finally:
-    p.write_text(orig)")"
+d = pathlib.Path(tempfile.mkdtemp())
+(d / '1.json').write_text(json.dumps(tmp, indent=2))
+c.DEPLOY_DIR = d
+out, _ = r.plan_for(1)
+shutil.rmtree(d, ignore_errors=True)
+print('REUSE' if out.get('AssetKindRegistry') else 'DEPLOY-FRESH')")"
 # The bridge stack must still be left alone — clearing it would be a different, worse bug.
+check "an ABSENT CLEAR_TOP key is created blank, not skipped" "created-blank" \
+      "$(py "
+import reset_deployment_records as r, chainlib as c, json, copy, tempfile, pathlib, shutil
+rec = c.deployment(1); tmp = copy.deepcopy(rec); tmp.pop('AssetKindRegistry', None)
+d = pathlib.Path(tempfile.mkdtemp()); (d / '1.json').write_text(json.dumps(tmp, indent=2))
+c.DEPLOY_DIR = d
+out, ch = r.plan_for(1)
+shutil.rmtree(d, ignore_errors=True)
+ok = out.get('AssetKindRegistry') == '' and any('AssetKindRegistry' in x for x in ch)
+print('created-blank' if ok else 'MISSING')")"
+# verify_step.step_record_cleared iterates CLEAR_TOP and FAILS on absence, so every CLEAR_TOP key
+# must exist in the planned record or runbook gate 1.1 breaks on every chain.
+check "every CLEAR_TOP key exists in the planned record" "True" \
+      "$(py "
+import reset_deployment_records as r, chainlib as c
+out, _ = r.plan_for(1)
+print(all(k in out for k in r.CLEAR_TOP))")"
 check "bridge keys still NOT cleared" "True" \
       "$(py "
 import reset_deployment_records as r
@@ -189,12 +206,23 @@ check "timing line is not flagged"         "missed" "$(noop_hit '  OK  12s  gas=
 # Cross-check against the SOURCE rather than a hand-written list: every distinct skip phrase the
 # deploy scripts emit must be matched. This is what stops the detector drifting behind the scripts
 # again — a new script with a new phrasing fails here instead of silently scoring OK.
-missed="$(grep -rhoE '"[^"]*already deployed at:[^"]*"|"[^"]*Already deployed at:[^"]*"' \
-            "$REPO_ROOT"/script/deploy/*.s.sol 2>/dev/null | tr -d '"' | sort -u \
-          | while IFS= read -r phrase; do
-              printf '%s\n' "$phrase" | grep -qaE "$NOOP_RE" || printf '%s\n' "$phrase"
-            done | wc -l)"
+# Harvest on `already deployed` — NOT `already deployed at:`. Keying the harvest to the literal
+# the regex matches made this check tautological: it could only ever find phrases that already
+# passed, which is exactly how `eETH_CustomPriceFeed already deployed:` and `CrossRate monitor
+# already deployed:` (no "at") survived the previous round with the suite green.
+harvest() {
+  grep -rhoiE '"[^"]*already deployed[^"]*"' "$REPO_ROOT"/script/deploy/*.s.sol 2>/dev/null \
+    | tr -d '"' | sort -u
+}
+missed="$(harvest | while IFS= read -r phrase; do
+            printf '%s\n' "$phrase" | grep -qaE "$NOOP_RE" || printf '%s\n' "$phrase"
+          done | wc -l)"
 check "every skip phrase in script/deploy is matched" "0" "$missed"
+# ...and the harvest must actually be finding things, or "0 missed" is vacuous.
+check "the harvest is non-empty" "yes" "$([[ "$(harvest | wc -l)" -ge 20 ]] && echo yes || echo no)"
+# It must also cover the two phrasings that have no "at", or it has narrowed again.
+check "harvest includes the at-less phrasings" "2" \
+      "$(harvest | grep -c 'already deployed:' || true)"
 
 echo
 echo "passed=$pass failed=$fail"

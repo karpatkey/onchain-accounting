@@ -106,9 +106,8 @@ mkdir -p safe-transactions
 # is exactly what breaks them and exactly what the git-derived candidate handles. The OIV env stays
 # sibling-derived because it is a genuinely separate repo that git cannot discover from here.
 #
-# Emitted in PROBE order. Note this is NOT precedence order: the loop below sources forward and
-# `set -a; source` assigns unconditionally, so the LAST existing candidate wins — unchanged from
-# before this fix, and deliberately opposite to chainlib.load_env's `setdefault`. See the loop.
+# Emitted in PROBE order, which IS precedence order: `load_env_files` below applies first-wins, so
+# the earliest candidate defining a key decides it. See the rule stated in full at that function.
 # Kept as a function so the guard test can extract it verbatim and drive each layout —
 # see script/test/env-resolution-guards.test.sh.
 env_candidates() {
@@ -201,7 +200,10 @@ env_candidates() {
 # plain KEY=VALUE (verified: no `export`, no expansions, no substitutions, no continuations), so
 # they are parsed, not executed.
 load_env_files() {
-  local f line k v
+  local f line k v n
+  # Snapshot the exported environment; `compgen -e` lists exported names only.
+  declare -A _env_exported=()
+  while IFS= read -r n; do _env_exported["$n"]=1; done < <(compgen -e)
   for f in "$@"; do
     [[ -f "$f" ]] || continue
     while IFS= read -r line || [[ -n "$line" ]]; do
@@ -212,13 +214,19 @@ load_env_files() {
       [[ "$k" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || continue
       v="${v#"${v%%[![:space:]]*}"}"; v="${v%"${v##*[![:space:]]}"}"
       # One matching pair of surrounding quotes, the same rule chainlib applies.
-      if (( ${#v} >= 2 )); then
-        [[ "${v:0:1}" == '"'  && "${v: -1}" == '"'  ]] && v="${v:1:${#v}-2}"
-        [[ "${v:0:1}" == "'"  && "${v: -1}" == "'"  ]] && v="${v:1:${#v}-2}"
+      # ONE pair, not two. As two sequential statements the single-quote strip ran on the output
+      # of the double-quote strip, so `"'x'"` became `x` here and stayed `'x'` in chainlib.
+      if (( ${#v} >= 2 )) && [[ "${v:0:1}" == "${v: -1}" ]]; then
+        case "${v:0:1}" in '"'|"'") v="${v:1:${#v}-2}" ;; esac
       fi
-      # setdefault: SET, not merely non-empty — an explicitly exported empty value still wins.
-      [[ -v "$k" ]] && continue
+      # Mirror `os.environ.setdefault` exactly: the test is membership of the EXPORTED
+      # environment, not `[[ -v ]]`, which also sees ordinary shell variables. This script sets
+      # plenty of those (CHAIN_ID, ROOT, WORK, PORT, RPC…), and any .env key colliding with one was
+      # silently dropped here while chainlib happily loaded it. Set-but-empty still counts as set,
+      # so an explicitly exported empty value wins, as setdefault does.
+      [[ -n "${_env_exported[$k]:-}" ]] && continue
       export "$k=$v"
+      _env_exported["$k"]=1
     done < "$f"
   done
 }
@@ -432,7 +440,7 @@ run_step() {
   # Measured on the fork: with the proxy unset, 04 logs "ERROR: NAVCalculator not configured or
   # deployed, cannot deploy adapter" once per adapter (26x on mainnet) and STILL exits 0, and 06 logs
   # two "WARNING: ... skipping" and exits 0. 03 is the only one that reverts (NotAContract).
-  # `[Aa]lready deployed at:` — NOT the capitalised form alone. Exactly ONE script emits
+  # `[Aa]lready deployed` — neither the capitalised form alone, NOR with `at:` appended. Exactly ONE script emits
   # "  Already deployed at:" (04_DeployBalanceAdapters.s.sol:232); every other skip line in the
   # sequence is lowercase — `02_2` and `02` ("[SKIP] NAV proxy already deployed at:"), `08`
   # ("AssetKindRegistry already deployed at:"), and all ~34 custom feeds in `03_DeployPriceFeeds`.
@@ -440,7 +448,10 @@ run_step() {
   # having done nothing — was blind to every one of them. A rehearsal where `03` skipped all its
   # feeds, or `08` reused a registry, scored OK. Found by sweeping the class that produced the
   # AssetKindRegistry reset bug: the safety net had the same hole as the thing it was guarding.
-  local noop_re="NAVCalculator not deployed for this chain|[Aa]lready deployed at:|No assets configured|ERROR: NAVCalculator not configured|WARNING: NAVCalculator not deployed"
+  # `at:` is deliberately NOT required either — `eETH_CustomPriceFeed already deployed:` and
+  # `CrossRate monitor already deployed:` omit it, covering 9 more call sites including every
+  # cross-rate monitor. Requiring it was the same mistake one word further along.
+  local noop_re="NAVCalculator not deployed for this chain|[Aa]lready deployed|No assets configured|ERROR: NAVCalculator not configured|WARNING: NAVCalculator not deployed"
   if grep -qaE "$noop_re" "$log"; then
     echo -e "${label}\t$((t1-t0))\t${gas}\tNO-OP" >> "$WORK/steps.tsv"
     echo "    NO-OP ($((t1-t0))s) — script exited 0 but did nothing:"

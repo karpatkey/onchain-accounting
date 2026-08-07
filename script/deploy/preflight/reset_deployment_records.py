@@ -84,7 +84,14 @@ def plan_for(chain_id: int) -> tuple[dict, list[str]]:
     out = json.loads(json.dumps(rec))  # deep copy, preserves key order
     changes: list[str] = []
     for k in CLEAR_TOP:
-        if k in out and out[k] not in ("", None):
+        if k not in out:
+            # ABSENT is not "already clear". `verify_step.step_record_cleared` fails any CLEAR_TOP
+            # key missing from the record, and `ConfigReader._readAddrOrZero` requires
+            # `vm.keyExists` before the deploy can write the new address back — so a key that is
+            # merely absent breaks runbook gate 1.1 AND the write-back. Create it blank.
+            changes.append(f"{k}: <absent> -> \"\" (created; ConfigReader needs the key to exist)")
+            out[k] = ""
+        elif out[k] not in ("", None):
             changes.append(f"{k}: {out[k]} -> \"\"")
             out[k] = ""
     for sec in CLEAR_SECTIONS:

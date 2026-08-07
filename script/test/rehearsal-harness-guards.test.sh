@@ -142,6 +142,35 @@ check "planning leaves the record untouched" "clean" \
       "$(cd "$REPO_ROOT" && py "import reset_deployment_records as r; r.plan_for(1)" >/dev/null 2>&1
          cd "$REPO_ROOT" && [[ -z "$(git status --porcelain -- script/config/deployments)" ]] && echo clean || echo DIRTY)"
 
+echo "== (4) the NO-OP detector must catch every skip line the scripts actually emit =="
+# Found by sweeping the class behind (3). Exactly one script emits the capitalised
+# "  Already deployed at:" the detector originally matched; `02`, `02_2`, `08` and all ~34 custom
+# feeds in `03` are lowercase, and `grep -E` is case-sensitive — so the guard against "exited 0
+# having done nothing" was blind to nearly every script it covers.
+NOOP_RE="$(grep -oP 'local noop_re="\K[^"]+' "$TARGET")"
+[[ -n "$NOOP_RE" ]] || { echo "could not extract noop_re from $TARGET" >&2; exit 1; }
+noop_hit() { printf '%s\n' "$1" | grep -qaE "$NOOP_RE" && echo caught || echo missed; }
+
+# Real skip lines, copied from the shipping deploy scripts.
+check "04 capitalised skip"                "caught" "$(noop_hit '  Already deployed at: 0x1111')"
+check "02_2 [SKIP] NAV proxy"              "caught" "$(noop_hit '[SKIP] NAV proxy already deployed at: 0x2222')"
+check "08 registry reuse"                  "caught" "$(noop_hit 'AssetKindRegistry already deployed at: 0x3333')"
+check "03 custom feed skip"                "caught" "$(noop_hit 'wstETH_CustomPriceFeed already deployed at: 0x4444')"
+check "RegisterAssets precondition unmet"  "caught" "$(noop_hit 'NAVCalculator not deployed for this chain')"
+# ...and must NOT fire on lines that report real work, or every rehearsal reads as a no-op.
+check "success line is not flagged"        "missed" "$(noop_hit 'Deployed AssetKindRegistry at: 0x5555')"
+check "timing line is not flagged"         "missed" "$(noop_hit '  OK  12s  gas=1234')"
+
+# Cross-check against the SOURCE rather than a hand-written list: every distinct skip phrase the
+# deploy scripts emit must be matched. This is what stops the detector drifting behind the scripts
+# again — a new script with a new phrasing fails here instead of silently scoring OK.
+missed="$(grep -rhoE '"[^"]*already deployed at:[^"]*"|"[^"]*Already deployed at:[^"]*"' \
+            "$REPO_ROOT"/script/deploy/*.s.sol 2>/dev/null | tr -d '"' | sort -u \
+          | while IFS= read -r phrase; do
+              printf '%s\n' "$phrase" | grep -qaE "$NOOP_RE" || printf '%s\n' "$phrase"
+            done | wc -l)"
+check "every skip phrase in script/deploy is matched" "0" "$missed"
+
 echo
 echo "passed=$pass failed=$fail"
 [[ $fail -eq 0 ]]

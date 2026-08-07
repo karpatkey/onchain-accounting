@@ -410,7 +410,15 @@ run_step() {
   # Measured on the fork: with the proxy unset, 04 logs "ERROR: NAVCalculator not configured or
   # deployed, cannot deploy adapter" once per adapter (26x on mainnet) and STILL exits 0, and 06 logs
   # two "WARNING: ... skipping" and exits 0. 03 is the only one that reverts (NotAContract).
-  local noop_re="NAVCalculator not deployed for this chain|Already deployed at:|No assets configured|ERROR: NAVCalculator not configured|WARNING: NAVCalculator not deployed"
+  # `[Aa]lready deployed at:` — NOT the capitalised form alone. Exactly ONE script emits
+  # "  Already deployed at:" (04_DeployBalanceAdapters.s.sol:232); every other skip line in the
+  # sequence is lowercase — `02_2` and `02` ("[SKIP] NAV proxy already deployed at:"), `08`
+  # ("AssetKindRegistry already deployed at:"), and all ~34 custom feeds in `03_DeployPriceFeeds`.
+  # `grep -E` is case-sensitive, so this detector — whose entire job is catching a step that exits 0
+  # having done nothing — was blind to every one of them. A rehearsal where `03` skipped all its
+  # feeds, or `08` reused a registry, scored OK. Found by sweeping the class that produced the
+  # AssetKindRegistry reset bug: the safety net had the same hole as the thing it was guarding.
+  local noop_re="NAVCalculator not deployed for this chain|[Aa]lready deployed at:|No assets configured|ERROR: NAVCalculator not configured|WARNING: NAVCalculator not deployed"
   if grep -qaE "$noop_re" "$log"; then
     echo -e "${label}\t$((t1-t0))\t${gas}\tNO-OP" >> "$WORK/steps.tsv"
     echo "    NO-OP ($((t1-t0))s) — script exited 0 but did nothing:"

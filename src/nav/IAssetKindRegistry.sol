@@ -20,14 +20,19 @@ import {IPrices} from "src/prices/IPrices.sol";
 ///      TWO (the accrual axis and the display labels), and call this address instead.
 ///
 ///      **The display labels are a THIRD axis and behave differently from the other two on purpose.** Both kinds are
-///      re-settable at any time; labels are set ONCE, at {registerAsset}, and by nothing else. There is no label
-///      setter and {setAssetKind}/{setAssetKinds} do not take one. An asset registered without labels has none until
-///      it is unregistered and registered again.
+///      re-settable by their own setters; labels are written by {registerAsset} and replaced by {setAssetLabels}, and
+///      by nothing else — {setAssetKind}/{setAssetKinds} still do not take them, because classification and
+///      labelling are separate axes. An asset registered without labels has none until {setAssetLabels} gives it
+///      some (or it is unregistered and registered again).
 ///
-///      That boundary is chosen for parity with the balance adapters, not for cost: adapter labels
-///      (`positionLabels()`) are fixed when the adapter is deployed and no role can change them, so letting an ASSET
-///      gain labels after registration would demand the same editability for adapters — an asymmetry we are not
-///      willing to open. An empty label list remains a legitimate state. See {registerAsset} and {getAssetLabels}.
+///      **That boundary USED to be write-once, chosen for parity with the balance adapters. The parity argument is
+///      retired.** It ran: adapter labels (`positionLabels()`) are fixed when the adapter is deployed and no role can
+///      change them, so letting an ASSET gain labels after registration would demand the same editability for
+///      adapters. It was dropped because the two are not the same kind of value — an adapter label is a compile-time
+///      constant OF THE CODE, an asset label is operator-supplied DATA — and because the write-once repair path was
+///      far more destructive than it looked (see {setAssetLabels}). **Adapter labels are unchanged and remain
+///      redeploy-to-change**; only the asymmetry argument is gone. An empty label list remains a legitimate state.
+///      See {registerAsset}, {setAssetLabels} and {getAssetLabels}.
 ///
 ///      **No roles.** Implementations gate on `NAV.hasRole(MANAGER, msg.sender)` — authority is exactly the NAV's
 ///      MANAGER set, and this contract has no admin, manager or owner of its own.
@@ -61,9 +66,14 @@ interface IAssetKindRegistry {
     /// @notice Emitted when an asset's classification is removed (e.g. the asset was unregistered upstream).
     event AssetKindCleared(address indexed asset);
 
-    /// @notice Emitted when an asset's display labels are written, which happens only at {registerAsset}.
-    /// @dev Fires at most once per registration. A second one for the same asset means it was unregistered and
-    ///      registered again — the only way labels can change, and the documented repair for a wrong label.
+    /// @notice Emitted when an asset's display labels are written, by either {registerAsset} or {setAssetLabels}.
+    /// @dev **Consumers must NOT infer a re-registration from a repeat.** This event once fired at most once per
+    ///      registration, so a second one for the same asset meant it had been unregistered and registered again.
+    ///      {setAssetLabels} broke that: a repeat now most likely means a label was CORRECTED in place, with the
+    ///      asset's price feeds, monitor feeds and `_assetPricing` (both tolerances, and so the derived `PegKind`)
+    ///      completely untouched. An indexer still reading the old contract would invalidate all of that on a typo
+    ///      fix. Distinguish the two by watching {AssetKindCleared}/`AssetUnregistered`, not by counting these.
+    ///      The payload is the full replacement array, not a delta, in both cases.
     event AssetLabelsSet(address indexed asset, string[] labels);
 
     /// @notice Emitted when an asset's display labels are dropped, which happens only at {unregisterAsset}.
@@ -78,6 +88,18 @@ interface IAssetKindRegistry {
     ///      on the WRITE path by {clearAssetKind} when the asset was never classified. Both, deliberately — clearing
     ///      something that is not there is a config mistake worth surfacing, not a no-op.
     error AssetNotClassified(address asset);
+
+    /// @notice Error when {setAssetLabels} is called for an asset the NAV does not hold.
+    /// @dev Named distinctly from the shared `AssetNotRegistered(string)` in `src/errors.sol`, which this contract
+    ///      imports globally and which keys on symbol rather than address.
+    /// @param asset The asset whose labels were being set.
+    error AssetNotRegisteredForLabels(address asset);
+
+    /// @notice Error when {setAssetLabels} is called with an empty array.
+    /// @dev Clearing labels outright is what {unregisterAsset} does as part of ending a registration; a setter that
+    ///      silently did nothing would report success for a request it did not honour.
+    /// @param asset The asset whose labels were being set.
+    error EmptyAssetLabelSet(address asset);
 
     /// @notice A batch setter was given arrays of differing lengths.
     error KindArrayLengthMismatch(uint256 assets, uint256 accrualKinds);
@@ -106,21 +128,24 @@ interface IAssetKindRegistry {
     ///      makes this facade the only path, and the invariant structural rather than conventional) — deliberately not
     ///      forced here, so the choice stays with the operator at zero cost.
     ///
-    ///      **⚠️ THIS IS THE ONLY PLACE LABELS CAN EVER BE SET.** Not one entry point among several — the only one.
-    ///      {setAssetKind} and {setAssetKinds} do not take labels, and there is no `setAssetLabels`. An asset
-    ///      registered without labels has none, permanently, until it is unregistered and registered again.
+    ///      **Labels can be set here or by {setAssetLabels}, and nowhere else.** {setAssetKind} and
+    ///      {setAssetKinds} still do not take them — classification and labelling are separate axes.
     ///
-    ///      **Why registration and not classification, since classification is the cheaper hook.** Consistency with
-    ///      the balance adapters. Adapter labels (`positionLabels()`) are fixed when the adapter is deployed and no
-    ///      role can change them. If an asset could gain labels after registration, the same argument would demand
-    ///      adapter labels become MANAGER-editable, and that asymmetry is not one we are willing to open. So an
-    ///      asset's labels are fixed at the moment the asset enters the system, exactly as an adapter's are fixed at
-    ///      the moment it is deployed. **A future author looking for somewhere convenient to add a label setter should
-    ///      read that as the reason it is not there.**
+    ///      **This call remains the place to set them, and the reason is atomicity, not exclusivity.** Carrying
+    ///      labels on the registration keeps them in the same transaction as the asset entering the system; a
+    ///      separate call is a second transaction that can fail to land while this one does, which is the class of
+    ///      silent divergence `08_DeployAssetKindRegistry`'s docstring is largely about. Use {setAssetLabels} to
+    ///      CORRECT labels afterwards, not to set them initially.
     ///
-    ///      Carrying labels on THIS call rather than a setter of their own also keeps them atomic with the
-    ///      registration: a separate call would be a second transaction that can land while this one does not,
-    ///      which is the class of silent divergence `08_DeployAssetKindRegistry`'s docstring is largely about.
+    ///      **The old parity argument for making labels write-once is retired, on purpose.** It ran: adapter labels
+    ///      (`positionLabels()`) are fixed at deploy time and no role can change them, so letting an asset gain
+    ///      labels after registration would demand adapter labels become MANAGER-editable too. That was rejected
+    ///      because the two are not the same kind of value — an adapter label is a compile-time constant OF THE
+    ///      CODE, an asset label is operator-supplied DATA — and because the write-once repair path was far more
+    ///      destructive than it looked: unregister-then-re-register also drops every price feed, every monitor feed
+    ///      and all of `_assetPricing` (both tolerances, one of which `PegKind` is derived from), across up to five
+    ///      transactions on an EOA MANAGER with the asset absent from NAV throughout. Adapter labels are unchanged
+    ///      and remain redeploy-to-change.
     function registerAsset(
         address asset,
         address priceFeed,
@@ -136,18 +161,34 @@ interface IAssetKindRegistry {
     ///      unregister it, so a missing kind is skipped rather than reverting. Contrast {clearAssetKind}, which DOES
     ///      revert on an unclassified asset because there the clear is the caller's whole intent.
     ///
-    ///      **Dropping the labels here is what makes the documented repair actually repair anything.** A wrong label is
-    ///      fixed by unregistering and re-registering the asset. If labels outlived unregistration, the re-registration
-    ///      would meet labels that are already set and could never replace them — the repair would be a no-op and the
-    ///      wrong label permanent for the life of the registry.
+    ///      **Dropping the labels here keeps the registration and its labels on one lifetime.** It also used to be
+    ///      what made the only available repair work: before {setAssetLabels} existed, a wrong label was fixed by
+    ///      unregistering and re-registering, and had labels outlived unregistration that repair would have been a
+    ///      silent no-op. **Correcting a label no longer needs this path** — use {setAssetLabels}, which leaves the
+    ///      asset's price feeds, monitor feeds and `_assetPricing` intact. This path remains correct for ending a
+    ///      registration outright.
     function unregisterAsset(address asset) external;
+
+    /// @notice Replaces one registered asset's display labels. MANAGER-gated, like every other write here.
+    /// @dev Exists so a wrong label can be corrected WITHOUT unregistering the asset. The previous repair —
+    ///      unregister then re-register — also destroyed every price feed, every monitor feed and all of
+    ///      `_assetPricing` (divergence AND peg tolerance, the latter being what {getAssetKind} derives `PegKind`
+    ///      from), took up to five transactions on an EOA MANAGER, and left the asset absent from NAV in between.
+    /// @dev Reverts {AssetNotRegisteredForLabels} if the NAV does not hold `asset`; labels are registration-scoped
+    ///      and nothing on this contract could ever clear ones written for an asset it does not hold.
+    /// @dev Reverts {EmptyAssetLabelSet} on an empty array — use {unregisterAsset} to end a registration.
+    /// @dev The content bounds are the registration ones exactly: {TooManyAssetLabels}, {EmptyAssetLabel},
+    ///      {AssetLabelTooLong}. Emits {AssetLabelsSet}, the same event registration emits.
+    /// @param asset The registered asset whose labels are being replaced.
+    /// @param labels The replacement labels, in significant order. Replaces the existing set wholesale.
+    function setAssetLabels(address asset, string[] calldata labels) external;
 
     /// @notice Classifies one asset. MANAGER-gated. Re-classification is allowed and emits again.
     /// @dev Reverts `InvalidArguments()` if `asset` is `address(0)` — this repo's USD-quote sentinel, never a
     ///      registered asset. That error is not declared in this interface; see the contract-level note.
     ///
-    ///      **Deliberately takes no labels.** Labels are set once at {registerAsset} and nowhere else; see there for
-    ///      why. Re-classifying an asset leaves its labels exactly as they are.
+    ///      **Deliberately takes no labels.** Classification and labelling are separate axes: labels are written by
+    ///      {registerAsset} and {setAssetLabels} only. Re-classifying an asset leaves its labels exactly as they are.
     function setAssetKind(address asset, AccrualKind accrualKind) external;
 
     /// @notice Classifies many assets in one call. MANAGER-gated. Both arrays must be the same length.
@@ -183,14 +224,13 @@ interface IAssetKindRegistry {
     ///      getter deliberately does not revert the way {getAssetKind} does. That is the one place the two axes differ:
     ///      there is no defensible default classification, but "no labels" IS the honest answer.
     ///
-    ///      **Registration is the only chance.** Labels are written by {registerAsset} and by nothing else. An asset
-    ///      registered without them has none for as long as it stays registered — there is no setter, and adding one
-    ///      later is the change this design exists to refuse. See {registerAsset} for the adapter-parity reason.
+    ///      **Labels are written by {registerAsset} and replaced by {setAssetLabels}.** An asset registered without
+    ///      them stays unlabelled until {setAssetLabels} gives it some.
     ///
-    ///      **Repairing a wrong label means unregistering and re-registering the asset**, which drops the labels and
-    ///      lets the re-registration write new ones. That is a genuine cost, accepted knowingly: it takes the asset out
-    ///      of the NAV and puts it back with its price feeds, to fix a display string. It is not softened here because
-    ///      an operator needs to know the price before they need the reassurance.
+    ///      **Repairing a wrong label is one MANAGER call to {setAssetLabels}**, which leaves the asset's price feeds,
+    ///      monitor feeds and `_assetPricing` (both tolerances, and so the derived `PegKind`) untouched. This block
+    ///      previously sent readers to unregister-then-re-register instead, which is destructive — it drops all of
+    ///      that — and is now needed only to END a registration, never to fix a display string.
     function getAssetLabels(address asset) external view returns (string[] memory labels);
 
     /// @notice One asset's complete public description — both classification axes and its display labels — in a single

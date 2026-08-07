@@ -25,6 +25,7 @@ contract MockNav {
     error MockNavRegisterReverted();
     error MockNavUnregisterReverted();
     error MockNavNotAuthorized();
+    error MockNavAssetNotRegistered();
 
     function grant(bytes32 role, address who) external {
         _roles[role][who] = true;
@@ -41,6 +42,7 @@ contract MockNav {
     /// @dev The derivation's input. `AssetKindRegistry` reads `pegToleranceBps` through `IPrices` to compute `PegKind`,
     ///      so a test that never varies this never exercises the derivation at all.
     mapping(address => IPrices.AssetPricing) private _pricing;
+    mapping(address => bool) private _isRegistered;
 
     function setPegTolerance(address asset, uint32 bps) external {
         _pricing[asset].pegToleranceBps = bps;
@@ -66,14 +68,37 @@ contract MockNav {
     ///      unable to see an authority defect. If you relax this, you reintroduce that blindness.
     function registerAsset(address asset, address, IPrices.PriceType, uint256) external {
         if (!_roles[MANAGER][msg.sender]) revert MockNavNotAuthorized();
+        // Faithful to `NAVCalculator.registerAsset`, which reverts `InvalidArguments()` for an asset it already
+        // holds — and it reverts with THAT error, not a mock-specific one, so a test asserting the production
+        // selector cannot pass here for the wrong reason. `_setAssetLabels`'s justification for carrying no
+        // write-once guard rests on exactly this behaviour — "{registerAsset} can only succeed for an asset the
+        // NAV does not already hold, so `_labels[asset]` is empty whenever this runs through the facade" — and a
+        // mock without it cannot falsify that claim. Latent rather than live when added: no test re-registered
+        // without an intervening unregister, so nothing was vacuous. Added so nothing becomes vacuous later.
+        if (_isRegistered[asset]) revert InvalidArguments();
         if (revertOnRegister) revert MockNavRegisterReverted();
         registered.push(asset);
+        _isRegistered[asset] = true;
     }
 
     function unregisterAsset(address asset) external {
         if (!_roles[MANAGER][msg.sender]) revert MockNavNotAuthorized();
+        // Faithful to `NAVCalculator.unregisterAsset`, which calls `_requireAssetExists` FIRST. Without this the
+        // mock let the facade unregister an asset the NAV never held — and that is the exact premise the
+        // {setAssetLabels} not-registered guard is justified by, so a mock that is more permissive than production
+        // makes the justification untestable.
+        if (!_isRegistered[asset]) revert MockNavAssetNotRegistered();
         if (revertOnUnregister) revert MockNavUnregisterReverted();
         unregistered.push(asset);
+        _isRegistered[asset] = false;
+    }
+
+    /// @notice Mirrors `NAVCalculator.isAssetRegistered`, which {AssetKindRegistry-setAssetLabels} gates on.
+    /// @dev Tracked as REAL state rather than hardcoded, and flipped by the two mutators above, so a test cannot
+    ///      accidentally set labels on an asset this mock never registered — the guard has to be exercised against a
+    ///      registration that actually happened, the same way production would.
+    function isAssetRegistered(address asset) external view returns (bool) {
+        return _isRegistered[asset];
     }
 
     function registeredCount() external view returns (uint256) {
@@ -262,6 +287,12 @@ contract AssetKindRegistryTest is Test {
     ///      work. Using the reverting {clearAssetKind} internally would make the facade unusable for exactly these
     ///      assets — which would be a self-inflicted outage on the path the facade is supposed to own.
     function test_unregisterAsset_worksForAnAssetThatWasNeverClassified() public {
+        // Model the premise the docstring states: the asset is on the NAV, registered DIRECTLY, with no kind here.
+        // This line is not decoration — before `MockNav.unregisterAsset` mirrored `_requireAssetExists`, the test
+        // passed without it while modelling nothing, because the mock let the facade unregister an asset the NAV
+        // had never held.
+        vm.prank(manager);
+        nav.registerAsset(WETH, address(0xFEED), IPrices.PriceType.Chainlink, 3600);
         assertFalse(registry.isClassified(WETH));
 
         vm.prank(manager);
@@ -616,12 +647,13 @@ contract AssetKindRegistryTest is Test {
     }
 
     // ============================================================
-    // Display labels — set at REGISTRATION, and only there
+    // Display labels — written at REGISTRATION, replaced by setAssetLabels
     //
-    // The rule in one line: **registration is the only chance.** Every branch below exists because that sentence has
-    // failure modes prose cannot distinguish — a setter that quietly accepts labels, a re-registration that cannot
-    // replace them, an unregister that leaves them behind — and each one is the difference between a repair that
-    // works and a repair that silently does nothing.
+    // The rule used to be "registration is the only chance", and these branches were written against it. They still
+    // earn their place: each covers a failure mode prose cannot distinguish — a classifier that quietly accepts
+    // labels, a re-registration that cannot replace them, an unregister that leaves them behind — and each is the
+    // difference between a repair that works and one that silently does nothing. The setter's own arms are in the
+    // `setAssetLabels` section below.
     //
     // Note what is NOT here any more, deliberately: the fill-a-blank tests, the identical-content no-op, and the
     // write-once guard's reverts. They covered behaviour that no longer exists. `setAssetKind`/`setAssetKinds` do not
@@ -655,8 +687,9 @@ contract AssetKindRegistryTest is Test {
         assertEq(registry.getAssetLabels(AUSDC).length, 0, "re-classification does not label either");
     }
 
-    /// @dev An asset registered with no labels stays unlabelled. This is the cost of the ruling, asserted rather than
-    ///      described: there is no later opportunity, because there is no setter.
+    /// @dev An asset registered with no labels stays unlabelled *through registration alone* — {registerAsset} is
+    ///      the only writer on this path, and an empty list is a silent no-op. {setAssetLabels} is what fills it in
+    ///      afterwards; `test_setAssetLabels_fillsInLabelsOnAnAssetRegisteredWithout` is the other half of this pair.
     function test_labels_anAssetRegisteredWithoutThemStaysUnlabelled() public {
         _register(USDC, AccrualKind.None, _noLabels());
         assertEq(registry.getAssetLabels(USDC).length, 0);
@@ -902,5 +935,188 @@ contract AssetKindRegistryTest is Test {
         for (uint256 i; i < n; ++i) {
             out = string(abi.encodePacked(out, unit));
         }
+    }
+
+    // ============================================================
+    // setAssetLabels — the repair path
+    // ============================================================
+    // Labels used to be write-once: a wrong one was fixed by unregistering and re-registering the asset. That repair
+    // is far more destructive than it looks — `NAVCalculator.unregisterAsset` also drops every price feed, every
+    // monitor feed and all of `_assetPricing` (divergence AND peg tolerance, the latter being what `PegKind` is
+    // derived from), across up to five transactions on an EOA MANAGER with the asset absent from NAV throughout.
+    // These arms cover the setter that replaces it, and BOTH of its refusals.
+
+    /// @notice The point of the whole change: a wrong label is corrected in one call, wholesale, with the asset
+    ///         never leaving the NAV.
+    function test_setAssetLabels_replacesLabelsWithoutUnregistering() public {
+        _register(WSTETH, AccrualKind.Appreciating, _labels("Lido", "LTS")); // typo'd label
+        _assertLabels(WSTETH, _labels("Lido", "LTS"));
+
+        vm.prank(manager);
+        registry.setAssetLabels(WSTETH, _labels("Lido", "LST"));
+
+        _assertLabels(WSTETH, _labels("Lido", "LST"));
+        // The repair cost nothing else: no unregistration, and the classification is untouched.
+        assertEq(nav.unregisteredCount(), 0, "the asset never left the NAV");
+        _assertKind(WSTETH, PegKind.Floating, AccrualKind.Appreciating);
+    }
+
+    /// @notice Replacement is WHOLESALE, not a merge — a shorter list shortens the stored one.
+    function test_setAssetLabels_replacementIsWholesaleNotAMerge() public {
+        _register(WSTETH, AccrualKind.Appreciating, _labels("Lido", "LST"));
+        vm.prank(manager);
+        registry.setAssetLabels(WSTETH, _labels("Lido"));
+        _assertLabels(WSTETH, _labels("Lido"));
+    }
+
+    /// @notice Emits the same event registration emits, so an indexer needs no new handler.
+    /// @notice Asserts the WHOLE event, not just its selector. Checking `topics[0]` alone passes for a wrong asset
+    ///         or a stale payload, which is most of what could go wrong — and the event is the only signal an
+    ///         off-chain indexer has that a label changed.
+    function test_setAssetLabels_emitsAssetLabelsSet() public {
+        _register(WSTETH, AccrualKind.Appreciating, _labels("Lido", "LTS"));
+        vm.expectEmit(true, false, false, true, address(registry));
+        emit IAssetKindRegistry.AssetLabelsSet(WSTETH, _labels("Lido", "LST"));
+        vm.prank(manager);
+        registry.setAssetLabels(WSTETH, _labels("Lido", "LST"));
+    }
+
+    /// @notice An asset registered with NO labels can be given some later. This is the empty -> non-empty
+    ///         transition, which registration itself can never exercise (an empty list is a silent no-op there).
+    function test_setAssetLabels_fillsInLabelsOnAnAssetRegisteredWithout() public {
+        _register(AUSDC, AccrualKind.Appreciating, _noLabels());
+        assertEq(registry.getAssetLabels(AUSDC).length, 0, "starts unlabelled");
+        vm.prank(manager);
+        registry.setAssetLabels(AUSDC, _labels("Aave V3", "aUSDC"));
+        _assertLabels(AUSDC, _labels("Aave V3", "aUSDC"));
+    }
+
+    /// @notice Shrinking from MAX-length, MAX-byte labels to one short label. Long strings (>= 32 bytes) use the
+    ///         long-form storage layout with a separate data slot, so this is the case where a stale tail could
+    ///         survive a wholesale replacement; the read-back proves it does not.
+    function test_setAssetLabels_shrinkFromLongFormLeavesNoStaleTail() public {
+        uint256 maxLabels = registry.MAX_ASSET_LABELS();
+        uint256 maxBytes = registry.MAX_ASSET_LABEL_BYTES();
+        string memory long = string(new bytes(maxBytes));
+        string[] memory full = new string[](maxLabels);
+        for (uint256 i; i < maxLabels; ++i) {
+            full[i] = long;
+        }
+        _register(WSTETH, AccrualKind.Appreciating, full);
+        assertEq(registry.getAssetLabels(WSTETH).length, maxLabels, "precondition: full long-form set");
+
+        vm.prank(manager);
+        registry.setAssetLabels(WSTETH, _labels("x"));
+
+        string[] memory after_ = registry.getAssetLabels(WSTETH);
+        assertEq(after_.length, 1, "shrunk to one");
+        assertEq(after_[0], "x", "and it is the new value, not a truncated old one");
+
+        // GROW BACK, and this is the half that actually proves it. `getAssetLabels` returns only `length`
+        // elements, so residue past the new length is structurally invisible to the two assertions above — a
+        // mutant that truncates the length while leaving the dropped elements' payload slots populated passes
+        // them green. Re-growing to the full width re-reads those exact slots, so a stale tail surfaces as a
+        // wrong string rather than staying hidden.
+        string[] memory regrown = new string[](maxLabels);
+        for (uint256 i; i < maxLabels; ++i) {
+            regrown[i] = "n";
+        }
+        vm.prank(manager);
+        registry.setAssetLabels(WSTETH, regrown);
+
+        string[] memory back = registry.getAssetLabels(WSTETH);
+        assertEq(back.length, maxLabels, "regrown to full width");
+        for (uint256 i; i < maxLabels; ++i) {
+            assertEq(back[i], "n", "every re-grown slot holds the new value, not long-form residue");
+        }
+    }
+
+    /// @notice REFUSAL 1 — an asset the NAV does not hold. Labels are registration-scoped, and `unregisterAsset`
+    ///         reverts for an asset the NAV does not hold, so labels written here could never be cleared by any path
+    ///         on this contract. Explicit, not incidental.
+    function test_RevertIf_setAssetLabels_assetNotRegisteredOnNav() public {
+        vm.prank(manager);
+        vm.expectRevert(abi.encodeWithSelector(IAssetKindRegistry.AssetNotRegisteredForLabels.selector, WSTETH));
+        registry.setAssetLabels(WSTETH, _labels("Lido", "LST"));
+        assertEq(registry.getAssetLabels(WSTETH).length, 0, "no orphan labels were written");
+    }
+
+    /// @notice And it stays refused after the asset is unregistered — the guard tracks the NAV's live state, it does
+    ///         not merely check that a registration once happened.
+    function test_RevertIf_setAssetLabels_afterUnregistration() public {
+        _register(WSTETH, AccrualKind.Appreciating, _labels("Lido", "LST"));
+        vm.prank(manager);
+        registry.unregisterAsset(WSTETH);
+
+        vm.prank(manager);
+        vm.expectRevert(abi.encodeWithSelector(IAssetKindRegistry.AssetNotRegisteredForLabels.selector, WSTETH));
+        registry.setAssetLabels(WSTETH, _labels("Lido", "LST"));
+    }
+
+    /// @notice REFUSAL 2 — an empty array. `_setAssetLabels` treats empty as a silent no-op, which is right for
+    ///         registration and wrong for a setter: a caller asking to clear would get silence and believe it worked.
+    function test_RevertIf_setAssetLabels_emptyArray() public {
+        _register(WSTETH, AccrualKind.Appreciating, _labels("Lido", "LST"));
+        vm.prank(manager);
+        vm.expectRevert(abi.encodeWithSelector(IAssetKindRegistry.EmptyAssetLabelSet.selector, WSTETH));
+        registry.setAssetLabels(WSTETH, _noLabels());
+        _assertLabels(WSTETH, _labels("Lido", "LST"));
+    }
+
+    /// @notice The authority gate is the contract's only one — the same `NAV.hasRole(MANAGER, …)` every other write
+    ///         uses. No new role, no local role.
+    function test_RevertIf_setAssetLabels_notManager() public {
+        _register(WSTETH, AccrualKind.Appreciating, _labels("Lido", "LST"));
+        vm.prank(stranger);
+        vm.expectRevert(NotAuthorized.selector);
+        registry.setAssetLabels(WSTETH, _labels("Lido", "LST"));
+    }
+
+    /// @notice The content bounds are inherited from `_setAssetLabels` unchanged: a set that could not be REGISTERED
+    ///         cannot be SET either. Covers all three, so the setter cannot become a way around them.
+    function test_RevertIf_setAssetLabels_violatesInheritedContentBounds() public {
+        _register(WSTETH, AccrualKind.Appreciating, _labels("Lido", "LST"));
+        // Read the bounds BEFORE any prank: `vm.prank` applies to the next EXTERNAL call, and these getters are
+        // external calls — reading them inline would consume the prank and the setter would arrive unpranked.
+        uint256 maxLabels = registry.MAX_ASSET_LABELS();
+        uint256 maxBytes = registry.MAX_ASSET_LABEL_BYTES();
+
+        string[] memory tooMany = new string[](maxLabels + 1);
+        for (uint256 i; i < tooMany.length; ++i) {
+            tooMany[i] = "x";
+        }
+        vm.prank(manager);
+        vm.expectRevert(
+            abi.encodeWithSelector(IAssetKindRegistry.TooManyAssetLabels.selector, WSTETH, maxLabels + 1, maxLabels)
+        );
+        registry.setAssetLabels(WSTETH, tooMany);
+
+        string[] memory withEmpty = _labels("Lido", "");
+        vm.prank(manager);
+        vm.expectRevert(abi.encodeWithSelector(IAssetKindRegistry.EmptyAssetLabel.selector, WSTETH, uint256(1)));
+        registry.setAssetLabels(WSTETH, withEmpty);
+
+        string[] memory tooLong = _labels(string(new bytes(maxBytes + 1)));
+        vm.prank(manager);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IAssetKindRegistry.AssetLabelTooLong.selector, WSTETH, uint256(0), maxBytes + 1, maxBytes
+            )
+        );
+        registry.setAssetLabels(WSTETH, tooLong);
+
+        _assertLabels(WSTETH, _labels("Lido", "LST")); // nothing partial was written by any of the three
+    }
+
+    /// @notice The setter does not disturb the other axis, and re-classification still does not disturb labels.
+    function test_setAssetLabels_andClassificationRemainIndependent() public {
+        _register(WSTETH, AccrualKind.Appreciating, _labels("Lido", "LST"));
+        vm.prank(manager);
+        registry.setAssetLabels(WSTETH, _labels("Lido", "Staked ETH"));
+        _assertKind(WSTETH, PegKind.Floating, AccrualKind.Appreciating);
+
+        vm.prank(manager);
+        registry.setAssetKind(WSTETH, AccrualKind.Rebasing);
+        _assertLabels(WSTETH, _labels("Lido", "Staked ETH"));
     }
 }

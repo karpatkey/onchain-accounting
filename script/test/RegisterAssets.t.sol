@@ -15,8 +15,9 @@ import {PegKind, AccrualKind} from "src/utils/AssetKind.sol";
 /// @dev **Why the guards specifically, and why now.** `AssetKindRegistryNotDeployed` fired for real during a fork
 ///      rehearsal, because the preflight script and the runbook had diverged on step order. It refused rather than
 ///      falling back to `NAVCalculator.registerAsset` — which is the correct outcome precisely because the fallback
-///      would have SUCCEEDED, silently and permanently costing every asset in that run its labels: labels can only be
-///      written at registration and there is no setter. So the guard is load-bearing, and until this file it had never
+///      would have SUCCEEDED, silently leaving every asset in that run unclassified and unlabelled. (Both are
+///      recoverable after the fact via `setAssetKinds`/`setAssetLabels` — the guard's value is refusing a run that
+///      reports success while producing that state, not the irreversibility of it.) So the guard is load-bearing, and until this file it had never
 ///      been executed by a test. That is the #253 failure mode — three guards written on reasoning alone, all three
 ///      defective — and it is what {test_failsClosed_whenAssetKindRegistryNotDeployed} exists to close.
 ///

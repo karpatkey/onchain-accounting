@@ -300,9 +300,9 @@ contract DeployAssetKindRegistry is BaseDeployScript {
         // Re-classification is permitted and event-emitting by design, so this runs on both paths.
         //
         // ⚠️ **This classifies; it does NOT label.** `setAssetKinds` takes no labels, deliberately — labels are
-        // written only by `AssetKindRegistry.registerAsset`, which is `RegisterAssets` (step 1.6), not this step. So a
-        // re-run of `08` re-classifies and cannot disturb a label, and this script's idempotency is unaffected by
-        // labels existing in config.
+        // written by `AssetKindRegistry.registerAsset` (step 1.6, `RegisterAssets`) and replaced by
+        // `setAssetLabels`, neither of which is this step. So a re-run of `08` re-classifies and cannot disturb a
+        // label, and this script's idempotency is unaffected by labels existing in config.
         //
         // What this step DOES for labels is make them possible at all: it deploys the registry and grants it MANAGER
         // on the NAV. That is why it must now run BEFORE `RegisterAssets` rather than after it.

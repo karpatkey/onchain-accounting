@@ -129,7 +129,9 @@ contract AssetKindRegistry is IAssetKindRegistry {
     /// @dev Keyed by ADAPTER, never by position. That is the whole reason this table is bounded: `protocolName()` is
     ///      a per-adapter constant in all 13 of its definitions (`MetaBalanceAdapter.protocolName` folds
     ///      `ProtocolNames.forProtocolId(_protocolId())` at compile time and no concrete meta-adapter overrides it),
-    ///      so one row per adapter covers every position that adapter can ever emit — ≤45 rows for the whole fleet,
+    ///      so one row per adapter covers every position that adapter can ever emit — at most one row per DEPLOYED
+    ///      adapter, i.e. ≤45 across all 7 chains (33 deployable contracts, 45 enabled deployments; the two figures
+    ///      count different things and an earlier revision used them interchangeably),
     ///      with nothing to re-write when `addMetaInstances` adds an instance.
     mapping(address adapter => string name) private _adapterProtocolName;
 

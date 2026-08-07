@@ -193,12 +193,25 @@ contract AdapterLabelOverridesTest is AdapterLabelOverridesBase {
         setupAll();
         registry = new AssetKindRegistry(address(nav));
         // NOTE: deliberately NO `grantRole(MANAGER, registry)`, unlike the asset-kind tests. These overrides never
-        // call back into the NAV, so they need no privilege at all — `test_overrides_needNoRoleGrant` pins that.
+        // invoke any STATE-CHANGING NAV function, so they need no role grant at all. (They DO read the NAV:
+        // `hasRole` on the gate and `isAdapterRegistered` in the setters, both `view`. An earlier revision of
+        // this note said "never call back into the NAV", which was false.)
+        // `test_overrides_needNoRoleGrant` pins that.
         vm.prank(navCalculatorManager);
         nav.setAssetKindRegistry(address(registry));
 
         adapter = new LabelledAdapter("Mock Protocol", "Market", "wstETH/USDC");
         _register(adapter);
+    }
+
+    /// @dev Locates `assetKindRegistry`'s storage slot by SCANNING for the known address rather than hardcoding an
+    ///      index. A hardcoded slot would silently stop matching after any NAVCalculator layout change, turning the
+    ///      zero-registry baseline below into a no-op that measures nothing — so the scan reverts instead.
+    function _registrySlot() internal view returns (bytes32) {
+        for (uint256 i = 0; i < 200; i++) {
+            if (address(uint160(uint256(vm.load(address(nav), bytes32(i))))) == address(registry)) return bytes32(i);
+        }
+        revert("assetKindRegistry slot not found");
     }
 
     // ------------------------------------------------------------------
@@ -593,12 +606,13 @@ contract AdapterLabelOverridesTest is AdapterLabelOverridesBase {
     // Gas: the registry leg must stay bounded
     // ------------------------------------------------------------------
 
-    /// @dev The honest measurement behind the docstring. The MISS path (no override) is the common case and is
-    ///      strictly more expensive than before, because it pays the registry reads on top of the adapter call. This
-    ///      bounds that surcharge rather than claiming it away, and it is the test the `PriceFeedLib.toVerbose`
-    ///      docstring points at.
+    /// @dev The honest measurement behind the docstring, and it must PIN the numbers rather than wave at them. An
+    ///      earlier revision asserted only `< 1_000_000`, roughly 9x the measured ~112k, which pinned nothing: moving
+    ///      the registry reads out of the `adapter != prevAdapter` branch would make them per-POSITION instead of per
+    ///      distinct adapter and this test would still have passed, while the real 117-position fixture paid ~1.1M
+    ///      extra. The surcharge is now measured against a NO-REGISTRY baseline and bounded per distinct adapter.
     function test_gas_registryLegIsBounded() public {
-        // Warm the read once so the comparison is not dominated by first-touch storage costs.
+        // Warm every path once so the comparison is not dominated by first-touch storage costs.
         _v();
 
         uint256 before = gasleft();
@@ -612,12 +626,110 @@ contract AdapterLabelOverridesTest is AdapterLabelOverridesBase {
         nav.getAccountPositionsVerbose(safe, address(0));
         uint256 withOverride = before - gasleft();
 
-        // Both must stay far inside the verbose read's own ceiling; the registry leg is two capped staticcalls per
-        // distinct adapter, so it cannot approach the 100k stipend it is bounded by.
-        assertLt(withRegistry, 1_000_000, "the miss path must stay bounded");
-        assertLt(withOverride, 1_000_000, "the hit path must stay bounded");
-        emit log_named_uint("verbose read gas, override MISS", withRegistry);
-        emit log_named_uint("verbose read gas, override HIT ", withOverride);
+        // The baseline: same read, registry lookup short-circuited by a zero registry. Zeroing the slot directly is
+        // the only route, because `setAssetKindRegistry` rejects address(0) by design.
+        bytes32 rslot = _registrySlot();
+        uint256 saved = uint256(vm.load(address(nav), rslot));
+        vm.store(address(nav), rslot, bytes32(0));
+        before = gasleft();
+        nav.getAccountPositionsVerbose(safe, address(0));
+        uint256 noRegistry = before - gasleft();
+        vm.store(address(nav), rslot, bytes32(saved));
+
+        emit log_named_uint("verbose read gas, NO registry   ", noRegistry);
+        emit log_named_uint("verbose read gas, override MISS ", withRegistry);
+        emit log_named_uint("verbose read gas, override HIT  ", withOverride);
+
+        // The ordering the docstring claims: no registry < hit < miss.
+        assertLt(noRegistry, withOverride, "no registry must be cheapest");
+        assertLt(withOverride, withRegistry, "a hit must be cheaper than a miss (it skips the adapter staticcall)");
+
+        // The surcharge is per DISTINCT ADAPTER, and this fixture has exactly one adapter emitting one position.
+        // A regression moving the lookup per-position would not change this fixture's numbers, so bound the
+        // surcharge tightly enough that a per-position lookup on the two-position adapter below breaks it.
+        uint256 surcharge = withRegistry - noRegistry;
+        emit log_named_uint("registry surcharge, 1 adapter   ", surcharge);
+        assertLt(surcharge, 25_000, "one distinct adapter must cost at most one pair of registry reads");
+    }
+
+    /// @dev The per-position regression the bound above cannot see on a one-position fixture: with TWO positions from
+    ///      ONE adapter, the surcharge must stay a single pair of registry reads, because the lookup is cached at the
+    ///      `adapter != prevAdapter` boundary. If it ever runs per position, this doubles and fails.
+    function test_gas_surchargeIsPerAdapter_notPerPosition() public {
+        LabelledAdapter multi = new LabelledAdapter("Multi Protocol", "Market", "leaf");
+        address[] memory assets = new address[](2);
+        assets[0] = address(usdc);
+        assets[1] = address(dai);
+        multi.setBalances(nav);
+        multi.setUnderlyingAssetsSupported(assets);
+        multi.setBalance(address(usdc), safe, 5 * 10 ** usdc.decimals(), false);
+        multi.setBalance(address(dai), safe, 5 * 10 ** dai.decimals(), false);
+        vm.prank(navCalculatorManager);
+        nav.addBalanceAdapters(aa(address(multi)));
+        nav.getAccountPositionsVerbose(safe, address(0)); // warm
+
+        uint256 before = gasleft();
+        nav.getAccountPositionsVerbose(safe, address(0));
+        uint256 withRegistry = before - gasleft();
+
+        bytes32 rslot = _registrySlot();
+        uint256 saved = uint256(vm.load(address(nav), rslot));
+        vm.store(address(nav), rslot, bytes32(0));
+        before = gasleft();
+        nav.getAccountPositionsVerbose(safe, address(0));
+        uint256 noRegistry = before - gasleft();
+        vm.store(address(nav), rslot, bytes32(saved));
+
+        // Two adapters now emit positions (the setUp adapter and `multi`, which alone emits two), so the honest
+        // bound is "one pair of reads per DISTINCT adapter", not per position.
+        uint256 surcharge = withRegistry - noRegistry;
+        emit log_named_uint("registry surcharge, 2 adapters / 3 positions", surcharge);
+        assertLt(surcharge, 50_000, "the surcharge must scale with DISTINCT ADAPTERS, not with positions");
+    }
+
+    // ------------------------------------------------------------------
+    // The other two toVerbose call sites
+    // ------------------------------------------------------------------
+
+    /// @dev `toVerbose` has THREE call sites and the diff changed all three, but every other test in this file reaches
+    ///      only `getAccountPositionsVerbose`. Passing `address(0)` at either of the others — an easy slip, since that
+    ///      is the documented "no registry" value — would silently drop every override on that entry point and leave
+    ///      the whole suite green. These two tests close that.
+    function test_override_appliesTo_getAccountNavVerbose() public {
+        vm.startPrank(navCalculatorManager);
+        registry.setAdapterProtocolName(address(adapter), "Overridden Protocol");
+        registry.setAdapterLabelCategory(address(adapter), "Lending Market");
+        vm.stopPrank();
+
+        INAVCalculator.VerboseNAV memory vn = nav.getAccountNavVerbose(safe, address(0));
+        bool found;
+        for (uint256 i = 0; i < vn.positions.length; i++) {
+            if (vn.positions[i].position.balanceAdapter != address(adapter)) continue;
+            found = true;
+            assertEq(vn.positions[i].protocolName, "Overridden Protocol", "getAccountNavVerbose must apply overrides");
+            assertEq(vn.positions[i].labels[0], "Lending Market", "and the category override too");
+            assertEq(vn.positions[i].labels[1], "wstETH/USDC", "leaf still live");
+        }
+        assertTrue(found, "adapter position not found in getAccountNavVerbose");
+    }
+
+    function test_override_appliesTo_getAccountPositionsForAssetVerbose() public {
+        vm.startPrank(navCalculatorManager);
+        registry.setAdapterProtocolName(address(adapter), "Overridden Protocol");
+        registry.setAdapterLabelCategory(address(adapter), "Lending Market");
+        vm.stopPrank();
+
+        INAVCalculator.VerbosePosition[] memory all =
+            nav.getAccountPositionsForAssetVerbose(safe, address(usdc), address(0));
+        bool found;
+        for (uint256 i = 0; i < all.length; i++) {
+            if (all[i].position.balanceAdapter != address(adapter)) continue;
+            found = true;
+            assertEq(all[i].protocolName, "Overridden Protocol", "ForAssetVerbose must apply overrides");
+            assertEq(all[i].labels[0], "Lending Market", "and the category override too");
+            assertEq(all[i].labels[1], "wstETH/USDC", "leaf still live");
+        }
+        assertTrue(found, "adapter position not found in getAccountPositionsForAssetVerbose");
     }
 
     // ------------------------------------------------------------------

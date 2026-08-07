@@ -330,6 +330,23 @@ interface IAssetKindRegistry {
     ///      protocol and not its siblings re-creates the phantom-sibling split at the DISPLAY layer, where that test
     ///      cannot see it. This registry cannot check it either — it holds no view of any adapter's protocol id.
     ///      **When a protocol has several adapters, override all of them or none.**
+    ///
+    ///      ⚠️ **A second divergence, and a wider one: this override is applied ONLY on the account read path.**
+    ///      {PriceFeedLib.toVerbose} is the sole consumer, so `getAccountPositionsVerbose` / `…ForAssetVerbose` /
+    ///      `getAccountNavVerbose` report the overridden name — while the adapter-ENUMERATION surface does not.
+    ///      A consumer that lists `IBalances.getAllAdapters()` and staticcalls `protocolName()` on each one has no
+    ///      view of this registry and still sees the adapter's own constant. {IPositionDescribable.protocolName}
+    ///      says exactly why that matters: enumerating consumers never see the typed `protocolBrand`/`protocolId`,
+    ///      so the display name is the only protocol identity they have, and it is their join key.
+    ///
+    ///      So overriding `AaveUmbrellaBalanceAdapter` to "Aave" makes positions report "Aave" while the configured
+    ///      -adapter list still says "Aave Umbrella" — the same phantom-sibling split the override was meant to
+    ///      REPAIR, now reintroduced between two surfaces instead of between two adapters. Closing it would mean
+    ///      either a NAV-side forwarding getter (+182 B against 455 free — not affordable) or every enumerating
+    ///      consumer learning to read this registry. **Until one of those happens, an override fixes the position
+    ///      view and not the configuration view, and an operator should expect to see both.**
+    ///      Two operational notes that apply to BOTH setters live on {clearAdapterProtocolName}: overrides are lost
+    ///      when the registry is replaced, and they are only visible on the account read path.
     /// @param adapter The balance adapter whose positions should report `name`.
     /// @param name The replacement protocol name, e.g. "Aave V3".
     function setAdapterProtocolName(address adapter, string calldata name) external;

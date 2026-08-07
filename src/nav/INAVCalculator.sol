@@ -213,6 +213,10 @@ interface INAVCalculator is IBalances {
     }
 
     /// @notice Position enriched with human-readable display labels.
+    /// @dev ⚠️ **`protocolName` and `labels[0]` are NOT necessarily the adapter's own values.** `AssetKindRegistry`
+    ///      holds optional per-ADAPTER overrides for both, and {PriceFeedLib.toVerbose} applies them in preference to
+    ///      the adapter's reply. Everything below index 0 — the computed leaf — always comes from the adapter, live.
+    ///      Consumers must not treat these strings as identity in any case; see {IPositionDescribable}.
     /// @dev Returned by verbose read methods. Labels are sourced from the adapter's `IPositionDescribable`
     ///      implementation (`positionLabels(positionId)`, via a fail-open staticcall) and are empty otherwise. MUST NOT
     ///      be used for identity, indexing, or reconciliation — use the typed fields on `position` for those purposes.

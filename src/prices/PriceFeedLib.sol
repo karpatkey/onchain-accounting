@@ -1941,13 +1941,22 @@ library PriceFeedLib {
     ///      the same address every time.
     ///
     ///      ⚠️ **That does NOT make the change gas-negative, and an earlier revision of this note claimed it did.**
-    ///      Measured, not reasoned: a HIT costs 111,820 and a MISS 114,221 on the single-adapter fixture, so the hit
-    ///      is ~2.4k cheaper THAN A MISS — but both are dearer than having no registry at all, which an independent
-    ///      20-adapter sweep put at **+9,569 gas per distinct adapter** for the two registry reads. So the ordering is
-    ///      `no registry < hit < miss`: the override never pays for itself outright, it only claws back the one
-    ///      adapter call it skips. The MISS path is the common case — every adapter has no override today — and it is
-    ///      strictly more expensive than before this change.
-    ///      `AdapterLabelOverrides.t.sol::test_gas_registryLegIsBounded` is that measurement and bounds both paths.
+    ///      Measured against a real no-registry baseline, not reasoned:
+    ///
+    ///        no registry 109,126  <  hit 111,799  <  miss 114,251   (single-adapter fixture)
+    ///
+    ///      So the ordering is `no registry < hit < miss`. The override never pays for itself outright; it only claws
+    ///      back the one adapter staticcall it skips. **The MISS path is the common case — no adapter has an override
+    ///      today — so this is strictly more expensive than before this change.**
+    ///
+    ///      The per-adapter surcharge is a RANGE, not one number, and both ends are real: ~5.1k warm (this fixture,
+    ///      where the registry's storage is already touched) up to ~9.6k cold (an independent 20-adapter sweep, where
+    ///      each adapter's mapping slot is a cold SLOAD). Quote the cold figure when sizing a real portfolio read,
+    ///      since distinct adapters are exactly the case that is cold. An earlier revision quoted only 9,569 as
+    ///      though it were the single value.
+    ///      `AdapterLabelOverrides.t.sol::test_gas_registryLegIsBounded` measures the ordering and bounds the
+    ///      surcharge; `test_gas_surchargeIsPerAdapter_notPerPosition` pins that it scales with adapters, not
+    ///      positions.
     ///
     ///      **Fail-open, exactly like the adapter reads.** The registry is reached through the same {_safeString}
     ///      shim — gas-capped and output-windowed — so a broken, hostile or absent registry degrades to "no
@@ -1960,7 +1969,10 @@ library PriceFeedLib {
     /// @param pos The positions to enrich.
     /// @param registry The chain's `AssetKindRegistry`, or `address(0)` when none is wired. Passed in rather than
     ///        read from storage because this library is reached by DELEGATECALL and has no view of `NAVCalculator`'s
-    ///        layout; passing it also avoids a second registry pointer on a contract with 502 bytes of headroom.
+    ///        layout; passing it also avoids a second registry pointer on a contract with 455 bytes of headroom.
+    ///        (455 is the figure AFTER this change; it was 502 before. This PR spends 47 of them on the extra
+    ///        argument and the `assetKindRegistry` SLOAD at three call sites — cheap only relative to the +182 B
+    ///        floor a forwarding getter would have cost.)
     function toVerbose(INAVCalculator.Position[] memory pos, address registry)
         external
         view
@@ -2029,9 +2041,14 @@ library PriceFeedLib {
     ///         pathological declared length OOGs within a bounded budget instead of starving the verbose read.
     uint256 private constant _LABEL_DECODE_GAS = 1_000_000;
 
-    /// @notice Gas stipend for the outer `protocolName()` staticcall. Every `protocolName()` in this repo is a
-    ///         `pure` constant string, so this is orders of magnitude more than a real one needs; it exists to
-    ///         bound a broken or hostile adapter, not to fit a legitimate read.
+    /// @notice Gas stipend for EVERY flat-string read on the verbose path: the outer `protocolName()` staticcall
+    ///         AND both {AssetKindRegistry} override reads in {_adapterOverrides}, which reach the registry through
+    ///         the same {_safeString} shim.
+    /// @dev Every `protocolName()` in this repo is a `pure` constant string and an override read is one capped
+    ///      `SLOAD` plus a 32-byte-bounded string, so this is orders of magnitude more than any legitimate read
+    ///      needs; it exists to bound a broken or hostile callee. Note the consequence of the shared stipend: a
+    ///      hostile registry can burn 2x this per DISTINCT ADAPTER, which is the ceiling
+    ///      `test_gas_registryLegIsBounded` exists to keep honest.
     uint256 private constant _NAME_READ_GAS = 100_000;
 
     /// @notice Gas stipend for the outer `positionLabels()` staticcall. An order of magnitude above

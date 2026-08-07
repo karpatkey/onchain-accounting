@@ -75,6 +75,17 @@ CLEAR_TOP = [
     "EtherFiWithdrawalQueueAssistant",
     "StakeWiseV3ExitQueueAssistant",
 ]
+# Keys to CREATE (blank) when the record lacks them. Deliberately NOT all of CLEAR_TOP: for the
+# three `*Assistant` keys, ABSENCE IS A SIGNAL that another tool reads. `deployer_balances.scope()`
+# counts assistant keys by PRESENCE, not value, to decide whether a chain deploys assistants —
+# 23 of 25 records have no assistant keys at all — so creating them would make every chain report
+# three, inflating its gas estimate by 10.5M units and producing a false "TOP UP" on chains that
+# deploy none. That module's own header calls a false alarm a failure mode in its own right.
+#
+# `AssetKindRegistry` carries no such signal: it is absent from ALL 25 records, so creating it
+# removes no information, and it is the key this tool newly clears — without creating it, adding it
+# to CLEAR_TOP breaks gate 1.1 everywhere.
+CREATE_IF_ABSENT = {"AssetKindRegistry"}
 CLEAR_SECTIONS = ["balanceAdapters", "customPriceFeeds"]
 KEEP = {"BridgeEscrowImplementation", "BridgeEscrowProxy", "bridgeAdapters"}
 
@@ -84,14 +95,14 @@ def plan_for(chain_id: int) -> tuple[dict, list[str]]:
     out = json.loads(json.dumps(rec))  # deep copy, preserves key order
     changes: list[str] = []
     for k in CLEAR_TOP:
-        if k not in out:
-            # ABSENT is not "already clear". `verify_step.step_record_cleared` fails any CLEAR_TOP
-            # key missing from the record, and `ConfigReader._readAddrOrZero` requires
+        if k not in out and k in CREATE_IF_ABSENT:
+            # ABSENT is not "already clear" for these. `verify_step.step_record_cleared` fails any
+            # CLEAR_TOP key missing from the record, and `ConfigReader._readAddrOrZero` requires
             # `vm.keyExists` before the deploy can write the new address back — so a key that is
             # merely absent breaks runbook gate 1.1 AND the write-back. Create it blank.
             changes.append(f"{k}: <absent> -> \"\" (created; ConfigReader needs the key to exist)")
             out[k] = ""
-        elif out[k] not in ("", None):
+        elif k in out and out[k] not in ("", None):
             changes.append(f"{k}: {out[k]} -> \"\"")
             out[k] = ""
     for sec in CLEAR_SECTIONS:

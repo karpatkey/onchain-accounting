@@ -214,6 +214,8 @@ DEFAULT_ENV_FILES = _default_env_files()
 
 
 _ENV_KEY_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+# Exactly POSIX [:space:] — what bash trims with. NOT str.strip()'s Unicode set.
+_ASCII_WS = " \t\n\r\v\f"
 
 
 def load_env(dotenv: Path | None = None) -> None:
@@ -234,12 +236,18 @@ def load_env(dotenv: Path | None = None) -> None:
     for path in ([dotenv] if dotenv else DEFAULT_ENV_FILES):
         if not path or not path.exists():
             continue
-        for line in path.read_text().splitlines():
-            line = line.strip()
+        # `.split("\n")`, not `.splitlines()`: the latter also breaks on U+2028/U+2029/\x0b/\x0c/\x85,
+        # which bash's `read` does not, so one such character would split a line on one side only.
+        # `_ASCII_WS`, not `.strip()`: Python treats U+00A0 (NBSP) as whitespace and glibc's
+        # `[:space:]` does not, so a URL pasted out of a web console with a trailing NBSP resolved
+        # to a different VALUE on each side — and a leading NBSP on a KEY made bash skip the line
+        # entirely while this loader accepted it.
+        for line in path.read_text().split("\n"):
+            line = line.strip(_ASCII_WS)
             if not line or line.startswith("#") or "=" not in line:
                 continue
             k, v = line.split("=", 1)
-            k, v = k.strip(), v.strip()
+            k, v = k.strip(_ASCII_WS), v.strip(_ASCII_WS)
             # Same key filter as the shell twin's `[[ "$k" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]`.
             # Without it the two sides diverge on any non-identifier line — `export FOO=x` (key
             # "export FOO") or `MY-VAR=x` are skipped by bash and accepted here — which breaks the

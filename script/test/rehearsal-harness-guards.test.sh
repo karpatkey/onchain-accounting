@@ -175,6 +175,22 @@ check "every CLEAR_TOP key exists in the planned record" "True" \
 import reset_deployment_records as r, chainlib as c
 out, _ = r.plan_for(1)
 print(all(k in out for k in r.CLEAR_TOP))")"
+# Key CREATION must be scoped. `deployer_balances.scope()` counts `*Assistant` keys by PRESENCE to
+# decide whether a chain deploys assistants — 23 of 25 records have none — so creating them would
+# make every chain report three and inflate its gas estimate by 10.5M, a false "TOP UP" on chains
+# that deploy none. Only AssetKindRegistry may be created: it is absent from ALL records, so it
+# carries no signal to destroy.
+check "creating keys does not invent assistants" "preserved" \
+      "$(py "
+import reset_deployment_records as r, chainlib as c
+bad = []
+for cid in c.all_chain_ids():
+    before = len([k for k in c.deployment(cid) if k.endswith('Assistant')])
+    after  = len([k for k in r.plan_for(cid)[0] if k.endswith('Assistant')])
+    if before != after: bad.append((cid, before, after))
+print('preserved' if not bad else 'INVENTED %s' % bad[:3])")"
+check "only AssetKindRegistry is create-if-absent" "{'AssetKindRegistry'}" \
+      "$(py "import reset_deployment_records as r; print(r.CREATE_IF_ABSENT)")"
 check "bridge keys still NOT cleared" "True" \
       "$(py "
 import reset_deployment_records as r

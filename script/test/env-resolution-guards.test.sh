@@ -232,6 +232,28 @@ sys.stdout.write(os.environ.get('$qk', '<UNSET>'))")"
   check "quote rule: bash == chainlib for $qk" "$qp" "$qb"
 done
 
+# NON-ASCII WHITESPACE. Every value the suite writes was ASCII, so the invariant below could not
+# see that `str.strip()` treats U+00A0 (NBSP) as whitespace while glibc's `[:space:]` does not.
+# A URL pasted out of a web console carries a trailing NBSP routinely; it resolved to a different
+# VALUE on each side, and a LEADING NBSP on a key made bash skip the line while chainlib took it —
+# producing a refusal whose own note named the variable it claimed had not resolved.
+NB=$'\u00a0'
+NW="$TMP/nbsp"; mkdir -p "$NW"
+printf 'N_A=%shttps://good%s\nN_B="https://q"%s\n%sN_C=https://keylead\nN_D=https://plain\n' \
+       "$NB" "$NB" "$NB" "$NB" > "$NW/.env"
+for nk in N_A N_B N_C N_D; do
+  nb="$( set -uo pipefail; eval "$load_src"; load_env_files "$NW/.env" 2>/dev/null
+         printf '%s' "${!nk-<UNSET>}" | od -An -c | tr -s ' ' )"
+  np="$(python3 -c "
+import sys, types, pathlib, os
+sys.modules.setdefault('requests', types.ModuleType('requests'))
+sys.path.insert(0, '$REPO_ROOT/script/deploy/preflight')
+import chainlib
+chainlib.load_env(pathlib.Path('$NW/.env'))
+sys.stdout.write(os.environ.get('$nk', '<UNSET>'))" | od -An -c | tr -s ' ')"
+  check "NBSP: bash == chainlib for $nk" "$np" "$nb"
+done
+
 # THE CROSS-IMPLEMENTATION INVARIANT. This is the assertion the divergence would have had to break:
 # every key, resolved through the shipped bash parser and through chainlib.load_env, must match.
 for var in ALCHEMY_API_KEY MAINNET_URL OIV_ONLY_URL; do

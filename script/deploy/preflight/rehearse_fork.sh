@@ -273,9 +273,14 @@ fi
 # the wrong chain is worse than one that refuses to start, because it produces a green report.
 #
 # The URL carries the API key, so only the resolution NOTE is echoed — never the URL itself.
-FORK_RPC_NOTE="$(python3 script/deploy/preflight/chainlib.py fork-rpc "$CHAIN_ID" 2>&1 >/dev/null)"
-if ! FORK_URL="$(python3 script/deploy/preflight/chainlib.py fork-rpc "$CHAIN_ID" 2>/dev/null)" \
-   || [[ -z "$FORK_URL" ]]; then
+# ONE invocation, both streams captured separately. Calling it twice — once for the note, once for
+# the URL — would be two sources of truth for a single decision, and the whole point of this block
+# is that the endpoint is decided in exactly one place.
+FORK_RPC_RC=0
+FORK_URL="$(python3 script/deploy/preflight/chainlib.py fork-rpc "$CHAIN_ID" 2>"$WORK/rpc.err")" \
+  || FORK_RPC_RC=$?
+FORK_RPC_NOTE="$(cat "$WORK/rpc.err" 2>/dev/null)"
+if (( FORK_RPC_RC != 0 )) || [[ -z "$FORK_URL" ]]; then
   echo "REFUSING: no RPC endpoint resolves for chain ${CHAIN_ID} (${FORK_RPC_NOTE})." >&2
   echo "This script will NOT fall back to another chain's endpoint — doing so is how a rehearsal" >&2
   echo "reports success for a chain it never contacted. Set \$${CHAIN_ID}'s URL env var (see" >&2

@@ -20,9 +20,10 @@ import {IPrices} from "src/prices/IPrices.sol";
 ///      TWO (the accrual axis and the display labels), and call this address instead.
 ///
 ///      **The display labels are a THIRD axis and behave differently from the other two on purpose.** Both kinds are
-///      re-settable at any time; labels are set ONCE, at {registerAsset}, and by nothing else. There is no label
-///      setter and {setAssetKind}/{setAssetKinds} do not take one. An asset registered without labels has none until
-///      it is unregistered and registered again.
+///      re-settable by their own setters; labels are written by {registerAsset} and replaced by {setAssetLabels}, and
+///      by nothing else — {setAssetKind}/{setAssetKinds} still do not take them, because classification and
+///      labelling are separate axes. An asset registered without labels has none until {setAssetLabels} gives it
+///      some (or it is unregistered and registered again).
 ///
 ///      That boundary is chosen for parity with the balance adapters, not for cost: adapter labels
 ///      (`positionLabels()`) are fixed when the adapter is deployed and no role can change them, so letting an ASSET
@@ -61,9 +62,14 @@ interface IAssetKindRegistry {
     /// @notice Emitted when an asset's classification is removed (e.g. the asset was unregistered upstream).
     event AssetKindCleared(address indexed asset);
 
-    /// @notice Emitted when an asset's display labels are written, which happens only at {registerAsset}.
-    /// @dev Fires at most once per registration. A second one for the same asset means it was unregistered and
-    ///      registered again — the only way labels can change, and the documented repair for a wrong label.
+    /// @notice Emitted when an asset's display labels are written, by either {registerAsset} or {setAssetLabels}.
+    /// @dev **Consumers must NOT infer a re-registration from a repeat.** This event once fired at most once per
+    ///      registration, so a second one for the same asset meant it had been unregistered and registered again.
+    ///      {setAssetLabels} broke that: a repeat now most likely means a label was CORRECTED in place, with the
+    ///      asset's price feeds, monitor feeds and `_assetPricing` (both tolerances, and so the derived `PegKind`)
+    ///      completely untouched. An indexer still reading the old contract would invalidate all of that on a typo
+    ///      fix. Distinguish the two by watching {AssetKindCleared}/`AssetUnregistered`, not by counting these.
+    ///      The payload is the full replacement array, not a delta, in both cases.
     event AssetLabelsSet(address indexed asset, string[] labels);
 
     /// @notice Emitted when an asset's display labels are dropped, which happens only at {unregisterAsset}.
@@ -151,18 +157,14 @@ interface IAssetKindRegistry {
     ///      unregister it, so a missing kind is skipped rather than reverting. Contrast {clearAssetKind}, which DOES
     ///      revert on an unclassified asset because there the clear is the caller's whole intent.
     ///
-    ///      **Dropping the labels here is what makes the documented repair actually repair anything.** A wrong label is
-    ///      fixed by unregistering and re-registering the asset. If labels outlived unregistration, the re-registration
-    ///      would meet labels that are already set and could never replace them — the repair would be a no-op and the
-    ///      wrong label permanent for the life of the registry.
+    ///      **Dropping the labels here keeps the registration and its labels on one lifetime.** It also used to be
+    ///      what made the only available repair work: before {setAssetLabels} existed, a wrong label was fixed by
+    ///      unregistering and re-registering, and had labels outlived unregistration that repair would have been a
+    ///      silent no-op. **Correcting a label no longer needs this path** — use {setAssetLabels}, which leaves the
+    ///      asset's price feeds, monitor feeds and `_assetPricing` intact. This path remains correct for ending a
+    ///      registration outright.
     function unregisterAsset(address asset) external;
 
-    /// @notice Classifies one asset. MANAGER-gated. Re-classification is allowed and emits again.
-    /// @dev Reverts `InvalidArguments()` if `asset` is `address(0)` — this repo's USD-quote sentinel, never a
-    ///      registered asset. That error is not declared in this interface; see the contract-level note.
-    ///
-    ///      **Deliberately takes no labels.** Classification and labelling are separate axes: labels are written by
-    ///      {registerAsset} and {setAssetLabels} only. Re-classifying an asset leaves its labels exactly as they are.
     /// @notice Replaces one registered asset's display labels. MANAGER-gated, like every other write here.
     /// @dev Exists so a wrong label can be corrected WITHOUT unregistering the asset. The previous repair —
     ///      unregister then re-register — also destroyed every price feed, every monitor feed and all of
@@ -177,6 +179,12 @@ interface IAssetKindRegistry {
     /// @param labels The replacement labels, in significant order. Replaces the existing set wholesale.
     function setAssetLabels(address asset, string[] calldata labels) external;
 
+    /// @notice Classifies one asset. MANAGER-gated. Re-classification is allowed and emits again.
+    /// @dev Reverts `InvalidArguments()` if `asset` is `address(0)` — this repo's USD-quote sentinel, never a
+    ///      registered asset. That error is not declared in this interface; see the contract-level note.
+    ///
+    ///      **Deliberately takes no labels.** Classification and labelling are separate axes: labels are written by
+    ///      {registerAsset} and {setAssetLabels} only. Re-classifying an asset leaves its labels exactly as they are.
     function setAssetKind(address asset, AccrualKind accrualKind) external;
 
     /// @notice Classifies many assets in one call. MANAGER-gated. Both arrays must be the same length.

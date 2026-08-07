@@ -192,10 +192,10 @@ contract AssetKindRegistry is IAssetKindRegistry {
             delete _kinds[asset];
             emit AssetKindCleared(asset);
         }
-        // **Labels go with the registration, and this line is what makes the documented repair work at all.** A wrong
-        // label is fixed by unregistering and re-registering the asset. If labels outlived unregistration, the
-        // re-registration would meet labels that are already set — and since {registerAsset} is the only writer, it
-        // could never replace them. The repair would silently be a no-op and the wrong label permanent.
+        // **Labels go with the registration: one lifetime, cleared with it.** This also used to be what made the
+        // only available repair work — before {setAssetLabels}, a wrong label was fixed by unregistering and
+        // re-registering, and had labels outlived unregistration that repair would have been a silent no-op, since
+        // {registerAsset} was then the sole writer. Correcting a label no longer requires unregistering anything.
         //
         // Guarded rather than unconditional so an asset that never had labels does not emit a misleading event.
         // Contrast {clearAssetKind}, which leaves labels ALONE: that ends the classification while the asset stays
@@ -213,8 +213,21 @@ contract AssetKindRegistry is IAssetKindRegistry {
     ///      *Unregistered asset* → {AssetNotRegisteredForLabels}. Labels are registration-scoped, and the only thing
     ///      that clears them is {unregisterAsset} — which calls `NAV.unregisterAsset` and therefore REVERTS for an
     ///      asset the NAV does not hold. So labels written to an unregistered asset could never be cleared by any
-    ///      path on this contract: they would be permanent orphans. The guard is what stops this setter from
-    ///      manufacturing state the rest of the contract cannot reach.
+    ///      path on this contract: they would be permanent orphans. This guard stops the SETTER from creating one.
+    ///
+    ///      **It does not stop one arising, and this note previously over-claimed that it did.** A MANAGER calling
+    ///      `NAVCalculator.unregisterAsset` DIRECTLY — which the design permits on purpose — strands whatever labels
+    ///      this contract holds: the facade's {unregisterAsset} then reverts inside `NAV.unregisterAsset`, and a later
+    ///      re-registration through the facade with an empty array does not clear them either, because
+    ///      `_setAssetLabels` returns early on an empty list. That state is reachable on the pre-setter code too, via
+    ///      {registerAsset} alone, so this change neither creates nor widens it — and the setter is now the one-call
+    ///      remedy for it, which did not exist before. `_setAssetLabels`'s own note on the absent write-once guard
+    ///      describes the same path from the other side.
+    ///
+    ///      Two capabilities are genuinely NEW, both benign and both intentional: an asset registered directly on the
+    ///      NAV and never classified can now be labelled (and stays clearable, because the facade's
+    ///      {unregisterAsset} is idempotent on the kind), and `NATIVE_ADDRESS` — pre-registered by `initialize` and so
+    ///      never registerable through {registerAsset} — becomes labellable for the first time.
     ///
     ///      *Empty array* → {EmptyAssetLabelSet}. `_setAssetLabels` treats an empty list as a silent no-op, which is
     ///      right for {registerAsset} (an asset may legitimately have none) and wrong here: a caller asking to clear

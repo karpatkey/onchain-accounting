@@ -25,6 +25,7 @@ contract MockNav {
     error MockNavRegisterReverted();
     error MockNavUnregisterReverted();
     error MockNavNotAuthorized();
+    error MockNavAssetNotRegistered();
 
     function grant(bytes32 role, address who) external {
         _roles[role][who] = true;
@@ -74,6 +75,11 @@ contract MockNav {
 
     function unregisterAsset(address asset) external {
         if (!_roles[MANAGER][msg.sender]) revert MockNavNotAuthorized();
+        // Faithful to `NAVCalculator.unregisterAsset`, which calls `_requireAssetExists` FIRST. Without this the
+        // mock let the facade unregister an asset the NAV never held — and that is the exact premise the
+        // {setAssetLabels} not-registered guard is justified by, so a mock that is more permissive than production
+        // makes the justification untestable.
+        if (!_isRegistered[asset]) revert MockNavAssetNotRegistered();
         if (revertOnUnregister) revert MockNavUnregisterReverted();
         unregistered.push(asset);
         _isRegistered[asset] = false;
@@ -85,11 +91,6 @@ contract MockNav {
     ///      registration that actually happened, the same way production would.
     function isAssetRegistered(address asset) external view returns (bool) {
         return _isRegistered[asset];
-    }
-
-    /// @notice Force the flag without a registration, for the unregistered-asset arm.
-    function setRegistered(address asset, bool v) external {
-        _isRegistered[asset] = v;
     }
 
     function registeredCount() external view returns (uint256) {
@@ -278,6 +279,12 @@ contract AssetKindRegistryTest is Test {
     ///      work. Using the reverting {clearAssetKind} internally would make the facade unusable for exactly these
     ///      assets — which would be a self-inflicted outage on the path the facade is supposed to own.
     function test_unregisterAsset_worksForAnAssetThatWasNeverClassified() public {
+        // Model the premise the docstring states: the asset is on the NAV, registered DIRECTLY, with no kind here.
+        // This line is not decoration — before `MockNav.unregisterAsset` mirrored `_requireAssetExists`, the test
+        // passed without it while modelling nothing, because the mock let the facade unregister an asset the NAV
+        // had never held.
+        vm.prank(manager);
+        nav.registerAsset(WETH, address(0xFEED), IPrices.PriceType.Chainlink, 3600);
         assertFalse(registry.isClassified(WETH));
 
         vm.prank(manager);
@@ -953,17 +960,47 @@ contract AssetKindRegistryTest is Test {
     }
 
     /// @notice Emits the same event registration emits, so an indexer needs no new handler.
+    /// @notice Asserts the WHOLE event, not just its selector. Checking `topics[0]` alone passes for a wrong asset
+    ///         or a stale payload, which is most of what could go wrong — and the event is the only signal an
+    ///         off-chain indexer has that a label changed.
     function test_setAssetLabels_emitsAssetLabelsSet() public {
         _register(WSTETH, AccrualKind.Appreciating, _labels("Lido", "LTS"));
-        vm.recordLogs();
+        vm.expectEmit(true, false, false, true, address(registry));
+        emit IAssetKindRegistry.AssetLabelsSet(WSTETH, _labels("Lido", "LST"));
         vm.prank(manager);
         registry.setAssetLabels(WSTETH, _labels("Lido", "LST"));
-        Vm.Log[] memory logs = vm.getRecordedLogs();
-        bool found;
-        for (uint256 i; i < logs.length; ++i) {
-            if (logs[i].topics[0] == keccak256("AssetLabelsSet(address,string[])")) found = true;
+    }
+
+    /// @notice An asset registered with NO labels can be given some later. This is the empty -> non-empty
+    ///         transition, which registration itself can never exercise (an empty list is a silent no-op there).
+    function test_setAssetLabels_fillsInLabelsOnAnAssetRegisteredWithout() public {
+        _register(AUSDC, AccrualKind.Appreciating, _noLabels());
+        assertEq(registry.getAssetLabels(AUSDC).length, 0, "starts unlabelled");
+        vm.prank(manager);
+        registry.setAssetLabels(AUSDC, _labels("Aave V3", "aUSDC"));
+        _assertLabels(AUSDC, _labels("Aave V3", "aUSDC"));
+    }
+
+    /// @notice Shrinking from MAX-length, MAX-byte labels to one short label. Long strings (>= 32 bytes) use the
+    ///         long-form storage layout with a separate data slot, so this is the case where a stale tail could
+    ///         survive a wholesale replacement; the read-back proves it does not.
+    function test_setAssetLabels_shrinkFromLongFormLeavesNoStaleTail() public {
+        uint256 maxLabels = registry.MAX_ASSET_LABELS();
+        uint256 maxBytes = registry.MAX_ASSET_LABEL_BYTES();
+        string memory long = string(new bytes(maxBytes));
+        string[] memory full = new string[](maxLabels);
+        for (uint256 i; i < maxLabels; ++i) {
+            full[i] = long;
         }
-        assertTrue(found, "AssetLabelsSet emitted");
+        _register(WSTETH, AccrualKind.Appreciating, full);
+        assertEq(registry.getAssetLabels(WSTETH).length, maxLabels, "precondition: full long-form set");
+
+        vm.prank(manager);
+        registry.setAssetLabels(WSTETH, _labels("x"));
+
+        string[] memory after_ = registry.getAssetLabels(WSTETH);
+        assertEq(after_.length, 1, "shrunk to one");
+        assertEq(after_[0], "x", "and it is the new value, not a truncated old one");
     }
 
     /// @notice REFUSAL 1 — an asset the NAV does not hold. Labels are registration-scoped, and `unregisterAsset`

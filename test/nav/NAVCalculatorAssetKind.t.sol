@@ -85,9 +85,10 @@ contract NAVCalculatorAssetKindTest is SuperTest {
         nav.setAssetKindRegistry(address(0));
     }
 
-    /// @dev Re-settable on purpose, and this is load-bearing for LABELS specifically, not just for upgrades: labels
-    ///      are write-once in the registry, so replacing the registry IS the repair path for a wrong label. If this
-    ///      ever stopped being re-settable, a typo would become permanent.
+    /// @dev Re-settable on purpose. This used to be load-bearing for LABELS specifically — while labels were
+    ///      write-once, replacing the registry was the repair path for a wrong one. `AssetKindRegistry.setAssetLabels`
+    ///      has since taken that job, so re-settability now matters for the ordinary reason: upgrading or replacing
+    ///      the registry without redeploying the NAV.
     function test_setAssetKindRegistry_isResettable() public {
         AssetKindRegistry second = new AssetKindRegistry(address(nav));
         vm.startPrank(navCalculatorManager);

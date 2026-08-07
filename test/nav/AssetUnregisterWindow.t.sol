@@ -59,23 +59,25 @@ contract AssetUnregisterWindowTest is SuperTest {
         (uint256 amt,) = adapter.balanceOf(address(tok), alice);
         assertEq(amt, 3e18, "adapter still reports the position mid-window");
 
-        // Does the NAV read revert, or silently drop it?
+        // Does the NAV read revert, or silently drop it? PIN THE ANSWER — an earlier revision of this test only
+        // logged the branch it took, which meant it passed whether the read reverted, returned zero, or returned a
+        // flagged non-zero. It measured the behaviour without asserting it, so nothing would have gone red if the
+        // behaviour changed. Each of the three assertions below is a separate claim about the SAME failure:
+        //   ok            — it does NOT revert (a revert would be the benign outcome, and would fail this)
+        //   value == 0    — the position is dropped entirely, not repriced or partially counted
+        //   stale empty   — and nothing marks it, so the zero is indistinguishable from a genuinely empty account
+        // If any of the three ever flips, the mid-window behaviour has changed and this test must be re-read, not
+        // re-baselined.
         (bool ok, bytes memory ret) =
             address(nav).staticcall(abi.encodeCall(INAVCalculator.getAccountNav, (alice, address(0))));
-        console2.log("MID-WINDOW getAccountNav succeeded:", ok);
-        if (ok) {
-            INAVCalculator.NAV memory during = abi.decode(ret, (INAVCalculator.NAV));
-            console2.log("MID-WINDOW nav totalValue:", uint256(during.value));
+        assertTrue(ok, "MEASURED: the mid-window read does NOT revert - it succeeds");
 
-            console2.log("MID-WINDOW stalePriceAssets:", during.stalePriceAssets.length);
-            console2.log("VERDICT: SILENT DROP - read succeeds, position omitted, no error");
-        } else {
-            console2.log("MID-WINDOW returndata length:", ret.length);
-            if (ret.length >= 4) {
-                console2.log("MID-WINDOW revert selector:");
-                console2.logBytes4(bytes4(ret));
-            }
-            console2.log("VERDICT: REVERT - the read fails loudly");
-        }
+        INAVCalculator.NAV memory during = abi.decode(ret, (INAVCalculator.NAV));
+        assertEq(during.value, 0, "MEASURED: the position is silently dropped - NAV falls to zero");
+        assertEq(during.stalePriceAssets.length, 0, "MEASURED: nothing is flagged - stalePriceAssets stays empty");
+        assertFalse(during.sequencerDown, "and no sequencer flag either");
+
+        // The whole point, stated as an assertion rather than a log: a healthy-looking zero.
+        assertLt(during.value, before.value, "the reported NAV collapsed while the account's holdings did not");
     }
 }

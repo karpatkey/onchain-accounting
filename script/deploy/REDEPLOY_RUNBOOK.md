@@ -894,10 +894,12 @@ kind"*.
 **So the invariant "no registered asset is unclassified" is STRUCTURAL only if the NAV's `MANAGER` set is exactly
 `{registry}`. Otherwise it is CONVENTIONAL** — upheld by whoever is at the keyboard.
 
-⚠️ **It bites harder than ordinary drift, because labels are write-once.** They can only be set at registration
-and there is no setter. An asset through the wrong door can therefore **never be labelled**; the only repair is
-`unregisterAsset` followed by re-registration through the facade — taking the asset out of the NAV and putting it
-back with its price feeds, to fix a display string.
+⚠️ **It still matters, but it no longer bites the way this note used to say.** Labels were write-once; an asset
+registered through the wrong door could never be labelled, and the only repair was `unregisterAsset` plus
+re-registration — taking the asset out of the NAV and putting it back, with its price feeds, to fix a display
+string. `AssetKindRegistry.setAssetLabels(asset, labels)` (MANAGER-gated) now corrects a label in one call, with
+feeds, monitors and tolerances untouched. Registering through the facade is still the right thing to do, because
+it is what classifies the asset atomically — but a labelling mistake is no longer expensive to undo.
 
 #### What `07` already does, which narrows the question
 

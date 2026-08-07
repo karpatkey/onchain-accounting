@@ -60,7 +60,7 @@ for cid in (1, 8453, 42161, 100, 56):
     seen.append(u.split('/')[2] if u else 'NONE')
 print(' '.join(seen))
 ")"
-check "distinct chains -> distinct hosts" "5" "$(tr ' ' '\n' <<<"$hosts" | sort -u | wc -l)"
+check "distinct chains -> distinct hosts" "5" "$(tr ' ' '\n' <<<"$hosts" | sort -u | wc -l | tr -d "[:space:]")"
 check "chain 8453 is NOT ethereum mainnet" "base-mainnet.g.alchemy.com" "$(cut -d' ' -f2 <<<"$hosts")"
 check "chain 1 is still ethereum mainnet"  "eth-mainnet.g.alchemy.com"  "$(cut -d' ' -f1 <<<"$hosts")"
 
@@ -189,7 +189,9 @@ echo "== (4) the NO-OP detector must catch every skip line the scripts actually 
 # "  Already deployed at:" the detector originally matched; `02`, `02_2`, `08` and all ~34 custom
 # feeds in `03` are lowercase, and `grep -E` is case-sensitive — so the guard against "exited 0
 # having done nothing" was blind to nearly every script it covers.
-NOOP_RE="$(grep -oP 'local noop_re="\K[^"]+' "$TARGET")"
+# `sed -E`, not `grep -oP`: PCRE is GNU-only and absent from BSD/macOS grep, and these guard
+# scripts are explicitly meant to be run by hand on a developer's machine.
+NOOP_RE="$(sed -nE 's/^[[:space:]]*local noop_re="(.*)"$/\1/p' "$TARGET" | head -1)"
 [[ -n "$NOOP_RE" ]] || { echo "could not extract noop_re from $TARGET" >&2; exit 1; }
 noop_hit() { printf '%s\n' "$1" | grep -qaE "$NOOP_RE" && echo caught || echo missed; }
 
@@ -216,10 +218,10 @@ harvest() {
 }
 missed="$(harvest | while IFS= read -r phrase; do
             printf '%s\n' "$phrase" | grep -qaE "$NOOP_RE" || printf '%s\n' "$phrase"
-          done | wc -l)"
+          done | wc -l | tr -d "[:space:]")"
 check "every skip phrase in script/deploy is matched" "0" "$missed"
 # ...and the harvest must actually be finding things, or "0 missed" is vacuous.
-check "the harvest is non-empty" "yes" "$([[ "$(harvest | wc -l)" -ge 20 ]] && echo yes || echo no)"
+check "the harvest is non-empty" "yes" "$([[ "$(harvest | wc -l | tr -d "[:space:]")" -ge 20 ]] && echo yes || echo no)"
 # It must also cover the two phrasings that have no "at", or it has narrowed again.
 check "harvest includes the at-less phrasings" "2" \
       "$(harvest | grep -c 'already deployed:' || true)"

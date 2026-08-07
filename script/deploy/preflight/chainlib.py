@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 import sys
 import time
@@ -212,6 +213,9 @@ def _default_env_files() -> list[Path]:
 DEFAULT_ENV_FILES = _default_env_files()
 
 
+_ENV_KEY_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+
 def load_env(dotenv: Path | None = None) -> None:
     """Load KEY=VALUE lines from .env files into os.environ.
 
@@ -236,6 +240,13 @@ def load_env(dotenv: Path | None = None) -> None:
                 continue
             k, v = line.split("=", 1)
             k, v = k.strip(), v.strip()
+            # Same key filter as the shell twin's `[[ "$k" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]`.
+            # Without it the two sides diverge on any non-identifier line — `export FOO=x` (key
+            # "export FOO") or `MY-VAR=x` are skipped by bash and accepted here — which breaks the
+            # "one endpoint inventory" invariant this loader exists to uphold, and quietly puts
+            # unusable names into the environment of five preflight tools.
+            if not _ENV_KEY_RE.match(k):
+                continue
             # ONE matching pair of surrounding quotes — not `.strip('"').strip("'")`, which peels
             # any number from either end independently and cannot be mirrored exactly in shell.
             if len(v) >= 2 and v[0] == v[-1] and v[0] in ("'", '"'):

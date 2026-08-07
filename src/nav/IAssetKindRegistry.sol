@@ -25,10 +25,14 @@ import {IPrices} from "src/prices/IPrices.sol";
 ///      labelling are separate axes. An asset registered without labels has none until {setAssetLabels} gives it
 ///      some (or it is unregistered and registered again).
 ///
-///      That boundary is chosen for parity with the balance adapters, not for cost: adapter labels
-///      (`positionLabels()`) are fixed when the adapter is deployed and no role can change them, so letting an ASSET
-///      gain labels after registration would demand the same editability for adapters — an asymmetry we are not
-///      willing to open. An empty label list remains a legitimate state. See {registerAsset} and {getAssetLabels}.
+///      **That boundary USED to be write-once, chosen for parity with the balance adapters. The parity argument is
+///      retired.** It ran: adapter labels (`positionLabels()`) are fixed when the adapter is deployed and no role can
+///      change them, so letting an ASSET gain labels after registration would demand the same editability for
+///      adapters. It was dropped because the two are not the same kind of value — an adapter label is a compile-time
+///      constant OF THE CODE, an asset label is operator-supplied DATA — and because the write-once repair path was
+///      far more destructive than it looked (see {setAssetLabels}). **Adapter labels are unchanged and remain
+///      redeploy-to-change**; only the asymmetry argument is gone. An empty label list remains a legitimate state.
+///      See {registerAsset}, {setAssetLabels} and {getAssetLabels}.
 ///
 ///      **No roles.** Implementations gate on `NAV.hasRole(MANAGER, msg.sender)` — authority is exactly the NAV's
 ///      MANAGER set, and this contract has no admin, manager or owner of its own.

@@ -126,6 +126,42 @@ sys.stdout.write(chainlib._materialise_spec('$spec') or '<empty>')")"
   check "bash materialises '$spec' as chainlib does" "$p" "$b"
 done
 
+# An operator override must be sufficient ON ITS OWN. The script used to refuse outright when
+# ALCHEMY_API_KEY was unset, which contradicted this fix's premise: `$<CHAIN>_URL` OUTRANKS the
+# chain config, so `MAINNET_URL=https://my-own-node` is a complete rehearsal setup needing no
+# Alchemy account. chainlib only emits an `alchemy:` spec when the key exists, so the requirement is
+# already enforced per chain, where it applies.
+check "override alone resolves chain 1 without an Alchemy key" "env:MAINNET_URL" \
+      "$(env -u ALCHEMY_API_KEY MAINNET_URL=https://my-own-node/x \
+         python3 "$CHAINLIB" fork-rpc 1 2>/dev/null)"
+# In-process, with load_env deliberately NOT called: `env -u` alone proves nothing here, because
+# load_env re-reads both variables from the .env files on disk and puts them straight back.
+check "a chain needing Alchemy resolves to nothing without the key" "None" \
+      "$(py "
+import os, chainlib
+for v in ('ALCHEMY_API_KEY', 'BASE_URL'):
+    os.environ.pop(v, None)
+print(chainlib.fork_rpc_spec(8453)[0])")"
+check "...and says why" "unresolved (\$ALCHEMY, ALCHEMY_API_KEY)" \
+      "$(py "
+import os, chainlib
+for v in ('ALCHEMY_API_KEY', 'BASE_URL'):
+    os.environ.pop(v, None)
+print(chainlib.fork_rpc_spec(8453)[1])")"
+# ...while the same chain resolves fine once an override is supplied, no Alchemy account needed.
+check "...but an override alone is enough for it too" "env:BASE_URL" \
+      "$(py "
+import os, chainlib
+os.environ.pop('ALCHEMY_API_KEY', None)
+os.environ['BASE_URL'] = 'https://my-own-base/x'
+print(chainlib.fork_rpc_spec(8453)[0])")"
+check "no unconditional ALCHEMY_API_KEY gate remains" "0" \
+      "$(grep -vE '^[[:space:]]*#' "$TARGET" | grep -c 'z "\${ALCHEMY_API_KEY:-}"' || true)"
+# The candidate listing that gate carried was useful; it must survive in the one refusal point.
+check "the refusal still lists .env candidates" "yes" \
+      "$(sed -n '/^if \[\[ -z "\$FORK_URL" \]\]; then/,/^fi$/p' "$TARGET" \
+         | grep -q 'env_candidates' && echo yes || echo no)"
+
 echo "== (3) the reset must clear the key 08 branches on =="
 check "AssetKindRegistry is in CLEAR_TOP" "True" \
       "$(py "import reset_deployment_records as r; print('AssetKindRegistry' in r.CLEAR_TOP)")"

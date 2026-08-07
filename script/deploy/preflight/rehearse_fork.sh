@@ -99,8 +99,8 @@ mkdir -p safe-transactions
 # it resolves for a worktree NESTED at <repo>/.claude/worktrees/<name> exactly as well as for a
 # sibling one. The previous `$(dirname "$ROOT")/onchain-accounting/.env` only ever hit when the
 # worktree happened to sit beside the main clone; from a nested worktree it probed
-# `.../worktrees/onchain-accounting/.env`, found nothing, and this script aborted on the
-# ALCHEMY_API_KEY check below. The sibling probes are KEPT as additional candidates — they cost
+# `.../worktrees/onchain-accounting/.env`, found nothing, and this script aborted for want of
+# credentials it could not find. The sibling probes are KEPT as additional candidates — they cost
 # nothing and still cover a clone git cannot be asked about (no git binary, $ROOT not in a repo).
 # Note they do NOT survive a renamed canonical clone: they hardcode the directory name, so a rename
 # is exactly what breaks them and exactly what the git-derived candidate handles. The OIV env stays
@@ -249,16 +249,13 @@ if (( ${#ENV_FOUND[@]} > 0 )); then
   load_env_files "${ENV_FOUND[@]}"
 fi
 
-if [[ -z "${ALCHEMY_API_KEY:-}" ]]; then
-  {
-    echo "REFUSING: ALCHEMY_API_KEY is not set. Candidates checked, in probe order:"
-    while IFS= read -r ENVF; do
-      if [[ -f "$ENVF" ]]; then echo "  read    $ENVF"; else echo "  absent  $ENVF"; fi
-    done < <(env_candidates "$ROOT")
-    echo "Define it in one of the files above, or export it before running."
-  } >&2
-  exit 1
-fi
+# NO unconditional ALCHEMY_API_KEY gate here. It used to refuse outright when the key was unset,
+# which contradicted this fix's own premise: `$<CHAIN>_URL` is the OPERATOR OVERRIDE and outranks
+# the chain config, so `MAINNET_URL=https://my-own-node rehearse_fork.sh 1` is a perfectly good
+# rehearsal that needs no Alchemy account at all. `chainlib.fork_rpc_spec` only emits an `alchemy:`
+# spec when the key is present, and returns None with a precise note otherwise — so the requirement
+# is already enforced exactly where it applies, per chain, instead of globally. The candidate
+# listing that gate carried was genuinely useful and has moved into the single refusal below.
 # --- the endpoint to fork ------------------------------------------------------
 # This line used to read `FORK_URL="${MAINNET_URL:-https://eth-mainnet.g.alchemy.com/v2/$KEY}"`,
 # which is ETHEREUM MAINNET regardless of $CHAIN_ID — while the other 17 uses of $CHAIN_ID in this
@@ -306,11 +303,17 @@ if (( FORK_RPC_RC == 0 )) && [[ -n "$FORK_RPC_SPEC" ]]; then
   esac
 fi
 if [[ -z "$FORK_URL" ]]; then
-  echo "REFUSING: no RPC endpoint resolves for chain ${CHAIN_ID} (${FORK_RPC_NOTE})." >&2
-  echo "This script will NOT fall back to another chain's endpoint — doing so is how a rehearsal" >&2
-  echo "reports success for a chain it never contacted. Set that chain's URL env var (see" >&2
-  echo "CHAIN_URL_ENV in script/deploy/preflight/chainlib.py) or fix its rpc in" >&2
-  echo "script/config/chains/${CHAIN_ID}.json, then re-run." >&2
+  {
+    echo "REFUSING: no RPC endpoint resolves for chain ${CHAIN_ID} (${FORK_RPC_NOTE})."
+    echo "This script will NOT fall back to another chain's endpoint — doing so is how a rehearsal"
+    echo "reports success for a chain it never contacted."
+    echo "Set that chain's URL env var (see CHAIN_URL_ENV in script/deploy/preflight/chainlib.py),"
+    echo "or set ALCHEMY_API_KEY, or fix the rpc in script/config/chains/${CHAIN_ID}.json."
+    echo ".env candidates, in probe order (first wins):"
+    while IFS= read -r ENVF; do
+      if [[ -f "$ENVF" ]]; then echo "  read    $ENVF"; else echo "  absent  $ENVF"; fi
+    done < <(env_candidates "$ROOT")
+  } >&2
   exit 2
 fi
 echo "fork endpoint for chain ${CHAIN_ID}: ${FORK_RPC_NOTE}"

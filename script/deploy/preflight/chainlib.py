@@ -112,7 +112,11 @@ def _is_worktree_top(path: Path) -> bool:
 
 
 def _canonical_repo_root() -> Path | None:
-    """The MAIN clone's working tree, whatever this checkout's layout is.
+    """The MAIN clone's working tree for a normal checkout or a git worktree, else None.
+
+    Not "whatever the layout is": a SUBMODULE resolves to `<super>/.git/modules/<name>`, whose
+    parent is not a working tree, so this returns None there and the sibling candidates apply —
+    the pre-fix behaviour, degraded to safely rather than silently pointed at the superproject.
 
     `git rev-parse --git-common-dir` reports the main clone's `.git` from inside ANY worktree —
     unlike `--git-dir`, which reports the per-worktree one — so this resolves for a worktree nested

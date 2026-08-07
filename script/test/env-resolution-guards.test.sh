@@ -179,6 +179,17 @@ printf 'ALCHEMY_API_KEY=canonical-sentinel\n' > "$O/vendor/onchain-accounting/.e
 check "vendored tree: no leak from the ancestor repo" "<unset>" "$(resolve_in "$O/vendor/x" OUTER_ONLY)"
 check "vendored tree: falls back to the sibling probe" "canonical-sentinel" "$(resolve_in "$O/vendor/x")"
 
+# (3) A submodule: --git-common-dir answers `<super>/.git/modules/<name>`, whose parent is not a
+#     working tree. Must degrade to the sibling probes, not adopt the SUPERPROJECT as the clone.
+S="$TMP/super"; mk "$S"; mk "$TMP/subsrc"
+printf 'ALCHEMY_API_KEY=super-leak\nSUPER_ONLY=yes\n' > "$S/.env"
+git -C "$S" -c protocol.file.allow=always submodule add -q "$TMP/subsrc" onchain-accounting 2>/dev/null
+printf 'ALCHEMY_API_KEY=canonical-sentinel\n' > "$S/onchain-accounting/.env"
+check "submodule: no leak from the superproject" "<unset>" \
+      "$(resolve_in "$S/onchain-accounting" SUPER_ONLY)"
+check "submodule: still resolves its own .env" "canonical-sentinel" \
+      "$(resolve_in "$S/onchain-accounting")"
+
 echo "== hygiene =="
 
 # Dedupe: in a normal checkout the three OA candidates are one file, so the resolved set is exactly

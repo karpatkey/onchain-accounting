@@ -96,8 +96,10 @@ check "rehearse_fork.sh calls chainlib fork-rpc" "yes" \
 # What must be gone is any EXECUTABLE assignment of a mainnet URL to FORK_URL.
 check "no executable line hardcodes eth-mainnet into FORK_URL" "0" \
       "$(grep -vE '^[[:space:]]*#' "$TARGET" | grep -c 'FORK_URL=.*eth-mainnet' || true)"
+# -E with an explicit optional group: the BRE forms `\(` and `\?` are not portable across grep
+# implementations, and these guard scripts are meant to be run by hand on any developer machine.
 check "FORK_URL is assigned exactly once, from the resolver" "1" \
-      "$(grep -vE '^[[:space:]]*#' "$TARGET" | grep -c '^[[:space:]]*\(if ! \)\?FORK_URL=' || true)"
+      "$(grep -vE '^[[:space:]]*#' "$TARGET" | grep -cE '^[[:space:]]*(if ! )?FORK_URL=' || true)"
 check "unresolvable chain aborts rather than falling back" "yes" \
       "$(sed -n '/^FORK_RPC_RC=0/,/^echo "fork endpoint/p' "$TARGET" | grep -q 'exit 2' && echo yes || echo no)"
 

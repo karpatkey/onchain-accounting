@@ -23,11 +23,26 @@ CHAINLIB="$REPO_ROOT/script/deploy/preflight/chainlib.py"
 [[ -f "$TARGET" ]] || { echo "cannot find $TARGET" >&2; exit 1; }
 
 # Pull the shipping code out verbatim: the candidate function, then the dedupe+source block.
-# `/^done$/` terminates on the for-loop's bare `done` — the while-loop's is `done < <(...)`.
+# The block runs from `ENV_FOUND=()` to the `fi` closing the source loop, both at column 0.
 fn_src="$(sed -n '/^env_candidates() {/,/^}/p' "$TARGET")"
 [[ -n "$fn_src" ]] || { echo "could not extract env_candidates from $TARGET" >&2; exit 1; }
-resolve_src="$(sed -n '/^ENV_FOUND=()/,/^done$/p' "$TARGET")"
+resolve_src="$(sed -n '/^ENV_FOUND=()/,/^fi$/p' "$TARGET")"
 [[ -n "$resolve_src" ]] || { echo "could not extract the resolution block from $TARGET" >&2; exit 1; }
+# A silently-truncated or runaway extraction would make every case below vacuous, so assert the
+# region's shape rather than merely that it is non-empty.
+# -F throughout: these anchors contain `$` and `(`, which an ERE would read as metacharacters.
+while IFS= read -r anchor; do
+  grep -qF -- "$anchor" <<<"$resolve_src" || {
+    echo "extracted block is missing '$anchor' — the sed range has drifted from $TARGET" >&2; exit 1; }
+done <<'ANCHORS'
+ENV_FOUND=()
+env_candidates "$ROOT"
+set -a; source
+ANCHORS
+grep -qx 'fi' <<<"$resolve_src" || {
+  echo "extracted block does not end at the closing 'fi' — the sed range has drifted" >&2; exit 1; }
+grep -q 'ALCHEMY_API_KEY is not set' <<<"$resolve_src" && {
+  echo "extracted block overran into the refusal check — see the range comment" >&2; exit 1; }
 
 pass=0
 fail=0
@@ -189,6 +204,23 @@ check "submodule: no leak from the superproject" "<unset>" \
       "$(resolve_in "$S/onchain-accounting" SUPER_ONLY)"
 check "submodule: still resolves its own .env" "canonical-sentinel" \
       "$(resolve_in "$S/onchain-accounting")"
+
+# (4) The guard must fail CLOSED when it cannot RESOLVE a path, not just when git refuses.
+#     `readlink -f` does not exist on BSD/macOS and prints nothing when it cannot resolve, so a
+#     readlink-based comparison degrades to "" == "" — passing precisely when nothing was verified,
+#     and re-opening the vendored-tree leak on every non-GNU box. Simulated by shadowing readlink
+#     with a stub that produces no output, which is what those platforms effectively give us.
+#     (A plain nonexistent root does NOT exercise this: `git rev-parse` fails first.)
+STUB="$TMP/stub"; mkdir -p "$STUB"
+printf '#!/bin/sh\nexit 1\n' > "$STUB/readlink"; chmod +x "$STUB/readlink"
+check "readlink unavailable: vendored tree still no leak" "<unset>" \
+      "$( PATH="$STUB:$PATH" resolve_in "$O/vendor/x" OUTER_ONLY )"
+check "readlink unavailable: bare-backed still no leak" "<unset>" \
+      "$( PATH="$STUB:$PATH" resolve_in "$B/oa-main" LEAKED_ONLY )"
+# ...and a genuinely unresolvable root must still not error out.
+check "unresolvable root: no error under set -euo" "0" \
+      "$( rc=0; ( set -euo pipefail; ROOT="$TMP/does/not/exist"; eval "$fn_src"; eval "$resolve_src" ) \
+          >/dev/null 2>&1 || rc=$?; echo $rc )"
 
 echo "== hygiene =="
 

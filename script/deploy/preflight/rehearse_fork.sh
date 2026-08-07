@@ -123,11 +123,16 @@ env_candidates() {
   #     the bare repo, whose parent is not a working tree at all — frequently $HOME, whose .env then
   #     gets sourced. Observed leaking a PRIVATE_KEY that way.
   _is_worktree_top() {
-    local d="$1" top
+    local d="$1" top dreal treal
     [[ "$(git -C "$d" rev-parse --is-bare-repository 2>/dev/null)" == "false" ]] || return 1
     top="$(git -C "$d" rev-parse --show-toplevel 2>/dev/null)" && [[ -n "$top" ]] || return 1
-    # Compare resolved paths: $root is legitimately a symlink in some checkouts.
-    [[ "$(readlink -f -- "$top" 2>/dev/null)" == "$(readlink -f -- "$d" 2>/dev/null)" ]]
+    # Resolve both before comparing — $root is legitimately a symlink in some checkouts — but with
+    # `cd -P`, NOT `readlink -f`. readlink is absent on BSD/macOS, and on failure it prints NOTHING
+    # and still exits 0 here, so an unresolvable path would compare "" == "" and the guard would
+    # PASS precisely when it could not verify anything. `cd` fails loudly, so this fails closed.
+    dreal="$(cd -P -- "$d" 2>/dev/null && pwd -P)" && [[ -n "$dreal" ]] || return 1
+    treal="$(cd -P -- "$top" 2>/dev/null && pwd -P)" && [[ -n "$treal" ]] || return 1
+    [[ "$dreal" == "$treal" ]]
   }
   printf '%s\n' "$root/.env"
   # Guarded: `git` may be absent, or $root may not be in a repo at all. Neither is fatal here.
@@ -180,9 +185,11 @@ while IFS= read -r ENVF; do
   ENV_FOUND+=("$ENVREAL")
 done < <(env_candidates "$ROOT")
 
-for ENVF in ${ENV_FOUND[@]+"${ENV_FOUND[@]}"}; do
-  set -a; source "$ENVF"; set +a
-done
+if (( ${#ENV_FOUND[@]} > 0 )); then
+  for ENVF in "${ENV_FOUND[@]}"; do
+    set -a; source "$ENVF"; set +a
+  done
+fi
 
 if [[ -z "${ALCHEMY_API_KEY:-}" ]]; then
   {

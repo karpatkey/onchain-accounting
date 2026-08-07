@@ -1949,11 +1949,12 @@ library PriceFeedLib {
     ///      back the one adapter staticcall it skips. **The MISS path is the common case — no adapter has an override
     ///      today — so this is strictly more expensive than before this change.**
     ///
-    ///      The per-adapter surcharge is a RANGE, not one number, and both ends are real: ~5.1k warm (this fixture,
-    ///      where the registry's storage is already touched) up to ~9.6k cold (an independent 20-adapter sweep, where
-    ///      each adapter's mapping slot is a cold SLOAD). Quote the cold figure when sizing a real portfolio read,
-    ///      since distinct adapters are exactly the case that is cold. An earlier revision quoted only 9,569 as
-    ///      though it were the single value.
+    ///      Per-DISTINCT-ADAPTER surcharge, measured in-repo: ~5.3k for one adapter, ~10.7k for two. It scales with
+    ///      distinct adapters, not with positions. ⚠️ Two earlier revisions of this note quoted a "~9.6k cold, from
+    ///      an independent 20-adapter sweep" figure; that measurement was made outside this repo and NOTHING here
+    ///      reproduces it, so it has been removed rather than left as an unverifiable number in a comment. Every
+    ///      figure quoted above comes from a test in this tree. Real portfolios touch each adapter's mapping slot
+    ///      cold, so treat these warm-fixture numbers as a FLOOR, not a forecast.
     ///      `AdapterLabelOverrides.t.sol::test_gas_registryLegIsBounded` measures the ordering and bounds the
     ///      surcharge; `test_gas_surchargeIsPerAdapter_notPerPosition` pins that it scales with adapters, not
     ///      positions.
@@ -2047,8 +2048,11 @@ library PriceFeedLib {
     /// @dev Every `protocolName()` in this repo is a `pure` constant string and an override read is one capped
     ///      `SLOAD` plus a 32-byte-bounded string, so this is orders of magnitude more than any legitimate read
     ///      needs; it exists to bound a broken or hostile callee. Note the consequence of the shared stipend: a
-    ///      hostile registry can burn 2x this per DISTINCT ADAPTER, which is the ceiling
-    ///      `test_gas_registryLegIsBounded` exists to keep honest.
+    ///      hostile registry can burn 2x this per DISTINCT ADAPTER. That ceiling is exercised by
+    ///      `AdapterLabelOverrides.t.sol::test_gas_hostileRegistryIsBoundedByTheStipend`, which wires a
+    ///      stipend-burning registry and measures the read (~422k, still fail-open). An earlier revision cited
+    ///      `test_gas_registryLegIsBounded` here, which uses a well-behaved registry and never approaches the
+    ///      ceiling it was said to police.
     uint256 private constant _NAME_READ_GAS = 100_000;
 
     /// @notice Gas stipend for the outer `positionLabels()` staticcall. An order of magnitude above

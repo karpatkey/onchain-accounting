@@ -136,7 +136,7 @@ contract AssetKindRegistry is IAssetKindRegistry {
     mapping(address adapter => string name) private _adapterProtocolName;
 
     /// @notice One balance adapter's override for segment 0 of `positionLabels()` — the CATEGORY. Empty means none.
-    /// @dev Also per-adapter, and for the same reason: the category is a string literal at every one of the 32 call
+    /// @dev Also per-adapter, and for the same reason: the category is a string literal in every one of the 31 call
     ///      sites that have one (`_labels("Market", leaf)`, `_addressLabels(pid, "Vault", false)`, …), while only the
     ///      leaf varies per position. Kept in its own mapping rather than packed with the name above so each can be
     ///      set and cleared independently — an operator correcting a protocol name usually has no reason to touch the

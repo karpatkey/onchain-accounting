@@ -219,7 +219,39 @@ if [[ -z "${ALCHEMY_API_KEY:-}" ]]; then
   } >&2
   exit 1
 fi
-FORK_URL="${MAINNET_URL:-https://eth-mainnet.g.alchemy.com/v2/${ALCHEMY_API_KEY}}"
+# --- the endpoint to fork ------------------------------------------------------
+# This line used to read `FORK_URL="${MAINNET_URL:-https://eth-mainnet.g.alchemy.com/v2/$KEY}"`,
+# which is ETHEREUM MAINNET regardless of $CHAIN_ID — while the other 17 uses of $CHAIN_ID in this
+# script (chain config, deployment record, broadcast dir, every post-condition) faithfully followed
+# the argument. So `rehearse_fork.sh 8453` read Base's config, wrote Base's records, asserted
+# against Base's expectations — and forked Ethereum. It reported success without once contacting
+# the chain it claimed to rehearse, which means NO NON-MAINNET CHAIN HAS EVER ACTUALLY BEEN
+# REHEARSED by this script; every such claim is a mainnet run wearing another chain's label.
+#
+# Resolution is delegated to `chainlib.fork_rpc`, not reimplemented here, so the rehearsal and the
+# five chainlib-backed preflight tools cannot drift apart on what a chain's endpoint is. That
+# function is the literal generalisation of the old line — `$<CHAIN>_URL` first (the operator
+# override that is how a deploy reaches chains the Alchemy app has disabled; a rehearsal is only
+# worth running against the endpoint the deploy will use), then the chain config — so CHAIN 1
+# RESOLVES EXACTLY AS BEFORE and only the other chains change.
+#
+# It FAILS CLOSED. A chain with no resolvable endpoint aborts here rather than falling back to
+# anything, matching the house rule the deploy path already follows (RegisterAssets reverts
+# `AssetKindRegistryNotDeployed` rather than quietly using a lesser path). A rehearsal that forks
+# the wrong chain is worse than one that refuses to start, because it produces a green report.
+#
+# The URL carries the API key, so only the resolution NOTE is echoed — never the URL itself.
+FORK_RPC_NOTE="$(python3 script/deploy/preflight/chainlib.py fork-rpc "$CHAIN_ID" 2>&1 >/dev/null)"
+if ! FORK_URL="$(python3 script/deploy/preflight/chainlib.py fork-rpc "$CHAIN_ID" 2>/dev/null)" \
+   || [[ -z "$FORK_URL" ]]; then
+  echo "REFUSING: no RPC endpoint resolves for chain ${CHAIN_ID} (${FORK_RPC_NOTE})." >&2
+  echo "This script will NOT fall back to another chain's endpoint — doing so is how a rehearsal" >&2
+  echo "reports success for a chain it never contacted. Set \$${CHAIN_ID}'s URL env var (see" >&2
+  echo "CHAIN_URL_ENV in script/deploy/preflight/chainlib.py) or fix its rpc in" >&2
+  echo "script/config/chains/${CHAIN_ID}.json, then re-run." >&2
+  exit 2
+fi
+echo "fork endpoint for chain ${CHAIN_ID}: ${FORK_RPC_NOTE}"
 
 DEPLOYER="$(jq -r '.addresses.admin' "script/config/chains/${CHAIN_ID}.json")"
 LIVE_PROXY="$(jq -r '.NAVCalculatorProxy // ""' "script/config/deployments/${CHAIN_ID}.json")"

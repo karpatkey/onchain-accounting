@@ -389,6 +389,27 @@ def resolve_rpc(chain_id: int, allow_fallback: bool = True,
     return None, note
 
 
+def fork_rpc(chain_id: int) -> tuple[str | None, str]:
+    """The endpoint a LOCAL FORK of `chain_id` must be taken from. (url, note); url None = give up.
+
+    Operator override FIRST, which is the opposite of `resolve_rpc` (that one mirrors ConfigReader,
+    where the chain config wins). `$<CHAIN>_URL` is how the 2026-07-22 redeploy reached the chains
+    the Alchemy app has disabled, and a rehearsal is only worth running against the same endpoint
+    the deploy will use — so the override outranks the config here.
+
+    This is the literal generalisation of what `rehearse_fork.sh` already did for ONE chain:
+    `FORK_URL="${MAINNET_URL:-<eth-mainnet alchemy>}"`. Chain 1 therefore resolves exactly as it did
+    before; every other chain stops silently resolving to Ethereum mainnet.
+
+    Returning None is a valid, deliberate outcome: the caller must abort rather than substitute some
+    other chain's endpoint, which is the defect this function exists to end.
+    """
+    envvar = CHAIN_URL_ENV.get(chain_id)
+    if envvar and os.environ.get(envvar):
+        return os.environ[envvar], f"env {envvar}"
+    return resolve_rpc(chain_id)
+
+
 class RpcError(RuntimeError):
     pass
 
@@ -557,3 +578,27 @@ def enumerate_deployed(chain_id: int) -> list[dict]:
             out.append(dict(chain=chain_id, addr=v, key=k, group="canonical",
                             name=CANONICAL_KEYS.get(k)))
     return out
+
+
+if __name__ == "__main__":
+    # Tiny CLI so shell tooling resolves endpoints through THIS module rather than reimplementing
+    # the rules. `fork-rpc` prints the URL on stdout and the human-readable note on stderr, so a
+    # caller can capture the URL without the note contaminating it — and without the URL (which
+    # carries the API key) landing in a log that only wanted the note.
+    #   python3 chainlib.py fork-rpc <chainId>   -> url on stdout, note on stderr; exit 3 if none
+    import sys as _sys
+
+    if len(_sys.argv) != 3 or _sys.argv[1] != "fork-rpc":
+        print("usage: chainlib.py fork-rpc <chainId>", file=_sys.stderr)
+        raise SystemExit(2)
+    try:
+        _cid = int(_sys.argv[2])
+    except ValueError:
+        print(f"chainId must be an integer, got {_sys.argv[2]!r}", file=_sys.stderr)
+        raise SystemExit(2)
+    load_env()
+    _url, _note = fork_rpc(_cid)
+    print(_note, file=_sys.stderr)
+    if not _url:
+        raise SystemExit(3)
+    print(_url)

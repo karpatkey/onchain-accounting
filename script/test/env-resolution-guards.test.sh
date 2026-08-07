@@ -210,6 +210,28 @@ printf 'MAINNET_URL=from-local\n' > "$NESTED/.env"
 check "local .env outranks the canonical clone" "from-local" "$(resolve_in "$NESTED" MAINNET_URL)"
 rm -f "$NESTED/.env"
 
+# QUOTE TORTURE. Every .env this suite writes was bare KEY=value — not one test value contained a
+# quote character — so the invariant below could not exercise the quote rule it exists to pin. That
+# gap hid two divergences: `A="\'x\'"` resolved to `x` in bash and `\'x\'` in chainlib, and `C="\'"`
+# made bash evaluate a negative-length substring and ABORT the whole script under `set -uo pipefail`.
+QT="$TMP/quote-torture"; mkdir -p "$QT"
+printf 'Q_A="\x27x\x27"\nQ_B=\x27"y"\x27\nQ_C="\x27"\nQ_D="\x27\x27"\nQ_E=""\nQ_F=\x27\x27\nQ_G="unterminated\n' > "$QT/.env"
+qt_rc=0
+( set -uo pipefail; eval "$load_src"; load_env_files "$QT/.env" ) >/dev/null 2>&1 || qt_rc=$?
+check "quoted values do not abort the loader" "0" "$qt_rc"
+for qk in Q_A Q_B Q_C Q_D Q_E Q_F Q_G; do
+  qb="$( set -uo pipefail; eval "$load_src"; load_env_files "$QT/.env" 2>/dev/null
+         printf '%s' "${!qk-<UNSET>}" )"
+  qp="$(python3 -c "
+import sys, types, pathlib, os
+sys.modules.setdefault('requests', types.ModuleType('requests'))
+sys.path.insert(0, '$REPO_ROOT/script/deploy/preflight')
+import chainlib
+chainlib.load_env(pathlib.Path('$QT/.env'))
+sys.stdout.write(os.environ.get('$qk', '<UNSET>'))")"
+  check "quote rule: bash == chainlib for $qk" "$qp" "$qb"
+done
+
 # THE CROSS-IMPLEMENTATION INVARIANT. This is the assertion the divergence would have had to break:
 # every key, resolved through the shipped bash parser and through chainlib.load_env, must match.
 for var in ALCHEMY_API_KEY MAINNET_URL OIV_ONLY_URL; do

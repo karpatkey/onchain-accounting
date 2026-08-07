@@ -99,7 +99,32 @@ check "no executable line hardcodes eth-mainnet into FORK_URL" "0" \
 check "FORK_URL is assigned exactly once, from the resolver" "1" \
       "$(grep -vE '^[[:space:]]*#' "$TARGET" | grep -c '^[[:space:]]*\(if ! \)\?FORK_URL=' || true)"
 check "unresolvable chain aborts rather than falling back" "yes" \
-      "$(sed -n '/^FORK_RPC_NOTE=/,/^fi$/p' "$TARGET" | grep -q 'exit 2' && echo yes || echo no)"
+      "$(sed -n '/^FORK_RPC_RC=0/,/^echo "fork endpoint/p' "$TARGET" | grep -q 'exit 2' && echo yes || echo no)"
+
+# THE SECRET MUST NEVER REACH stdout OR stderr. The URL embeds $ALCHEMY_API_KEY, and stdout ends up
+# in CI transcripts and shell logs; CodeQL flags precisely this (py/clear-text-logging-sensitive-data,
+# high). chainlib therefore emits a SPEC naming the source and the caller assembles the URL itself.
+check "CLI emits a spec, never a URL" "yes" \
+      "$(python3 "$CHAINLIB" fork-rpc 1 2>/dev/null | grep -qE '^(env|alchemy|literal):' && echo yes || echo no)"
+check "no API key in the CLI's combined output" "0" \
+      "$(ALCHEMY_API_KEY=SENTINELKEYXYZ python3 "$CHAINLIB" fork-rpc 8453 2>&1 | grep -c 'SENTINELKEYXYZ' || true)"
+check "CLI output contains no https:// for an env spec" "0" \
+      "$(python3 "$CHAINLIB" fork-rpc 1 2>/dev/null | grep -c 'https://' || true)"
+
+# The shell's `case` must materialise a spec EXACTLY as chainlib._materialise_spec does, or the two
+# halves of this design drift and the rehearsal forks something neither side intended.
+SPEC_CASE="$(sed -n '/^  case "\$FORK_RPC_SPEC" in/,/^  esac/p' "$TARGET")"
+[[ -n "$SPEC_CASE" ]] || { echo "could not extract the spec case block from $TARGET" >&2; exit 1; }
+for spec in "env:GUARD_TEST_VAR" "alchemy:base-mainnet" "literal:https://rpc.example/x" "bogus:thing"; do
+  b="$( set -uo pipefail
+        export GUARD_TEST_VAR="https://from-env/x" ALCHEMY_API_KEY="guard-test-key"
+        FORK_RPC_SPEC="$spec"; FORK_URL=""; FORK_RPC_NOTE="n"
+        eval "$SPEC_CASE"; printf '%s' "${FORK_URL:-<empty>}" )"
+  p="$(GUARD_TEST_VAR="https://from-env/x" ALCHEMY_API_KEY="guard-test-key" py "
+import sys, chainlib
+sys.stdout.write(chainlib._materialise_spec('$spec') or '<empty>')")"
+  check "bash materialises '$spec' as chainlib does" "$p" "$b"
+done
 
 echo "== (3) the reset must clear the key 08 branches on =="
 check "AssetKindRegistry is in CLEAR_TOP" "True" \

@@ -404,25 +404,71 @@ def resolve_rpc(chain_id: int, allow_fallback: bool = True,
     return None, note
 
 
-def fork_rpc(chain_id: int) -> tuple[str | None, str]:
-    """The endpoint a LOCAL FORK of `chain_id` must be taken from. (url, note); url None = give up.
+def fork_rpc_spec(chain_id: int) -> tuple[str | None, str]:
+    """WHERE a local fork of `chain_id` gets its endpoint — named, never materialised. (spec, note).
 
-    Operator override FIRST, which is the opposite of `resolve_rpc` (that one mirrors ConfigReader,
-    where the chain config wins). `$<CHAIN>_URL` is how the 2026-07-22 redeploy reached the chains
-    the Alchemy app has disabled, and a rehearsal is only worth running against the same endpoint
-    the deploy will use — so the override outranks the config here.
+    This is the primitive; `fork_rpc` is derived from it. It returns a SOURCE DESCRIPTOR rather than
+    a URL so that a caller which only needs to be told where to look never has to handle the secret:
 
-    This is the literal generalisation of what `rehearse_fork.sh` already did for ONE chain:
-    `FORK_URL="${MAINNET_URL:-<eth-mainnet alchemy>}"`. Chain 1 therefore resolves exactly as it did
-    before; every other chain stops silently resolving to Ethereum mainnet.
+        env:<VARNAME>      read that environment variable
+        alchemy:<network>  build https://<network>.g.alchemy.com/v2/$ALCHEMY_API_KEY
+        literal:<url>      a non-secret URL committed in the chain config
 
-    Returning None is a valid, deliberate outcome: the caller must abort rather than substitute some
-    other chain's endpoint, which is the defect this function exists to end.
+    None means nothing resolved, and the caller MUST abort rather than substitute another chain's
+    endpoint — the defect this whole path exists to end.
+
+    Operator override FIRST, the opposite of `resolve_rpc` (which mirrors ConfigReader, where the
+    chain config wins). `$<CHAIN>_URL` is how the 2026-07-22 redeploy reached the chains the Alchemy
+    app has disabled, and a rehearsal is only worth running against the endpoint the deploy will
+    use. This is the literal generalisation of what `rehearse_fork.sh` did for ONE chain
+    (`FORK_URL="${MAINNET_URL:-<eth-mainnet alchemy>}"`), so chain 1 resolves exactly as before.
     """
     envvar = CHAIN_URL_ENV.get(chain_id)
     if envvar and os.environ.get(envvar):
-        return os.environ[envvar], f"env {envvar}"
-    return resolve_rpc(chain_id)
+        return f"env:{envvar}", f"env {envvar}"
+
+    raw = chain_config(chain_id).get("rpc", "")
+    if raw == "$ALCHEMY":
+        net = ALCHEMY_NETWORK.get(chain_id)
+        if net and os.environ.get("ALCHEMY_API_KEY"):
+            return f"alchemy:{net}", "alchemy"
+        note = ("unresolved ($ALCHEMY, ALCHEMY_API_KEY)" if net
+                else f"unresolved (no alchemy network mapped for {chain_id})")
+    elif raw.startswith("$"):
+        if os.environ.get(raw[1:]):
+            return f"env:{raw[1:]}", f"env {raw[1:]}"
+        note = f"unresolved ({raw} not in env)"
+    elif raw:
+        return f"literal:{raw}", "literal"
+    else:
+        note = "no rpc in chain config"
+
+    if chain_id in PUBLIC_FALLBACK_RPC:
+        return f"literal:{PUBLIC_FALLBACK_RPC[chain_id]}", f"public fallback ({note})"
+    return None, note
+
+
+def _materialise_spec(spec: str) -> str | None:
+    """Turn a `fork_rpc_spec` descriptor into the actual URL. Mirrored by rehearse_fork.sh."""
+    kind, _, val = spec.partition(":")
+    if kind == "env":
+        return os.environ.get(val) or None
+    if kind == "alchemy":
+        key = os.environ.get("ALCHEMY_API_KEY")
+        return f"https://{val}.g.alchemy.com/v2/{key}" if key else None
+    if kind == "literal":
+        return val or None
+    return None
+
+
+def fork_rpc(chain_id: int) -> tuple[str | None, str]:
+    """The endpoint a LOCAL FORK of `chain_id` must be taken from. (url, note); url None = give up.
+
+    Derived from `fork_rpc_spec` so there is exactly one place that decides, and so the URL — which
+    embeds an API key — is only ever built by a caller that genuinely needs the value.
+    """
+    spec, note = fork_rpc_spec(chain_id)
+    return (_materialise_spec(spec) if spec else None), note
 
 
 class RpcError(RuntimeError):
@@ -597,10 +643,18 @@ def enumerate_deployed(chain_id: int) -> list[dict]:
 
 if __name__ == "__main__":
     # Tiny CLI so shell tooling resolves endpoints through THIS module rather than reimplementing
-    # the rules. `fork-rpc` prints the URL on stdout and the human-readable note on stderr, so a
-    # caller can capture the URL without the note contaminating it — and without the URL (which
-    # carries the API key) landing in a log that only wanted the note.
-    #   python3 chainlib.py fork-rpc <chainId>   -> url on stdout, note on stderr; exit 3 if none
+    # the rules.
+    #
+    # It prints the SPEC, never the URL. The URL embeds $ALCHEMY_API_KEY, and stdout is a channel
+    # that ends up in logs and CI transcripts — CodeQL flags exactly that
+    # (py/clear-text-logging-sensitive-data, high), and it is right to. The caller already holds the
+    # key in its own environment, so naming the source leaks nothing while keeping every DECISION
+    # (which override wins, which network, when to give up) in this module.
+    #
+    #   python3 chainlib.py fork-rpc <chainId>
+    #     stdout: env:<VAR> | alchemy:<network> | literal:<url>
+    #     stderr: human-readable note
+    #     exit:   0 resolved, 2 bad usage, 3 nothing resolves
     import sys as _sys
 
     if len(_sys.argv) != 3 or _sys.argv[1] != "fork-rpc":
@@ -612,8 +666,8 @@ if __name__ == "__main__":
         print(f"chainId must be an integer, got {_sys.argv[2]!r}", file=_sys.stderr)
         raise SystemExit(2)
     load_env()
-    _url, _note = fork_rpc(_cid)
+    _spec, _note = fork_rpc_spec(_cid)
     print(_note, file=_sys.stderr)
-    if not _url:
+    if not _spec:
         raise SystemExit(3)
-    print(_url)
+    print(_spec)

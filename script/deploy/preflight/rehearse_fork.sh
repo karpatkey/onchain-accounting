@@ -272,18 +272,35 @@ fi
 # `AssetKindRegistryNotDeployed` rather than quietly using a lesser path). A rehearsal that forks
 # the wrong chain is worse than one that refuses to start, because it produces a green report.
 #
-# The URL carries the API key, so only the resolution NOTE is echoed — never the URL itself.
-# ONE invocation, both streams captured separately. Calling it twice — once for the note, once for
-# the URL — would be two sources of truth for a single decision, and the whole point of this block
-# is that the endpoint is decided in exactly one place.
+# chainlib returns a SPEC naming the source, never the URL: the URL embeds $ALCHEMY_API_KEY, and
+# emitting a secret on stdout is a real exposure channel however carefully this one caller handles
+# it — CodeQL flags exactly that (py/clear-text-logging-sensitive-data, high) and is right to. This
+# shell already holds the key in its own environment, so naming the source leaks nothing while every
+# DECISION — which override wins, which network, when to give up — stays in chainlib.
+# `_materialise_spec` there mirrors the case below, and the guard test asserts the two produce
+# identical URLs so they cannot drift apart.
+#
+# ONE invocation, both streams captured separately: calling it twice, once for the note and once for
+# the value, would be two sources of truth for a single decision.
 FORK_RPC_RC=0
-FORK_URL="$(python3 script/deploy/preflight/chainlib.py fork-rpc "$CHAIN_ID" 2>"$WORK/rpc.err")" \
+FORK_RPC_SPEC="$(python3 script/deploy/preflight/chainlib.py fork-rpc "$CHAIN_ID" 2>"$WORK/rpc.err")" \
   || FORK_RPC_RC=$?
 FORK_RPC_NOTE="$(cat "$WORK/rpc.err" 2>/dev/null)"
-if (( FORK_RPC_RC != 0 )) || [[ -z "$FORK_URL" ]]; then
+FORK_URL=""
+if (( FORK_RPC_RC == 0 )) && [[ -n "$FORK_RPC_SPEC" ]]; then
+  case "$FORK_RPC_SPEC" in
+    # Two steps deliberately: `${!VAR#env:}` does NOT mean "strip the prefix, then expand
+    # indirectly" — bash applies the modifier to the indirect result, so it silently yields nothing.
+    env:*)     FORK_ENV_VAR="${FORK_RPC_SPEC#env:}"; FORK_URL="${!FORK_ENV_VAR:-}" ;;
+    alchemy:*) FORK_URL="https://${FORK_RPC_SPEC#alchemy:}.g.alchemy.com/v2/${ALCHEMY_API_KEY:-}" ;;
+    literal:*) FORK_URL="${FORK_RPC_SPEC#literal:}" ;;
+    *)         FORK_RPC_NOTE="unrecognised spec '${FORK_RPC_SPEC}' (${FORK_RPC_NOTE})" ;;
+  esac
+fi
+if [[ -z "$FORK_URL" ]]; then
   echo "REFUSING: no RPC endpoint resolves for chain ${CHAIN_ID} (${FORK_RPC_NOTE})." >&2
   echo "This script will NOT fall back to another chain's endpoint — doing so is how a rehearsal" >&2
-  echo "reports success for a chain it never contacted. Set \$${CHAIN_ID}'s URL env var (see" >&2
+  echo "reports success for a chain it never contacted. Set that chain's URL env var (see" >&2
   echo "CHAIN_URL_ENV in script/deploy/preflight/chainlib.py) or fix its rpc in" >&2
   echo "script/config/chains/${CHAIN_ID}.json, then re-run." >&2
   exit 2

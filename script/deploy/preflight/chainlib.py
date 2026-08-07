@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -77,10 +78,141 @@ PUBLIC_FALLBACK_RPC = {
 }
 
 
-DEFAULT_ENV_FILES = [
-    REPO.parent / "onchain-accounting" / ".env",
-    REPO.parent / "onchain-investment-vehicles" / ".env",
-]
+def _git(cwd: Path, *args: str) -> str | None:
+    """Run `git -C cwd <args>` and return stripped stdout, or None if it fails at all.
+
+    The git environment is CLEARED: GIT_DIR / GIT_WORK_TREE make `rev-parse` answer about whatever
+    they point at rather than about `cwd`, which makes every check below vacuous — and git exports
+    GIT_DIR to hooks, so this is reachable rather than theoretical.
+    """
+    env = {k: v for k, v in os.environ.items()
+           if k not in ("GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR")}
+    try:
+        out = subprocess.run(
+            ["git", "-C", str(cwd), *args],
+            capture_output=True, text=True, timeout=10, check=True, env=env,
+        ).stdout.strip()
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return out or None
+
+
+def _owns_gitdir(gitdir: Path, candidate: Path) -> bool:
+    """True only when `candidate` is the working tree that OWNS `gitdir`.
+
+    Being *a* working-tree top is not enough: a bare repo's parent directory is frequently itself a
+    checked-out repo — a dotfiles-managed ``$HOME`` is the ordinary case — and that parent would
+    otherwise be adopted as "the canonical clone" and have its .env read first.
+    """
+    if not _is_worktree_top(candidate):
+        return False
+    common = _git(candidate, "rev-parse", "--git-common-dir")
+    if not common:
+        return False
+    try:
+        return (candidate / common).resolve() == gitdir.resolve()
+    except OSError:
+        return False
+
+
+def _is_worktree_top(path: Path) -> bool:
+    """True only when `path` is the TOP directory of a non-bare working tree.
+
+    git answers `rev-parse` from any directory INSIDE a repository, and that willingness is a trap:
+    without this check, a tree with no `.git` of its own that merely sits inside an ancestor repo
+    (a vendored or tarball copy) makes git walk UP and report the ANCESTOR, whose unrelated `.env`
+    is then read; and the parent of a bare repo is reported as a "clone" although it is not a
+    working tree at all.
+    """
+    if _git(path, "rev-parse", "--is-bare-repository") != "false":
+        return False
+    top = _git(path, "rev-parse", "--show-toplevel")
+    if not top:
+        return False
+    try:
+        # Resolved comparison: the checkout is legitimately reached via a symlink in some setups.
+        return Path(top).resolve() == path.resolve()
+    except OSError:
+        return False
+
+
+def _canonical_repo_root() -> Path | None:
+    """The MAIN clone's working tree for a normal checkout or a git worktree, else None.
+
+    Not "whatever the layout is": a SUBMODULE resolves to `<super>/.git/modules/<name>`, whose
+    parent is not a working tree, so this returns None there and the sibling candidates apply —
+    the pre-fix behaviour, degraded to safely rather than silently pointed at the superproject.
+
+    `git rev-parse --git-common-dir` reports the main clone's `.git` from inside ANY worktree —
+    unlike `--git-dir`, which reports the per-worktree one — so this resolves for a worktree nested
+    at `<repo>/.claude/worktrees/<name>` as well as for a sibling one. Deriving the canonical clone
+    from `REPO.parent` instead (as this module used to) only worked for the sibling layout.
+
+    A normal checkout answers with a relative ``.git``; joining onto `REPO` handles that, and is a
+    no-op when the answer is absolute. Both `REPO` and the derived root are required to be genuine
+    working-tree tops — see `_is_worktree_top`. Returns None when git is unavailable, `REPO` is not
+    a repository top, or the result is not one, none of which is an error: the sibling candidates
+    still apply, exactly as before this fix.
+    """
+    if not _is_worktree_top(REPO):
+        return None
+    out = _git(REPO, "rev-parse", "--git-common-dir")
+    if not out:
+        return None
+    common = REPO / out
+    # Take the parent LEXICALLY, mirroring the shell twin's logical `cd -- "$common/.."`.
+    # `.resolve().parent` would resolve symlinks across the whole path first, so a clone whose
+    # `.git` is a symlink to a relocated git dir would yield the TARGET's parent — an unrelated
+    # directory — instead of the clone. The two implementations must agree.
+    canonical = Path(os.path.normpath(str(common))).parent
+    return canonical if _owns_gitdir(common, canonical) else None
+
+
+def _default_env_files() -> list[Path]:
+    """.env candidates in PRECEDENCE order — `load_env` uses `setdefault`, so the first wins.
+
+    Only the PATHS change here; the ordering and precedence are deliberately identical to what this
+    list produced before, so a normal checkout and a sibling worktree resolve exactly what they
+    always did. `REPO / ".env"` is intentionally NOT added: in a sibling worktree it would be the
+    worktree's own file and would outrank the canonical clone's, which is a semantic change this
+    path-derivation fix has no business making. (A worktree's own .env is consequently still never
+    read here, unlike in rehearse_fork.sh, which has always read it. That asymmetry predates this
+    fix and is left alone on purpose.)
+    """
+    candidates: list[Path] = []
+    canonical = _canonical_repo_root()
+    if canonical is not None:
+        candidates.append(canonical / ".env")
+        # OIV is a separate repo git cannot discover, so it stays sibling-derived — but a sibling of
+        # the CANONICAL CLONE, not of REPO. Deriving it from REPO carries the same defect the OA
+        # probe had: from a nested worktree it points at
+        # `<repo>/.claude/worktrees/onchain-investment-vehicles`, so the OIV-only endpoints go
+        # missing exactly where the OA env does.
+        candidates += [
+            canonical.parent / "onchain-accounting" / ".env",
+            canonical.parent / "onchain-investment-vehicles" / ".env",
+        ]
+    # The original REPO-derived probes, kept as belt-and-braces: they still cover a canonical clone
+    # reached outside git (no git binary, REPO not in a repository). Deduped away otherwise.
+    candidates += [
+        REPO.parent / "onchain-accounting" / ".env",
+        REPO.parent / "onchain-investment-vehicles" / ".env",
+    ]
+    # In a normal checkout several candidates are the same file; keep the first occurrence of each.
+    seen: set[Path] = set()
+    unique: list[Path] = []
+    for path in candidates:
+        try:
+            key = path.resolve()
+        except OSError:
+            key = path
+        if key not in seen:
+            seen.add(key)
+            unique.append(path)
+    return unique
+
+
+DEFAULT_ENV_FILES = _default_env_files()
 
 
 def load_env(dotenv: Path | None = None) -> None:

@@ -728,6 +728,93 @@ contract AdapterLabelOverridesTest is AdapterLabelOverridesBase {
     }
 
     // ------------------------------------------------------------------
+    // The two display SURFACES must agree
+    // ------------------------------------------------------------------
+
+    /// @dev **The surface-agreement invariant.** An override changes what `getAccountPositionsVerbose` reports. A
+    ///      consumer that instead enumerates `getAllAdapters()` must see the SAME string, or the two surfaces
+    ///      disagree silently about one adapter — the phantom-sibling split this whole feature exists to remove,
+    ///      reintroduced between two views instead of between two adapters.
+    ///
+    ///      Asserted for BOTH an overridden adapter and an un-overridden one, so the test fails whether the
+    ///      configuration path ignores the override OR wrongly applies one.
+    function test_configurationAndPositionSurfaces_agree() public {
+        LabelledAdapter other = new LabelledAdapter("Other Protocol", "Vault", "sUSDe");
+        _register(other);
+
+        vm.startPrank(navCalculatorManager);
+        registry.setAdapterProtocolName(address(adapter), "Overridden Protocol");
+        registry.setAdapterLabelCategory(address(adapter), "Lending Market");
+        vm.stopPrank();
+
+        address[] memory all = nav.getAllAdapters();
+        (string[] memory names, string[][] memory labels) = nav.getAdapterDisplayInfo(all);
+        assertEq(names.length, all.length, "one name per adapter");
+        assertEq(labels.length, all.length, "one breadcrumb per adapter");
+
+        INAVCalculator.VerbosePosition[] memory verbose = nav.getAccountPositionsVerbose(safe, address(0));
+
+        uint256 compared;
+        for (uint256 i = 0; i < all.length; i++) {
+            for (uint256 j = 0; j < verbose.length; j++) {
+                if (verbose[j].position.balanceAdapter != all[i]) continue;
+                assertEq(
+                    names[i],
+                    verbose[j].protocolName,
+                    "configuration and position surfaces must report the SAME protocol name"
+                );
+                ++compared;
+                break;
+            }
+        }
+        assertGe(compared, 2, "must have compared at least the overridden and un-overridden adapters");
+
+        // And the override is genuinely visible on the configuration surface, not merely equal by both being wrong.
+        for (uint256 i = 0; i < all.length; i++) {
+            if (all[i] != address(adapter)) continue;
+            assertEq(names[i], "Overridden Protocol", "the configuration surface must show the override");
+            assertEq(labels[i][0], "Lending Market", "and the category override");
+            assertEq(labels[i][1], "wstETH/USDC", "leaf still derived live");
+        }
+        for (uint256 i = 0; i < all.length; i++) {
+            if (all[i] != address(other)) continue;
+            assertEq(names[i], "Other Protocol", "an un-overridden adapter still reports its own constant");
+            assertEq(labels[i][0], "Vault", "and its own category");
+        }
+    }
+
+    /// @dev The configuration surface must be fail-open too: a broken registry degrades to the adapter's constant
+    ///      rather than reverting the whole enumeration.
+    function test_configurationSurface_failsOpenOnBrokenRegistry() public {
+        address broken = address(new RevertingRegistry());
+        vm.prank(navCalculatorManager);
+        nav.setAssetKindRegistry(broken);
+
+        address[] memory all = nav.getAllAdapters();
+        (string[] memory names,) = nav.getAdapterDisplayInfo(all);
+        for (uint256 i = 0; i < all.length; i++) {
+            if (all[i] != address(adapter)) continue;
+            assertEq(names[i], "Mock Protocol", "a broken registry must fall back on the configuration surface too");
+        }
+    }
+
+    /// @dev An adapter with NO labels must yield an empty breadcrumb on the configuration surface, never a grown
+    ///      array — the same load-bearing `length != 0` guard as the position path. Without it Solidity's bounds
+    ///      check Panics(0x32) and the never-revert property is gone.
+    function test_configurationSurface_doesNotGrowAnEmptyLabelSet() public {
+        NoLabelAdapter silent = new NoLabelAdapter();
+        _register(silent);
+
+        vm.prank(navCalculatorManager);
+        registry.setAdapterLabelCategory(address(silent), "Invented Category");
+
+        address[] memory one = new address[](1);
+        one[0] = address(silent);
+        (, string[][] memory labels) = nav.getAdapterDisplayInfo(one);
+        assertEq(labels[0].length, 0, "an empty breadcrumb must stay empty, not be grown");
+    }
+
+    // ------------------------------------------------------------------
     // The other two toVerbose call sites
     // ------------------------------------------------------------------
 

@@ -1998,10 +1998,8 @@ library PriceFeedLib {
         for (uint256 i = 0; i < len; i++) {
             address adapter = pos[i].balanceAdapter;
             if (i == 0 || adapter != prevAdapter) {
-                (prevName, prevCategory) = _adapterOverrides(registry, adapter);
-                // Only ask the adapter when no override answered. Skipping the staticcall is the point: it is the
-                // 100k-stipend cold call this whole branch exists to ration.
-                if (bytes(prevName).length == 0) prevName = _safeString(adapter, protocolNameCall);
+                prevName = _effectiveProtocolName(registry, adapter, protocolNameCall);
+                prevCategory = _categoryOverride(registry, adapter);
                 prevAdapter = adapter;
             }
             // Labels are derived lazily from positionId (display only, off the NAV hot path) via a fail-open,
@@ -2022,23 +2020,68 @@ library PriceFeedLib {
         }
     }
 
-    /// @notice Reads one adapter's operator overrides from the registry, fail-open to `("", "")`.
-    /// @dev Two separate flat-`string` getters rather than one packed tuple, on purpose: it reuses {_safeString}'s
-    ///      already-audited head validation verbatim instead of hand-rolling a two-string tuple decoder, which is the
-    ///      shape most likely to get a bounds check subtly wrong. The second call is cheap — the registry address is
-    ///      warm after the first adapter, and both replies are a single 32-byte-capped word of payload.
+    /// @notice **The ONE place protocol-name precedence is decided**: the registry override wins, the adapter's own
+    ///         `protocolName()` answers on a miss.
+    /// @dev Called by BOTH the position path ({toVerbose}) and the configuration path ({adapterDisplayInfo}). That
+    ///      sharing is the point and is load-bearing: it is what makes the two surfaces agree **by construction**
+    ///      rather than by two implementations happening to match today and drifting apart later. Before this
+    ///      existed, an override changed `getAccountPositionsVerbose` while a consumer enumerating
+    ///      `getAllAdapters()` still saw the adapter's constant — two surfaces silently disagreeing about the same
+    ///      adapter, which is the phantom-sibling split {IPositionDescribable.protocolName} exists to prevent.
+    ///      **If a third display surface is ever added, it must call this too.**
     ///
-    ///      `""` is an unambiguous miss: the setters reject the empty string, so a stored override is never empty and
-    ///      an empty reply can only mean "unset", "no registry", or "unreadable" — all of which take the same
-    ///      fall-back-to-the-adapter path.
-    function _adapterOverrides(address registry, address adapter)
+    ///      Fail-open throughout: an absent, broken or hostile registry yields "" and falls through to the adapter.
+    ///      On a hit the adapter staticcall is skipped entirely.
+    function _effectiveProtocolName(address registry, address adapter, bytes memory protocolNameCall)
         private
         view
-        returns (string memory name, string memory category)
+        returns (string memory name)
     {
-        if (registry == address(0)) return ("", "");
-        name = _safeString(registry, abi.encodeCall(IAssetKindRegistry.getAdapterProtocolName, (adapter)));
-        category = _safeString(registry, abi.encodeCall(IAssetKindRegistry.getAdapterLabelCategory, (adapter)));
+        if (registry != address(0)) {
+            name = _safeString(registry, abi.encodeCall(IAssetKindRegistry.getAdapterProtocolName, (adapter)));
+            if (bytes(name).length != 0) return name;
+        }
+        return _safeString(adapter, protocolNameCall);
+    }
+
+    /// @notice The ONE place the label-category override is read, shared by both display surfaces for the same
+    ///         by-construction reason as {_effectiveProtocolName}. `""` means no override.
+    function _categoryOverride(address registry, address adapter) private view returns (string memory) {
+        if (registry == address(0)) return "";
+        return _safeString(registry, abi.encodeCall(IAssetKindRegistry.getAdapterLabelCategory, (adapter)));
+    }
+
+    /// @notice The CONFIGURATION read path: each adapter's effective display name and its positionId-independent
+    ///         breadcrumb, with the same overrides the position path applies.
+    /// @dev Closes the surface split described on {_effectiveProtocolName}. A consumer pairs this with
+    ///      `IBalances.getAllAdapters()` instead of staticcalling `protocolName()` on each adapter itself, and then
+    ///      groups configured adapters by exactly the string the position path reports.
+    ///
+    ///      `positionLabels("")` is the interface's own convention for "no account, no positionId": an adapter whose
+    ///      breadcrumb is positionId-independent answers with its full constant breadcrumb, and one that derives it
+    ///      per position returns `[]`. So a computed adapter legitimately yields an empty array here, exactly as it
+    ///      does today — this does not invent a breadcrumb for it.
+    /// @param adapters The adapters to describe, typically `getAllAdapters()`.
+    /// @param registry The chain's `AssetKindRegistry`, or `address(0)` when none is wired.
+    function adapterDisplayInfo(address[] memory adapters, address registry)
+        external
+        view
+        returns (string[] memory names, string[][] memory labels)
+    {
+        uint256 len = adapters.length;
+        names = new string[](len);
+        labels = new string[][](len);
+        bytes memory protocolNameCall = abi.encodeCall(IPositionDescribable.protocolName, ());
+        bytes memory labelsCall = abi.encodeCall(IPositionDescribable.positionLabels, (bytes("")));
+        for (uint256 i = 0; i < len; i++) {
+            address adapter = adapters[i];
+            names[i] = _effectiveProtocolName(registry, adapter, protocolNameCall);
+            labels[i] = _safeStringArray(adapter, labelsCall);
+            string memory category = _categoryOverride(registry, adapter);
+            // Same rule as the position path, including the load-bearing length guard: replacing index 0 of an EMPTY
+            // array would be an out-of-bounds write that Solidity turns into Panic(0x32), breaking never-revert.
+            if (bytes(category).length != 0 && labels[i].length != 0) labels[i][0] = category;
+        }
     }
 
     /// @notice Gas stipend for the `decodeStringArray` shim (see `_safeStringArray`). Generous for any legitimate
@@ -2047,7 +2090,7 @@ library PriceFeedLib {
     uint256 private constant _LABEL_DECODE_GAS = 1_000_000;
 
     /// @notice Gas stipend for EVERY flat-string read on the verbose path: the outer `protocolName()` staticcall
-    ///         AND both {AssetKindRegistry} override reads in {_adapterOverrides}, which reach the registry through
+    ///         AND both {AssetKindRegistry} override reads ({_effectiveProtocolName} / {_categoryOverride}), which reach it through
     ///         the same {_safeString} shim.
     /// @dev Every `protocolName()` in this repo is a `pure` constant string and an override read is one capped
     ///      `SLOAD` plus a 32-byte-bounded string, so this is orders of magnitude more than any legitimate read

@@ -258,6 +258,26 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
         return assetKindRegistry.getAssetInfo(asset);
     }
 
+    /// @notice Every listed adapter's EFFECTIVE display name and positionId-independent breadcrumb — the same
+    ///         values the verbose position reads report, including any {AssetKindRegistry} override.
+    /// @dev **This exists so the configuration view and the position view cannot disagree.** A consumer that
+    ///      enumerates {getAllAdapters} and staticcalls `protocolName()` on each adapter itself bypasses the
+    ///      override store and sees the adapter's compile-time constant, while `getAccountPositionsVerbose` reports
+    ///      the override — two surfaces silently disagreeing about one adapter, which is the phantom-sibling split
+    ///      {IPositionDescribable.protocolName} exists to prevent. Pair this with {getAllAdapters} instead.
+    ///
+    ///      The body is a single forward into `PriceFeedLib.adapterDisplayInfo`, which shares its precedence helper
+    ///      with `toVerbose` — so agreement holds by construction, not by two implementations matching. The work
+    ///      lives in the library because this contract is at its EIP-170 limit; only the selector is paid for here.
+    /// @param adapters The adapters to describe, typically the result of {getAllAdapters}.
+    function getAdapterDisplayInfo(address[] calldata adapters)
+        external
+        view
+        returns (string[] memory names, string[][] memory labels)
+    {
+        return PriceFeedLib.adapterDisplayInfo(adapters, address(assetKindRegistry));
+    }
+
     /// @inheritdoc INAVCalculator
     function addBalanceAdapters(address[] calldata adapters) external {
         _requireManager();

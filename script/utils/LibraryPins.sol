@@ -37,7 +37,7 @@ pragma solidity ^0.8;
 ///      member recompiles the library without moving its address. Membership is necessary, not
 ///      sufficient; measure rather than predict.
 library LibraryPins {
-    address internal constant PRICE_FEED_LIB = 0x8E727A20A34D65A0dF2d5BBcB5d9ce639a54e4b2;
+    address internal constant PRICE_FEED_LIB = 0x3b3701b04aE5963161239d361cF38D0C0710063F;
     address internal constant NAV_REGISTRY_LIB = 0x5f5D054E021A53E1DEF54B3Bda3c939ccD14fd90;
 
     /// @dev True if the 20-byte `needle` address appears verbatim anywhere in `haystack` — the linker embeds a

@@ -42,9 +42,9 @@ import "src/constants.sol";
 ///      here is added to them, and no deployed adapter is touched or redeployed by this feature.
 ///
 ///      **Why it is its own contract and not part of the NAV. Not preference — measured, twice, for two different
-///      questions.** `NAVCalculator` sits at **24,475 of 24,576 bytes: 101 bytes** of EIP-170 headroom (measured on
-///      this tree, not inherited). ⚠️ This line read "24,508 / 68 bytes" and was already stale before the labels work
-///      touched it — the `_toVerbose` extraction into `PriceFeedLib` had since returned ~520 bytes. The measurements
+///      questions.** `NAVCalculator` runs against the EIP-170 limit; **{NAVCalculator}'s own header is the single
+///      authority for the current margin and this line no longer restates it** — it carried "24,508 / 68 bytes",
+///      which was already stale when written, and a second stale copy is worse than none. The measurements
 ///      BELOW are historical, taken against the 68-byte tree, and are left as they were: they are what the decision
 ///      was made on, and re-stating them against today's headroom would be inventing numbers nobody measured. Read
 ///      them as "why this is not in the NAV", not as current margins.
@@ -64,10 +64,15 @@ import "src/constants.sol";
 ///      is, and is measured.)
 ///      That moved `PriceFeedLib` from `0xfc6AE534…` to `0x49C18627665562F4bEbae5208BA6eF7428039614` (it shrank 69
 ///      bytes, 18,585 -> 18,516). ⚠️ Both of those are HISTORICAL readings, kept because they record why the pin
-///      moved — neither is the pinned value. **The regeneration that was owed has now been done:** `PriceFeedLib` is
-///      pinned at `0x3b3701b04aE5963161239d361cF38D0C0710063F` (regenerated twice since, as `toVerbose` and then
-///      `adapterDisplayInfo` changed its bytecode), measured from a cold `forge clean && forge build
-///      --force` with every submodule at its recorded revision. `NAVRegistryLib` did NOT move and holds at
+///      moved — neither is the pinned value. **The regeneration that was owed has been done, and redone three times
+///      since** as `toVerbose`, then `adapterDisplayInfo`, then the meta-adapter category fix each changed
+///      `PriceFeedLib`'s bytecode. ⚠️ **This sentence deliberately no longer names the current address.** It named
+///      one, and that literal went stale the very next time the pin was regenerated — a docstring asserting an
+///      address that is not the deployed one. The failure was a doc that duplicates an authority instead of pointing
+///      at it, so: **`foundry.toml` and {LibraryPins} are the only authorities, and `LibraryPinConsistency.t.sol`
+///      proves they match the tree.** Every regeneration is measured from two INDEPENDENT cold
+///      `forge clean && forge build` runs that must agree before the value is written. `NAVRegistryLib` has not
+///      moved through any of it and holds at
 ///      `0x5f5D054E…` — measured, not assumed. Do not take a pin from this sentence either: `foundry.toml` and
 ///      {LibraryPins} are the only authorities, and `LibraryPinConsistency.t.sol` is what proves they match the tree.
 ///

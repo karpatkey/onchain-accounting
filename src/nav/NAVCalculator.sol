@@ -25,13 +25,25 @@ import "src/constants.sol";
 /// @notice NAV Calculator.
 /// @author KPK
 /// @dev EIP-170 budget: this contract runs close to the 24,576-byte runtime limit (CI's `forge build --sizes`
-///      enforces it). **As of `NAV.monitorsUnhealthyPriceAssets` it is 68 bytes under** (runtime 24,508 B, measured
-///      from `out/NAVCalculator.sol/NAVCalculator.json` under the default profile — the one CI's `--sizes` uses).
-///      **Treat this contract as FULL.** For scale: one minimal external getter has measured at 122 B, i.e. already
-///      more than the whole remaining budget, so the next addition here needs space reclaimed first rather than
-///      found. (This figure was stale by 144 B for a while — it read "325 bytes under / 24,251 B", which predated
-///      the paginated-NAV work; the pre-`monitorsUnhealthyPriceAssets` margin was in fact 181 B. If you cite a
-///      margin, re-measure it; do not trust a number in a comment, including this one.)
+///      enforces it). **THIS BLOCK IS THE SINGLE AUTHORITY FOR THE EIP-170 BUDGET.** Other files used to restate
+///      it and drifted into three mutually contradictory figures; they now point here instead. If you cite a
+///      margin, cite this one — and re-measure it, because a number in a comment is never evidence.
+///
+///      As of {getAdapterDisplayInfo}, measured by `forge build --sizes`:
+///        - `NAVCalculator`        24,475 / 24,576 -> **101 bytes** free
+///        - `NAVCalculatorV2`      24,567 / 24,576 -> **9 bytes** free
+///
+///      ⚠️ **9, not 101, is the number that gates a change.** `NAVCalculatorV2` is the UUPS upgrade fixture in
+///      `test/nav/NAVCalculator.upgrade.t.sol` — this contract plus one `foo()` function, never deployed — and
+///      CI's Build step is literally `forge build --sizes`, which **exits 1** on ANY contract over the limit,
+///      `test/` included. Verified by probe: an oversized contract under `test/` produces
+///      `Error: some contracts exceed the runtime size limit (EIP-170: 24576 bytes)` and exit code 1. So a change
+///      that fits this contract but pushes the fixture over still fails CI, naming a file nobody edited.
+///
+///      **Treat this contract as FULL.** For scale: one minimal external getter has measured at 122 B — more than
+///      the fixture's whole remaining budget — and {getAdapterDisplayInfo} cost 354 B. The next addition here needs
+///      space reclaimed first rather than found. (Earlier revisions of this line read "325 bytes under / 24,251 B"
+///      and then "68 bytes under / 24,508 B"; both were stale when read.)
 ///      Measure with a clean
 ///      `forge build --sizes` before and after anything added here, and assume nothing non-trivial fits: the next
 ///      substantive read will need the verbose label block (`_toVerbose` / `_safeString` / `_safeStringArray` /

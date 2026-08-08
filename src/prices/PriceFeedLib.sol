@@ -1974,12 +1974,12 @@ library PriceFeedLib {
     /// @param pos The positions to enrich.
     /// @param registry The chain's `AssetKindRegistry`, or `address(0)` when none is wired. Passed in rather than
     ///        read from storage because this library is reached by DELEGATECALL and has no view of `NAVCalculator`'s
-    ///        layout; passing it also avoids a second registry pointer on a contract with 101 bytes of headroom.
-    ///        (Headroom went 502 -> 455 for the three extra call-site arguments, then 455 -> 101 when
-    ///        {NAVCalculator.getAdapterDisplayInfo} was added at +354 B. ⚠️ The BINDING figure is not this one:
-    ///        `NAVCalculatorV2`, the upgrade-test subclass in `test/nav/NAVCalculator.upgrade.t.sol`, is 92 bytes
-    ///        larger and sits at **9 bytes** under EIP-170 — and CI's `forge build --sizes` fails on test contracts
-    ///        too. Treat 9, not 101, as the real budget.)
+    ///        layout; passing it also avoids a second registry pointer on a contract that is effectively full.
+    ///        (For the current margin see {NAVCalculator}'s header, which is the single authority — this line used
+    ///        to restate it and drifted. The history worth keeping: this PR spent 47 B threading the argument
+    ///        through three call sites, then 354 B on {NAVCalculator.getAdapterDisplayInfo} — the latter against a
+    ///        "+182 B floor" estimate that was wrong in BOTH directions, understating the cost of a nested
+    ///        `string[][]` return AND wrongly calling it unaffordable.)
     function toVerbose(INAVCalculator.Position[] memory pos, address registry)
         external
         view

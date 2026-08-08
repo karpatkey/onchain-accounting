@@ -76,6 +76,19 @@ import chainlib
 u,_ = chainlib.fork_rpc(1); print(u.split('/')[2])")"
 
 # FAIL CLOSED. An unresolvable chain must yield nothing, never another chain's endpoint.
+# The public fallback is DELIBERATE and default-on (see the banner cases below), but a missing
+# credential should be able to be fatal for anyone who wants that. REHEARSAL_STRICT_RPC=1 turns the
+# degradation off without removing the capability from those who need it.
+check "strict mode refuses a public fallback" "3" \
+      "$(REHEARSAL_STRICT_RPC=1 python3 "$CHAINLIB" fork-rpc 43111 >/dev/null 2>&1; echo $?)"
+# Capture first, then match: the CLI exits 3 here, and under `set -o pipefail` the pipeline would
+# inherit that status and defeat the `&&` even when grep matched.
+strict_note="$(REHEARSAL_STRICT_RPC=1 python3 "$CHAINLIB" fork-rpc 43111 2>&1 >/dev/null || true)"
+check "...and says the fallback was disabled, not absent" "yes" \
+      "$(grep -q 'public fallback available but disabled' <<<"$strict_note" && echo yes || echo no)"
+check "default still allows it" "0" \
+      "$(python3 "$CHAINLIB" fork-rpc 43111 >/dev/null 2>&1; echo $?)"
+
 check "unresolvable chain resolves to NOTHING" "None" \
       "$(py "
 import chainlib

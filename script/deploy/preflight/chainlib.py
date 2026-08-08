@@ -423,7 +423,7 @@ def resolve_rpc(chain_id: int, allow_fallback: bool = True,
     return None, note
 
 
-def fork_rpc_spec(chain_id: int) -> tuple[str | None, str]:
+def fork_rpc_spec(chain_id: int, allow_public_fallback: bool = True) -> tuple[str | None, str]:
     """WHERE a local fork of `chain_id` gets its endpoint — named, never materialised. (spec, note).
 
     This is the primitive; `fork_rpc` is derived from it. It returns a SOURCE DESCRIPTOR rather than
@@ -463,7 +463,16 @@ def fork_rpc_spec(chain_id: int) -> tuple[str | None, str]:
         note = "no rpc in chain config"
 
     if chain_id in PUBLIC_FALLBACK_RPC:
-        return f"literal:{PUBLIC_FALLBACK_RPC[chain_id]}", f"public fallback ({note})"
+        # The fallback is a public endpoint for the SAME chain, so it never violates the "never
+        # another chain's endpoint" rule — but it does let a caller proceed in a credential state
+        # where the DEPLOY would fail. It is on by default because the five chains that reach here
+        # (143, 196, 204, 43111, 16661) have no CHAIN_URL_ENV entry and a credential-gated config
+        # rpc, so without it they cannot be rehearsed at all; and the caller announces it loudly.
+        # `allow_public_fallback=False` gives the strict behaviour to anyone who wants a missing
+        # credential to be fatal rather than degraded.
+        if allow_public_fallback:
+            return f"literal:{PUBLIC_FALLBACK_RPC[chain_id]}", f"public fallback ({note})"
+        note = f"{note}; public fallback available but disabled"
     return None, note
 
 
@@ -685,7 +694,10 @@ if __name__ == "__main__":
         print(f"chainId must be an integer, got {_sys.argv[2]!r}", file=_sys.stderr)
         raise SystemExit(2)
     load_env()
-    _spec, _note = fork_rpc_spec(_cid)
+    # REHEARSAL_STRICT_RPC=1 turns a missing credential into a hard failure instead of a public
+    # fallback, for anyone who would rather not rehearse at all than rehearse degraded.
+    _strict = os.environ.get("REHEARSAL_STRICT_RPC", "") not in ("", "0", "false", "no")
+    _spec, _note = fork_rpc_spec(_cid, allow_public_fallback=not _strict)
     print(_note, file=_sys.stderr)
     if not _spec:
         raise SystemExit(3)

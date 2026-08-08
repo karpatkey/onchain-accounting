@@ -190,6 +190,13 @@ contract Mock_NAVCalculator is INAVCalculator {
     }
 
     /// @dev Stub for the display surface; this mock has no adapter registry.
+    ///
+    ///      The inner arrays are deliberately left at their default. A review flagged this as a possible
+    ///      malformed-ABI hazard ("zero inner pointers"); it was MEASURED and is not one. Solidity initialises
+    ///      `new string[][](n)`'s inner pointers to the canonical empty-array slot (0x60), not address 0, so an
+    ///      external call returns a well-formed encoding of N empty arrays: `0x20 | n | 0x60 0x80 0xa0 | 0 0 0`
+    ///      for n = 3, 256 bytes, no revert. Nothing calls this stub today either — every
+    ///      `getAdapterDisplayInfo` call site in the suite targets the real `NAVCalculator`.
     function getAdapterDisplayInfo(address[] calldata adapters)
         external
         pure

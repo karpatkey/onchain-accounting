@@ -215,7 +215,17 @@ interface INAVCalculator is IBalances {
     /// @notice Position enriched with human-readable display labels.
     /// @dev ⚠️ **`protocolName` and `labels[0]` are NOT necessarily the adapter's own values.** `AssetKindRegistry`
     ///      holds optional per-ADAPTER overrides for both, and {PriceFeedLib.toVerbose} applies them in preference to
-    ///      the adapter's reply. Everything below index 0 — the computed leaf — always comes from the adapter, live.
+    ///      the adapter's reply. Index 1 and below-that always come from the adapter, live and unoverridable.
+    ///
+    ///      ⚠️ **Do NOT read that as "the computed leaf is never overridable" — an earlier revision of this line said
+    ///      so and it is false.** It equated "the computed leaf" with "below index 0", which holds for 32 of the 33
+    ///      deployable adapters but NOT for `ERC20DefaultBalanceAdapter`, whose reply is a single element that IS the
+    ///      computed token symbol (`out[0] = LabelLib.symbol(...)`). For that adapter a category override replaces a
+    ///      COMPUTED value, not a literal category. Contrast the other single-element adapters —
+    ///      `AaveV3SafetyModuleBalanceAdapter` (`out[0] = "Safety Module"`), `AaveUmbrellaBalanceAdapter` — whose
+    ///      lone element is a literal and is therefore a legitimate override target. The distinction is
+    ///      literal-vs-computed at index 0, not array length. `AdapterLabelOverrides.t.sol
+    ///      ::test_categoryOverride_onLeafOnlyAdapter_replacesTheLeaf_documentedHazard` asserts this.
     ///      Consumers must not treat these strings as identity in any case; see {IPositionDescribable}.
     /// @dev Returned by verbose read methods. Labels are sourced from the adapter's `IPositionDescribable`
     ///      implementation (`positionLabels(positionId)`, via a fail-open staticcall) and are empty otherwise. MUST NOT

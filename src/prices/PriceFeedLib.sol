@@ -2119,12 +2119,18 @@ library PriceFeedLib {
     ///      hostile registry can burn 2x this per DISTINCT ADAPTER on the ACCOUNT path, which caches per adapter.
     ///      ⚠️ The CONFIGURATION path ({adapterDisplayInfo}) has no such cache — it is a flat loop over the caller's
     ///      array — so there the ceiling is 2x this per ARRAY ENTRY, and a caller passing the same adapter N times
-    ///      pays N times. That is bounded by the caller's own gas and its own array, not by the fleet size. It is
-    ///      exercised by
+    ///      pays N times. That is bounded by the caller's own gas and its own array, not by the fleet size. The
+    ///      ACCOUNT-path ceiling is exercised by
     ///      `AdapterLabelOverrides.t.sol::test_gas_hostileRegistryIsBoundedByTheStipend`, which wires a
-    ///      stipend-burning registry and measures the read (~422k, still fail-open). An earlier revision cited
-    ///      `test_gas_registryLegIsBounded` here, which uses a well-behaved registry and never approaches the
-    ///      ceiling it was said to police.
+    ///      stipend-burning registry and measures the read (~422k, still fail-open), and the CONFIGURATION-path
+    ///      ceiling by `test_gas_configurationSurface_hostileRegistryIsBounded`.
+    ///
+    ///      ⚠️ Two earlier revisions of this note cited tests that did not cover what they were said to cover:
+    ///      first `test_gas_registryLegIsBounded` (a well-behaved registry, nowhere near the ceiling), then
+    ///      `test_gas_hostileRegistryIsBoundedByTheStipend` for the CONFIGURATION path — that test only calls
+    ///      `getAccountPositionsVerbose` and never reaches {adapterDisplayInfo}. A doc naming a test as proof of a
+    ///      bound the test never exercises is worse than admitting the bound is unmeasured, so the missing test was
+    ///      written rather than the sentence deleted.
     uint256 private constant _NAME_READ_GAS = 100_000;
 
     /// @notice Gas stipend for the outer `positionLabels()` staticcall. An order of magnitude above

@@ -746,6 +746,54 @@ contract AdapterLabelOverridesTest is AdapterLabelOverridesBase {
         assertLt(used, 600_000, "a stipend-burning registry must stay inside 2x_NAME_READ_GAS per distinct adapter");
     }
 
+    /// @dev The CONFIGURATION-path hostile-registry ceiling, which nothing exercised before. The `_NAME_READ_GAS`
+    ///      docstring previously cited `test_gas_hostileRegistryIsBoundedByTheStipend` for this, but that test only
+    ///      calls `getAccountPositionsVerbose` and never reaches `adapterDisplayInfo`.
+    ///
+    ///      The bound here is deliberately per-ARRAY-ENTRY, not per distinct adapter: {adapterDisplayInfo} has no
+    ///      `prevAdapter` cache — it is a flat loop over the caller's array — so a caller passing the same adapter N
+    ///      times pays N times. That is the honest shape of the ceiling and it is what this asserts.
+    function test_gas_configurationSurface_hostileRegistryIsBounded() public {
+        RawReplier burner = new RawReplier();
+        burner.stageBurnGas();
+        vm.prank(navCalculatorManager);
+        nav.setAssetKindRegistry(address(burner));
+
+        // Three entries, deliberately including a duplicate: the cost must track ENTRIES, not distinct adapters.
+        address[] memory three = new address[](3);
+        three[0] = address(adapter);
+        three[1] = address(adapter);
+        three[2] = address(usdc); // not an adapter at all; must still not revert
+
+        uint256 before = gasleft();
+        (string[] memory names, string[][] memory labels) = nav.getAdapterDisplayInfo(three);
+        uint256 used = before - gasleft();
+        emit log_named_uint("configuration surface gas, stipend-burning registry, 3 entries", used);
+
+        // Fail-open: a burning registry must degrade to the adapter's own value, never revert the enumeration.
+        assertEq(names.length, 3);
+        assertEq(labels.length, 3);
+        assertEq(names[0], "Mock Protocol", "burning registry must fall back to the adapter");
+        assertEq(names[1], "Mock Protocol", "and on the duplicate entry too");
+        assertEq(names[2], "", "a non-adapter address yields an empty name, not a revert");
+
+        // Ceiling: 2 x _NAME_READ_GAS (100k) per ENTRY, plus the adapters' own reads. Bounded well inside it.
+        assertLt(used, 3 * 2 * 100_000 + 400_000, "the configuration ceiling is 2x the stipend PER ENTRY");
+    }
+
+    /// @dev Never-revert on the configuration surface for inputs that are not adapters at all.
+    function test_configurationSurface_neverRevertsOnHostileInput() public view {
+        address[] memory odd = new address[](4);
+        odd[0] = address(0);
+        odd[1] = address(0xdead);
+        odd[2] = address(nav);
+        odd[3] = address(adapter);
+        (string[] memory names, string[][] memory labels) = nav.getAdapterDisplayInfo(odd);
+        assertEq(names.length, 4);
+        assertEq(labels.length, 4);
+        assertEq(names[3], "Mock Protocol", "the real adapter still resolves among the junk");
+    }
+
     // ------------------------------------------------------------------
     // The two display SURFACES must agree
     // ------------------------------------------------------------------

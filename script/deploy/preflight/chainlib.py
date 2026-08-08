@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 import sys
 import time
@@ -171,15 +172,12 @@ def _canonical_repo_root() -> Path | None:
 def _default_env_files() -> list[Path]:
     """.env candidates in PRECEDENCE order — `load_env` uses `setdefault`, so the first wins.
 
-    Only the PATHS change here; the ordering and precedence are deliberately identical to what this
-    list produced before, so a normal checkout and a sibling worktree resolve exactly what they
-    always did. `REPO / ".env"` is intentionally NOT added: in a sibling worktree it would be the
-    worktree's own file and would outrank the canonical clone's, which is a semantic change this
-    path-derivation fix has no business making. (A worktree's own .env is consequently still never
-    read here, unlike in rehearse_fork.sh, which has always read it. That asymmetry predates this
-    fix and is left alone on purpose.)
+    `REPO / ".env"` leads, matching `env_candidates` in rehearse_fork.sh exactly — the two must
+    produce the SAME ordered list, or "one endpoint inventory" is untrue again the moment a worktree
+    carries its own .env. (The previous PR deliberately left this asymmetry alone because changing
+    precedence was out of its scope; unifying precedence is the whole point of this one.)
     """
-    candidates: list[Path] = []
+    candidates: list[Path] = [REPO / ".env"]
     canonical = _canonical_repo_root()
     if canonical is not None:
         candidates.append(canonical / ".env")
@@ -215,17 +213,53 @@ def _default_env_files() -> list[Path]:
 DEFAULT_ENV_FILES = _default_env_files()
 
 
+_ENV_KEY_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+# Exactly POSIX [:space:] — what bash trims with. NOT str.strip()'s Unicode set.
+_ASCII_WS = " \t\n\r\v\f"
+
+
 def load_env(dotenv: Path | None = None) -> None:
-    """Load KEY=VALUE lines from .env files into os.environ without overriding what is already set."""
+    """Load KEY=VALUE lines from .env files into os.environ.
+
+    THE PRECEDENCE RULE, identical to `load_env_files` in `rehearse_fork.sh`:
+    read every candidate in order; the FIRST writer of a key wins, and a value already in the
+    environment beats every file. Files therefore UNION — load-bearing, because the OIV env carries
+    endpoints for 19 chains this repo's own .env has none for — while the earliest source of any one
+    key decides it. Precedence: environment > local .env > canonical clone > OIV.
+
+    The shell twin used to `source` forward, so its LAST file won and OIV outranked this repo's own
+    .env, giving a different answer from this function on 5 of the 6 keys the files share —
+    MAINNET_URL among them, which is what the rehearsal forks. Keeping the rule stated and
+    implemented explicitly on both sides is the point: the drift happened precisely because one side
+    got its precedence from `source` order and the other from `setdefault`.
+    """
     for path in ([dotenv] if dotenv else DEFAULT_ENV_FILES):
         if not path or not path.exists():
             continue
-        for line in path.read_text().splitlines():
-            line = line.strip()
+        # `.split("\n")`, not `.splitlines()`: the latter also breaks on U+2028/U+2029/\x0b/\x0c/\x85,
+        # which bash's `read` does not, so one such character would split a line on one side only.
+        # `_ASCII_WS`, not `.strip()`: Python treats U+00A0 (NBSP) as whitespace and glibc's
+        # `[:space:]` does not, so a URL pasted out of a web console with a trailing NBSP resolved
+        # to a different VALUE on each side — and a leading NBSP on a KEY made bash skip the line
+        # entirely while this loader accepted it.
+        for line in path.read_text().split("\n"):
+            line = line.strip(_ASCII_WS)
             if not line or line.startswith("#") or "=" not in line:
                 continue
             k, v = line.split("=", 1)
-            os.environ.setdefault(k.strip(), v.strip().strip('"').strip("'"))
+            k, v = k.strip(_ASCII_WS), v.strip(_ASCII_WS)
+            # Same key filter as the shell twin's `[[ "$k" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]`.
+            # Without it the two sides diverge on any non-identifier line — `export FOO=x` (key
+            # "export FOO") or `MY-VAR=x` are skipped by bash and accepted here — which breaks the
+            # "one endpoint inventory" invariant this loader exists to uphold, and quietly puts
+            # unusable names into the environment of five preflight tools.
+            if not _ENV_KEY_RE.match(k):
+                continue
+            # ONE matching pair of surrounding quotes — not `.strip('"').strip("'")`, which peels
+            # any number from either end independently and cannot be mirrored exactly in shell.
+            if len(v) >= 2 and v[0] == v[-1] and v[0] in ("'", '"'):
+                v = v[1:-1]
+            os.environ.setdefault(k, v)
 
 
 def all_chain_ids() -> list[int]:
@@ -387,6 +421,82 @@ def resolve_rpc(chain_id: int, allow_fallback: bool = True,
     if allow_fallback and chain_id in PUBLIC_FALLBACK_RPC:
         return PUBLIC_FALLBACK_RPC[chain_id], f"public fallback ({note})"
     return None, note
+
+
+def fork_rpc_spec(chain_id: int, allow_public_fallback: bool = True) -> tuple[str | None, str]:
+    """WHERE a local fork of `chain_id` gets its endpoint — named, never materialised. (spec, note).
+
+    This is the primitive; `fork_rpc` is derived from it. It returns a SOURCE DESCRIPTOR rather than
+    a URL so that a caller which only needs to be told where to look never has to handle the secret:
+
+        env:<VARNAME>      read that environment variable
+        alchemy:<network>  build https://<network>.g.alchemy.com/v2/$ALCHEMY_API_KEY
+        literal:<url>      a non-secret URL committed in the chain config
+
+    None means nothing resolved, and the caller MUST abort rather than substitute another chain's
+    endpoint — the defect this whole path exists to end.
+
+    Operator override FIRST, the opposite of `resolve_rpc` (which mirrors ConfigReader, where the
+    chain config wins). `$<CHAIN>_URL` is how the 2026-07-22 redeploy reached the chains the Alchemy
+    app has disabled, and a rehearsal is only worth running against the endpoint the deploy will
+    use. This is the literal generalisation of what `rehearse_fork.sh` did for ONE chain
+    (`FORK_URL="${MAINNET_URL:-<eth-mainnet alchemy>}"`), so chain 1 resolves exactly as before.
+    """
+    envvar = CHAIN_URL_ENV.get(chain_id)
+    if envvar and os.environ.get(envvar):
+        return f"env:{envvar}", f"env {envvar}"
+
+    raw = chain_config(chain_id).get("rpc", "")
+    if raw == "$ALCHEMY":
+        net = ALCHEMY_NETWORK.get(chain_id)
+        if net and os.environ.get("ALCHEMY_API_KEY"):
+            return f"alchemy:{net}", "alchemy"
+        note = ("unresolved ($ALCHEMY, ALCHEMY_API_KEY)" if net
+                else f"unresolved (no alchemy network mapped for {chain_id})")
+    elif raw.startswith("$"):
+        if os.environ.get(raw[1:]):
+            return f"env:{raw[1:]}", f"env {raw[1:]}"
+        note = f"unresolved ({raw} not in env)"
+    elif raw:
+        return f"literal:{raw}", "literal"
+    else:
+        note = "no rpc in chain config"
+
+    if chain_id in PUBLIC_FALLBACK_RPC:
+        # The fallback is a public endpoint for the SAME chain, so it never violates the "never
+        # another chain's endpoint" rule — but it does let a caller proceed in a credential state
+        # where the DEPLOY would fail. It is on by default because the five chains that reach here
+        # (143, 196, 204, 43111, 16661) have no CHAIN_URL_ENV entry and a credential-gated config
+        # rpc, so without it they cannot be rehearsed at all; and the caller announces it loudly.
+        # `allow_public_fallback=False` gives the strict behaviour to anyone who wants a missing
+        # credential to be fatal rather than degraded.
+        if allow_public_fallback:
+            return f"literal:{PUBLIC_FALLBACK_RPC[chain_id]}", f"public fallback ({note})"
+        note = f"{note}; public fallback available but disabled"
+    return None, note
+
+
+def _materialise_spec(spec: str) -> str | None:
+    """Turn a `fork_rpc_spec` descriptor into the actual URL. Mirrored by rehearse_fork.sh."""
+    kind, _, val = spec.partition(":")
+    if kind == "env":
+        return os.environ.get(val) or None
+    if kind == "alchemy":
+        key = os.environ.get("ALCHEMY_API_KEY")
+        return f"https://{val}.g.alchemy.com/v2/{key}" if key else None
+    if kind == "literal":
+        return val or None
+    return None
+
+
+def fork_rpc(chain_id: int) -> tuple[str | None, str]:
+    """The endpoint a LOCAL FORK of `chain_id` must be taken from. (url, note); url None = give up.
+
+    Derived from `fork_rpc_spec` so there is exactly one place that decides, and so the URL — which
+    embeds an API key — is only ever built by a caller that genuinely needs the value.
+    """
+    spec, note = fork_rpc_spec(chain_id)
+    return (_materialise_spec(spec) if spec else None), note
 
 
 class RpcError(RuntimeError):
@@ -557,3 +667,38 @@ def enumerate_deployed(chain_id: int) -> list[dict]:
             out.append(dict(chain=chain_id, addr=v, key=k, group="canonical",
                             name=CANONICAL_KEYS.get(k)))
     return out
+
+
+if __name__ == "__main__":
+    # Tiny CLI so shell tooling resolves endpoints through THIS module rather than reimplementing
+    # the rules.
+    #
+    # It prints the SPEC, never the URL. The URL embeds $ALCHEMY_API_KEY, and stdout is a channel
+    # that ends up in logs and CI transcripts — CodeQL flags exactly that
+    # (py/clear-text-logging-sensitive-data, high), and it is right to. The caller already holds the
+    # key in its own environment, so naming the source leaks nothing while keeping every DECISION
+    # (which override wins, which network, when to give up) in this module.
+    #
+    #   python3 chainlib.py fork-rpc <chainId>
+    #     stdout: env:<VAR> | alchemy:<network> | literal:<url>
+    #     stderr: human-readable note
+    #     exit:   0 resolved, 2 bad usage, 3 nothing resolves
+    import sys as _sys
+
+    if len(_sys.argv) != 3 or _sys.argv[1] != "fork-rpc":
+        print("usage: chainlib.py fork-rpc <chainId>", file=_sys.stderr)
+        raise SystemExit(2)
+    try:
+        _cid = int(_sys.argv[2])
+    except ValueError:
+        print(f"chainId must be an integer, got {_sys.argv[2]!r}", file=_sys.stderr)
+        raise SystemExit(2)
+    load_env()
+    # REHEARSAL_STRICT_RPC=1 turns a missing credential into a hard failure instead of a public
+    # fallback, for anyone who would rather not rehearse at all than rehearse degraded.
+    _strict = os.environ.get("REHEARSAL_STRICT_RPC", "") not in ("", "0", "false", "no")
+    _spec, _note = fork_rpc_spec(_cid, allow_public_fallback=not _strict)
+    print(_note, file=_sys.stderr)
+    if not _spec:
+        raise SystemExit(3)
+    print(_spec)

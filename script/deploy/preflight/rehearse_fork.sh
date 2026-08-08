@@ -99,16 +99,15 @@ mkdir -p safe-transactions
 # it resolves for a worktree NESTED at <repo>/.claude/worktrees/<name> exactly as well as for a
 # sibling one. The previous `$(dirname "$ROOT")/onchain-accounting/.env` only ever hit when the
 # worktree happened to sit beside the main clone; from a nested worktree it probed
-# `.../worktrees/onchain-accounting/.env`, found nothing, and this script aborted on the
-# ALCHEMY_API_KEY check below. The sibling probes are KEPT as additional candidates — they cost
+# `.../worktrees/onchain-accounting/.env`, found nothing, and this script aborted for want of
+# credentials it could not find. The sibling probes are KEPT as additional candidates — they cost
 # nothing and still cover a clone git cannot be asked about (no git binary, $ROOT not in a repo).
 # Note they do NOT survive a renamed canonical clone: they hardcode the directory name, so a rename
 # is exactly what breaks them and exactly what the git-derived candidate handles. The OIV env stays
 # sibling-derived because it is a genuinely separate repo that git cannot discover from here.
 #
-# Emitted in PROBE order. Note this is NOT precedence order: the loop below sources forward and
-# `set -a; source` assigns unconditionally, so the LAST existing candidate wins — unchanged from
-# before this fix, and deliberately opposite to chainlib.load_env's `setdefault`. See the loop.
+# Emitted in PROBE order, which IS precedence order: `load_env_files` below applies first-wins, so
+# the earliest candidate defining a key decides it. See the rule stated in full at that function.
 # Kept as a function so the guard test can extract it verbatim and drive each layout —
 # see script/test/env-resolution-guards.test.sh.
 env_candidates() {
@@ -178,19 +177,62 @@ env_candidates() {
   printf '%s\n' "$(dirname "$root")/onchain-investment-vehicles/.env"
 }
 
-# Source every candidate that exists, in order — the union matters, since the OIV env carries
-# endpoints for 19 chains the OA env has none for.
+# THE PRECEDENCE RULE, stated once and implemented identically here and in `chainlib.load_env`:
 #
-# The ORDER AND PRECEDENCE HERE ARE DELIBERATELY UNCHANGED from before this fix. `set -a; source`
-# assigns unconditionally, so the last file sourced wins, which means OIV outranks the OA env on
-# the 6 keys they share. That is NOT what chainlib.load_env does — it uses `os.environ.setdefault`,
-# so the FIRST file wins there — and the two disagree on 5 real keys, MAINNET_URL among them, which
-# is the endpoint anvil forks from below. Reconciling them changes which RPC the rehearsal and the
-# five chainlib-backed preflight tools actually use, so it is deliberately NOT bundled into a fix
-# whose whole point is that it only moves path derivation. Left as-is on purpose; see the PR.
+#   Read every candidate that exists, in candidate order. The FIRST writer of a key wins, and a
+#   value already present in the environment beats every file. Files therefore UNION — which is
+#   load-bearing, since the OIV env carries endpoints for 19 chains the OA env has none for — while
+#   the earliest source of any single key decides it. Precedence: environment > local .env >
+#   canonical clone > OIV.
 #
-# The dedupe below is semantically neutral (re-sourcing a file is idempotent) and exists so the
-# error listing reports what was really read rather than the same file three times.
+# This replaces `set -a; source`, under which the LAST file assigned unconditionally and so OIV
+# outranked this repo's own .env, while chainlib's `os.environ.setdefault` gave the opposite answer.
+# The two disagreed on 5 of the 6 keys the files share — MAINNET_URL among them, which is what anvil
+# forks from — so the "so the tooling all sees one endpoint inventory" claim above was simply false.
+# It is true now. The rule is EXPLICIT in both implementations rather than emergent from `source`
+# order versus `setdefault`, because that emergence is exactly how the two drifted apart unnoticed.
+#
+# NOTE this repoints the rehearsal: keys the two files disagree on now resolve to the ONCHAIN-
+# ACCOUNTING value, where this script previously used the onchain-investment-vehicles one. See the PR.
+#
+# Parsing is deliberate too. `source` executed the file, so a .env could run arbitrary shell and
+# could silently override a variable the operator had exported on the command line. Both files are
+# plain KEY=VALUE (verified: no `export`, no expansions, no substitutions, no continuations), so
+# they are parsed, not executed.
+load_env_files() {
+  local f line k v n
+  # Snapshot the exported environment; `compgen -e` lists exported names only.
+  declare -A _env_exported=()
+  while IFS= read -r n; do _env_exported["$n"]=1; done < <(compgen -e)
+  for f in "$@"; do
+    [[ -f "$f" ]] || continue
+    while IFS= read -r line || [[ -n "$line" ]]; do
+      line="${line#"${line%%[![:space:]]*}"}"                 # ltrim
+      [[ -z "$line" || "$line" == '#'* || "$line" != *=* ]] && continue
+      k="${line%%=*}"; v="${line#*=}"
+      k="${k%"${k##*[![:space:]]}"}"                          # rtrim key
+      [[ "$k" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || continue
+      v="${v#"${v%%[![:space:]]*}"}"; v="${v%"${v##*[![:space:]]}"}"
+      # One matching pair of surrounding quotes, the same rule chainlib applies.
+      # ONE pair, not two. As two sequential statements the single-quote strip ran on the output
+      # of the double-quote strip, so `"'x'"` became `x` here and stayed `'x'` in chainlib.
+      if (( ${#v} >= 2 )) && [[ "${v:0:1}" == "${v: -1}" ]]; then
+        case "${v:0:1}" in '"'|"'") v="${v:1:${#v}-2}" ;; esac
+      fi
+      # Mirror `os.environ.setdefault` exactly: the test is membership of the EXPORTED
+      # environment, not `[[ -v ]]`, which also sees ordinary shell variables. This script sets
+      # plenty of those (CHAIN_ID, ROOT, WORK, PORT, RPC…), and any .env key colliding with one was
+      # silently dropped here while chainlib happily loaded it. Set-but-empty still counts as set,
+      # so an explicitly exported empty value wins, as setdefault does.
+      [[ -n "${_env_exported[$k]:-}" ]] && continue
+      export "$k=$v"
+      _env_exported["$k"]=1
+    done < "$f"
+  done
+}
+
+# The dedupe below keeps the error listing honest about what was really read, and with first-wins
+# it is no longer merely cosmetic: a file read twice would still only ever set a key once.
 ENV_FOUND=()
 declare -A _env_seen=()
 while IFS= read -r ENVF; do
@@ -204,22 +246,102 @@ while IFS= read -r ENVF; do
 done < <(env_candidates "$ROOT")
 
 if (( ${#ENV_FOUND[@]} > 0 )); then
-  for ENVF in "${ENV_FOUND[@]}"; do
-    set -a; source "$ENVF"; set +a
-  done
+  load_env_files "${ENV_FOUND[@]}"
 fi
 
-if [[ -z "${ALCHEMY_API_KEY:-}" ]]; then
+# NO unconditional ALCHEMY_API_KEY gate here. It used to refuse outright when the key was unset,
+# which contradicted this fix's own premise: `$<CHAIN>_URL` is the OPERATOR OVERRIDE and outranks
+# the chain config, so `MAINNET_URL=https://my-own-node rehearse_fork.sh 1` is a perfectly good
+# rehearsal that needs no Alchemy account at all. `chainlib.fork_rpc_spec` only emits an `alchemy:`
+# spec when the key is present, and returns None with a precise note otherwise — so the requirement
+# is already enforced exactly where it applies, per chain, instead of globally. The candidate
+# listing that gate carried was genuinely useful and has moved into the single refusal below.
+# --- the endpoint to fork ------------------------------------------------------
+# This line used to read `FORK_URL="${MAINNET_URL:-https://eth-mainnet.g.alchemy.com/v2/$KEY}"`,
+# which is ETHEREUM MAINNET regardless of $CHAIN_ID — while the other 17 uses of $CHAIN_ID in this
+# script (chain config, deployment record, broadcast dir, every post-condition) faithfully followed
+# the argument. So `rehearse_fork.sh 8453` read Base's config, wrote Base's records, asserted
+# against Base's expectations — and forked Ethereum. It reported success without once contacting
+# the chain it claimed to rehearse, which means NO NON-MAINNET CHAIN HAS EVER ACTUALLY BEEN
+# REHEARSED by this script; every such claim is a mainnet run wearing another chain's label.
+#
+# Resolution is delegated to `chainlib.fork_rpc`, not reimplemented here, so the rehearsal and the
+# five chainlib-backed preflight tools cannot drift apart on what a chain's endpoint is. That
+# function is the literal generalisation of the old line — `$<CHAIN>_URL` first (the operator
+# override that is how a deploy reaches chains the Alchemy app has disabled; a rehearsal is only
+# worth running against the endpoint the deploy will use), then the chain config — so CHAIN 1
+# RESOLVES EXACTLY AS BEFORE and only the other chains change.
+#
+# It FAILS CLOSED, and the property is precisely "never another CHAIN's endpoint" — not "never any
+# fallback". `fork_rpc_spec` can still return a `literal:` spec from PUBLIC_FALLBACK_RPC, which is a
+# public endpoint for the SAME chain; five chains (143, 196, 204, 43111, 16661) have no
+# CHAIN_URL_ENV entry and a credential-gated config rpc, so that fallback is the ONLY way to rehearse
+# them at all. It is never silent: the note is echoed below, so a fallback run announces itself as
+# `public fallback (unresolved ($ALCHEMY, ALCHEMY_API_KEY))`.
+#
+# ⚠️ OPEN QUESTION for review, raised by the review loop and deliberately NOT decided here: a public
+# fallback lets the rehearsal go green in a credential state where the DEPLOY would fail, which is
+# adjacent to the failure class this PR exists to end. Removing it would make those five chains
+# un-rehearsable. Left as-is, visibly, rather than changed unilaterally.
+#
+# A chain with no endpoint at all aborts, matching the house rule the deploy path already follows
+# (RegisterAssets reverts `AssetKindRegistryNotDeployed` rather than quietly using a lesser path). A
+# rehearsal that forks the wrong chain is worse than one that refuses to start: it produces a green
+# report.
+#
+# chainlib returns a SPEC naming the source, never the URL: the URL embeds $ALCHEMY_API_KEY, and
+# emitting a secret on stdout is a real exposure channel however carefully this one caller handles
+# it — CodeQL flags exactly that (py/clear-text-logging-sensitive-data, high) and is right to. This
+# shell already holds the key in its own environment, so naming the source leaks nothing while every
+# DECISION — which override wins, which network, when to give up — stays in chainlib.
+# `_materialise_spec` there mirrors the case below, and the guard test asserts the two produce
+# identical URLs so they cannot drift apart.
+#
+# ONE invocation, both streams captured separately: calling it twice, once for the note and once for
+# the value, would be two sources of truth for a single decision.
+FORK_RPC_RC=0
+FORK_RPC_SPEC="$(python3 script/deploy/preflight/chainlib.py fork-rpc "$CHAIN_ID" 2>"$WORK/rpc.err")" \
+  || FORK_RPC_RC=$?
+FORK_RPC_NOTE="$(cat "$WORK/rpc.err" 2>/dev/null)"
+FORK_URL=""
+if (( FORK_RPC_RC == 0 )) && [[ -n "$FORK_RPC_SPEC" ]]; then
+  case "$FORK_RPC_SPEC" in
+    # Two steps deliberately: `${!VAR#env:}` does NOT mean "strip the prefix, then expand
+    # indirectly" — bash applies the modifier to the indirect result, so it silently yields nothing.
+    env:*)     FORK_ENV_VAR="${FORK_RPC_SPEC#env:}"; FORK_URL="${!FORK_ENV_VAR:-}" ;;
+    alchemy:*) FORK_URL="https://${FORK_RPC_SPEC#alchemy:}.g.alchemy.com/v2/${ALCHEMY_API_KEY:-}" ;;
+    literal:*) FORK_URL="${FORK_RPC_SPEC#literal:}" ;;
+    *)         FORK_RPC_NOTE="unrecognised spec '${FORK_RPC_SPEC}' (${FORK_RPC_NOTE})" ;;
+  esac
+fi
+if [[ -z "$FORK_URL" ]]; then
   {
-    echo "REFUSING: ALCHEMY_API_KEY is not set. Candidates checked, in probe order:"
+    echo "REFUSING: no RPC endpoint resolves for chain ${CHAIN_ID} (${FORK_RPC_NOTE})."
+    echo "This script will NOT fall back to another chain's endpoint — doing so is how a rehearsal"
+    echo "reports success for a chain it never contacted."
+    echo "Set that chain's URL env var (see CHAIN_URL_ENV in script/deploy/preflight/chainlib.py),"
+    echo "or set ALCHEMY_API_KEY, or fix the rpc in script/config/chains/${CHAIN_ID}.json."
+    echo ".env candidates, in probe order (first wins):"
     while IFS= read -r ENVF; do
       if [[ -f "$ENVF" ]]; then echo "  read    $ENVF"; else echo "  absent  $ENVF"; fi
     done < <(env_candidates "$ROOT")
-    echo "Define it in one of the files above, or export it before running."
   } >&2
-  exit 1
+  exit 2
 fi
-FORK_URL="${MAINNET_URL:-https://eth-mainnet.g.alchemy.com/v2/${ALCHEMY_API_KEY}}"
+# The announcement is the load-bearing property of keeping the public fallback at all: a fallback
+# run is CORRECT-BY-ANNOUNCEMENT, not silent, which is the line this whole script is about. A single
+# line in a long transcript is easy to skim past, so a fallback says so in a banner and repeats it in
+# the step table, where anyone reading the result will meet it.
+echo "fork endpoint for chain ${CHAIN_ID}: ${FORK_RPC_NOTE}"
+if [[ "$FORK_RPC_NOTE" == public\ fallback* ]]; then
+  echo "############################################################################"
+  echo "## PUBLIC FALLBACK IN USE for chain ${CHAIN_ID} — ${FORK_RPC_NOTE}"
+  echo "## The configured endpoint did NOT resolve. This rehearsal is running against"
+  echo "## a public RPC for the RIGHT chain, but the DEPLOY would fail in this same"
+  echo "## credential state. A green result here does NOT prove the deploy can run."
+  echo "############################################################################"
+  echo -e "fork-endpoint\t0\t0\tPUBLIC-FALLBACK" >> "$WORK/steps.tsv"
+fi
 
 DEPLOYER="$(jq -r '.addresses.admin' "script/config/chains/${CHAIN_ID}.json")"
 LIVE_PROXY="$(jq -r '.NAVCalculatorProxy // ""' "script/config/deployments/${CHAIN_ID}.json")"
@@ -346,7 +468,18 @@ run_step() {
   # Measured on the fork: with the proxy unset, 04 logs "ERROR: NAVCalculator not configured or
   # deployed, cannot deploy adapter" once per adapter (26x on mainnet) and STILL exits 0, and 06 logs
   # two "WARNING: ... skipping" and exits 0. 03 is the only one that reverts (NotAContract).
-  local noop_re="NAVCalculator not deployed for this chain|Already deployed at:|No assets configured|ERROR: NAVCalculator not configured|WARNING: NAVCalculator not deployed"
+  # `[Aa]lready deployed` — neither the capitalised form alone, NOR with `at:` appended. Exactly ONE script emits
+  # "  Already deployed at:" (04_DeployBalanceAdapters.s.sol:232); every other skip line in the
+  # sequence is lowercase — `02_2` and `02` ("[SKIP] NAV proxy already deployed at:"), `08`
+  # ("AssetKindRegistry already deployed at:"), and all ~34 custom feeds in `03_DeployPriceFeeds`.
+  # `grep -E` is case-sensitive, so this detector — whose entire job is catching a step that exits 0
+  # having done nothing — was blind to every one of them. A rehearsal where `03` skipped all its
+  # feeds, or `08` reused a registry, scored OK. Found by sweeping the class that produced the
+  # AssetKindRegistry reset bug: the safety net had the same hole as the thing it was guarding.
+  # `at:` is deliberately NOT required either — `eETH_CustomPriceFeed already deployed:` and
+  # `CrossRate monitor already deployed:` omit it, covering 9 more call sites including every
+  # cross-rate monitor. Requiring it was the same mistake one word further along.
+  local noop_re="NAVCalculator not deployed for this chain|[Aa]lready deployed|No assets configured|ERROR: NAVCalculator not configured|WARNING: NAVCalculator not deployed"
   if grep -qaE "$noop_re" "$log"; then
     echo -e "${label}\t$((t1-t0))\t${gas}\tNO-OP" >> "$WORK/steps.tsv"
     echo "    NO-OP ($((t1-t0))s) — script exited 0 but did nothing:"

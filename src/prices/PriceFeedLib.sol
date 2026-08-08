@@ -1974,10 +1974,12 @@ library PriceFeedLib {
     /// @param pos The positions to enrich.
     /// @param registry The chain's `AssetKindRegistry`, or `address(0)` when none is wired. Passed in rather than
     ///        read from storage because this library is reached by DELEGATECALL and has no view of `NAVCalculator`'s
-    ///        layout; passing it also avoids a second registry pointer on a contract with 455 bytes of headroom.
-    ///        (455 is the figure AFTER this change; it was 502 before. This PR spends 47 of them on the extra
-    ///        argument and the `assetKindRegistry` SLOAD at three call sites — cheap only relative to the +182 B
-    ///        floor a forwarding getter would have cost.)
+    ///        layout; passing it also avoids a second registry pointer on a contract with 101 bytes of headroom.
+    ///        (Headroom went 502 -> 455 for the three extra call-site arguments, then 455 -> 101 when
+    ///        {NAVCalculator.getAdapterDisplayInfo} was added at +354 B. ⚠️ The BINDING figure is not this one:
+    ///        `NAVCalculatorV2`, the upgrade-test subclass in `test/nav/NAVCalculator.upgrade.t.sol`, is 92 bytes
+    ///        larger and sits at **9 bytes** under EIP-170 — and CI's `forge build --sizes` fails on test contracts
+    ///        too. Treat 9, not 101, as the real budget.)
     function toVerbose(INAVCalculator.Position[] memory pos, address registry)
         external
         view
@@ -2078,9 +2080,28 @@ library PriceFeedLib {
             names[i] = _effectiveProtocolName(registry, adapter, protocolNameCall);
             labels[i] = _safeStringArray(adapter, labelsCall);
             string memory category = _categoryOverride(registry, adapter);
-            // Same rule as the position path, including the load-bearing length guard: replacing index 0 of an EMPTY
-            // array would be an out-of-bounds write that Solidity turns into Panic(0x32), breaking never-revert.
-            if (bytes(category).length != 0 && labels[i].length != 0) labels[i][0] = category;
+            if (bytes(category).length == 0) continue;
+            if (labels[i].length != 0) {
+                // Replace index 0 in place. NEVER write index 0 of an EMPTY array — Solidity's bounds check turns
+                // that into Panic(0x32) and the never-revert property is gone. The guard is load-bearing.
+                labels[i][0] = category;
+            } else {
+                // **The empty case diverges from the position path ON PURPOSE, and getting this wrong left the two
+                // surfaces disagreeing for 21 of 33 adapters.** Every meta-adapter answers `positionLabels("")` with
+                // `[]` — `MetaBalanceAdapter._pidAddress` rejects a non-32-byte pid, so `_addressLabels` returns an
+                // empty array — which is the interface's documented "no positionId, breadcrumb is per-position"
+                // reply. Skipping the override there (as the position path does) meant an operator who set a
+                // category on a Morpho or Uniswap meta-adapter saw it on `getAccountPositionsVerbose` and NOT on
+                // this surface: exactly the split this function exists to close.
+                //
+                // The two paths ask different questions, which is why the answers differ. The POSITION path asks
+                // "what is this position's breadcrumb" — a position the adapter declined to describe must not gain
+                // one. This path asks "what category is this ADAPTER configured with", and the operator has
+                // answered that explicitly. So the override is surfaced as a one-element breadcrumb, which agrees
+                // with the position path's `labels[0]` rather than contradicting it.
+                labels[i] = new string[](1);
+                labels[i][0] = category;
+            }
         }
     }
 
@@ -2095,7 +2116,11 @@ library PriceFeedLib {
     /// @dev Every `protocolName()` in this repo is a `pure` constant string and an override read is one capped
     ///      `SLOAD` plus a 32-byte-bounded string, so this is orders of magnitude more than any legitimate read
     ///      needs; it exists to bound a broken or hostile callee. Note the consequence of the shared stipend: a
-    ///      hostile registry can burn 2x this per DISTINCT ADAPTER. That ceiling is exercised by
+    ///      hostile registry can burn 2x this per DISTINCT ADAPTER on the ACCOUNT path, which caches per adapter.
+    ///      ⚠️ The CONFIGURATION path ({adapterDisplayInfo}) has no such cache — it is a flat loop over the caller's
+    ///      array — so there the ceiling is 2x this per ARRAY ENTRY, and a caller passing the same adapter N times
+    ///      pays N times. That is bounded by the caller's own gas and its own array, not by the fleet size. It is
+    ///      exercised by
     ///      `AdapterLabelOverrides.t.sol::test_gas_hostileRegistryIsBoundedByTheStipend`, which wires a
     ///      stipend-burning registry and measures the read (~422k, still fail-open). An earlier revision cited
     ///      `test_gas_registryLegIsBounded` here, which uses a well-behaved registry and never approaches the

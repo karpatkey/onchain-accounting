@@ -21,10 +21,13 @@ import "src/constants.sol";
 ///      transaction, and {unregisterAsset} is exactly symmetric. So a registered asset is always classified, by
 ///      construction rather than by an operator remembering two calls.
 ///
-///      **There is now exactly ONE on-chain consumer, and this note is the revisit it asked for.** It previously read
+///      **There are now TWO on-chain consumers, and this note is the revisit it asked for.** It previously read
 ///      "nothing on-chain reads this registry", with the standing instruction that the first consumer to appear should
-///      be recorded here. That consumer is {PriceFeedLib.toVerbose}, which reads the two ADAPTER-override getters —
-///      {getAdapterProtocolName} and {getAdapterLabelCategory} — once per distinct adapter on the verbose read path.
+///      be recorded here. Those consumers are {PriceFeedLib.toVerbose} (the ACCOUNT read path, once per distinct
+///      adapter) and `PriceFeedLib.adapterDisplayInfo` (the CONFIGURATION read path behind
+///      `NAVCalculator.getAdapterDisplayInfo`, once per listed adapter). Both read the same two ADAPTER-override
+///      getters — {getAdapterProtocolName} and {getAdapterLabelCategory} — through ONE shared precedence helper, so
+///      the two display surfaces cannot disagree. A third consumer, if one is ever added, must use that helper too.
 ///      Note what did NOT change: the CLASSIFICATION half (the kinds and the per-asset labels) still has no on-chain
 ///      reader, and its value remains the atomic register+classify invariant on the write path, not the read. An
 ///      earlier version justified the contract with "a consumer makes two calls and caches the kinds indefinitely";
@@ -39,7 +42,7 @@ import "src/constants.sol";
 ///      here is added to them, and no deployed adapter is touched or redeployed by this feature.
 ///
 ///      **Why it is its own contract and not part of the NAV. Not preference — measured, twice, for two different
-///      questions.** `NAVCalculator` sits at **24,074 of 24,576 bytes: 502 bytes** of EIP-170 headroom (measured on
+///      questions.** `NAVCalculator` sits at **24,475 of 24,576 bytes: 101 bytes** of EIP-170 headroom (measured on
 ///      this tree, not inherited). ⚠️ This line read "24,508 / 68 bytes" and was already stale before the labels work
 ///      touched it — the `_toVerbose` extraction into `PriceFeedLib` had since returned ~520 bytes. The measurements
 ///      BELOW are historical, taken against the 68-byte tree, and are left as they were: they are what the decision
@@ -62,7 +65,8 @@ import "src/constants.sol";
 ///      That moved `PriceFeedLib` from `0xfc6AE534…` to `0x49C18627665562F4bEbae5208BA6eF7428039614` (it shrank 69
 ///      bytes, 18,585 -> 18,516). ⚠️ Both of those are HISTORICAL readings, kept because they record why the pin
 ///      moved — neither is the pinned value. **The regeneration that was owed has now been done:** `PriceFeedLib` is
-///      pinned at `0xcD6F52F4b5F2e563993d1966C27E7E322281Bb26`, measured from a cold `forge clean && forge build
+///      pinned at `0x3b3701b04aE5963161239d361cF38D0C0710063F` (regenerated twice since, as `toVerbose` and then
+///      `adapterDisplayInfo` changed its bytecode), measured from a cold `forge clean && forge build
 ///      --force` with every submodule at its recorded revision. `NAVRegistryLib` did NOT move and holds at
 ///      `0x5f5D054E…` — measured, not assumed. Do not take a pin from this sentence either: `foundry.toml` and
 ///      {LibraryPins} are the only authorities, and `LibraryPinConsistency.t.sol` is what proves they match the tree.

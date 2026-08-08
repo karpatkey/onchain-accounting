@@ -270,6 +270,7 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
     ///      with `toVerbose` — so agreement holds by construction, not by two implementations matching. The work
     ///      lives in the library because this contract is at its EIP-170 limit; only the selector is paid for here.
     /// @param adapters The adapters to describe, typically the result of {getAllAdapters}.
+    /// @inheritdoc INAVCalculator
     function getAdapterDisplayInfo(address[] calldata adapters)
         external
         view

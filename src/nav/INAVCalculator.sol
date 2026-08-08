@@ -984,4 +984,20 @@ interface INAVCalculator is IBalances {
         external
         view
         returns (int256 value, bool quoteAssetStale);
+
+    /// @notice Every listed adapter's EFFECTIVE display name and positionId-independent breadcrumb — the same values
+    ///         the verbose position reads report, including any {AssetKindRegistry} override.
+    /// @dev Declared here, not only on the concrete contract, so INTERFACE-TYPED consumers can reach it. That is the
+    ///      caller that matters: a consumer holding `INAVCalculator` is exactly the one that would otherwise
+    ///      enumerate `getAllAdapters()` and staticcall `protocolName()` on each adapter itself, which is the
+    ///      surface split this function exists to close. Leaving it off the interface would have left that consumer
+    ///      with no way to reach the fix.
+    /// @param adapters The adapters to describe, typically the result of `getAllAdapters()`.
+    /// @return names Each adapter's effective protocol name.
+    /// @return labels Each adapter's effective breadcrumb. Empty when the adapter derives it per position AND no
+    ///         category override is set; a lone category when one is.
+    function getAdapterDisplayInfo(address[] calldata adapters)
+        external
+        view
+        returns (string[] memory names, string[][] memory labels);
 }

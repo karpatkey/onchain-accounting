@@ -144,6 +144,25 @@ contract PerPositionCategoryAdapter is IBalanceAdapter {
     }
 }
 
+/// @notice Behaves like a REAL meta-adapter: `positionLabels("")` returns `[]` (its breadcrumb is per-position), and
+///         a genuine positionId returns `[category, leaf]`.
+/// @dev This shape is what `MetaBalanceAdapter._addressLabels` produces — `_pidAddress` rejects a non-32-byte pid, so
+///      the empty pid yields an empty array. 21 of 33 deployable adapters do this. `LabelledAdapter` does NOT model
+///      it (it returns a fixed array for any positionId), which is exactly why the first version of the
+///      surface-agreement test could not see the category override being dropped on the configuration path.
+contract MetaShapedAdapter is Mock_CustomBalanceAdapter {
+    function protocolName() external pure returns (string memory) {
+        return "Morpho";
+    }
+
+    function positionLabels(bytes calldata positionId) external pure returns (string[] memory out) {
+        if (positionId.length != 32) return new string[](0);
+        out = new string[](2);
+        out[0] = "Vault";
+        out[1] = "steakUSDC";
+    }
+}
+
 /// @notice A registry that reverts on every call, to prove the read path is fail-open against a NON-ZERO but broken
 ///         registry — the case `address(0)` short-circuiting does not cover.
 contract RevertingRegistry {
@@ -798,20 +817,47 @@ contract AdapterLabelOverridesTest is AdapterLabelOverridesBase {
         }
     }
 
-    /// @dev An adapter with NO labels must yield an empty breadcrumb on the configuration surface, never a grown
-    ///      array — the same load-bearing `length != 0` guard as the position path. Without it Solidity's bounds
-    ///      check Panics(0x32) and the never-revert property is gone.
-    function test_configurationSurface_doesNotGrowAnEmptyLabelSet() public {
+    /// @dev With NO override, an adapter that describes nothing must yield an empty breadcrumb — never a grown array.
+    function test_configurationSurface_emptyStaysEmptyWithoutOverride() public {
         NoLabelAdapter silent = new NoLabelAdapter();
         _register(silent);
-
-        vm.prank(navCalculatorManager);
-        registry.setAdapterLabelCategory(address(silent), "Invented Category");
 
         address[] memory one = new address[](1);
         one[0] = address(silent);
         (, string[][] memory labels) = nav.getAdapterDisplayInfo(one);
-        assertEq(labels[0].length, 0, "an empty breadcrumb must stay empty, not be grown");
+        assertEq(labels[0].length, 0, "no override means no breadcrumb");
+    }
+
+    /// @dev **The gap the first version of this feature shipped with.** Every meta-adapter answers
+    ///      `positionLabels("")` with `[]`, so skipping the override on an empty reply (as the POSITION path
+    ///      correctly does) meant a category set on a Morpho/Uniswap meta-adapter was visible on
+    ///      `getAccountPositionsVerbose` and invisible on the configuration surface — the two surfaces disagreeing
+    ///      about `labels[0]`, which is the very split this feature exists to close. The configuration path now
+    ///      surfaces the override as a one-element breadcrumb.
+    function test_configurationSurface_surfacesCategoryForMetaShapedAdapter() public {
+        MetaShapedAdapter meta = new MetaShapedAdapter();
+        _register(meta);
+
+        address[] memory one = new address[](1);
+        one[0] = address(meta);
+
+        // Control: with no override, the configuration surface legitimately has no breadcrumb for this adapter.
+        (, string[][] memory before) = nav.getAdapterDisplayInfo(one);
+        assertEq(before.length, 1);
+        assertEq(before[0].length, 0, "control: a meta-shaped adapter has no positionId-independent breadcrumb");
+
+        vm.prank(navCalculatorManager);
+        registry.setAdapterLabelCategory(address(meta), "Lending Market");
+
+        (, string[][] memory afterSet) = nav.getAdapterDisplayInfo(one);
+        assertEq(afterSet[0].length, 1, "the override must be surfaced, not dropped");
+        assertEq(afterSet[0][0], "Lending Market", "and it must be the category the operator set");
+
+        // And it must AGREE with what the position path reports at index 0 for the same adapter.
+        INAVCalculator.VerbosePosition memory v = _verboseFor(address(meta));
+        assertEq(v.labels[0], "Lending Market", "position path reports the same category");
+        assertEq(v.labels[1], "steakUSDC", "leaf still derived live on the position path");
+        assertEq(afterSet[0][0], v.labels[0], "the two surfaces must agree on labels[0]");
     }
 
     // ------------------------------------------------------------------

@@ -189,6 +189,17 @@ contract Mock_NAVCalculator is INAVCalculator {
         revert("Not implemented in mock");
     }
 
+    /// @dev Stub for the display surface; this mock has no adapter registry.
+    function getAdapterDisplayInfo(address[] calldata adapters)
+        external
+        pure
+        override
+        returns (string[] memory names, string[][] memory labels)
+    {
+        names = new string[](adapters.length);
+        labels = new string[][](adapters.length);
+    }
+
     function calculateValue(address[] memory, uint256[] memory, address) external pure override returns (int256, bool) {
         revert("Not implemented in mock");
     }

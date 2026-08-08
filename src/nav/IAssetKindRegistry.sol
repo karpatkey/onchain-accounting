@@ -331,22 +331,29 @@ interface IAssetKindRegistry {
     ///      cannot see it. This registry cannot check it either — it holds no view of any adapter's protocol id.
     ///      **When a protocol has several adapters, override all of them or none.**
     ///
-    ///      ⚠️ **A second divergence, and a wider one: this override is applied ONLY on the account read path.**
-    ///      {PriceFeedLib.toVerbose} is the sole consumer, so `getAccountPositionsVerbose` / `…ForAssetVerbose` /
-    ///      `getAccountNavVerbose` report the overridden name — while the adapter-ENUMERATION surface does not.
-    ///      A consumer that lists `IBalances.getAllAdapters()` and staticcalls `protocolName()` on each one has no
-    ///      view of this registry and still sees the adapter's own constant. {IPositionDescribable.protocolName}
-    ///      says exactly why that matters: enumerating consumers never see the typed `protocolBrand`/`protocolId`,
-    ///      so the display name is the only protocol identity they have, and it is their join key.
+    ///      **Both NAV display surfaces apply this override, and they agree by construction.** The account path
+    ///      (`getAccountPositionsVerbose` / `…ForAssetVerbose` / `getAccountNavVerbose`, via
+    ///      {PriceFeedLib.toVerbose}) and the CONFIGURATION path (`NAVCalculator.getAdapterDisplayInfo`, via
+    ///      `PriceFeedLib.adapterDisplayInfo`) both resolve precedence through the same private helper, so they
+    ///      cannot report different names for one adapter — that is a structural property, not two implementations
+    ///      that happen to match.
     ///
-    ///      So overriding `AaveUmbrellaBalanceAdapter` to "Aave" makes positions report "Aave" while the configured
-    ///      -adapter list still says "Aave Umbrella" — the same phantom-sibling split the override was meant to
-    ///      REPAIR, now reintroduced between two surfaces instead of between two adapters. Closing it would mean
-    ///      either a NAV-side forwarding getter (+182 B against 455 free — not affordable) or every enumerating
-    ///      consumer learning to read this registry. **Until one of those happens, an override fixes the position
-    ///      view and not the configuration view, and an operator should expect to see both.**
-    ///      Two operational notes that apply to BOTH setters live on {clearAdapterProtocolName}: overrides are lost
-    ///      when the registry is replaced, and they are only visible on the account read path.
+    ///      ⚠️ **The one place an override is still invisible: a consumer that BYPASSES the NAV entirely.** If a
+    ///      caller lists `IBalances.getAllAdapters()` and then staticcalls `protocolName()` on each adapter itself,
+    ///      it is reading the adapter's immutable constant and no override can reach it — nothing on-chain can
+    ///      intercept a direct call to a third-party contract. {IPositionDescribable.protocolName} explains why that
+    ///      matters: enumerating consumers never see the typed `protocolBrand`/`protocolId`, so the display name is
+    ///      the only protocol identity they have, and it is their join key. **The remedy is to call
+    ///      `getAdapterDisplayInfo(getAllAdapters())` instead of staticcalling the adapters**, which is exactly why
+    ///      that function exists.
+    ///
+    ///      (An earlier revision of this note said closing the split "would mean a NAV-side forwarding getter
+    ///      (+182 B against 455 free — not affordable)". That estimate was wrong in both directions and is recorded
+    ///      here so the correction is not lost: the real cost was **+354 B** — the nested `string[][]` return costs
+    ///      far more ABI surface than the +182 B floor quoted for a flat forwarding read — and it was nonetheless
+    ///      affordable. See {NAVCalculator.getAdapterDisplayInfo} for the current headroom, which is now thin.)
+    ///      One operational note that applies to BOTH setters lives on {clearAdapterProtocolName}: overrides are
+    ///      lost when the registry is replaced.
     /// @param adapter The balance adapter whose positions should report `name`.
     /// @param name The replacement protocol name, e.g. "Aave V3".
     function setAdapterProtocolName(address adapter, string calldata name) external;

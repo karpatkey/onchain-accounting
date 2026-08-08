@@ -11,10 +11,20 @@ recorded below, with the consequences that follow from it, and the custom-feed c
 Revised again 2026-08-08 against `main` @ `a3974686`, which is **399 commits after the `dc5810eb`
 reading above**. The two dated paragraphs above are left exactly as written; this pass corrected the
 places where they, and the sections they point at, describe a state that has since changed. What moved:
-the merge train named above **has landed** (0.1), the pin regen **has run twice and the pin moved again
-after the second one** (0.3), and — the one that matters most — **no fork rehearsal has ever run against
-`main`**, and the harness that produced the last green result no longer exists (see the rehearsal note
-below). Every configured count in this section was re-measured and is unchanged.
+the merge train named above **has landed** (0.1), and the pin regen **has run twice and the pin moved
+again after the second one** (0.3). Every configured count in this section was re-measured and is
+unchanged.
+
+Both of that pass's open questions were closed the same day, and the results are recorded where they
+belong rather than here — **0.3's pins are verified by a local clean build** at `a3974686`, and **the
+first fork rehearsal ever run against `main`** (rather than a PR branch head) passed end to end. Two
+things came out of that rehearsal that this document did not previously say and that will bite the next
+operator: **pin the fork block** (see the note at the rehearsal invocation — it is the difference between
+209 s and a 2,915 s hang) and **`NAVRegistryLib`'s salt seed is the mixed-case literal
+`"NavRegistryLib"`** (see 0.3 — the all-caps spelling manufactures a false drift report).
+
+**None of this means the system is deployed. It is not.** A fork rehearsal is evidence that the deploy
+path executes; it is not a deploy, and it is not an approval to deploy.
 
 Companion tooling lives in [`preflight/`](preflight/README.md). Everything there is read-only except
 `rehearse_fork.sh`, which only ever broadcasts to a loopback anvil.
@@ -183,14 +193,23 @@ described, not an anomaly to investigate — and it remains the correct reading 
 > green result from the current one, and #279 exists precisely because the old one **reported success
 > for work it never did**.
 >
-> 🕳 **GAP — AWAITING RESULT. Do not fill this in by prediction, and do not treat an empty gap as a
-> pass.** A rehearsal against `a3974686` with the post-#279 harness is running now. Until its outcome is
-> recorded here, **the deploy path is unproven on this tree.**
+> ✅ **CLOSED 2026-08-08 — the first rehearsal ever run against `main`, and the first against #279's
+> rewritten harness.** `REHEARSAL_HEAD == a3974686` (merged `main`, the real artifact — not a PR branch
+> head), `EXIT=0`, **8 post-conditions PASS / 0 FAIL**, ~209 s total, one anvil pid throughout.
+> **One shot, no retry.**
 >
-> - [ ] `REHEARSAL_EXIT` at `a3974686`?
-> - [ ] proxy address differs from the live `0x80eD5cc6…`?
-> - [ ] a fresh ERC20Default is minted by `initialize()`?
-> - [ ] no step reported success while doing nothing — the failure mode #279 was written to catch?
+> - [x] `REHEARSAL_EXIT` at `a3974686` — **0**, against merged `main`
+> - [x] proxy address differs from the live `0x80eD5cc6…` — asserted by the harness
+> - [x] a fresh ERC20Default is minted by `initialize()`
+> - [x] no step reported success while doing nothing — **8/0 on post-conditions**, which is the check
+>       #279 added and the reason the exit code alone is not the evidence
+>
+> `RegisterAssets` ran **88 s against its 79 s historical norm** — the same step that previously hung for
+> **2,915 s**. `06_Configure` completed in 10 s. **Pin the fork block; see the note at the invocation
+> below** — that is what moved this run from "hangs" to "88 s", and it is not optional advice.
+>
+> **This is fork evidence, not a deploy.** The system is not deployed. It says the deploy path executes
+> end to end on this tree; it does not say the deploy has happened or been approved.
 
 #### What a new proxy obliges — the enlargement, in one place
 
@@ -298,8 +317,32 @@ the rehearsal after any further source change, since the placeholder's bytecode 
 `via_ir` with no source change (the `NAVRegistryLib` precedent):
 
 ```bash
-script/deploy/preflight/rehearse_fork.sh 1        # asserts the proxy address differs from live
+script/deploy/preflight/rehearse_fork.sh 1 25708060   # <chainId> <forkBlock> — PIN THE BLOCK
 ```
+
+> ⚠️ **PIN THE FORK BLOCK. This runbook did not say so before, and that omission cost a 2,915 s hang.**
+> `rehearse_fork.sh` takes the block as an optional **second positional argument** (`FORK_BLOCK`,
+> `rehearse_fork.sh:47`, passed to anvil as `--fork-block-number`, `:368`). Omit it and you fork
+> `latest`, which is the root cause of both failures below. Use a recent finalized block, not the one
+> above verbatim — `25708060` is simply the block the 2026-08-08 rehearsal used.
+>
+> **Correctness.** With the block pinned, the harness logged `fork block 25708060` and anvil served
+> **25,708,060** from the second sample onward — **recorded and served heights agree exactly, and the
+> ~1.2 M-block gap seen previously does not reproduce.** That gap belongs to **unpinned / `latest`**
+> forking — forge and anvil each resolving "latest" at a different moment against a load-balanced
+> endpoint — **not to anvil's semantics.** Do not go looking for a bug in anvil; pin the block.
+>
+> **Cost, which is the part that decides whether your run finishes.** A pinned fork re-reads from
+> `~/.foundry/cache/rpc/mainnet/<block>/` instead of pulling fresh every time: **209 s pinned versus
+> 2,915 s+ unpinned.** A run that finishes is not spending 12 retries per cache miss. **Pinning is both
+> the correctness fix and the cost fix** — there is no tradeoff to weigh here.
+>
+> **What is NOT settled, and must not be written up as if it were.** Why forge expected block
+> **24,492,904** is **unexplained**, and it could not have been answered by the 2026-08-08 run: the
+> deadlock never occurred, so forge never entered the block-waiting path and never issued such a request.
+> The standing hypothesis — that the deadlock is a consequence of the same unpinned-fork root cause — is
+> **evidenced but unproven**. Settling it needs a deliberate reproduction against an unpinned fork on an
+> archive RPC. **Nobody has run that, and it should not be run incidentally.**
 
 > **The rehearsal treats the config tree as disposable, and you must let it.** It forks as the *real*
 > chain id (ConfigReader keys every path off it), so the deploy scripts rewrite
@@ -327,7 +370,8 @@ before the bump is stale on arrival.
 > ⚠️ **SUPERSEDED TWICE — read this block as the 2026-07-30 record, not as the current pin.** The
 > measurement below was real and its method is why it is kept, but the `PriceFeedLib` value it reports is
 > **two regens out of date**. `script/utils/LibraryPins.sol` on `main` is the only source of truth for
-> the current pins. **0.3 is not satisfied for the `a3974686` tree** — see the gap marker below.
+> the current pins. **0.3 IS now satisfied for the `a3974686` tree** — but by the clean-build measurement
+> recorded below, not by this block. Read the closure note, not this table.
 >
 > ✅ **DONE (2026-07-30).** Measured against the merged tree at `f837f076` from a cold `forge clean && forge build --force`
 > (937 s) with `git submodule status` reporting **zero** mismatches:
@@ -360,15 +404,29 @@ before the bump is stale on arrival.
 > section requires**, and the "computed last, against the final tree" ordering from 0.1 no longer holds:
 > `#278` is after the tree that was called final.
 >
-> 🕳 **GAP — AWAITING MEASUREMENT. Do not fill this in by prediction, and do not read an empty gap as a
-> pass.** A cold clean-build pin verification against `a3974686` is running now.
+> ✅ **CLOSED 2026-08-08 — 0.3 is satisfied for `a3974686`. This is the measurement of record: a local
+> clean build, not a CI reading, which is exactly what this section demands.**
 >
-> - [ ] `PriceFeedLib` computed from a cold `forge clean && forge build --force` at `a3974686` == `LibraryPins.PRICE_FEED_LIB` (`0x784bDE7A…`)?
-> - [ ] `NAVRegistryLib` == `0x5f5D054E…`?
-> - [ ] all four `LibraryPinConsistency.t.sol` assertions green at `a3974686`?
+> ```
+> Local clean-build measurement of record, a3974686 (not a CI reading):
+> PriceFeedLib    computed 0x784bDE7A519B0FA0Ad0c5B2820140501A02B0A62 == recorded in foundry.toml:82 and LibraryPins.sol:40
+> NAVRegistryLib  computed 0x5f5D054E021A53E1DEF54B3Bda3c939ccD14fd90 == recorded in foundry.toml:83 and LibraryPins.sol:41
+> Derived independently from freshly built artifacts:
+>   salt = keccak256(name ‖ uint256(1));  addr = keccak256(0xff ‖ 0x4e59b448… ‖ salt ‖ keccak256(initcode))[12:]
+> Sizes byte-identical to 253f6bd6: 7,923 / 24,475 / 24,475 / 24,567 (9 free — the binding CI figure) / 22,920
+> ```
 >
-> Until those are answered, treat 0.3 as **outstanding**. A wrong pin reverts `01_2` on every chain
-> before it broadcasts — which is the safe failure, but it is still 24 failed runs.
+> **So the same-commit pin change in #278 turned out to be correct** — the pin was regenerated in that
+> commit and the value it wrote is what a cold build computes. The process objection above still stands
+> as a process objection: it was verified *after* the fact, by this measurement, not by the ordering the
+> section asks for. Do not read this as a licence to bundle the next pin with a source change.
+>
+> 🪤 **THE SALT SEED IS MIXED-CASE `"NavRegistryLib"`, AND GETTING IT WRONG MANUFACTURES A DRIFT REPORT.**
+> Per `01_2_DeployNAVImplementation.s.sol:132` the literal is **`"NavRegistryLib"`** — *not*
+> `"NAVRegistryLib"`. Seeding the salt with the all-caps spelling yields **`0xf7461247…`** and a **false
+> drift report** against a pin that is in fact correct. This is the highest-value trap in 0.3: the failure
+> looks exactly like a real stale pin, and the instinct is to regenerate — which would replace a correct
+> pin with a wrong one. Copy the literal from the script; never retype it from the library's name.
 
 Own PR, own commit, computed against the **final merged tree** — which already includes the
 `DeploySalts.NAV_PROXY` bump from 0.2 (merged in #180 ahead of the regen for this reason). Never in the same commit as a source change — that is exactly how `6b7e4851` wrote a

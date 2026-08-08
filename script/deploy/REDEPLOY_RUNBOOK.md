@@ -8,6 +8,14 @@ two-library pin regen (0.1, 0.3).
 Revised again 2026-07-30: **why** this is a new proxy rather than a UUPS implementation upgrade is now
 recorded below, with the consequences that follow from it, and the custom-feed count corrected to 41.
 
+Revised again 2026-08-08 against `main` @ `a3974686`, which is **399 commits after the `dc5810eb`
+reading above**. The two dated paragraphs above are left exactly as written; this pass corrected the
+places where they, and the sections they point at, describe a state that has since changed. What moved:
+the merge train named above **has landed** (0.1), the pin regen **has run twice and the pin moved again
+after the second one** (0.3), and — the one that matters most — **no fork rehearsal has ever run against
+`main`**, and the harness that produced the last green result no longer exists (see the rehearsal note
+below). Every configured count in this section was re-measured and is unchanged.
+
 Companion tooling lives in [`preflight/`](preflight/README.md). Everything there is read-only except
 `rehearse_fork.sh`, which only ever broadcasts to a loopback anvil.
 
@@ -27,6 +35,12 @@ Configured totals, reconciled from config **and** confirmed against the live NAV
 feed count re-measured 2026-07-30 against the merged tree:
 **33 meta adapters, 110 meta instances, 12 plain adapters, 41 custom price feeds, 93 assets.**
 The feed count is no longer pending anything — see the note under 1.4 for the two PRs that moved it.
+
+**Re-measured 2026-08-08 at `a3974686` with `preflight_config.py`: all five totals and every per-chain
+row below are unchanged.** `script/config/` did change in the interval (labels were retired in #275 and
+realigned to `ProtocolNames.sol`), so this was measured rather than assumed — but nothing moved a count.
+`0 error(s)` across all 24 chains; the warnings it prints are declared-heartbeat margin findings, which
+are a separate axis and not a count.
 
 | chain | meta adapters | meta instances | plain | feeds | assets |
 | --- | --- | --- | --- | --- | --- |
@@ -146,11 +160,37 @@ address to swap; ERC20Default calls `LabelLib.symbol` at `:213`. A `LabelLib` fi
 contract **only when that contract is itself recompiled and redeployed** — which, for ERC20Default,
 means a new proxy.
 
-**The rehearsal already demonstrated the whole chain empirically** (2026-07-30, mainnet fork,
+**A rehearsal demonstrated this mechanism empirically once, on 2026-07-30** (mainnet fork,
 `REHEARSAL_EXIT=0`): it produced proxy `0x54EaD2A1…`, distinct from the live
 `0x80eD5cc6cEbAe4fEE1eD8687279aa492A50afa8d`, carrying a **fresh** ERC20Default `0x4Bc39Dce…` in
 place of the live `0x41967559D0a20Ad102F6e27b7723b1963390aD75`. That is the mechanism working as
-described, not an anomaly to investigate.
+described, not an anomaly to investigate — and it remains the correct reading of *that* run.
+
+> ⚠️ **That run is NOT evidence that the deploy path works today, and this runbook previously implied it
+> was.** The sentence above used to read "the rehearsal already demonstrated the whole chain
+> empirically", present-perfect and unqualified. A reader would reasonably conclude the deploy path is
+> proven. **It is not.**
+>
+> **No fork rehearsal has ever run against `main`.** The two most recent runs were against **PR branch
+> heads** — `a4909342` and `0aebea7a` — and `git merge-base --is-ancestor` places **neither** in
+> `main`'s history. The 2026-07-30 run above predates every merge since.
+>
+> **The harness that produced those results no longer exists.** #279 rewrote it. As `--numstat` pairs,
+> per the house rule above: `rehearse_fork.sh` **+158/−25**, `chainlib.py` **+157/−12**,
+> `reset_deployment_records.py` **+33/−3**, and two new test files —
+> `script/test/rehearsal-harness-guards.test.sh` **+314/−0** and
+> `script/test/env-resolution-guards.test.sh` **+81/−35**. A green result from the old script is not a
+> green result from the current one, and #279 exists precisely because the old one **reported success
+> for work it never did**.
+>
+> 🕳 **GAP — AWAITING RESULT. Do not fill this in by prediction, and do not treat an empty gap as a
+> pass.** A rehearsal against `a3974686` with the post-#279 harness is running now. Until its outcome is
+> recorded here, **the deploy path is unproven on this tree.**
+>
+> - [ ] `REHEARSAL_EXIT` at `a3974686`?
+> - [ ] proxy address differs from the live `0x80eD5cc6…`?
+> - [ ] a fresh ERC20Default is minted by `initialize()`?
+> - [ ] no step reported success while doing nothing — the failure mode #279 was written to catch?
 
 #### What a new proxy obliges — the enlargement, in one place
 
@@ -187,7 +227,7 @@ nothing on the old proxy needs unregistering (2.7).
 
 Do not start until **all** of these hold.
 
-### 0.1 The hardening wave — landed; a short merge train still runs ahead of 0.3
+### 0.1 The hardening wave — landed; so has the merge train that used to run ahead of 0.3
 
 | landed | what it was |
 | --- | --- |
@@ -203,12 +243,17 @@ Do not start until **all** of these hold.
 | #191 | the library-pin assertions in `01` (see 1.2) |
 | #187 | paginated NAV read over a caller-supplied adapter set |
 
-`main` is at **`89274d50`**. What still has to land, **in this order**, before 0.3 can be computed:
+`main` is at **`a3974686`**. The `89274d50` reading this section used to carry is **399 commits behind**
+it, and **nothing in the table below is still open — both entries landed.** The table is kept because
+the ordering rule in its second row is still the rule, and because that rule was subsequently broken.
 
-| open | relationship to the pin regen |
+| was listed as open | what actually happened |
 | --- | --- |
-| the O(1) registry-getter PR (`_getAssetInfo`, not yet opened) | its effect on each pin must be **measured, not predicted** — see below |
-| **#185, the regen itself (0.3)** | must be computed last, against the final tree |
+| the O(1) registry-getter PR (`_getAssetInfo`, "not yet opened") | **opened and merged, as #195** (`feat/registered-asset-getter`). `_getAssetInfo` is on `main`: `MetaBalanceAdapter.sol:594`, `CapBalanceAdapter.sol:299`, `ERC20DefaultBalanceAdapter.sol:258` |
+| **#185, the regen itself (0.3)** | **merged** — then re-run as the "FINAL" regen in **#274**, after which **#278 moved the `PriceFeedLib` pin again**. "Computed last, against the final tree" was **not** held. See 0.3 |
+
+The "measured, not predicted" instruction in the first row still applies to every future pin question,
+and 0.3 is where it now lives.
 
 **Both pinned values will be regenerated, but for two independent reasons — do not attribute either to
 the other.**
@@ -279,7 +324,12 @@ before the bump is stale on arrival.
 
 ### 0.3 Regenerate BOTH library pins — last, in its own commit
 
-> ✅ **DONE.** Measured against the merged tree at `f837f076` from a cold `forge clean && forge build --force`
+> ⚠️ **SUPERSEDED TWICE — read this block as the 2026-07-30 record, not as the current pin.** The
+> measurement below was real and its method is why it is kept, but the `PriceFeedLib` value it reports is
+> **two regens out of date**. `script/utils/LibraryPins.sol` on `main` is the only source of truth for
+> the current pins. **0.3 is not satisfied for the `a3974686` tree** — see the gap marker below.
+>
+> ✅ **DONE (2026-07-30).** Measured against the merged tree at `f837f076` from a cold `forge clean && forge build --force`
 > (937 s) with `git submodule status` reporting **zero** mismatches:
 >
 > | library | pinned | |
@@ -291,6 +341,34 @@ before the bump is stale on arrival.
 > `vm.computeCreate2Address(computeSalt(name,1), keccak256(type(Lib).creationCode), …)`, and a separate
 > keccak/CREATE2 computation over the built artifact. All four assertions in `LibraryPinConsistency.t.sol`
 > pass on the regenerated tree.
+
+> **What moved after that measurement — the reason the block above is marked superseded.**
+>
+> - **#274** (`chore(pins): FINAL library pin regeneration against the deploying tree`, `44018255`)
+>   replaced `PriceFeedLib` `0xcD6F52F4…` with `0x2a0C3Ce6…`. It touched exactly `foundry.toml` and
+>   `script/utils/LibraryPins.sol`, one line each — the discipline this section asks for.
+> - **#278** (`38cc6ddd`) then replaced it **again** with `0x784bDE7A…`, which is what
+>   `LibraryPins.sol:40` holds at `a3974686`.
+> - `NAVRegistryLib` is `0x5f5D054E…` (`LibraryPins.sol:41`) — **unchanged across all three regens**,
+>   and still measured rather than assumed.
+>
+> **#278 changed a pinned library's source and the pin itself in the same commit:**
+> `src/prices/PriceFeedLib.sol` **+170/−8** alongside `script/utils/LibraryPins.sol` **+1/−1**. That is
+> the exact pattern the paragraph below forbids, and the reason `6b7e4851` is cited there as writing a
+> stale-from-birth pin. It does not follow that the new pin is wrong — the pin was regenerated in that
+> same commit, so it may well be right — but it does mean **it has not been verified by the process this
+> section requires**, and the "computed last, against the final tree" ordering from 0.1 no longer holds:
+> `#278` is after the tree that was called final.
+>
+> 🕳 **GAP — AWAITING MEASUREMENT. Do not fill this in by prediction, and do not read an empty gap as a
+> pass.** A cold clean-build pin verification against `a3974686` is running now.
+>
+> - [ ] `PriceFeedLib` computed from a cold `forge clean && forge build --force` at `a3974686` == `LibraryPins.PRICE_FEED_LIB` (`0x784bDE7A…`)?
+> - [ ] `NAVRegistryLib` == `0x5f5D054E…`?
+> - [ ] all four `LibraryPinConsistency.t.sol` assertions green at `a3974686`?
+>
+> Until those are answered, treat 0.3 as **outstanding**. A wrong pin reverts `01_2` on every chain
+> before it broadcasts — which is the safe failure, but it is still 24 failed runs.
 
 Own PR, own commit, computed against the **final merged tree** — which already includes the
 `DeploySalts.NAV_PROXY` bump from 0.2 (merged in #180 ahead of the regen for this reason). Never in the same commit as a source change — that is exactly how `6b7e4851` wrote a
@@ -317,7 +395,10 @@ yields a wrong address that looks authoritative.
 > session is running back-to-back local clean builds to pin it down. Until that is resolved, **the
 > regen's own local clean-build measurement is the only source this runbook or `LibraryPins.sol`
 > should take a value from.** No pin address is quoted anywhere in this runbook as authoritative for
-> that reason. See `reference_pricefeedlib_pin_drift` for the full history.
+> that reason — where addresses appear above they record **what `LibraryPins.sol` holds** and **what
+> moved between regens**, which is provenance, not a measurement of record. Never copy a pin out of this
+> document into `LibraryPins.sol`; the direction of trust runs the other way. See
+> `reference_pricefeedlib_pin_drift` for the full history.
 
 ### 0.4 Submodules at the recorded commits — **root cause fixed, keep the check**
 
@@ -658,11 +739,16 @@ alternative out, before proposing a smaller deploy.
 PERSIST_DEPLOYMENTS=1 forge script script/deploy/08_DeployAssetKindRegistry.s.sol $BROADCAST
 ```
 
-**This step does not exist yet.** `08_DeployAssetKindRegistry.s.sol` and `src/nav/AssetKindRegistry.sol`
-land with **PR #241**, which is unmerged — verify with `git ls-tree origin/main` before running anything
-here. It is written up now because the runbook previously had no `08` step at all, so an operator following
-it to the end would finish a deploy having never deployed the registry, with nothing reporting a gap:
-`verify_step.py`'s `STEPS` list ends at `1.7` and has no gate for it either.
+**This step exists now — PR #241 is merged.** Both `script/deploy/08_DeployAssetKindRegistry.s.sol` and
+`src/nav/AssetKindRegistry.sol` are present at `a3974686`, confirmed with the
+`git ls-tree -r --name-only origin/main` check this note originally asked for. Keep running that check:
+it costs nothing and it is how this claim is meant to be settled rather than believed.
+
+The reason this was written up before it existed still stands, and **the gap it warns about is still
+open**: an operator following the runbook to the end would finish a deploy having never deployed the
+registry, with nothing reporting the omission. `verify_step.py`'s `STEPS` list is
+`["1.1" … "1.8"]` — it ends at **`1.8`** (not `1.7`, as this note previously said) and **still has no
+gate for `08`**. Verify the registry deploy by hand.
 
 #### What this step broadcasts — FOUR transactions, and BOTH directions of the link
 

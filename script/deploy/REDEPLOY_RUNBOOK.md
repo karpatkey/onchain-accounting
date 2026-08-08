@@ -740,15 +740,26 @@ PERSIST_DEPLOYMENTS=1 forge script script/deploy/08_DeployAssetKindRegistry.s.so
 ```
 
 **This step exists now — PR #241 is merged.** Both `script/deploy/08_DeployAssetKindRegistry.s.sol` and
-`src/nav/AssetKindRegistry.sol` are present at `a3974686`, confirmed with the
-`git ls-tree -r --name-only origin/main` check this note originally asked for. Keep running that check:
-it costs nothing and it is how this claim is meant to be settled rather than believed.
+`src/nav/AssetKindRegistry.sol` are present at `a3974686`. Confirm it against the tree you are actually
+deploying rather than against a moving ref:
 
-The reason this was written up before it existed still stands, and **the gap it warns about is still
-open**: an operator following the runbook to the end would finish a deploy having never deployed the
-registry, with nothing reporting the omission. `verify_step.py`'s `STEPS` list is
-`["1.1" … "1.8"]` — it ends at **`1.8`** (not `1.7`, as this note previously said) and **still has no
-gate for `08`**. Verify the registry deploy by hand.
+```bash
+git ls-tree -r --name-only a3974686 -- script/deploy/08_DeployAssetKindRegistry.s.sol src/nav/AssetKindRegistry.sol
+```
+
+**It is also gated now, and the earlier warning here was wrong on both counts.** This note used to say
+`verify_step.py`'s `STEPS` list *"ends at `1.7` and has no gate for it either"*. Both halves are false at
+`a3974686`: `STEPS` is `["1.1" … "1.8"]`, and **`08` is gated as step `1.4`** —
+`"08 — asset-kind registry: MANAGER grant AND classification"` (`verify_step.py:57`), implemented by
+`step_asset_kind_registry` (`:579`), which checks the MANAGER grant and samples asset classifications.
+Do not infer the coverage from the step *numbers*: the gate for `08` is filed under a `1.x` label, so
+grepping `STEPS` for `"08"` finds nothing and reads as absent.
+
+**What it will not do is fail you for skipping `08`.** An absent `AssetKindRegistry` in the deployment
+record is an explicit **SKIP, not a failure** — `step 1.4 asserts NOTHING on this chain` is emitted as an
+`info` line (`:609`). That is deliberate, since `08` is a late step many chains will not have reached.
+So the original hazard survives in a narrower form: `verify_step.py 1.4` **will tell you** the registry is
+missing, but a run that skipped `08` still does not go red. Read the `info` lines, not just the verdict.
 
 #### What this step broadcasts — FOUR transactions, and BOTH directions of the link
 

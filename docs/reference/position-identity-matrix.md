@@ -4,7 +4,7 @@ Verified against `src/balances/` emission code on 2026-07-10 (includes the Nexus
 
 ## How a position is identified
 
-Identity is the tuple `(chainId, protocolSubId, positionId, balanceAsset.asset, positionKind)`. The identity-key protocol component is `protocolSubId` (the most specific per-product slug); the broader `protocolBrand` and `protocolId` fields are display/grouping only and are **not** part of the key. `isLocked` is **excluded** from the key: it is a mutable per-leg attribute — the withdrawal-queue / cooldown adapters split a holding into a claimable leg (`isLocked=false`) and a locked leg (`isLocked=true`) that share the same static `positionId`, and a leg flips `true→false` as its portion finalizes, so keying on it would split one economic position into two keys over its lifetime. The two legs therefore share one key and are **summed** in reconciliation (read `isLocked` per leg for the claimable-vs-locked split; see [ADR 0016](../decisions/0016-islocked-position-status.md)). `balanceAdapter` (provenance), `positionInstanceId` (the ephemeral per-item coordinate), and `isDebt` (the canonical NAV-sign signal per `PositionKind.sol` — read directly, not inferred from kind) are likewise excluded by design. `Position` adds only pricing fields (`quoteAsset`, `value`, `price`, `priceDecimals`, `stale`) on top of `PositionBalance` — none participate in identity, so this matrix covers both structs.
+Identity is the tuple `(chainId, protocolSubId, positionId, balanceAsset.asset, positionKind)`. The identity-key protocol component is `protocolSubId` (the most specific per-product slug); the broader `protocolBrand` and `protocolId` fields are display/grouping only and are **not** part of the key. `isLocked` is **excluded** from the key: it is a mutable per-leg attribute — the withdrawal-queue / cooldown adapters split a holding into a claimable leg (`isLocked=false`) and a locked leg (`isLocked=true`) that share the same static `positionId`, and a leg flips `true→false` as its portion finalizes, so keying on it would split one economic position into two keys over its lifetime. The two legs therefore share one key and are **summed** in reconciliation (read `isLocked` per leg for the claimable-vs-locked split; see [ADR 0016](../decisions/0016-islocked-position-status.md)). `balanceAdapter` (provenance), `positionInstanceId` (the ephemeral per-item coordinate), and `isDebt` (the canonical NAV-sign signal per `PositionKind.sol` — read directly, not inferred from kind) are likewise excluded by design. `Position` adds only pricing fields (`quoteAsset`, `value`, `price`, `priceDecimals`, `stale`, `quoteAssetStale`, `irregular`, `quoteAssetIrregular`) on top of `PositionBalance` — none participate in identity, so this matrix covers both structs.
 
 **The key identifies a position _group_, not necessarily a single leg.** Adapters that emit one leg per underlying item — the withdrawal queues (one leg per request) and the NFT-position adapters (Uniswap V3 / PancakeSwap V3 / Nexus Mutual, one leg per NFT — up to four for a V3 LP) — emit multiple legs sharing the same full key, told apart only by the typed `positionInstanceId` (request id / NFT id), which is **not** part of the key. Reconcile at the position level by **summing amounts across legs that share the key** (what NAV does); read `positionInstanceId` for per-item granularity.
 
@@ -19,7 +19,7 @@ Identity is the tuple `(chainId, protocolSubId, positionId, balanceAsset.asset, 
 | ERC20DefaultBalanceAdapter | `wallet` | `abi.encode(address asset)` | wallet balance | `Wallet` | false | the asset itself |
 | AaveV3InstancesMeta | `aave-v3-lending` | `abi.encode(address pool)` | supply (collateral toggle off) | `Supplied` | false | reserve |
 | | | | supply (collateral toggle on) | `Collateral` | false | reserve |
-| | | | variable debt | `Borrowed` | true | reserve |
+| | | | debt (variable + legacy stable, summed into one leg) | `Borrowed` | true | reserve |
 | SparkLend | `spark-lend` | `abi.encode(address pool)` | same 3 legs as Aave V3 | `Supplied`/`Collateral`/`Borrowed` | f/f/t | reserve |
 | CompoundV3CometsMeta | `compound-v3-comets` | `abi.encode(address comet)` | base supply (net > 0) | `Supplied` | false | base token |
 | | | | base borrow (net < 0) | `Borrowed` | true | base token |
@@ -28,7 +28,7 @@ Identity is the tuple `(chainId, protocolSubId, positionId, balanceAsset.asset, 
 | MorphoMarketsMeta | `morpho-markets` | `abi.encode(bytes32 marketId)` | market collateral | `Collateral` | false | collateral token |
 | | | | loan-side supply | `Supplied` | false | loan token |
 | | | | borrow | `Borrowed` | true | loan token |
-| MorphoVaultsMeta | `morpho-vaults` | `abi.encode(address vault)` | vault deposit (`convertToAssets`) | `Supplied` | false | `vault.asset()` |
+| MorphoVaultsMeta | `morpho-vaults` | `abi.encode(address vault)` | vault deposit (`previewRedeem`, net of any exit fee) | `Supplied` | false | `vault.asset()` |
 | GearboxV3MarketsMeta | `gearbox-v3-markets` | `abi.encode(address market)` | passive-pool deposit | `Supplied` | false | `market.asset()` |
 | GearboxV3CreditAccountsMeta | `gearbox-v3-credit-accounts` | `abi.encode(address creditAccount)` | credit-account collateral | `Collateral` | false | collateral token |
 | | | | credit-account debt | `Borrowed` | true | pool underlying |
@@ -64,9 +64,11 @@ Identity is the tuple `(chainId, protocolSubId, positionId, balanceAsset.asset, 
 | | | | extra reward tokens | `Rewards` | false | reward token |
 | BalancerV3GaugesMeta | `balancer-v3-gauges` | `abi.encode(address gauge)` | same 3 legs as V2 gauges | `Staking`/`Rewards` | false | pool token / reward token |
 | CurveGaugesMeta | `curve-gauges` | `abi.encode(address gauge)` | staked per-coin principal | `Staking` | false | pool coin |
+| | | | fallback when the pool's coins cannot be resolved: the staked balance in LP terms (mutually exclusive with the per-coin legs; emits only if the LP token itself is registered) | `Staking` | false | gauge LP token |
 | | | | CRV (lower bound) | `Rewards` | false | CRV |
 | | | | extra reward tokens | `Rewards` | false | reward token |
 | ConvexCurveLPStakingMeta | `convex-curve-lp-staking` | `abi.encode(address rewarder)` | staked per-coin principal | `Staking` | false | Curve pool coin |
+| | | | same undecomposable-pool fallback as Curve gauges: the staked balance in LP terms | `Staking` | false | Curve LP token |
 | | | | earned CRV | `Rewards` | false | CRV |
 | | | | derived CVX (cliff schedule) | `Rewards` | false | CVX |
 | | | | extra reward tokens | `Rewards` | false | reward token |
@@ -90,7 +92,7 @@ split legs of the withdrawal-queue / cooldown adapters, which each emit a `Suppl
 | `Supplied` | 22 | lending supply, vaults, Cap cUSD, unstaked LP, withdrawal/exit queues (claimable + locked legs), Ethena cooldown, Euler vaults |
 | `Borrowed` | 8 | Aave V3, Spark, Compound V3, Morpho Markets, Fluid Vaults, StakeWise V3, Euler vaults, Gearbox credit accounts |
 | `Collateral` | 7 | Aave V3, Spark, Compound V3, Morpho Markets, Fluid Vaults, Euler vaults, Gearbox credit accounts |
-| `Staking` | 11 | Safety Module (locked + unlocked stake), Umbrella (locked + unlocked stake), StakeWise V3, Cap stcUSD, Nexus staked NXM, Balancer gauges ×2, Curve gauge, Convex |
+| `Staking` | 13 | Safety Module (locked + unlocked stake), Umbrella (locked + unlocked stake), StakeWise V3, Cap stcUSD, Nexus staked NXM, Balancer gauges ×2, Curve gauge ×2, Convex ×2 (each: per-coin split + undecomposable-pool LP fallback) |
 | `Rewards` | 11 | SM, Umbrella, Nexus staked NXM, Compound V3, Balancer gauges ×2, Curve gauge, Convex |
 | `Fees` | 2 | Uniswap V3 (PancakeSwap V3 inherits) |
 

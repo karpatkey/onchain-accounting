@@ -61,22 +61,26 @@ Set `addresses.admin` and `addresses.manager` to the **deployer EOA** (they hold
 
 **Note:** We use the canonical CREATE2 deployer (0x4e59b44847b379578588920cA78FbF26c0B4956C) which is the same on all chains. No need to deploy a custom Create2Deployer.
 
-Deploy the libraries + implementations directly from the deployer EOA (same deterministic addresses on every chain — run once):
+Deploy the libraries + implementations directly from the deployer EOA (CREATE2, so the addresses are the same on every chain — but run it once on each chain you deploy to):
 
 ```bash
+PERSIST_DEPLOYMENTS=1 \
 forge script script/deploy/01_DeployImplementations.s.sol \
   --rpc-url "https://eth-mainnet.g.alchemy.com/v2/$ALCHEMY_API_KEY" \
   --chain-id 1 --broadcast --account $DEPLOYER_NAME
 ```
 
+`PERSIST_DEPLOYMENTS=1` is what writes the addresses to `script/config/deployments/<chainId>.json`; without it they are only logged, and the later steps that read them fail.
+
 ## Step 4: Deploy Core Contracts (Proxies + Init, per chain)
 
-**4a. Deploy implementations (once)** — already done in Step 3.
+**4a. Deploy implementations (once per chain)** — already done in Step 3.
 
 **4b. Deploy proxies and initialize (per chain)** — run once per chain. This deploys a placeholder impl + NAV + Bridge proxies and initializes them in one EOA transaction (deterministic addresses across chains):
 
 ```bash
 # Mainnet
+PERSIST_DEPLOYMENTS=1 \
 forge script script/deploy/02_DeployProxies.s.sol \
   --rpc-url "https://eth-mainnet.g.alchemy.com/v2/$ALCHEMY_API_KEY" \
   --chain-id 1 \
@@ -90,11 +94,24 @@ Proxy addresses are identical on all chains. 02 does deploy + init + role-grant 
 
 ## Step 5: Deploy on Other Chains
 
-Repeat Step 4b on each chain (run `02_DeployProxies.s.sol` with that chain's RPC and `--chain-id`).
+Repeat Steps 3 and 4b on each chain (run `01_DeployImplementations.s.sol`, then `02_DeployProxies.s.sol`, with that chain's RPC and `--chain-id`). The addresses come out identical everywhere, but each chain still needs its own broadcast: `02` reads `NAVCalculatorImplementation` + `BridgeEscrowImplementation` out of that chain's deployments file and reverts with "Run 01_DeployImplementations.s.sol first." when they are missing.
+
+## Step 5b: Deploy the AssetKindRegistry (before asset registration, and before Step 8)
+
+Deploys the per-chain `AssetKindRegistry`, points the NAV at it, grants it `MANAGER` on the NAV, and classifies every asset in `script/config/nav-config/assets-and-price-feeds/<chainId>.json`:
+
+```bash
+PERSIST_DEPLOYMENTS=1 \
+forge script script/deploy/08_DeployAssetKindRegistry.s.sol \
+  --rpc-url "https://eth-mainnet.g.alchemy.com/v2/$ALCHEMY_API_KEY" \
+  --chain-id 1 --broadcast --account $DEPLOYER_NAME
+```
+
+It is numbered 08 but it is **not** the last step: the `grantRole` needs `DEFAULT_ADMIN_ROLE`, which Step 8 (`07_…`) hands away, so it must run before that. `RegisterAssets.s.sol` routes an asset's primary registration through this registry and reverts (`AssetKindRegistryNotDeployed`) if it has not run. It is fail-closed: every configured asset must carry a valid `accrualKind` string or the script aborts.
 
 ## Step 6: Deploy Adapters (Optional)
 
-Edit chain config and scripts to enable needed adapters, then:
+Enable the adapters/feeds you need in `script/config/contracts-deployment-config/{custom-price-feeds,balance-adapters,meta-balance-adapters,bridge-adapters}/<chainId>.json` (`.<name>.enabled`), then:
 
 ```bash
 # Price feeds (deploys the custom feed contracts only — asset/feed
@@ -104,7 +121,9 @@ forge script script/deploy/03_DeployPriceFeeds.s.sol \
   --account $DEPLOYER_NAME \
   --broadcast
 
-# Balance adapters
+# Balance adapters (PERSIST_DEPLOYMENTS=1: the three assistant contracts are
+# recorded through the gated writer, so without it a re-run deploys duplicates)
+PERSIST_DEPLOYMENTS=1 \
 forge script script/deploy/04_DeployBalanceAdapters.s.sol \
   --rpc-url "https://eth-mainnet.g.alchemy.com/v2/$ALCHEMY_API_KEY" \
   --account $DEPLOYER_NAME \

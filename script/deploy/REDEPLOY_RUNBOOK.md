@@ -8,6 +8,24 @@ two-library pin regen (0.1, 0.3).
 Revised again 2026-07-30: **why** this is a new proxy rather than a UUPS implementation upgrade is now
 recorded below, with the consequences that follow from it, and the custom-feed count corrected to 41.
 
+Revised again 2026-08-08 against `main` @ `a3974686`, which is **399 commits after the `dc5810eb`
+reading above**. The two dated paragraphs above are left exactly as written; this pass corrected the
+places where they, and the sections they point at, describe a state that has since changed. What moved:
+the merge train named above **has landed** (0.1), and the pin regen **has run twice and the pin moved
+again after the second one** (0.3). Every configured count in this section was re-measured and is
+unchanged.
+
+Both of that pass's open questions were closed the same day, and the results are recorded where they
+belong rather than here — **0.3's pins are verified by a local clean build** at `a3974686`, and **the
+first fork rehearsal ever run against `main`** (rather than a PR branch head) passed end to end. Two
+things came out of that rehearsal that this document did not previously say and that will bite the next
+operator: **pin the fork block** (see the note at the rehearsal invocation — it is the difference between
+209 s and a 2,915 s hang) and **`NAVRegistryLib`'s salt seed is the mixed-case literal
+`"NavRegistryLib"`** (see 0.3 — the all-caps spelling manufactures a false drift report).
+
+**None of this means the system is deployed. It is not.** A fork rehearsal is evidence that the deploy
+path executes; it is not a deploy, and it is not an approval to deploy.
+
 Companion tooling lives in [`preflight/`](preflight/README.md). Everything there is read-only except
 `rehearse_fork.sh`, which only ever broadcasts to a loopback anvil.
 
@@ -27,6 +45,12 @@ Configured totals, reconciled from config **and** confirmed against the live NAV
 feed count re-measured 2026-07-30 against the merged tree:
 **33 meta adapters, 110 meta instances, 12 plain adapters, 41 custom price feeds, 93 assets.**
 The feed count is no longer pending anything — see the note under 1.4 for the two PRs that moved it.
+
+**Re-measured 2026-08-08 at `a3974686` with `preflight_config.py`: all five totals and every per-chain
+row below are unchanged.** `script/config/` did change in the interval (labels were retired in #275 and
+realigned to `ProtocolNames.sol`), so this was measured rather than assumed — but nothing moved a count.
+`0 error(s)` across all 24 chains; the warnings it prints are declared-heartbeat margin findings, which
+are a separate axis and not a count.
 
 | chain | meta adapters | meta instances | plain | feeds | assets |
 | --- | --- | --- | --- | --- | --- |
@@ -146,11 +170,49 @@ address to swap; ERC20Default calls `LabelLib.symbol` at `:213`. A `LabelLib` fi
 contract **only when that contract is itself recompiled and redeployed** — which, for ERC20Default,
 means a new proxy.
 
-**The rehearsal already demonstrated the whole chain empirically** (2026-07-30, mainnet fork,
+**A rehearsal demonstrated this mechanism empirically once, on 2026-07-30** (mainnet fork,
 `REHEARSAL_EXIT=0`): it produced proxy `0x54EaD2A1…`, distinct from the live
 `0x80eD5cc6cEbAe4fEE1eD8687279aa492A50afa8d`, carrying a **fresh** ERC20Default `0x4Bc39Dce…` in
 place of the live `0x41967559D0a20Ad102F6e27b7723b1963390aD75`. That is the mechanism working as
-described, not an anomaly to investigate.
+described, not an anomaly to investigate — and it remains the correct reading of *that* run.
+
+> ⚠️ **That run is NOT evidence that the deploy path works today, and this runbook previously implied it
+> was.** The sentence above used to read "the rehearsal already demonstrated the whole chain
+> empirically", present-perfect and unqualified. A reader would reasonably conclude the deploy path is
+> proven. **It is not.**
+>
+> **Before the 2026-08-08 run recorded in the closure note below, no fork rehearsal had ever run against
+> `main`.** The two most recent were against **PR branch heads** — `a4909342` and `0aebea7a` — and
+> `git merge-base --is-ancestor` places **neither** in `main`'s history. The 2026-07-30 run above predates
+> every merge since. **Read this paragraph as the state that motivated that closure, never as the current
+> state.** What remains true today is narrower and is the reason the paragraph is kept: the 2026-07-30 run
+> on its own is still not evidence about `main`.
+>
+> **The harness that produced those results no longer exists.** #279 rewrote it. As `--numstat` pairs,
+> per the house rule above: `rehearse_fork.sh` **+158/−25**, `chainlib.py` **+157/−12**,
+> `reset_deployment_records.py` **+33/−3**, and two new test files —
+> `script/test/rehearsal-harness-guards.test.sh` **+314/−0** and
+> `script/test/env-resolution-guards.test.sh` **+81/−35**. A green result from the old script is not a
+> green result from the current one, and #279 exists precisely because the old one **reported success
+> for work it never did**.
+>
+> ✅ **CLOSED 2026-08-08 — the first rehearsal ever run against `main`, and the first against #279's
+> rewritten harness.** `REHEARSAL_HEAD == a3974686` (merged `main`, the real artifact — not a PR branch
+> head), `EXIT=0`, **8 post-conditions PASS / 0 FAIL**, ~209 s total, one anvil pid throughout.
+> **One shot, no retry.**
+>
+> - [x] `REHEARSAL_EXIT` at `a3974686` — **0**, against merged `main`
+> - [x] proxy address differs from the live `0x80eD5cc6…` — asserted by the harness
+> - [x] a fresh ERC20Default is minted by `initialize()`
+> - [x] no step reported success while doing nothing — **8/0 on post-conditions**, which is the check
+>       #279 added and the reason the exit code alone is not the evidence
+>
+> `RegisterAssets` ran **88 s against its 79 s historical norm** — the same step that previously hung for
+> **2,915 s**. `06_Configure` completed in 10 s. **Pin the fork block; see the note at the invocation
+> below** — that is what moved this run from "hangs" to "88 s", and it is not optional advice.
+>
+> **This is fork evidence, not a deploy.** The system is not deployed. It says the deploy path executes
+> end to end on this tree; it does not say the deploy has happened or been approved.
 
 #### What a new proxy obliges — the enlargement, in one place
 
@@ -187,7 +249,7 @@ nothing on the old proxy needs unregistering (2.7).
 
 Do not start until **all** of these hold.
 
-### 0.1 The hardening wave — landed; a short merge train still runs ahead of 0.3
+### 0.1 The hardening wave — landed; so has the merge train that used to run ahead of 0.3
 
 | landed | what it was |
 | --- | --- |
@@ -203,12 +265,17 @@ Do not start until **all** of these hold.
 | #191 | the library-pin assertions in `01` (see 1.2) |
 | #187 | paginated NAV read over a caller-supplied adapter set |
 
-`main` is at **`89274d50`**. What still has to land, **in this order**, before 0.3 can be computed:
+`main` is at **`a3974686`**. The `89274d50` reading this section used to carry is **399 commits behind**
+it, and **nothing in the table below is still open — both entries landed.** The table is kept because
+the ordering rule in its second row is still the rule, and because that rule was subsequently broken.
 
-| open | relationship to the pin regen |
+| was listed as open | what actually happened |
 | --- | --- |
-| the O(1) registry-getter PR (`_getAssetInfo`, not yet opened) | its effect on each pin must be **measured, not predicted** — see below |
-| **#185, the regen itself (0.3)** | must be computed last, against the final tree |
+| the O(1) registry-getter PR (`_getAssetInfo`, "not yet opened") | **opened and merged, as #195** — merged from branch `feat/registered-asset-getter`, which is how it was identified. `_getAssetInfo` is on `main`: `MetaBalanceAdapter.sol:594`, `CapBalanceAdapter.sol:299`, `ERC20DefaultBalanceAdapter.sol:258`. **Cross-reference by the PR number**; the branch is provenance and may be deleted |
+| **#185, the regen itself (0.3)** | **merged** — then re-run as the "FINAL" regen in **#274**, after which **#278 moved the `PriceFeedLib` pin again**. "Computed last, against the final tree" was **not** held. See 0.3 |
+
+The "measured, not predicted" instruction in the first row still applies to every future pin question,
+and 0.3 is where it now lives.
 
 **Both pinned values will be regenerated, but for two independent reasons — do not attribute either to
 the other.**
@@ -253,8 +320,32 @@ the rehearsal after any further source change, since the placeholder's bytecode 
 `via_ir` with no source change (the `NAVRegistryLib` precedent):
 
 ```bash
-script/deploy/preflight/rehearse_fork.sh 1        # asserts the proxy address differs from live
+script/deploy/preflight/rehearse_fork.sh 1 25708060   # <chainId> <forkBlock> — PIN THE BLOCK
 ```
+
+> ⚠️ **PIN THE FORK BLOCK. This runbook did not say so before, and that omission cost a 2,915 s hang.**
+> `rehearse_fork.sh` takes the block as an optional **second positional argument** (`FORK_BLOCK`,
+> `rehearse_fork.sh:47`, passed to anvil as `--fork-block-number`, `:368`). Omit it and you fork
+> `latest`, which is the root cause of both failures below. Use a recent finalized block, not the one
+> above verbatim — `25708060` is simply the block the 2026-08-08 rehearsal used.
+>
+> **Correctness.** With the block pinned, the harness logged `fork block 25708060` and anvil served
+> **25,708,060** from the second sample onward — **recorded and served heights agree exactly, and the
+> ~1.2 M-block gap seen previously does not reproduce.** That gap belongs to **unpinned / `latest`**
+> forking — forge and anvil each resolving "latest" at a different moment against a load-balanced
+> endpoint — **not to anvil's semantics.** Do not go looking for a bug in anvil; pin the block.
+>
+> **Cost, which is the part that decides whether your run finishes.** A pinned fork re-reads from
+> `~/.foundry/cache/rpc/mainnet/<block>/` instead of pulling fresh every time: **209 s pinned versus
+> 2,915 s+ unpinned.** A run that finishes is not spending 12 retries per cache miss. **Pinning is both
+> the correctness fix and the cost fix** — there is no tradeoff to weigh here.
+>
+> **What is NOT settled, and must not be written up as if it were.** Why forge expected block
+> **24,492,904** is **unexplained**, and it could not have been answered by the 2026-08-08 run: the
+> deadlock never occurred, so forge never entered the block-waiting path and never issued such a request.
+> The standing hypothesis — that the deadlock is a consequence of the same unpinned-fork root cause — is
+> **evidenced but unproven**. Settling it needs a deliberate reproduction against an unpinned fork on an
+> archive RPC. **Nobody has run that, and it should not be run incidentally.**
 
 > **The rehearsal treats the config tree as disposable, and you must let it.** It forks as the *real*
 > chain id (ConfigReader keys every path off it), so the deploy scripts rewrite
@@ -279,7 +370,13 @@ before the bump is stale on arrival.
 
 ### 0.3 Regenerate BOTH library pins — last, in its own commit
 
-> ✅ **DONE.** Measured against the merged tree at `f837f076` from a cold `forge clean && forge build --force`
+> ⚠️ **SUPERSEDED TWICE — read this block as the 2026-07-30 record, not as the current pin.** The
+> measurement below was real and its method is why it is kept, but the `PriceFeedLib` value it reports is
+> **two regens out of date**. `script/utils/LibraryPins.sol` on `main` is the only source of truth for
+> the current pins. **0.3 IS now satisfied for the `a3974686` tree** — but by the clean-build measurement
+> recorded below, not by this block. Read the closure note, not this table.
+>
+> ✅ **DONE (2026-07-30).** Measured against the merged tree at `f837f076` from a cold `forge clean && forge build --force`
 > (937 s) with `git submodule status` reporting **zero** mismatches:
 >
 > | library | pinned | |
@@ -291,6 +388,67 @@ before the bump is stale on arrival.
 > `vm.computeCreate2Address(computeSalt(name,1), keccak256(type(Lib).creationCode), …)`, and a separate
 > keccak/CREATE2 computation over the built artifact. All four assertions in `LibraryPinConsistency.t.sol`
 > pass on the regenerated tree.
+
+> **What moved after that measurement — the reason the block above is marked superseded.**
+>
+> - **#274** (`chore(pins): FINAL library pin regeneration against the deploying tree`, `44018255`)
+>   replaced `PriceFeedLib` `0xcD6F52F4…` with `0x2a0C3Ce6…`. It touched exactly `foundry.toml` and
+>   `script/utils/LibraryPins.sol`, one line each — the discipline this section asks for.
+> - **#278** (`38cc6ddd`) then replaced it **again** with `0x784bDE7A…`, which is what
+>   `LibraryPins.sol:40` holds at `a3974686`.
+> - `NAVRegistryLib` is `0x5f5D054E…` (`LibraryPins.sol:41`) — **unchanged across all three regens**,
+>   and still measured rather than assumed.
+>
+> **#278 changed a pinned library's source and the pin itself in the same commit:**
+> `src/prices/PriceFeedLib.sol` **+170/−8** alongside `script/utils/LibraryPins.sol` **+1/−1**. That is
+> the exact pattern the paragraph below forbids, and the reason `6b7e4851` is cited there as writing a
+> stale-from-birth pin. It does not follow that the new pin is wrong — the pin was regenerated in that
+> same commit, so it may well be right — but it does mean **it has not been verified by the process this
+> section requires**, and the "computed last, against the final tree" ordering from 0.1 no longer holds:
+> `#278` is after the tree that was called final.
+>
+> ✅ **CLOSED 2026-08-08 — 0.3 is satisfied for `a3974686`. This is the measurement of record: a local
+> clean build, not a CI reading, which is exactly what this section demands.**
+>
+> ⚠️ **READ THIS BEFORE THE BLOCK BELOW, BECAUSE THE BLOCK IS NOT SAFE TO PASTE.** The measurement is
+> quoted verbatim, and the verbatim text contains two **non-ASCII** characters: `‖` (U+2016 DOUBLE VERTICAL
+> LINE, standing for concatenation) and `…` (U+2026 HORIZONTAL ELLIPSIS, abbreviating the deployer address).
+> A shell or script will mangle or reject both. **If you are recomputing the pins, copy this instead** — same
+> derivation, ASCII-only, and complete rather than elided:
+>
+> ```
+> version = 1                     # for both libraries
+> name    = "PriceFeedLib"        # then repeat with name = "NavRegistryLib"
+>                                 # NOTE the mixed case: NavRegistryLib, not NAVRegistryLib
+> salt    = keccak256(utf8(name) ++ uint256_be32(version))          # abi.encodePacked(string, uint256)
+> addr    = keccak256(0xff ++ 0x4e59b44847b379578588920cA78FbF26c0B4956C ++ salt ++ keccak256(initcode))[12:32]
+> ```
+>
+> `0x4e59b44847b379578588920cA78FbF26c0B4956C` is `CANONICAL_CREATE2_DEPLOYER`
+> (`01_2_DeployNAVImplementation.s.sol:22`); the salt encoding is `ConfigReader.computeSalt` (`:833-835`).
+>
+> **The verbatim record, for citation — not for pasting:**
+>
+> ```
+> Local clean-build measurement of record, a3974686 (not a CI reading):
+> PriceFeedLib    computed 0x784bDE7A519B0FA0Ad0c5B2820140501A02B0A62 == recorded in foundry.toml:82 and LibraryPins.sol:40
+> NAVRegistryLib  computed 0x5f5D054E021A53E1DEF54B3Bda3c939ccD14fd90 == recorded in foundry.toml:83 and LibraryPins.sol:41
+> Derived independently from freshly built artifacts:
+>   salt = keccak256(name ‖ uint256(1));  addr = keccak256(0xff ‖ 0x4e59b448… ‖ salt ‖ keccak256(initcode))[12:]
+> Sizes byte-identical to 253f6bd6: 7,923 / 24,475 / 24,475 / 24,567 (9 free — the binding CI figure) / 22,920
+> ```
+>
+> **So the same-commit pin change in #278 turned out to be correct** — the pin was regenerated in that
+> commit and the value it wrote is what a cold build computes. The process objection above still stands
+> as a process objection: it was verified *after* the fact, by this measurement, not by the ordering the
+> section asks for. Do not read this as a licence to bundle the next pin with a source change.
+>
+> 🪤 **THE SALT SEED IS MIXED-CASE `"NavRegistryLib"`, AND GETTING IT WRONG MANUFACTURES A DRIFT REPORT.**
+> Per `01_2_DeployNAVImplementation.s.sol:132` the literal is **`"NavRegistryLib"`** — *not*
+> `"NAVRegistryLib"`. Seeding the salt with the all-caps spelling yields **`0xf7461247…`** and a **false
+> drift report** against a pin that is in fact correct. This is the highest-value trap in 0.3: the failure
+> looks exactly like a real stale pin, and the instinct is to regenerate — which would replace a correct
+> pin with a wrong one. Copy the literal from the script; never retype it from the library's name.
 
 Own PR, own commit, computed against the **final merged tree** — which already includes the
 `DeploySalts.NAV_PROXY` bump from 0.2 (merged in #180 ahead of the regen for this reason). Never in the same commit as a source change — that is exactly how `6b7e4851` wrote a
@@ -317,7 +475,10 @@ yields a wrong address that looks authoritative.
 > session is running back-to-back local clean builds to pin it down. Until that is resolved, **the
 > regen's own local clean-build measurement is the only source this runbook or `LibraryPins.sol`
 > should take a value from.** No pin address is quoted anywhere in this runbook as authoritative for
-> that reason. See `reference_pricefeedlib_pin_drift` for the full history.
+> that reason — where addresses appear above they record **what `LibraryPins.sol` holds** and **what
+> moved between regens**, which is provenance, not a measurement of record. Never copy a pin out of this
+> document into `LibraryPins.sol`; the direction of trust runs the other way. See
+> `reference_pricefeedlib_pin_drift` for the full history.
 
 ### 0.4 Submodules at the recorded commits — **root cause fixed, keep the check**
 
@@ -658,11 +819,29 @@ alternative out, before proposing a smaller deploy.
 PERSIST_DEPLOYMENTS=1 forge script script/deploy/08_DeployAssetKindRegistry.s.sol $BROADCAST
 ```
 
-**This step does not exist yet.** `08_DeployAssetKindRegistry.s.sol` and `src/nav/AssetKindRegistry.sol`
-land with **PR #241**, which is unmerged — verify with `git ls-tree origin/main` before running anything
-here. It is written up now because the runbook previously had no `08` step at all, so an operator following
-it to the end would finish a deploy having never deployed the registry, with nothing reporting a gap:
-`verify_step.py`'s `STEPS` list ends at `1.7` and has no gate for it either.
+**This step exists now — PR #241 is merged.** Both `script/deploy/08_DeployAssetKindRegistry.s.sol` and
+`src/nav/AssetKindRegistry.sol` are present at `a3974686`. Confirm it against **the tree you are actually
+deploying** — an explicit tree-ish, never a moving ref like `origin/main`, whose meaning changes every time
+`main` does. Set `TREE` to the commit you are deploying; `a3974686` is the example, not a constant:
+
+```bash
+TREE=a3974686   # <- the tree you are deploying
+git ls-tree -r --name-only "$TREE" -- script/deploy/08_DeployAssetKindRegistry.s.sol src/nav/AssetKindRegistry.sol
+```
+
+**It is also gated now, and the earlier warning here was wrong on both counts.** This note used to say
+`verify_step.py`'s `STEPS` list *"ends at `1.7` and has no gate for it either"*. Both halves are false at
+`a3974686`: `STEPS` is `["1.1" … "1.8"]`, and **`08` is gated as step `1.4`** —
+`"08 — asset-kind registry: MANAGER grant AND classification"` (`verify_step.py:57`), implemented by
+`step_asset_kind_registry` (`:579`), which checks the MANAGER grant and samples asset classifications.
+Do not infer the coverage from the step *numbers*: the gate for `08` is filed under a `1.x` label, so
+grepping `STEPS` for `"08"` finds nothing and reads as absent.
+
+**What it will not do is fail you for skipping `08`.** An absent `AssetKindRegistry` in the deployment
+record is an explicit **SKIP, not a failure** — `step 1.4 asserts NOTHING on this chain` is emitted as an
+`info` line (`:609`). That is deliberate, since `08` is a late step many chains will not have reached.
+So the original hazard survives in a narrower form: `verify_step.py 1.4` **will tell you** the registry is
+missing, but a run that skipped `08` still does not go red. Read the `info` lines, not just the verdict.
 
 #### What this step broadcasts — FOUR transactions, and BOTH directions of the link
 
@@ -740,6 +919,56 @@ Recoverable (`setAssetKinds` + `setAssetLabels`), but only once somebody notices
   dead on writes) and that **the NAV points BACK at it** (without which every read reverts), plus a sampled
   classification. An earlier revision of this line said no gate existed; it does, and it covers both
   directions of the link.
+
+#### What the adapter-label override surface costs to read — measured on merged `main`
+
+The registry this step deploys also holds #278's adapter-keyed overrides
+(`setAdapterProtocolName` / `setAdapterLabelCategory` and their `clear…` pair). Reading them is not free,
+and **the day-one cost is the higher of the two figures.** Measured on merged `main` at `a3974686` — not on
+a branch, and not on the superseded head that earlier numbers came from:
+
+| verbose read, per distinct adapter | gas |
+| --- | --- |
+| override **MISS** — **what an operator pays today** | **114,552** |
+| override **HIT** | 112,169 |
+
+**MISS is dearer than HIT, and every adapter is a MISS today.** No overrides exist on `main`; one comes
+into being only when a `MANAGER` calls `setAdapterProtocolName` or `setAdapterLabelCategory`. A hit skips
+the adapter's `protocolName()` staticcall entirely; a miss pays the registry lookup **and still makes the
+adapter call**, so a miss is strictly a superset of the work. **You pay the higher number from day one, for
+zero benefit until an override is actually set.**
+
+**The denominator is the whole point: the surcharge is PER VERBOSE READ, PER DISTINCT ADAPTER — not per
+position.**
+
+| fixture | surcharge |
+| --- | --- |
+| 1 distinct adapter / 1 position | 5,378 |
+| 2 distinct adapters / 3 positions | **≥ 10,968 — warm-fixture floor** |
+
+Two adapters across three positions cost the same as two across two: **the third position adds nothing.** An
+account with N distinct adapters pays roughly **N × 5.4k warm**, however many positions those adapters emit.
+Quote the denominator with the number or do not quote the number.
+
+**Three qualifiers travel with these figures. Do not strip them.**
+
+1. **`10,968` is a warm-fixture FLOOR, not the live cost.** The test warms the read before measuring; a real
+   portfolio touches each adapter's slot **cold**. Phrase it as *"≥ 10,968, warm-fixture floor; real cost is
+   higher by an unmeasured cold-access premium"*. **The cold figure was not measured.**
+2. **The linear-in-adapters property is demonstrated only at N=1 and N=2.** The fixture is 1–2 adapters; the
+   mainnet fixture is 117 positions across many more. **No extrapolation was made, and none should be.**
+3. **This is a read cost on the verbose path only.** It is not a deploy cost and does not affect any step here.
+
+**Why the bound is trustworthy: it is mutation-defended.** Breaking the cache so overrides resolve
+per-position instead of per-distinct-adapter gives clean **10,968** against mutant **16,296**, tripping a
+12,000 bound and failing with *"the surcharge must scale with DISTINCT ADAPTERS, not with positions"*. Tree
+restored clean afterwards, 0 modified files. The per-adapter denominator is therefore an asserted invariant,
+not an observation that happened to hold on one fixture.
+
+> **NOT MEASURED, and not to be papered over: the benign-path gas of the new `getAdapterDisplayInfo`
+> configuration surface.** Only its **hostile ceiling** exists — **667,962** for 3 entries against a
+> stipend-burning registry. There is **no normal-operation measurement** of it. Do not infer one from the
+> hostile figure, and do not present that ceiling as a typical cost.
 
 ### 1.5 `03_DeployPriceFeeds` — 41 custom feeds
 

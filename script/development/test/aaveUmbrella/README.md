@@ -36,7 +36,7 @@ All kept as regression nets.
 
 ## 3. What this case adds
 
-- **Mock-based unit test** (`test/balances/BalanceAdapters/AaveUmbrellaBalanceAdapter.t.sol` → `AaveUmbrellaBalanceMathTest`, + `test/balances/BalanceAdapters/AaveUmbrellaMocks.sol`) — closes the both-unit-and-fork convention gap. Drives the ERC4626 walk (two-hop vs one-hop), reward bare-reserve resolution (aToken vs plain), leg emission/identity, the cooldown-driven locked/unlocked Staking split (`isLocked`), zero-leg skipping, dedup across stake tokens sharing a reserve, and the documented asymmetry (balance methods report an unregistered reserve; `getAdapterPositions` skips it). 13 tests, no fork. (The same file also carries the 10 early-exit / constructor / ERC165 tests in `AaveUmbrellaBalanceAdapterTest`, for 23 unit tests total.)
+- **Mock-based unit test** (`test/balances/BalanceAdapters/AaveUmbrellaBalanceAdapter.t.sol` → `AaveUmbrellaBalanceMathTest`, + `test/balances/BalanceAdapters/AaveUmbrellaMocks.sol`) — closes the both-unit-and-fork convention gap. Drives the ERC4626 walk (two-hop vs one-hop), reward bare-reserve resolution (aToken vs plain), leg emission/identity, the cooldown-driven locked/unlocked Staking split (`isLocked`), zero-leg skipping, dedup across stake tokens sharing a reserve, and the documented asymmetry (balance methods report an unregistered reserve; `getAdapterPositions` skips it). 20 tests, no fork. (The same file also carries the 11 early-exit / constructor / ERC165 tests in `AaveUmbrellaBalanceAdapterTest`, for 31 unit tests total.)
 - **Fork block** set to the verification block `25_287_877` — the fork test and this README's §7 figures pin the **same** block. The live dev-anvil dashboard (§9) forks at *latest* and is a sanity check that drifts from these numbers by design.
 - This evidence pack: the per-leg ground truth for a comprehensive all-four-stake-token holder, plus a dashboard wiring helper.
 
@@ -57,7 +57,7 @@ def toBareReserve(s):
     staked = stk.convertToAssets(s)                # shares -> first-level asset
     first  = stk.asset()
     if isErc4626Wrapper(first):                    # stkwaEth* family
-        staked = first.convertToAssets(staked)     # waToken -> bare reserve
+        staked = first.previewRedeem(staked)       # waToken -> bare reserve, fee-net; 0 if unreadable
     return staked                                  # else first IS the bare reserve (stkGHO)
 
 emit (bareReserve, amount=toBareReserve(lockedShares),   Staking, isLocked=true,  isDebt=false)   if > 0
@@ -156,7 +156,7 @@ bash script/development/app/sync-app-env.sh 1
 
 `start-forks.sh` forks at the **latest** block (not pinned to `25_287_877`), and the staked amounts come from `convertToAssets` on the aToken-backed wrappers (which accrue every block), so the dashboard values read marginally higher than §7's pinned numbers — an expected, sub-bp live-drift sanity check, not a mismatch. For strict alignment, fork anvil at the pinned block directly (`anvil --fork-url <rpc> --fork-block-number 25287877`).
 
-The deployed adapter address is recorded in `script/development/state/1-addresses.json`. Each Umbrella position renders under **Aave Umbrella** with a **Staking** and a **Rewards** leg per stake token, denominated in the bare reserve (USDC/USDT/WETH/GHO). GHO is a Chainlink-priced reserve so stkGHO renders; all four reserves are registered by `register-assets.sh`.
+The deployed adapter address is recorded in `script/development/state/1-addresses.json`. Each Umbrella position renders under **Aave V3** — the group header is the adapter's `protocolName()`, which is `ProtocolNames.AAVE_V3` for all three Aave products — with **Umbrella Module** as the per-position label (the `positionLabels()` leaf), and a **Staking** and a **Rewards** leg per stake token, denominated in the bare reserve (USDC/USDT/WETH/GHO). GHO is a Chainlink-priced reserve so stkGHO renders; all four reserves are registered by `register-assets.sh`.
 
 ## 10. Test verdict
 
@@ -171,7 +171,7 @@ The deployed adapter address is recorded in `script/development/state/1-addresse
 | Zero-leg skip / rewards-only leg / assetFilter | ✅ |
 | Unregistered-reserve skip in `getAdapterPositions` (balance methods still report it) | ✅ |
 
-**Mainnet: 12 / 12 fork + 23 / 23 unit tests pass.** Single mainnet deployment → no cross-chain surface. Aave Umbrella is verified.
+**Mainnet: 12 / 12 fork + 31 / 31 unit tests pass.** Single mainnet deployment → no cross-chain surface. Aave Umbrella is verified.
 
 Run via:
 

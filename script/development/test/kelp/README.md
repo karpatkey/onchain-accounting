@@ -9,7 +9,7 @@
 - **Inheritance:** extends `BalanceAdapterBase` (the shared plain-adapter base, which declares the `IBalanceAdapter` + `IPositionDescribable` surface and implements the common `supportsInterface`). The adapter adds the balance/position reads and the `IPositionDescribable` display hooks; it does not override the base's `supportsInterface`.
 - **Per-chain scope:** Kelp's `LRTWithdrawalManager` is **mainnet-only**. So mainnet (chainId 1) is the only chain that enables `KelpWithdrawalQueue` — see `script/config/nav-config/balance-adapters/1.json` and `script/config/contracts-deployment-config/balance-adapters/1.json`. A single mainnet fork test suffices.
 - **Multi-asset (the distinguishing feature):** when a user unstakes rsETH, the rsETH is burned and a per-`(asset, user)` request is recorded denominated in the LST the user chose to receive. Kelp's payout assets are **discovered at runtime** from `lrtConfig().getSupportedAssetList()` — at the fork block: **stETH** (`0xae7a…`), **ETHx** (`0xA35b…`), **native ETH** (`0xEeee…`, ERC-7528 sentinel). The adapter emits **one `Supplied` leg per open request** — each carrying its own `isLocked` (`false` for claimable, `true` for pending) and its `userNonce` in `positionInstanceId`, all sharing the static `positionId = abi.encode(address(WITHDRAWAL_MANAGER))` (the payout asset is in `balanceAsset.asset`) — for every supported asset that is also registered in NAV (ADR 0016).
-- **Registration gating (asymmetric, same as sGHO / Aave Umbrella / Lido / Stader):** `getAdapterPositions` drops any asset not registered on NAVCalculator (registered-asset intersection). On the dev NAV, stETH and native ETH are registered; **ETHx is not** (it uses a custom feed the dev `deploy.sh` skips), so an ETHx request is dropped from positions — but `getAdapterBalanceForAsset` / `getAdapterBalances` still return its raw owed value (they don't consult the registry).
+- **Registration gating (asymmetric, same as sGHO / Aave Umbrella / Lido / Stader):** `getAdapterPositions` drops any asset not registered on NAVCalculator (registered-asset intersection). On the dev NAV, native ETH is registered at bootstrap (`01_DeployNAV.s.sol` pre-registers the sentinel and wires its Chainlink feed); **stETH and ETHx are not** — both now carry a **Custom** primary feed (`stETHFundamental` / `ETHx` in `script/config/nav-config/assets-and-price-feeds/1.json`), and `register-assets.sh` registers only assets whose first price feed is `Chainlink`, so a request in either asset is dropped from positions until it is registered against its custom feed — but `getAdapterBalanceForAsset` / `getAdapterBalances` still return the raw owed value (they don't consult the registry). The fork test registers stETH + native ETH directly in its harness, so §7's legs are unaffected.
 
 ### Math — one leg per request, with a two-gate claimable/locked flag (ADR 0016)
 
@@ -123,18 +123,18 @@ Multi-asset emission, summing, the claimed-front skip (deque pop), the no-cap fu
 
 ## 9. Wiring the live dev-anvil dashboard
 
-`script/development/deploy/deploy-kelp-withdrawal-queue.sh` deploys + registers the adapter on the local mainnet anvil. stETH and native ETH are registered on the NAV at bootstrap, so both legs render; ETHx is skipped (custom feed). To pin the dev anvil at the verification block (so the dashboard matches §7 exactly):
+`script/development/deploy/deploy-kelp-withdrawal-queue.sh` deploys + registers the adapter on the local mainnet anvil. Native ETH is registered on the NAV at bootstrap, but **stETH and ETHx are not** — both are Custom-primary and `register-assets.sh` registers only Chainlink-first assets — so out of the box only the native-ETH leg renders; register stETH against its custom feed to see its legs too. To pin the dev anvil at the verification block (so the dashboard matches §7 exactly):
 
 ```bash
 anvil --fork-url <MAINNET_URL> --fork-block-number 25331379 --chain-id 1 --port 8545 \
       --state script/development/state/1.json --state-interval 60 &
-bash script/development/deploy/deploy.sh 1                       # NAV + Chainlink assets (incl. stETH + native ETH)
+bash script/development/deploy/deploy.sh 1                       # NAV + Chainlink assets (native ETH; stETH is Custom-primary → skipped)
 bash script/development/deploy/deploy-kelp-withdrawal-queue.sh 1
 bash script/development/app/sync-app-env.sh 1
 # then start the Next.js dev server in app/
 ```
 
-The position renders under **Kelp DAO** (the adapter's `protocolName()`) as **Supplied legs** across two payout assets — stETH and native ETH. The holder is an arbitrary on-chain staker (not a tracked NAV account), so its NAV *total* also includes unrelated wallet positions — cross-check the **Kelp legs** specifically.
+The position renders under **Kelp DAO** (the adapter's `protocolName()`) as **Supplied legs** across two payout assets — stETH and native ETH (stETH only once it is registered, per the note above). The holder is an arbitrary on-chain staker (not a tracked NAV account), so its NAV *total* also includes unrelated wallet positions — cross-check the **Kelp legs** specifically.
 
 **Per-request-id drill-down (display only).** Each Kelp asset renders per-request sub-rows — one per Kelp **request** (Kelp's identifier is the request's `userNonce` within its asset queue, not an ERC721 NFT), with its id, amount, price, USD value, %, and a Claimable / Pending badge (claimable once `userNonce < nextLockedNonce(asset)`). This is re-derived client-side from the LRTWithdrawalManager (app hook `app/src/hooks/use-kelp-withdrawals.ts`, rendered in `protocol-group.tsx`) and does **not** change NAV. It shares the same generic withdrawal-row rendering as Lido/Stader, but — because Kelp is multi-asset — the drill-down map is keyed by `chainId:oracle:asset` (the asset is required so the stETH and native-ETH requests don't cross-contaminate). For `0x13833b44…` the stETH rows are `↳ #7177` + `↳ #7203` (both Pending) and the native-ETH row is `↳ #5937` (Pending).
 

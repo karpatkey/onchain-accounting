@@ -2,6 +2,8 @@
 
 This is the price-side counterpart to [`src/balances/BALANCE_ADAPTERS.md`](../balances/BALANCE_ADAPTERS.md). It describes the `Prices` abstract registry, the `ICustomPriceFeed` interface, the existing per-asset custom adapters, and how to add a new one.
 
+> **Naming shorthand used below.** Per-asset feeds are written as `<Asset>_Price` (e.g. `rETH_Price`, `sUSDe_Price`). That is a shorthand, **not** a contract name — the contracts are `<Asset>_CustomPriceFeed` under [`src/prices/protocols/`](protocols/) (so `rETH_Price` is `rETH_CustomPriceFeed.sol`). When you need to grep for one, use the full `_CustomPriceFeed` name.
+
 ---
 
 ## 1. Overview
@@ -259,11 +261,14 @@ Left uncaught, the failure is quiet: `_selectFeedCore` wraps each custom-feed ca
 For each `PositionBalance` returned by an oracle, NAVCalculator:
 
 1. Calls `latestPrice(asset)` on the price registry.
-2. Gets `(price, decimals, stale)`. If stale, the asset is added to `NAV.stalePriceAssets` — and since feed selection returns `price = 0` once every feed has failed the staleness gate, the position is summed as a zero-value leg (consumers decide what to do with stale).
+2. Gets `(price, decimals, stale, irregular)`. **`stale` has two independent causes, and they behave differently:**
+   - **Feed staleness** — every registered feed for that asset failed its heartbeat gate. Feed selection then returns `price = 0`, so the position is summed as a zero-value leg, and the asset is listed in `NAV.stalePriceAssets`.
+   - **L2 sequencer down or within grace** — `latestPrice` ORs `checkL2SequencerUptime()` into `stale`, but `price` is **still populated** and positions are **not** zeroed. This cause is surfaced only by the top-level `nav.sequencerDown` flag; it does **not** put the asset in `NAV.stalePriceAssets`, which is built from feed staleness alone (`_selectFeedCore`). See [ADR 0019](../../docs/decisions/0019-nav-sourced-base-price.md) for why zeroing per position during an outage would produce an internally inconsistent NAV.
+   - `irregular` is a pricing-**quality** signal, not a validity flag: the primary diverged from its monitors beyond `divergenceToleranceBps`, or (stablecoins) off $1 beyond `pegToleranceBps`. `price` is still populated, and it is always `false` when `stale`. Diverged assets are listed in `NAV.irregularPriceAssets`.
 3. Computes `value = amount × price` (sign by `isDebt`).
 4. If `quoteAsset != address(0)`, divides by `latestPrice(quoteAsset)` so NAV is denominated in the quote currency.
 
-So custom feeds are **building blocks** for value computation. Their staleness flags propagate into `NAV.stalePriceAssets` so callers can decide the right policy.
+So custom feeds are **building blocks** for value computation. Their staleness flags propagate into `NAV.stalePriceAssets` so callers can decide the right policy — but read `nav.sequencerDown` separately, because a sequencer outage marks prices stale without listing a single asset there.
 
 ---
 
@@ -374,7 +379,7 @@ Detailed walkthrough lives at [`docs/howto/add-price-feed.md`](../../docs/howto/
 
 ### 8.1 Contract layout
 
-**If your feed is just `rate × base/USD` (the NAV-sourced base times an 18-decimal on-chain rate), extend `BaseCustomPriceFeed` instead** — pass `(underlying, nav, baseAsset)` to its constructor and implement only `_rate()`. The five interface methods, immutables, validation, and staleness/normalize math come for free (see §5.0; e.g. `rETH_Price`). If the rate comes from a Chainlink-ABI rate feed rather than an on-chain call, extend **`TwoFeedChainlinkPriceFeed`** (pass `(underlying, rateFeed, rateHeartbeat, nav, baseAsset)`; e.g. `weETH_L2_Price`, or `CrossRateCustomPriceFeed` for a generic cross-rate); if it's an ERC-4626 vault share, extend **`ERC4626VaultRatePriceFeed`** (pass `(vault, nav, baseAsset)`; e.g. `sUSDe_Price`). The full checklist below applies to bespoke feeds that don't fit any of those shapes (derived multi-feed rates, no single rate leg, an inverted rate, or a non-standard `latestRoundData`).
+**If your feed is just `rate × base/USD` (the NAV-sourced base times an 18-decimal on-chain rate), extend `BaseCustomPriceFeed` instead** — pass `(underlying, nav, baseAsset)` to its constructor and implement only `_rate()`. The five interface methods, immutables, validation, and staleness/normalize math come for free (see §5.0; e.g. `rETH_CustomPriceFeed`). If the rate comes from a Chainlink-ABI rate feed rather than an on-chain call, extend **`TwoFeedChainlinkPriceFeed`** (pass `(underlying, rateFeed, rateHeartbeat, nav, baseAsset)`; e.g. `weETH_L2_CustomPriceFeed`, or `CrossRateCustomPriceFeed` for a generic cross-rate); if it's an ERC-4626 vault share, extend **`ERC4626VaultRatePriceFeed`** (pass `(vault, nav, baseAsset)`; e.g. `sUSDe_CustomPriceFeed`). The full checklist below applies to bespoke feeds that don't fit any of those shapes (derived multi-feed rates, no single rate leg, an inverted rate, or a non-standard `latestRoundData`).
 
 1. Create `src/prices/protocols/<Asset>_CustomPriceFeed.sol` (`_L2_` infix for L2-specific variants: `<Asset>_L2_CustomPriceFeed.sol`).
 2. Implement `ICustomPriceFeed`, `IERC165`, and `INavSourcedPriceFeed` — the last is `BASE_ASSET()` alone, and a bespoke feed with no NAV dependency declares `address public constant override BASE_ASSET = address(0)`. Registration **rejects** a Custom feed that cannot answer it (§5.2); the three shared bases already implement it, so this step only applies to feeds written from scratch.

@@ -4,7 +4,12 @@ Written 2026-07-30 against `main` @ `f72dd48a` (twelve PRs merged in the wave). 
 no memory of the wave. It is deliberately self-contained: everything you need to decide **pass or
 fail** is here, because a rehearsal run with a wrong pass/fail rule is worse than no rehearsal.
 
-> **The rehearsal has been RUN. §9 records the first attempt, which FAILED at step 1.4 and found two
+> ⚠️ **Step numbers in this document were REMAPPED when `08_DeployAssetKindRegistry` moved from 1.8 to 1.4**
+> (labels became registration-only, so the registry must exist before `RegisterAssets`). The rehearsal itself
+> ran under the OLD numbering: what it calls step 1.5 below was numbered 1.4 on the day. The numbers have been
+> updated so they point at the right steps today; the events they describe are unchanged.
+
+> **The rehearsal has been RUN. §9 records the first attempt, which FAILED at step 1.5 and found two
 > blockers. §10 records the run that PASSED — every step, every post-condition, and the §4 NAV
 > comparison, which answers the redeploy's central question: it is the same portfolio.
 > Read §9 and §10 (last two sections) before running anything; they supersede anything above that
@@ -388,7 +393,7 @@ Two rules out of that, in order of importance:
 1.7  06_Configure                    register + reconcile
 ```
 
-### `FOUNDRY_PROFILE=slow` on step 1.5 is a REQUIREMENT, not a throughput preference
+### `FOUNDRY_PROFILE=slow` on step 1.6 is a REQUIREMENT, not a throughput preference
 
 **`slow` does not mean "go slower to be safe". It raises `gas_limit` AND `memory_limit` from the default
 1 GiB to 16 GiB** (`foundry.toml:108-117`). `RegisterAssets` needs that because it registers the whole
@@ -473,7 +478,7 @@ Four traps that have each already cost a run:
   > wrong feed addresses.
   >
   > **So: after ANY failed `03`, re-run step 1.1 (`reset_deployment_records.py --apply`) before
-  > retrying. Unconditionally.** `verify_step.py 1.4` does catch the polluted state (`NAV()
+  > retrying. Unconditionally.** `verify_step.py 1.5` does catch the polluted state (`NAV()
   > unreadable` on every phantom address) — that is the gate working, and it is the reason to gate
   > every step rather than trusting exit codes.
 - **1.4 must precede 1.5.** `RegisterAssets` resolves Custom feeds from the record; run first it skips
@@ -482,7 +487,7 @@ Four traps that have each already cost a run:
 ### Gate every step on its post-condition, not its exit code
 
 ```bash
-python3 script/deploy/preflight/verify_step.py 1.2      # then 1.3, 1.4, 1.5, 1.6, 1.7
+python3 script/deploy/preflight/verify_step.py 1.2      # then 1.3, 1.4, 1.5, 1.6, 1.7, 1.8
 ```
 
 It exits non-zero on the first real problem and treats an **unreachable** chain as a failure. Do not
@@ -739,7 +744,7 @@ whether that mechanism is even in play, is the easy error here.** Compare prices
   raw access-controlled aggregator — ETHx.
 - **BLOCKER 2 (record pollution) — unchanged and still true.** §5's step-1.1 rule stands.
 - **`RegisterAssets` MemoryOOG was NOT a product defect** — this script ran every step on the default
-  profile while the runbook requires `FOUNDRY_PROFILE=slow` for step 1.5 (16 GiB vs 1 GiB limits). It
+  profile while the runbook requires `FOUNDRY_PROFILE=slow` for step 1.6 (16 GiB vs 1 GiB limits). It
   only surfaced once the ETHx fix let all 86 actions actually be planned. Fixed in #214.
 - **The 27-vs-24 discrepancy was an instrument defect, now root-caused.** `snapshot_production.py` read
   `latest - 3`; on a fork with `--slow` the last three blocks *are* the tail of the deploy, so it silently

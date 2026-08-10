@@ -8,7 +8,9 @@ import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
 import {IPrices} from "./IPrices.sol";
 import {ICustomPriceFeed} from "./ICustomPriceFeed.sol";
+import {INavSourcedPriceFeed} from "./INavSourcedPriceFeed.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
+import {IAssetKindRegistry} from "src/nav/IAssetKindRegistry.sol";
 import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
 import {IMetaBalanceAdapter} from "src/balances/IMetaBalanceAdapter.sol";
 import {IPositionDescribable} from "src/balances/IPositionDescribable.sol";
@@ -1823,6 +1825,7 @@ library PriceFeedLib {
             // lets a malformed feed revert rather than swallowing it.
             address feedAsset = ICustomPriceFeed(priceFeed).underlyingAssetSupported();
             if (feedAsset != token) revert IPrices.CustomFeedAssetMismatch(token, priceFeed, feedAsset);
+            _validateFeedNotCircular(token, priceFeed);
         } else if (
             priceType == IPrices.PriceType.Chainlink || priceType == IPrices.PriceType.Redstone
                 || priceType == IPrices.PriceType.API3
@@ -1839,8 +1842,145 @@ library PriceFeedLib {
         }
     }
 
-    /// @notice Enriches a Position[] with human-readable labels from IPositionDescribable on each adapter.
-    function toVerbose(INAVCalculator.Position[] memory pos)
+    /// @notice Rejects a `Custom` feed whose NAV-sourced base asset is the very asset it is being registered for.
+    /// @dev **The failure.** A NAV-sourced custom feed prices its asset as `rate × base/USD` and reads the `base/USD`
+    ///      term back out of THIS NAV — `NavBaseUsdLib.baseUsd(NAV, BASE_ASSET)` → `getPriceData(BASE_ASSET)`
+    ///      (ADR 0019). The circularity invariant that makes this safe (`BASE_ASSET` must be priced by DIRECT feeds,
+    ///      never by a feed that calls back into the NAV) is stated in {NavBaseUsdLib} and held by CONVENTION only:
+    ///      `BASE_ASSET` is a constructor argument checked for nothing but ERC20-ness, and until this gate nothing
+    ///      on the registration path could even see it. Register such a feed for its own base and
+    ///      `getPriceData(token)` → feed → `getPriceData(token)` recurses until the ~1024 call-depth limit. The read
+    ///      still SUCCEEDS — `_selectFeedCore`'s per-feed `try`/`catch` swallows the depth failure and continues to
+    ///      the healthy feed — so there is no revert, no event and no wrong number to notice; the only symptom is
+    ///      that every read of that asset, and of every position priced from it, burns gas proportional to ~1024
+    ///      nested `STATICCALL` frames, forever.
+    /// @dev **Why here.** Registration is the chokepoint the NAV actually controls. A constructor assertion in the
+    ///      feed bases would bind only feeds deployed from this repo after that change — not an already-deployed
+    ///      feed, not a third-party one, and not anything a MANAGER registers later. Those are precisely the cases
+    ///      the invariant has to survive.
+    /// @dev **Why unreadable is a rejection.** `BASE_ASSET()` is probed with a raw `staticcall` because a feed that
+    ///      does not implement it must be distinguishable from one that does — but "we could not read it" is then
+    ///      deliberately NOT allowed to collapse into "it is fine", because the failure being closed is unbounded
+    ///      recursion. A feed with no NAV dependency at all declares that by answering `address(0)`, which passes
+    ///      (`address(0)` is never a registrable asset, so it can never equal `token`). Every in-repo custom feed
+    ///      answers: the three NAV-sourced bases and `ankrETH_CustomPriceFeed` expose `BASE_ASSET` as an immutable,
+    ///      and `ETHPlus_CustomPriceFeed` — which prices from the Reserve Protocol basket and never calls back into
+    ///      the NAV — declares it `address(0)`. A third-party feed must do likewise to be registrable; that
+    ///      requirement is the price of the guard being able to answer NO.
+    /// @dev **Scope — an admission check, not a runtime invariant**, exactly like the `underlyingAssetSupported()`
+    ///      binding above. It is read once, at registration, never on a read path. A feed with a MUTABLE base can
+    ///      pass here and recurse afterwards, and a hostile feed can re-enter the NAV without exposing a base at
+    ///      all — neither is what this closes. What it closes is the MISCONFIGURATION: a legitimate, honest feed
+    ///      pointed at its own base by a config typo, on a registration path driven from an EOA.
+    /// @dev **A MULTI-HOP CYCLE IS NOT CAUGHT, AND THAT IS DELIBERATE.** Feed for A based on B, feed for B based on
+    ///      A: each passes every check here — `underlyingAssetSupported()` matches its own asset, and neither base
+    ///      equals the asset it is registered for. Both legs register cleanly through the normal MANAGER path, **in
+    ///      either order**, because this function receives only `(token, priceFeed)` and never reads the registry;
+    ///      there is no "second leg trips it" ordering to rely on.
+    ///
+    ///      **CYCLE LENGTH DOES NOT MATTER, AND NEITHER DOES DEPTH.** Swept on a real proxy at a fixed 8,000,000-gas
+    ///      budget, ring sizes 2/3/4/5/6 all cost an IDENTICAL 7,732,849 gas. What the cost actually tracks is the
+    ///      CALLER'S BUDGET: sweeping the budget at a fixed ring size gives 0.49M/0.92M/1.94M/3.87M/7.73M/15.45M
+    ///      for 0.5M/1M/2M/4M/8M/16M supplied — a flat ~96.6% of whatever is offered, against a no-cycle control
+    ///      that stays at ~14k regardless. That is the 63/64 call-gas forwarding rule: every level forwards all but
+    ///      1/64 of what it holds and the recursion runs until the gas is gone, so the loop body and the number of
+    ///      distinct assets in the ring are both irrelevant. "How deep can it go" is therefore the wrong question —
+    ///      the answer is "as deep as the gas you supplied allows", and the bill is a fraction of the budget rather
+    ///      than any fixed figure.
+    ///
+    ///      Below roughly 1M gas the read does not merely get expensive, it FAILS (`ok == false` at a 0.5M budget):
+    ///      the 1/64 the outermost frame retains is no longer enough to finish the healthy feed after the `catch`.
+    ///      So "returns the correct price while burning the gas" is itself budget-dependent — it holds for a
+    ///      generous `eth_call`, not for a gas-constrained on-chain caller, which simply reverts.
+    ///
+    ///      Not enforced on chain because the only on-chain fix is an ordering-dependent scan of the registry, and
+    ///      that scan cannot answer NO reliably: a base with no custom feed today can acquire one tomorrow, so it
+    ///      would have to run on every registration in both directions and would STILL miss a cycle completed by a
+    ///      later registration. A check that cannot answer NO is the failure mode this whole guard exists to avoid.
+    ///
+    ///      It is instead unconstructible in configuration, and that is where it is enforced: a cycle of any length
+    ///      needs at least one base asset to itself be priced by a Custom primary, and **0 of the 41** configured
+    ///      Custom (asset, feed) pairs across all 7 chains have one — every base resolves to a Chainlink-only asset
+    ///      (WETH, USDC, GHO, USDS, USDe, GNO, WXDAI). `script/deploy/preflight/preflight_config.py` now makes that
+    ///      an ERROR rather than a property, so the config cannot drift into a cycle unnoticed. Re-derive both
+    ///      numbers with `python3 script/deploy/preflight/preflight_config.py --base-report` (see that file's
+    ///      `base_allowlist_findings` docstring). The related and STRICTLY WORSE gap is a base that is merely the
+    ///      WRONG asset rather than a cyclic one: it has no gas signature, no `stale` and no `irregular` — only a
+    ///      wrong number, at an ordinary 43,738-gas read. **35 of the 41** pairs rely on config correctness for it;
+    ///      the other 6 are the ERC-4626 family (`sUSDe`, `sUSDS`, `syrupUSDC`, `RWIV`, `sGHO`, `sXDAI`), whose
+    ///      constructor pins the base to `IERC4626(vault).asset()` and reverts `BaseAssetMismatch` otherwise. The
+    ///      preflight narrows the remaining 35 from "any of the 93 registered assets" to "a direct-priced base",
+    ///      but cannot tell WETH from USDC for an LST — there is no on-chain ground truth for what an LST's base
+    ///      ought to be, which is exactly why the ERC-4626 family can be pinned and the rest cannot.
+    /// @dev No gas cap on the probe: this runs only on a MANAGER-authorized registration transaction, so a feed that
+    ///      burns the caller's gas here grieves only the caller, and it fails closed (the registration reverts).
+    function _validateFeedNotCircular(address token, address priceFeed) private view {
+        (bool ok, bytes memory ret) =
+            priceFeed.staticcall(abi.encodeWithSelector(INavSourcedPriceFeed.BASE_ASSET.selector));
+        // A missing function, a revert, or anything that is not a single ABI word is unreadable. Note a code-less
+        // target would return `ok == true` with empty returndata, which this also catches — though
+        // `AddressCheckLib.requireContract` above has already excluded that case.
+        if (!ok || ret.length != 32) revert IPrices.CustomFeedBaseUnreadable(token, priceFeed);
+        // Decode as uint256 and range-check by hand rather than `abi.decode(ret, (address))`: the ABI decoder
+        // reverts on a dirty upper 96 bits with empty returndata, which would surface to the MANAGER as an
+        // anonymous revert instead of a named error.
+        uint256 rawBase = abi.decode(ret, (uint256));
+        if (rawBase > type(uint160).max) revert IPrices.CustomFeedBaseUnreadable(token, priceFeed);
+        if (address(uint160(rawBase)) == token) revert IPrices.CustomFeedBaseCircular(token, priceFeed);
+    }
+
+    /// @notice Enriches a Position[] with human-readable labels from IPositionDescribable on each adapter, with the
+    ///         `AssetKindRegistry`'s per-adapter operator overrides taking precedence over the adapter's own reply.
+    /// @dev **The overrides ride the EXISTING per-adapter cache, which is what makes them affordable.** Both are
+    ///      per-adapter constants, so they are fetched in the same `adapter != prevAdapter` branch that already
+    ///      guarded the `protocolName()` staticcall — roughly one extra pair of reads per DISTINCT adapter, not per
+    ///      position. On the real mainnet fixture that is a handful of adapters against 117 positions.
+    ///
+    ///      **On a protocol-name hit the adapter staticcall is skipped**, so an overridden adapter trades one cold
+    ///      `staticcall` to the adapter for reads of the registry, which is warm after the first adapter since it is
+    ///      the same address every time.
+    ///
+    ///      ⚠️ **That does NOT make the change gas-negative, and an earlier revision of this note claimed it did.**
+    ///      Measured against a real no-registry baseline, not reasoned. ⚠️ **These are ILLUSTRATIVE readings, not
+    ///      CI-pinned constants** — the tests assert the ORDERING and an upper BOUND, never these exact values, and
+    ///      the figures drift with solc and EVM settings. They already drifted across runs of this very tree
+    ///      (~109.1k vs ~109.0k baseline, ~5.1k vs ~5.3k surcharge), which is precisely why nothing asserts them
+    ///      exactly. Read them as an order of magnitude:
+    ///
+    ///        no registry ~109k  <  hit ~112k  <  miss ~114k   (single-adapter fixture)
+    ///
+    ///      So the ordering is `no registry < hit < miss`, and THAT is what is pinned. The override never pays for
+    ///      itself outright; it only claws back the one adapter staticcall it skips. **The MISS path is the common
+    ///      case — no adapter has an override today — so this is strictly more expensive than before this change.**
+    ///
+    ///      Per-DISTINCT-ADAPTER surcharge, measured in-repo: ~5.3k for one adapter, ~10.7k for two — again
+    ///      approximate, and again only the SCALING is asserted. It scales with distinct adapters, not positions. ⚠️ Two earlier revisions of this note quoted a "~9.6k cold, from
+    ///      an independent 20-adapter sweep" figure; that measurement was made outside this repo and NOTHING here
+    ///      reproduces it, so it has been removed rather than left as an unverifiable number in a comment. Every
+    ///      figure quoted above comes from a test in this tree. Real portfolios touch each adapter's mapping slot
+    ///      cold, so treat these warm-fixture numbers as a FLOOR, not a forecast.
+    ///      `AdapterLabelOverrides.t.sol::test_gas_registryLegIsBounded` measures the ordering and bounds the
+    ///      surcharge; `test_gas_surchargeIsPerAdapter_notPerPosition` pins that it scales with adapters, not
+    ///      positions.
+    ///
+    ///      **Fail-open, exactly like the adapter reads.** The registry is reached through the same {_safeString}
+    ///      shim — gas-capped and output-windowed — so a broken, hostile or absent registry degrades to "no
+    ///      override" instead of reverting the verbose read. `registry == address(0)` (a NAV deployed before `08`
+    ///      wires one) short-circuits before any call rather than relying on that degradation.
+    ///
+    ///      **Only segment 0 of the labels is replaced.** The computed leaf at index 1 and everything below it stay
+    ///      exactly as the adapter derived them, live, on this call. See {IAssetKindRegistry.setAdapterLabelCategory}
+    ///      for why the leaf is deliberately not overridable at all.
+    /// @param pos The positions to enrich.
+    /// @param registry The chain's `AssetKindRegistry`, or `address(0)` when none is wired. Passed in rather than
+    ///        read from storage because this library is reached by DELEGATECALL and has no view of `NAVCalculator`'s
+    ///        layout; passing it also avoids a second registry pointer on a contract that is effectively full.
+    ///        (For the current margin see {NAVCalculator}'s header, which is the single authority — this line used
+    ///        to restate it and drifted. The history worth keeping: this PR spent 47 B threading the argument
+    ///        through three call sites, then 354 B on {NAVCalculator.getAdapterDisplayInfo} — the latter against a
+    ///        "+182 B floor" estimate that was wrong in BOTH directions, understating the cost of a nested
+    ///        `string[][]` return AND wrongly calling it unaffordable.)
+    function toVerbose(INAVCalculator.Position[] memory pos, address registry)
         external
         view
         returns (INAVCalculator.VerbosePosition[] memory verbose)
@@ -1852,23 +1992,116 @@ library PriceFeedLib {
         // protocolName() returns a per-adapter constant, and positions are grouped by adapter (PriceFeedLib
         // concatenates each adapter's positions contiguously), so cache the last adapter's name and only
         // re-staticcall when the adapter changes — one protocolName() call per distinct adapter, not per position.
-        // positionLabels() varies by positionId, so it stays per-position.
+        // positionLabels() varies by positionId, so it stays per-position; its CATEGORY does not, so the category
+        // override is cached here alongside the name.
         address prevAdapter;
         string memory prevName;
+        string memory prevCategory;
         for (uint256 i = 0; i < len; i++) {
             address adapter = pos[i].balanceAdapter;
             if (i == 0 || adapter != prevAdapter) {
-                prevName = _safeString(adapter, protocolNameCall);
+                prevName = _effectiveProtocolName(registry, adapter, protocolNameCall);
+                prevCategory = _categoryOverride(registry, adapter);
                 prevAdapter = adapter;
             }
             // Labels are derived lazily from positionId (display only, off the NAV hot path) via a fail-open,
             // gas-capped staticcall — an adapter that doesn't implement positionLabels yields an empty array.
             // Field-by-field assignment (not a VerbosePosition literal, which would deep-copy the 17-field Position
-            // as one expression) keeps this loop under the via_ir stack limit.
+            // as one expression) keeps this loop under the via_ir stack limit — which is also why the category is
+            // applied in place on `verbose[i].labels` rather than through a local.
             verbose[i].position = pos[i];
             verbose[i].protocolName = prevName;
             verbose[i].labels =
                 _safeStringArray(adapter, abi.encodeCall(IPositionDescribable.positionLabels, (pos[i].positionId)));
+            // Replace the category and NOTHING else. An empty reply is left empty — an adapter that described no
+            // segments has no category to correct, and growing the array would change its length rather than
+            // override a value.
+            if (bytes(prevCategory).length != 0 && verbose[i].labels.length != 0) {
+                verbose[i].labels[0] = prevCategory;
+            }
+        }
+    }
+
+    /// @notice **The ONE place protocol-name precedence is decided**: the registry override wins, the adapter's own
+    ///         `protocolName()` answers on a miss.
+    /// @dev Called by BOTH the position path ({toVerbose}) and the configuration path ({adapterDisplayInfo}). That
+    ///      sharing is the point and is load-bearing: it is what makes the two surfaces agree **by construction**
+    ///      rather than by two implementations happening to match today and drifting apart later. Before this
+    ///      existed, an override changed `getAccountPositionsVerbose` while a consumer enumerating
+    ///      `getAllAdapters()` still saw the adapter's constant — two surfaces silently disagreeing about the same
+    ///      adapter, which is the phantom-sibling split {IPositionDescribable.protocolName} exists to prevent.
+    ///      **If a third display surface is ever added, it must call this too.**
+    ///
+    ///      Fail-open throughout: an absent, broken or hostile registry yields "" and falls through to the adapter.
+    ///      On a hit the adapter staticcall is skipped entirely.
+    function _effectiveProtocolName(address registry, address adapter, bytes memory protocolNameCall)
+        private
+        view
+        returns (string memory name)
+    {
+        if (registry != address(0)) {
+            name = _safeString(registry, abi.encodeCall(IAssetKindRegistry.getAdapterProtocolName, (adapter)));
+            if (bytes(name).length != 0) return name;
+        }
+        return _safeString(adapter, protocolNameCall);
+    }
+
+    /// @notice The ONE place the label-category override is read, shared by both display surfaces for the same
+    ///         by-construction reason as {_effectiveProtocolName}. `""` means no override.
+    function _categoryOverride(address registry, address adapter) private view returns (string memory) {
+        if (registry == address(0)) return "";
+        return _safeString(registry, abi.encodeCall(IAssetKindRegistry.getAdapterLabelCategory, (adapter)));
+    }
+
+    /// @notice The CONFIGURATION read path: each adapter's effective display name and its positionId-independent
+    ///         breadcrumb, with the same overrides the position path applies.
+    /// @dev Closes the surface split described on {_effectiveProtocolName}. A consumer pairs this with
+    ///      `IBalances.getAllAdapters()` instead of staticcalling `protocolName()` on each adapter itself, and then
+    ///      groups configured adapters by exactly the string the position path reports.
+    ///
+    ///      `positionLabels("")` is the interface's own convention for "no account, no positionId": an adapter whose
+    ///      breadcrumb is positionId-independent answers with its full constant breadcrumb, and one that derives it
+    ///      per position returns `[]`. So a computed adapter legitimately yields an empty array here, exactly as it
+    ///      does today — this does not invent a breadcrumb for it.
+    /// @param adapters The adapters to describe, typically `getAllAdapters()`.
+    /// @param registry The chain's `AssetKindRegistry`, or `address(0)` when none is wired.
+    function adapterDisplayInfo(address[] memory adapters, address registry)
+        external
+        view
+        returns (string[] memory names, string[][] memory labels)
+    {
+        uint256 len = adapters.length;
+        names = new string[](len);
+        labels = new string[][](len);
+        bytes memory protocolNameCall = abi.encodeCall(IPositionDescribable.protocolName, ());
+        bytes memory labelsCall = abi.encodeCall(IPositionDescribable.positionLabels, (bytes("")));
+        for (uint256 i = 0; i < len; i++) {
+            address adapter = adapters[i];
+            names[i] = _effectiveProtocolName(registry, adapter, protocolNameCall);
+            labels[i] = _safeStringArray(adapter, labelsCall);
+            string memory category = _categoryOverride(registry, adapter);
+            if (bytes(category).length == 0) continue;
+            if (labels[i].length != 0) {
+                // Replace index 0 in place. NEVER write index 0 of an EMPTY array — Solidity's bounds check turns
+                // that into Panic(0x32) and the never-revert property is gone. The guard is load-bearing.
+                labels[i][0] = category;
+            } else {
+                // **The empty case diverges from the position path ON PURPOSE, and getting this wrong left the two
+                // surfaces disagreeing for 21 of 33 adapters.** Every meta-adapter answers `positionLabels("")` with
+                // `[]` — `MetaBalanceAdapter._pidAddress` rejects a non-32-byte pid, so `_addressLabels` returns an
+                // empty array — which is the interface's documented "no positionId, breadcrumb is per-position"
+                // reply. Skipping the override there (as the position path does) meant an operator who set a
+                // category on a Morpho or Uniswap meta-adapter saw it on `getAccountPositionsVerbose` and NOT on
+                // this surface: exactly the split this function exists to close.
+                //
+                // The two paths ask different questions, which is why the answers differ. The POSITION path asks
+                // "what is this position's breadcrumb" — a position the adapter declined to describe must not gain
+                // one. This path asks "what category is this ADAPTER configured with", and the operator has
+                // answered that explicitly. So the override is surfaced as a one-element breadcrumb, which agrees
+                // with the position path's `labels[0]` rather than contradicting it.
+                labels[i] = new string[](1);
+                labels[i][0] = category;
+            }
         }
     }
 
@@ -1877,9 +2110,27 @@ library PriceFeedLib {
     ///         pathological declared length OOGs within a bounded budget instead of starving the verbose read.
     uint256 private constant _LABEL_DECODE_GAS = 1_000_000;
 
-    /// @notice Gas stipend for the outer `protocolName()` staticcall. Every `protocolName()` in this repo is a
-    ///         `pure` constant string, so this is orders of magnitude more than a real one needs; it exists to
-    ///         bound a broken or hostile adapter, not to fit a legitimate read.
+    /// @notice Gas stipend for EVERY flat-string read on the verbose path: the outer `protocolName()` staticcall
+    ///         AND both {AssetKindRegistry} override reads ({_effectiveProtocolName} / {_categoryOverride}), which reach it through
+    ///         the same {_safeString} shim.
+    /// @dev Every `protocolName()` in this repo is a `pure` constant string and an override read is one capped
+    ///      `SLOAD` plus a 32-byte-bounded string, so this is orders of magnitude more than any legitimate read
+    ///      needs; it exists to bound a broken or hostile callee. Note the consequence of the shared stipend: a
+    ///      hostile registry can burn 2x this per DISTINCT ADAPTER on the ACCOUNT path, which caches per adapter.
+    ///      ⚠️ The CONFIGURATION path ({adapterDisplayInfo}) has no such cache — it is a flat loop over the caller's
+    ///      array — so there the ceiling is 2x this per ARRAY ENTRY, and a caller passing the same adapter N times
+    ///      pays N times. That is bounded by the caller's own gas and its own array, not by the fleet size. The
+    ///      ACCOUNT-path ceiling is exercised by
+    ///      `AdapterLabelOverrides.t.sol::test_gas_hostileRegistryIsBoundedByTheStipend`, which wires a
+    ///      stipend-burning registry and measures the read (~422k, still fail-open), and the CONFIGURATION-path
+    ///      ceiling by `test_gas_configurationSurface_hostileRegistryIsBounded`.
+    ///
+    ///      ⚠️ Two earlier revisions of this note cited tests that did not cover what they were said to cover:
+    ///      first `test_gas_registryLegIsBounded` (a well-behaved registry, nowhere near the ceiling), then
+    ///      `test_gas_hostileRegistryIsBoundedByTheStipend` for the CONFIGURATION path — that test only calls
+    ///      `getAccountPositionsVerbose` and never reaches {adapterDisplayInfo}. A doc naming a test as proof of a
+    ///      bound the test never exercises is worse than admitting the bound is unmeasured, so the missing test was
+    ///      written rather than the sentence deleted.
     uint256 private constant _NAME_READ_GAS = 100_000;
 
     /// @notice Gas stipend for the outer `positionLabels()` staticcall. An order of magnitude above

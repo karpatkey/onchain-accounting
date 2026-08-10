@@ -64,6 +64,12 @@ contract Mock_RevertingBalanceAdapter is IBalanceAdapter {
 /// @title Mock Reverting Price Oracle
 /// @notice Price oracle that reverts for testing error handling
 contract Mock_RevertingPriceOracle is ICustomPriceFeed {
+    /// @notice Declared so registration's circularity gate can read it; see {INavSourcedPriceFeed}.
+    /// @dev `address(0)` — no NAV dependency, so registration's circularity gate accepts it. A custom feed that
+    ///      cannot answer this at all is rejected (`IPrices.CustomFeedBaseUnreadable`), which is why a mock that
+    ///      gets registered has to declare it.
+    address public constant BASE_ASSET = address(0);
+
     address private immutable _asset;
 
     /// @param asset_ The asset this feed claims to price. Must be the asset it is registered for — registration
@@ -101,6 +107,12 @@ contract Mock_RevertingPriceOracle is ICustomPriceFeed {
 /// @title Mock Malformed Price Oracle
 /// @notice Price oracle that returns invalid data
 contract Mock_MalformedPriceOracle is ICustomPriceFeed {
+    /// @notice Declared so registration's circularity gate can read it; see {INavSourcedPriceFeed}.
+    /// @dev `address(0)` — no NAV dependency, so registration's circularity gate accepts it. A custom feed that
+    ///      cannot answer this at all is rejected (`IPrices.CustomFeedBaseUnreadable`), which is why a mock that
+    ///      gets registered has to declare it.
+    address public constant BASE_ASSET = address(0);
+
     address private immutable _asset;
 
     /// @param asset_ The asset this feed claims to price; see {Mock_RevertingPriceOracle} for why it must match.

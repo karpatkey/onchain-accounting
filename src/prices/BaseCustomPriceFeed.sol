@@ -2,6 +2,7 @@
 pragma solidity ^0.8;
 
 import {ICustomPriceFeed} from "src/prices/ICustomPriceFeed.sol";
+import {INavSourcedPriceFeed} from "src/prices/INavSourcedPriceFeed.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {NavBaseUsdLib} from "src/prices/NavBaseUsdLib.sol";
@@ -21,7 +22,7 @@ import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 ///      one the NAV prices the base asset's own legs with — so it cancels cleanly when NAV is quoted in the base.
 ///      See {NavBaseUsdLib} (incl. the circularity invariant) and `docs/decisions`. Math: `price = rate · base8 / 1e18`
 ///      (Floor); stale when the NAV reports the base feed stale (all-feeds-stale; NOT L2 sequencer-down alone) or `_rate()` is 0.
-abstract contract BaseCustomPriceFeed is ICustomPriceFeed {
+abstract contract BaseCustomPriceFeed is ICustomPriceFeed, INavSourcedPriceFeed {
     using Math for uint256;
 
     /// @notice The token this feed prices (returned by `underlyingAssetSupported`).
@@ -32,7 +33,7 @@ abstract contract BaseCustomPriceFeed is ICustomPriceFeed {
 
     /// @notice The base asset whose USD price is read from the NAV (e.g. WETH). Must be priced by DIRECT feeds on the
     ///         NAV — never by a NAV-sourced custom feed (see {NavBaseUsdLib} circularity invariant).
-    address public immutable BASE_ASSET;
+    address public immutable override BASE_ASSET;
 
     /// @notice Decimals of the returned price — `NAV_DECIMALS` (8).
     uint8 private immutable _decimals;

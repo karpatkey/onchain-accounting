@@ -531,6 +531,32 @@ library ConfigReader {
         return accrualKindFromString(_readAssetString(vm, chainId, symbol, "accrualKind"));
     }
 
+    /// @notice Reads an asset's display `labels` array. Empty when the file, the asset, or the key is absent.
+    /// @dev **Absence is NOT an error here, unlike `accrualKind` immediately above, and the asymmetry is the point.**
+    ///      There is no defensible default classification, so a missing `accrualKind` aborts the deploy. There IS a
+    ///      defensible default label set — none — because an unlabelled asset is unlabelled, not misconfigured, and
+    ///      `AssetKindRegistry` treats an empty list as a legitimate state rather than a gap. So this reader returns
+    ///      empty and `08` proceeds.
+    ///
+    ///      That is also what lets the labels for the 93 configured rows land as a separate, asset-by-asset reviewable
+    ///      change without holding up the contracts: every chain reads empty until its config gains the key. Those
+    ///      first non-empty writes are no longer the ones that necessarily stick — `AssetKindRegistry.setAssetLabels`
+    ///      can replace them — so a later config correction is a re-run plus a setter call, not a lost opportunity.
+    ///
+    ///      **This reader deliberately does NOT validate.** `AssetKindRegistry` enforces the count, per-label length
+    ///      and non-emptiness on-chain, and re-checking them here would create a second copy of the rule that can drift
+    ///      from the one the chain applies — the #248 failure mode. Structural preflight validation, when it is added,
+    ///      reads `MAX_ASSET_LABELS` / `MAX_ASSET_LABEL_BYTES` off the deployed registry rather than restating them.
+    ///
+    ///      Subject to the same no-`.`-in-symbols constraint as every path-building reader in this file; see
+    ///      {_readAssetString}.
+    function readAssetLabels(Vm vm, uint256 chainId, string memory symbol) internal view returns (string[] memory) {
+        string memory json = _readOrEmpty(vm, _navAssetsPath(vm, chainId));
+        string memory jsonPath = string(abi.encodePacked(".", symbol, ".labels"));
+        if (!vm.keyExistsJson(json, jsonPath)) return new string[](0);
+        return vm.parseJsonStringArray(json, jsonPath);
+    }
+
     /// @notice Shared `accrualKind` string -> enum mapping. `valid` is false for an empty/unrecognized value.
     /// @dev `internal` rather than `private` so tests exercise the exact mapping production uses, instead of a
     ///      re-implementation that could drift from it.

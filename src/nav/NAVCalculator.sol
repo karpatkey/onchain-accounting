@@ -25,13 +25,25 @@ import "src/constants.sol";
 /// @notice NAV Calculator.
 /// @author KPK
 /// @dev EIP-170 budget: this contract runs close to the 24,576-byte runtime limit (CI's `forge build --sizes`
-///      enforces it). **As of `NAV.monitorsUnhealthyPriceAssets` it is 68 bytes under** (runtime 24,508 B, measured
-///      from `out/NAVCalculator.sol/NAVCalculator.json` under the default profile — the one CI's `--sizes` uses).
-///      **Treat this contract as FULL.** For scale: one minimal external getter has measured at 122 B, i.e. already
-///      more than the whole remaining budget, so the next addition here needs space reclaimed first rather than
-///      found. (This figure was stale by 144 B for a while — it read "325 bytes under / 24,251 B", which predated
-///      the paginated-NAV work; the pre-`monitorsUnhealthyPriceAssets` margin was in fact 181 B. If you cite a
-///      margin, re-measure it; do not trust a number in a comment, including this one.)
+///      enforces it). **THIS BLOCK IS THE SINGLE AUTHORITY FOR THE EIP-170 BUDGET.** Other files used to restate
+///      it and drifted into three mutually contradictory figures; they now point here instead. If you cite a
+///      margin, cite this one — and re-measure it, because a number in a comment is never evidence.
+///
+///      As of {getAdapterDisplayInfo}, measured by `forge build --sizes`:
+///        - `NAVCalculator`        24,475 / 24,576 -> **101 bytes** free
+///        - `NAVCalculatorV2`      24,567 / 24,576 -> **9 bytes** free
+///
+///      ⚠️ **9, not 101, is the number that gates a change.** `NAVCalculatorV2` is the UUPS upgrade fixture in
+///      `test/nav/NAVCalculator.upgrade.t.sol` — this contract plus one `foo()` function, never deployed — and
+///      CI's Build step is literally `forge build --sizes`, which **exits 1** on ANY contract over the limit,
+///      `test/` included. Verified by probe: an oversized contract under `test/` produces
+///      `Error: some contracts exceed the runtime size limit (EIP-170: 24576 bytes)` and exit code 1. So a change
+///      that fits this contract but pushes the fixture over still fails CI, naming a file nobody edited.
+///
+///      **Treat this contract as FULL.** For scale: one minimal external getter has measured at 122 B — more than
+///      the fixture's whole remaining budget — and {getAdapterDisplayInfo} cost 354 B. The next addition here needs
+///      space reclaimed first rather than found. (Earlier revisions of this line read "325 bytes under / 24,251 B"
+///      and then "68 bytes under / 24,508 B"; both were stale when read.)
 ///      Measure with a clean
 ///      `forge build --sizes` before and after anything added here, and assume nothing non-trivial fits: the next
 ///      substantive read will need the verbose label block (`_toVerbose` / `_safeString` / `_safeStringArray` /
@@ -229,18 +241,54 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
         assetKindRegistry = IAssetKindRegistry(registry);
     }
 
-    /// @notice One asset's two-axis classification, read through this NAV so callers need a single entry point.
-    /// @dev Forwards to {AssetKindRegistry}. Returns the ENUMS rather than raw `uint8`s: solc inserts range
+    /// @notice Everything this system publishes about one asset — both classification axes and its display labels — in
+    ///         a single call, read through this NAV so callers need one entry point and one round trip.
+    /// @dev **This REPLACED `getAssetKind`, which shipped days earlier and was never deployed.** Combining the two
+    ///      reads rather than adding a second getter is what makes it affordable: replacing DISPLACES a selector
+    ///      instead of adding one, measured at **+87 bytes** against a **+182** floor for any forwarding read at all,
+    ///      where adding `getAssetLabels` alongside `getAssetKind` cost +202 and keeping all three cost +479. The shape
+    ///      that best matches "the NAV is the single point of entry" was also the cheapest, which is the opposite of
+    ///      the usual trade and worth saying out loud.
+    ///
+    ///      Forwards to {AssetKindRegistry}. Returns the ENUMS rather than raw `uint8`s: solc inserts range
     ///      validation on every enum decoded from returndata, which measured 179 bytes more than a `(uint8, uint8)`
     ///      signature — paid deliberately for a typed ABI, and affordable only because the verbose read path was
     ///      moved into `PriceFeedLib` first.
     ///
     ///      Fail-closed by inheritance, not by re-implementation: the registry reverts `AssetNotClassified` for an
     ///      unclassified asset and this does not soften that into a default. If no registry is set, the call to
-    ///      `address(0)` reverts — deliberately louder than returning `(Pegged, None)`, which is a real
+    ///      `address(0)` reverts — deliberately louder than returning `(Pegged, None, [])`, which is a real
     ///      classification and would be indistinguishable from a configured answer.
-    function getAssetKind(address asset) external view returns (PegKind, AccrualKind) {
-        return assetKindRegistry.getAssetKind(asset);
+    ///
+    ///      **`labels` is NOT bounded here, and that is deliberate rather than overlooked.** {_MAX_LABEL_ELEMENTS}
+    ///      guards `positionLabels()` replies from arbitrary, permissionlessly-deployed balance adapters read over a
+    ///      low-level `staticcall`. This is a high-level call to a MANAGER-configured registry that enforces
+    ///      `MAX_ASSET_LABELS` on the WRITE side, so the bound already exists where it can be enforced once rather
+    ///      than re-checked on every read — and a second cap here would cost bytes to defend against an address the
+    ///      same MANAGER chose.
+    function getAssetInfo(address asset) external view returns (PegKind, AccrualKind, string[] memory) {
+        return assetKindRegistry.getAssetInfo(asset);
+    }
+
+    /// @notice Every listed adapter's EFFECTIVE display name and positionId-independent breadcrumb — the same
+    ///         values the verbose position reads report, including any {AssetKindRegistry} override.
+    /// @dev **This exists so the configuration view and the position view cannot disagree.** A consumer that
+    ///      enumerates {getAllAdapters} and staticcalls `protocolName()` on each adapter itself bypasses the
+    ///      override store and sees the adapter's compile-time constant, while `getAccountPositionsVerbose` reports
+    ///      the override — two surfaces silently disagreeing about one adapter, which is the phantom-sibling split
+    ///      {IPositionDescribable.protocolName} exists to prevent. Pair this with {getAllAdapters} instead.
+    ///
+    ///      The body is a single forward into `PriceFeedLib.adapterDisplayInfo`, which shares its precedence helper
+    ///      with `toVerbose` — so agreement holds by construction, not by two implementations matching. The work
+    ///      lives in the library because this contract is at its EIP-170 limit; only the selector is paid for here.
+    /// @param adapters The adapters to describe, typically the result of {getAllAdapters}.
+    /// @inheritdoc INAVCalculator
+    function getAdapterDisplayInfo(address[] calldata adapters)
+        external
+        view
+        returns (string[] memory names, string[][] memory labels)
+    {
+        return PriceFeedLib.adapterDisplayInfo(adapters, address(assetKindRegistry));
     }
 
     /// @inheritdoc INAVCalculator
@@ -485,7 +533,7 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
         returns (INAVCalculator.VerbosePosition[] memory)
     {
         _validateQuoteAsset(quoteAsset);
-        return PriceFeedLib.toVerbose(_computePositions(account, address(0), quoteAsset));
+        return PriceFeedLib.toVerbose(_computePositions(account, address(0), quoteAsset), address(assetKindRegistry));
     }
 
     /// @inheritdoc INAVCalculator
@@ -496,7 +544,7 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
     {
         _validateQuoteAsset(quoteAsset);
         _validateAssetFilter(asset);
-        return PriceFeedLib.toVerbose(_computePositions(account, asset, quoteAsset));
+        return PriceFeedLib.toVerbose(_computePositions(account, asset, quoteAsset), address(assetKindRegistry));
     }
 
     /// @inheritdoc INAVCalculator
@@ -522,7 +570,7 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
             _isSequencerDown(),
             _nativeTokenSymbol
         );
-        verboseNav.positions = PriceFeedLib.toVerbose(positions);
+        verboseNav.positions = PriceFeedLib.toVerbose(positions, address(assetKindRegistry));
     }
 
     /// @notice Shared entry point for the (filtered) position read path. Keeps the long PriceFeedLib argument

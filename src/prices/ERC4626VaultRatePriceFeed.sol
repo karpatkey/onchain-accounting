@@ -2,6 +2,7 @@
 pragma solidity ^0.8;
 
 import {ICustomPriceFeed} from "src/prices/ICustomPriceFeed.sol";
+import {INavSourcedPriceFeed} from "src/prices/INavSourcedPriceFeed.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {NavBaseUsdLib} from "src/prices/NavBaseUsdLib.sol";
@@ -30,7 +31,7 @@ import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IER
 ///      5 `ICustomPriceFeed` thunks, the immutables, and the constructor validation live here once instead of being
 ///      copy-pasted into each vault feed. Feeds whose rate is a non-ERC4626 source (e.g. a DSR-`chi`-style accumulator) stay
 ///      bespoke; feeds with an 18-decimal rate against a NAV base use {BaseCustomPriceFeed} instead.
-abstract contract ERC4626VaultRatePriceFeed is ICustomPriceFeed {
+abstract contract ERC4626VaultRatePriceFeed is ICustomPriceFeed, INavSourcedPriceFeed {
     using Math for uint256;
 
     /// @notice Thrown when the configured `baseAsset_` is not the vault's own `asset()` underlying — the base/USD
@@ -45,7 +46,7 @@ abstract contract ERC4626VaultRatePriceFeed is ICustomPriceFeed {
 
     /// @notice The base asset (the vault's underlying) whose USD price is read from the NAV (e.g. USDe, GHO). Must be
     ///         priced by DIRECT feeds on the NAV — never by a NAV-sourced custom feed (see {NavBaseUsdLib} invariant).
-    address public immutable BASE_ASSET;
+    address public immutable override BASE_ASSET;
 
     /// @notice Decimals of the returned price — `NAV_DECIMALS` (8).
     uint8 private immutable _decimals;

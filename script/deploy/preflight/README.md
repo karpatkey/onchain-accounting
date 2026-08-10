@@ -12,7 +12,7 @@ The ordered procedure these support is [`../REDEPLOY_RUNBOOK.md`](../REDEPLOY_RU
 | `snapshot_production.py` | captures the full live NAV state of every deployed chain to `snapshots/<tag>/` |
 | `diff_snapshots.py` | diffs two snapshots; addresses are expected to move, shape is not |
 | `bytecode_audit.py` | proves every deployed address does (or does not) run code from the current build |
-| `preflight_config.py` | validates every per-chain config the deploy reads, before a tx is sent |
+| `preflight_config.py` | validates every per-chain config the deploy reads, before a tx is sent. Includes the **base allowlist** — a NAV-sourced custom feed's `baseAsset` must be a direct-priced asset, which is where multi-hop pricing cycles are caught (the on-chain guard sees only the self case). `--base-report` prints the base graph; `--self-test` proves every arm, including by mutating the real mainnet config |
 | `declared_heartbeat_guard.py` | flags registered heartbeats that do NOT exceed the provider's declared cadence — WARN for an unmeasured one, ERROR only for a broken exemption; also runs inside `preflight_config.py`. `--refresh` re-fetches the committed snapshot, `--self-test` proves the guard |
 | `chainlink_declared_heartbeats.json` | committed snapshot of each feed's provider-declared heartbeat; regenerate with `declared_heartbeat_guard.py --refresh` |
 | `reset_deployment_records.py` | archives + clears the deployment records so `03`/`04` actually redeploy |
@@ -33,7 +33,7 @@ python3 reset_deployment_records.py --apply --tag pre-redeploy
 
 # … deploy per the runbook, gating each step on its post-condition …
 python3 verify_step.py 1.2                        # after 01_2, before 02_2
-python3 verify_step.py 1.3                        # … and so on through 1.7
+python3 verify_step.py 1.3                        # … and so on through 1.8
 
 # after the deploy
 forge clean && forge build

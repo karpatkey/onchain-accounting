@@ -122,7 +122,7 @@ Internal API (used by NAVCalculator):
 - `_removePriceFeed(asset, priceFeed)` — locates feed by address, calls `_removePriceFeedAt`. Reverts with `PriceFeedNotFound` if not registered.
 - `_removeAllPriceFeeds(asset)` — `delete _priceOracles[asset]`, used by `unregisterAsset` only.
 - `_priceFeedCount(asset)` — returns array length.
-- `checkPriceOracleSupport(asset, priceFeed, priceType)` — public; for Custom: ERC165 check **plus an asset-binding check** — the feed's own `underlyingAssetSupported()` must equal `asset`, else it reverts `CustomFeedAssetMismatch(asset, feed, feedAsset)`; for Chainlink/Redstone/API3: rejects `ICustomPriceFeed`-shaped feeds and calls `latestRoundData()` as a sanity check. The same validator backs `registerAsset`, `addPriceFeed` and `addMonitorFeed`, so the binding is enforced everywhere a Custom feed can be attached to an asset — this view is the transaction-free way to pre-flight it.
+- `checkPriceOracleSupport(asset, priceFeed, priceType)` — public; for Custom: ERC165 check, **plus an asset-binding check** — the feed's own `underlyingAssetSupported()` must equal `asset`, else it reverts `CustomFeedAssetMismatch(asset, feed, feedAsset)` — **plus a circularity check** on `INavSourcedPriceFeed.BASE_ASSET()` (see §5.2); for Chainlink/Redstone/API3: rejects `ICustomPriceFeed`-shaped feeds and calls `latestRoundData()` as a sanity check. The same validator backs `registerAsset`, `addPriceFeed` and `addMonitorFeed`, so both checks are enforced everywhere a Custom feed can be attached to an asset — this view is the transaction-free way to pre-flight it.
 
 External view API:
 
@@ -145,6 +145,8 @@ Every custom feed must implement this interface (and ERC165).
 | `decimals()` | Returns the number of decimals the price is expressed in. Pinned at construction. |
 | `underlyingAssetSupported()` | Returns the asset address this feed prices. Single asset per feed (1:1 contract-to-asset). **Checked on-chain at registration:** `registerAsset` / `addPriceFeed` / `addMonitorFeed` all read this and revert `CustomFeedAssetMismatch` unless it equals the asset being registered. This is an *admission check, not a runtime invariant* — it is read once, at registration, and never again on any read path. **Back it with an `immutable` pinned in the constructor** (every in-repo feed does): a feed that can change its answer afterwards can break the binding post-registration, and by flipping between registrations one such feed can back two assets. That grants an attacker nothing a hostile feed could not already do by lying in `getLatestPrice()`, but it does mean the 1:1 property holds by feed convention, not by enforcement. |
 | `supportsInterface(bytes4)` | Must return `true` for `type(ICustomPriceFeed).interfaceId` and `IERC165`. |
+
+Every custom feed must **additionally** implement `INavSourcedPriceFeed.BASE_ASSET()` — see §5.2. It is deliberately a separate interface: adding a member to `ICustomPriceFeed` would change `type(ICustomPriceFeed).interfaceId` and make every already-deployed feed fail the ERC165 gate.
 
 ### 5.0 `BaseCustomPriceFeed` — the "rate × NAV-base/USD" skeleton
 
@@ -226,6 +228,28 @@ Every Chainlink heartbeat used in an adapter's staleness check is pinned as an i
 `_addPriceFeed()` requires a non-zero heartbeat for all feed types. For custom feeds this value is used by `Prices.sol` as the heartbeat gate on `latestRoundData().updatedAt` (after the primary `getLatestPrice().stale` gate). Set it to the slowest constituent Chainlink heartbeat for the adapter — i.e. `max(H1, H2, …)` — so the external heartbeat gate does not fire before the internal staleness check would.
 
 For feeds backed by Reserve Protocol (ETHPlus): set this to the slowest Chainlink heartbeat among the basket's underlying feeds — 86 400 s for the current ETH+ basket. Re-evaluate if basket composition changes.
+
+### 5.2 `INavSourcedPriceFeed.BASE_ASSET()` — the circularity gate
+
+A NAV-sourced custom feed prices its asset as `rate × base/USD` and reads the `base/USD` term back out of the **same NAV** — `NavBaseUsdLib.baseUsd(NAV, BASE_ASSET)` → `nav.getPriceData(BASE_ASSET)` (ADR [0019](../../docs/decisions/0019-nav-sourced-base-price.md)). That is safe only while the **circularity invariant** holds: `BASE_ASSET` must be priced by *direct* feeds (Chainlink/API3/Redstone), never by a feed that calls back into the NAV.
+
+`BASE_ASSET` is a constructor argument checked for nothing but ERC20-ness, and for an LST there is no on-chain ground truth for what the base *should* be. So the invariant is enforced at **registration**, the chokepoint the NAV actually controls:
+
+| Feed answers `BASE_ASSET()` … | Registration |
+|---|---|
+| a value `!= asset` (incl. `address(0)`) | **accepted** |
+| `== asset` | reverts `CustomFeedBaseCircular(asset, feed)` |
+| not at all / short return / dirty word | reverts `CustomFeedBaseUnreadable(asset, feed)` |
+
+**Every custom feed must answer.** Unreadable is a rejection on purpose — the failure being closed is unbounded recursion, so "the base could not be read" must not collapse into "the base is fine". A feed with **no** NAV dependency declares that by returning `address(0)`; `ETHPlus_CustomPriceFeed` (which prices from the Reserve Protocol basket and never calls back) is the in-repo example. The three shared bases and `ankrETH_CustomPriceFeed` expose it as an `immutable`.
+
+**What the gate does not cover**, deliberately:
+
+- It is an **admission check, not a runtime invariant** — read once at registration, never on a read path (same standing as `underlyingAssetSupported()`). A feed with a *mutable* base can pass and then recurse; back `BASE_ASSET` with an `immutable`.
+- It does not catch a **two-hop cycle** (feed for A based on B, feed for B based on A). Detecting that needs an ordering-dependent scan of the registry, which cannot answer reliably — a base with no custom feed today can acquire one tomorrow — so two-hop stays with review and the deploy-time preflight.
+- It does not validate that the base is the *right* asset, only that it is not the asset itself. A feed built with `BASE_ASSET = USDC` when it should be WETH still registers cleanly and silently misprices; `ERC4626VaultRatePriceFeed` is the only family with a real constructor check (`baseAsset == vault.asset()`, reverts `BaseAssetMismatch`).
+
+Left uncaught, the failure is quiet: `_selectFeedCore` wraps each custom-feed call in a bare `try`/`catch` with no gas cap, so the recursion burns ~63/64 of the caller's gas and then the healthy feed answers anyway. Measured in `test/prices/CustomFeedBaseCircularity.t.sol`: the same `getPriceData` read costs **50,389 gas** normally and **7,728,753 gas** with one circular feed registered — and returns the correct price both times.
 
 ---
 
@@ -352,7 +376,7 @@ Detailed walkthrough lives at [`docs/howto/add-price-feed.md`](../../docs/howto/
 **If your feed is just `rate × base/USD` (the NAV-sourced base times an 18-decimal on-chain rate), extend `BaseCustomPriceFeed` instead** — pass `(underlying, nav, baseAsset)` to its constructor and implement only `_rate()`. The five interface methods, immutables, validation, and staleness/normalize math come for free (see §5.0; e.g. `rETH_Price`). If the rate comes from a Chainlink-ABI rate feed rather than an on-chain call, extend **`TwoFeedChainlinkPriceFeed`** (pass `(underlying, rateFeed, rateHeartbeat, nav, baseAsset)`; e.g. `weETH_Price`, or `CrossRateCustomPriceFeed` for a generic cross-rate); if it's an ERC-4626 vault share, extend **`ERC4626VaultRatePriceFeed`** (pass `(vault, nav, baseAsset)`; e.g. `sUSDe_Price`). The full checklist below applies to bespoke feeds that don't fit any of those shapes (derived multi-feed rates, no single rate leg, an inverted rate, or a non-standard `latestRoundData`).
 
 1. Create `src/prices/protocols/<Asset>_CustomPriceFeed.sol` (suffix `_L2_Price` for L2-specific variants).
-2. Implement `ICustomPriceFeed` and `IERC165`.
+2. Implement `ICustomPriceFeed`, `IERC165`, and `INavSourcedPriceFeed` — the last is `BASE_ASSET()` alone, and a bespoke feed with no NAV dependency declares `address public constant override BASE_ASSET = address(0)`. Registration **rejects** a Custom feed that cannot answer it (§5.2); the three shared bases already implement it, so this step only applies to feeds written from scratch.
 3. Pin every input as `immutable` in the constructor: token address, dollar-leg Chainlink feed, rate provider, heartbeats.
 4. Use `OracleArgumentChecks` (`src/utils/OracleArgumentChecks.sol`) for constructor validation: `assertERC20Address`, `assertChainlinkOracle`, `assertNotZeroNumber`, `assertNonZeroAddress`.
 5. In `getLatestPrice`:

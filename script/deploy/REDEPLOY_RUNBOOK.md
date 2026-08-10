@@ -181,9 +181,11 @@ described, not an anomaly to investigate — and it remains the correct reading 
 > empirically", present-perfect and unqualified. A reader would reasonably conclude the deploy path is
 > proven. **It is not.**
 >
-> **No fork rehearsal has ever run against `main`.** The two most recent runs were against **PR branch
-> heads** — `a4909342` and `0aebea7a` — and `git merge-base --is-ancestor` places **neither** in
-> `main`'s history. The 2026-07-30 run above predates every merge since.
+> **Up to 2026-08-08, no fork rehearsal had ever run against `main`.** The two most recent runs were
+> against **PR branch heads** — `a4909342` and `0aebea7a` — and `git merge-base --is-ancestor` places
+> **neither** in `main`'s history. The 2026-07-30 run above predates every merge since. **That changed on
+> 2026-08-08 — see the closure note below.** Read this paragraph as the state that motivated the closure,
+> not as the current state; the 2026-07-30 run on its own is still not evidence about `main`.
 >
 > **The harness that produced those results no longer exists.** #279 rewrote it. As `--numstat` pairs,
 > per the house rule above: `rehearse_fork.sh` **+158/−25**, `chainlib.py` **+157/−12**,
@@ -414,6 +416,15 @@ before the bump is stale on arrival.
 > Derived independently from freshly built artifacts:
 >   salt = keccak256(name ‖ uint256(1));  addr = keccak256(0xff ‖ 0x4e59b448… ‖ salt ‖ keccak256(initcode))[12:]
 > Sizes byte-identical to 253f6bd6: 7,923 / 24,475 / 24,475 / 24,567 (9 free — the binding CI figure) / 22,920
+> ```
+>
+> The block above is reproduced **verbatim** from the measurement, `‖` included. **Do not copy that
+> character into tooling** — it is U+2016 DOUBLE VERTICAL LINE, not ASCII, and most shells and scripts will
+> mangle or reject it. The derivation in ASCII, for anything you actually run:
+>
+> ```
+> salt = keccak256(concat(name, uint256(1)))
+> addr = keccak256(concat(0xff, 0x4e59b448..., salt, keccak256(initcode)))[12:]
 > ```
 >
 > **So the same-commit pin change in #278 turned out to be correct** — the pin was regenerated in that

@@ -48,7 +48,9 @@ filter: keep positions whose asset is in the asset registry
 for each position: lookup price, value = amount × price (sign by isDebt)
         │
         ▼
-sum → NAV { value, quoteAsset, timestamp, stalePriceAssets, sequencerDown, quoteAssetStale }
+sum → NAV { value, quoteAsset, timestamp, stalePriceAssets, sequencerDown,
+            quoteAssetStale, irregularPriceAssets, quoteAssetIrregular,
+            monitorsUnhealthyPriceAssets }
 ```
 
 Authoritative reference: [`src/balances/BALANCE_ADAPTERS.md`](../src/balances/BALANCE_ADAPTERS.md) §2.
@@ -87,8 +89,10 @@ Read [`src/balances/BALANCE_ADAPTERS.md`](../src/balances/BALANCE_ADAPTERS.md) f
 ## 5. Price feeds
 
 Two flavors:
-- **Chainlink** — registered with `priceType = Chainlink` and a heartbeat for staleness. Most assets use this.
+- **Push oracle** — an `AggregatorV3Interface` contract read directly, registered with a heartbeat for staleness. `PriceType` has three of these, sharing one read path: `Chainlink` (what most assets use), `Redstone`, and `API3`.
 - **Custom** — a contract implementing `ICustomPriceFeed` that derives a price (e.g., `sXDAI_CustomPriceFeed` combines the vault's ERC-4626 share rate with the NAV's own xDAI/USD price; `wstETH_CustomPriceFeed` reads `stEthPerToken()` × the NAV's ETH/USD, holding stETH/ETH ≡ 1.0 — it is **pure fundamental, with no market leg**). Used for receipt tokens, LP tokens, and synthetic rates. All custom feeds live under `src/prices/protocols/`. Note that since [ADR 0019](./decisions/0019-nav-sourced-base-price.md) the `base/USD` leg of a derived feed comes from the NAV's own selector, not a hardcoded oracle.
+
+Feeds come in two roles. An asset's **primary** feeds are the only ones NAV prices off — the registry keeps a primary array per asset and selects the freshest healthy entry (every asset configured today carries exactly one) — while **monitor** feeds are used solely for divergence detection: if the primary drifts from the worst monitor past `divergenceToleranceBps`, or (for an asset given a non-zero `pegToleranceBps`) off $1 past that, the asset is flagged `irregular` rather than stale. Per asset the config carries them as `priceFeeds` (primary) and `monitorFeeds` in `nav-config/assets-and-price-feeds/<chainId>.json`.
 
 L2 deployments check `chainlinkL2SequencerUptimeFeed`; if down or in grace period, prices are flagged stale.
 
@@ -114,15 +118,17 @@ The whole flow is **EOA-only** (deployer key + `--broadcast`; no Safe executes d
 6. `06_Configure.s.sol` — **EOA broadcast**: add balance adapters to NAV, `addMetaInstances`/`removeMetaInstances` for meta-adapters, authorize bridge adapters on BridgeEscrow (idempotent).
 7. `07_TransferAdminToSecurityCouncil.s.sol` — **last:** grants DEFAULT_ADMIN_ROLE + MANAGER to `securityCouncil` on both proxies and renounces the deployer's roles.
 
+Plus one step whose number does not match its position: `08_DeployAssetKindRegistry.s.sol` deploys the per-chain `AssetKindRegistry`, wires both directions of the link to the NAV — `setAssetKindRegistry(registry)` so the NAV can read, `grantRole(MANAGER, registry)` so the facade can write — and classifies every asset in `nav-config/assets-and-price-feeds/<chainId>.json`. It runs **after `02` and before `03`/`RegisterAssets`** (`RegisterAssets` reverts `AssetKindRegistryNotDeployed` without it), and it **must precede `07`**, which gives away the two roles those calls need: `setAssetKindRegistry` is MANAGER-gated and `grantRole` requires `DEFAULT_ADMIN`.
+
 For the operational sequencing see [`script/deploy/README.md`](../script/deploy/README.md) and [`script/DEPLOYMENT_SUMMARY.md`](../script/DEPLOYMENT_SUMMARY.md).
 
-Per-chain configuration is split under `script/config/`: `chains/<chainId>.json` holds chain metadata + role addresses; `contracts-deployment-config/{custom-price-feeds,balance-adapters,meta-balance-adapters,bridge-adapters}/<chainId>.json` holds what to deploy; `nav-config/{assets-and-price-feeds,balance-adapters,meta-balance-adapters}/<chainId>.json` holds what to register on NAV; `deployments/<chainId>.json` holds the resulting deployed addresses. Deployed on 24 chains (see [`script/deploy/DEPLOYED_ADDRESSES.md`](../script/deploy/DEPLOYED_ADDRESSES.md)); fully configured on Ethereum, Optimism, Arbitrum, Base, and Gnosis.
+Per-chain configuration is split under `script/config/`: `chains/<chainId>.json` holds chain metadata + role addresses; `contracts-deployment-config/{custom-price-feeds,balance-adapters,meta-balance-adapters,bridge-adapters}/<chainId>.json` holds what to deploy; `nav-config/{assets-and-price-feeds,balance-adapters,meta-balance-adapters}/<chainId>.json` holds what to register on NAV; `deployments/<chainId>.json` holds the resulting deployed addresses. Deployed on 24 chains (see [`script/deploy/DEPLOYED_ADDRESSES.md`](../script/deploy/DEPLOYED_ADDRESSES.md)); the seven chains carrying `nav-config/` entries are Ethereum, Optimism, Gnosis, Polygon, Arbitrum, BSC, and Base.
 
 Adding a new chain or new adapter is a config edit + a single deploy script run; see the `./howto/` guides.
 
 ## 7.5. Integration test freshness
 
-The integration tests under `test/integration/` deploy a NAV stack on a forked chain at a pinned block, register every adapter from chain config, and assert exact NAV values for a set of accounts. Fork blocks and expected NAVs are stored in `test/integration/accounts.json` — **the per-chain `NAV.<Chain>.integration.fork.t.sol` files are stubs that just point at the JSON**.
+The integration tests under `test/integration/` deploy a NAV stack on a forked chain at a pinned block, register every adapter from chain config, and assert exact NAV values for a set of accounts. (Every adapter *except* those declared in `test/integration/undispatched-adapters.json` — adapters that are enabled in deploy config but that the harness's hand-maintained dispatch chain does not resolve, so they are neither deployed nor registered. The declaration is enforced in both directions.) Fork blocks and expected NAVs are stored in `test/integration/accounts.json` — **the per-chain `NAV.<Chain>.integration.fork.t.sol` files are stubs that just point at the JSON**.
 
 When you add an adapter that should appear in an existing test account's NAV, or when you want to add a new test account: edit `accounts.json` and run `script/test/refresh-integration-snapshot.sh`. The script bumps fork blocks, regenerates the expected NAVs, and (if `DEBANK_API_KEY` is set) cross-checks each NAV against Debank's USD total within a configurable tolerance. Tests stay deterministic; the Debank check happens at bump time only.
 

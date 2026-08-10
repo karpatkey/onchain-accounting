@@ -896,6 +896,56 @@ Recoverable (`setAssetKinds` + `setAssetLabels`), but only once somebody notices
   classification. An earlier revision of this line said no gate existed; it does, and it covers both
   directions of the link.
 
+#### What the adapter-label override surface costs to read — measured on merged `main`
+
+The registry this step deploys also holds #278's adapter-keyed overrides
+(`setAdapterProtocolName` / `setAdapterLabelCategory` and their `clear…` pair). Reading them is not free,
+and **the day-one cost is the higher of the two figures.** Measured on merged `main` at `a3974686` — not on
+a branch, and not on the superseded head that earlier numbers came from:
+
+| verbose read, per distinct adapter | gas |
+| --- | --- |
+| override **MISS** — **what an operator pays today** | **114,552** |
+| override **HIT** | 112,169 |
+
+**MISS is dearer than HIT, and every adapter is a MISS today.** No overrides exist on `main`; one comes
+into being only when a `MANAGER` calls `setAdapterProtocolName` or `setAdapterLabelCategory`. A hit skips
+the adapter's `protocolName()` staticcall entirely; a miss pays the registry lookup **and still makes the
+adapter call**, so a miss is strictly a superset of the work. **You pay the higher number from day one, for
+zero benefit until an override is actually set.**
+
+**The denominator is the whole point: the surcharge is PER VERBOSE READ, PER DISTINCT ADAPTER — not per
+position.**
+
+| fixture | surcharge |
+| --- | --- |
+| 1 distinct adapter / 1 position | 5,378 |
+| 2 distinct adapters / 3 positions | **≥ 10,968 — warm-fixture floor** |
+
+Two adapters across three positions cost the same as two across two: **the third position adds nothing.** An
+account with N distinct adapters pays roughly **N × 5.4k warm**, however many positions those adapters emit.
+Quote the denominator with the number or do not quote the number.
+
+**Three qualifiers travel with these figures. Do not strip them.**
+
+1. **`10,968` is a warm-fixture FLOOR, not the live cost.** The test warms the read before measuring; a real
+   portfolio touches each adapter's slot **cold**. Phrase it as *"≥ 10,968, warm-fixture floor; real cost is
+   higher by an unmeasured cold-access premium"*. **The cold figure was not measured.**
+2. **The linear-in-adapters property is demonstrated only at N=1 and N=2.** The fixture is 1–2 adapters; the
+   mainnet fixture is 117 positions across many more. **No extrapolation was made, and none should be.**
+3. **This is a read cost on the verbose path only.** It is not a deploy cost and does not affect any step here.
+
+**Why the bound is trustworthy: it is mutation-defended.** Breaking the cache so overrides resolve
+per-position instead of per-distinct-adapter gives clean **10,968** against mutant **16,296**, tripping a
+12,000 bound and failing with *"the surcharge must scale with DISTINCT ADAPTERS, not with positions"*. Tree
+restored clean afterwards, 0 modified files. The per-adapter denominator is therefore an asserted invariant,
+not an observation that happened to hold on one fixture.
+
+> **NOT MEASURED, and not to be papered over: the benign-path gas of the new `getAdapterDisplayInfo`
+> configuration surface.** Only its **hostile ceiling** exists — **667,962** for 3 entries against a
+> stipend-burning registry. There is **no normal-operation measurement** of it. Do not infer one from the
+> hostile figure, and do not present that ceiling as a typical cost.
+
 ### 1.5 `03_DeployPriceFeeds` — 41 custom feeds
 
 ```bash

@@ -48,6 +48,8 @@ fully-on-chain alternative was researched and ruled out: Merkl commits only a ro
 allocations off-chain, so no `view` (and no on-chain recomputation) can produce an unclaimed amount without
 externally-supplied leaf data — the proof-fed cache is the trust-minimized optimum.
 
+> **Added later (not part of the original decision):** the contract described below — `MerklRewardsAssistedBalanceAdapter` — and the role-gated agent-fed base it rode on are **no longer present in this repository**; they were removed pending a rewrite of the Merkl adapter and are retrievable from git history. Every `src/` and `test/` path named in the Reference section below therefore currently resolves to nothing, the `MerklRewardsAssisted` deploy-config entry is absent from every `script/config/contracts-deployment-config/balance-adapters/*.json` (the per-chain files themselves still exist, for the other adapters), and no contract in `src/` declares an `ASSISTANT_ROLE` — the assisted family that remains ([ADR 0015](0015-assisted-balance-adapter-family.md) / [ADR 0018](0018-assistant-fed-assisted-balance-adapters.md)) is permissionless and `msg.sender`-keyed. The decision below stands as recorded at the time it was taken; read it as history, not as a description of what ships today.
+
 ## Context
 
 Merkl (Angle Labs) distributes rewards via off-chain merkle trees. The on-chain Distributor at `0x3Ef3D8bA38EBe18DB133cEc108f4D14CE00Dd9Ae` (canonical address on every supported EVM chain) only stores **claimed** amounts: `mapping(address user => mapping(address token => Claim { uint208 amount, uint48 timestamp, bytes32 merkleRoot }))`. To learn a user's *unclaimed* allocation you need the merkle leaf and proof from the off-chain Merkl API — the contract has no view function for it.

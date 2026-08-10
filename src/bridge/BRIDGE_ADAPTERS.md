@@ -147,7 +147,7 @@ Adapters inherit `BridgeAdapter` in `src/bridge/BridgeAdapter.sol`.
 
 ### 6.2 Provenance config + funding helper
 
-- **trustedRemoteAdapter[uint64 sourceKey] → bytes32** + **setTrustedRemoteAdapter(sourceKey, remote)** (admin): the allowlist of trusted sibling adapters on remote chains. The `sourceKey` is the remote chain's **standard chain id** for every adapter — each adapter translates its protocol-specific source identifier (CCIP selector, LZ eid, CCTP domain, AMB/OP xDomain sender) back to the standard chain id internally before this lookup, so callers always key by the plain chain id. The value is the remote adapter identity (use `_toBytes32(addr)`; with CREATE2 same-address this equals the adapter's own address).
+- **trustedRemoteAdapter[uint64 sourceKey] → bytes32** + **setTrustedRemoteAdapter(sourceKey, remote)** (admin): the allowlist of trusted sibling adapters on remote chains. The `sourceKey` is the remote chain's **standard chain id** for every adapter that consults this map — each translates its protocol-specific source identifier (CCIP selector, LZ eid, AMB/OP xDomain sender) back to the standard chain id internally before this lookup, so callers always key by the plain chain id. The value is the remote adapter identity (use `_toBytes32(addr)`; with CREATE2 same-address this equals the adapter's own address). `CctpBridgeAdapter` is the exception: it never reads `trustedRemoteAdapter` — its provenance is the Circle attestation plus the message-body binding (which does map `domainToChainId[sourceDomain]` back to the invoice's source chain id).
 - **_fundAndRelease(messagePayload, asset, amount):** Hands the escrow exactly `amount` of `asset` and triggers release. ERC20: `forceApprove(escrow, amount)` → `releaseByInvoiceId` (escrow pulls) → reset approval to 0. Native: `releaseByInvoiceId{value: amount}`. The adapter must already hold the delivered funds.
 
 ### 6.3 What adapters implement
@@ -195,7 +195,7 @@ In all cases the protocol delivers the tokens to the adapter, the adapter authen
 | CctpBridgeAdapter | CCTP (Circle) | adapter (self) | — (manager) | Circle attestation + message-body binding + nonce dedup |
 | SuperchainBridgeAdapter | Optimism L1/L2 | adapter (self) | `completeDeposit` (L1→L2) | xDomainMessageSender; portal proof + real OP hash (L2→L1) |
 
-Each adapter's `trustedRemoteAdapter` must be configured per source chain so inbound messages are authenticated.
+Each adapter's `trustedRemoteAdapter` must be configured per source chain so inbound messages are authenticated — except `CctpBridgeAdapter`, which never reads it (provenance is the Circle attestation + message-body binding).
 
 ---
 
@@ -218,8 +218,8 @@ Adapters are **non-upgradeable**: deployed via the canonical CREATE2 deployer (`
 
 1. **Deploy the adapter** and run `initialize(...)`.
 2. **Authorize on the escrow:** `BridgeEscrow.authorizeAdapter(adapter)` (admin) — enables `depositAndBridge` and lets the adapter call `releaseByInvoiceId`.
-3. **Configure trusted remotes:** for each source chain, `adapter.setTrustedRemoteAdapter(sourceKey, remoteAdapterIdentity)` (admin) so inbound messages are authenticated. With CREATE2 same-address deployment the remote identity is the adapter's own address.
+3. **Configure trusted remotes:** for each source chain, `adapter.setTrustedRemoteAdapter(sourceKey, remoteAdapterIdentity)` (admin) so inbound messages are authenticated. With CREATE2 same-address deployment the remote identity is the adapter's own address. **Skip this for `CctpBridgeAdapter`** — it never reads `trustedRemoteAdapter` (see §6.2); its provenance is the Circle attestation plus the message-body binding.
 4. **Register assets** on both source and destination escrows: `BridgeEscrow.registerAsset(symbol, assetAddress)`.
-5. **Roles:** `07_TransferAdminToSecurityCouncil` hands each adapter's `DEFAULT_ADMIN_ROLE` + `MANAGER` to the security council and renounces the deployer. The council's adapter `MANAGER` gates `completeBridge`, `recoverStuckAssets`, and (Superchain) `proveWithdrawal`/`finalizeWithdrawal`.
+5. **Roles:** `07_TransferAdminToSecurityCouncil` hands each adapter's `DEFAULT_ADMIN_ROLE` + `MANAGER` to the security council and renounces the deployer. The council's adapter `MANAGER` gates `completeBridge`, `recoverStuckAssets`, and (Superchain) `proveWithdrawal` — withdrawal finalization has no separate entry point of its own; it runs inside `completeBridge`.
 
 After this, accounts call `depositAndBridge(..., adapter)`; on the destination chain either the authenticated protocol receiver (auto) or a manager calling `adapter.completeBridge(messagePayload, protocolData)` triggers the funded release.

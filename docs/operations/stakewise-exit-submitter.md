@@ -33,9 +33,9 @@ For each event where `receiver == account`, record `(vault, positionTicket, bloc
 |---|---|---|
 | **Account list** | Operator config | EVM addresses to track (the OIV per-chain accounts that use StakeWise V3). |
 | **Vaults** | StakeWise VaultsRegistry / operator config | The vaults to scan `ExitQueueEntered` on (e.g. mainnet Genesis `0xAC0F…2885`, MetaVault `0x1563…cad3`). |
-| **Chains** | Operator config | StakeWise V3 exit queues tracked here are **mainnet (1)** only today (vaults settle in ETH). |
-| **Adapter address** | `script/config/deployments/1.json` → `balanceAdapters.StakeWiseV3ExitQueueAssisted` | Read at startup; refresh on redeploy. |
-| **Assistant address** | `script/config/deployments/1.json` → `StakeWiseV3ExitQueueAssistant` | The delegatecall action the Safe uses to enter/claim and feed the adapter in one tx. |
+| **Chains** | Operator config | The exit-queue adapter is enabled in config on **mainnet (1)** and **Gnosis (100)** today (mainnet vaults settle in ETH, Gnosis vaults in GNO). |
+| **Adapter address** | `script/config/deployments/<chainId>.json` → `balanceAdapters.StakeWiseV3ExitQueueAssisted` | Read at startup; refresh on redeploy. |
+| **Assistant address** | `script/config/deployments/<chainId>.json` → `StakeWiseV3ExitQueueAssistant` | The delegatecall action the Safe uses to enter/claim and feed the adapter in one tx. |
 | **Owner key** | Operator secret store | The OIV Safe (`chainConfig.admin`), which is the exit-position `receiver`. Feed via the Safe Transaction Service / a granted Zodiac role — a `submit` sent from any other key tracks that key's own (empty) set, not the Safe's. |
 
 The `VaultsRegistry` address and all valuation/verification rules are pinned in the adapter; the reconciliation process does not need them beyond event scanning.

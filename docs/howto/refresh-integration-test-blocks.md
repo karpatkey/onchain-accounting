@@ -23,8 +23,8 @@ The single source of truth is [`test/integration/accounts.json`](../../test/inte
 ├──────────────────────────────────────────────────────────────────────┤
 │ 1.5. Merkl proof capture per (chain × account) — Merkl API → fixture │
 │    test/integration/merkl-proofs.json. Captures Distributor          │
-│    merkleRoot at the new fork block for diagnostics. Failed proof    │
-│    submissions in step 2 are tolerated (NAV treats them as 0).       │
+│    merkleRoot at the new fork block for diagnostics. Nothing         │
+│    consumes the fixture today — see the note below.                  │
 ├──────────────────────────────────────────────────────────────────────┤
 │ 2. forge build once (warm cache) → forge test per chain (PARALLEL)   │
 │    → deploys NAV stack at the new fork, reads NAV per enabled        │
@@ -39,7 +39,7 @@ The single source of truth is [`test/integration/accounts.json`](../../test/inte
 └──────────────────────────────────────────────────────────────────────┘
 ```
 
-> **Why a separate Merkl-proof step.** Merkl's API only serves proofs against the *currently published* root. Forge tests pinned at a historical block can only verify a proof if that block's `Distributor.getMerkleRoot()` matches the API's current root — true right after a bump (when `forkBlock = cast block-number`), false a few hours later (Merkl rotates roots ~every 8h). Capturing proofs at bump time is the only window where this alignment holds reliably. After step 1.5, `merkl-proofs.json` is the source of truth that the integration test consumes deterministically — **the Merkl API is not queried during test runs, and you do not need to re-fetch proofs when re-running tests against the same pinned fork block.** The proofs remain valid for a given fork block forever, because `Distributor.getMerkleRoot()` is frozen at that block.
+> **Why a separate Merkl-proof step.** Merkl's API only serves proofs against the *currently published* root. Forge tests pinned at a historical block can only verify a proof if that block's `Distributor.getMerkleRoot()` matches the API's current root — true right after a bump (when `forkBlock = cast block-number`), false a few hours later (Merkl rotates roots ~every 8h). Capturing proofs at bump time is the only window where this alignment holds reliably. **The Merkl API is not queried during test runs, and you do not need to re-fetch proofs when re-running tests against the same pinned fork block.** The proofs remain valid for a given fork block forever, because `Distributor.getMerkleRoot()` is frozen at that block.
 >
 > **⚠️ Merkl is NOT currently seeded into the integration harness.** `_seedMerklProofs` was removed together with the
 > old Merkl adapter in #141 and has not been restored: `test/integration/IntegrationFromConfigBase.fork.sol` contains
@@ -48,7 +48,9 @@ The single source of truth is [`test/integration/accounts.json`](../../test/inte
 > expected NAVs) contain no Merkl positions, and the JSON-driven integration tests assert nothing about Merkl while
 > reporting green. Do not read a green integration run as coverage of this adapter; its regression net is the
 > dedicated unit + fork suites under `test/balances/AttestedBalanceAdapters/`, including a real captured mainnet proof.
-> Re-wiring the harness is tracked as a follow-up, coupled to enabling the adapter per chain.
+> Re-wiring the harness is tracked as a follow-up, coupled to enabling the adapter per chain. (The script's own inline
+> comment at `script/test/refresh-integration-snapshot.sh:190-192` still claims the test consumes the fixture; that
+> comment is stale.)
 >
 > **Root-mismatch detection (applies once seeding is re-wired).** The fixture stores `expectedRoot` — the root captured
 > from the Distributor at the fork block. The seeding step is meant to compare this against the live root at test time;
@@ -116,7 +118,7 @@ Exit codes:
 | Code | Meaning |
 |---|---|
 | `0` | All chains refreshed, no tolerance violations. |
-| `1` | At least one chain failed in step 2 (RPC down, OOM, `forge` revert, hung). The script still proceeds to step 3 (Debank) and step 4 (report) so partial data is preserved; surviving chains' snapshots are written to `accounts.json`. |
+| `1` | At least one chain failed in step 2 — four ways: `forge` exited non-zero (RPC down, OOM, revert); `forge` exited 0 but emitted zero SNAPSHOT lines; a snapshot reported `sequencerDown`; a snapshot reported stale price assets. A failed chain is all-or-nothing: none of its snapshots are applied, its `forkBlock` is rolled back to the pre-run value, and it is excluded from steps 3 and 4 (so its stale NAV is never compared against a fresh Debank reference). The script still proceeds to step 3 (Debank) and step 4 (report) for the chains that succeeded, whose snapshots are written to `accounts.json`. |
 | `2` | Every chain succeeded but at least one (chain × account) drifted past `tolerance`. Inspect the report. |
 
 After a clean run, verify the integration tests still pass against the new snapshots:
@@ -140,9 +142,7 @@ Required secrets / repo vars:
 
 | Name | Where | Notes |
 |---|---|---|
-| `KNODE_URL` (var) | repo variables | Used by this workflow to build the per-chain `*_URL` env (`foundry.yml` itself now uses Alchemy). |
-| `KNODE_API_KEY` | repo secrets | Existing. |
-| `ALCHEMY_API_KEY` | repo secrets | Fallback when a chain-specific `*_URL` is unset. |
+| `ALCHEMY_API_KEY` | repo secrets | Sole RPC source. The workflow deliberately sets no per-chain `*_URL` overrides — `getAlchemyUrl` prefers any `*_URL` that is present, so setting them would only shadow the Alchemy URL the helper already builds. |
 | `DEBANK_API_KEY` | repo secrets | New. Used only when the workflow is triggered with `include_debank: true` (default for cron runs). |
 
 ---
@@ -278,7 +278,7 @@ Severity hint prefix on drift cells: `OK` (≤1%), `WARN` (1–5%), `FAIL` (>5%)
 - Both small but `Δ USD %` non-trivial → rounding or precision loss in the NAV computation (rare).
 - Both large → investigate adapter first (wrong amount usually explains the rest).
 
-Legs with no Debank counterpart (adapter-only positions Debank doesn't expose) appear with `—` in the DB columns. Debank items with no NAV match appear in Section 4.2 instead.
+Legs with no Debank counterpart (adapter-only positions Debank doesn't expose) are excluded from the per-adapter tables and collected in a "NAV-only positions (no DeBank counterpart matched)" subsection at the end of Section 3, with the DB and Δ columns dropped. Debank items with no NAV match appear in Section 4.2 instead.
 
 ### Section 4 — Coverage gap detection
 
@@ -290,10 +290,11 @@ Lists Debank protocol ids that carry non-zero `net_usd_value` for any account on
 
 **4.2 — Debank items in supported protocols with no NAV match**
 
-A protocol is allowlisted but one of its items produced no `LegMatch`. Diagnostic hints per row:
-- *Unregistered token*: the token address isn't an asset in `script/config/nav-config/assets-and-price-feeds/<chainId>.json`.
-- *Missing price feed*: the asset is registered but has no `priceFeeds[]` entry in `script/config/nav-config/assets-and-price-feeds/<chainId>.json` (custom-feed deploy config lives in `script/config/contracts-deployment-config/custom-price-feeds/<chainId>.json`).
-- *Adapter not wired*: `balanceAdapters` in the chain config doesn't include an entry for this market/vault.
+A protocol is allowlisted but one of its items produced no `LegMatch`. Only items worth ≥ $1 are listed, and an item whose every non-zero token is unpriced goes to the Section 5 untracked-by-design footer instead. One of four hints is attached per row:
+- *No `<debank id>` protocol adapter, but `<symbols>` is/are NAV-priced* — no adapter and no price-feed match for that Debank id, yet every non-zero underlying token is a registered (or adapter-aggregated) asset, so the value is already in the NAV total when held in-wallet. A true gap only if the tokens are locked inside the protocol's own contract (withdrawal queue / savings vault).
+- *No NAV adapter/feed registered for `<debank id>` on chain `<chainId>`* — same "no adapter, no feed" branch, but the underlying tokens aren't all NAV-priced either.
+- *Token(s) not in NAV registry: `<symbols>`* — an adapter or feed exists, but one or more of the item's tokens isn't a registered asset in `script/config/nav-config/assets-and-price-feeds/<chainId>.json` (custom-feed deploy config lives in `script/config/contracts-deployment-config/custom-price-feeds/<chainId>.json`).
+- *Adapter registered but no matching position* — zero balance, or a position-identity mismatch between NAV and Debank.
 
 **To action a 4.1 row:**
 

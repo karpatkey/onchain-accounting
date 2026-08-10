@@ -20,7 +20,7 @@ Onchain accounting infrastructure for portfolio NAV: **balances** (per-protocol 
 | `script/deploy/` | Numbered deploy scripts `01_*` → `07_*` (and any later additions). Reads `script/config/chains/<chainId>.json` (chain meta + roles) plus the `contracts-deployment-config/` and `nav-config/` subtrees. |
 | `script/config/chains/<chainId>.json` | Chain metadata + role addresses ONLY (chainId, name, rpc, explorer, sequencer feed, native token, `addresses.{admin,manager,securityCouncil}`). Adapter/feed deploy config lives under `script/config/contracts-deployment-config/{custom-price-feeds,balance-adapters,meta-balance-adapters,bridge-adapters,bridge-escrow}/<chainId>.json` (`bridge-escrow` holds the BridgeEscrow post-deploy config — `accounts[]` to authorize + `assets.<symbol>` to register, read by `06_Configure`); assets+NAV registration under `script/config/nav-config/{assets-and-price-feeds,balance-adapters,meta-balance-adapters}/<chainId>.json`; deployed addresses (the ONLY place they live) under `script/config/deployments/<chainId>.json`. |
 | `test/` | Mirrors `src/`. Each protocol has a unit test alongside a fork test under `test/.../fork/`. |
-| `docs/` | This onboarding folder — howto guides, decision records, price-adapter reference. |
+| `docs/` | This onboarding folder — howto guides, decision records, operations runbooks. |
 
 ## Read this first by intent
 

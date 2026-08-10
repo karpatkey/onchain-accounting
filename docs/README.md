@@ -27,6 +27,8 @@ The companion is the top-level [`CLAUDE.md`](../CLAUDE.md) "Read this first by i
 | [`howto/position-identity-schema.md`](howto/position-identity-schema.md) | **Position identity reference** — `protocolId` slugs, `positionId` ABI-decode schemas per protocol, `PositionKind` enum, stable reconciliation key, TypeScript decode examples, `NAVCalculator` verbose reads. Read when building indexers, frontends, or reconciliation jobs. |
 | [`howto/refresh-integration-test-blocks.md`](howto/refresh-integration-test-blocks.md) | Bumping integration-test fork blocks, refreshing expected NAVs, cross-checking against DeBank. |
 | [`howto/verify-oracle-heartbeat.md`](howto/verify-oracle-heartbeat.md) | Looking up Chainlink heartbeats via the reference-data-directory API; per-feed link table. |
+| [`howto/read-nav-in-slices.md`](howto/read-nav-in-slices.md) | Reading a NAV too large for one `eth_call` — `NAVCalculator.getAccountNavForAdapters`, how to slice the adapter set and recombine the results. |
+| [`howto/nav-backtest.md`](howto/nav-backtest.md) | Running / refreshing the NAV historical backtest window — driver `script/test/nav-backtest.ts`, Solidity `test/integration/NavBacktest.fork.t.sol`, window config `test/integration/backtest-blocks.json`. |
 
 ---
 
@@ -34,7 +36,7 @@ The companion is the top-level [`CLAUDE.md`](../CLAUDE.md) "Read this first by i
 
 | Doc | What it is |
 |---|---|
-| [`reference/position-identity-matrix.md`](reference/position-identity-matrix.md) | Enumerates every position leg each balance adapter can emit — the actual `protocolId` / `positionId` / `PositionKind` value space, verified against `src/balances/` emission code. Companion to [`howto/position-identity-schema.md`](howto/position-identity-schema.md), which defines the schema. |
+| [`reference/position-identity-matrix.md`](reference/position-identity-matrix.md) | Enumerates every position leg each balance adapter can emit — the actual `protocolSubId` / `positionId` / `PositionKind` value space, verified against `src/balances/` emission code. Companion to [`howto/position-identity-schema.md`](howto/position-identity-schema.md), which defines the schema. |
 
 ---
 
@@ -60,7 +62,7 @@ Numbered ADRs. Read when you want the *why* behind a design choice.
 | [`0004-morpho-projected-vs-stored-balances.md`](decisions/0004-morpho-projected-vs-stored-balances.md) | Morpho projected-share accounting vs stored values. |
 | [`0005-aave-safety-module-hardcoded-immutable.md`](decisions/0005-aave-safety-module-hardcoded-immutable.md) | Aave V3 SM adapter immutability (supersedes 0002). |
 | [`0006-aave-umbrella-balance-adapter.md`](decisions/0006-aave-umbrella-balance-adapter.md) | Aave Umbrella stake-token coverage. |
-| [`0007-merkl-trust-minimized-cache.md`](decisions/0007-merkl-trust-minimized-cache.md) | Merkl rewards adapter — the framework's documented mutable-adapter exception. |
+| [`0007-merkl-trust-minimized-cache.md`](decisions/0007-merkl-trust-minimized-cache.md) | Merkl rewards adapter — the framework's documented mutable-adapter exception. (The adapter has since been removed from `src/`.) |
 | [`0008-uniswap-v3-math-libs-gpl-license.md`](decisions/0008-uniswap-v3-math-libs-gpl-license.md) | License rationale for Uni V3 math library inclusion. |
 | [`0009-multi-feed-price-redundancy.md`](decisions/0009-multi-feed-price-redundancy.md) | Multi-feed price redundancy / freshest-feed selection. |
 | [`0010-meta-balance-adapters.md`](decisions/0010-meta-balance-adapters.md) | Meta balance-adapters: one adapter per protocol, instances governed on NAVCalculator. |
@@ -72,6 +74,8 @@ Numbered ADRs. Read when you want the *why* behind a design choice.
 | [`0017-lp-valuation-instantaneous-amounts.md`](decisions/0017-lp-valuation-instantaneous-amounts.md) | LP-position valuation: report instantaneous underlying amounts; pool-liquidity manipulation out of scope under an async NAV consumer. |
 | [`0018-assistant-fed-assisted-balance-adapters.md`](decisions/0018-assistant-fed-assisted-balance-adapters.md) | Permissionless assistant-fed assisted family — `msg.sender`-keyed cache mutators, delegatecall assistant feeder (supersedes the AccessControl model in 0015). |
 | [`0019-nav-sourced-base-price.md`](decisions/0019-nav-sourced-base-price.md) | Custom price feeds source their base/USD from the NAV (one price source per base asset). |
+| [`0020-custom-feed-governing-leg-freshness.md`](decisions/0020-custom-feed-governing-leg-freshness.md) | Custom-feed `getPriceData` reports the *governing leg*'s freshness. |
+| [`0023-asset-classification-two-axes.md`](decisions/0023-asset-classification-two-axes.md) | Asset classification on two orthogonal axes (`PegKind` × `AccrualKind`), surfaced by a standalone `AssetKindRegistry`. |
 | [`decisions/README.md`](decisions/README.md) | ADR index + template. |
 
 ---
@@ -100,11 +104,11 @@ Numbered ADRs. Read when you want the *why* behind a design choice.
 
 | Doc | When to read |
 |---|---|
-| [`script/DEPLOYMENT_SUMMARY.md`](../script/DEPLOYMENT_SUMMARY.md) | **Architectural overview + step-by-step** of the deployment system — CREATE2, atomic proxy deploy, EOA-only deploy/config, the per-script roles (`01_…` → `07_…`). Read first if new. |
+| [`script/DEPLOYMENT_SUMMARY.md`](../script/DEPLOYMENT_SUMMARY.md) | **Architectural overview + step-by-step** of the deployment system — CREATE2, atomic proxy deploy, EOA-only deploy/config, the per-script roles (`01_…` → `08_…`). Read first if new. |
 | [`script/deploy/DEPLOYED_ADDRESSES.md`](../script/deploy/DEPLOYED_ADDRESSES.md) | Current production addresses — canonical CREATE2 layer (same on every chain) + per-chain price feeds and balance adapters, across all 24 deployed chains. Updated after each production deploy. |
 | [`script/config/CONFIG_GUIDE.md`](../script/config/CONFIG_GUIDE.md) | Schema and conventions for `chains/<chainId>.json` plus the `contracts-deployment-config/` and `nav-config/` per-chain files. |
 | [`script/config/README.md`](../script/config/README.md) | Per-folder index for `script/config/`. |
-| [`script/deploy/README.md`](../script/deploy/README.md) | Per-script reference for the `01_…` → `07_…` deploy scripts. |
+| [`script/deploy/README.md`](../script/deploy/README.md) | Per-script reference for the `01_…` → `08_…` deploy scripts. |
 | [`script/test/README.md`](../script/test/README.md) | Reference for the deployment-script tests in `script/test/` (this folder also holds the snapshot-refresh and comparison-report scripts). |
 
 ---
@@ -144,7 +148,7 @@ When you spot a position in `comparison-report.md` that NAV doesn't cover (a `�
 
 | Bucket | When to use | Where it lives |
 |---|---|---|
-| **Untracked by design** | The gap is intentional — token has no Chainlink mainnet feed, protocol is deprecated/legacy, etc. "Will not fix unless rule changes." | `test/integration/accounts.json.chains.<chainId>.$untracked_by_design` (per-chain prose field; today only chain 1 is populated). |
+| **Untracked by design** | The gap is intentional — token has no Chainlink mainnet feed, protocol is deprecated/legacy, etc. "Will not fix unless rule changes." | `test/integration/accounts.json.chains.<chainId>.$untracked_by_design` (per-chain prose field; today chains 1 and 8453 are populated). |
 | **Pending production deploy** | Adapter / price-feed code is in the repo and the harness already exercises it; just hasn't been deployed to a given chain yet. "Wire's done, ship pending." | [`script/deploy/README.md`](../script/deploy/README.md) — the deploy runbook (forge invocations + role flow). |
 | **Need new adapter / feed code** | The gap requires a new contract or new ADR. "Have to build something." | [`roadmap/balance-adapter-coverage.md`](roadmap/balance-adapter-coverage.md) for missing balance adapters; [`howto/add-price-feed.md`](howto/add-price-feed.md) is the recipe to fix one. |
 | **Display polish / matcher heuristics** | The math is right but the report's per-row pairing or layout could be clearer. "Visual / UX work on the report itself." | [`roadmap/comparison-report-improvements.md`](roadmap/comparison-report-improvements.md). |

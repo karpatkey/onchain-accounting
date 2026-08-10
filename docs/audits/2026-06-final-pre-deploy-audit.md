@@ -45,6 +45,14 @@ follow-up / team decision — deliberately not rushed into immutable contracts h
 Systemic (cross-cutting): S1 stale-feed-zeros-NAV (High-rooted), S2 stale-quote-USD-fallback (Medium),
 S3 inconsistent short-returndata guarding across libs (Medium), S4 fail-open masks misconfiguration (Low).
 
+> **Added later (post-audit rename):** the contract audited here as `UniswapV3PoolsAssistedBalanceAdapter`
+> (findings [2] and [15], and the [15] bullet below) no longer exists under that name — the interim assisted
+> Uniswap V3 / PancakeSwap V3 adapters were deleted and replaced by meta-adapters that enumerate the NPM's
+> NFTs on-chain, today
+> [`src/balances/MetaBalanceAdapters/uniswap/UniswapV3PoolsMetaBalanceAdapter.sol`](../../src/balances/MetaBalanceAdapters/uniswap/UniswapV3PoolsMetaBalanceAdapter.sol),
+> whose enumeration cap is `MAX_POSITIONS = 1000` rather than the 256 recorded in [15]. The findings are left
+> exactly as audited.
+
 ---
 
 ## Fixed in this PR

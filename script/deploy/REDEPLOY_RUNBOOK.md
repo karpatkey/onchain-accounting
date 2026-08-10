@@ -271,7 +271,7 @@ the ordering rule in its second row is still the rule, and because that rule was
 
 | was listed as open | what actually happened |
 | --- | --- |
-| the O(1) registry-getter PR (`_getAssetInfo`, "not yet opened") | **opened and merged, as #195** (`feat/registered-asset-getter`). `_getAssetInfo` is on `main`: `MetaBalanceAdapter.sol:594`, `CapBalanceAdapter.sol:299`, `ERC20DefaultBalanceAdapter.sol:258` |
+| the O(1) registry-getter PR (`_getAssetInfo`, "not yet opened") | **opened and merged, as #195** — merged from branch `feat/registered-asset-getter`, which is how it was identified. `_getAssetInfo` is on `main`: `MetaBalanceAdapter.sol:594`, `CapBalanceAdapter.sol:299`, `ERC20DefaultBalanceAdapter.sol:258`. **Cross-reference by the PR number**; the branch is provenance and may be deleted |
 | **#185, the regen itself (0.3)** | **merged** — then re-run as the "FINAL" regen in **#274**, after which **#278 moved the `PriceFeedLib` pin again**. "Computed last, against the final tree" was **not** held. See 0.3 |
 
 The "measured, not predicted" instruction in the first row still applies to every future pin question,
@@ -418,7 +418,8 @@ before the bump is stale on arrival.
 >
 > ```
 > version = 1                     # for both libraries
-> name    = "PriceFeedLib" | "NavRegistryLib"        # NOTE the mixed case of NavRegistryLib
+> name    = "PriceFeedLib"        # then repeat with name = "NavRegistryLib"
+>                                 # NOTE the mixed case: NavRegistryLib, not NAVRegistryLib
 > salt    = keccak256(utf8(name) ++ uint256_be32(version))          # abi.encodePacked(string, uint256)
 > addr    = keccak256(0xff ++ 0x4e59b44847b379578588920cA78FbF26c0B4956C ++ salt ++ keccak256(initcode))[12:32]
 > ```
@@ -819,11 +820,13 @@ PERSIST_DEPLOYMENTS=1 forge script script/deploy/08_DeployAssetKindRegistry.s.so
 ```
 
 **This step exists now — PR #241 is merged.** Both `script/deploy/08_DeployAssetKindRegistry.s.sol` and
-`src/nav/AssetKindRegistry.sol` are present at `a3974686`. Confirm it against the tree you are actually
-deploying rather than against a moving ref:
+`src/nav/AssetKindRegistry.sol` are present at `a3974686`. Confirm it against **the tree you are actually
+deploying** — an explicit tree-ish, never a moving ref like `origin/main`, whose meaning changes every time
+`main` does. Set `TREE` to the commit you are deploying; `a3974686` is the example, not a constant:
 
 ```bash
-git ls-tree -r --name-only a3974686 -- script/deploy/08_DeployAssetKindRegistry.s.sol src/nav/AssetKindRegistry.sol
+TREE=a3974686   # <- the tree you are deploying
+git ls-tree -r --name-only "$TREE" -- script/deploy/08_DeployAssetKindRegistry.s.sol src/nav/AssetKindRegistry.sol
 ```
 
 **It is also gated now, and the earlier warning here was wrong on both counts.** This note used to say

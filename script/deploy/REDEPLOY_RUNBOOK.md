@@ -181,11 +181,12 @@ described, not an anomaly to investigate — and it remains the correct reading 
 > empirically", present-perfect and unqualified. A reader would reasonably conclude the deploy path is
 > proven. **It is not.**
 >
-> **Up to 2026-08-08, no fork rehearsal had ever run against `main`.** The two most recent runs were
-> against **PR branch heads** — `a4909342` and `0aebea7a` — and `git merge-base --is-ancestor` places
-> **neither** in `main`'s history. The 2026-07-30 run above predates every merge since. **That changed on
-> 2026-08-08 — see the closure note below.** Read this paragraph as the state that motivated the closure,
-> not as the current state; the 2026-07-30 run on its own is still not evidence about `main`.
+> **Before the 2026-08-08 run recorded in the closure note below, no fork rehearsal had ever run against
+> `main`.** The two most recent were against **PR branch heads** — `a4909342` and `0aebea7a` — and
+> `git merge-base --is-ancestor` places **neither** in `main`'s history. The 2026-07-30 run above predates
+> every merge since. **Read this paragraph as the state that motivated that closure, never as the current
+> state.** What remains true today is narrower and is the reason the paragraph is kept: the 2026-07-30 run
+> on its own is still not evidence about `main`.
 >
 > **The harness that produced those results no longer exists.** #279 rewrote it. As `--numstat` pairs,
 > per the house rule above: `rehearse_fork.sh` **+158/−25**, `chainlib.py` **+157/−12**,
@@ -409,6 +410,24 @@ before the bump is stale on arrival.
 > ✅ **CLOSED 2026-08-08 — 0.3 is satisfied for `a3974686`. This is the measurement of record: a local
 > clean build, not a CI reading, which is exactly what this section demands.**
 >
+> ⚠️ **READ THIS BEFORE THE BLOCK BELOW, BECAUSE THE BLOCK IS NOT SAFE TO PASTE.** The measurement is
+> quoted verbatim, and the verbatim text contains two **non-ASCII** characters: `‖` (U+2016 DOUBLE VERTICAL
+> LINE, standing for concatenation) and `…` (U+2026 HORIZONTAL ELLIPSIS, abbreviating the deployer address).
+> A shell or script will mangle or reject both. **If you are recomputing the pins, copy this instead** — same
+> derivation, ASCII-only, and complete rather than elided:
+>
+> ```
+> version = 1                     # for both libraries
+> name    = "PriceFeedLib" | "NavRegistryLib"        # NOTE the mixed case of NavRegistryLib
+> salt    = keccak256(utf8(name) ++ uint256_be32(version))          # abi.encodePacked(string, uint256)
+> addr    = keccak256(0xff ++ 0x4e59b44847b379578588920cA78FbF26c0B4956C ++ salt ++ keccak256(initcode))[12:32]
+> ```
+>
+> `0x4e59b44847b379578588920cA78FbF26c0B4956C` is `CANONICAL_CREATE2_DEPLOYER`
+> (`01_2_DeployNAVImplementation.s.sol:22`); the salt encoding is `ConfigReader.computeSalt` (`:833-835`).
+>
+> **The verbatim record, for citation — not for pasting:**
+>
 > ```
 > Local clean-build measurement of record, a3974686 (not a CI reading):
 > PriceFeedLib    computed 0x784bDE7A519B0FA0Ad0c5B2820140501A02B0A62 == recorded in foundry.toml:82 and LibraryPins.sol:40
@@ -416,15 +435,6 @@ before the bump is stale on arrival.
 > Derived independently from freshly built artifacts:
 >   salt = keccak256(name ‖ uint256(1));  addr = keccak256(0xff ‖ 0x4e59b448… ‖ salt ‖ keccak256(initcode))[12:]
 > Sizes byte-identical to 253f6bd6: 7,923 / 24,475 / 24,475 / 24,567 (9 free — the binding CI figure) / 22,920
-> ```
->
-> The block above is reproduced **verbatim** from the measurement, `‖` included. **Do not copy that
-> character into tooling** — it is U+2016 DOUBLE VERTICAL LINE, not ASCII, and most shells and scripts will
-> mangle or reject it. The derivation in ASCII, for anything you actually run:
->
-> ```
-> salt = keccak256(concat(name, uint256(1)))
-> addr = keccak256(concat(0xff, 0x4e59b448..., salt, keccak256(initcode)))[12:]
 > ```
 >
 > **So the same-commit pin change in #278 turned out to be correct** — the pin was regenerated in that

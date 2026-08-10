@@ -509,8 +509,8 @@ git submodule status | grep -v '^ ' && echo "DRIFT — fix before building" || e
 
 The Alchemy app behind `ALCHEMY_API_KEY` has most networks **disabled**; only
 `eth / opt / gnosis / base / arb` answer. `ConfigReader` resolves 22 of the 24 chains through
-`$ALCHEMY` alone (`ConfigReader.sol:759`), so a bare `forge script` **cannot reach 19 of them**,
-including **polygon (137), a configured chain**.
+`$ALCHEMY` alone (`ConfigReader._resolveRpcUrl`, `ConfigReader.sol:837`), so a bare `forge script`
+**cannot reach 19 of them**, including **polygon (137), a configured chain**.
 
 Either enable the networks on the Alchemy app, or pass `--rpc-url` explicitly per chain from the
 per-chain `*_URL` vars. Confirm the full inventory first:
@@ -519,9 +519,28 @@ per-chain `*_URL` vars. Confirm the full inventory first:
 python3 script/deploy/preflight/deployer_balances.py      # prints the endpoint each chain resolves to
 ```
 
+**Re-confirmed 2026-08-10 against `main` @ `08cff61d`, by measurement, and every number above held.**
+Resolving each chain the way `ConfigReader` does (`chainlib.resolve_rpc(config_only=True)`, which
+exists for exactly this question) and then issuing a real `eth_blockNumber`:
+
+- **Alchemy answers on exactly 5 chains** — `1, 10, 100, 8453, 42161`, i.e. eth / opt / gnosis / base / arb.
+- **A bare `forge script` reaches 5 and cannot reach 19**, polygon (137) among them.
+- Exactly **22** chains carry `rpc: "$ALCHEMY"`; the other two are `$QUICKNODE_0G` (16661) and
+  `$QUICKNODE_HEMI` (43111), neither of which is in the environment.
+
+> ⚠️ **`deployer_balances.py` reporting `0 unreachable` does NOT contradict any of this, and must not be
+> read as clearing 0.5.** That script is deliberately more capable than a bare `forge script`:
+> `chainlib.probe_rpc` tries the configured endpoint, then the per-chain `*_URL` var, then a public
+> fallback. On 2026-08-10 all 24 chains answered — but only 5 answered *via Alchemy*; 14 answered only
+> because a `*_URL` var was set (polygon among them, via `POLYGON_URL`), and 5 only via a public
+> fallback. So a green `0 unreachable` is evidence the **preflight** can read every chain, never
+> evidence that `forge script` without `--rpc-url` can.
+
 Chains with no `*_URL` and no Alchemy access — `143 monad`, `196 xlayer`, `204 opbnb`, `16661 0g`,
 `43111 hemi` — currently fall back to public RPCs. Public endpoints are fine for reads but should be
-replaced with real ones before broadcasting.
+replaced with real ones before broadcasting. (Re-verified individually 2026-08-10: all five have no
+`*_URL` set and all five resolved to the public fallback. 143/196/204 resolve to Alchemy and are
+refused; 16661/43111 do not resolve at all, their `$QUICKNODE_*` vars being absent.)
 
 ### 0.6 Fund the deployer
 
@@ -532,6 +551,26 @@ python3 script/deploy/preflight/deployer_balances.py --json topup.json
 Re-measured **2026-07-29, after the linea top-up landed**: every priced chain is funded, linea
 included (0.03066 ETH against an estimated 0.02800). Re-check on the day — linea had already been
 topped up once on 2026-07-27 without clearing, so measure rather than assume.
+
+**Re-measured 2026-08-10 against `main` @ `08cff61d`** (`python3 script/deploy/preflight/deployer_balances.py`):
+**24 chains scoped, 0 unreachable, 0 short, 2 unpriceable.** The top-up list came back
+`none — every priced chain is funded for the estimated gas`, so **funding is not the blocker**. Note the
+2026-07-29 linea comparison above is now stale on its second number only: linea still holds 0.03066 ETH,
+but the estimate for it is now **0.00293**, not 0.02800 — the balance figure aged well, the estimate did not.
+
+**The script still exits non-zero and prints `not clear to deploy`, and the reason is the two
+unpriceable chains, not a shortfall.** Measured the same day:
+
+| chain | holds | `eth_gasPrice` quote | state |
+|---|---|---|---|
+| **100 gnosis** — a **CONFIGURED** chain (it carries `nav-config/` entries, so it is in the deploy's asset/adapter scope, not a shell) | 7.90011 xDAI | ~2.3k wei (0.0000023 gwei) | `UNPRICEABLE` |
+| 534352 scroll | 0.00648 ETH | 120108 wei (0.0001201 gwei) | `UNPRICEABLE` |
+
+Treat the gnosis quote as a **live, drifting value, not a constant**: two runs minutes apart on
+2026-08-10 read **2266 wei** and **2283 wei**. Quote it as an order of magnitude, and note it now sits
+*below* the "~5–10k wei" band recorded in the paragraph that follows. Plasma priced normally in this run
+(need 0.00022), which is what "intermittently" means — its absence from the unpriceable list on any one
+day is not a fix.
 
 **Some chains report `UNPRICEABLE`, which is a third state and not a pass.** Gnosis, scroll and
 intermittently plasma quote an `eth_gasPrice` far below any usable price (gnosis ~5–10k wei, scroll

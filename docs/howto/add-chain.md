@@ -119,11 +119,13 @@ For any bridge adapters this chain should support (CCIP, CCTP, Across, Stargate,
 {
   "CCIP": {
     "enabled": true,
-    "initialize": { "admin": "0x...", "bridgeEscrow": "0x...", "router": "0x...", "feeToken": "0x...", "version": "1.0.0" }
+    "initialize": { "admin": "0x...", "bridgeEscrow": "0x...", "router": "0x...", "feeToken": "0x...", "version": "1.0.0" },
+    "remoteChains": [10, 8453]
   },
   "CCTP": {
     "enabled": true,
-    "initialize": { "admin": "0x...", "bridgeEscrow": "0x...", "version": "1.0.0" }
+    "initialize": { "admin": "0x...", "bridgeEscrow": "0x...", "tokenMessenger": "0x...", "messageTransmitter": "0x...", "version": "1.0.0" },
+    "remoteChains": [10, 8453]
   }
 }
 ```
@@ -148,6 +150,8 @@ Create `script/config/contracts-deployment-config/bridge-escrow/<newChainId>.jso
 
 `PERSIST_DEPLOYMENTS=1` gates the impl/proxy/library address writes in `01`/`02` (via `saveDeployedAddress`, including the `ERC20Default` write in `02`): without it those are only logged, not written to `script/config/deployments/<chainId>.json`. The per-feed/per-adapter writes in `03`/`04`/`05` (via `writeAdapterAddress`) are **not** gated — they write on every run. Set `PERSIST_DEPLOYMENTS=1` on each command below once you're ready to record the real impl/proxy addresses.
 
+The order below is **`01 → 02 → 08 → 03 → RegisterAssets → 04 → 05 → 06 → 07`**. It is not the numeric order: `08` and `RegisterAssets` both run early for the reasons noted inline. [`script/deploy/README.md`](../../script/deploy/README.md) is the authority for this sequence — if the two ever disagree, that file wins.
+
 ```bash
 export CHAIN_ID=<newChainId>
 export DEPLOYER_NAME=...
@@ -159,11 +163,21 @@ forge script script/deploy/01_DeployImplementations.s.sol --chain-id $CHAIN_ID -
 # 02 — proxies + initializers (atomic; placeholder + proxy + upgrade in one tx)
 forge script script/deploy/02_DeployProxies.s.sol --chain-id $CHAIN_ID --account $DEPLOYER_NAME --broadcast
 
+# 08 — asset-kind registry. Numbered last, runs early: it is PRIVILEGED and MUST run BEFORE 07, because it calls
+#      NAV.grantRole(MANAGER, registry), which needs the DEFAULT_ADMIN that 07 hands away. It must also precede
+#      RegisterAssets, which routes an asset's primary registration through it. Fail-closed — aborts unless every
+#      configured asset carries a valid accrualKind. Do not skip it, or no AssetKindRegistry exists on this chain.
+PERSIST_DEPLOYMENTS=1 \
+forge script script/deploy/08_DeployAssetKindRegistry.s.sol --chain-id $CHAIN_ID --account $DEPLOYER_NAME --broadcast
+
 # 03 — deploy custom price feed adapters from contracts-deployment-config/custom-price-feeds/<chainId>.json
 forge script script/deploy/03_DeployPriceFeeds.s.sol --chain-id $CHAIN_ID --account $DEPLOYER_NAME --broadcast --verify
 
-# 03b — register assets + price feeds on NAVCalculator from nav-config/assets-and-price-feeds/<chainId>.json
-#       (separate script; deployer-as-MANAGER broadcasts registerAsset/addPriceFeed directly)
+# RegisterAssets — register assets + price feeds on NAVCalculator from nav-config/assets-and-price-feeds/<chainId>.json
+#       (separate script; deployer-as-MANAGER broadcasts the batch). MUST run AFTER 08 and after 03: an unregistered
+#       asset's PRIMARY registration is routed through AssetKindRegistry.registerAsset (register + classify + label in
+#       one tx), so with no registry recorded the script reverts AssetKindRegistryNotDeployed; trailing feeds still go
+#       to NAVCalculator.addPriceFeed.
 forge script script/manage/RegisterAssets.s.sol --chain-id $CHAIN_ID --account $DEPLOYER_NAME --broadcast
 
 # 04 — deploy enabled balance adapters from contracts-deployment-config/balance-adapters/<chainId>.json + meta-balance-adapters/<chainId>.json
@@ -177,12 +191,6 @@ forge script script/deploy/05_DeployBridgeAdapters.s.sol --chain-id $CHAIN_ID --
 #      meta from nav-config/meta-balance-adapters/<id>.json (addMetaBalanceAdapter + addMetaInstances). The contracts
 #      still enforce the split on-chain (addBalanceAdapters reverts for a meta-adapter, and vice-versa).
 forge script script/deploy/06_Configure.s.sol --chain-id $CHAIN_ID --account $DEPLOYER_NAME --broadcast
-
-# 08 — asset-kind registry. PRIVILEGED, and it MUST run BEFORE 07: it calls NAV.grantRole(MANAGER, registry), which
-#      needs the DEFAULT_ADMIN that 07 hands to the council. Fail-closed — aborts unless every configured asset
-#      carries a valid accrualKind. Do not skip it, or no AssetKindRegistry exists on this chain.
-PERSIST_DEPLOYMENTS=1 \
-forge script script/deploy/08_DeployAssetKindRegistry.s.sol --chain-id $CHAIN_ID --account $DEPLOYER_NAME --broadcast
 
 # 07 — LAST: the role handoff. Hand DEFAULT_ADMIN + MANAGER to the security council Safe, renounce the deployer's
 #      roles. Everything needing deployer privileges, 08 included, must already have run.
@@ -203,11 +211,12 @@ For chains where some scripts are no-ops (e.g., a chain with no bridge adapters)
 cast call $NAVCalculator "getRegisteredAssets()((address,string,uint8)[])" --rpc-url $RPC
 
 # Pull a price for a known asset (expect non-zero, not stale)
-cast call $NAVCalculator "latestPrice(address)(int256,uint8,bool)" $WETH --rpc-url $RPC
+cast call $NAVCalculator "latestPrice(address)(int256,uint8,bool,bool)" $WETH --rpc-url $RPC
 
 # Pull NAV for the OIV Safe (sanity check; expect a number > 0 if the Safe holds anything)
-# NAV{value, quoteAsset, timestamp, stalePriceAssets, sequencerDown, quoteAssetStale}
-cast call $NAVCalculator "getAccountNav(address,address)((int256,(address,string,uint8),uint64,(address,string,uint8)[],bool,bool))" \
+# NAV{value, quoteAsset, timestamp, stalePriceAssets, sequencerDown, quoteAssetStale,
+#     irregularPriceAssets, quoteAssetIrregular, monitorsUnhealthyPriceAssets}
+cast call $NAVCalculator "getAccountNav(address,address)((int256,(address,string,uint8),uint64,(address,string,uint8)[],bool,bool,(address,string,uint8)[],bool,(address,string,uint8)[]))" \
   $SAFE 0x0000000000000000000000000000000000000000 --rpc-url $RPC
 ```
 

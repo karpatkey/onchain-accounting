@@ -34,7 +34,7 @@ On every `latestPrice(asset)` call, `Prices._selectFeed` iterates all registered
 5. **Freshest-wins** — among survivors, select the one with the largest `effectiveTime`. Ties go to the feed at the lowest array index.
 6. **All-stale fallback** — if no feed survives, return `(0, firstFeed.decimals, true)`.
 7. **L2 sequencer** — top-level `latestPrice()` ORs in `checkL2SequencerUptime()`: stale if the sequencer is down or within the grace period.
-8. **Return** — `(int256 price, uint8 decimals, bool stale)`.
+8. **Return** — `(int256 price, uint8 decimals, bool stale, bool irregular)`. `irregular` is the divergence-vs-monitor-feeds signal (`PriceFeedLib.irregularForSelected`, computed from the primary just selected); it is always false when `stale`.
 
 Special case for Custom `updatedAt == 0`: treated as `block.timestamp - 1` (no trackable oracle — feed survives the staleness gate but yields to any feed with a real timestamp). See ADR 0009 for rationale.
 
@@ -48,7 +48,7 @@ flowchart TD
     C --> D{L2 sequencer<br/>uptime check}
     D -- sequencer down<br/>or in grace period --> SEQ[stale = true]
     SEQ --> RET
-    D -- ok --> RET([return price, decimals, stale])
+    D -- ok --> RET([return price, decimals,<br/>stale, irregular])
 ```
 
 ### 2.2 `_selectFeed` — per-feed iteration and freshest-wins selection
@@ -142,6 +142,7 @@ Every custom feed must implement this interface (and ERC165).
 |---|---|
 | `getLatestPrice()` | Returns `(uint256 price, bool stale)`. Price is in `decimals()` precision. Return `(0, true)` on any failure or uncertainty. |
 | `latestRoundData()` | Returns `(roundId, answer, startedAt, updatedAt, answeredInRound)` — same shape as Chainlink's `AggregatorV3Interface`. **`Prices.sol` calls this** to obtain `updatedAt` for the heartbeat gate and freshness ranking among surviving Custom feeds. See §5.1 for what to return. |
+| `governingFeedFreshness()` | Returns `(uint256 updatedAt, uint256 heartbeat)` for the underlying Chainlink leg that GOVERNS this feed's staleness — the leg with the largest `age/heartbeat` ratio; `(0, 0)` when there is no trackable Chainlink dependency. Read by `NAVCalculator.getPriceData` so the two values are a real, matched pair from one oracle (unlike `latestRoundData().updatedAt`, which is the worst-case timestamp used for *selection* and carries no companion heartbeat). Advisory: it does not on its own determine staleness. |
 | `decimals()` | Returns the number of decimals the price is expressed in. Pinned at construction. |
 | `underlyingAssetSupported()` | Returns the asset address this feed prices. Single asset per feed (1:1 contract-to-asset). **Checked on-chain at registration:** `registerAsset` / `addPriceFeed` / `addMonitorFeed` all read this and revert `CustomFeedAssetMismatch` unless it equals the asset being registered. This is an *admission check, not a runtime invariant* — it is read once, at registration, and never again on any read path. **Back it with an `immutable` pinned in the constructor** (every in-repo feed does): a feed that can change its answer afterwards can break the binding post-registration, and by flipping between registrations one such feed can back two assets. That grants an attacker nothing a hostile feed could not already do by lying in `getLatestPrice()`, but it does mean the 1:1 property holds by feed convention, not by enforcement. |
 | `supportsInterface(bytes4)` | Must return `true` for `type(ICustomPriceFeed).interfaceId` and `IERC165`. |
@@ -258,7 +259,7 @@ Left uncaught, the failure is quiet: `_selectFeedCore` wraps each custom-feed ca
 For each `PositionBalance` returned by an oracle, NAVCalculator:
 
 1. Calls `latestPrice(asset)` on the price registry.
-2. Gets `(price, decimals, stale)`. If stale, the asset is added to `NAV.stalePriceAssets`; the position still contributes to NAV using the last-known price (consumers decide what to do with stale).
+2. Gets `(price, decimals, stale)`. If stale, the asset is added to `NAV.stalePriceAssets` — and since feed selection returns `price = 0` once every feed has failed the staleness gate, the position is summed as a zero-value leg (consumers decide what to do with stale).
 3. Computes `value = amount × price` (sign by `isDebt`).
 4. If `quoteAsset != address(0)`, divides by `latestPrice(quoteAsset)` so NAV is denominated in the quote currency.
 
@@ -322,7 +323,7 @@ dead code, and do not wire them up without the corresponding held position.
 | Feed | Why it is not deployed | Why it is kept |
 |---|---|---|
 | `cbETH_Price` | Mainnet cbETH is not a held asset, so there is no `cbETH` key in `custom-price-feeds/1.json` and no `nav-config` registration. | It reads `cbETH.exchangeRate()` — a **fundamental** rate — while `cbETH_L2_Price` composes a Chainlink cbETH/ETH **market** feed. Independent sources are exactly what a divergence check needs, so this is the natural **monitor** feed if mainnet cbETH is ever held. `Prices` keeps `_monitorFeeds` strictly separate: "NEVER used to price the NAV; read only to detect divergence", with "exactly one primary feed per asset, with redundancy moved to `_monitorFeeds`". Fundamental primary + market monitor is the shape wstETH and weETH already use. |
-| `stETH_Price` | stETH's primary is now the fundamental unit-rate feed, and its market cross-rate monitor is deployed from the **generic** `CrossRateCustomPriceFeed` (the renamed `stETHCrossRate` config block matches that helper's shape), so this named subclass has no remaining deploy site. | It is a zero-override, constructor-only `CrossRateCustomPriceFeed` subclass. Its ONLY remaining dependant is `test/prices/protocols/fork/stETH_CustomPriceFeed.fork.t.sol`; check there before deleting it. (Not the integration harness — `IntegrationFromConfigBase._deployStEthCrossRate` deliberately builds the generic `CrossRateCustomPriceFeed` so the fork test exercises the bytecode production ships.) |
+| `stETH_Price` | stETH's primary is now the fundamental unit-rate feed, and its market cross-rate monitor is deployed from the **generic** `CrossRateCustomPriceFeed` (the renamed `stETHCrossRate` config block matches that helper's shape), so this named subclass has no remaining deploy site. | It is a zero-override, constructor-only `CrossRateCustomPriceFeed` subclass. Its only remaining dependants are `test/prices/protocols/fork/stETH_CustomPriceFeed.fork.t.sol` and `test/prices/CustomFeedBaseCircularity.t.sol` (`test_realFeedTypesAnswerBaseAsset` instantiates it as the concrete stand-in for the abstract `CrossRateCustomPriceFeed`/`TwoFeedChainlinkPriceFeed` root — it is *not* the circular feed there, which is a `NavSourcedFeed` mock); check both before deleting it. (Not the integration harness — `IntegrationFromConfigBase._deployStEthCrossRate` deliberately builds the generic `CrossRateCustomPriceFeed` so the fork test exercises the bytecode production ships.) |
 | `ETHPlus_Price` | Its config entry is `"enabled": false`. ETH+ is priced by the Chainlink "Calculated ETH+/USD" feed registered in `nav-config`; this 8-dec Custom feed cannot co-register with that 18-dec feed (`PriceFeedDecimalsMismatch`). | The disabled entry and its `$comment` are the **record** of why a custom feed did not work for ETH+. Deleting the contract would leave that explanation dangling. |
 
 (By contrast `sDAI_CustomPriceFeed` *was* deleted: it was superseded on Gnosis by `sXDAI_CustomPriceFeed`, mainnet sDAI
@@ -339,7 +340,7 @@ Their rate legs are **not** uniform, and two of the three have been re-sourced s
 | `osETH_CrossRate_Price` | Redstone Classic Push osETH/ETH (`0x66ac817f…`) | market | **Yes** |
 | `ezETH_CrossRate_Price` | RedStone multi-feed **`ezETH_FUNDAMENTAL`** (`0x701e83Bd…`, 8-dec) — migrated 2026-07-22 after RedStone sunset the Classic Push ezETH/ETH market feed | **fundamental** | **No** — see below |
 
-`ezETH`'s monitor is the exception worth knowing: its rate leg is now *fundamental*, so it compares one fundamental rate (RedStone's) against another (Renzo's `RestakeManager`). The **source** is independent; the **methodology** is not. Two fundamental sources agreeing says nothing about market price, so ezETH's 250 bps tolerance cannot fire on the depeg it exists to catch. This is a known open gap, recorded here rather than fixed — closing it requires a market-priced ezETH source to exist.
+`ezETH`'s monitor is the exception worth knowing: its rate leg is now *fundamental*, so it compares one fundamental rate (RedStone's) against another (Renzo's `RestakeManager`). The **source** is independent; the **methodology** is not. Two fundamental sources agreeing says nothing about market price, so ezETH's 250 bps tolerance cannot fire on the depeg it exists to catch. That gap was closed by adding a SECOND monitor rather than by re-sourcing this one: `ezETHCrossRateMarket` — a generic `CrossRateCustomPriceFeed` over the RedStone Classic Push ezETH/ETH **market** feed (`0xF4a3e183…`, heartbeat 46 800 s, deployed via `_deployCrossRateMonitor`) — is registered alongside it, so ezETH carries two monitors and the market-vs-fundamental comparison exists again.
 
 > ### 📌 RESOLVED — why ETHx's rate leg is the proxy and not the aggregator
 >
@@ -353,7 +354,7 @@ Their rate legs are **not** uniform, and two of the three have been re-sourced s
 > | `hasAccess(<any contract>, "")` | **`false`** |
 > | `hasAccess(<EOA / zero addr>, "")` | `true` |
 >
-> So `OracleArgumentChecks.assertChainlinkOracle` probed `latestRoundData()` inside a `try`, was denied, and the constructor reverted **`NotChainlinkOracle()`** — making **`_deployEthxCrossRate()`** (`03_DeployPriceFeeds.s.sol:211` → `:639`) revert during simulation. Note it is that **named** deploy function, *not* the generic `_deployCrossRateMonitor` at `:598`; ETHx does not use the generic helper (its call sites are stETH / rETH / weETH / ezETH / rsETH only). Because `vm.writeJson` side effects are **not** rolled back on revert, the failed run left phantom `customPriceFeeds` addresses in `deployments/1.json` that `04` then collided with — one wrong address cascading into a corrupted deployment record.
+> So `OracleArgumentChecks.assertChainlinkOracle` probed `latestRoundData()` inside a `try`, was denied, and the constructor reverted **`NotChainlinkOracle()`** — making **`_deployEthxCrossRate()`** (`03_DeployPriceFeeds.s.sol:233` → `:664`) revert during simulation. Note it is that **named** deploy function, *not* the generic `_deployCrossRateMonitor` at `:623`; ETHx does not use the generic helper (its call sites are stETH / rETH / weETH / ezETH / rsETH only). Because `vm.writeJson` side effects are **not** rolled back on revert, the failed run left phantom `customPriceFeeds` addresses in `deployments/1.json` that `04` then collided with — one wrong address cascading into a corrupted deployment record.
 >
 > **The discriminator is access control, NOT `aggregator()`.** A reverting `aggregator()` proves nothing — every RedStone feed reverts it too (they are not `EACAggregatorProxy`) and all of them are perfectly contract-readable. Probed across every mainnet rate leg, the raw ETHx aggregator was **the only one with an access controller at all**; `stETH/ETH`, `rETH/ETH`, `lsETH/ETH`, `osETH/ETH`, `OETH/ETH` and both ezETH feeds have no `checkEnabled()` and are unconditionally readable.
 >
@@ -373,9 +374,9 @@ Detailed walkthrough lives at [`docs/howto/add-price-feed.md`](../../docs/howto/
 
 ### 8.1 Contract layout
 
-**If your feed is just `rate × base/USD` (the NAV-sourced base times an 18-decimal on-chain rate), extend `BaseCustomPriceFeed` instead** — pass `(underlying, nav, baseAsset)` to its constructor and implement only `_rate()`. The five interface methods, immutables, validation, and staleness/normalize math come for free (see §5.0; e.g. `rETH_Price`). If the rate comes from a Chainlink-ABI rate feed rather than an on-chain call, extend **`TwoFeedChainlinkPriceFeed`** (pass `(underlying, rateFeed, rateHeartbeat, nav, baseAsset)`; e.g. `weETH_Price`, or `CrossRateCustomPriceFeed` for a generic cross-rate); if it's an ERC-4626 vault share, extend **`ERC4626VaultRatePriceFeed`** (pass `(vault, nav, baseAsset)`; e.g. `sUSDe_Price`). The full checklist below applies to bespoke feeds that don't fit any of those shapes (derived multi-feed rates, no single rate leg, an inverted rate, or a non-standard `latestRoundData`).
+**If your feed is just `rate × base/USD` (the NAV-sourced base times an 18-decimal on-chain rate), extend `BaseCustomPriceFeed` instead** — pass `(underlying, nav, baseAsset)` to its constructor and implement only `_rate()`. The five interface methods, immutables, validation, and staleness/normalize math come for free (see §5.0; e.g. `rETH_Price`). If the rate comes from a Chainlink-ABI rate feed rather than an on-chain call, extend **`TwoFeedChainlinkPriceFeed`** (pass `(underlying, rateFeed, rateHeartbeat, nav, baseAsset)`; e.g. `weETH_L2_Price`, or `CrossRateCustomPriceFeed` for a generic cross-rate); if it's an ERC-4626 vault share, extend **`ERC4626VaultRatePriceFeed`** (pass `(vault, nav, baseAsset)`; e.g. `sUSDe_Price`). The full checklist below applies to bespoke feeds that don't fit any of those shapes (derived multi-feed rates, no single rate leg, an inverted rate, or a non-standard `latestRoundData`).
 
-1. Create `src/prices/protocols/<Asset>_CustomPriceFeed.sol` (suffix `_L2_Price` for L2-specific variants).
+1. Create `src/prices/protocols/<Asset>_CustomPriceFeed.sol` (`_L2_` infix for L2-specific variants: `<Asset>_L2_CustomPriceFeed.sol`).
 2. Implement `ICustomPriceFeed`, `IERC165`, and `INavSourcedPriceFeed` — the last is `BASE_ASSET()` alone, and a bespoke feed with no NAV dependency declares `address public constant override BASE_ASSET = address(0)`. Registration **rejects** a Custom feed that cannot answer it (§5.2); the three shared bases already implement it, so this step only applies to feeds written from scratch.
 3. Pin every input as `immutable` in the constructor: token address, dollar-leg Chainlink feed, rate provider, heartbeats.
 4. Use `OracleArgumentChecks` (`src/utils/OracleArgumentChecks.sol`) for constructor validation: `assertERC20Address`, `assertChainlinkOracle`, `assertNotZeroNumber`, `assertNonZeroAddress`.
@@ -387,15 +388,16 @@ Detailed walkthrough lives at [`docs/howto/add-price-feed.md`](../../docs/howto/
 6. Implement `latestRoundData()` — see §5.1 for what to return. For a single Chainlink dependency: pass through that feed's round data, substituting `answer` with the computed price. For multiple Chainlink feeds: return the tuple with the lowest `updatedAt`, again substituting `answer`.
 7. `decimals()` returns the pinned decimals (typically the Chainlink feed's decimals).
 8. `underlyingAssetSupported()` returns the token address.
+9. Implement `governingFeedFreshness()` — the `(updatedAt, heartbeat)` of the Chainlink leg with the largest `age/heartbeat` ratio, or `(0, 0)` if the feed has no trackable Chainlink dependency.
 
 ### 8.2 Tests
 
-- Unit test under `test/prices/protocols/<Asset>_Price.t.sol` with mocked Chainlink + rate provider:
+- Unit test under `test/prices/protocols/<Asset>_CustomPriceFeed.t.sol` with mocked Chainlink + rate provider:
   - Happy path: known inputs → expected output.
   - Negative Chainlink price → `(0, true)`.
   - Stale heartbeat → `(0, true)` — return zero price when stale (security invariant I-1).
   - Zero or negative rate → `(0, true)`.
-- Fork test under `test/prices/protocols/fork/<Asset>_Price.fork.t.sol` against the real feed at a pinned block — assert the price is within a reasonable range and not stale.
+- Fork test under `test/prices/protocols/fork/<Asset>_CustomPriceFeed.fork.t.sol` against the real feed at a pinned block — assert the price is within a reasonable range and not stale.
 
 ### 8.3 Registration
 
@@ -424,7 +426,7 @@ Per-chain asset registration config lives at `script/config/nav-config/assets-an
 }
 ```
 
-`script/manage/RegisterAssets.s.sol` reads these and calls `NAVCalculator.registerAsset` for the first feed (and `addPriceFeed` for any additional ones).
+`script/manage/RegisterAssets.s.sol` reads these and registers the first feed through `AssetKindRegistry.registerAsset` — which forwards to `NAVCalculator.registerAsset` in the same transaction, so the asset is registered, classified and labelled atomically — then calls `NAVCalculator.addPriceFeed` for any additional ones.
 
 ### 9.2 Adding the same asset on multiple chains
 

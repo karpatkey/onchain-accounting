@@ -66,11 +66,11 @@ chain's reads are pinned to a single block.
 ## Notes on the tooling
 
 **RPC resolution mirrors `ConfigReader`, then goes further.** `chainlib.resolve_rpc` reproduces
-`ConfigReader.sol:759` exactly (`$ALCHEMY` → `ALCHEMY_API_KEY`, `$FOO` → env). `probe_rpc` then adds
-what the deploy does in practice: a URL *resolving* is not a URL *working* — the Alchemy app behind
-`ALCHEMY_API_KEY` has most networks disabled and only says so on a real request. `probe_rpc` tries the
-configured endpoint, then the per-chain `*_URL` var, then a public fallback, and reports which ones
-were rejected and why.
+`_resolveRpcUrl` (`ConfigReader.sol:837`) exactly (`$ALCHEMY` → `ALCHEMY_API_KEY`, `$FOO` → env).
+`probe_rpc` then adds what the deploy does in practice: a URL *resolving* is not a URL *working* — the
+Alchemy app behind `ALCHEMY_API_KEY` has most networks disabled and only says so on a real request.
+`probe_rpc` tries the configured endpoint, then the per-chain `*_URL` var, then a public fallback, and
+reports which ones were rejected and why.
 
 **Batched JSON-RPC.** Providers meter per request, not per call. Mainnet's snapshot is ~200 calls; run
 one at a time against a throttled endpoint it takes over 15 minutes, batched it takes ~70 seconds.
@@ -100,7 +100,7 @@ everything downstream of the reset checked zero chains and exited 0: `preflight_
 reporting success, which is the rollback path failing exactly when it is wanted. Each tool now prints
 the scope it resolved and its source.
 
-**Post-conditions are assertions, not prose.** `verify_step.py <1.1…1.7|all>` runs the runbook's
+**Post-conditions are assertions, not prose.** `verify_step.py <1.1…1.8|all>` runs the runbook's
 stated post-condition for a step against every chain in scope: record shape, addresses that must have
 moved, CREATE2 addresses that must be identical everywhere, `NAV()`/`ADAPTER()` immutable pointers,
 role layout, `getAssetCount()`, and per-adapter meta-instance **set** equality against config. It

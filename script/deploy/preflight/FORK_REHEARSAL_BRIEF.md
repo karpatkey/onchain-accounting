@@ -38,7 +38,7 @@ before the redeploy, as a DeBank-compared final validation.
 | **#185** two-library pin regen | **MERGED** 2026-07-30; `main` is `7efcc8af`. Pins are `PriceFeedLib 0x8b7e4fA9…7dc1` / `NavRegistryLib 0x5f5D054E…fd90` |
 | **#203** Curve `getPool`/`getLpToken` | **MERGED**, in `7efcc8af` |
 | **#220** ETHx rate-leg proxy | fixes the §9 BLOCKER 1; the rehearsal that PASSED included it |
-| this rehearsal | **PASSED** on `7efcc8af` + #220 — see §10. (First attempt failed at 1.4; §9.) |
+| this rehearsal | **PASSED** on `7efcc8af` + #220 — see §10. (First attempt failed at 1.5; §9.) |
 
 If #185 has not landed, `01_2` will revert on its pin assertions and the rehearsal cannot pass. That
 revert is correct behaviour, not a bug — see §5. It has landed, and the assertions passed: §9 records
@@ -387,16 +387,17 @@ Two rules out of that, in order of importance:
 1.1  clear the deployment record                             reset_deployment_records.py --apply
 1.2  01_2_DeployNAVImplementation    libs + impl             PERSIST_DEPLOYMENTS=1
 1.3  02_2_DeployNAVProxy             new proxy + ERC20Default PERSIST_DEPLOYMENTS=1
-1.4  03_DeployPriceFeeds             41 custom feeds          <- BEFORE RegisterAssets
-1.5  RegisterAssets                  assets + feeds          FOUNDRY_PROFILE=slow  <- REQUIRED, see below
-1.6  04_DeployBalanceAdapters        adapters + assistants
-1.7  06_Configure                    register + reconcile
+1.4  08_DeployAssetKindRegistry      asset-kind registry      <- BEFORE RegisterAssets
+1.5  03_DeployPriceFeeds             41 custom feeds          <- BEFORE RegisterAssets
+1.6  RegisterAssets                  assets + feeds          FOUNDRY_PROFILE=slow  <- REQUIRED, see below
+1.7  04_DeployBalanceAdapters        adapters + assistants
+1.8  06_Configure                    register + reconcile
 ```
 
 ### `FOUNDRY_PROFILE=slow` on step 1.6 is a REQUIREMENT, not a throughput preference
 
 **`slow` does not mean "go slower to be safe". It raises `gas_limit` AND `memory_limit` from the default
-1 GiB to 16 GiB** (`foundry.toml:108-117`). `RegisterAssets` needs that because it registers the whole
+1 GiB to 16 GiB** (`foundry.toml:157-166`). `RegisterAssets` needs that because it registers the whole
 asset set inside **one call frame**, and EVM memory-expansion cost is **quadratic** — mainnet's 43 assets
 plan 86 actions and the frame simply outgrows a 1 GiB budget.
 
@@ -411,7 +412,7 @@ Without it, measured on mainnet 2026-07-30: **`EvmError: MemoryOOG` after wiring
 **This was NOT knowledge lost to session notes — and that is the uncomfortable part.** It was documented
 in **three** places before it cost a run:
 
-1. `REDEPLOY_RUNBOOK.md` §1.5's command line — `FOUNDRY_PROFILE=slow forge script … RegisterAssets`;
+1. `REDEPLOY_RUNBOOK.md` §1.6's command line — `FOUNDRY_PROFILE=slow forge script … RegisterAssets`;
 2. the sentence right below it: "`FOUNDRY_PROFILE=slow` (16 GiB) is required on mainnet — 43 assets
    otherwise `MemoryOOG`", plus a row in the runbook's troubleshooting table. Both present since the
    runbook was created (`7199e661`, 2026-07-27);
@@ -453,13 +454,13 @@ not read a newly-surfaced failure as a regression.
 Four traps that have each already cost a run:
 
 - **`PERSIST_DEPLOYMENTS=1` is mandatory on 1.2 and 1.3.** Without it those steps only *log* the new
-  addresses; the record keeps the old ones and 1.4–1.7 build against the old NAV. Nothing errors.
+  addresses; the record keeps the old ones and 1.4–1.8 build against the old NAV. Nothing errors.
 - **Use `01_2`, never `01`.** `01` also deploys a `BridgeEscrow` impl — wasted gas and it rewrites
   bridge state for a deferred stack.
-- **1.1 must precede 1.4 — and must be RE-RUN after any failed `03`.** Each of `03`'s 32 `_deploy*`
+- **1.1 must precede 1.5 — and must be RE-RUN after any failed `03`.** Each of `03`'s 31 `_deploy*`
   helpers is skip-if-deployed and returns early without reverting, so a surviving `customPriceFeeds`
-  record makes `03` a silent no-op leaving all 40 feeds bound to the **old** proxy. `verify_step.py
-  1.4` enforces it by requiring every recorded feed address to be *new*, not merely non-zero.
+  record makes `03` a silent no-op leaving all 41 feeds bound to the **old** proxy. `verify_step.py
+  1.5` enforces it by requiring every recorded feed address to be *new*, not merely non-zero.
 
   This is **not only a first-run ordering rule.** It is also the recovery procedure, because a `03`
   that reverts still writes addresses it never deployed:
@@ -481,7 +482,7 @@ Four traps that have each already cost a run:
   > retrying. Unconditionally.** `verify_step.py 1.5` does catch the polluted state (`NAV()
   > unreadable` on every phantom address) — that is the gate working, and it is the reason to gate
   > every step rather than trusting exit codes.
-- **1.4 must precede 1.5.** `RegisterAssets` resolves Custom feeds from the record; run first it skips
+- **1.5 must precede 1.6.** `RegisterAssets` resolves Custom feeds from the record; run first it skips
   **20 of mainnet's 43 assets** with `[skip] primary feed unresolved`.
 
 ### Gate every step on its post-condition, not its exit code
@@ -561,7 +562,7 @@ Run against `main` @ `7efcc8af` (post-#185) on a mainnet fork at block 25642902,
 | `04_DeployBalanceAdapters` | 16s | 64,430,119 | OK |
 | `06_Configure` | 9s | 7,240,775 | OK |
 
-`verify_step.py` 1.2, 1.3, 1.6, 1.7 clean; 1.4 (21 failures) and 1.5 (3) fail entirely downstream of
+`verify_step.py` 1.2, 1.3, 1.7, 1.8 clean; 1.5 (21 failures) and 1.6 (3) fail entirely downstream of
 `03`. Note `03` at 30s against the expected 239s — the §6 smell test worked.
 
 ### BLOCKER 1 — a gated Chainlink feed stops the redeploy
@@ -677,7 +678,9 @@ live proxy; every broadcast went to loopback anvil.
 | `04_DeployBalanceAdapters` | 20s | 64,430,104 | OK |
 | `06_Configure` | 11s | 7,310,219 | OK |
 
-Every post-condition PASS. **`verify_step.py` 1.2 – 1.7 all exit 0.** 27 adapters, **43/43 assets**,
+Every post-condition PASS. **`verify_step.py` 1.2 – 1.7 all exit 0.** (Those are the day's numbers —
+the six steps in the table above; `08_DeployAssetKindRegistry`, today's 1.4, was not yet in the
+sequence.) 27 adapters, **43/43 assets**,
 **66/66 meta instances**, all three assistant `ADAPTER()` pointers paired. New proxy
 `0x54EaD2A1…6214`, fresh `ERC20Default` `0x4Bc39Dce…1eE6`. Both library pins CREATE2-landed on
 `0x8b7e4fA9…7dc1` / `0x5f5D054E…fd90` for the third independent time.

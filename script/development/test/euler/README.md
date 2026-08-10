@@ -21,16 +21,16 @@ Per instance, up to two legs:
 
 - **filter** — `assetFilter != 0 && assetFilter != vault.asset()` → empty (both legs share the asset).
 - **registration** — `vault.asset()` not registered on NAVCalculator → empty (registered-asset intersection).
-- **Supply leg** — `supplied = convertToAssets(balanceOf(account))`; emit a supply leg (`isDebt = false`) iff `> 0`. Its `positionKind` is **`Collateral`** when the account has enabled the vault as EVC collateral (`vault.EVC()` → `EVC.getCollaterals(account)` membership, under try/catch), else **`Supplied`** (EulerEarn earn deposits, or core-eVault supply not enabled as collateral).
-- **Borrow leg** — `debt = debtOf(account)` read under `try/catch` (EulerEarn vaults don't implement `debtOf` → revert caught → `debt = 0`, and the supply leg is unaffected); emit a `Borrowed` leg (`isDebt = true`) iff `> 0`. Core eVaults only.
+- **Supply leg** — `supplied = convertToAssets(balanceOf(account))`; emit a supply leg (`isDebt = false`) iff `> 0`. Its `positionKind` is **`Collateral`** when the account has enabled the vault as EVC collateral (`vault.EVC()` → `EVC.getCollaterals(account)` membership, read through bounded low-level staticcalls), else **`Supplied`** (EulerEarn earn deposits, or core-eVault supply not enabled as collateral).
+- **Borrow leg** — `debt = debtOf(account)` read through a bounded low-level staticcall (EulerEarn vaults don't implement `debtOf` → revert, or a reply shorter than a word → `debt = 0`, and the supply leg is unaffected; a read that runs out of its frame-derived stipend instead reverts `DebtReadGasExhausted`, which `MetaBalanceAdapter` re-raises as `InstanceGasExhausted`); emit a `Borrowed` leg (`isDebt = true`) iff `> 0`. Core eVaults only.
 
-The EVC lookup is under try/catch, so a vault without `EVC()`/`getCollaterals` (EulerEarn aggregators — never usable as collateral — or a non-Euler ERC4626) degrades to `Supplied`. NAV value is identical either way; the `Supplied`/`Collateral` split is the reconciliation label (matching the Aave convention).
+The EVC lookup is a pair of bounded low-level staticcalls that are genuinely fail-open (`try`/`catch` intercepts neither a return-data decode failure nor a call to a code-less address), so a vault without `EVC()`/`getCollaterals` (EulerEarn aggregators — never usable as collateral — or a non-Euler ERC4626) degrades to `Supplied`. NAV value is identical either way; the `Supplied`/`Collateral` split is the reconciliation label (matching the Aave convention).
 
 ## 2. Existing test coverage
 
-Unit (`test/balances/MetaBalanceAdapters/EulerVaultsMetaBalanceAdapter.t.sol`, **16 cases**) covers every branch against mocks: ERC165, no-arg-methods-empty, multi-vault aggregation, asset filter, zero-balance skip, unregistered-asset skip, bad-instance isolation, empty-instances, `positionLabels`, the borrow leg via a core-eVault mock with `debtOf` (supply+borrow, borrow-only, asset-filter), an Earn-shaped mock **without** `debtOf` proving the try/catch keeps the supply leg, and the Collateral-vs-Supplied classification via a mock EVC `getCollaterals`.
+Unit (`test/balances/MetaBalanceAdapters/EulerVaultsMetaBalanceAdapter.t.sol`, **43 cases**) covers every branch against mocks: ERC165, no-arg-methods-empty, multi-vault aggregation, asset filter, zero-balance skip, unregistered-asset skip, bad-instance isolation, empty-instances, `positionLabels`, the borrow leg via a core-eVault mock with `debtOf` (supply+borrow, borrow-only, asset-filter), an Earn-shaped mock **without** `debtOf` proving the fail-open read keeps the supply leg, and the Collateral-vs-Supplied classification via a mock EVC `getCollaterals` — plus the hardened-read cases: the uncatchable `EVC()`/`getCollaterals` shapes (empty returndata, `bytes32`-shaped word, code-less address, bad offset, absurd length, truncated payload, over-cap list), gas/returndata bombs on both probes, and the `debtOf` starvation cases that must revert rather than drop the debt leg.
 
-Fork (`test/balances/MetaBalanceAdapters/fork/EulerVaultsMetaBalanceAdapter.fork.t.sol`, **9 cases**) re-checks against real vaults at the pinned block: EulerEarn supply aggregation + NAV routing, on-chain identity, asset filter, `positionLabels`, the strict-equality redemption cross-check (§8), plus the Collateral classification + borrow (`debtOf`) leg + NAV debt-netting on a real core-eVault borrower (§3).
+Fork (`test/balances/MetaBalanceAdapters/fork/EulerVaultsMetaBalanceAdapter.fork.t.sol`, **11 cases**) re-checks against real vaults at the pinned block: EulerEarn supply aggregation + NAV routing, on-chain identity, asset filter, `positionLabels`, the strict-equality redemption cross-check (§8), plus the Collateral classification + borrow (`debtOf`) leg + NAV debt-netting on a real core-eVault borrower (§3), the live EVC reads classifying correctly, and a broken `EVC()` on a real vault failing open with both legs intact.
 
 All kept as regression nets.
 
@@ -49,8 +49,9 @@ asset = vault.asset()
 if assetFilter != 0 and assetFilter != asset:        return []      # filter
 if asset not registered on NAV:                      return []      # registered-asset intersection
 supplied = vault.convertToAssets(vault.balanceOf(account))
-try    debt = vault.debtOf(account)                                 # core eVaults only
-catch  debt = 0                                                     # EulerEarn lacks debtOf
+debt = safeDebt(vault, account)                                     # core eVaults only, bounded staticcall:
+                                                                    #   revert / short reply -> 0 (EulerEarn lacks debtOf)
+                                                                    #   starved stipend      -> revert DebtReadGasExhausted
 emit Supplied(asset, supplied, isDebt=false)  if supplied > 0       # earn / lend / collateral
 emit Borrowed(asset, debt,     isDebt=true)   if debt > 0           # core-eVault borrow
 # both legs: positionId = abi.encode(vault), protocolSubId = keccak256("euler-vaults"), protocolId = protocolBrand = keccak256("euler")
@@ -166,11 +167,11 @@ cast send $NAV "addMetaInstances(address,bytes32[])" $ADAPTER \
 | Supply classified `Collateral` when EVC-enabled, else `Supplied` (`getCollaterals` lookup) | ✅ (unit + fork: borrower's eUSDC-2 → Collateral) |
 | earn + lend + borrow in one account | ✅ (real borrower + seeded earn) |
 | NAV nets the borrow leg to a negative value | ✅ |
-| Borrow + collateral lookups guarded by try/catch (EulerEarn without `debtOf`/usable-collateral keeps its supply leg as `Supplied`) | ✅ (unit + fork) |
+| Borrow + collateral lookups guarded by bounded low-level staticcalls (EulerEarn without `debtOf`/usable-collateral keeps its supply leg as `Supplied`) | ✅ (unit + fork) |
 | Identity: `protocolSubId == euler-vaults`, `protocolId == euler`, `positionId == abi.encode(vault)`, `Supplied`/`Collateral`/`Borrowed` | ✅ |
 | Mainnet-only scope | ✅ |
 
-**Mainnet: Euler fork suite (9) + unit suite (16) pass.** EulerEarn supply (both KPK vaults) and core-eVault supply/collateral + borrow (real borrower) are verified. Euler V2 vaults adapter is verified.
+**Mainnet: Euler fork suite (11) + unit suite (43) pass.** EulerEarn supply (both KPK vaults) and core-eVault supply/collateral + borrow (real borrower) are verified. Euler V2 vaults adapter is verified.
 
 Run via:
 

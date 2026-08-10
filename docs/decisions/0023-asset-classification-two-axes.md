@@ -36,7 +36,9 @@ AccrualKind  { None, Rebasing, Appreciating }  -- how value accrues
    unexplained balance delta is yield (`Rebasing`) or a genuine anomaly (`Appreciating` / `None`).
 
 3. **The axes are independent.** All six combinations are **reachable mechanisms**; five are occupied by
-   a currently registered asset and one is empty today (see the table below).
+   a currently registered asset and one is empty today (see the table below). *(Added later: the
+   amendment under that table moved sUSDS/sDAI off `Pegged + Appreciating`, so the count is now four
+   occupied and two empty — the Consequences section already reads that way.)*
 
 ## Alternatives considered
 
@@ -70,6 +72,9 @@ false dichotomy over the same axis.
 > still part of the argument — see immediately below. Recorded rather than silently rewritten: this ADR taught the
 > overruled classification for as long as it stood, and a reader who acted on it deserves to know it
 > changed rather than to conclude they misread it.
+>
+> *(Added later: #241 has since merged. `src/utils/AssetKind.sol` and `src/nav/AssetKindRegistry.sol`
+> are both on `main` as of `a3974686` — the "not yet merged" above was true when written.)*
 
 **The two empty cells are empty for DIFFERENT reasons, and conflating them loses the argument.**
 
@@ -94,9 +99,11 @@ fundamental value is $1". Across the seven configured chains it is set on exactl
 stablecoins (on mainnet: USDC, USDS, USDT, DAI, GHO, USDe, RLUSD, crvUSD). **No yield-bearing wrapper
 carries it** — not sDAI, sGHO, sUSDe, sUSDS or syrupUSDC. The absence of a peg tolerance is the
 discriminator, and it holds for every one of them.
+
 **There is exactly one authority, so there is nothing to cross-check.** The peg axis is **derived, not
 stored** — `pegKind(asset)` is computed on read as `pegToleranceBps > 0` (implemented in
-`AssetKindRegistry` on **PR #241**, still unmerged; neither it nor the registry is on `main` today). A
+`AssetKindRegistry` on **PR #241**, still unmerged; neither it nor the registry is on `main` today —
+*added later: #241 has since merged, and that derivation is `AssetKindRegistry._derivePegKind`*). A
 classification contradicting the pricing layer is therefore not merely detectable — **the contradictory
 sentence is unwriteable**, because there is no parameter in which to write it.
 

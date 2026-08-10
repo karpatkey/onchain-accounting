@@ -71,8 +71,8 @@ NFT's split is not expressible as a simple reserve share — it depends on the c
 synthesise a manipulation-resistant price.) An earlier revision reconstructed the V3 `sqrtPriceX96` from
 oracle prices to neutralise spot manipulation (audit `[2]`); that was reverted under this ADR because the
 async-consumer model makes the manipulation non-monetisable and the oracle reconstruction sacrificed
-common-case accuracy and the adapter/NAV separation. If the revisit trigger below ever fires, oracle-
-reconstructed `sqrtPriceX96` is the V3-specific mitigation to reinstate.
+common-case accuracy and the adapter/NAV separation. If the revisit trigger below ever fires,
+oracle-reconstructed `sqrtPriceX96` is the V3-specific mitigation to reinstate.
 
 ## Consequences
 

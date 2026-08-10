@@ -17,7 +17,7 @@
 - `noCooldown_emptyPositions`, `zeroAddress` — empty/negative cases against the real fork.
 
 ## 3. Unit test coverage
-`test/balances/BalanceAdapters/EthenaCooldownBalanceAdapter.t.sol` (23 tests, mock-only): constructor guards (×4), interface/describe (×3), `getAdapterBalanceForAsset` (×6 incl. active/elapsed cooldown), `getAdapterBalances` (×3), `getAdapterPositions` (×7 incl. unregistered-asset drop, asset filter, identity, and the `isLocked` cases — locked while cooling, unlocked after the cooldown elapsed, unlocked when cooldown disabled).
+`test/balances/BalanceAdapters/EthenaCooldownBalanceAdapter.t.sol` (24 tests, mock-only): constructor guards (×4), interface/describe (×4), `getAdapterBalanceForAsset` (×6 incl. active/elapsed cooldown), `getAdapterBalances` (×3), `getAdapterPositions` (×7 incl. unregistered-asset drop, asset filter, identity, and the `isLocked` cases — locked while cooling, unlocked after the cooldown elapsed, unlocked when cooldown disabled).
 
 ## 4. Adapter formula recap
 ```

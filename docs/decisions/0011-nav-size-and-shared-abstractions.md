@@ -64,6 +64,12 @@ far — `cbETH`, `rETH`, `ETHx`, `rsETH`, `ezETH`, `ezETH_L2`, `osToken`, `NXM`)
 outliers stay as-is: `ETHPlus_CustomPriceFeed` (no Chainlink leg), `eETH_CustomPriceFeed` (derived two-feed),
 `ankrETH_CustomPriceFeed` (rate inversion).
 
+(Added later: `eETH_CustomPriceFeed` no longer belongs on that outlier list — it has since been reshaped into a
+`BaseCustomPriceFeed` subclass with a constant unit `_rate()` of `1e18` (`src/prices/protocols/eETH_CustomPriceFeed.sol:13`).
+`ETHPlus_CustomPriceFeed` (`src/prices/protocols/ETHPlus_CustomPriceFeed.sol:37`) and `ankrETH_CustomPriceFeed`
+(`src/prices/protocols/ankrETH_CustomPriceFeed.sol:41`) do still implement `ICustomPriceFeed` directly, as this ADR
+decided.)
+
 ### PR C — `BalanceAdapterBase` base + `StaticCallLib` + `ArrayLib` helpers (maintainability; partially shipped)
 
 - An `abstract BalanceAdapterBase` for the standalone leaf adapters (the 9 plain

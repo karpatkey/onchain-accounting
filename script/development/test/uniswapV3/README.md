@@ -32,6 +32,12 @@ The math libraries (`TickMath`, `LiquidityAmounts`, `FixedPoint128`) live under 
 
 Kept untouched as a regression net.
 
+_(Added later: both fork-test classes went with the per-pool adapter — `test/balances/protocols/` no longer
+exists, so `UniswapV3Pool.fork.t.sol` and the two `UniswapV3PoolBalanceOracleForkTest_*` contracts named in §5
+and in the `--match-contract` command in §10 match nothing on this tree. Live V3 fork coverage is
+`test/balances/MetaBalanceAdapters/fork/UniswapV3PoolsMetaBalanceAdapter.fork.t.sol`, against its own holder and
+pinned block. The original text below is left as written.)_
+
 ## 3. What this case adds
 
 - Two new holders covering the WETH/USDT 0.3% and USDC/WETH 0.05% pools (the remaining two registered V3 instances).

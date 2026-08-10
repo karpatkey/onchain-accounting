@@ -34,11 +34,11 @@ This deployment system uses an **EOA deployer** (`--broadcast`) with **CREATE2 d
 |--------|---------|--------|
 | `01_DeployImplementations.s.sol` (`01_2` = NAV only) | Deploy `PriceFeedLib` + `NAVRegistryLib` libraries then NAVCalculator (and BridgeEscrow) **implementations** via EOA `--broadcast` (CREATE2, canonical deployer 0x4e59...). Same impl addresses on all chains; run once. | Saved impl/library addresses |
 | `02_DeployProxies.s.sol` (`02_2` = NAV only) | Deploy placeholder + NAV + Bridge **proxies** and **initialize** them via EOA (canonical CREATE2). Default: one atomic tx via `AtomicProxyDeployer`, granting DEFAULT_ADMIN + MANAGER to `admin`/`manager` (= deployer EOA). `USE_LEGACY_DEPLOY=1` for legacy multi-tx. Run **per chain**. | Proxy addresses (same on all chains); saved to config |
-| `03_DeployPriceFeeds.s.sol` | Deploy custom price feed adapters; register assets/feeds (per-chain, config-driven) | Adapter addresses in config |
+| `03_DeployPriceFeeds.s.sol` | Deploy custom price feed adapters (per-chain, config-driven). It **deploys only** — it makes no call on NAVCalculator; asset/feed registration is a separate step (`script/manage/RegisterAssets.s.sol`), which must run **after** `03` because it resolves each Custom feed from `deployments/<id>.json .customPriceFeeds.<name>` | Adapter addresses in config |
 | `04_DeployBalanceAdapters.s.sol` | Deploy balance adapters incl. meta-adapters (per-chain, config-driven) | Adapter addresses in config |
 | `05_DeployBridgeAdapters.s.sol` | Deploy bridge adapters (CCIP, Across, Stargate, CCTP, Gnosis, Superchain; per-chain) | Adapter addresses in config |
 | `06_Configure.s.sol` | **EOA broadcast** (deployer holds admin+MANAGER): `addBalanceAdapters` for each deployed plain adapter + `addMetaBalanceAdapter` then `addMetaInstances`/`removeMetaInstances` for meta-adapters + authorize bridge adapters + authorize bridge accounts (`authorizeAccount`) + register bridge assets (`registerAsset`) from `bridge-escrow/<chainId>.json`. Idempotent / re-runnable. | On-chain config txs |
-| `07_TransferAdminToSecurityCouncil.s.sol` | **EOA broadcast, last of the role handoff**: grant DEFAULT_ADMIN + MANAGER to `addresses.securityCouncil` (Safe) on both proxies, revoke/renounce the deployer's roles. **Does not cover `AssetKindRegistry` (08), and does not need to** — that contract has no roles of its own; it gates on `NAV.hasRole(MANAGER, …)`, so handing off the NAV hands off the registry with it. | On-chain role handoff |
+| `07_TransferAdminToSecurityCouncil.s.sol` | **EOA broadcast, last of the role handoff**: grant DEFAULT_ADMIN + MANAGER to `addresses.securityCouncil` (Safe) on both proxies **and on each deployed bridge adapter** (CCIP, Across, Stargate, Gnosis, CCTP, Superchain — they are independent AccessControl contracts, ADR 0012), revoke/renounce the deployer's roles. **Does not cover `AssetKindRegistry` (08), and does not need to** — that contract has no roles of its own; it gates on `NAV.hasRole(MANAGER, …)`, so handing off the NAV hands off the registry with it. | On-chain role handoff |
 | `08_DeployAssetKindRegistry.s.sol` | Deploy the per-chain `AssetKindRegistry` and classify every configured asset on the two-axis taxonomy (`PegKind` × `AccrualKind`). **PRIVILEGED, and must run BEFORE 07** — it grants the registry MANAGER on the NAV (needs `DEFAULT_ADMIN`, which 07 hands away) — so it DOES make a state-changing call on the NAV proxy, though it never upgrades or reconfigures one (it does not itself move a library pin, though the feature as a whole moves `PriceFeedLib`'s). **Fail-closed**: aborts unless every asset carries a valid `accrualKind` string (no `pegKind` in config — the peg axis is derived from the NAV). Idempotent / re-runnable — **requires `PERSIST_DEPLOYMENTS=1`**, since the skip-if-deployed guard reads the record that flag gates. Registry has NO roles of its own — authority is the NAV's MANAGER set, so no separate handover exists. Also provides the atomic `registerAsset(…, accrualKind)` facade, and **grants the registry `MANAGER` on the NAV** — so it is a privileged step and must run BEFORE `07`. | Registry address in config |
 
 ### Upgrade Scripts (`script/upgrade/`)
@@ -54,7 +54,7 @@ This deployment system uses an **EOA deployer** (`--broadcast`) with **CREATE2 d
 |--------|---------|
 | `ManageAdapters.s.sol` | Add/remove/configure adapters via Safe (emits Safe-TX JSON) |
 | `AuthorizeBridgeAdapters.s.sol` | Authorize enabled bridge adapters on BridgeEscrow (EOA admin broadcast) |
-| `RegisterAssets.s.sol` | Register assets/price feeds via Safe (emits Safe-TX JSON) |
+| `RegisterAssets.s.sol` | Register assets/price feeds. Emits Safe-TX JSON **and** broadcasts the same batch from the deployer EOA, so it doubles as the EOA-flow registration step. A primary registration is addressed to `AssetKindRegistry` (atomic register + classify + label), every other action to the NAV — so it requires `08` to have run first |
 | `RegisterBridgeEscrow.s.sol` | Register the CCTP bridge adapter + USDC on BridgeEscrow via Safe (emits Safe-TX JSON) |
 
 ### Verification Scripts (`script/verify/`)
@@ -297,7 +297,8 @@ forge script script/deploy/06_Configure.s.sol \
 forge script script/verify/VerifyEtherscan.s.sol \
   --rpc-url "https://eth-mainnet.g.alchemy.com/v2/$ALCHEMY_API_KEY"
 
-# Or check + submit verification for all configured chains in one go
+# Or check + submit verification in one go for the chains verify-all.sh hardcodes
+# (CHAIN_IDS = 1, 10, 100, 137, 42161, 8453 — other chains need forge verify-contract by hand)
 script/verify/verify-all.sh
 ```
 
@@ -354,7 +355,7 @@ script/verify/verify-all.sh
 - `FluidFTokensMetaBalanceAdapter`, `FluidVaultsMetaBalanceAdapter` - Fluid lending + vaults
 - `GearboxV3MarketsMetaBalanceAdapter` - Gearbox kpk-curated markets
 - `GearboxV3CreditAccountsMetaBalanceAdapter` - Gearbox credit accounts
-- `StakeWiseV3VaultsMetaBalanceAdapter` - StakeWise V3 Genesis Vault (osETH/osGNO themselves are Custom-priced ERC20s via `osToken_CustomPriceFeed`, not balance adapters)
+- `StakeWiseV3VaultsMetaBalanceAdapter` - StakeWise V3 vaults, `Staking` (vault shares) + `Borrowed` (osToken debt) legs per vault (osETH/osGNO themselves are Custom-priced ERC20s via `osToken_CustomPriceFeed`, not balance adapters)
 - `StaderWithdrawalQueueBalanceAdapter` - Stader pending unstake requests
 - `KelpWithdrawalQueueBalanceAdapter` - Kelp DAO rsETH exit queue (multi-asset; payout assets discovered via `lrtConfig().getSupportedAssetList()`)
 - `LidoWithdrawalQueueBalanceAdapter` - Lido stETH withdrawal queue (`WithdrawalQueueERC721`; sums open requests, reported as native ETH — the asset paid on claim)
@@ -411,7 +412,7 @@ safe-transactions/
 ├── {chainId}-add-balance-adapter.json     # From script/manage/ManageAdapters.s.sol
 ├── {chainId}-register-assets.json         # From script/manage/RegisterAssets.s.sol
 ├── {chainId}-register-bridge-escrow.json  # From script/manage/RegisterBridgeEscrow.s.sol
-├── {chainId}-upgrade-navcalc.json         # From script/upgrade/UpgradeNAVCalculator.s.sol
+├── {chainId}-upgrade-navcalc-{impl}.json  # From script/upgrade/UpgradeNAVCalculator.s.sol (filename carries the new impl address)
 ├── {chainId}-upgrade-bridgeescrow.json    # From script/upgrade/UpgradeBridgeEscrow.s.sol
 └── ... (one per Safe transaction)
 ```
@@ -449,11 +450,15 @@ Note: Proxy deploy + init is done via EOA in `02_DeployProxies.s.sol` (no Safe T
 1. **Configure** - Fill in `script/config/chains/{chainId}.json` with `addresses.securityCouncil`, `admin`, `manager` (and RPC/explorer vars in `.env` if using `$VAR`).
 2. **Deploy implementations** - Run `01_DeployImplementations.s.sol` once with `--broadcast --account` to deploy via the deployer EOA.
 3. **Deploy and initialize proxies** - Run `02_DeployProxies.s.sol` **per chain** with `--broadcast --account` (deploys placeholder + proxies and initializes them via EOA; atomic by default).
-4. **Deploy adapters** - Run scripts 03–05 with adapters enabled in the `contracts-deployment-config/` files; broadcast to deploy adapter contracts.
-5. **Configure adapters** - Run `06_Configure.s.sol` with `--broadcast --account` (deployer EOA holds admin+MANAGER): adds balance adapters, sets meta-instances, authorizes bridge adapters, authorizes bridge accounts, and registers bridge assets (the last two from `bridge-escrow/<chainId>.json` — required for `depositAndBridge` to work). Idempotent.
-6. **Verify** - Run `VerifyEtherscan.s.sol` (or `script/verify/verify-all.sh`) to check and submit `forge verify-contract` for each deployed contract.
-7. **Asset-kind registry** - Run `08_DeployAssetKindRegistry.s.sol` with `PERSIST_DEPLOYMENTS=1`. **Runs BEFORE `07`** (it grants the registry MANAGER on the NAV, which needs the `DEFAULT_ADMIN` that `07` transfers away) and **do not skip it**, or no `AssetKindRegistry` exists on the chain and nothing in the pipeline says so. Fail-closed: aborts unless every configured asset carries a valid `accrualKind`.
-8. **Transfer admin** - Run `07_TransferAdminToSecurityCouncil.s.sol` as the last ROLE-HANDOFF step: hands DEFAULT_ADMIN + MANAGER to the council Safe and renounces the deployer's roles.
+4. **Asset-kind registry** - Run `08_DeployAssetKindRegistry.s.sol` with `PERSIST_DEPLOYMENTS=1`. Numbered last, it runs **here**: it must precede `07` (it grants the registry MANAGER on the NAV, which needs the `DEFAULT_ADMIN` that `07` transfers away) **and** precede `RegisterAssets` (step 6), which routes a primary registration through it. **Do not skip it**, or no `AssetKindRegistry` exists on the chain and nothing in the pipeline says so. Fail-closed: aborts unless every configured asset carries a valid `accrualKind`.
+5. **Deploy price feeds** - Run `03_DeployPriceFeeds.s.sol` with the feeds enabled in `contracts-deployment-config/custom-price-feeds/<chainId>.json`. It deploys the feed contracts only; it registers nothing on NAVCalculator.
+6. **Register assets + price feeds** - Run `script/manage/RegisterAssets.s.sol`. No script in `03`–`06` registers an asset on NAVCalculator (`06`'s `registerAsset` is BridgeEscrow's, a different function), so skipping this leaves the NAV with no assets. It must run **after** `03` (it resolves each Custom feed from `deployments/<id>.json .customPriceFeeds.<name>`) and **after** `08` (a primary registration is routed through `AssetKindRegistry`; without it the script reverts `AssetKindRegistryNotDeployed`).
+7. **Deploy adapters** - Run `04_DeployBalanceAdapters.s.sol` and `05_DeployBridgeAdapters.s.sol` with adapters enabled in the `contracts-deployment-config/` files; broadcast to deploy the adapter contracts.
+8. **Configure adapters** - Run `06_Configure.s.sol` with `--broadcast --account` (deployer EOA holds admin+MANAGER): adds balance adapters, sets meta-instances, authorizes bridge adapters, authorizes bridge accounts, and registers bridge assets (the last two from `bridge-escrow/<chainId>.json` — required for `depositAndBridge` to work). Idempotent.
+9. **Verify** - Run `VerifyEtherscan.s.sol` (or `script/verify/verify-all.sh`) to check and submit `forge verify-contract` for each deployed contract. Note `verify-all.sh` hardcodes `CHAIN_IDS=(1 10 100 137 42161 8453)`, so it does not cover every configured chain.
+10. **Transfer admin** - Run `07_TransferAdminToSecurityCouncil.s.sol` as the last ROLE-HANDOFF step: hands DEFAULT_ADMIN + MANAGER to the council Safe and renounces the deployer's roles.
+
+The resulting order is **`01` → `02` → `08` → `03` → `RegisterAssets` → `04` → `05` → `06` → `07`**, which is not the numeric order. [`script/deploy/README.md`](deploy/README.md) is the authority for this sequence.
 
 ## What You Need to Do to Deploy NAVCalculator and BridgeEscrow
 

@@ -953,6 +953,252 @@ contract AdapterLabelOverridesTest is AdapterLabelOverridesBase {
         assertTrue(found, "adapter position not found in getAccountPositionsForAssetVerbose");
     }
 
+    /// @dev COLD-slot measurement. Every other gas test here warms the read first, so its surcharge is a FLOOR: a
+    ///      real portfolio touches each adapter's registry slots cold. `vm.cool(registry)` marks the registry's
+    ///      account AND its storage slots cold again, which is the only clean way to produce that state inside one
+    ///      test transaction (EIP-2929 warmth otherwise persists for the whole call frame).
+    ///
+    ///      All three measurements share an identical baseline: the adapters are warmed once up front and are never
+    ///      cooled, so the ONLY thing that differs between warm and cold is the registry. That isolation is what
+    ///      makes the delta attributable.
+    function test_gas_coldVsWarm_oneAdapter() public {
+        nav.getAccountPositionsVerbose(safe, address(0)); // warm everything
+
+        bytes32 rslot = _registrySlot();
+        uint256 saved = uint256(vm.load(address(nav), rslot));
+
+        // Baseline: registry not consulted at all. Adapters warm.
+        vm.store(address(nav), rslot, bytes32(0));
+        uint256 t = gasleft();
+        nav.getAccountPositionsVerbose(safe, address(0));
+        uint256 base = t - gasleft();
+        vm.store(address(nav), rslot, bytes32(saved));
+
+        // Registry WARM (its slots were touched by the warm-up read).
+        t = gasleft();
+        nav.getAccountPositionsVerbose(safe, address(0));
+        uint256 warm = t - gasleft();
+
+        // Registry COLD.
+        vm.cool(address(registry));
+        t = gasleft();
+        nav.getAccountPositionsVerbose(safe, address(0));
+        uint256 cold = t - gasleft();
+
+        emit log_named_uint("1 adapter | baseline no-registry ", base);
+        emit log_named_uint("1 adapter | surcharge WARM       ", warm - base);
+        emit log_named_uint("1 adapter | surcharge COLD       ", cold - base);
+        emit log_named_uint("1 adapter | cold premium         ", cold - warm);
+
+        assertGt(cold, warm, "a cold registry must cost more than a warm one");
+        assertLt(cold - base, 20_000, "one distinct adapter, cold, must stay within one pair of cold reads");
+    }
+
+    /// @dev The same, with TWO distinct adapters emitting three positions, so the per-DISTINCT-ADAPTER property is
+    ///      testable cold as well as warm. The bound is what the mutation below has to break.
+    function test_gas_coldVsWarm_twoAdapters() public {
+        LabelledAdapter multi = new LabelledAdapter("Multi Protocol", "Market", "leaf");
+        address[] memory assets = new address[](2);
+        assets[0] = address(usdc);
+        assets[1] = address(dai);
+        multi.setBalances(nav);
+        multi.setUnderlyingAssetsSupported(assets);
+        multi.setBalance(address(usdc), safe, 5 * 10 ** usdc.decimals(), false);
+        multi.setBalance(address(dai), safe, 5 * 10 ** dai.decimals(), false);
+        vm.prank(navCalculatorManager);
+        nav.addBalanceAdapters(aa(address(multi)));
+
+        nav.getAccountPositionsVerbose(safe, address(0)); // warm everything
+
+        bytes32 rslot = _registrySlot();
+        uint256 saved = uint256(vm.load(address(nav), rslot));
+
+        vm.store(address(nav), rslot, bytes32(0));
+        uint256 t = gasleft();
+        nav.getAccountPositionsVerbose(safe, address(0));
+        uint256 base = t - gasleft();
+        vm.store(address(nav), rslot, bytes32(saved));
+
+        t = gasleft();
+        nav.getAccountPositionsVerbose(safe, address(0));
+        uint256 warm = t - gasleft();
+
+        vm.cool(address(registry));
+        t = gasleft();
+        nav.getAccountPositionsVerbose(safe, address(0));
+        uint256 cold = t - gasleft();
+
+        emit log_named_uint("2 adapters/3 positions | baseline ", base);
+        emit log_named_uint("2 adapters/3 positions | WARM     ", warm - base);
+        emit log_named_uint("2 adapters/3 positions | COLD     ", cold - base);
+        emit log_named_uint("2 adapters/3 positions | premium  ", cold - warm);
+
+        assertGt(cold, warm, "cold must exceed warm");
+        // Cold surcharge must still scale with DISTINCT ADAPTERS, not positions. A per-position lookup on this
+        // 3-position fixture inflates it past this bound -- which the mutation test proves.
+        // Bound set FROM THE MUTATION, not from taste: clean 19,256 / per-position mutant 24,584.
+        // An earlier 34,000 passed under that mutant and was therefore worthless.
+        assertLt(cold - base, 22_000, "cold surcharge must scale with distinct adapters, not positions");
+    }
+
+    /// @dev The BENIGN path of the configuration surface. Only its hostile-registry ceiling was ever measured, which
+    ///      is not much use to an operator.
+    ///
+    ///      ⚠️ This fixture registers only TWO adapters, so a full enumeration here is N=2 and dividing its total by
+    ///      2 would attribute fixed call overhead to each entry. The MARGINAL per-entry cost is measured separately
+    ///      below by comparing N=2 against N=27 (mainnet's registered-adapter count per the fork rehearsal), padding
+    ///      with repeated addresses. Repeats are warm after the first touch, so that marginal figure is a WARM
+    ///      per-entry loop cost and a floor, not a cold one.
+    function test_gas_configurationSurface_benignPath() public {
+        address[] memory all = nav.getAllAdapters();
+        emit log_named_uint("configuration surface | adapters actually registered in fixture", all.length);
+
+        // Warm, then measure a full enumeration.
+        nav.getAdapterDisplayInfo(all);
+        uint256 t = gasleft();
+        nav.getAdapterDisplayInfo(all);
+        uint256 warm = t - gasleft();
+
+        vm.cool(address(registry));
+        t = gasleft();
+        nav.getAdapterDisplayInfo(all);
+        uint256 cold = t - gasleft();
+
+        emit log_named_uint("configuration surface | WARM, full enumeration", warm);
+        emit log_named_uint("configuration surface | COLD, full enumeration", cold);
+        emit log_named_uint("configuration surface | per entry WARM        ", warm / all.length);
+        emit log_named_uint("configuration surface | per entry COLD        ", cold / all.length);
+        assertGt(cold, warm, "cold enumeration must cost more than warm");
+    }
+
+    /// @dev Marginal per-ENTRY cost of the configuration surface: N=2 vs N=27, so fixed call overhead cancels.
+    function test_gas_configurationSurface_marginalPerEntry() public {
+        address[] memory all = nav.getAllAdapters();
+        address[] memory pad = new address[](27);
+        for (uint256 i = 0; i < 27; i++) {
+            pad[i] = all[i % all.length];
+        }
+        nav.getAdapterDisplayInfo(all);
+        nav.getAdapterDisplayInfo(pad); // warm both shapes
+
+        uint256 t = gasleft();
+        nav.getAdapterDisplayInfo(all);
+        uint256 gN = t - gasleft();
+        t = gasleft();
+        nav.getAdapterDisplayInfo(pad);
+        uint256 g27 = t - gasleft();
+
+        emit log_named_uint("config surface | N=2  total ", gN);
+        emit log_named_uint("config surface | N=27 total ", g27);
+        emit log_named_uint("config surface | MARGINAL per entry (warm)", (g27 - gN) / (27 - all.length));
+        assertGt(g27, gN, "more entries must cost more");
+    }
+
+    /// @dev Registers distinct adapters until the NAV holds `target` of them, returning the full set.
+    ///      Each is a SEPARATE contract, so each occupies its own registry mapping slots -- which is the whole point:
+    ///      repeated addresses are warm after the first touch and understate a real enumeration.
+    function _growTo(uint256 target) internal returns (address[] memory) {
+        while (nav.getAllAdapters().length < target) {
+            LabelledAdapter a = new LabelledAdapter("Proto", "Market", "leaf");
+            _register(a);
+        }
+        return nav.getAllAdapters();
+    }
+
+    function _coolAll(address[] memory xs) internal {
+        vm.cool(address(registry));
+        for (uint256 i = 0; i < xs.length; i++) {
+            vm.cool(xs[i]);
+        }
+    }
+
+    /// @dev THE 27-DISTINCT FIXTURE. 27 is mainnet's registered-adapter count per the fork rehearsal.
+    ///      Two isolations are reported and they answer different questions:
+    ///        - REGISTRY-COLD only: the registry surcharge, methodologically identical to the account-path numbers.
+    ///        - EVERYTHING-COLD: what a caller actually pays on a fresh call, which is what a gas limit is sized from.
+    function test_gas_configurationSurface_27Distinct_cold() public {
+        address[] memory all = _growTo(27);
+        assertEq(all.length, 27, "fixture must hold 27 DISTINCT adapters");
+
+        nav.getAdapterDisplayInfo(all); // warm everything
+        uint256 t = gasleft();
+        nav.getAdapterDisplayInfo(all);
+        uint256 warm = t - gasleft();
+
+        vm.cool(address(registry));
+        t = gasleft();
+        nav.getAdapterDisplayInfo(all);
+        uint256 regCold = t - gasleft();
+
+        nav.getAdapterDisplayInfo(all); // re-warm
+        _coolAll(all);
+        t = gasleft();
+        nav.getAdapterDisplayInfo(all);
+        uint256 allCold = t - gasleft();
+
+        emit log_named_uint("27 distinct | WARM total            ", warm);
+        emit log_named_uint("27 distinct | REGISTRY-COLD total   ", regCold);
+        emit log_named_uint("27 distinct | EVERYTHING-COLD total ", allCold);
+        emit log_named_uint("27 distinct | registry premium      ", regCold - warm);
+        emit log_named_uint("27 distinct | per entry WARM        ", warm / 27);
+        emit log_named_uint("27 distinct | per entry ALL-COLD    ", allCold / 27);
+        assertGt(regCold, warm, "cooling the registry must cost more");
+        assertGt(allCold, regCold, "cooling the adapters too must cost more still");
+    }
+
+    /// @dev Linearity at scale: totals at N = 1, 9, 18, 27 DISTINCT adapters, everything cold each time. If the
+    ///      marginal cost per entry is flat the surface is linear and safe to extrapolate; if it climbs, it is not.
+    function test_gas_configurationSurface_linearityAtScale() public {
+        address[] memory all = _growTo(27);
+        uint256[4] memory ns = [uint256(1), 9, 18, 27];
+        uint256[4] memory tot;
+        for (uint256 k = 0; k < 4; k++) {
+            address[] memory sub = new address[](ns[k]);
+            for (uint256 i = 0; i < ns[k]; i++) {
+                sub[i] = all[i];
+            }
+            nav.getAdapterDisplayInfo(sub); // warm, then cool everything for an equal footing
+            _coolAll(sub);
+            uint256 t = gasleft();
+            nav.getAdapterDisplayInfo(sub);
+            tot[k] = t - gasleft();
+        }
+        emit log_named_uint("linearity | N=1  all-cold total", tot[0]);
+        emit log_named_uint("linearity | N=9  all-cold total", tot[1]);
+        emit log_named_uint("linearity | N=18 all-cold total", tot[2]);
+        emit log_named_uint("linearity | N=27 all-cold total", tot[3]);
+        emit log_named_uint("linearity | marginal per entry, 1->9  ", (tot[1] - tot[0]) / 8);
+        emit log_named_uint("linearity | marginal per entry, 9->18 ", (tot[2] - tot[1]) / 9);
+        emit log_named_uint("linearity | marginal per entry, 18->27", (tot[3] - tot[2]) / 9);
+    }
+
+    /// @dev The ACCOUNT path at scale, cold, with 27 DISTINCT adapters -- the result I am willing to stand behind,
+    ///      extended from N=2. Bound is set from the mutation below, not from taste.
+    function test_gas_accountPath_27Distinct_cold() public {
+        address[] memory all = _growTo(27);
+        nav.getAccountPositionsVerbose(safe, address(0)); // warm
+
+        bytes32 rslot = _registrySlot();
+        uint256 saved = uint256(vm.load(address(nav), rslot));
+        vm.store(address(nav), rslot, bytes32(0));
+        uint256 t = gasleft();
+        nav.getAccountPositionsVerbose(safe, address(0));
+        uint256 base = t - gasleft();
+        vm.store(address(nav), rslot, bytes32(saved));
+
+        vm.cool(address(registry));
+        t = gasleft();
+        nav.getAccountPositionsVerbose(safe, address(0));
+        uint256 cold = t - gasleft();
+
+        uint256 surcharge = cold - base;
+        emit log_named_uint("account path 27 distinct | baseline no-registry", base);
+        emit log_named_uint("account path 27 distinct | COLD surcharge      ", surcharge);
+        emit log_named_uint("account path 27 distinct | per adapter         ", surcharge / all.length);
+        // Bound derived from the per-position mutant; see the mutation run in the report.
+        assertLt(surcharge, 300_000, "cold surcharge must scale with DISTINCT ADAPTERS, not positions");
+    }
+
     // ------------------------------------------------------------------
     // Events
     // ------------------------------------------------------------------

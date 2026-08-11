@@ -602,6 +602,34 @@ Note the
 2026-07-29 linea comparison above is now stale on its second number only: linea still holds 0.03066 ETH,
 but the estimate for it is now **0.00293**, not 0.02800 — the balance figure aged well, the estimate did not.
 
+> ### ⚠️ SCOPE OF THIS GATE, AND WHY IT STAYS RED
+>
+> `deployer_balances.py` prices as `(gasUnits × gasPrice) × headroom` and models **no L1
+> data-availability fee** (open issue **#287**). That term is not a rounding error — on scroll it
+> measured **~99.9% of total cost**. Nine of 24 chains are affected, and the question is now **settled
+> by measurement rather than left as reasoning**:
+>
+> | chains | n | status |
+> | --- | --- | --- |
+> | `10, 130, 204, 480, 5000, 8453, 42220, 57073` | 8 | **Pass, with a documented omission.** Measured: for any of these to flip, the L1-DA term would have to be **10× to 996× the entire current need**. The margins are not close, so the omission does not change their verdicts |
+> | `534352` scroll | 1 | **Stays failed closed.** ~99.9% of its cost is the unmodelled term, so no honest number exists for it |
+> | `100` gnosis | 1 | Unpriceable today (near-zero base fee); priced from a pinned 2 gwei once #284 lands |
+> | the remaining 14 | 14 | No known omission — but that is **absence of a measurement, not a clearance** |
+>
+> **So the gate is authoritative for the 8 above and for the remaining 14 as far as anything has been
+> checked; it is NOT authoritative for scroll, and makes no finding on gnosis today.**
+>
+> **It will therefore keep printing `not clear to deploy` on every run until #287 lands or scroll is
+> explicitly waived.** That is the gate working, not a regression. **Do not "fix" it by raising a floor
+> or silencing the row** — a 1 gwei floor was already measured reporting `TOP UP` on **11 of 24**
+> amply-funded chains. The two legitimate exits are landing #287, or recording a waiver for scroll with
+> a named person, a date and the basis.
+>
+> One caveat on wording, because the mechanism is threshold-driven rather than intentional: on `main`
+> today scroll is unpriceable only because `priceable = quoted >= GAS_PRICE_IMPLAUSIBLE_WEI`
+> (`deployer_balances.py:117`), so a higher quote would price it **while still omitting L1 DA**. It is
+> #284 that makes the refusal deliberate rather than incidental.
+
 **The script still exits non-zero and prints `not clear to deploy`, and the reason is the two
 unpriceable chains, not a shortfall.** Measured the same day:
 
@@ -1540,7 +1568,8 @@ other 11 hold **zero of both**. So ~**$9.76** was missing from its anchor, again
 `debankUsd` of `175.305516` — about **5.6%** of that figure.
 
 **Material, but do not overstate it: it does not flip a parity verdict.** ACCOUNT_1's committed
-`navUsd8dp` is ~$218.96, so the NAV-vs-DeBank drift is ~19.9% before the fix and ~15.5% after — the
+`navUsd8dp` is ~$218.96, so the drift is **~19.9% before the fix and ~15.5% after** when expressed
+against NAV (**~24.9% → ~18.3%** against the anchor — state the denominator, the two differ). The
 account sits far outside the 1% tolerance either way, and its own `$comment` already documents an
 expected ~12% drift. The correction moves the anchor toward NAV; it does not change a pass into a fail.
 

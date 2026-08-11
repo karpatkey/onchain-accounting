@@ -619,8 +619,13 @@ but the estimate for it is now **0.00293**, not 0.02800 — the balance figure a
 > **So the gate is authoritative for the 8 above and for the remaining 14 as far as anything has been
 > checked; it is NOT authoritative for scroll, and makes no finding on gnosis today.**
 >
-> **It will therefore keep printing `not clear to deploy` on every run until #287 lands or scroll is
-> explicitly waived.** That is the gate working, not a regression. **Do not "fix" it by raising a floor
+> **Today the blocker is TWO chains, not one.** With #284 unmerged, `deployer_balances.py` leaves both
+> gnosis and scroll unpriceable, so landing #287 or waiving scroll **cannot by itself clear this gate** —
+> gnosis would still hold it red. **Once #284 has landed** (gnosis priced from a pinned 2 gwei, plasma
+> likewise), scroll is the sole remaining blocker, and only then does it **keep printing
+> `not clear to deploy` on every run until #287 lands or scroll is explicitly waived.** Do not expect
+> #287 alone to make this preflight green while #284 is open, and do not read the residual gnosis
+> failure as a regression. That is the gate working, not a regression. **Do not "fix" it by raising a floor
 > or silencing the row** — a 1 gwei floor was already measured reporting `TOP UP` on **11 of 24**
 > amply-funded chains. The two legitimate exits are landing #287, or recording a waiver for scroll with
 > a named person, a date and the basis.
@@ -1582,6 +1587,15 @@ still needs reviewing on its own merits.
 `/v1/user/all_complex_protocol_list` per account (`:537`, covers every chain) plus one
 `/v1/user/token_list` per (chain × account) (`:633`), gated on `DEBANK_API_KEY`, with
 `/v1/account/units` queried first (`:127`).
+
+**A skipped DeBank step is NOT an acceptable completion of this re-baseline, and it fails quietly.** The
+cross-check is conditional: with `DEBANK_API_KEY` unset the script prints *"DEBANK_API_KEY not set —
+DeBank cross-check skipped"*, and if the units probe returns no balance it prints *"proceeding without
+DeBank cross-check"* — in both cases it continues, exits normally, and **leaves every existing
+`debankUsd` untouched**. The whole point of this re-baseline is ACCOUNT_1's corrected anchor, so a run
+that skipped DeBank has not done it. **Prerequisites are therefore: authorisation for the unit spend AND
+a working key with units available.** Afterwards, confirm `expected."1".debankUsd` for ACCOUNT_1 actually
+changed — an unchanged value means the step was skipped, not that nothing needed correcting.
 
 Before spending anything, re-verify the allowlist is non-empty — no RPC needed: confirm
 `generate-comparison-report.py`'s `adapter_aggregated_addrs('1')` returns both Cap token addresses.

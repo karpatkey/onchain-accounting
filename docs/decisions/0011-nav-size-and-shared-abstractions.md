@@ -79,7 +79,7 @@ decided.)
   + `IERC165`. A thin `SingleAssetBalanceAdapterBase` subbase adds the single-underlying getter
   triad (`underlyingAssetsSupported` / `getAdapterBalanceForAsset` / `getAdapterBalances`) off one
   `_owedAmount` hook, used by the Lido/Stader/Ethena withdrawal-queue adapters. `_getAssetInfo`
-  was **not** hoisted into the base — it remains a per-adapter copy (Cap, ERC20Default, …).
+  was **not** hoisted into the base — it remains a per-adapter copy (the Cap leg adapters, ERC20Default, …).
 - A `StaticCallLib` carrying the `safeUint` / `safeAddr` staticcall-and-decode helpers
   duplicated (and already drifting) across the Convex (`ConvexCurveLPStakingMetaBalanceAdapter`)
   and `UniswapV2PairLib` call sites. (The Aura adapter, which shared the same copy, has since

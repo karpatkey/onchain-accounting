@@ -23,7 +23,8 @@ import {
     GearboxV3MarketsMetaBalanceAdapter
 } from "../../src/balances/MetaBalanceAdapters/GearboxV3MarketsMetaBalanceAdapter.sol";
 import {EulerVaultsMetaBalanceAdapter} from "../../src/balances/MetaBalanceAdapters/EulerVaultsMetaBalanceAdapter.sol";
-import {CapBalanceAdapter} from "../../src/balances/BalanceAdapters/CapBalanceAdapter.sol";
+import {CapStablecoinBalanceAdapter} from "../../src/balances/BalanceAdapters/cap/CapStablecoinBalanceAdapter.sol";
+import {CapSavingsBalanceAdapter} from "../../src/balances/BalanceAdapters/cap/CapSavingsBalanceAdapter.sol";
 import {
     CurvePoolsMetaBalanceAdapter
 } from "../../src/balances/MetaBalanceAdapters/curve/CurvePoolsMetaBalanceAdapter.sol";
@@ -132,8 +133,9 @@ contract DeployBalanceAdapters is BaseDeployScript {
         // --- Aave Umbrella (Mainnet only; multi-token adapter mirroring the SM design, see ADR 0007) ---
         _deployIfEnabled("AaveUmbrella");
 
-        // --- Cap Finance (Mainnet only) ---
-        _deployIfEnabled("Cap");
+        // --- Cap Finance (Mainnet only; ONE ADAPTER PER LEG so each label segment is per-adapter constant) ---
+        _deployIfEnabled("CapStablecoin");
+        _deployIfEnabled("CapSavings");
 
         // --- Morpho Vaults meta-adapter (one adapter for all vaults; instance set on NAV, ADR 0010) ---
         _deployIfEnabled("MorphoVaultsMeta"); // Meta-adapter: all Morpho vaults; instance set configured on NAV (ADR 0010)
@@ -353,9 +355,12 @@ contract DeployBalanceAdapters is BaseDeployScript {
             return _deployGearboxV3MarketsMeta(adapterName, navCalculator);
         }
 
-        // Cap Finance adapter
-        if (_equals(adapterName, "Cap")) {
-            return _deployCap(navCalculator);
+        // Cap Finance adapters — one per leg (held cUSD / staked stcUSD)
+        if (_equals(adapterName, "CapStablecoin")) {
+            return _deployCapStablecoin(navCalculator);
+        }
+        if (_equals(adapterName, "CapSavings")) {
+            return _deployCapSavings(navCalculator);
         }
 
         // Curve meta-adapters (ADR 0010)
@@ -521,16 +526,29 @@ contract DeployBalanceAdapters is BaseDeployScript {
         return address(adapter);
     }
 
-    function _deployCap(address navCalculator) internal returns (address) {
-        address cUsd =
-            vm.parseAddress(ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", "Cap", "cUsd"));
-        address stcUsd =
-            vm.parseAddress(ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", "Cap", "stcUsd"));
-        address usdc =
-            vm.parseAddress(ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", "Cap", "usdc"));
+    /// @notice Deploys the Cap cUSD (stablecoin) leg adapter. Reads `cUsd` + `usdc` from its OWN config key —
+    ///         the two Cap adapters carry separate constructor blocks so neither depends on the other's config.
+    function _deployCapStablecoin(address navCalculator) internal returns (address) {
+        address cUsd = vm.parseAddress(
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", "CapStablecoin", "cUsd")
+        );
+        address usdc = vm.parseAddress(
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", "CapStablecoin", "usdc")
+        );
+        return address(new CapStablecoinBalanceAdapter(cUsd, usdc, navCalculator));
+    }
 
-        CapBalanceAdapter adapter = new CapBalanceAdapter(cUsd, stcUsd, usdc, navCalculator);
-        return address(adapter);
+    /// @notice Deploys the Cap stcUSD (savings) leg adapter. Takes `cUsd` too: cUSD is the burn-quote oracle for the
+    ///         second valuation hop (stcUSD shares -> cUSD -> USDC), not just the other leg's token.
+    function _deployCapSavings(address navCalculator) internal returns (address) {
+        address cUsd =
+            vm.parseAddress(ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", "CapSavings", "cUsd"));
+        address stcUsd = vm.parseAddress(
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", "CapSavings", "stcUsd")
+        );
+        address usdc =
+            vm.parseAddress(ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", "CapSavings", "usdc"));
+        return address(new CapSavingsBalanceAdapter(cUsd, stcUsd, usdc, navCalculator));
     }
 
     function _deployCurvePoolsMeta(string memory, address navCalculator) internal returns (address) {

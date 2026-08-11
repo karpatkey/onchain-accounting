@@ -14,8 +14,13 @@
   "AaveUmbrella": {
     "enabled": true
   },
-  "Cap": {
-    "enabled": true
+  "CapStablecoin": {
+    "enabled": true,
+    "$comment": "Cap cUSD leg. Registered via addBalanceAdapters, alongside its CapSavings sibling — the former single `Cap` key registered one contract that served both legs."
+  },
+  "CapSavings": {
+    "enabled": true,
+    "$comment": "Cap stcUSD leg. Registered via addBalanceAdapters, alongside its CapStablecoin sibling."
   },
   "MorphoVault_kpkETHPrime_V1": {
     "enabled": false

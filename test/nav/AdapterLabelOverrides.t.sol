@@ -63,8 +63,15 @@ contract NoLabelAdapter is Mock_CustomBalanceAdapter {
     }
 }
 
-/// @notice The `CapBalanceAdapter` shape: index 0 is a LITERAL, but a DIFFERENT literal per positionId. A per-adapter
-///         override cannot express that, which is why Cap is excluded.
+/// @notice A LITERAL segment that is a DIFFERENT literal per positionId. A per-adapter override cannot express that:
+///         one write rewrites every position of the adapter.
+/// @dev ⚠️ **This shape no longer has a counterpart in `src/`, and that is the point of keeping it.** It modelled
+///      `CapBalanceAdapter`, which served both Cap legs from one contract (`["Savings","stcUSD"]` vs
+///      `["Stablecoin","cUSD"]`); that adapter was SPLIT into `CapStablecoinBalanceAdapter` /
+///      `CapSavingsBalanceAdapter` precisely so no deployed adapter is in this state — `BALANCE_ADAPTERS.md` §6.2's
+///      sweep is the evidence that Cap was the only one. The mock stays because the MECHANISM's limitation is
+///      unchanged and unenforceable, so the next adapter author who reaches for a per-position literal needs the
+///      behaviour pinned rather than rediscovered.
 /// @dev Implements {IBalanceAdapter} directly rather than extending `Mock_CustomBalanceAdapter`, because that mock
 ///      hardcodes `row.positionId = abi.encode(address(this))` for every row and its `getAdapterPositions` is not
 ///      `virtual`. With one positionId shared by both legs, `positionLabels` would take the same branch twice and the
@@ -163,6 +170,33 @@ contract MetaShapedAdapter is Mock_CustomBalanceAdapter {
     }
 }
 
+/// @notice The `ConvexCurveLPStakingMetaBalanceAdapter` shape: a reply whose LENGTH varies by position — 2 elements
+///         when its leaf probe comes back empty, 3 when it answers.
+/// @dev This is the mock that makes the `min(reply.length, override.length)` bound assertable against something real
+///      rather than hypothetical. `ConvexCurveLPStakingMetaBalanceAdapter.positionLabels` builds `["Staking",
+///      "Curve LP"]` or `["Staking", "Curve LP", coins]` depending on whether `rewarderCoinSymbols` answers, so a
+///      3-segment override written under a fixed-length assumption is a `Panic(0x32)` on live data the moment the
+///      probe fails. Most of the meta family is a milder version of the same thing (0, 1 or 2 by position).
+contract VaryingLengthAdapter is Mock_CustomBalanceAdapter {
+    bool private _deep;
+
+    /// @notice Toggles the third segment on/off, standing in for the leaf probe succeeding or failing.
+    function setDeep(bool deep_) external {
+        _deep = deep_;
+    }
+
+    function protocolName() external pure returns (string memory) {
+        return "Convex";
+    }
+
+    function positionLabels(bytes calldata) external view returns (string[] memory out) {
+        out = new string[](_deep ? 3 : 2);
+        out[0] = "Staking";
+        out[1] = "Curve LP";
+        if (_deep) out[2] = "crvUSD/USDC";
+    }
+}
+
 /// @notice A registry that reverts on every call, to prove the read path is fail-open against a NON-ZERO but broken
 ///         registry — the case `address(0)` short-circuiting does not cover.
 contract RevertingRegistry {
@@ -177,8 +211,9 @@ contract OverlongRegistry {
         return string(new bytes(5000));
     }
 
-    function getAdapterLabelCategory(address) external pure returns (string memory) {
-        return string(new bytes(5000));
+    function getAdapterLabels(address) external pure returns (string[] memory out) {
+        out = new string[](1);
+        out[0] = string(new bytes(5000));
     }
 }
 
@@ -203,6 +238,35 @@ abstract contract AdapterLabelOverridesBase is SuperTest {
 
     function _v() internal view returns (INAVCalculator.VerbosePosition memory) {
         return _verboseFor(address(adapter));
+    }
+
+    /// @notice A one-segment override — exactly what the retired `setAdapterLabelCategory(adapter, s)` did.
+    /// @dev Every migrated call site in this file uses this, which is itself the evidence for the subsumption ruling:
+    ///      the scalar setter was a strict special case of the array one, not a complement to it.
+    function one(string memory a) internal pure returns (string[] memory out) {
+        out = new string[](1);
+        out[0] = a;
+    }
+
+    function two(string memory a, string memory b) internal pure returns (string[] memory out) {
+        out = new string[](2);
+        out[0] = a;
+        out[1] = b;
+    }
+
+    function three(string memory a, string memory b, string memory c) internal pure returns (string[] memory out) {
+        out = new string[](3);
+        out[0] = a;
+        out[1] = b;
+        out[2] = c;
+    }
+
+    /// @notice The configuration surface's breadcrumb for a single adapter.
+    function _configLabels(address a) internal view returns (string[] memory) {
+        address[] memory one_ = new address[](1);
+        one_[0] = a;
+        (, string[][] memory labels) = nav.getAdapterDisplayInfo(one_);
+        return labels[0];
     }
 }
 
@@ -288,14 +352,14 @@ contract AdapterLabelOverridesTest is AdapterLabelOverridesBase {
     // (B) label-category override
     // ------------------------------------------------------------------
 
-    function test_categoryOverride_replacesCategoryAndPreservesComputedLeaf() public {
+    function test_labelsOverride_replacesSegment0AndPreservesComputedLeaf() public {
         INAVCalculator.VerbosePosition memory v = _v();
         assertEq(v.labels.length, 2);
         assertEq(v.labels[0], "Market", "baseline category");
         assertEq(v.labels[1], "wstETH/USDC", "baseline leaf");
 
         vm.prank(navCalculatorManager);
-        registry.setAdapterLabelCategory(address(adapter), "Lending Market");
+        registry.setAdapterLabels(address(adapter), one("Lending Market"));
 
         v = _v();
         assertEq(v.labels.length, 2, "the override must not change the array length");
@@ -305,9 +369,9 @@ contract AdapterLabelOverridesTest is AdapterLabelOverridesBase {
 
     /// @dev The load-bearing claim of the whole design: the leaf stays LIVE. With a category override in place, a
     ///      change in the adapter's derived leaf must still flow through. A table that froze the leaf would fail this.
-    function test_categoryOverride_leafStaysLive() public {
+    function test_labelsOverride_leafStaysLive() public {
         vm.prank(navCalculatorManager);
-        registry.setAdapterLabelCategory(address(adapter), "Lending Market");
+        registry.setAdapterLabels(address(adapter), one("Lending Market"));
 
         adapter.setLeaf("WETH/DAI");
 
@@ -316,11 +380,11 @@ contract AdapterLabelOverridesTest is AdapterLabelOverridesBase {
         assertEq(v.labels[1], "WETH/DAI", "the leaf must be recomputed live, never frozen");
     }
 
-    function test_categoryOverride_clearRestoresAdapterCategory() public {
+    function test_labelsOverride_clearRestoresAdapterSegments() public {
         vm.startPrank(navCalculatorManager);
-        registry.setAdapterLabelCategory(address(adapter), "Lending Market");
+        registry.setAdapterLabels(address(adapter), one("Lending Market"));
         assertEq(_v().labels[0], "Lending Market");
-        registry.clearAdapterLabelCategory(address(adapter));
+        registry.clearAdapterLabels(address(adapter));
         vm.stopPrank();
 
         assertEq(_v().labels[0], "Market", "clearing must fall back to the adapter");
@@ -328,27 +392,30 @@ contract AdapterLabelOverridesTest is AdapterLabelOverridesBase {
 
     /// @dev An adapter that describes no segments has no category to correct. The override must leave the empty
     ///      reply empty rather than growing it to length 1.
-    function test_categoryOverride_doesNotGrowAnEmptyLabelSet() public {
+    function test_labelsOverride_doesNotGrowAnEmptyLabelSet() public {
         NoLabelAdapter silent = new NoLabelAdapter();
         _register(silent);
 
         vm.prank(navCalculatorManager);
-        registry.setAdapterLabelCategory(address(silent), "Invented Category");
+        registry.setAdapterLabels(address(silent), one("Invented Category"));
 
         assertEq(_verboseFor(address(silent)).labels.length, 0, "an empty reply must stay empty");
     }
 
-    /// @dev The documented hazard, asserted rather than assumed. `ERC20DefaultBalanceAdapter`'s shape is a single
-    ///      element that IS the computed leaf, so an override there replaces the leaf. The mechanism sees an array,
-    ///      not the source, and cannot tell a category from a leaf — hence the exclusion is operational, not enforced.
-    function test_categoryOverride_onLeafOnlyAdapter_replacesTheLeaf_documentedHazard() public {
+    /// @dev The documented hazard, asserted rather than assumed, and now the ONLY adapter-level exclusion left.
+    ///      `ERC20DefaultBalanceAdapter`'s shape is a single element that IS the computed leaf, so any override there
+    ///      replaces the leaf. The mechanism sees an array, not the source, and cannot tell a category from a leaf —
+    ///      hence the exclusion is operational, not enforced. Note there is no way to express "override nothing" for a
+    ///      one-element reply: `[""]` is refused as an override that reads back as absence, so the guidance really is
+    ///      "leave this adapter alone".
+    function test_labelsOverride_onLeafOnlyAdapter_replacesTheLeaf_documentedHazard() public {
         LeafOnlyAdapter leafOnly = new LeafOnlyAdapter();
         _register(leafOnly);
 
         assertEq(_verboseFor(address(leafOnly)).labels[0], "USDC");
 
         vm.prank(navCalculatorManager);
-        registry.setAdapterLabelCategory(address(leafOnly), "Wallet Balance");
+        registry.setAdapterLabels(address(leafOnly), one("Wallet Balance"));
 
         assertEq(
             _verboseFor(address(leafOnly)).labels[0],
@@ -369,7 +436,7 @@ contract AdapterLabelOverridesTest is AdapterLabelOverridesBase {
         vm.prank(navCalculatorManager);
         registry.clearAdapterProtocolName(address(adapter));
         vm.prank(navCalculatorManager);
-        registry.setAdapterLabelCategory(address(adapter), "Lending Market");
+        registry.setAdapterLabels(address(adapter), one("Lending Market"));
 
         v = _v();
         assertEq(v.protocolName, "Mock Protocol", "the name is untouched by a category override");
@@ -391,7 +458,7 @@ contract AdapterLabelOverridesTest is AdapterLabelOverridesBase {
 
         vm.startPrank(navCalculatorManager);
         registry.setAdapterProtocolName(address(adapter), "Overridden Protocol");
-        registry.setAdapterLabelCategory(address(adapter), "Lending Market");
+        registry.setAdapterLabels(address(adapter), one("Lending Market"));
         vm.stopPrank();
 
         INAVCalculator.VerbosePosition memory afterOverride = _verboseFor(address(other));
@@ -425,9 +492,9 @@ contract AdapterLabelOverridesTest is AdapterLabelOverridesBase {
         registry.setAdapterProtocolName(address(adapter), "Nope");
     }
 
-    function test_RevertIf_setAdapterLabelCategory_notManager() public {
+    function test_RevertIf_setAdapterLabels_notManager() public {
         vm.expectRevert(NotAuthorized.selector);
-        registry.setAdapterLabelCategory(address(adapter), "Nope");
+        registry.setAdapterLabels(address(adapter), one("Nope"));
     }
 
     function test_RevertIf_clearAdapterProtocolName_notManager() public {
@@ -442,11 +509,11 @@ contract AdapterLabelOverridesTest is AdapterLabelOverridesBase {
         registry.setAdapterProtocolName(ghost, "Ghost Protocol");
     }
 
-    function test_RevertIf_setAdapterLabelCategory_unregisteredAdapter() public {
+    function test_RevertIf_setAdapterLabels_unregisteredAdapter() public {
         address ghost = makeAddr("ghost");
         vm.prank(navCalculatorManager);
         vm.expectRevert(abi.encodeWithSelector(IAssetKindRegistry.AdapterNotRegistered.selector, ghost));
-        registry.setAdapterLabelCategory(ghost, "Ghost Category");
+        registry.setAdapterLabels(ghost, one("Ghost Category"));
     }
 
     function test_RevertIf_setAdapterProtocolName_empty() public {
@@ -480,10 +547,10 @@ contract AdapterLabelOverridesTest is AdapterLabelOverridesBase {
         registry.clearAdapterProtocolName(address(adapter));
     }
 
-    function test_RevertIf_clearAdapterLabelCategory_notSet() public {
+    function test_RevertIf_clearAdapterLabels_notSet() public {
         vm.prank(navCalculatorManager);
         vm.expectRevert(abi.encodeWithSelector(IAssetKindRegistry.AdapterOverrideNotSet.selector, address(adapter)));
-        registry.clearAdapterLabelCategory(address(adapter));
+        registry.clearAdapterLabels(address(adapter));
     }
 
     /// @dev Clearing must stay possible after the adapter is deregistered, or an override would be both unreadable
@@ -503,7 +570,7 @@ contract AdapterLabelOverridesTest is AdapterLabelOverridesBase {
 
     function test_getters_returnEmptyWhenUnset() public view {
         assertEq(registry.getAdapterProtocolName(address(adapter)), "");
-        assertEq(registry.getAdapterLabelCategory(address(adapter)), "");
+        assertEq(registry.getAdapterLabels(address(adapter)).length, 0, "no label override set");
     }
 
     // ------------------------------------------------------------------
@@ -529,7 +596,7 @@ contract AdapterLabelOverridesTest is AdapterLabelOverridesBase {
 
         vm.startPrank(navCalculatorManager);
         registry.setAdapterProtocolName(address(multi), "Overridden Protocol");
-        registry.setAdapterLabelCategory(address(multi), "Lending Market");
+        registry.setAdapterLabels(address(multi), one("Lending Market"));
         vm.stopPrank();
 
         INAVCalculator.VerbosePosition[] memory all = nav.getAccountPositionsVerbose(safe, address(0));
@@ -544,10 +611,14 @@ contract AdapterLabelOverridesTest is AdapterLabelOverridesBase {
         assertEq(seen, 2, "the adapter must have produced two positions, or the cache path was not exercised");
     }
 
-    /// @dev The second documented exclusion, asserted rather than assumed. `CapBalanceAdapter` emits a DIFFERENT
-    ///      literal at index 0 per position, so one per-adapter override necessarily rewrites both legs. This is why
-    ///      Cap must not be given a category override, and it is a distinct reason from `ERC20DefaultBalanceAdapter`'s.
-    function test_categoryOverride_onPerPositionCategoryAdapter_rewritesBothLegs_documentedHazard() public {
+    /// @dev The mechanism's per-position limitation, asserted rather than assumed: an adapter emitting a DIFFERENT
+    ///      literal at index 0 per position has both of them rewritten by one per-adapter override.
+    ///
+    ///      **No adapter in `src/` is in this state any more.** `CapBalanceAdapter` was, at both indices, and was
+    ///      split into two one-leg adapters rather than accommodated here. This test therefore pins a property of the
+    ///      MECHANISM against a synthetic shape — which is still worth having, because nothing on-chain can detect the
+    ///      shape and the fix is always "split the adapter", never "extend the table".
+    function test_labelsOverride_onPerPositionLiteralAdapter_rewritesBothLegs_documentedHazard() public {
         PerPositionCategoryAdapter cap = new PerPositionCategoryAdapter(address(usdc), address(dai));
         vm.prank(navCalculatorManager);
         nav.addBalanceAdapters(aa(address(cap)));
@@ -566,7 +637,7 @@ contract AdapterLabelOverridesTest is AdapterLabelOverridesBase {
         );
 
         vm.prank(navCalculatorManager);
-        registry.setAdapterLabelCategory(address(cap), "Synthetic Dollar");
+        registry.setAdapterLabels(address(cap), one("Synthetic Dollar"));
 
         all = nav.getAccountPositionsVerbose(safe, address(0));
         uint256 seen;
@@ -684,10 +755,17 @@ contract AdapterLabelOverridesTest is AdapterLabelOverridesBase {
     ///      taste.** Two positions from ONE adapter: the lookup is cached at the `adapter != prevAdapter` boundary,
     ///      so the surcharge must stay one pair of registry reads per DISTINCT adapter.
     ///
-    ///      Measured on clean HEAD: 9,790. Measured with `_adapterOverrides` moved out of the cache branch so it runs
-    ///      per position: 14,993. An earlier revision bounded this at 50,000 and therefore passed under that exact
-    ///      mutation — the regression it was written to catch shipped green. The bound is now 12,000: above the
-    ///      honest number with room for compiler drift, below the mutant.
+    ///      ⚠️ **Re-measured when the segment-0-only category override became the per-segment
+    ///      {IAssetKindRegistry.setAdapterLabels} array override, which made this leg genuinely more expensive.** The
+    ///      registry read went from one flat `string` to a `string[]` behind the isolating decode shim, so the
+    ///      surcharge rose from 9,790 to **15,343**, and the 12,000 bound below it had to move. That is a real cost
+    ///      increase, not measurement noise, and it is stated rather than absorbed.
+    ///
+    ///      Both arms, on this tree: **15,343** clean vs **20,292** with the override read moved out of the cache
+    ///      branch so it runs per position. The bound is **17,500** — above the honest number with room for compiler
+    ///      drift, below the mutant. (History worth keeping: an earlier revision bounded this at 50,000 and therefore
+    ///      PASSED under that exact mutation, so the regression it was written to catch shipped green. The bound is
+    ///      set from the mutant every time for that reason.)
     function test_gas_surchargeIsPerAdapter_notPerPosition() public {
         LabelledAdapter multi = new LabelledAdapter("Multi Protocol", "Market", "leaf");
         address[] memory assets = new address[](2);
@@ -716,7 +794,7 @@ contract AdapterLabelOverridesTest is AdapterLabelOverridesBase {
 
         uint256 surcharge = withRegistry - noRegistry;
         emit log_named_uint("surcharge, 2 adapters / 3 positions", surcharge);
-        assertLt(surcharge, 12_000, "the surcharge must scale with DISTINCT ADAPTERS, not with positions");
+        assertLt(surcharge, 17_500, "the surcharge must scale with DISTINCT ADAPTERS, not with positions");
     }
 
     /// @dev The hostile-registry ceiling the `_NAME_READ_GAS` docstring actually claims: a registry that burns its
@@ -811,7 +889,7 @@ contract AdapterLabelOverridesTest is AdapterLabelOverridesBase {
 
         vm.startPrank(navCalculatorManager);
         registry.setAdapterProtocolName(address(adapter), "Overridden Protocol");
-        registry.setAdapterLabelCategory(address(adapter), "Lending Market");
+        registry.setAdapterLabels(address(adapter), one("Lending Market"));
         vm.stopPrank();
 
         address[] memory all = nav.getAllAdapters();
@@ -882,22 +960,22 @@ contract AdapterLabelOverridesTest is AdapterLabelOverridesBase {
     ///      `getAccountPositionsVerbose` and invisible on the configuration surface — the two surfaces disagreeing
     ///      about `labels[0]`, which is the very split this feature exists to close. The configuration path now
     ///      surfaces the override as a one-element breadcrumb.
-    function test_configurationSurface_surfacesCategoryForMetaShapedAdapter() public {
+    function test_configurationSurface_surfacesOverrideForMetaShapedAdapter() public {
         MetaShapedAdapter meta = new MetaShapedAdapter();
         _register(meta);
 
-        address[] memory one = new address[](1);
-        one[0] = address(meta);
+        address[] memory listed = new address[](1);
+        listed[0] = address(meta);
 
         // Control: with no override, the configuration surface legitimately has no breadcrumb for this adapter.
-        (, string[][] memory before) = nav.getAdapterDisplayInfo(one);
+        (, string[][] memory before) = nav.getAdapterDisplayInfo(listed);
         assertEq(before.length, 1);
         assertEq(before[0].length, 0, "control: a meta-shaped adapter has no positionId-independent breadcrumb");
 
         vm.prank(navCalculatorManager);
-        registry.setAdapterLabelCategory(address(meta), "Lending Market");
+        registry.setAdapterLabels(address(meta), one("Lending Market"));
 
-        (, string[][] memory afterSet) = nav.getAdapterDisplayInfo(one);
+        (, string[][] memory afterSet) = nav.getAdapterDisplayInfo(listed);
         assertEq(afterSet[0].length, 1, "the override must be surfaced, not dropped");
         assertEq(afterSet[0][0], "Lending Market", "and it must be the category the operator set");
 
@@ -919,7 +997,7 @@ contract AdapterLabelOverridesTest is AdapterLabelOverridesBase {
     function test_override_appliesTo_getAccountNavVerbose() public {
         vm.startPrank(navCalculatorManager);
         registry.setAdapterProtocolName(address(adapter), "Overridden Protocol");
-        registry.setAdapterLabelCategory(address(adapter), "Lending Market");
+        registry.setAdapterLabels(address(adapter), one("Lending Market"));
         vm.stopPrank();
 
         INAVCalculator.VerboseNAV memory vn = nav.getAccountNavVerbose(safe, address(0));
@@ -937,7 +1015,7 @@ contract AdapterLabelOverridesTest is AdapterLabelOverridesBase {
     function test_override_appliesTo_getAccountPositionsForAssetVerbose() public {
         vm.startPrank(navCalculatorManager);
         registry.setAdapterProtocolName(address(adapter), "Overridden Protocol");
-        registry.setAdapterLabelCategory(address(adapter), "Lending Market");
+        registry.setAdapterLabels(address(adapter), one("Lending Market"));
         vm.stopPrank();
 
         INAVCalculator.VerbosePosition[] memory all =
@@ -974,54 +1052,375 @@ contract AdapterLabelOverridesTest is AdapterLabelOverridesBase {
         registry.clearAdapterProtocolName(address(adapter));
     }
 
-    function test_setAdapterLabelCategory_emits() public {
+    function test_setAdapterLabels_emits() public {
         vm.expectEmit(true, false, false, true, address(registry));
-        emit IAssetKindRegistry.AdapterLabelCategorySet(address(adapter), "Lending Market");
+        emit IAssetKindRegistry.AdapterLabelsSet(address(adapter), one("Lending Market"));
         vm.prank(navCalculatorManager);
-        registry.setAdapterLabelCategory(address(adapter), "Lending Market");
+        registry.setAdapterLabels(address(adapter), one("Lending Market"));
     }
 
-    function test_clearAdapterLabelCategory_emits() public {
+    function test_clearAdapterLabels_emits() public {
         vm.prank(navCalculatorManager);
-        registry.setAdapterLabelCategory(address(adapter), "Lending Market");
+        registry.setAdapterLabels(address(adapter), one("Lending Market"));
 
         vm.expectEmit(true, false, false, true, address(registry));
-        emit IAssetKindRegistry.AdapterLabelCategoryCleared(address(adapter));
+        emit IAssetKindRegistry.AdapterLabelsCleared(address(adapter));
         vm.prank(navCalculatorManager);
-        registry.clearAdapterLabelCategory(address(adapter));
+        registry.clearAdapterLabels(address(adapter));
     }
 
     // ------------------------------------------------------------------
     // Validator parity: the category setter must be guarded exactly like the name setter
     // ------------------------------------------------------------------
 
-    function test_RevertIf_clearAdapterLabelCategory_notManager() public {
+    function test_RevertIf_clearAdapterLabels_notManager() public {
         vm.expectRevert(NotAuthorized.selector);
-        registry.clearAdapterLabelCategory(address(adapter));
+        registry.clearAdapterLabels(address(adapter));
     }
 
-    function test_RevertIf_setAdapterLabelCategory_empty() public {
+    function test_RevertIf_setAdapterLabels_singleEmptyElement() public {
         vm.prank(navCalculatorManager);
         vm.expectRevert(abi.encodeWithSelector(IAssetKindRegistry.EmptyAdapterOverride.selector, address(adapter)));
-        registry.setAdapterLabelCategory(address(adapter), "");
+        registry.setAdapterLabels(address(adapter), one(""));
     }
 
-    function test_RevertIf_setAdapterLabelCategory_tooLong() public {
+    function test_RevertIf_setAdapterLabels_elementTooLong() public {
         string memory tooLong = "123456789012345678901234567890123"; // 33 bytes
         vm.prank(navCalculatorManager);
         vm.expectRevert(
             abi.encodeWithSelector(
-                IAssetKindRegistry.AdapterOverrideTooLong.selector, address(adapter), uint256(33), uint256(32)
+                IAssetKindRegistry.AdapterLabelTooLong.selector, address(adapter), uint256(0), uint256(33), uint256(32)
             )
         );
-        registry.setAdapterLabelCategory(address(adapter), tooLong);
+        registry.setAdapterLabels(address(adapter), one(tooLong));
     }
 
-    function test_setAdapterLabelCategory_atMaxLength() public {
+    function test_setAdapterLabels_elementAtMaxLength() public {
         string memory exact = "12345678901234567890123456789012"; // 32 bytes
         vm.prank(navCalculatorManager);
-        registry.setAdapterLabelCategory(address(adapter), exact);
+        registry.setAdapterLabels(address(adapter), one(exact));
         assertEq(_v().labels[0], exact);
+    }
+
+    // ------------------------------------------------------------------
+    // DEPTH: the per-segment override
+    // ------------------------------------------------------------------
+
+    /// @dev **The load-bearing bound, against a reply whose length genuinely varies.** `VaryingLengthAdapter` is the
+    ///      `ConvexCurveLPStakingMetaBalanceAdapter` shape: 2 segments when its leaf probe comes back empty, 3 when it
+    ///      answers. A 3-element override must therefore write only 2 of them in the shallow state — writing index 2
+    ///      of a 2-element array is `Panic(0x32)`, which would revert the whole verbose read and destroy the
+    ///      never-revert property the label path is built on.
+    ///
+    ///      Both states are asserted in ONE test on purpose: the shallow arm proves the bound holds, and the deep arm
+    ///      proves the bound is not simply dropping the third segment always. A test with only the shallow arm passes
+    ///      against an implementation that ignores index 2 entirely.
+    function test_labelsOverride_appliesOnlyWithinTheShorterArray() public {
+        VaryingLengthAdapter varying = new VaryingLengthAdapter();
+        _register(varying);
+
+        vm.prank(navCalculatorManager);
+        registry.setAdapterLabels(address(varying), three("Staking Position", "Curve Pool", "OVERRIDDEN"));
+
+        // Shallow: the adapter emits 2 segments, so the third override element must be inert — not a revert.
+        INAVCalculator.VerbosePosition memory v = _verboseFor(address(varying));
+        assertEq(v.labels.length, 2, "the override must not lengthen the reply");
+        assertEq(v.labels[0], "Staking Position");
+        assertEq(v.labels[1], "Curve Pool");
+
+        // Deep: the same override now has a third segment to land on.
+        varying.setDeep(true);
+        v = _verboseFor(address(varying));
+        assertEq(v.labels.length, 3, "the adapter, not the override, decides the length");
+        assertEq(v.labels[0], "Staking Position");
+        assertEq(v.labels[1], "Curve Pool");
+        assertEq(v.labels[2], "OVERRIDDEN", "and the third element is genuinely applied when it exists");
+    }
+
+    /// @dev The same bound on the CONFIGURATION surface, which has its own branch and could regress independently.
+    function test_labelsOverride_appliesOnlyWithinTheShorterArray_configurationSurface() public {
+        VaryingLengthAdapter varying = new VaryingLengthAdapter();
+        _register(varying);
+
+        vm.prank(navCalculatorManager);
+        registry.setAdapterLabels(address(varying), three("Staking Position", "Curve Pool", "OVERRIDDEN"));
+
+        string[] memory labels = _configLabels(address(varying));
+        assertEq(labels.length, 2, "the configuration surface truncates to the adapter's reply too");
+        assertEq(labels[0], "Staking Position");
+        assertEq(labels[1], "Curve Pool");
+    }
+
+    /// @dev `""` means "leave this segment alone", which is the whole reason a COMPUTED leaf survives a category
+    ///      correction. Asserted twice over: the leaf is right immediately, and it is still recomputed live afterwards
+    ///      — a frozen copy would pass the first assertion and fail the second.
+    function test_labelsOverride_emptyStringLeavesTheSegmentAlone() public {
+        vm.prank(navCalculatorManager);
+        registry.setAdapterLabels(address(adapter), two("Lending Market", ""));
+
+        INAVCalculator.VerbosePosition memory v = _v();
+        assertEq(v.labels.length, 2);
+        assertEq(v.labels[0], "Lending Market", "segment 0 replaced");
+        assertEq(v.labels[1], "wstETH/USDC", "segment 1 skipped: the adapter's computed leaf stands");
+
+        adapter.setLeaf("WETH/DAI");
+        v = _v();
+        assertEq(v.labels[0], "Lending Market");
+        assertEq(v.labels[1], "WETH/DAI", "and it is still derived LIVE, not frozen at override time");
+    }
+
+    /// @dev The other direction: a `""` at index 0 leaves the adapter's own category and still writes the leaf. This
+    ///      is what makes the skip a per-INDEX decision rather than a prefix-length one.
+    function test_labelsOverride_emptyStringAtSegment0LeavesTheCategory() public {
+        vm.prank(navCalculatorManager);
+        registry.setAdapterLabels(address(adapter), two("", "sUSDe (Ethena)"));
+
+        INAVCalculator.VerbosePosition memory v = _v();
+        assertEq(v.labels[0], "Market", "the adapter's own category is untouched");
+        assertEq(v.labels[1], "sUSDe (Ethena)", "while the deeper segment IS replaced");
+    }
+
+    /// @dev The case the whole feature exists for: an adapter whose leaf is ALSO a literal, so both segments are
+    ///      per-adapter constants and both are correctable. (`LidoWithdrawalQueueBalanceAdapter` is the real one:
+    ///      `["Withdrawal Queue", "stETH"]`.)
+    function test_labelsOverride_replacesEverySegmentWhenAllAreLiteral() public {
+        LabelledAdapter queue = new LabelledAdapter("Lido", "Withdrawal Queue", "stETH");
+        _register(queue);
+
+        vm.prank(navCalculatorManager);
+        registry.setAdapterLabels(address(queue), two("Withdrawal Queue", "Lido stETH"));
+
+        INAVCalculator.VerbosePosition memory v = _verboseFor(address(queue));
+        assertEq(v.labels.length, 2);
+        assertEq(v.labels[0], "Withdrawal Queue");
+        assertEq(v.labels[1], "Lido stETH");
+    }
+
+    /// @dev An override longer than {AssetKindRegistry.MAX_ADAPTER_LABEL_SEGMENTS} is rejected at the setter, and one
+    ///      at the bound is accepted but cannot lengthen a 2-element reply — so `NAVCalculator`'s
+    ///      `_MAX_LABEL_ELEMENTS = 8` is unreachable from the registry side. This is the element-cap property stated
+    ///      as an assertion instead of a comment.
+    function test_labelsOverride_cannotLengthenAReplyPastTheElementCap() public {
+        string[] memory eight = new string[](8);
+        for (uint256 i; i < 8; ++i) {
+            eight[i] = "seg";
+        }
+        vm.prank(navCalculatorManager);
+        registry.setAdapterLabels(address(adapter), eight);
+
+        assertEq(_v().labels.length, 2, "the adapter emitted 2 segments, so 2 is what comes back");
+        assertEq(_configLabels(address(adapter)).length, 2, "and the same on the configuration surface");
+    }
+
+    function test_RevertIf_setAdapterLabels_tooManySegments() public {
+        string[] memory nine = new string[](9);
+        for (uint256 i; i < 9; ++i) {
+            nine[i] = "seg";
+        }
+        vm.prank(navCalculatorManager);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IAssetKindRegistry.TooManyAdapterLabels.selector, address(adapter), uint256(9), uint256(8)
+            )
+        );
+        registry.setAdapterLabels(address(adapter), nine);
+    }
+
+    function test_setAdapterLabels_atMaxSegments() public {
+        string[] memory eight = new string[](8);
+        for (uint256 i; i < 8; ++i) {
+            eight[i] = "seg";
+        }
+        vm.prank(navCalculatorManager);
+        registry.setAdapterLabels(address(adapter), eight);
+        assertEq(registry.getAdapterLabels(address(adapter)).length, 8, "exactly at the bound must be accepted");
+    }
+
+    /// @dev An empty ARRAY and an array of only `""` are the same mistake — an override that overlays nothing at any
+    ///      index and therefore reads back as absence. Both must be refused rather than silently stored, or a caller
+    ///      trying to clear gets success for a request that did nothing.
+    function test_RevertIf_setAdapterLabels_emptyArray() public {
+        vm.prank(navCalculatorManager);
+        vm.expectRevert(abi.encodeWithSelector(IAssetKindRegistry.EmptyAdapterOverride.selector, address(adapter)));
+        registry.setAdapterLabels(address(adapter), new string[](0));
+    }
+
+    function test_RevertIf_setAdapterLabels_allElementsEmpty() public {
+        vm.prank(navCalculatorManager);
+        vm.expectRevert(abi.encodeWithSelector(IAssetKindRegistry.EmptyAdapterOverride.selector, address(adapter)));
+        registry.setAdapterLabels(address(adapter), three("", "", ""));
+    }
+
+    /// @dev ...but an array with SOME empty elements is legitimate and must be stored verbatim, `""` included, since
+    ///      the read path needs the positions to line up. A setter that compacted the skips would shift every later
+    ///      segment.
+    function test_setAdapterLabels_storesSkipSentinelsVerbatim() public {
+        vm.prank(navCalculatorManager);
+        registry.setAdapterLabels(address(adapter), three("", "Leaf", ""));
+
+        string[] memory stored = registry.getAdapterLabels(address(adapter));
+        assertEq(stored.length, 3, "the skips occupy their indices");
+        assertEq(stored[0], "");
+        assertEq(stored[1], "Leaf");
+        assertEq(stored[2], "");
+    }
+
+    /// @dev The index must be reported, not just "one of them is too long" — with eight candidate segments the
+    ///      scalar error's payload is not actionable. Asserted at a NON-ZERO index so a hardcoded 0 fails.
+    function test_RevertIf_setAdapterLabels_elementTooLong_namesTheIndex() public {
+        string memory tooLong = "123456789012345678901234567890123"; // 33 bytes
+        vm.prank(navCalculatorManager);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IAssetKindRegistry.AdapterLabelTooLong.selector, address(adapter), uint256(1), uint256(33), uint256(32)
+            )
+        );
+        registry.setAdapterLabels(address(adapter), two("Fine", tooLong));
+    }
+
+    // ------------------------------------------------------------------
+    // DEPTH: the two surfaces must agree at EVERY segment
+    // ------------------------------------------------------------------
+
+    /// @dev **The surface-agreement invariant, at depth.** Both display paths overlay through the same
+    ///      `PriceFeedLib._applyLabelOverride`, so they cannot report different segments for one adapter. Asserted
+    ///      element-by-element over the whole array — not just `labels[0]` — because the array override is exactly
+    ///      what makes a deeper disagreement possible for the first time.
+    function test_bothSurfaces_agreeOnEverySegment() public {
+        vm.prank(navCalculatorManager);
+        registry.setAdapterLabels(address(adapter), two("Lending Market", ""));
+
+        string[] memory position = _v().labels;
+        string[] memory config = _configLabels(address(adapter));
+
+        assertEq(config.length, position.length, "the two surfaces must agree on the ARRAY LENGTH");
+        assertGt(position.length, 1, "control: there is more than one segment to disagree about");
+        for (uint256 i; i < position.length; ++i) {
+            assertEq(config[i], position[i], "the two surfaces must agree at every segment");
+        }
+        // ...and agree on the right values, not merely on the same wrong ones.
+        assertEq(position[0], "Lending Market");
+        assertEq(position[1], "wstETH/USDC");
+    }
+
+    /// @dev The empty-reply divergence, PRESERVED. The position path leaves an adapter that described nothing empty;
+    ///      the configuration path grows it, because there the operator's answer is the whole answer. Skipping the
+    ///      grow left the two surfaces disagreeing for 21 of 33 adapters, so this is pinned rather than assumed.
+    ///
+    ///      What the array override adds: the grown array is the override's LEADING NON-EMPTY PREFIX, so a trailing
+    ///      `""` is dropped rather than rendered as a blank segment. An implementation that copied the whole override
+    ///      answers length 2 here with `labels[1] == ""`.
+    function test_configurationSurface_growsEmptyReplyToLeadingNonEmptyPrefixOnly() public {
+        MetaShapedAdapter meta = new MetaShapedAdapter();
+        _register(meta);
+
+        assertEq(_configLabels(address(meta)).length, 0, "control: no breadcrumb without an override");
+
+        vm.prank(navCalculatorManager);
+        registry.setAdapterLabels(address(meta), two("Lending Market", ""));
+
+        string[] memory config = _configLabels(address(meta));
+        assertEq(config.length, 1, "the trailing skip must NOT be surfaced as a blank segment");
+        assertEq(config[0], "Lending Market");
+
+        // The position path still leaves the EMPTY reply alone (its `positionLabels("")` is what was empty), while a
+        // real positionId gets the overlay — the deliberate asymmetry, both halves in one place.
+        INAVCalculator.VerbosePosition memory v = _verboseFor(address(meta));
+        assertEq(v.labels.length, 2, "the position path sees a real 2-segment reply");
+        assertEq(v.labels[0], "Lending Market", "and agrees with the configuration surface at segment 0");
+        assertEq(v.labels[1], "steakUSDC", "leaf still derived live");
+    }
+
+    /// @dev The grow must stop at the FIRST empty element, not skip past it. An override of `["", "Curve Pool"]` on an
+    ///      adapter with no breadcrumb must grow to NOTHING: promoting `"Curve Pool"` to index 0 would put it at an
+    ///      index the position path never shows it at, which is the surface disagreement in a new costume.
+    function test_configurationSurface_skippedSegment0GrowsNothing() public {
+        MetaShapedAdapter meta = new MetaShapedAdapter();
+        _register(meta);
+
+        vm.prank(navCalculatorManager);
+        registry.setAdapterLabels(address(meta), two("", "Curve Pool"));
+
+        assertEq(_configLabels(address(meta)).length, 0, "a skipped segment 0 must not be filled from below");
+    }
+
+    /// @dev Every segment of a multi-segment override reaches the configuration surface when the adapter has nothing
+    ///      to say — the counterpart of the test above, so "grow to the prefix" is not read as "grow to one".
+    function test_configurationSurface_growsToTheWholeOverrideWhenNoneAreSkipped() public {
+        MetaShapedAdapter meta = new MetaShapedAdapter();
+        _register(meta);
+
+        vm.prank(navCalculatorManager);
+        registry.setAdapterLabels(address(meta), two("Withdrawal Queue", "Lido stETH"));
+
+        string[] memory config = _configLabels(address(meta));
+        assertEq(config.length, 2);
+        assertEq(config[0], "Withdrawal Queue");
+        assertEq(config[1], "Lido stETH");
+    }
+
+    // ------------------------------------------------------------------
+    // DEPTH: gas — read ONCE PER ADAPTER, not per position
+    // ------------------------------------------------------------------
+
+    /// @dev **The array override must stay a per-ADAPTER cost.** It is fetched in the same `adapter != prevAdapter`
+    ///      branch that already caches `protocolName()`, so a two-position adapter must pay for one read, not two.
+    ///      Moving `_labelOverride` into the loop body is the regression this catches, and the bound below is set
+    ///      from that MUTATION rather than from taste — the precedent being
+    ///      `test_gas_surchargeIsPerAdapter_notPerPosition`, whose original 50,000 bound passed under the exact
+    ///      mutation it was written to catch.
+    ///
+    ///      Measured on this tree, both arms: **20,746 cached** vs **30,033** with `_labelOverride` moved out of the
+    ///      `adapter != prevAdapter` branch and into the loop body. The bound is **25,000** — above the honest number
+    ///      with room for compiler drift, and comfortably below the mutant. (An earlier revision of this line quoted
+    ///      "12,349 vs 19,469"; those numbers were never measured and the 15,000 bound derived from them failed
+    ///      against the honest tree. Recorded rather than quietly replaced, because a fabricated measurement in a
+    ///      comment is the exact failure this file's other gas notes keep warning about.)
+    function test_gas_labelOverride_isPerAdapter_notPerPosition() public {
+        LabelledAdapter multi = new LabelledAdapter("Multi Protocol", "Market", "leaf");
+        address[] memory assets = new address[](2);
+        assets[0] = address(usdc);
+        assets[1] = address(dai);
+        multi.setBalances(nav);
+        multi.setUnderlyingAssetsSupported(assets);
+        multi.setBalance(address(usdc), safe, 5 * 10 ** usdc.decimals(), false);
+        multi.setBalance(address(dai), safe, 5 * 10 ** dai.decimals(), false);
+        vm.prank(navCalculatorManager);
+        nav.addBalanceAdapters(aa(address(multi)));
+
+        vm.prank(navCalculatorManager);
+        registry.setAdapterLabels(address(multi), two("Lending Market", ""));
+        nav.getAccountPositionsVerbose(safe, address(0)); // warm
+
+        // Baseline FIRST — memory cost is quadratic in the frame total, so measuring it last biases it upward and the
+        // surcharge downward. Same ordering discipline as the tests above.
+        bytes32 rslot = _registrySlot();
+        uint256 saved = uint256(vm.load(address(nav), rslot));
+        vm.store(address(nav), rslot, bytes32(0));
+        uint256 before = gasleft();
+        nav.getAccountPositionsVerbose(safe, address(0));
+        uint256 noRegistry = before - gasleft();
+        vm.store(address(nav), rslot, bytes32(saved));
+
+        before = gasleft();
+        nav.getAccountPositionsVerbose(safe, address(0));
+        uint256 withRegistry = before - gasleft();
+
+        uint256 surcharge = withRegistry - noRegistry;
+        emit log_named_uint("label-override surcharge, 2 adapters / 3 positions", surcharge);
+        assertLt(surcharge, 25_000, "the override read must scale with DISTINCT ADAPTERS, not with positions");
+
+        // And it must still be CORRECT on every position, so a "cheap" mutant that drops the override cannot pass by
+        // being fast.
+        INAVCalculator.VerbosePosition[] memory all = nav.getAccountPositionsVerbose(safe, address(0));
+        uint256 seen;
+        for (uint256 i; i < all.length; ++i) {
+            if (all[i].position.balanceAdapter != address(multi)) continue;
+            ++seen;
+            assertEq(all[i].labels[0], "Lending Market");
+            assertEq(all[i].labels[1], "leaf");
+        }
+        assertEq(seen, 2, "two positions, or the cache-hit path was not exercised");
     }
 }
 

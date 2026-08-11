@@ -282,6 +282,57 @@ An unknown `protocolId` reverts (`UnknownProtocolId`) rather than returning `""`
 
 `test/ProtocolNameConsistency.t.sol` covers what remains assertable: every hardcoded adapter matches its constant (including the single-member protocols no group comparison reaches), every protocol id the meta family declares has a name, an unknown id reverts, and distinct protocols do not collide on one name.
 
+#### Which label segments an operator may override — the per-segment sweep
+
+`AssetKindRegistry.setAdapterLabels(adapter, string[])` overrides `positionLabels()` **segment by segment**, index-aligned with the adapter's own reply, where `""` at an index means *leave that segment alone*. Two rules make it safe, and both are properties of the ADAPTER rather than of the mechanism:
+
+1. **Only a segment that is the SAME for every position the adapter can emit may be given a literal.** The override table is keyed by adapter, so it cannot express a per-position value. A segment that varies by position must be passed `""`.
+2. **A COMPUTED segment should normally be `""` too.** Overriding one freezes a derivation that is the feature: for a meta-adapter it stamps one leaf onto every instance, it does not track `addMetaInstances`, and a wrong leaf almost always means the derivation is wrong across every instance — which a single row masks rather than fixes.
+
+The table below is the sweep of every `positionLabels` implementation in `src/balances/` (31 bodies across 33 deployable adapters — `PancakeSwapV2PoolsMeta` and `PancakeSwapV3PoolsMeta` inherit theirs from the Uniswap adapters). `U` = literal and uniform across positions (safe to override), `C` = computed live (pass `""` unless you intend to freeze it), `—` = the adapter never emits that index.
+
+| Adapter | seg 0 | seg 1 | seg 2 | reply length | notes |
+|---|---|---|---|---|---|
+| **Plain** | | | | | |
+| `AaveUmbrellaBalanceAdapter` | `U` "Umbrella Module" | — | — | 1 | |
+| `AaveV3SafetyModuleBalanceAdapter` | `U` "Safety Module" | — | — | 1 | |
+| `CapStablecoinBalanceAdapter` | `U` "Stablecoin" | `U` "cUSD" | — | 0 or 2 | 0 for a foreign positionId |
+| `CapSavingsBalanceAdapter` | `U` "Savings" | `U` "stcUSD" | — | 0 or 2 | 0 for a foreign positionId |
+| `ERC20DefaultBalanceAdapter` | `C` token symbol | — | — | 0 or 1 | **Never override.** Index 0 is not a category — it IS the computed leaf. |
+| `EthenaCooldownBalanceAdapter` | `U` "Unstaking Cooldown" | `U` "sUSDe" | — | 2 | |
+| `KelpWithdrawalQueueBalanceAdapter` | `U` "Withdrawal Queue" | `U` "rsETH" | — | 2 | |
+| `LidoWithdrawalQueueBalanceAdapter` | `U` "Withdrawal Queue" | `U` "stETH" | — | 2 | |
+| `SparkLendBalanceAdapter` | `U` "Market" | `U` "SparkLend" | — | 2 | |
+| `StaderWithdrawalQueueBalanceAdapter` | `U` "Withdrawal Queue" | `U` "ETHx" | — | 2 | |
+| **Assisted** | | | | | |
+| `EtherFiWithdrawalQueueAssistedBalanceAdapter` | `U` "Withdrawal Queue" | `U` "eETH" | — | 2 | |
+| `NexusMutualStakingPoolsAssistedBalanceAdapter` | `U` "Staking Pools" | `C` `"Pool #<id>"` / pool hex | — | 0 or 2 | |
+| `StakeWiseV3ExitQueueAssistedBalanceAdapter` | `U` "Exit Queue" | `U` `receiptSymbol` | — | 1 or 2 | `receiptSymbol` is a constructor argument, so it is a per-DEPLOYMENT constant, not a per-position value; the length is fixed once deployed |
+| **Meta** (all via `_labels(category, leaf)`) | | | | | |
+| `AaveV3InstancesMetaBalanceAdapter` | `U` "Market" | `C` `_marketId(pool)` | — | 0–2 | |
+| `CompoundV3CometsMetaBalanceAdapter` | `U` "Market" | `C` comet symbol | — | 0–2 | |
+| `ConvexCurveLPStakingMetaBalanceAdapter` | `U` "Staking" | `U` "Curve LP" | `C` coin symbols | 0, **2 or 3** | **The reply LENGTH varies by position** — seg 2 exists only when the `rewarderCoinSymbols` probe answers |
+| `EulerVaultsMetaBalanceAdapter` | `U` "Vault" | `C` vault name | — | 0–2 | |
+| `FluidFTokensMetaBalanceAdapter` | `U` "Lending" | `C` fToken symbol | — | 0–2 | |
+| `FluidVaultsMetaBalanceAdapter` | `U` "Vault" | `C` pair symbols | — | 0–2 | |
+| `GearboxV3CreditAccountsMetaBalanceAdapter` | `U` "Credit Account" | `C` credit-manager name / underlying symbol | — | 0–2 | |
+| `GearboxV3MarketsMetaBalanceAdapter` | `U` "Market" | `C` market name | — | 0–2 | |
+| `MorphoMarketsMetaBalanceAdapter` | `U` "Market" | `C` `"<collateral>/<loan>"` | — | 0–2 | |
+| `MorphoVaultsMetaBalanceAdapter` | `U` "Vault" | `C` vault name | — | 0–2 | |
+| `StakeWiseV3VaultsMetaBalanceAdapter` | `U` "Vault" | `C` vault name / symbol+hex | — | 1–2 | |
+| `BalancerV2PoolsMetaBalanceAdapter` | `U` "AMM Liquidity Pool" | `C` joined token symbols | — | 0–2 | |
+| `BalancerV2GaugesMetaBalanceAdapter` | `U` "Staking Gauge" | `C` joined token symbols | — | 0–2 | |
+| `BalancerV3PoolsMetaBalanceAdapter` | `U` "AMM Liquidity Pool" | `C` joined token symbols | — | 0–2 | |
+| `BalancerV3GaugesMetaBalanceAdapter` | `U` "Staking Gauge" | `C` joined token symbols | — | 0–2 | |
+| `CurvePoolsMetaBalanceAdapter` | `U` "AMM Liquidity Pool" | `C` coin symbols | — | 0–2 | |
+| `CurveGaugesMetaBalanceAdapter` | `U` "Staking Gauge" | `C` coin symbols | — | 0–2 | |
+| `UniswapV2PoolsMetaBalanceAdapter` | `U` "AMM Liquidity Pool" | `C` `"T0/T1"` | — | 0–2 | `PancakeSwapV2PoolsMeta` inherits this |
+| `UniswapV3PoolsMetaBalanceAdapter` | `U` "AMM Liquidity Pool" | `C` `"T0/T1 <fee>%"` | — | 1–2 | `PancakeSwapV3PoolsMeta` inherits this |
+
+**What the sweep found.** Exactly one adapter had a LITERAL segment that varied by position: the former combined `CapBalanceAdapter`, at **both** indices (`["Savings","stcUSD"]` vs `["Stablecoin","cUSD"]`). It has been split into `CapStablecoinBalanceAdapter` and `CapSavingsBalanceAdapter`, one leg each, so every literal segment in the tree is now a per-adapter constant. `ERC20DefaultBalanceAdapter` is a different case and is **out of scope by decision** — its single segment is the computed token symbol, it is the one adapter that cannot be replaced without a new NAV proxy, and its labels are not expected to change.
+
+**The two length hazards are handled by the read path, not by the operator.** `PriceFeedLib` overlays an override only for `i < min(reply.length, override.length)`, so (a) an override can never write past a shorter reply — which is what `ConvexCurveLPStakingMetaBalanceAdapter`'s 2-or-3 element reply would otherwise turn into a `Panic(0x32)` on live data — and (b) an override can never LENGTHEN a reply, so `NAVCalculator`'s `_MAX_LABEL_ELEMENTS = 8` ceiling cannot be crossed from the registry side.
+
 #### Describing an adapter with no account — `IPositionEnumerable`
 
 `positionLabels` needs a `positionId`, and a **configuration view** (a registry page listing what the NAVCalculator is set up to account for) has no account and therefore no positionId to pass. There are exactly three answers an adapter can give:
@@ -289,7 +340,7 @@ An unknown `protocolId` reverts (`UnknownProtocolId`) rather than returning `""`
 | Adapter shape | What `positionLabels("")` returns | Does it implement `IPositionEnumerable`? |
 |---|---|---|
 | **Single-shape** — the breadcrumb does not depend on `positionId` (`AaveV3SafetyModule`, `LidoWithdrawalQueue`, `EtherFiWithdrawalQueueAssisted`, …) | the full constant breadcrumb — that *is* the answer | No. Nothing to enumerate; the probe already answered. |
-| **Enumerable** — a bounded shape set derivable on-chain: pinned at construction (`Cap`: cUSD / stcUSD) or governed (every meta-adapter's instance set) | `[]`, because the breadcrumb is per-position | **Yes.** `positionIds()` lists the shapes; pair each with `positionLabels(id)`. |
+| **Enumerable** — a bounded shape set derivable on-chain: pinned at construction (`CapStablecoin` / `CapSavings`, one shape each) or governed (every meta-adapter's instance set) | `[]`, because the breadcrumb is derived from the `positionId` | **Yes.** `positionIds()` lists the shapes; pair each with `positionLabels(id)`. |
 | **Per-account** — shapes are discovered from coordinates the position owner feeds in (`NexusMutualStakingPoolsAssisted`) | `[]` | No — there is no account-independent answer to give. |
 
 `ERC20Default` is the one registered adapter that sits outside those rows: its leaf is the token symbol decoded from `positionId`, so the probe answers `[]` like the middle row, but it does not implement `IPositionEnumerable` — its shape set is readable from `underlyingAssetsSupported()` (the inclusion list) instead.
@@ -422,7 +473,7 @@ Meta-adapters extend `MetaBalanceAdapter` (PancakeSwap V2 extends `UniswapV2Pool
 
 > Uniswap V3 / PancakeSwap V3 **are** meta-adapters: their `NonfungiblePositionManager` is `ERC721Enumerable`, so an account's LP NFTs are discoverable on-chain with no off-chain assistant. (They were briefly assisted adapters — see the amendment on ADR [0015](../../docs/decisions/0015-assisted-balance-adapter-family.md); the live-`slot0` valuation is unchanged.)
 
-### 7.2 Per-instance singleton adapters (12)
+### 7.2 Per-instance singleton adapters (13)
 
 These adapters are a single immutable deployment each. The plain ones implement `IBalanceAdapter` directly (not `MetaBalanceAdapter`); the assisted ones (`EtherFiWithdrawalQueueAssisted`, `StakeWiseV3ExitQueueAssisted`, `NexusMutualStakingPoolsAssisted`) extend `AssistedCoordCache` (see §6.3) — **permissionless & `msg.sender`-keyed** (no `admin`/`assistant` args; fed on-chain by a delegatecall `BalanceAdapterAssistant`, [ADR 0018](../../docs/decisions/0018-assistant-fed-assisted-balance-adapters.md)). Both plain and assisted constructors take protocol-specific addresses and `navCalculator` (the assistant feed is a separate contract, not a constructor arg). Identity is expressed via compile-time `bytes32` constants (`PROTOCOL_BRAND` / `PROTOCOL_ID` / `PROTOCOL_SUB_ID = ProtocolIds.<CONSTANT>`) and `positionId` computed at query time via `abi.encode(...)`.
 
@@ -431,7 +482,8 @@ These adapters are a single immutable deployment each. The plain ones implement 
 | **ERC20DefaultBalanceAdapter** | Wallet ERC20 and native balances for all registered assets. protocolId = `WALLET`, positionId = `abi.encode(asset)`, kind = `Wallet`. Auto-registered at init. | `(navCalculator, initialAssets[])` | Default adapter; registered by `NAVCalculator.initialize`. |
 | **AaveV3SafetyModule** | Aave V3 Safety Module stake tokens (stkAAVE, stkABPT, stkABPTv2, stkGHO). Stake-token set hardcoded at construction. Up to three legs per token, **all sharing positionId `abi.encode(stakeToken)`** (no discriminator): a locked `Staking` leg (`isLocked=true` — active stake plus any cooling/expired cooldown; active stake is non-withdrawable), an unlocked `Staking` leg (`isLocked=false`, only when a cooldown has elapsed and is still inside the unstake window), and a `Rewards` leg (told apart by `positionKind`). Stake tokens without the V3 cooldown ABI degrade to a single locked-stake leg. | `(navCalculator)` | protocolSubId = `AAVE_V3_SAFETY_MODULE` (protocolId `AAVE_V3`, brand `AAVE`). Mainnet only. |
 | **AaveUmbrella** | Aave Umbrella stake tokens discovered dynamically via `RewardsController.getAllAssets()`. Up to three legs per token, **all sharing positionId `abi.encode(stakeToken)`** (no discriminator): a locked `Staking` leg (`isLocked=true` — active stake plus any cooling/expired cooldown), an unlocked `Staking` leg (`isLocked=false`, only when a cooldown has elapsed and is still inside the withdrawal window) — both in the bare reserve — and a `Rewards` leg (told apart by `positionKind`). Picks up new stake tokens via governance without redeploy. | `(rewardsController, navCalculator)` | protocolSubId = `AAVE_V3_UMBRELLA` (protocolId `AAVE_V3`, brand `AAVE`). See `docs/decisions/0006-aave-umbrella-balance-adapter.md`. |
-| **Cap** | Cap protocol balances reported as USDC, as **two legs**: held cUSD (`["Stablecoin", "cUSD"]`) and staked stcUSD (`["Savings", "stcUSD"]`). positionId = `abi.encode(cUSD)` / `abi.encode(stcUSD)` per leg; cUSD `Supplied`, staked stcUSD `Staking`. | `(cUsd, stcUsd, usdc, navCalculator)` | protocolSubId = `CAP` (brand and protocolId also `CAP`). |
+| **CapStablecoin** | Cap's held synthetic dollar (cUSD) reported as USDC: `ERC20.balanceOf` → `ICUsd.getBurnAmount` → USDC. One leg, labels `["Stablecoin", "cUSD"]`, positionId = `abi.encode(cUSD)`, kind `Supplied`. | `(cUsd, usdc, navCalculator)` | protocolSubId = `CAP` (brand and protocolId also `CAP`). Shares `CapBalanceAdapterBase` with its sibling. |
+| **CapSavings** | Cap's staked savings token (stcUSD) reported as USDC: `ERC20.balanceOf` → ERC4626 `convertToAssets` → cUSD → `ICUsd.getBurnAmount` → USDC. One leg, labels `["Savings", "stcUSD"]`, positionId = `abi.encode(stcUSD)`, kind `Staking`. Takes `cUsd` as the burn-quote oracle for the second hop. | `(cUsd, stcUsd, usdc, navCalculator)` | protocolSubId = `CAP` (brand and protocolId also `CAP`). **Two adapters, one protocol:** the combined `Cap` adapter served both legs and branched its label LITERALS on positionId, which a per-adapter `AssetKindRegistry` override cannot express — see §6.2's sweep. Both return `protocolName() == "Cap"`. |
 | **EthenaCooldownBalanceAdapter** | USDe owed to an account in the sUSDe unstaking cooldown. Reads the single per-account `UserCooldown` slot on `StakedUSDeV2` (`cooldowns(account)` → `{cooldownEnd, underlyingAmount}`) and reports `underlyingAmount` as one position denominated in USDe; non-zero only while an unstake is in flight. positionId = `abi.encode(address sUSDe)` (static). `Supplied` kind; `isLocked=true` until the cooldown elapses, then `false`. | `(stakedUSDe, underlyingToken, navCalculator)` | protocolSubId = `ETHENA_COOLDOWN` (protocolId and brand `ETHENA`). Mainnet only. |
 | **KelpWithdrawalQueue** | Kelp DAO rsETH exit queue (`LRTWithdrawalManager`). Emits **one `Supplied` leg per open request** (per payout asset), valued at `expectedAssetAmount`. Payout-asset set discovered at runtime; the payout asset is carried in `balanceAsset`. positionId = `abi.encode(address withdrawalManager)` (static, shared by all requests); the request's `userNonce` rides in `positionInstanceId`, never in positionId. A request is `isLocked=false` only once `userNonce < nextLockedNonce(asset)` **and** the block delay (`withdrawalStartBlock + withdrawalDelayBlocks()`) has passed, else `isLocked=true`. **No adapter-level request cap** — the full per-asset set is read (Kelp requests are keyed to the unstaking `msg.sender`, so they cannot be third-party-injected; a large count is self-inflicted). Balance getters report the summed total. | `(withdrawalManager, navCalculator)` | protocolSubId = `KELP_WITHDRAWAL` (protocolId and brand `KELP`). Mainnet only. |
 | **LidoWithdrawalQueue** | Lido `WithdrawalQueueERC721`. Emits **one `Supplied` leg per open (un-claimed) withdrawal request** (enumerated via `getWithdrawalRequests`): finalized → exact claimable ETH (`getClaimableEther`, `isLocked=false`); not finalized → `_cappedOwed(amountOfStETH, amountOfShares)`, the conservative min of the live share value and the request-time `amountOfStETH` (`isLocked=true`). positionId = `abi.encode(address withdrawalQueue)` (static, shared by every request); the ERC721 request id rides in `positionInstanceId`, never in positionId (it is ephemeral — burned on claim). `Supplied` kind, native-ETH. **No adapter-level request cap** — the full set is read (an O(1) `balanceOf` short-circuits the zero case); a griefed/third-party-inflated list makes only *that* account's NAV read expensive (liveness-only fail-safe, [`docs/operations/stader-withdrawal-queue-griefing.md`](../../docs/operations/stader-withdrawal-queue-griefing.md)). The balance getters report the summed total. | `(withdrawalQueue, underlyingToken, navCalculator)` | protocolSubId = `LIDO_WITHDRAWAL` (protocolId and brand `LIDO`). Mainnet only. |

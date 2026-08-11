@@ -351,7 +351,8 @@ script/verify/verify-all.sh
 - `BalancerV3PoolsMetaBalanceAdapter`, `BalancerV3GaugesMetaBalanceAdapter` - Balancer V3 LPs + gauges
 - `CurvePoolsMetaBalanceAdapter`, `CurveGaugesMetaBalanceAdapter` - Curve LPs + gauges
 - `ConvexCurveLPStakingMetaBalanceAdapter` - Convex staking
-- `CapBalanceAdapter` - Cap (cUSD + stcUSD aggregated → USDC)
+- `CapStablecoinBalanceAdapter` - Cap held cUSD → USDC (config key `CapStablecoin`)
+- `CapSavingsBalanceAdapter` - Cap staked stcUSD → USDC (config key `CapSavings`)
 - `FluidFTokensMetaBalanceAdapter`, `FluidVaultsMetaBalanceAdapter` - Fluid lending + vaults
 - `GearboxV3MarketsMetaBalanceAdapter` - Gearbox kpk-curated markets
 - `GearboxV3CreditAccountsMetaBalanceAdapter` - Gearbox credit accounts

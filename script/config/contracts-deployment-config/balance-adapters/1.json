@@ -33,8 +33,18 @@
       "positionId": "0x4655Ce3D625a63d30bA704087E52B4C31E38188B"
     }
   },
-  "Cap": {
+  "CapStablecoin": {
     "enabled": true,
+    "$comment": "Cap protocol's held synthetic dollar (cUSD), valued in USDC via cUSD's burn quote. Sibling of CapSavings: the former combined `Cap` adapter served BOTH legs from one contract and branched its label literals on positionId, which a per-adapter AssetKindRegistry label override cannot express (one write rewrote both legs at both indices). One adapter per leg makes every label segment a per-adapter constant. Labels: [\"Stablecoin\", \"cUSD\"], kind Supplied, positionId = abi.encode(cUSD).",
+    "constructor": {
+      "cUsd": "0xcCcc62962d17b8914c62D74FfB843d73B2a3cccC",
+      "usdc": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+      "positionId": "0xcCcc62962d17b8914c62D74FfB843d73B2a3cccC"
+    }
+  },
+  "CapSavings": {
+    "enabled": true,
+    "$comment": "Cap protocol's staked savings token (stcUSD), valued in USDC via ERC4626 convertToAssets then cUSD's burn quote. Sibling of CapStablecoin (see its comment for why Cap is two adapters). `cUsd` is required here as the burn-quote oracle for the second hop, not as the other leg's token. Labels: [\"Savings\", \"stcUSD\"], kind Staking, positionId = abi.encode(stcUSD).",
     "constructor": {
       "cUsd": "0xcCcc62962d17b8914c62D74FfB843d73B2a3cccC",
       "stcUsd": "0x88887bE419578051FF9F4eb6C858A951921D8888",

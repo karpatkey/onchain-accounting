@@ -30,7 +30,8 @@ import {
 import {
     GearboxV3MarketsMetaBalanceAdapter
 } from "src/balances/MetaBalanceAdapters/GearboxV3MarketsMetaBalanceAdapter.sol";
-import {CapBalanceAdapter} from "src/balances/BalanceAdapters/CapBalanceAdapter.sol";
+import {CapStablecoinBalanceAdapter} from "src/balances/BalanceAdapters/cap/CapStablecoinBalanceAdapter.sol";
+import {CapSavingsBalanceAdapter} from "src/balances/BalanceAdapters/cap/CapSavingsBalanceAdapter.sol";
 import {CurvePoolsMetaBalanceAdapter} from "src/balances/MetaBalanceAdapters/curve/CurvePoolsMetaBalanceAdapter.sol";
 import {CurveGaugesMetaBalanceAdapter} from "src/balances/MetaBalanceAdapters/curve/CurveGaugesMetaBalanceAdapter.sol";
 import {
@@ -552,8 +553,11 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         if (_equals(name, "GearboxV3MarketsMeta")) {
             return _deployGearboxV3MarketsMeta(name, navAddr);
         }
-        if (_equals(name, "Cap")) {
-            return _deployCap(navAddr);
+        if (_equals(name, "CapStablecoin")) {
+            return _deployCapStablecoin(navAddr);
+        }
+        if (_equals(name, "CapSavings")) {
+            return _deployCapSavings(navAddr);
         }
         if (_equals(name, "CurvePoolsMeta")) {
             return _deployCurvePoolsMeta(name, navAddr);
@@ -668,12 +672,22 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         return address(new GearboxV3MarketsMetaBalanceAdapter(navAddr));
     }
 
-    function _deployCap(address navAddr) internal returns (address) {
-        address cUsd = vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", "Cap", "cUsd"));
+    function _deployCapStablecoin(address navAddr) internal returns (address) {
+        address cUsd =
+            vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", "CapStablecoin", "cUsd"));
+        address usdc =
+            vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", "CapStablecoin", "usdc"));
+        return address(new CapStablecoinBalanceAdapter(cUsd, usdc, navAddr));
+    }
+
+    function _deployCapSavings(address navAddr) internal returns (address) {
+        address cUsd =
+            vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", "CapSavings", "cUsd"));
         address stcUsd =
-            vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", "Cap", "stcUsd"));
-        address usdc = vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", "Cap", "usdc"));
-        return address(new CapBalanceAdapter(cUsd, stcUsd, usdc, navAddr));
+            vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", "CapSavings", "stcUsd"));
+        address usdc =
+            vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", "CapSavings", "usdc"));
+        return address(new CapSavingsBalanceAdapter(cUsd, stcUsd, usdc, navAddr));
     }
 
     function _deployCurvePoolsMeta(string memory, address navAddr) internal returns (address) {

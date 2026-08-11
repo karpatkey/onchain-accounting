@@ -26,8 +26,9 @@ import "src/constants.sol";
 ///      be recorded here. Those consumers are {PriceFeedLib.toVerbose} (the ACCOUNT read path, once per distinct
 ///      adapter) and `PriceFeedLib.adapterDisplayInfo` (the CONFIGURATION read path behind
 ///      `NAVCalculator.getAdapterDisplayInfo`, once per listed adapter). Both read the same two ADAPTER-override
-///      getters — {getAdapterProtocolName} and {getAdapterLabelCategory} — through ONE shared precedence helper, so
-///      the two display surfaces cannot disagree. A third consumer, if one is ever added, must use that helper too.
+///      getters — {getAdapterProtocolName} and {getAdapterLabels} — through ONE shared precedence helper each, and
+///      both overlay the label array through one shared `_applyLabelOverride`, so the two display surfaces cannot
+///      disagree. A third consumer, if one is ever added, must use those helpers too.
 ///      Note what did NOT change: the CLASSIFICATION half (the kinds and the per-asset labels) still has no on-chain
 ///      reader, and its value remains the atomic register+classify invariant on the write path, not the read. An
 ///      earlier version justified the contract with "a consumer makes two calls and caches the kinds indefinitely";
@@ -144,13 +145,30 @@ contract AssetKindRegistry is IAssetKindRegistry {
     ///      with nothing to re-write when `addMetaInstances` adds an instance.
     mapping(address adapter => string name) private _adapterProtocolName;
 
-    /// @notice One balance adapter's override for segment 0 of `positionLabels()` — the CATEGORY. Empty means none.
-    /// @dev Also per-adapter, and for the same reason: the category is a string literal in every one of the 31 call
-    ///      sites that have one (`_labels("Market", leaf)`, `_addressLabels(pid, "Vault", false)`, …), while only the
-    ///      leaf varies per position. Kept in its own mapping rather than packed with the name above so each can be
-    ///      set and cleared independently — an operator correcting a protocol name usually has no reason to touch the
-    ///      category, and one mapping would make clearing either one require rewriting both.
-    mapping(address adapter => string category) private _adapterLabelCategory;
+    /// @notice One balance adapter's per-SEGMENT override of its `positionLabels()` reply, index-aligned with that
+    ///         reply. `""` at an index means "leave that segment alone"; an EMPTY ARRAY means "no override at all".
+    /// @dev Also per-adapter, and for the same reason as the name above: after the combined `CapBalanceAdapter` was
+    ///      split into {CapStablecoinBalanceAdapter} / {CapSavingsBalanceAdapter}, **every literal label segment in
+    ///      `src/balances/` is a compile-time constant of its adapter and the same for every position that adapter can
+    ///      emit** — so one row per adapter covers them all, and nothing has to be re-written when `addMetaInstances`
+    ///      adds an instance. The segments that still vary per position are the COMPUTED ones, and `""` is how an
+    ///      operator declines to touch those. `src/balances/BALANCE_ADAPTERS.md` §6.2 carries the per-adapter,
+    ///      per-segment sweep that says which index is which.
+    ///
+    ///      **This REPLACED a scalar `_adapterLabelCategory` that could only rewrite index 0, and the scalar was
+    ///      removed rather than kept alongside.** `setAdapterLabels(a, ["X"])` is byte-for-byte the old
+    ///      `setAdapterLabelCategory(a, "X")` on both display surfaces, so the scalar was a strict special case, not a
+    ///      complement. Keeping both would have meant two stores writing one display value with no principled
+    ///      precedence between them — and two mechanisms that must agree about one display value is precisely the
+    ///      failure this feature has already hit twice (the `protocolName` phantom-sibling split, and the empty-reply
+    ///      divergence that left the two surfaces disagreeing for 21 of 33 adapters). Migration cost was zero:
+    ///      `AssetKindRegistry` appears in no `script/config/deployments/*.json`, so no chain has ever had one and
+    ///      `setAdapterLabelCategory` was never callable in production.
+    ///
+    ///      Kept in its own mapping rather than packed with the name above so each can be set and cleared
+    ///      independently — an operator correcting a protocol name usually has no reason to touch the breadcrumb, and
+    ///      one mapping would make clearing either one require rewriting both.
+    mapping(address adapter => string[] labels) private _adapterLabels;
 
     /// @notice Most labels one asset may carry.
     /// @dev Mirrors `NAVCalculator`'s `_MAX_LABEL_ELEMENTS = 8` on the READ side, at half the value because these are
@@ -162,9 +180,24 @@ contract AssetKindRegistry is IAssetKindRegistry {
     ///      that lives only in the config tooling drifts from the rule the chain enforces, and the chain wins.
     uint256 public constant MAX_ASSET_LABELS = 4;
 
+    /// @notice Most SEGMENTS one adapter's label override may carry.
+    /// @dev **Deliberately 8, not {MAX_ASSET_LABELS}' 4, and the difference is not an inconsistency.** An asset's
+    ///      labels are standalone hand-written content, so a tight bound costs nothing. This array is INDEX-ALIGNED
+    ///      with an adapter's `positionLabels()` reply and must be able to address every segment the NAV will accept:
+    ///      `NAVCalculator`'s `_MAX_LABEL_ELEMENTS = 8` is exactly that ceiling, so a lower bound here would leave the
+    ///      deepest addressable segments permanently uncorrectable.
+    ///
+    ///      It cannot be used to LENGTHEN a reply. `PriceFeedLib` overlays only `i < min(reply.length,
+    ///      override.length)`, so a segment past the adapter's own reply is inert on both display surfaces — the
+    ///      longest reply anywhere in `src/balances/` today is 3 (`ConvexCurveLPStakingMetaBalanceAdapter`). This bound
+    ///      therefore protects the operator's own gas and this contract's storage, not the read path's element cap.
+    uint256 public constant MAX_ADAPTER_LABEL_SEGMENTS = 8;
+
     /// @notice Longest one label may be, in BYTES (not characters — a multi-byte glyph costs more than one).
     /// @dev One EVM word. Keeps per-label storage a single slot and predictable, and no legitimate display label is
-    ///      longer. Public for the same reason as {MAX_ASSET_LABELS}.
+    ///      longer. Shared by the asset labels and the per-adapter label override, which land in the same breadcrumb
+    ///      and are read through the same fixed copy window in {PriceFeedLib}. Public for the same reason as
+    ///      {MAX_ASSET_LABELS}.
     uint256 public constant MAX_ASSET_LABEL_BYTES = 32;
 
     /// @notice The `NAVCalculator` this registry fronts. Source of truth for BOTH the asset registry and authority.
@@ -351,18 +384,38 @@ contract AssetKindRegistry is IAssetKindRegistry {
     }
 
     /// @inheritdoc IAssetKindRegistry
-    function setAdapterLabelCategory(address adapter, string calldata category) external onlyNavManager {
+    /// @dev The three checks below are the array analogue of {_requireValidOverride}, which cannot be reused per
+    ///      element: it rejects `""`, and `""` is this setter's SKIP sentinel rather than an error.
+    function setAdapterLabels(address adapter, string[] calldata labels) external onlyNavManager {
         _requireRegisteredAdapter(adapter);
-        _requireValidOverride(adapter, category);
-        _adapterLabelCategory[adapter] = category;
-        emit AdapterLabelCategorySet(adapter, category);
+        uint256 length = labels.length;
+        if (length > MAX_ADAPTER_LABEL_SEGMENTS) {
+            revert TooManyAdapterLabels(adapter, length, MAX_ADAPTER_LABEL_SEGMENTS);
+        }
+        bool anySet;
+        for (uint256 i; i < length; ++i) {
+            uint256 labelBytes = bytes(labels[i]).length;
+            if (labelBytes > MAX_ASSET_LABEL_BYTES) {
+                revert AdapterLabelTooLong(adapter, i, labelBytes, MAX_ASSET_LABEL_BYTES);
+            }
+            if (labelBytes != 0) anySet = true;
+        }
+        // An array whose every element is `""` overrides NOTHING, so it would read back as absence — the same
+        // write-that-reads-as-a-miss the scalar setters reject `""` for, and the reason a caller trying to CLEAR must
+        // use {clearAdapterLabels} instead of being told "done" by silence. The empty array falls out of the same
+        // check (`anySet` is false), so both no-op shapes take one exit.
+        if (!anySet) revert EmptyAdapterOverride(adapter);
+        // Validate, then write — same ordering rationale as {_setAssetLabels}: every exit above reverts, so hoisting
+        // the write would be behaviourally equivalent, but it would pay for `SSTORE`s that are about to be discarded.
+        _adapterLabels[adapter] = labels;
+        emit AdapterLabelsSet(adapter, labels);
     }
 
     /// @inheritdoc IAssetKindRegistry
-    function clearAdapterLabelCategory(address adapter) external onlyNavManager {
-        if (bytes(_adapterLabelCategory[adapter]).length == 0) revert AdapterOverrideNotSet(adapter);
-        delete _adapterLabelCategory[adapter];
-        emit AdapterLabelCategoryCleared(adapter);
+    function clearAdapterLabels(address adapter) external onlyNavManager {
+        if (_adapterLabels[adapter].length == 0) revert AdapterOverrideNotSet(adapter);
+        delete _adapterLabels[adapter];
+        emit AdapterLabelsCleared(adapter);
     }
 
     /// @inheritdoc IAssetKindRegistry
@@ -371,8 +424,8 @@ contract AssetKindRegistry is IAssetKindRegistry {
     }
 
     /// @inheritdoc IAssetKindRegistry
-    function getAdapterLabelCategory(address adapter) external view returns (string memory) {
-        return _adapterLabelCategory[adapter];
+    function getAdapterLabels(address adapter) external view returns (string[] memory) {
+        return _adapterLabels[adapter];
     }
 
     /// @dev Setters only — see {IAssetKindRegistry.AdapterNotRegistered} for why the clearers deliberately skip this.
@@ -382,8 +435,8 @@ contract AssetKindRegistry is IAssetKindRegistry {
         if (!NAV.isAdapterRegistered(adapter)) revert AdapterNotRegistered(adapter);
     }
 
-    /// @dev Both overrides share one validator because they are the same kind of value: a short display string that
-    ///      lands in the same breadcrumb, read through the same fixed copy window in {PriceFeedLib}.
+    /// @dev The scalar-override validator. Used by {setAdapterProtocolName} only — {setAdapterLabels} spells the same
+    ///      two bounds out per element, because this one rejects `""` and `""` is that setter's SKIP sentinel.
     function _requireValidOverride(address adapter, string calldata value) private pure {
         uint256 len = bytes(value).length;
         // `""` is the read path's MISS sentinel, so storing one would read back as absence — see
@@ -432,12 +485,19 @@ contract AssetKindRegistry is IAssetKindRegistry {
     ///
     ///      ⚠️ **The trailing half of that argument — "and adapter labels remain redeploy-to-change" — is no longer
     ///      true, and the distinction above survives only in a narrowed form.** {setAdapterProtocolName} and
-    ///      {setAdapterLabelCategory} now make an adapter's two CONSTANT segments correctable without a redeploy.
-    ///      What still holds, and is the line that matters, is that only the constants moved: the computed LEAF is
-    ///      untouched and still derived live on every read, because 21 of the 33 deployable adapters build it from
-    ///      on-chain state and a stored table has no finite key for a computed value. So an adapter label is still
-    ///      not operator-supplied data in general — only the part of it that was already a literal is. The repair
-    ///      this replaces was
+    ///      {setAdapterLabels} make an adapter's label segments correctable without a redeploy.
+    ///
+    ///      ⚠️ **An earlier revision of this note said "only the CONSTANTS moved: the computed LEAF is untouched".
+    ///      That stopped being true when {setAdapterLabels} replaced the segment-0-only scalar setter** — an override
+    ///      can now be written at ANY index, a computed leaf included. What holds instead, and is the line that
+    ///      matters, is that the leaf is not overridden BY DEFAULT and the mechanism is opt-in per segment: `""` at an
+    ///      index leaves that segment derived live, and it is the value an operator is told to pass for every
+    ///      computed index (see the sweep in `src/balances/BALANCE_ADAPTERS.md` §6.2). Overriding a computed leaf is
+    ///      possible and is documented as a hazard rather than prevented: 21 of the 33 deployable adapters build the
+    ///      leaf from on-chain state, so a stored value freezes a derivation across every instance, does not track
+    ///      `addMetaInstances`, and masks a broken derivation one row at a time.
+    ///
+    ///      The repair this replaces was
     ///      unregister-then-re-register, which also destroys every price feed, every monitor feed and the whole of
     ///      `_assetPricing` (both tolerances) — up to five transactions on an EOA MANAGER with the asset absent from
     ///      NAV in between.

@@ -14,7 +14,7 @@ pragma solidity ^0.8;
 ///      it can enumerate `getMetaInstances(adapter)` on the NAVCalculator; for every other adapter there was no
 ///      enumeration primitive at all, so the only question it could ask was `positionLabels("")` — which answers
 ///      only for adapters whose breadcrumb happens to be positionId-independent. An adapter that derives its
-///      labels per `positionId` (Cap's cUSD vs. stcUSD legs) correctly returns an empty array to that probe and
+///      labels per `positionId` (each Cap leg adapter, which answers only for its own token) correctly returns an empty array to that probe and
 ///      was therefore undescribable from a configuration view, and — since it advertises exactly the interface
 ///      set every other adapter does — indistinguishable from an adapter that was simply broken. `positionIds()`
 ///      is that missing primitive: the adapter states its shapes directly, and its ERC-165 bit is the signal that

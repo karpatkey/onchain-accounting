@@ -43,18 +43,38 @@ Companion tooling lives in [`preflight/`](preflight/README.md). Everything there
 
 Configured totals, reconciled from config **and** confirmed against the live NAV on 2026-07-27;
 feed count re-measured 2026-07-30 against the merged tree:
-**33 meta adapters, 110 meta instances, 12 plain adapters, 41 custom price feeds, 93 assets.**
+**33 meta adapters, 110 meta instances, 13 plain adapters, 41 custom price feeds, 93 assets.**
 The feed count is no longer pending anything — see the note under 1.4 for the two PRs that moved it.
 
 **Re-measured 2026-08-08 at `a3974686` with `preflight_config.py`: all five totals and every per-chain
-row below are unchanged.** `script/config/` did change in the interval (labels were retired in #275 and
-realigned to `ProtocolNames.sol`), so this was measured rather than assumed — but nothing moved a count.
-`0 error(s)` across all 24 chains; the warnings it prints are declared-heartbeat margin findings, which
-are a separate axis and not a count.
+row below were unchanged at that commit.** `script/config/` did change in the interval (labels were
+retired in #275 and realigned to `ProtocolNames.sol`), so this was measured rather than assumed — but
+nothing moved a count. `0 error(s)` across all 24 chains; the warnings it prints are declared-heartbeat
+margin findings, which are a separate axis and not a count.
+
+⚠️ **One total has moved SINCE that measurement: plain adapters, 12 → 13.** The combined `Cap` adapter
+was split into `CapStablecoin` + `CapSavings` (one adapter per leg, so each label segment is a
+per-adapter constant an `AssetKindRegistry` override can address). Chain 1's `plain` column goes
+**11 → 12** and the fleet total **12 → 13**. Nothing else moves:
+
+| total | before | after | why |
+| --- | --- | --- | --- |
+| plain adapters | 12 | **13** | one `Cap` key replaced by two |
+| meta adapters | 33 | 33 | Cap is a plain adapter |
+| meta instances | 110 | 110 | ditto — **step 1.8's per-adapter set assertion is untouched** |
+| custom price feeds | 41 | 41 | no feed involved |
+| assets | 93 | 93 | both legs are still valued in the already-registered USDC |
+
+**The tooling moves with it and needs no edit.** `preflight_config.py` derives `plainAdapters` from
+`len(enabled_keys(nav-config/balance-adapters/<id>.json))`, and `verify_step.py` **1.7** asserts
+`len(record.balanceAdapters) == plainAdapters + metaAdapters + 1` plus set equality on the KEY NAMES —
+both read config, so both expect 13 the moment the config lands. This table is the thing that goes
+stale, which is why it is stated here. (Note 110 is **1.8**'s number, not 1.7's; 1.7 does not look at
+meta instances at all.)
 
 | chain | meta adapters | meta instances | plain | feeds | assets |
 | --- | --- | --- | --- | --- | --- |
-| 1 mainnet | 15 | 66 | 11 | 26 | 43 |
+| 1 mainnet | 15 | 66 | 12 | 26 | 43 |
 | 42161 arbitrum | 7 | 16 | 0 | 8 | 11 |
 | 8453 base | 6 | 16 | 0 | 4 | 11 |
 | 10 optimism | 2 | 4 | 0 | 0 | 6 |
@@ -224,10 +244,15 @@ NAV address is invalidated by construction:
 | --- | --- | --- |
 | every custom price feed is redeployed — each holds `INAVCalculator public immutable NAV` (ADR 0019) | **41**: mainnet 26, arbitrum 8, base 4, gnosis 3 | 1.4 |
 | every asset with its primary + monitor feeds is re-registered | **93** assets | 1.5 |
-| every plain and meta adapter is redeployed | 12 plain + 33 meta | 1.6 |
-| every meta instance is re-registered | **110** | 1.7 |
+| every plain and meta adapter is redeployed | 13 plain + 33 meta | 1.7 |
+| every meta instance is re-registered | **110** | 1.8 |
 | each assisted adapter drags its assistant, which holds `immutable ADAPTER` | **4 pairs on 2 chains** | 2.1 |
 | downstream consumers repoint off the old proxy | kpkShares, portal, agents, subgraphs | 2.7 |
+
+(⚠️ The `done at` column's last two adapter rows read **1.6 / 1.7** until 2026-08-11 and were both off
+by one against `verify_step.py`'s own map, where `1.6` is `RegisterAssets`, `1.7` is `04` and `1.8` is
+`06`. §"Meta instances" already said 1.8 for the instance reconcile, so the document contradicted
+itself; corrected here rather than left for deploy day.)
 
 None of it is optional, and none of it fails loudly: a step skipped here leaves the new proxy quietly
 **under-reporting**, not erroring. That asymmetry is also why "just upgrade the implementation" keeps

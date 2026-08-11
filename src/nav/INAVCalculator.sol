@@ -213,19 +213,26 @@ interface INAVCalculator is IBalances {
     }
 
     /// @notice Position enriched with human-readable display labels.
-    /// @dev ⚠️ **`protocolName` and `labels[0]` are NOT necessarily the adapter's own values.** `AssetKindRegistry`
-    ///      holds optional per-ADAPTER overrides for both, and {PriceFeedLib.toVerbose} applies them in preference to
-    ///      the adapter's reply. Index 1 and below-that always come from the adapter, live and unoverridable.
+    /// @dev ⚠️ **NEITHER `protocolName` NOR ANY element of `labels` is necessarily the adapter's own value.**
+    ///      `AssetKindRegistry` holds an optional per-ADAPTER protocol name plus a per-ADAPTER, per-SEGMENT `labels`
+    ///      override, and {PriceFeedLib.toVerbose} applies both in preference to the adapter's reply.
     ///
-    ///      ⚠️ **Do NOT read that as "the computed leaf is never overridable" — an earlier revision of this line said
-    ///      so and it is false.** It equated "the computed leaf" with "below index 0", which holds for 32 of the 33
-    ///      deployable adapters but NOT for `ERC20DefaultBalanceAdapter`, whose reply is a single element that IS the
-    ///      computed token symbol (`out[0] = LabelLib.symbol(...)`). For that adapter a category override replaces a
-    ///      COMPUTED value, not a literal category. Contrast the other single-element adapters —
-    ///      `AaveV3SafetyModuleBalanceAdapter` (`out[0] = "Safety Module"`), `AaveUmbrellaBalanceAdapter` — whose
-    ///      lone element is a literal and is therefore a legitimate override target. The distinction is
-    ///      literal-vs-computed at index 0, not array length. `AdapterLabelOverrides.t.sol
-    ///      ::test_categoryOverride_onLeafOnlyAdapter_replacesTheLeaf_documentedHazard` asserts this.
+    ///      ⚠️ **Two earlier revisions of this line were narrower than the code, in the same direction each time.**
+    ///      The first said the computed leaf was never overridable; the second said only `labels[0]` was. Both are now
+    ///      false: {IAssetKindRegistry.setAdapterLabels} writes at ANY index, bounded only by
+    ///      `min(reply.length, override.length)` — so the honest statement is that a segment comes from the adapter
+    ///      **unless an operator overrode that index**, and `""` at an index is how an operator declines to.
+    ///
+    ///      What the override CANNOT do is change the array's LENGTH: it never writes past the adapter's own reply and
+    ///      never extends it, so `labels.length` is always the adapter's answer. (The one exception is
+    ///      `getAdapterDisplayInfo`, whose empty-reply case is deliberately grown — see
+    ///      `PriceFeedLib.adapterDisplayInfo`.)
+    ///
+    ///      Which segments an operator SHOULD write is a property of the adapter, not of this struct;
+    ///      `src/balances/BALANCE_ADAPTERS.md` §6.2 carries the per-adapter sweep, and
+    ///      `ERC20DefaultBalanceAdapter` is the one adapter that must not be overridden at all (its single element is
+    ///      the computed token symbol, not a category). `AdapterLabelOverrides.t.sol
+    ///      ::test_labelsOverride_onLeafOnlyAdapter_replacesTheLeaf_documentedHazard` asserts that hazard.
     ///      Consumers must not treat these strings as identity in any case; see {IPositionDescribable}.
     /// @dev Returned by verbose read methods. Labels are sourced from the adapter's `IPositionDescribable`
     ///      implementation (`positionLabels(positionId)`, via a fail-open staticcall) and are empty otherwise. MUST NOT

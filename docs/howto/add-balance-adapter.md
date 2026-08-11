@@ -173,7 +173,7 @@ contract MyProtocolBalanceAdapter is BalanceAdapterBase {
 Reuse patterns from existing adapters:
 
 - **Per-instance, multi-asset (supply + borrow legs):** `src/balances/BalanceAdapters/SparkLendBalanceAdapter.sol`.
-- **Per-instance, single-asset vault:** `src/balances/BalanceAdapters/CapBalanceAdapter.sol`.
+- **Per-instance, single-asset vault:** `src/balances/BalanceAdapters/cap/CapStablecoinBalanceAdapter.sol` (and its `CapSavings` sibling — a protocol with two structurally distinct legs served by TWO adapters over a shared `CapBalanceAdapterBase`, so each label segment stays a per-adapter constant; see `src/balances/BALANCE_ADAPTERS.md` §6.2).
 - **Meta-adapter, single-leg:** `src/balances/MetaBalanceAdapters/GearboxV3MarketsMetaBalanceAdapter.sol`, `src/balances/MetaBalanceAdapters/MorphoVaultsMetaBalanceAdapter.sol`.
 - **Meta-adapter, multi-leg (LP + rewards):** `src/balances/MetaBalanceAdapters/curve/CurveGaugesMetaBalanceAdapter.sol`, `src/balances/MetaBalanceAdapters/balancer/BalancerV3GaugesMetaBalanceAdapter.sol`.
 

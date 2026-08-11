@@ -8,7 +8,8 @@ import {ProtocolNames} from "src/utils/ProtocolNames.sol";
 
 import {AaveUmbrellaBalanceAdapter} from "src/balances/BalanceAdapters/AaveUmbrellaBalanceAdapter.sol";
 import {AaveV3SafetyModuleBalanceAdapter} from "src/balances/BalanceAdapters/AaveV3SafetyModuleBalanceAdapter.sol";
-import {CapBalanceAdapter} from "src/balances/BalanceAdapters/CapBalanceAdapter.sol";
+import {CapStablecoinBalanceAdapter} from "src/balances/BalanceAdapters/cap/CapStablecoinBalanceAdapter.sol";
+import {CapSavingsBalanceAdapter} from "src/balances/BalanceAdapters/cap/CapSavingsBalanceAdapter.sol";
 import {ERC20DefaultBalanceAdapter} from "src/balances/BalanceAdapters/ERC20DefaultBalanceAdapter.sol";
 import {EthenaCooldownBalanceAdapter} from "src/balances/BalanceAdapters/EthenaCooldownBalanceAdapter.sol";
 import {KelpWithdrawalQueueBalanceAdapter} from "src/balances/BalanceAdapters/KelpWithdrawalQueueBalanceAdapter.sol";
@@ -180,7 +181,13 @@ contract ProtocolNameConsistencyTest is Test {
     ///      `test_hardcodedAdapters_matchCanonicalNames`. This family is where the Umbrella bug actually happened,
     ///      and deriving the name fixed only the meta family — so without this census the exact defect this file
     ///      exists to prevent stays re-introducible here.
-    uint256 internal constant HARDCODED_ADAPTER_COUNT = 12;
+    ///
+    ///      12 -> **13** when the combined `CapBalanceAdapter` was split into `CapStablecoinBalanceAdapter` +
+    ///      `CapSavingsBalanceAdapter`: two contracts, one protocol, one `ProtocolNames.CAP`. That is exactly the
+    ///      shape this census exists to make visible — a protocol gaining a second adapter is the moment a phantom
+    ///      sibling can appear — so both are asserted in {test_hardcodedAdapters_matchCanonicalNames} above.
+    ///      `CapBalanceAdapterBase` is abstract and is not counted (the census walks `out/` for deployable artifacts).
+    uint256 internal constant HARDCODED_ADAPTER_COUNT = 13;
 
     BalancesHarness internal nav;
     address internal stub;
@@ -195,8 +202,9 @@ contract ProtocolNameConsistencyTest is Test {
     // ─────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
     /// @notice Every adapter that hardcodes its display name must report exactly its `ProtocolNames` constant.
-    /// @dev Covers all 12, including the single-member protocols (Kelp, Lido, Cap, Spark, Ethena, Stader, ether.fi,
-    ///      Nexus Mutual, Wallet) that no shared-protocol-id comparison can reach. Deploying each adapter — rather
+    /// @dev Covers all 13, including the single-member protocols (Kelp, Lido, Spark, Ethena, Stader, ether.fi,
+    ///      Nexus Mutual, Wallet) that no shared-protocol-id comparison can reach. Cap is no longer single-member:
+    ///      its two leg adapters share `ProtocolNames.CAP` and both are asserted below. Deploying each adapter — rather
     ///      than restating its literal — is what keeps this non-tautological: the assertion reads the string out of
     ///      compiled bytecode.
     function test_hardcodedAdapters_matchCanonicalNames() public {
@@ -215,7 +223,15 @@ contract ProtocolNameConsistencyTest is Test {
             ProtocolNames.SPARK,
             "SparkLend"
         );
-        assertEq(new CapBalanceAdapter(stub, stub, stub, address(nav)).protocolName(), ProtocolNames.CAP, "Cap");
+        // BOTH Cap leg adapters, deliberately. They are two contracts serving one protocol, which is exactly the
+        // shape this test exists to police: if the split had given them different display names, a consumer
+        // enumerating configured adapters would see Cap as two peer protocols — the phantom-sibling split.
+        assertEq(
+            new CapStablecoinBalanceAdapter(stub, stub, address(nav)).protocolName(), ProtocolNames.CAP, "CapStablecoin"
+        );
+        assertEq(
+            new CapSavingsBalanceAdapter(stub, stub, stub, address(nav)).protocolName(), ProtocolNames.CAP, "CapSavings"
+        );
         assertEq(
             new EthenaCooldownBalanceAdapter(stub, stub, address(nav)).protocolName(), ProtocolNames.ETHENA, "Ethena"
         );

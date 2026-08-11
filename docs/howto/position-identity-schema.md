@@ -210,7 +210,7 @@ PositionBalance({
 })
 ```
 
-#### `Cap` — cUSD + stcUSD (two legs)
+#### `Cap` — cUSD + stcUSD (two adapters, one leg each)
 
 Two structurally distinct legs, each valued in USDC: the base synthetic dollar (cUSD) and the staked,
 yield-bearing savings token (stcUSD). The leg is identified by the token in `positionId`.
@@ -605,10 +605,16 @@ The tables below show what the call returns for a representative account positio
 `IPositionDescribable.protocolName()`; `labels` comes from `IPositionDescribable.positionLabels(positionId)`
 (the ordered hierarchy below `protocolName`, leaf last) — computed lazily from `positionId`, so
 meta-adapters derive it on-chain from live state and per-instance adapters return a fixed array.
-Two of those strings are not necessarily the adapter's own: `AssetKindRegistry` holds optional
-per-ADAPTER overrides — `setAdapterProtocolName` and `setAdapterLabelCategory`, both `onlyNavManager` —
-and `PriceFeedLib.toVerbose` applies them in preference to the adapter's reply, the name wholesale and
-the category as a replacement of `labels[0]`. Everything below index 0 always comes from the adapter.
+None of those strings is necessarily the adapter's own: `AssetKindRegistry` holds optional per-ADAPTER
+overrides — `setAdapterProtocolName` and `setAdapterLabels`, both `onlyNavManager` — and
+`PriceFeedLib.toVerbose` applies them in preference to the adapter's reply. The name is replaced
+wholesale; `setAdapterLabels` takes a `string[]` that is **index-aligned with the adapter's reply** and
+replaces it **segment by segment**, where `""` at an index means "leave that segment alone". So
+`["Lending Market", ""]` corrects a meta-adapter's category and leaves its computed leaf derived live.
+The overlay applies only for `i < min(reply.length, override.length)`, so an override can never write
+past — nor lengthen — the adapter's own reply: `labels.length` is always the adapter's answer.
+`src/balances/BALANCE_ADAPTERS.md` §6.2 carries the per-adapter sweep of which segment is a literal and
+which is computed.
 
 > **`protocolName()` names the protocol, never the product.** Every adapter sharing a `protocolId` returns the
 > same string: Aave V3's lending instances, Safety Module and Umbrella are all `"Aave V3"`; Morpho's vaults and
@@ -673,7 +679,7 @@ Scenario: 1 000 USDC staked in stkwaEthUSDC.v1 with 5 USDC rewards pending.
 | USDC  | 5      | +5          | `Rewards`    | `"Aave V3"`       | `["Umbrella Module"]` |
 | **NAV** | | **+1 005** | | | |
 
-#### `Cap` — cUSD + stcUSD
+#### `Cap` — cUSD + stcUSD (one leg per adapter)
 
 Scenario: 2 000 cUSD held + 1 000 USDC-worth of staked stcUSD.
 
@@ -983,7 +989,7 @@ schemas are in the next section and in the per-adapter table above.)
 | `pancakeswap-v2` | `PANCAKESWAP_V2` | `PancakeSwapV2PoolsMetaBalanceAdapter` — PancakeSwap V2 LP |
 | `stakewise-v3-vaults` | `STAKEWISE_V3_VAULTS` | `StakeWiseV3VaultsMetaBalanceAdapter` — StakeWise V3 vault stake + osToken debt |
 | `nexus-mutual-staking-pools` | `NEXUS_MUTUAL_STAKING_POOLS` | `NexusMutualStakingPoolsAssistedBalanceAdapter` — Nexus Mutual StakingNFT stake + rewards |
-| `cap` | `CAP` | `CapBalanceAdapter` — Cap cUSD (held) and stcUSD (staked) |
+| `cap` | `CAP` | `CapStablecoinBalanceAdapter` (held cUSD) + `CapSavingsBalanceAdapter` (staked stcUSD) — two adapters, one `protocolSubId`: both legs encode the same positionId shape |
 | `merkl` | `MERKL` | Reserved Merkl-rewards slug — no live adapter on `main` (the former `MerklRewardsAssistedBalanceAdapter` was removed; re-add pending). Would emit unclaimed (claimable) Merkl reward tokens |
 | `lido-withdrawal` | `LIDO_WITHDRAWAL` | `LidoWithdrawalQueueBalanceAdapter` — ETH owed from the Lido stETH withdrawal queue |
 | `stader-withdrawal` | `STADER_WITHDRAWAL` | `StaderWithdrawalQueueBalanceAdapter` — ETH owed from the Stader ETHx withdrawal queue |
@@ -1513,9 +1519,9 @@ legs, and a worked example — for every balance adapter on `main`.
   meta-adapters the breadcrumb root `protocolName()` is **derived from
   the adapter's own `_protocolId()`** (`ProtocolNames.forProtocolId`) — not a constructor argument and not
   configurable per deployment — the category is a `const` literal, and the leaf is `derived` on-chain.
-  What the *verbose reads report* for the root and the category is a separate matter: an `AssetKindRegistry`
-  per-adapter override (`setAdapterProtocolName` / `setAdapterLabelCategory`, `onlyNavManager`) replaces the
-  reported `protocolName` and `labels[0]` without touching the adapter, which is immutable either way.
+  What the *verbose reads report* is a separate matter: an `AssetKindRegistry` per-adapter override
+  (`setAdapterProtocolName` / `setAdapterLabels`, `onlyNavManager`) replaces the reported `protocolName` and
+  any `labels` SEGMENT — `""` skips a segment — without touching the adapter, which is immutable either way.
   Meta-adapters use a `_labels(category, leaf)` helper that **drops an empty leaf**, so a failed read
   degrades to `[category]`.
 - Labels are returned by `positionLabels(positionId)`; the ephemeral per-item id (request / NFT / ticket)
@@ -1528,8 +1534,8 @@ legs, and a worked example — for every balance adapter on `main`.
 | `ERC20DefaultBalanceAdapter` | `wallet` | `"Wallet"` | `[<symbol>]` (derived); `["native"]`; `[]` on revert | `abi.encode(address asset)` | Wallet | `["Wallet","USDC"]` |
 | `AaveUmbrellaBalanceAdapter` | `aave-v3-umbrella` | `"Aave V3"` | `["Umbrella Module"]` (const) | `abi.encode(address stakeToken)` | Staking / Rewards | `["Aave V3","Umbrella Module"]` |
 | `AaveV3SafetyModuleBalanceAdapter` | `aave-v3-safety-module` | `"Aave V3"` | `["Safety Module"]` (const) | `abi.encode(address stakeToken)` | Staking / Rewards | `["Aave V3","Safety Module"]` |
-| `CapBalanceAdapter` (cUSD) | `cap` | `"Cap"` | `["Stablecoin","cUSD"]` (const) | `abi.encode(address CUSD)` | Supplied | `["Cap","Stablecoin","cUSD"]` |
-| `CapBalanceAdapter` (stcUSD) | `cap` | `"Cap"` | `["Savings","stcUSD"]` (const) | `abi.encode(address STCUSD)` | Staking | `["Cap","Savings","stcUSD"]` |
+| `CapStablecoinBalanceAdapter` | `cap` | `"Cap"` | `["Stablecoin","cUSD"]` (const) | `abi.encode(address CUSD)` | Supplied | `["Cap","Stablecoin","cUSD"]` |
+| `CapSavingsBalanceAdapter` | `cap` | `"Cap"` | `["Savings","stcUSD"]` (const) | `abi.encode(address STCUSD)` | Staking | `["Cap","Savings","stcUSD"]` |
 | `EthenaCooldownBalanceAdapter` | `ethena-cooldown` | `"Ethena"` | `["Unstaking Cooldown", "sUSDe"]` (const) | `abi.encode(address sUSDe)` | Supplied (`isLocked` while cooling) | `["Ethena","Unstaking Cooldown","sUSDe"]` |
 | `SparkLendBalanceAdapter` | `spark-lend` | `"Spark"` | `["Market","SparkLend"]` (const) | `abi.encode(address POOL)` | Collateral/Supplied / Borrowed | `["Spark","Market","SparkLend"]` |
 | `LidoWithdrawalQueueBalanceAdapter` | `lido-withdrawal` | `"Lido"` | `["Withdrawal Queue", "stETH"]` (const) | `abi.encode(address withdrawalQueue)` | Supplied — one leg **per request** (each `isLocked` = pending), shared positionId, request id in `positionInstanceId` | `["Lido","Withdrawal Queue","stETH"]` |

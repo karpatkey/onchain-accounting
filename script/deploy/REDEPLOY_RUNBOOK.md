@@ -657,6 +657,15 @@ figure for 2.3's before/after comparison.
 >
 > **Order: #286 (landed as `8fe1a949`) → re-take the integration snapshot → then capture 0.9.**
 >
+> **The re-take is gated on exactly two things: #286, which has landed, and a human authorising the
+> DeBank unit spend below. Nothing else.** In particular it is **not** gated on any `src/` work. A
+> later change to which adapter supplies the wallet-aggregating tokens does not invalidate an anchor
+> captured now: the allowlist's output is the token addresses, and those are constructor arguments of
+> the Cap adapters whatever the adapter is called. If a future PR breaks that registry, that is a
+> defect to catch in *that* PR's review — not a reason to hold this capture. Do not couple the
+> snapshot re-take to the deploy-ordering work (fork-rehearsal invalidation, library-pin
+> regeneration); those gate the DEPLOY, not this snapshot.
+>
 > **Be precise about what was wrong, because it is narrower than "0.9 is invalid".** 0.9's own method is
 > a hand capture from the DeBank UI compared against live `getAccountNavVerbose`; it does **not** read
 > `expected.<chain>.debankUsd`, so the defect below did not corrupt 0.9's output. What it corrupted is

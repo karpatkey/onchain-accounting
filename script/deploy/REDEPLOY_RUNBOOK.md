@@ -521,8 +521,13 @@ consequence is **stronger** than "19 chains are unreachable": a broadcast needs 
 `--rpc-url` on **every** chain, including the five where Alchemy does answer. A resolvable `rpc`
 field is not a substitute on any of them.
 
-**Supply the endpoint explicitly on every chain** — `--rpc-url` on every invocation, sourced from the
-per-chain `*_URL` vars. This is **not** an either/or with the Alchemy app:
+**Supply the endpoint explicitly on every chain** — `--rpc-url` on every invocation. For **19 of the 24**
+the URL comes from that chain's `*_URL` var (`CHAIN_URL_ENV`, `chainlib.py:63-69`). **The remaining five —
+`143 monad`, `196 xlayer`, `204 opbnb`, `16661 0g`, `43111 hemi` — have no `*_URL` var at all**, so there
+is nothing to source from: pass the provisioned endpoint to `--rpc-url` directly, and if you want the
+preflight to see it too, add the chain to `CHAIN_URL_ENV` (a code change, not config). Those five are the
+same chains that currently fall back to public RPCs — see the note below. This is **not** an either/or
+with the Alchemy app:
 because `chainConfig.rpc` is inert (see below), enabling those networks does not hand Foundry an
 endpoint, so it is never a substitute for passing one. Enabling them is still worth doing — it gives you
 a good URL to pass and restores the preflight's first-choice candidate — but it is complementary, not an

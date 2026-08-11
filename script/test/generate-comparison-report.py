@@ -49,6 +49,7 @@ NAV_ASSETS_PATTERN = "script/config/nav-config/assets-and-price-feeds/{chain_id}
 # Adapter deploy config. Since the 2026-06-17 config split (5e25464d) per-adapter entries live here,
 # NOT under chains/<id>.json.balanceAdapters — that key no longer exists on any chain.
 BALANCE_ADAPTERS_CONFIG_DIR = "script/config/contracts-deployment-config/balance-adapters"
+META_ADAPTERS_CONFIG_DIR = "script/config/nav-config/meta-balance-adapters"
 NAV_POSITIONS_PATTERN = "test/integration/nav-positions-{chain_id}.json"
 DEBANK_CACHE_DIR = "test/integration/debank-cache"
 OUT_FILE = "comparison-report.md"
@@ -237,6 +238,32 @@ def adapter_aggregated_addrs(cid: str) -> set[str]:
     return addrs
 
 
+def meta_covered_addrs(cid: str) -> set[str]:
+    """Pool/vault addresses governed by an ENABLED meta-adapter on this chain.
+
+    A per-pool adapter is usually disabled because a meta-adapter superseded it, not because the pool
+    is untracked. Those addresses must not be treated as uncovered.
+    """
+    try:
+        with open(f"{META_ADAPTERS_CONFIG_DIR}/{cid}.json") as f:
+            metas = json.load(f)
+    except FileNotFoundError:
+        return set()
+    addrs: set[str] = set()
+    for key, cfg in metas.items():
+        if key.startswith("$") or not isinstance(cfg, dict):
+            continue
+        if not cfg.get("enabled", True):
+            continue
+        for field in ("instances", "instancesRaw"):
+            for a in cfg.get(field) or []:
+                # instancesRaw carries bytes32 coordinates (Morpho marketIds); only 20-byte
+                # addresses can collide with a DeBank pool controller, so keep just those.
+                if isinstance(a, str) and len(a) == 42:
+                    addrs.add(a.lower())
+    return addrs
+
+
 def disabled_lp_pool_addrs(cid: str) -> set[str]:
     try:
         with open(f"{BALANCE_ADAPTERS_CONFIG_DIR}/{cid}.json") as f:
@@ -253,7 +280,9 @@ def disabled_lp_pool_addrs(cid: str) -> set[str]:
         pool = ctor.get("pool") or ctor.get("pair")
         if pool:
             addrs.add(pool.lower())
-    return addrs
+    # A pool superseded by an enabled meta-adapter is still covered by NAV. Dropping its DeBank
+    # positions would lower the reference total against a NAV that still counts them.
+    return addrs - meta_covered_addrs(cid)
 
 
 def debank_get(path, params=""):

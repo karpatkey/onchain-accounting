@@ -1167,10 +1167,16 @@ contract AdapterLabelOverridesTest is AdapterLabelOverridesBase {
     ///      like any other. For that model the 27-adapter display path first-touches **31** accounts -- the proxy, 27
     ///      adapters, the implementation, `PriceFeedLib`, the registry -- at 2,500 each: **~77,500 unmeasured**.
     ///
-    ///      A fresh EOA transaction differs twice: EIP-2929 pre-warms its `to`, so the proxy drops out and the
-    ///      correction is ~75,000 over 30 accounts; and nothing on-chain decodes the result, so these totals
-    ///      OVERSTATE that case by the caller-side decode. Size a contract reader's limit from the reported total
-    ///      plus ~77,500; do not apply the 30-account figure to a number measured under the 31-account model.
+    ///      **That figure is for a contract reader, and it is the ONLY path these fixtures size.** Add ~77,500 to a
+    ///      reported total to size a contract that calls the NAV.
+    ///
+    ///      ⚠️ **A direct EOA transaction is a SEPARATE accounting model and cannot be derived from these numbers.**
+    ///      An earlier revision claimed it "differs twice" -- proxy pre-warmed, no on-chain decode -- and concluded
+    ///      these totals overstate it. That enumeration was incomplete and the conclusion was unmeasured. A
+    ///      transaction also OMITS the caller-side ABI encoding and the CALL overhead this helper includes, and ADDS
+    ///      the 21,000 intrinsic cost plus per-calldata-byte gas. Those push in opposite directions, so the sign of
+    ///      the difference is not established here and no arithmetic on the ~77,500 recovers it. **Sizing the
+    ///      transaction path needs its own measurement; this file does not provide one.**
     function _coolAll(address[] memory xs) internal {
         // ORDER IS LOAD-BEARING: `vm.load` WARMS the slot it reads, so reading the implementation slot after
         // `vm.cool(address(nav))` would silently re-warm it and hand the measured call a warm SLOAD. Read first,
@@ -1192,7 +1198,8 @@ contract AdapterLabelOverridesTest is AdapterLabelOverridesBase {
     ///          UUPS implementation, `PriceFeedLib` -- with all SLOTS cold. It is a FLOOR, not the real cost:
     ///          `vm.cool` does not reproduce cold-ACCOUNT premiums, leaving **~77,500** unmeasured under the
     ///          contract-caller model these figures are measured in (31 accounts x 2,500). See `_coolAll` for the
-    ///          measured proof, the arithmetic, and why a plain EOA transaction takes a different correction.
+    ///          measured proof and the arithmetic. It sizes a CONTRACT reader only -- the transaction path is a
+    ///          separate accounting model this file does not measure.
     function test_gas_configurationSurface_27Distinct_cold() public {
         address[] memory all = _growTo(27);
 

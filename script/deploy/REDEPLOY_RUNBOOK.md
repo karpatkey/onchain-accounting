@@ -602,6 +602,31 @@ Note the
 2026-07-29 linea comparison above is now stale on its second number only: linea still holds 0.03066 ETH,
 but the estimate for it is now **0.00293**, not 0.02800 — the balance figure aged well, the estimate did not.
 
+> ### ⚠️ WHICH CHAINS THIS GATE IS AUTHORITATIVE FOR — it is not "all 24"
+>
+> `none — every priced chain is funded` says the balance cleared **the estimate**. It does not say the
+> estimate included every cost the chain charges. Per **open issue #287**, it does not on 9 of 24:
+> `deployer_balances.py` prices as `(gasUnits × gasPrice) × headroom` and models **no L1
+> data-availability fee**, which rollups charge on top. On scroll that term measured **~99.9% of total
+> cost**, so an execution-only figure there is a **lower bound, not an estimate**.
+>
+> | chains | count | what the gate is worth |
+> | --- | --- | --- |
+> | 534352 scroll | 1 | **No finding.** `UNPRICEABLE` by design — no L1 term is modelled, so no number would be honest |
+> | 100 gnosis | 1 | **No finding.** `UNPRICEABLE` (near-zero base fee); funding rests on the out-of-band confirmation, see above |
+> | 10, 130, 204, 480, 5000, 8453, 42220, 57073 | 8 | **Priced, but on an understated basis** — OP-stack chains priced with **no L1-DA term**. Margins are large (optimism holds 0.0149 against a 0.00005 execution need) but that is unmeasured reasoning, not a measurement |
+> | the remaining 14 | 14 | Priced from the node with no known omission — **but "not named by #287" is absence of a measurement, not a clearance.** Arbitrum (42161) and linea (59144) are rollups too; their L1-cost handling has not been verified here |
+>
+> **So a green run authorises nothing on 10 of 24 chains, and rests on unmeasured reasoning on 8 of
+> those.** Do not read "0 short" as "funding verified across the board". Until #287 lands, size scroll
+> and the OP-stack chains from something other than this tool — or top their deployers up generously,
+> which removes the dependence on getting the measurement right at all.
+>
+> Two things #287 already settled, so nobody re-derives them: use the oracle's own `getL1Fee(bytes)`
+> and never reconstruct the formula (a reconstruction understated the real figure **~27×**), and do not
+> quote a single-variable "flip point" — post-Curie the fee has two independent drivers, so
+> "flips once `l1BaseFee` > X" is not a flip condition.
+
 **The script still exits non-zero and prints `not clear to deploy`, and the reason is the two
 unpriceable chains, not a shortfall.** Measured the same day:
 

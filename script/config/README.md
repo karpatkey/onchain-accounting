@@ -857,7 +857,7 @@ MANAGER (keccak256("MANAGER"))
 │  └─ setChainlinkL2SequencerGracePeriod()
 │
 ├─ BridgeEscrow:
-│  ├─ releaseByInvoiceId() (when not called by adapter)
+│  ├─ claim() / claim(bytes32[]) (release held destination custody; ADR 0024)
 │  ├─ cancelInvoice()
 │  ├─ markInvoiceCompleted()
 │  ├─ registerAsset()

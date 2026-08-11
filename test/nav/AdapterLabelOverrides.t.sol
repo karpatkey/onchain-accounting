@@ -770,12 +770,19 @@ contract AdapterLabelOverridesTest is AdapterLabelOverridesBase {
             assertEq(all[i].protocolName, "Mock Protocol", "a burning registry must fall back, not override");
         }
         assertTrue(found, "adapter position not found");
-        // Two distinct adapters emit positions here (ERC20Default + ours), so the ceiling is 2 adapters x 2 reads x
-        // 100k, plus the underlying read. Bounded well inside the verbose read's own budget.
+
+        // ⚠️ Only ONE adapter emits here, not two. An earlier comment claimed "ERC20Default + ours"; the default ERC20
+        // adapter holds no balance for `safe` and emits nothing, which {test_gas_accountPath_27Distinct_cold} pins
+        // independently (26 emitting of 27 registered). So the REGISTRY stipend component of this ceiling is
+        // 1 adapter x 2 reads x _NAME_READ_GAS = 200,000, not 400,000 -- the bound has more slack than it looked.
+        // The rest of the measured ~420,700 is the adapter's own work and the gas-capped label decode, which this
+        // test does not attempt to bound; it bounds the registry's contribution and that the read still completes.
+        uint256 emitting = _adaptersEmittingPositions(nav.getAllAdapters());
+        assertEq(emitting, 1, "fixture shape: exactly one adapter emits a position for safe");
         assertLt(
             used,
-            2 * 2 * 100_000 + 200_000,
-            "a stipend-burning registry must stay inside 2x_NAME_READ_GAS per distinct adapter, plus the underlying read"
+            emitting * 2 * 100_000 + 400_000,
+            "a stipend-burning registry must stay inside 2x_NAME_READ_GAS per EMITTING adapter, plus the adapter's own work"
         );
     }
 
@@ -1145,9 +1152,18 @@ contract AdapterLabelOverridesTest is AdapterLabelOverridesBase {
     ///      The consequence is that EVERY "cold" number in this file is slots-cold, so it is a FLOOR: a real fresh
     ///      call additionally pays one cold-account premium per distinct account it touches, which this cheatcode
     ///      cannot reproduce inside a single test transaction (creating or calling an account warms it for the rest of
-    ///      the transaction). On the 27-adapter display path that is 30 accounts -- 27 adapters, the implementation,
-    ///      `PriceFeedLib`, the registry -- at 2,500 each, so **~75,000 unmeasured**. The proxy is excluded: EIP-2929
-    ///      pre-warms a transaction's `to`. Size a gas limit from the reported total PLUS that margin.
+    ///      the transaction).
+    ///
+    ///      ⚠️ **The size of that correction depends on the CALL MODEL, and mixing the two is a mistake.** Everything
+    ///      here is the CONTRACT-CALLER model: measured from inside a Solidity call (see {measureVerbose}), so the
+    ///      totals include caller-side calldata construction and returndata decoding, and the proxy is a cold account
+    ///      like any other. For that model the 27-adapter display path first-touches **31** accounts -- the proxy, 27
+    ///      adapters, the implementation, `PriceFeedLib`, the registry -- at 2,500 each: **~77,500 unmeasured**.
+    ///
+    ///      A fresh EOA transaction differs twice: EIP-2929 pre-warms its `to`, so the proxy drops out and the
+    ///      correction is ~75,000 over 30 accounts; and nothing on-chain decodes the result, so these totals
+    ///      OVERSTATE that case by the caller-side decode. Size a contract reader's limit from the reported total
+    ///      plus ~77,500; do not apply the 30-account figure to a number measured under the 31-account model.
     function _coolAll(address[] memory xs) internal {
         // ORDER IS LOAD-BEARING: `vm.load` WARMS the slot it reads, so reading the implementation slot after
         // `vm.cool(address(nav))` would silently re-warm it and hand the measured call a warm SLOAD. Read first,
@@ -1255,9 +1271,10 @@ contract AdapterLabelOverridesTest is AdapterLabelOverridesBase {
     ///      ⚠️ Its ceiling is a COARSE SCALE GUARD, not a caching defense, and is NOT mutation-derived. Every adapter
     ///      that emits here emits exactly ONE position, so per-adapter and per-position lookups are indistinguishable
     ///      -- the per-position mutant left this test's surcharge unchanged. The per-DISTINCT-ADAPTER caching
-    ///      property is defended SOLELY by `test_gas_coldVsWarm_twoAdapters` (2 adapters / 3 positions), whose bound
-    ///      IS derived from that mutant. What this test contributes is the MEASUREMENT of the surcharge at scale; the
-    ///      linearity claim is asserted in `test_gas_configurationSurface_linearityAtScale`, not here.
+    ///      property is defended by TWO tests, both mutation-derived: `test_gas_surchargeIsPerAdapter_notPerPosition`
+    ///      (warm) and `test_gas_coldVsWarm_twoAdapters` (cold), each 2 adapters / 3 positions. What THIS test
+    ///      contributes is the MEASUREMENT of the surcharge at scale; the linearity claim is asserted in
+    ///      `test_gas_configurationSurface_linearityAtScale`, not here.
     ///
     ///      ⚠️ **27 adapters are REGISTERED but only 26 EMIT.** The fixture's `ERC20DefaultBalanceAdapter` holds no
     ///      balance for `safe`, so it contributes no position and the override lookup never runs for it. The

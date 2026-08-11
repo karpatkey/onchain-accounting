@@ -575,18 +575,27 @@ topped up once on 2026-07-27 without clearing, so measure rather than assume.
 
 **Re-measured 2026-08-10 against `main` @ `08cff61d`** (`python3 script/deploy/preflight/deployer_balances.py`):
 **24 chains scoped, 0 unreachable, 0 short, 2 unpriceable.** The top-up list came back
-`none — every priced chain is funded for the estimated gas`. Read that scope literally: **it clears the
-22 priced chains and says nothing about the other two.** The script files gnosis and scroll under
-`NOT PRICED (these chains were not checked, and are not OK)`, so their funding adequacy is **not**
-established here — it rests on the out-of-band confirmation recorded in the UNPRICEABLE paragraph below.
-So: **no priced chain needs a top-up**, and the two unpriceable chains are not a funding blocker either —
-this section's own record below states their funding "has been confirmed sufficient out of band". What
-stays non-green is the **script**, and it stays that way **permanently and by design**: `UNPRICEABLE`
-reflects the chain's own `eth_gasPrice`, not a state anyone can top up, so **re-running
-`deployer_balances.py` will never clear it**. Read 0.6 accordingly — for those two chains the gate is
-satisfied by the out-of-band confirmation and *not* by the tool, so record who confirmed it and when,
-because the tool structurally cannot. A non-zero exit here is the expected steady state, not a
-remediable failure. Note the
+`none — every priced chain is funded for the estimated gas`, and the run exited non-zero with
+`not clear to deploy`.
+
+What that output does and does not cover, stated without inferring a verdict:
+
+- **Covers:** the 22 priced chains. None needs a top-up at the estimates in force that day.
+- **Does not cover:** gnosis and scroll. The script files them under
+  `NOT PRICED (these chains were not checked, and are not OK)` and sets `sufficient = None`, so it makes
+  **no finding either way** about their funding.
+- **Why, and under what condition:** `priceable = quoted >= GAS_PRICE_IMPLAUSIBLE_WEI`, where the
+  threshold is `1_000_000` wei / 0.001 gwei (`deployer_balances.py:51`, test at `:117`). Both chains
+  quoted far below it. **This is conditional, not permanent** — a later quote above the threshold clears
+  it, and plasma is the worked example: unpriceable in the 2026-07-29 reading, priced normally
+  (need 0.00022) on 2026-08-10.
+- **Therefore 0.6 is OPEN for gnosis and scroll, not satisfied and not blocked.** The tool cannot close
+  it for them by construction. The paragraph below asserts their funding "has been confirmed sufficient
+  out of band" but records **no confirmer, no date and no sizing basis**, so it is not auditable and must
+  not be read as closing the gate. **To close 0.6: record who confirmed, when, and against what estimate
+  — or re-run once a quote clears the threshold and let the tool price them.**
+
+Note the
 2026-07-29 linea comparison above is now stale on its second number only: linea still holds 0.03066 ETH,
 but the estimate for it is now **0.00293**, not 0.02800 — the balance figure aged well, the estimate did not.
 

@@ -428,8 +428,14 @@ contract BridgeEscrow is
     function registerAsset(string calldata symbol, address asset) external onlyRole(MANAGER_ROLE) {
         bytes6 sym = InvoiceDataLib.strToBytes6(symbol);
         if (_registeredSymbolsIndex[sym] != 0) {
-            // Already registered: only allow a no-op or a repoint when no invoices reference it.
-            if (_assetRegistry[sym] != asset && _hasActiveInvoicesForAsset(sym)) {
+            // Already registered: only allow a no-op or a repoint when the OLD asset has neither source-side
+            // active invoices nor destination held custody — otherwise the repoint would hide that outstanding
+            // obligation from the symbol-enumerating views (getHeldBalance*), even though the old record stays
+            // claimable by raw hash. Mirrors the unregisterAsset guard.
+            if (
+                _assetRegistry[sym] != asset
+                    && (_hasActiveInvoicesForAsset(sym) || _heldClaimable[_assetRegistry[sym]] != 0)
+            ) {
                 revert AssetHasActiveInvoices(symbol);
             }
             _assetRegistry[sym] = asset;

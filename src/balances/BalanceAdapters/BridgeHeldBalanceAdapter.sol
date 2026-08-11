@@ -20,10 +20,15 @@ import {ProtocolNames} from "src/utils/ProtocolNames.sol";
 ///         custody (ADR 0024 "hold-then-claim"). Between `recordDelivery` (funds arrive on the destination and are
 ///         held by the escrow) and `claim` (MANAGER moves them to the safe), the value is not yet in the safe's
 ///         wallet, so the ordinary ERC20 balance adapter would miss it. This adapter closes that gap by reading the
-///         escrow's per-account custody so NAV counts held value continuously across the bridge hop. The three
-///         windows — source in-transit → destination held (this adapter) → safe balance (the ERC20 adapter) — are
-///         disjoint by construction, so nothing is double-counted; the MANAGER-gated `claim` is the controlled block
-///         where value transitions from "held" to "safe balance".
+///         escrow's per-account custody so NAV counts held value continuously across the bridge hop. On the
+///         destination the two windows this adapter borders — destination held → safe balance — are disjoint: the
+///         MANAGER-gated `claim` is the single block where value moves from "held" to "safe balance". **The
+///         source-chain in-transit window is NOT disjoint from destination held**: `recordDelivery` starts the
+///         held position, but source in-transit clears only at the later, separate `markInvoiceCompleted`, so a
+///         cross-chain NAV that sums both escrows double-counts during that settlement gap. Netting source
+///         in-transit against destination delivery (source `getActiveInvoices` × dest `isInvoiceCompleted`) or a
+///         prompt settlement keeper is required to close it — the same operational requirement the source-side
+///         in-transit accounting already carries; hold-then-claim does not remove it.
 /// @dev Immutable, view-only, per-chain: pin the destination `BridgeEscrow` for this chain in the constructor. Every
 ///      leg is `PositionKind.Supplied` with `isLocked = true` (the account owns the value but cannot use it until a
 ///      claim moves it to the safe). Only assets registered on `NAVCalculator` are emitted (unregistered held assets
@@ -39,6 +44,12 @@ contract BridgeHeldBalanceAdapter is BalanceAdapterBase {
 
     /// @notice The destination BridgeEscrow on this chain whose held custody this adapter reports.
     IBridgeEscrow public immutable BRIDGE_ESCROW;
+
+    /// @dev NAV's native-asset sentinel (ERC-7528, matches `Balances.NATIVE_ADDRESS`). The escrow keys native
+    ///      custody at `address(0)` (its registration convention), so this adapter maps `address(0)` → this
+    ///      sentinel before every NAV metadata lookup/filter and maps back when querying the escrow, otherwise a
+    ///      held native (ETH) delivery would be silently omitted from NAV.
+    address private constant NATIVE_ASSET = 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE;
 
     /// @param navCalculator The NAVCalculator address (registered-asset lookups).
     /// @param bridgeEscrow The BridgeEscrow proxy on this chain.
@@ -75,17 +86,27 @@ contract BridgeHeldBalanceAdapter is BalanceAdapterBase {
     }
 
     /// @inheritdoc IBalanceAdapter
+    /// @notice `asset` is the NAV-side address; the native sentinel (or `address(0)`) sums both native keys the
+    ///         escrow might hold custody under (`address(0)` by convention, or the ERC-7528 sentinel).
     function getAdapterBalanceForAsset(address account, address asset)
         external
         view
         returns (uint256 amount, bool isDebt)
     {
         if (account == address(0) || asset == address(0)) return (0, false);
+        if (asset == NATIVE_ASSET) {
+            return (
+                BRIDGE_ESCROW.getHeldBalanceForAsset(address(0), account)
+                    + BRIDGE_ESCROW.getHeldBalanceForAsset(NATIVE_ASSET, account),
+                false
+            );
+        }
         return (BRIDGE_ESCROW.getHeldBalanceForAsset(asset, account), false);
     }
 
     /// @inheritdoc IBalanceAdapter
-    /// @notice Per-asset held custody for the account (credit; skips zeros).
+    /// @notice Per-asset held custody for the account (credit; skips zeros). The escrow's `address(0)` native key
+    ///         is surfaced as NAV's native sentinel so consumers see a consistent native address.
     function getAdapterBalances(address account)
         external
         view
@@ -93,6 +114,9 @@ contract BridgeHeldBalanceAdapter is BalanceAdapterBase {
     {
         if (account == address(0)) return (new address[](0), new uint256[](0), new bool[](0));
         (assets, amounts) = BRIDGE_ESCROW.getHeldBalancesForAccount(account);
+        for (uint256 i; i < assets.length; ++i) {
+            if (assets[i] == address(0)) assets[i] = NATIVE_ASSET;
+        }
         isDebt = new bool[](assets.length); // all false (credit)
     }
 
@@ -114,7 +138,9 @@ contract BridgeHeldBalanceAdapter is BalanceAdapterBase {
         INAVCalculator.PositionBalance[] memory tmp = new INAVCalculator.PositionBalance[](heldAssets.length);
         uint256 count;
         for (uint256 i; i < heldAssets.length; ++i) {
-            address asset = heldAssets[i];
+            // Map the escrow's native key (address(0)) to NAV's native sentinel before filtering/lookup, else a
+            // held ETH delivery would fail the (0xEeee != address(0)) find and be silently dropped from NAV.
+            address asset = heldAssets[i] == address(0) ? NATIVE_ASSET : heldAssets[i];
             uint256 amount = heldAmounts[i];
             if (amount == 0) continue;
             if (assetFilter != address(0) && assetFilter != asset) continue;

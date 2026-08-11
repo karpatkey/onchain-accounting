@@ -112,8 +112,13 @@ untouched. (Source side — `depositAndBridge`, `_bridge`, recipient = sibling a
   `emergencyWithdraw` is the break-glass). Manual routes still need their proof step to get funds out of the
   bridge into the escrow — only the final escrow→safe step is unified.
 - **NAV hook (follow-up):** a destination getter `getHeldBalanceForAsset(asset, account)` + a
-  `BridgeHeldBalanceAdapter` (`IBalanceAdapter`) lets NAV count held-but-unclaimed value. The three windows —
-  source in-transit → destination held → safe balance — are disjoint by construction, so no double count.
+  `BridgeHeldBalanceAdapter` (`IBalanceAdapter`) lets NAV count held-but-unclaimed value. Windows **destination
+  held → safe balance** are disjoint on the destination chain (`claim` is the single transition). But **source
+  in-transit is NOT disjoint from destination held**: `recordDelivery` starts the held position while source
+  in-transit clears only at the later `markInvoiceCompleted`, so a cross-chain NAV summing both escrows
+  double-counts during that settlement gap. Closing it needs read-time netting (source `getActiveInvoices` ×
+  dest `isInvoiceCompleted`) or a prompt settlement keeper — the same source-side reconciliation the
+  pass-through model already required; hold-then-claim does not remove it.
 
 ## Open questions (sign-off needed — several are Santi's call)
 

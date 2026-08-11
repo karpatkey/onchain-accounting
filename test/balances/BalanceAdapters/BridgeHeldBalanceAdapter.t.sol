@@ -66,6 +66,7 @@ contract BridgeHeldBalanceAdapterTest is Test {
     Mock_ERC20 internal unregistered;
 
     address internal account = makeAddr("account");
+    address internal constant NATIVE = 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE;
 
     function setUp() public {
         nav = new Mock_NAVCalculator();
@@ -156,6 +157,39 @@ contract BridgeHeldBalanceAdapterTest is Test {
         INAVCalculator.PositionBalance[] memory p = adapter.getAdapterPositions(account, address(weth));
         assertEq(p.length, 1);
         assertEq(p[0].balanceAsset.asset, address(weth));
+    }
+
+    function test_positions_nativeHeld_normalizedToNavSentinel() public {
+        // Escrow holds native custody keyed at address(0) (its registration convention); NAV registers native
+        // under the ERC-7528 sentinel. The adapter must map address(0) -> sentinel or native is dropped.
+        escrow.registerAsset("ETH", address(0));
+        escrow.setHeld(account, address(0), 5 ether);
+        nav.registerAsset(NATIVE, 18, "ETH");
+
+        INAVCalculator.PositionBalance[] memory p = adapter.getAdapterPositions(account, address(0));
+        assertEq(p.length, 1, "one native leg");
+        assertEq(p[0].balanceAsset.asset, NATIVE, "native mapped to NAV sentinel");
+        assertEq(p[0].amount, 5 ether);
+        assertTrue(p[0].isLocked);
+
+        // Filtering by the NAV native sentinel matches the native leg.
+        INAVCalculator.PositionBalance[] memory f = adapter.getAdapterPositions(account, NATIVE);
+        assertEq(f.length, 1);
+        assertEq(f[0].balanceAsset.asset, NATIVE);
+
+        // Getter surfaces: point query by sentinel, and getAdapterBalances surfaces native as the sentinel.
+        (uint256 amt,) = adapter.getAdapterBalanceForAsset(account, NATIVE);
+        assertEq(amt, 5 ether, "native point query sums the address(0) key");
+        (address[] memory as_, uint256[] memory am_,) = adapter.getAdapterBalances(account);
+        bool seen;
+        for (uint256 i; i < as_.length; ++i) {
+            if (as_[i] == NATIVE) {
+                seen = true;
+                assertEq(am_[i], 5 ether);
+            }
+            assertTrue(as_[i] != address(0), "address(0) never surfaced raw");
+        }
+        assertTrue(seen, "native surfaced as the NAV sentinel");
     }
 
     function test_positions_emptyForZeroAccount() public view {

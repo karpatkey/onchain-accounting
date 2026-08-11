@@ -331,6 +331,23 @@ contract BridgeEscrowErrorTest is BridgeEscrowTestBase {
         bridgeEscrow.unregisterAsset(USDC_SYMBOL);
     }
 
+    /// @notice Repointing a registered symbol to a different asset while the OLD asset still backs held custody
+    ///         must revert — otherwise getHeldBalance* would enumerate the new asset and hide the old held funds.
+    function test_RevertWhen_registerAsset_repointWithHeldCustody() public {
+        (BridgeEscrow destEscrow, bytes memory messagePayload, MockBridgeAdapter destMock) =
+            _setupDestinationAndValidPayload(address(usdc), 1000e6);
+        usdc.mint(address(destMock), 1000e6);
+        vm.prank(address(destMock));
+        usdc.approve(address(destEscrow), 1000e6);
+        vm.prank(address(destMock));
+        destEscrow.recordDelivery(messagePayload); // USDC held under "USDC"
+
+        // Repoint "USDC" -> a different token while custody still holds the old USDC.
+        vm.prank(manager);
+        vm.expectRevert(abi.encodeWithSelector(AssetHasActiveInvoices.selector, USDC_SYMBOL));
+        destEscrow.registerAsset(USDC_SYMBOL, address(weth));
+    }
+
     /// @notice Unregistering an asset that still backs destination held custody must revert — otherwise
     ///         getHeldBalance* (which enumerate registered symbols) would silently hide still-claimable funds.
     function test_RevertWhen_unregisterAsset_withHeldCustody() public {

@@ -643,11 +643,41 @@ contract AdapterLabelOverridesTest is AdapterLabelOverridesBase {
     // Gas: the registry leg must stay bounded
     // ------------------------------------------------------------------
 
+    /// @dev **EVERY gas figure in this file is measured through one of these two helpers, and that is load-bearing.**
+    ///      Measuring several arms sequentially in ONE frame does not put them on equal footing: each call's dynamic
+    ///      return (`string[]`, `string[][]`, `VerbosePosition[]`) is ABI-decoded into the CALLER's memory, advancing
+    ///      the free-memory pointer, and memory cost is quadratic in the frame total. So every successive arm pays
+    ///      more expansion than the last for identical work. Measured on this fixture, repeating the SAME call:
+    ///
+    ///        same frame    display   493,378 -> 498,752   (+1,343 per call)
+    ///                      account 2,154,364 -> 2,215,762 (+20,466 per call)
+    ///        fresh frame   display   491,676 every time, account 2,093,268 every time -- bit-identical
+    ///
+    ///      An external call gets a fresh memory region, so the measurement inside is independent of whatever the
+    ///      test frame already allocated. `vm.cool` / `vm.store` are applied OUTSIDE, before entering: account
+    ///      warmth and storage are frame-independent, memory is not.
+    ///
+    ///      ⚠️ **Do not inline `gasleft()` around a call in a test body.** The inline form silently attributes the
+    ///      harness's own memory growth to the code under test: it put ~20,500 of drift into the account-path
+    ///      surcharge and ~61,000 into its absolute total, and no assertion in this file would have caught it.
+    function measureVerbose(address account) external view returns (uint256 used) {
+        uint256 t = gasleft();
+        nav.getAccountPositionsVerbose(account, address(0));
+        used = t - gasleft();
+    }
+
+    /// @dev Configuration-surface counterpart of {measureVerbose}; see there for why the fresh frame is required.
+    function measureDisplay(address[] calldata adapters) external view returns (uint256 used) {
+        uint256 t = gasleft();
+        nav.getAdapterDisplayInfo(adapters);
+        used = t - gasleft();
+    }
+
     /// @dev Measures the registry surcharge against a real no-registry baseline.
     ///
-    ///      **The baseline is measured FIRST, deliberately.** An earlier revision measured it last, after two prior
-    ///      verbose reads had already grown this frame's memory; since memory cost is quadratic in the frame total,
-    ///      that biased the baseline UP and the published surcharge DOWN. Ordering is part of the measurement.
+    ///      Arm ORDER no longer biases anything: each arm is measured in its own frame via {measureVerbose}, so the
+    ///      memory baseline is identical for all three. (An earlier revision had to measure the baseline first to
+    ///      limit that bias; with fresh frames the ordering is free.)
     ///
     ///      **What this test does and does not bound.** It bounds the surcharge for ONE distinct adapter emitting ONE
     ///      position. It CANNOT distinguish a per-adapter lookup from a per-position one, because with one position
@@ -659,20 +689,14 @@ contract AdapterLabelOverridesTest is AdapterLabelOverridesBase {
         bytes32 rslot = _registrySlot();
         uint256 saved = uint256(vm.load(address(nav), rslot));
         vm.store(address(nav), rslot, bytes32(0));
-        uint256 before = gasleft();
-        nav.getAccountPositionsVerbose(safe, address(0));
-        uint256 noRegistry = before - gasleft();
+        uint256 noRegistry = this.measureVerbose(safe);
         vm.store(address(nav), rslot, bytes32(saved));
 
-        before = gasleft();
-        nav.getAccountPositionsVerbose(safe, address(0));
-        uint256 miss = before - gasleft();
+        uint256 miss = this.measureVerbose(safe);
 
         vm.prank(navCalculatorManager);
         registry.setAdapterProtocolName(address(adapter), "Overridden Protocol");
-        before = gasleft();
-        nav.getAccountPositionsVerbose(safe, address(0));
-        uint256 hit = before - gasleft();
+        uint256 hit = this.measureVerbose(safe);
 
         emit log_named_uint("verbose read gas, NO registry ", noRegistry);
         emit log_named_uint("verbose read gas, override HIT", hit);
@@ -681,7 +705,8 @@ contract AdapterLabelOverridesTest is AdapterLabelOverridesBase {
 
         assertLt(noRegistry, hit, "no registry must be cheapest");
         assertLt(hit, miss, "a hit must be cheaper than a miss (it skips the adapter staticcall)");
-        // Measured ~5.1k. Bound just above it, so a second pair of reads (~+5k) breaks this.
+        // Bound derived from the second-pair mutant (duplicate the two lookups inside the cache branch), which is
+        // exactly the regression this message names: clean 5,311 PASS / mutant 10,623 FAIL / bound 8,000.
         assertLt(miss - noRegistry, 8_000, "one distinct adapter must cost at most one pair of registry reads");
     }
 
@@ -691,11 +716,12 @@ contract AdapterLabelOverridesTest is AdapterLabelOverridesBase {
     ///      the COLD counterpart; between them the caching property is defended warm and cold, and nothing else in
     ///      this file defends it.
     ///
-    ///      Measured on clean HEAD: 10,980. Measured with the lookup moved out of the cache branch so it runs per
-    ///      position: 16,308. An earlier revision bounded this at 50,000 and therefore passed under that exact
+    ///      Measured on clean HEAD: 10,650. Measured with the lookup moved out of the cache branch so it runs per
+    ///      position: 15,978. An earlier revision bounded this at 50,000 and therefore passed under that exact
     ///      mutation — the regression it was written to catch shipped green. The bound is 12,000: above the honest
-    ///      number, below the mutant. ⚠️ Headroom is now only ~9%, so a genuine cost increase here will surface as
-    ///      this test going red; re-derive the bound from the mutant rather than simply raising it.
+    ///      number, below the mutant, with ~13% of headroom. ⚠️ When this goes red, RE-DERIVE the bound from the
+    ///      mutant; do not simply raise it. Raising a bound to make a test pass is how the 50,000 above, the 34,000
+    ///      on the cold counterpart and the 20,000 on {test_gas_coldVsWarm_oneAdapter} all came to enforce nothing.
     function test_gas_surchargeIsPerAdapter_notPerPosition() public {
         LabelledAdapter multi = new LabelledAdapter("Multi Protocol", "Market", "leaf");
         address[] memory assets = new address[](2);
@@ -709,18 +735,13 @@ contract AdapterLabelOverridesTest is AdapterLabelOverridesBase {
         nav.addBalanceAdapters(aa(address(multi)));
         nav.getAccountPositionsVerbose(safe, address(0)); // warm
 
-        // Baseline FIRST, for the same ordering reason as above.
         bytes32 rslot = _registrySlot();
         uint256 saved = uint256(vm.load(address(nav), rslot));
         vm.store(address(nav), rslot, bytes32(0));
-        uint256 before = gasleft();
-        nav.getAccountPositionsVerbose(safe, address(0));
-        uint256 noRegistry = before - gasleft();
+        uint256 noRegistry = this.measureVerbose(safe);
         vm.store(address(nav), rslot, bytes32(saved));
 
-        before = gasleft();
-        nav.getAccountPositionsVerbose(safe, address(0));
-        uint256 withRegistry = before - gasleft();
+        uint256 withRegistry = this.measureVerbose(safe);
 
         uint256 surcharge = withRegistry - noRegistry;
         emit log_named_uint("surcharge, 2 adapters / 3 positions", surcharge);
@@ -736,9 +757,9 @@ contract AdapterLabelOverridesTest is AdapterLabelOverridesBase {
         vm.prank(navCalculatorManager);
         nav.setAssetKindRegistry(address(burner));
 
-        uint256 before = gasleft();
+        // Gas in its own frame; the returned data is fetched separately, since only the CONTENT is asserted on.
+        uint256 used = this.measureVerbose(safe);
         INAVCalculator.VerbosePosition[] memory all = nav.getAccountPositionsVerbose(safe, address(0));
-        uint256 used = before - gasleft();
 
         emit log_named_uint("verbose read gas, stipend-burning registry", used);
         // Fail-open still holds: the adapter's own values come back.
@@ -777,9 +798,8 @@ contract AdapterLabelOverridesTest is AdapterLabelOverridesBase {
         three[1] = address(adapter);
         three[2] = address(usdc); // not an adapter at all; must still not revert
 
-        uint256 before = gasleft();
+        uint256 used = this.measureDisplay(three);
         (string[] memory names, string[][] memory labels) = nav.getAdapterDisplayInfo(three);
-        uint256 used = before - gasleft();
         emit log_named_uint("configuration surface gas, stipend-burning registry, 3 entries", used);
 
         // Fail-open: a burning registry must degrade to the adapter's own value, never revert the enumeration.
@@ -987,21 +1007,15 @@ contract AdapterLabelOverridesTest is AdapterLabelOverridesBase {
 
         // Baseline: registry not consulted at all. Adapters warm.
         vm.store(address(nav), rslot, bytes32(0));
-        uint256 t = gasleft();
-        nav.getAccountPositionsVerbose(safe, address(0));
-        uint256 base = t - gasleft();
+        uint256 base = this.measureVerbose(safe);
         vm.store(address(nav), rslot, bytes32(saved));
 
         // Registry WARM (its slots were touched by the warm-up read).
-        t = gasleft();
-        nav.getAccountPositionsVerbose(safe, address(0));
-        uint256 warm = t - gasleft();
+        uint256 warm = this.measureVerbose(safe);
 
-        // Registry COLD.
+        // Registry COLD. Cooled OUTSIDE the measured frame -- warmth is frame-independent, memory is not.
         vm.cool(address(registry));
-        t = gasleft();
-        nav.getAccountPositionsVerbose(safe, address(0));
-        uint256 cold = t - gasleft();
+        uint256 cold = this.measureVerbose(safe);
 
         emit log_named_uint("1 adapter | baseline no-registry ", base);
         emit log_named_uint("1 adapter | surcharge WARM       ", warm - base);
@@ -1012,7 +1026,7 @@ contract AdapterLabelOverridesTest is AdapterLabelOverridesBase {
         // Bound set FROM A MUTANT, not from taste. The mutant is a second pair of registry reads per distinct adapter
         // (duplicate the two lookups inside the `adapter != prevAdapter` branch) -- precisely the regression this
         // message names. An earlier 20,000 passed under it (mutant 14,719) and so enforced nothing:
-        //   clean 9,443 PASS / mutant 14,755 FAIL / bound 12,000.
+        //   clean 9,311 PASS / mutant 14,623 FAIL / bound 12,000.
         assertLt(cold - base, 12_000, "one distinct adapter, cold, must stay within one pair of cold reads");
     }
 
@@ -1036,19 +1050,13 @@ contract AdapterLabelOverridesTest is AdapterLabelOverridesBase {
         uint256 saved = uint256(vm.load(address(nav), rslot));
 
         vm.store(address(nav), rslot, bytes32(0));
-        uint256 t = gasleft();
-        nav.getAccountPositionsVerbose(safe, address(0));
-        uint256 base = t - gasleft();
+        uint256 base = this.measureVerbose(safe);
         vm.store(address(nav), rslot, bytes32(saved));
 
-        t = gasleft();
-        nav.getAccountPositionsVerbose(safe, address(0));
-        uint256 warm = t - gasleft();
+        uint256 warm = this.measureVerbose(safe);
 
         vm.cool(address(registry));
-        t = gasleft();
-        nav.getAccountPositionsVerbose(safe, address(0));
-        uint256 cold = t - gasleft();
+        uint256 cold = this.measureVerbose(safe);
 
         emit log_named_uint("2 adapters/3 positions | baseline ", base);
         emit log_named_uint("2 adapters/3 positions | WARM     ", warm - base);
@@ -1058,7 +1066,7 @@ contract AdapterLabelOverridesTest is AdapterLabelOverridesBase {
         assertGt(cold, warm, "cold must exceed warm");
         // Cold surcharge must still scale with DISTINCT ADAPTERS, not positions. A per-position lookup on this
         // 3-position fixture inflates it past this bound -- which the mutation test proves.
-        // Bound set FROM THE MUTATION, not from taste: clean 19,256 / per-position mutant 24,584.
+        // Bound set FROM THE MUTATION, not from taste: clean 18,650 / per-position mutant 23,978.
         // An earlier 34,000 passed under that mutant and was therefore worthless.
         assertLt(cold - base, 22_000, "cold surcharge must scale with distinct adapters, not positions");
     }
@@ -1073,19 +1081,16 @@ contract AdapterLabelOverridesTest is AdapterLabelOverridesBase {
     ///      per-entry loop cost and a floor, not a cold one.
     function test_gas_configurationSurface_benignPath() public {
         address[] memory all = nav.getAllAdapters();
-        emit log_named_uint("configuration surface | adapters actually registered in fixture", all.length);
 
-        // Warm, then measure a full enumeration.
+        // Warm, then measure a full enumeration. Every emit is deferred until after the last measurement -- see
+        // {measureVerbose}; an emit allocates its message and would shift the frame the measurements sit in.
         nav.getAdapterDisplayInfo(all);
-        uint256 t = gasleft();
-        nav.getAdapterDisplayInfo(all);
-        uint256 warm = t - gasleft();
+        uint256 warm = this.measureDisplay(all);
 
         vm.cool(address(registry));
-        t = gasleft();
-        nav.getAdapterDisplayInfo(all);
-        uint256 cold = t - gasleft();
+        uint256 cold = this.measureDisplay(all);
 
+        emit log_named_uint("configuration surface | adapters actually registered in fixture", all.length);
         emit log_named_uint("configuration surface | WARM, full enumeration", warm);
         emit log_named_uint("configuration surface | COLD, full enumeration", cold);
         emit log_named_uint("configuration surface | per entry WARM        ", warm / all.length);
@@ -1103,12 +1108,8 @@ contract AdapterLabelOverridesTest is AdapterLabelOverridesBase {
         nav.getAdapterDisplayInfo(all);
         nav.getAdapterDisplayInfo(pad); // warm both shapes
 
-        uint256 t = gasleft();
-        nav.getAdapterDisplayInfo(all);
-        uint256 gN = t - gasleft();
-        t = gasleft();
-        nav.getAdapterDisplayInfo(pad);
-        uint256 g27 = t - gasleft();
+        uint256 gN = this.measureDisplay(all);
+        uint256 g27 = this.measureDisplay(pad);
 
         emit log_named_uint("config surface | N=2  total ", gN);
         emit log_named_uint("config surface | N=27 total ", g27);
@@ -1129,16 +1130,17 @@ contract AdapterLabelOverridesTest is AdapterLabelOverridesBase {
 
     /// @dev Cools every account a NAV read touches whose warmth this fixture controls: the registry, the supplied
     ///      adapters, the NAV PROXY (its own slots are read on every call and were previously left warm -- cooling
-    ///      them is worth a measured ~4,000, two cold-SLOAD deltas), and the two accounts the call DELEGATECALLs into,
+    ///      them is worth a measured 4,000 exactly, two cold-SLOAD deltas), and the two accounts it DELEGATECALLs into,
     ///      the UUPS implementation and the externally linked `PriceFeedLib` (`getAdapterDisplayInfo` is a single
     ///      forward into it).
     ///
     ///      ⚠️ **`vm.cool` cools SLOTS ONLY in forge 1.7.1, despite its forge-std docstring claiming it also marks
     ///      "the account address as cold".** Measured, storage-free control: a warm call costs 514 gas and 540 after
     ///      `vm.cool` -- +26, not the +2,500 a genuine cold-ACCOUNT access (2,600 vs 100) would add. So cooling the
-    ///      implementation and `PriceFeedLib` -- which hold no storage this path reads -- moves the total by only
-    ///      ~130. They are cooled anyway: it is correct in intent and becomes correct in effect if a later forge
-    ///      implements the address half.
+    ///      implementation and `PriceFeedLib` -- which hold no storage this path reads -- moves the total by
+    ///      EXACTLY ZERO (measured: 930,471 either way). An earlier revision recorded ~130 here; that was drift from
+    ///      same-frame measurement, not an effect. They are cooled anyway: correct in intent, and correct in effect
+    ///      if a later forge implements the address half.
     ///
     ///      The consequence is that EVERY "cold" number in this file is slots-cold, so it is a FLOOR: a real fresh
     ///      call additionally pays one cold-account premium per distinct account it touches, which this cheatcode
@@ -1171,20 +1173,14 @@ contract AdapterLabelOverridesTest is AdapterLabelOverridesBase {
         address[] memory all = _growTo(27);
 
         nav.getAdapterDisplayInfo(all); // warm everything
-        uint256 t = gasleft();
-        nav.getAdapterDisplayInfo(all);
-        uint256 warm = t - gasleft();
+        uint256 warm = this.measureDisplay(all);
 
         vm.cool(address(registry));
-        t = gasleft();
-        nav.getAdapterDisplayInfo(all);
-        uint256 regCold = t - gasleft();
+        uint256 regCold = this.measureDisplay(all);
 
         nav.getAdapterDisplayInfo(all); // re-warm
         _coolAll(all);
-        t = gasleft();
-        nav.getAdapterDisplayInfo(all);
-        uint256 allCold = t - gasleft();
+        uint256 allCold = this.measureDisplay(all);
 
         emit log_named_uint("27 distinct | WARM total            ", warm);
         emit log_named_uint("27 distinct | REGISTRY-COLD total   ", regCold);
@@ -1218,8 +1214,8 @@ contract AdapterLabelOverridesTest is AdapterLabelOverridesBase {
     ///      regression through CI silently. Bound derived FROM A MUTANT, per this PR's own rule -- a plausible O(N^2)
     ///      dedup scan over already-processed entries in `PriceFeedLib.adapterDisplayInfo`:
     ///
-    ///        clean   35,087 vs 34,449  = +1.9%   PASS
-    ///        mutant  39,804 vs 35,456  = +12.3%  FAIL
+    ///        clean   34,741 vs 34,397  = +1.0%   PASS
+    ///        mutant  39,458 vs 35,404  = +11.4%  FAIL
     ///        bound   +5%
     ///
     ///      Compares the LAST marginal against the FIRST, since super-linearity shows up as growth across windows.
@@ -1234,9 +1230,10 @@ contract AdapterLabelOverridesTest is AdapterLabelOverridesBase {
             }
             nav.getAdapterDisplayInfo(sub); // warm, then cool everything for an equal footing
             _coolAll(sub);
-            uint256 t = gasleft();
-            nav.getAdapterDisplayInfo(sub);
-            tot[k] = t - gasleft();
+            // Fresh frame per sample. Without it the loop measured ascending N in ONE frame, so each sample sat on
+            // more accumulated memory than the last -- an N-correlated term that the +5% assertion below could have
+            // read as super-linearity coming from the harness rather than from the surface.
+            tot[k] = this.measureDisplay(sub);
         }
         emit log_named_uint("linearity | N=1  all-cold total", tot[0]);
         emit log_named_uint("linearity | N=9  all-cold total", tot[1]);
@@ -1256,11 +1253,16 @@ contract AdapterLabelOverridesTest is AdapterLabelOverridesBase {
     /// @dev The ACCOUNT path at scale, cold, with 27 DISTINCT adapters -- the SCALE measurement, extended from N=2.
     ///
     ///      ⚠️ Its ceiling is a COARSE SCALE GUARD, not a caching defense, and is NOT mutation-derived. Every adapter
-    ///      in this fixture emits exactly ONE position, so per-adapter and per-position lookups are indistinguishable
-    ///      here -- the per-position mutant left this test's surcharge unchanged. The per-DISTINCT-ADAPTER caching
+    ///      that emits here emits exactly ONE position, so per-adapter and per-position lookups are indistinguishable
+    ///      -- the per-position mutant left this test's surcharge unchanged. The per-DISTINCT-ADAPTER caching
     ///      property is defended SOLELY by `test_gas_coldVsWarm_twoAdapters` (2 adapters / 3 positions), whose bound
-    ///      IS derived from that mutant. What this test contributes is the MEASUREMENT of the surcharge at N=27; the
+    ///      IS derived from that mutant. What this test contributes is the MEASUREMENT of the surcharge at scale; the
     ///      linearity claim is asserted in `test_gas_configurationSurface_linearityAtScale`, not here.
+    ///
+    ///      ⚠️ **27 adapters are REGISTERED but only 26 EMIT.** The fixture's `ERC20DefaultBalanceAdapter` holds no
+    ///      balance for `safe`, so it contributes no position and the override lookup never runs for it. The
+    ///      per-adapter figure therefore divides by the EMITTING count, which is measured rather than assumed; an
+    ///      earlier revision divided by 27 and published a per-adapter number ~4% low.
     function test_gas_accountPath_27Distinct_cold() public {
         address[] memory all = _growTo(27);
         nav.getAccountPositionsVerbose(safe, address(0)); // warm
@@ -1268,23 +1270,42 @@ contract AdapterLabelOverridesTest is AdapterLabelOverridesBase {
         bytes32 rslot = _registrySlot();
         uint256 saved = uint256(vm.load(address(nav), rslot));
         vm.store(address(nav), rslot, bytes32(0));
-        uint256 t = gasleft();
-        nav.getAccountPositionsVerbose(safe, address(0));
-        uint256 base = t - gasleft();
+        uint256 base = this.measureVerbose(safe);
         vm.store(address(nav), rslot, bytes32(saved));
 
         vm.cool(address(registry));
-        t = gasleft();
-        nav.getAccountPositionsVerbose(safe, address(0));
-        uint256 cold = t - gasleft();
+        uint256 cold = this.measureVerbose(safe);
 
+        // Counted AFTER the measurements: it is a full verbose read plus an O(N^2) scan.
+        uint256 emitting = _adaptersEmittingPositions(all);
         uint256 surcharge = cold - base;
-        emit log_named_uint("account path 27 distinct | baseline no-registry", base);
-        emit log_named_uint("account path 27 distinct | COLD surcharge      ", surcharge);
-        emit log_named_uint("account path 27 distinct | per adapter         ", surcharge / all.length);
-        // Coarse scale ceiling, NOT mutation-derived: this fixture is one position per adapter, so the per-position
-        // mutant leaves `surcharge` unchanged. `test_gas_coldVsWarm_twoAdapters` is the mutation-derived guard.
+
+        emit log_named_uint("account path | adapters REGISTERED        ", all.length);
+        emit log_named_uint("account path | adapters EMITTING positions", emitting);
+        emit log_named_uint("account path | baseline no-registry       ", base);
+        emit log_named_uint("account path | COLD surcharge             ", surcharge);
+        emit log_named_uint("account path | per EMITTING adapter       ", surcharge / emitting);
+
+        // Coarse scale ceiling, NOT mutation-derived: one position per emitting adapter, so the per-position mutant
+        // leaves `surcharge` unchanged. `test_gas_coldVsWarm_twoAdapters` is the mutation-derived guard.
         assertLt(surcharge, 300_000, "cold surcharge must stay within the coarse 27-adapter scale ceiling");
+        assertEq(all.length, 27, "fixture must hold 27 registered adapters");
+        assertEq(emitting, 26, "fixture shape: 26 of the 27 emit; the default ERC20 adapter holds no balance for safe");
+    }
+
+    /// @dev How many of `xs` actually produce at least one position for `safe`. Deliberately NOT `xs.length`: a
+    ///      registered adapter with nothing to report never reaches the override lookup, so using the registered
+    ///      count as a divisor understates the true per-adapter cost.
+    function _adaptersEmittingPositions(address[] memory xs) internal view returns (uint256 n) {
+        INAVCalculator.VerbosePosition[] memory v = nav.getAccountPositionsVerbose(safe, address(0));
+        for (uint256 i = 0; i < xs.length; i++) {
+            for (uint256 j = 0; j < v.length; j++) {
+                if (v[j].position.balanceAdapter == xs[i]) {
+                    n++;
+                    break;
+                }
+            }
+        }
     }
 
     // ------------------------------------------------------------------

@@ -46,7 +46,9 @@ DEBANK_API_KEY = os.environ.get("DEBANK_API_KEY", "")
 DEBANK_BASE = "https://pro-openapi.debank.com"
 ACCOUNTS_JSON = "test/integration/accounts.json"
 NAV_ASSETS_PATTERN = "script/config/nav-config/assets-and-price-feeds/{chain_id}.json"
-CHAINS_CONFIG_DIR = "script/config/chains"
+# Adapter deploy config. Since the 2026-06-17 config split (5e25464d) per-adapter entries live here,
+# NOT under chains/<id>.json.balanceAdapters — that key no longer exists on any chain.
+BALANCE_ADAPTERS_CONFIG_DIR = "script/config/contracts-deployment-config/balance-adapters"
 NAV_POSITIONS_PATTERN = "test/integration/nav-positions-{chain_id}.json"
 DEBANK_CACHE_DIR = "test/integration/debank-cache"
 OUT_FILE = "comparison-report.md"
@@ -218,8 +220,8 @@ def debank_ids_for_nav_protocol(protocol: str) -> list[str]:
 
 def adapter_aggregated_addrs(cid: str) -> set[str]:
     try:
-        with open(f"{CHAINS_CONFIG_DIR}/{cid}.json") as f:
-            adapters = json.load(f).get("balanceAdapters", {})
+        with open(f"{BALANCE_ADAPTERS_CONFIG_DIR}/{cid}.json") as f:
+            adapters = json.load(f)
     except FileNotFoundError:
         return set()
     addrs: set[str] = set()
@@ -237,12 +239,14 @@ def adapter_aggregated_addrs(cid: str) -> set[str]:
 
 def disabled_lp_pool_addrs(cid: str) -> set[str]:
     try:
-        with open(f"{CHAINS_CONFIG_DIR}/{cid}.json") as f:
-            adapters = json.load(f).get("balanceAdapters", {})
+        with open(f"{BALANCE_ADAPTERS_CONFIG_DIR}/{cid}.json") as f:
+            adapters = json.load(f)
     except FileNotFoundError:
         return set()
     addrs: set[str] = set()
     for _key, params in adapters.items():
+        if _key.startswith("$") or not isinstance(params, dict):
+            continue  # $comment and other scalar metadata keys are not adapters
         if params.get("enabled", True):
             continue
         ctor = params.get("constructor", {})

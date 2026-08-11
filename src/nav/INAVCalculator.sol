@@ -1011,8 +1011,13 @@ interface INAVCalculator is IBalances {
     ///      with no way to reach the fix.
     /// @param adapters The adapters to describe, typically the result of `getAllAdapters()`.
     /// @return names Each adapter's effective protocol name.
-    /// @return labels Each adapter's effective breadcrumb. Empty when the adapter derives it per position AND no
-    ///         category override is set; a lone category when one is.
+    /// @return labels Each adapter's effective breadcrumb, with any {AssetKindRegistry} per-segment override applied.
+    ///         Empty when the adapter derives it per position AND no override is set. When the adapter answers
+    ///         nothing but an override IS set, this path deliberately GROWS the breadcrumb to the override's leading
+    ///         non-empty prefix — so it can be MULTI-segment, not merely a lone category. (It was a lone category
+    ///         under the retired scalar `setAdapterLabelCategory`; do not code against that.) When the adapter DOES
+    ///         answer, the override is overlaid segment-by-segment and can neither lengthen nor truncate the reply.
+    ///         See `PriceFeedLib.adapterDisplayInfo` for why the empty case diverges from the position path.
     function getAdapterDisplayInfo(address[] calldata adapters)
         external
         view

@@ -1933,8 +1933,9 @@ library PriceFeedLib {
     ///         `AssetKindRegistry`'s per-adapter operator overrides taking precedence over the adapter's own reply.
     /// @dev **The overrides ride the EXISTING per-adapter cache, which is what makes them affordable.** Both are
     ///      per-adapter constants, so they are fetched in the same `adapter != prevAdapter` branch that already
-    ///      guarded the `protocolName()` staticcall — roughly one extra pair of reads per DISTINCT adapter, not per
-    ///      position. On the real mainnet fixture that is a handful of adapters against 117 positions.
+    ///      guarded the `protocolName()` staticcall — one extra flat-string read plus one extra ARRAY read per
+    ///      DISTINCT adapter, not per position. On the real mainnet fixture that is a handful of adapters against
+    ///      117 positions.
     ///
     ///      **On a protocol-name hit the adapter staticcall is skipped**, so an overridden adapter trades one cold
     ///      `staticcall` to the adapter for reads of the registry, which is warm after the first adapter since it is
@@ -1944,29 +1945,42 @@ library PriceFeedLib {
     ///      Measured against a real no-registry baseline, not reasoned. ⚠️ **These are ILLUSTRATIVE readings, not
     ///      CI-pinned constants** — the tests assert the ORDERING and an upper BOUND, never these exact values, and
     ///      the figures drift with solc and EVM settings. They already drifted across runs of this very tree
-    ///      (~109.1k vs ~109.0k baseline, ~5.1k vs ~5.3k surcharge), which is precisely why nothing asserts them
-    ///      exactly. Read them as an order of magnitude:
+    ///      (~109.1k vs ~109.0k baseline, ~5.1k vs ~5.3k surcharge under the retired scalar read), which is precisely
+    ///      why nothing asserts them exactly. Re-measured on the array-override tree — the whole block moved, so do
+    ///      not carry the old numbers forward:
     ///
-    ///        no registry ~109k  <  hit ~112k  <  miss ~114k   (single-adapter fixture)
+    ///        no registry 109,418  <  hit 114,597  <  miss 116,981   (single-adapter fixture)
     ///
     ///      So the ordering is `no registry < hit < miss`, and THAT is what is pinned. The override never pays for
     ///      itself outright; it only claws back the one adapter staticcall it skips. **The MISS path is the common
     ///      case — no adapter has an override today — so this is strictly more expensive than before this change.**
     ///
-    ///      Per-DISTINCT-ADAPTER surcharge, measured in-repo: ~5.3k for one adapter, ~10.7k for two — again
-    ///      approximate, and again only the SCALING is asserted. It scales with distinct adapters, not positions. ⚠️ Two earlier revisions of this note quoted a "~9.6k cold, from
-    ///      an independent 20-adapter sweep" figure; that measurement was made outside this repo and NOTHING here
-    ///      reproduces it, so it has been removed rather than left as an unverifiable number in a comment. Every
-    ///      figure quoted above comes from a test in this tree. Real portfolios touch each adapter's mapping slot
-    ///      cold, so treat these warm-fixture numbers as a FLOOR, not a forecast.
-    ///      `AdapterLabelOverrides.t.sol::test_gas_registryLegIsBounded` measures the ordering and bounds the
-    ///      surcharge; `test_gas_surchargeIsPerAdapter_notPerPosition` pins that it scales with adapters, not
-    ///      positions.
+    ///      ⚠️ **RE-MEASURED when the segment-0-only category override became the per-segment {setAdapterLabels}
+    ///      array override, and the figures MOVED. This note quoted ~5.3k for one adapter and ~10.7k for two, from
+    ///      the scalar `_safeString` read; both are retired.** The registry read is now a `string[]` behind the
+    ///      isolating decode shim ({_labelOverride}), which costs more:
     ///
-    ///      **Fail-open, exactly like the adapter reads.** The registry is reached through the same {_safeString}
-    ///      shim — gas-capped and output-windowed — so a broken, hostile or absent registry degrades to "no
-    ///      override" instead of reverting the verbose read. `registry == address(0)` (a NAV deployed before `08`
-    ///      wires one) short-circuits before any call rather than relying on that degradation.
+    ///        per-DISTINCT-ADAPTER surcharge, 2-adapter / 3-position fixture:  9,790 (scalar)  ->  15,343 (array)
+    ///
+    ///      i.e. roughly **+5.5k per distinct adapter**, and that increase is the PRICE of correctable deep
+    ///      segments rather than a regression to be optimised away. Still per DISTINCT ADAPTER, not per position —
+    ///      that is the property `test_gas_labelOverride_isPerAdapter_notPerPosition` and
+    ///      `test_gas_surchargeIsPerAdapter_notPerPosition` exist to hold, and both bounds are set from a MUTATION
+    ///      (the read moved into the loop body: 30,033 and 20,292 respectively), never from taste.
+    ///
+    ///      ⚠️ Two earlier revisions of this note quoted a "~9.6k cold, from an independent 20-adapter sweep"
+    ///      figure; that measurement was made outside this repo and NOTHING here reproduces it, so it was removed
+    ///      rather than left as an unverifiable number in a comment. Every figure quoted above comes from a test in
+    ///      this tree. **All of it is a synthetic warm fixture — no real portfolio has been measured.** Real
+    ///      portfolios touch each adapter's mapping slot cold, so treat these as a FLOOR, not a forecast.
+    ///      `AdapterLabelOverrides.t.sol::test_gas_registryLegIsBounded` measures the ordering above and bounds the
+    ///      single-adapter surcharge.
+    ///
+    ///      **Fail-open, exactly like the adapter reads.** The protocol-name override is reached through the
+    ///      {_safeString} shim and the label override through {_safeStringArray} — both gas-capped and
+    ///      output-windowed — so a broken, hostile or absent registry degrades to "no override" instead of
+    ///      reverting the verbose read. `registry == address(0)` (a NAV deployed before `08` wires one)
+    ///      short-circuits before any call rather than relying on that degradation.
     ///
     ///      **The override is applied SEGMENT BY SEGMENT through {_applyLabelOverride}, the one helper both display
     ///      surfaces share.** Only indices `i < min(reply.length, override.length)` are touched, and an override

@@ -747,7 +747,13 @@ contract AdapterLabelOverridesTest is AdapterLabelOverridesBase {
 
         assertLt(noRegistry, hit, "no registry must be cheapest");
         assertLt(hit, miss, "a hit must be cheaper than a miss (it skips the adapter staticcall)");
-        // Measured ~5.1k. Bound just above it, so a second pair of reads (~+5k) breaks this.
+        // ⚠️ **Measured 7,563 on the array-override tree, against a bound of 8,000 — a margin of 437, or ~5.8%.**
+        // It was ~5.1k under the retired scalar `_safeString` read; the `string[]` read behind the decode shim is
+        // what closed the gap. The bound is deliberately NOT raised to make room: it is a mutation-catching
+        // assertion, and tightness is the safe direction for one. Raising it on taste rather than from a measured
+        // mutant is precisely how `test_gas_surchargeIsPerAdapter_notPerPosition` once shipped a 50,000 bound that
+        // passed under the exact regression it was written to catch. If solc drift ever pushes this over 8,000, the
+        // fix is to MEASURE the second-pair-of-reads mutant and set the bound between — not to add headroom.
         assertLt(miss - noRegistry, 8_000, "one distinct adapter must cost at most one pair of registry reads");
     }
 

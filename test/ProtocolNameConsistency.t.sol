@@ -150,7 +150,7 @@ contract StaderWithdrawalManagerStub {
 ///
 ///      The invariant has two halves and they need different instruments:
 ///
-///        1. **Hardcoded names** (12 adapters) — a string literal in the adapter, so the name is in the bytecode.
+///        1. **Hardcoded names** (13 adapters) — a string literal in the adapter, so the name is in the bytecode.
 ///           Every one is deployed here and pinned to its `ProtocolNames` constant
 ///           (`test_hardcodedAdapters_matchCanonicalNames`). That is what makes "use the constant, not a literal" a
 ///           checked rule rather than an aspiration: a literal that drifts from its constant fails here even for

@@ -1597,14 +1597,18 @@ DeBank cross-check"* — in both cases it continues and **leaves every existing 
 DeBank, and the run can still exit non-zero for an unrelated reason: step 4 evaluates the *retained*
 anchors against tolerance and exits 2 on a violation — and ACCOUNT_1 already exceeds 1%, as recorded
 below. So a non-zero exit does not mean DeBank ran, and a zero exit does not mean it did. **The
-field-change check below is necessary but not sufficient; acceptance rests on the three conditions
+field-change check below is necessary but not sufficient; acceptance rests on the four conditions
 after it, never on the exit status** — the same doctrine this
 runbook already applies everywhere else ("gate every step on its post-condition, not on its exit code",
 and the `a step exits 0 having done nothing` row in the failure table). The whole point of this
 re-baseline is ACCOUNT_1's corrected anchor, so a run that skipped DeBank has not done it.
 **Prerequisites are therefore: authorisation for the unit spend AND a working key with units
-available.** Afterwards, confirm `expected."1".debankUsd` for ACCOUNT_1 actually
-changed — an unchanged value means the step was skipped, not that nothing needed correcting.
+available.** Afterwards, confirm the DeBank requests for ACCOUNT_1 actually completed, and reconcile
+`expected."1".debankUsd` against ACCOUNT_1's **current** holdings.
+**An unchanged value does not prove the step was skipped.** The ~$9.76 figure is ACCOUNT_1's position at
+block **25732915**; this refresh reads *current* state, so the holding may have moved, or unrelated
+changes may offset it, before the runbook is executed. Treat an unchanged value as a prompt to check the
+requests — not as proof of a skip, and not as proof nothing needed correcting.
 
 **That single-field check is necessary but NOT sufficient, so do not treat it as authoritative on its
 own.** A non-empty units response counts as active even when it reads `0` (`:136-140`), and a failed
@@ -1627,7 +1631,7 @@ applies to **detecting whether DeBank ran** — a skipped cross-check has no ded
 **not** license ignoring a non-zero exit in general: `Incomplete run` / exit 1 is a real signal and must
 not be waved through.
 
-Before spending anything, re-verify the allowlist is non-empty. **Do not run
+Before spending anything, re-verify the allowlist matches its exact expected pair. **Do not run
 `generate-comparison-report.py` as a program to do this** — it fetches live DeBank data whenever
 `DEBANK_API_KEY` is set (`generate-comparison-report.py:1525-1529`, `:1560-1564`), which would spend the
 units this check exists to protect, and it does not print the set anyway. The helper has no CLI. Load
@@ -1644,7 +1648,10 @@ print(sorted(m.adapter_aggregated_addrs('1')))"
 `main()` is behind an `if __name__ == "__main__"` guard (`:1724`), so importing runs no network code.
 Expect both Cap token addresses:
 `['0x88887be419578051ff9f4eb6c858a951921d8888', '0xcccc62962d17b8914c62d74ffb843d73b2a3cccc']`.
-An empty list means the allowlist is broken again — stop, do not spend units. This is the check whose
+**Require exact equality with that pair, and stop on any other output.** An empty list means the
+allowlist is broken again; **one address means a PARTIAL regression** — if either constructor parameter
+is absent or misnamed the helper returns a single token, and an empty-only check would wave that
+through and let the costly refresh proceed with the other token still omitted. This is the check whose
 absence let the defect run for ~8 weeks, and it costs nothing **only when invoked this way**.
 
 > **Methodology warning — the harness can answer confidently and emptily.** The first instrument used to

@@ -36,7 +36,11 @@ library DeploySalts {
     ///         AtomicBridgeProxyDeployer. Bumped 3->4 for the clean redeploy: salt 3 resolves to the abandoned,
     ///         front-run/buggy escrow (already initialized → not re-usable), so a fresh salt yields a brand-new
     ///         deterministic address. Bump again (5, 6, …) for any subsequent clean-redeploy attempt.
-    uint256 internal constant BRIDGE_PROXY = 4;
+    ///         Bumped 4->5 for the hold-then-claim redeploy (ADR 0024): salt-4 resolves to the already-initialized
+    ///         funded-pass-through escrow whose wired adapters call the removed `releaseByInvoiceId`, so a fresh
+    ///         salt yields a brand-new escrow for the record→claim adapters (which themselves re-derive to new
+    ///         same-address CREATE2 addresses on their changed `_fundAndRelease`→`recordDelivery` bytecode).
+    uint256 internal constant BRIDGE_PROXY = 5;
 
     /// @notice NAVCalculator implementation salt. Used by 01_DeployImplementations and 01_2_DeployNAVImplementation.
     uint256 internal constant NAV_IMPL = 3;

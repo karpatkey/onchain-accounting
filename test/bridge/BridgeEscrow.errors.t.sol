@@ -11,9 +11,12 @@ import {
     InvoiceNotFound,
     InvoiceAlreadyExists,
     AssetHasActiveInvoices,
-    AssetNotRegistered
+    AssetNotRegistered,
+    TransferFailed
 } from "src/errors.sol";
 import {IBridgeEscrow} from "src/bridge/IBridgeEscrow.sol";
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 
 /// @title BridgeEscrow Error Tests
 /// @notice Revert and authorization tests for BridgeEscrow
@@ -547,5 +550,138 @@ contract BridgeEscrowErrorTest is BridgeEscrowTestBase {
         vm.prank(manager);
         destEscrow.claim(invoiceHash);
         assertEq(destEscrow.getHeldBalanceForAsset(address(usdc), account), 0, "held cleared by claim");
+    }
+
+    // ============ revokeAccount + held custody (ADR 0024) ============
+
+    /// @notice revokeAccount must be blocked while the account still has outstanding destination held custody,
+    ///         and succeed once the custody is claimed. Mirrors the register/unregister held-custody guards.
+    function test_RevertWhen_revokeAccount_withHeldCustody() public {
+        (BridgeEscrow destEscrow, bytes memory payload, MockBridgeAdapter destMock) =
+            _setupDestinationAndValidPayload(address(usdc), 1000e6);
+        usdc.mint(address(destMock), 1000e6);
+        vm.prank(address(destMock));
+        usdc.approve(address(destEscrow), 1000e6);
+        vm.prank(address(destMock));
+        destEscrow.recordDelivery(payload);
+
+        vm.prank(admin);
+        vm.expectRevert(abi.encodeWithSelector(IBridgeEscrow.AccountHasActiveInvoices.selector, account));
+        destEscrow.revokeAccount(account);
+
+        // Once claimed, the account can be revoked.
+        bytes32 h = bytes32(uint256(uint192(InvoiceDataLib.decode(payload).checksum24)));
+        vm.prank(manager);
+        destEscrow.claim(h);
+        vm.prank(admin);
+        destEscrow.revokeAccount(account); // no revert
+        assertFalse(destEscrow.isAuthorizedAccount(account), "revoked after settlement");
+    }
+
+    // ============ native + fee-on-transfer record/claim (ADR 0024) ============
+
+    /// @notice Native record → claim happy path: msg.value is held under address(0) and paid to the account.
+    function test_recordAndClaim_native_happyPath() public {
+        (BridgeEscrow destEscrow,, MockBridgeAdapter destMock) = _setupDestinationAndValidPayload(address(usdc), 1);
+        vm.prank(manager);
+        destEscrow.registerAsset("ETH   ", address(0));
+
+        InvoiceDataLib.InvoiceData memory data =
+            _createInvoiceData(SOURCE_CHAIN_ID, DEST_CHAIN_ID, account, bytes6("ETH   "), 3 ether);
+        bytes memory payload = InvoiceDataLib.encode(data);
+        vm.deal(address(destMock), 3 ether);
+        vm.prank(address(destMock));
+        destEscrow.recordDelivery{value: 3 ether}(payload);
+        assertEq(destEscrow.getHeldBalanceForAsset(address(0), account), 3 ether, "native held");
+
+        uint256 balBefore = account.balance;
+        vm.prank(manager);
+        destEscrow.claim(bytes32(uint256(uint192(data.checksum24))));
+        assertEq(account.balance - balBefore, 3 ether, "native paid to account");
+        assertEq(destEscrow.getHeldBalanceForAsset(address(0), account), 0, "native held cleared");
+    }
+
+    /// @notice A native claim to a recipient that rejects ETH reverts, and the effects roll back so the record
+    ///         stays claimable (no funds lost, no half-updated state).
+    function test_RevertWhen_claim_nativeToRejectingAccount() public {
+        (BridgeEscrow destEscrow,, MockBridgeAdapter destMock) = _setupDestinationAndValidPayload(address(usdc), 1);
+        RejectEther rejecter = new RejectEther();
+        vm.prank(admin);
+        destEscrow.authorizeAccount(address(rejecter));
+        vm.prank(manager);
+        destEscrow.registerAsset("ETH   ", address(0));
+
+        InvoiceDataLib.InvoiceData memory data =
+            _createInvoiceData(SOURCE_CHAIN_ID, DEST_CHAIN_ID, address(rejecter), bytes6("ETH   "), 1 ether);
+        bytes memory payload = InvoiceDataLib.encode(data);
+        vm.deal(address(destMock), 1 ether);
+        vm.prank(address(destMock));
+        destEscrow.recordDelivery{value: 1 ether}(payload);
+
+        vm.prank(manager);
+        vm.expectRevert(abi.encodeWithSelector(TransferFailed.selector));
+        destEscrow.claim(bytes32(uint256(uint192(data.checksum24))));
+
+        // Effects rolled back: the record is still fully claimable.
+        assertEq(
+            destEscrow.getHeldBalanceForAsset(address(0), address(rejecter)), 1 ether, "held intact after failed claim"
+        );
+    }
+
+    /// @notice recordDelivery measures the balance-delta actually received, so a fee-on-transfer token records the
+    ///         POST-fee amount (< declared), and claim releases exactly that measured amount (I7).
+    function test_recordDelivery_feeOnTransfer_measuredDelta() public {
+        (BridgeEscrow destEscrow,, MockBridgeAdapter destMock) = _setupDestinationAndValidPayload(address(usdc), 1);
+        Mock_FeeOnTransferERC20 fot = new Mock_FeeOnTransferERC20();
+        vm.prank(manager);
+        destEscrow.registerAsset("FOT   ", address(fot));
+
+        uint256 declared = 1000e18;
+        uint256 measured = declared - declared / 100; // 1% fee withheld on transfer
+        InvoiceDataLib.InvoiceData memory data =
+            _createInvoiceData(SOURCE_CHAIN_ID, DEST_CHAIN_ID, account, bytes6("FOT   "), declared);
+        bytes memory payload = InvoiceDataLib.encode(data);
+        fot.mint(address(destMock), declared);
+        vm.prank(address(destMock));
+        fot.approve(address(destEscrow), declared);
+        vm.prank(address(destMock));
+        destEscrow.recordDelivery(payload);
+
+        assertEq(
+            destEscrow.getHeldBalanceForAsset(address(fot), account), measured, "held == measured (post-fee) delta"
+        );
+        (,, uint256 amount,,,) = destEscrow.destinationCustody(bytes32(uint256(uint192(data.checksum24))));
+        assertEq(amount, measured, "custody records measured, not declared");
+        assertLt(measured, declared, "measured strictly below declared");
+
+        // claim releases exactly the measured amount.
+        vm.prank(manager);
+        destEscrow.claim(bytes32(uint256(uint192(data.checksum24))));
+        assertEq(destEscrow.getHeldBalanceForAsset(address(fot), account), 0, "held cleared");
+    }
+}
+
+/// @dev A contract that rejects all ETH, to exercise the native-claim failure/rollback path.
+contract RejectEther {
+    // no receive / fallback — any value-bearing call fails.
+}
+
+/// @dev Minimal fee-on-transfer ERC20 (1% fee withheld to a sink on account-to-account transfers), to exercise
+///      recordDelivery's measured-delta path on the destination.
+contract Mock_FeeOnTransferERC20 is ERC20 {
+    constructor() ERC20("FeeToken", "FOT") {}
+
+    function mint(address to, uint256 amount) external {
+        _mint(to, amount);
+    }
+
+    function _update(address from, address to, uint256 value) internal override {
+        if (from != address(0) && to != address(0)) {
+            uint256 fee = value / 100;
+            super._update(from, to, value - fee);
+            if (fee > 0) super._update(from, address(0xdead), fee);
+            return;
+        }
+        super._update(from, to, value);
     }
 }

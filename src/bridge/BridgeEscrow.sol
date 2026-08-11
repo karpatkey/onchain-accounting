@@ -666,6 +666,11 @@ contract BridgeEscrow is
     ///      releases. Blocking the revoke keeps that guard complete.
     function revokeAccount(address safe) external onlyRole(DEFAULT_ADMIN_ROLE) {
         if (_activeInvoices[safe].length > 0) revert AccountHasActiveInvoices(safe);
+        // Also block revoke while the account still has outstanding destination held custody (ADR 0024): the
+        // funds remain claimable to this recorded account, so revoke it only after settlement, mirroring the
+        // held-custody guards on register/unregisterAsset. (Held custody is an outstanding obligation like an
+        // active invoice, hence the shared error.)
+        if (_hasHeldCustody(safe)) revert AccountHasActiveInvoices(safe);
         _authorizedAccounts.remove(safe);
         emit AccountRevoked(safe);
     }
@@ -769,6 +774,16 @@ contract BridgeEscrow is
         return _isNativeToken(asset)
             ? _heldClaimable[address(0)] + _heldClaimable[NATIVE_ADDRESS_ERC7528]
             : _heldClaimable[asset];
+    }
+
+    /// @notice True iff `account` has any outstanding destination held custody across the registered assets.
+    /// @dev O(registered symbols); used only by `revokeAccount` (a rare admin op), so the linear scan is fine.
+    function _hasHeldCustody(address account) internal view returns (bool) {
+        uint256 n = _registeredSymbols.length;
+        for (uint256 i = 0; i < n; i++) {
+            if (_heldByAccount[account][_assetRegistry[_registeredSymbols[i]]] != 0) return true;
+        }
+        return false;
     }
 
     /// @inheritdoc IBridgeEscrow

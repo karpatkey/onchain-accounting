@@ -99,8 +99,13 @@ contract BridgeEscrowInvariantTest is BridgeEscrowTestBase {
             assertEq(aggregate, sumPerAccount, "aggregate == Sum of per-account held (cross-account)");
             assertEq(aggregate, handler.ghostUnclaimedFor(t), "aggregate == ghost unclaimed (per asset)");
             assertGe(escrowBalance, aggregate, "escrow balance covers held custody");
+            // The escrow's real balance is exactly: unclaimed held custody + stray + source deposits still in
+            // the escrow (BRIDGING). cancelInvoice must never let a source refund eat into held custody — if it
+            // did, this equality (and the aggregate == unclaimed check above) would break.
             assertEq(
-                escrowBalance, handler.ghostUnclaimedFor(t) + handler.ghostStrayFor(t), "balance == unclaimed + stray"
+                escrowBalance,
+                handler.ghostUnclaimedFor(t) + handler.ghostStrayFor(t) + handler.ghostSourceDepositedFor(t),
+                "balance == unclaimed + stray + source-deposited"
             );
         }
     }
@@ -151,15 +156,23 @@ contract DestinationCustodyHandler is Test {
     uint64 internal constant SRC_CHAIN_ID = 1;
     uint64 internal _destChainId;
 
+    uint64 internal constant OTHER_CHAIN = 137; // a destination chain id != the escrow's, for source deposits
+
     // Ghost accounting, per token index (0 == token0, 1 == token1)
     uint256[2] internal _ghostRecorded; // Σ recorded (measured) amounts
     uint256[2] internal _ghostClaimed; // Σ claimed amounts
     uint256[2] internal _ghostStray; // Σ stray direct transfers
+    uint256[2] internal _ghostSourceDeposited; // Σ source-deposit funds currently sitting in the escrow (BRIDGING)
     uint256 internal _nonce;
 
     bytes32[] internal _recordedHashes;
     mapping(bytes32 => bool) internal _isClaimed;
     bytes32[] internal _claimedHashes;
+
+    bytes32[] internal _sourceHashes;
+    mapping(bytes32 => bool) internal _sourceClosed;
+    mapping(bytes32 => uint256) internal _sourceAmount;
+    mapping(bytes32 => uint256) internal _sourceTok;
 
     constructor(
         BridgeEscrow escrow_,
@@ -192,6 +205,10 @@ contract DestinationCustodyHandler is Test {
 
     function ghostStrayFor(uint256 t) external view returns (uint256) {
         return _ghostStray[t];
+    }
+
+    function ghostSourceDepositedFor(uint256 t) external view returns (uint256) {
+        return _ghostSourceDeposited[t];
     }
 
     function claimedHashesLength() external view returns (uint256) {
@@ -247,6 +264,47 @@ contract DestinationCustodyHandler is Test {
         // forge-lint: disable-next-line(erc20-unchecked-transfer)
         _tokens[t].transfer(address(escrow), amount);
         _ghostStray[t] += amount;
+    }
+
+    /// @notice Open a SOURCE bridging invoice via depositAndBridge (the mock adapter is a no-op, so the deposited
+    ///         funds sit in the escrow — commingled with destination held custody, which is the whole point).
+    function depositSource(uint256 amountSeed, uint256 accSeed, uint256 tokSeed) external {
+        uint256 amount = bound(amountSeed, 1, 1e30);
+        uint256 a = accSeed % 2;
+        uint256 t = tokSeed % 2;
+
+        _tokens[t].mint(_accounts[a], amount);
+        vm.prank(_accounts[a]);
+        _tokens[t].approve(address(escrow), amount);
+        vm.prank(_accounts[a]);
+        bytes32 h = escrow.depositAndBridge(OTHER_CHAIN, _symbolStr(t), amount, address(adapter));
+
+        _sourceHashes.push(h);
+        _sourceAmount[h] = amount;
+        _sourceTok[h] = t;
+        _ghostSourceDeposited[t] += amount;
+    }
+
+    /// @notice Cancel a random open SOURCE invoice as MANAGER — must refund only from the surplus over held
+    ///         custody, never dipping into it (the guard under test).
+    function cancelSource(uint256 idxSeed) external {
+        uint256 len = _sourceHashes.length;
+        if (len == 0) return;
+        uint256 start = bound(idxSeed, 0, len - 1);
+        for (uint256 k = 0; k < len; k++) {
+            bytes32 h = _sourceHashes[(start + k) % len];
+            if (_sourceClosed[h]) continue;
+            uint256 t = _sourceTok[h];
+            vm.prank(manager);
+            escrow.cancelInvoice(h);
+            _sourceClosed[h] = true;
+            _ghostSourceDeposited[t] -= _sourceAmount[h];
+            return;
+        }
+    }
+
+    function _symbolStr(uint256 t) internal pure returns (string memory) {
+        return t == 0 ? "USDC" : "DAI";
     }
 
     function _tokenIndex(address asset) internal view returns (uint256) {

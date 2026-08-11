@@ -80,8 +80,9 @@ contract MerklRewardsAttestedBalanceAdapter is IAttestedBalanceAdapter, IPositio
         uint256 cumulativeAmount;
     }
 
-    /// @notice One token's entry in a per-user replace submission: the per-token leaf (proof-verified) plus its
-    ///         per-campaign breakdown.
+    /// @notice One token's entry in a per-user **upsert** submission: the per-token leaf (proof-verified) plus its
+    ///         per-campaign breakdown. Upsert, not replace — submitting this entry adds or refreshes only its own
+    ///         `(user, token)`; tokens omitted from the same call are left untouched, never removed.
     /// @param token            Reward token the leaf is for.
     /// @param cumulativeAmount Cumulative amount in the leaf (`amount` per Merkl's leaf encoding) — the per-token
     ///                         total, proof-verified.
@@ -638,11 +639,22 @@ contract MerklRewardsAttestedBalanceAdapter is IAttestedBalanceAdapter, IPositio
     ///      monotonicity to extrapolate; require a fresh proof against the new root.
     ///
     ///      **Not revert-free, deliberately.** The two Distributor reads below are unguarded and their returndata is
-    ///      ABI-decoded, so this reverts if the Distributor ever returns something undecodable (it is an upgradeable
-    ///      proxy under Angle governance: a `Claim` struct reshape breaks the decode) — and note that in this repo a
-    ///      bare `try`/`catch` would not catch the decode half anyway. Consequences if it ever fires: on the NAV path
-    ///      `PriceFeedLib._getAdapterPositions` fails open on a plain revert, so this adapter's whole leg set drops
-    ///      out of NAV (an under-report, the safe direction, but silent).
+    ///      ABI-decoded, so this reverts if the Distributor ever returns something *undecodable* (it is an upgradeable
+    ///      proxy under Angle governance) — and note that in this repo a bare `try`/`catch` would not catch the decode
+    ///      half anyway. Consequences if it ever fires: on the NAV path `PriceFeedLib._getAdapterPositions` fails open
+    ///      on a plain revert, so this adapter's whole leg set drops out of NAV (an under-report, the safe direction,
+    ///      but silent).
+    ///
+    ///      **Do NOT generalise that to "a `Claim` reshape fails loudly" — the dangerous reshapes decode CLEANLY and
+    ///      over-report.** Only a reshape that makes the returndata undecodable reverts. A field *reorder* to
+    ///      `(uint48 timestamp, uint208 amount, bytes32 root)` puts the small timestamp where `amount` is read: it
+    ///      passes `uint208` range validation, decodes without error, and yields `unclaimed = cached − timestamp`.
+    ///      Measured on a mock: a fully-claimed account (`claimed == cumulative == 1000e18`) reported `0` before and
+    ///      `999999999999999998766` after — a silent OVER-report, the one direction this family forbids. A field
+    ///      *append* is likewise ignored by the decoder rather than reverting. This adds no new trust assumption
+    ///      (Angle already controls the root and can inflate any leaf — ADR 0007 accepts that explicitly), which is
+    ///      why it is documented rather than guarded; but anyone reasoning about hardening this read should start
+    ///      from "cleanly-decoding reshapes over-report", not from "a reshape reverts".
     ///
     ///      It is deliberately NOT made fail-open-to-0, because `clearAllocation`/`clearAccount` gate on this value:
     ///      a `_unclaimed` that returned 0 on a failed read would let anyone clear another account's LIVE entries

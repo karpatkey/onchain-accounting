@@ -17,7 +17,7 @@ Exactly two things, every cycle:
 1. **For each (account, chain) pair the operator wants tracked**, fetch the current set of `(token, cumulativeAmount, proof, breakdowns)` allocations from Merkl's API.
 2. **Submit each account's allocations to the deployed `MerklRewardsAttestedBalanceAdapter` on that chain** via `submitProofs` (or the multi-account `submitProofsBatch`), signed by the keeper EOA (no on-chain role required). Submission is **upsert** semantics: each `submitProofs(user, allocs)` call adds or refreshes the `(user, token)` entries it carries and **never drops** a token it omits (a token that leaves the tree goes stale → reads 0, and is GC'd via `clearAllocation`). The bot submits the account's full current allocation set every cycle; a partial submit is also safe (it can only add/refresh, never suppress).
 
-That's the whole job. Garbage collection (`clearAllocation`) and ownership transfer are infrequent operator actions, not part of the steady-state loop.
+That's the whole job. Garbage collection (`clearAllocation`) is an infrequent operator action, not part of the steady-state loop. (There is no ownership transfer — the adapter has no owner.)
 
 ## Inputs
 
@@ -98,7 +98,7 @@ Operationally:
 
 - **4-hour cadence is a good default.** Sub-cycle frequency tolerates one missed run without going stale.
 - **Don't rely on hour-aligned scheduling.** Merkl's rotation isn't strictly periodic. If the bot's run aligns badly with a rotation, the next run picks up the new root.
-- **Avoid running multiple submitters in parallel** for the same `(adapter, account)`. They will race; because each submit fully replaces the user's set, the later submission simply overwrites the earlier one, and in steady state it is wasted gas. Use a per-chain mutex / leader election if HA matters.
+- **Avoid running multiple submitters in parallel** for the same `(adapter, account)`. They will race; because each submit **upserts** the `(user, token)` entries it carries, the later submission simply refreshes what the earlier one wrote (it does not replace the account's set, and neither run can drop a token the other submitted), so in steady state it is wasted gas. Use a per-chain mutex / leader election if HA matters.
 
 ## Submission model
 
@@ -154,7 +154,7 @@ Which is correct: the user's true total is `cum_{N+1}`, the latest cumulative al
 ## What the bot must NOT do
 
 - Do not call `clearAllocation` automatically — it's a manual operator action triggered by either pruning (above) or an `AmountRegression` investigation.
-- Do not transfer ownership of the adapter. Ownership transfers happen via the Safe, not the bot.
+- There is no ownership to transfer. The adapter has no `Ownable`, no `AccessControl` and no admin — nothing to hand over, and no Safe involvement in its operation.
 - Do not submit proofs for accounts that aren't in the operator's tracked list. Submitting for arbitrary external accounts is harmless on the adapter (the proof still verifies), but inflates per-user storage and confuses NAV consumers — the adapter is intended only for accounts whose NAV is computed by the OIV.
 - Do not retry indefinitely on a single failed submission. One retry per cycle is enough; the next cycle will catch what was missed.
 

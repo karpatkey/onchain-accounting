@@ -41,16 +41,20 @@ The single source of truth is [`test/integration/accounts.json`](../../test/inte
 
 > **Why a separate Merkl-proof step.** Merkl's API only serves proofs against the *currently published* root. Forge tests pinned at a historical block can only verify a proof if that block's `Distributor.getMerkleRoot()` matches the API's current root — true right after a bump (when `forkBlock = cast block-number`), false a few hours later (Merkl rotates roots ~every 8h). Capturing proofs at bump time is the only window where this alignment holds reliably. **The Merkl API is not queried during test runs, and you do not need to re-fetch proofs when re-running tests against the same pinned fork block.** The proofs remain valid for a given fork block forever, because `Distributor.getMerkleRoot()` is frozen at that block.
 >
-> **⚠️ Merkl is NOT currently seeded into the integration harness.** `_seedMerklProofs` was removed together with the
-> old Merkl adapter in #141 and has not been restored: `test/integration/IntegrationFromConfigBase.fork.sol` contains
-> no Merkl code, and the Merkl adapter ships `enabled:false` in every chain's deploy config. So step 1.5 still
-> captures `merkl-proofs.json`, but **nothing consumes it** — the committed integration baselines (`nav-positions-<chainId>.json`,
-> expected NAVs) contain no Merkl positions, and the JSON-driven integration tests assert nothing about Merkl while
-> reporting green. Do not read a green integration run as coverage of this adapter; its regression net is the
-> dedicated unit + fork suites under `test/balances/AttestedBalanceAdapters/`, including a real captured mainnet proof.
-> Re-wiring the harness is tracked as a follow-up, coupled to enabling the adapter per chain. (The script's own inline
-> comment at `script/test/refresh-integration-snapshot.sh:190-192` still claims the test consumes the fixture; that
-> comment is stale.)
+> **⚠️ Merkl is NOT seeded into the JSON-driven integration harness — but the fixture is NOT unused.** Keep the two
+> apart, because they pull in opposite directions:
+>
+> - **The integration harness does not seed Merkl.** `_seedMerklProofs` was removed together with the old Merkl
+>   adapter in #141 and has not been restored: `test/integration/IntegrationFromConfigBase.fork.sol` contains no
+>   Merkl code, and the Merkl adapter ships `enabled:false` in every chain's deploy config. So the committed
+>   integration baselines (`nav-positions-<chainId>.json`, expected NAVs) contain no Merkl positions, and the
+>   JSON-driven integration tests assert nothing about Merkl while reporting green. **Do not read a green
+>   integration run as coverage of this adapter.** Re-wiring is a tracked follow-up, coupled to per-chain enablement.
+> - **The dedicated fork test DOES consume `merkl-proofs.json`.**
+>   `MerklRewardsAttestedBalanceAdapterRealProofForkTest._setupFork` reads it with `vm.readFile` and replays a real
+>   captured proof against the live Distributor root — the only test that pins Merkl's leaf encoding against
+>   reality. So step 1.5, the fixture, and its `expectedRoot` field must all be kept: deleting any of them silently
+>   removes that coverage.
 >
 > **Root-mismatch detection (applies once seeding is re-wired).** The fixture stores `expectedRoot` — the root captured
 > from the Distributor at the fork block. The seeding step is meant to compare this against the live root at test time;

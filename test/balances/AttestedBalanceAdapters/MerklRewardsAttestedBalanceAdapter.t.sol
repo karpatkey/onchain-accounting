@@ -1041,6 +1041,63 @@ contract MerklRewardsAttestedBalanceAdapterTest is BalanceAdapterTestBase {
         assertEq(pos[0].amount + pos[1].amount, 100 ether);
     }
 
+    /// @dev The pro-rata split against a PARTIALLY-CLAIMED token — the only case in which `_appendTokenLegs`'
+    ///      `Math.mulDiv` actually divides. Every other campaign test leaves `claimed` at 0, where
+    ///      `unclaimed == tokenCumulative` and `mulDiv(unclaimed, share, tokenCumulative)` collapses to `share`
+    ///      exactly, so the numerator and the denominator are indistinguishable and an over-reporting mutation is
+    ///      numerically invisible. Here 70 of a 100 cumulative is already claimed, so the 60/40 split must be applied
+    ///      to the 30 UNCLAIMED — legs of 18 + 12, not 60 + 40. Substituting the cached cumulative for `unclaimed` in
+    ///      that numerator emits 60 + 40 = 100 against a real balance of 30: a 3.3x OVER-report, the one direction
+    ///      this family forbids. Verified to fail with that mutation applied.
+    function test_multipleCampaigns_splitProRataAgainstPartiallyClaimed() public {
+        bytes32 cidA = keccak256("campaign-A");
+        bytes32 cidB = keccak256("campaign-B");
+        MerklRewardsAttestedBalanceAdapter.CampaignShare[] memory shares =
+            new MerklRewardsAttestedBalanceAdapter.CampaignShare[](2);
+        shares[0] = MerklRewardsAttestedBalanceAdapter.CampaignShare({
+            campaignId: cidA, subCampaignId: ZERO, cumulativeAmount: 60 ether
+        });
+        shares[1] = MerklRewardsAttestedBalanceAdapter.CampaignShare({
+            campaignId: cidB, subCampaignId: ZERO, cumulativeAmount: 40 ether
+        });
+        _submitWithCampaigns(alice, address(arb), 100 ether, shares);
+        // 70 of the 100 proven cumulative is already claimed on-chain ⇒ 30 unclaimed left to split 60/40.
+        distributor.setClaimed(alice, address(arb), uint208(70 ether), uint48(block.timestamp), bytes32(0));
+
+        INAVCalculator.PositionBalance[] memory pos = adapter.getAdapterPositions(alice, address(0));
+        assertEq(pos.length, 2, "one leg per campaign");
+        assertEq(pos[0].amount, 18 ether, "60% of the 30 unclaimed, NOT 60% of the 100 cumulative");
+        assertEq(pos[0].positionInstanceId, keccak256(abi.encode(cidA, ZERO)));
+        assertEq(pos[1].amount, 12 ether, "40% of the 30 unclaimed");
+        assertEq(pos[1].positionInstanceId, keccak256(abi.encode(cidB, ZERO)));
+        // The legs must sum to the token's unclaimed total, never to its cumulative.
+        assertEq(pos[0].amount + pos[1].amount, 30 ether, "legs sum to unclaimed, not cumulative");
+        (uint256 whole,) = adapter.getAdapterBalanceForAsset(alice, address(arb));
+        assertEq(pos[0].amount + pos[1].amount, whole, "split legs agree with the single-asset getter");
+    }
+
+    /// @dev `mulDiv` floors, so an indivisible split under-reports by dust and NEVER over-reports. 100 unclaimed
+    ///      across three equal shares of a 300 cumulative gives 33 + 33 + 33 = 99 ≤ 100.
+    function test_multipleCampaigns_roundingDownNeverExceedsUnclaimed() public {
+        MerklRewardsAttestedBalanceAdapter.CampaignShare[] memory shares =
+            new MerklRewardsAttestedBalanceAdapter.CampaignShare[](3);
+        for (uint256 i; i < 3; ++i) {
+            shares[i] = MerklRewardsAttestedBalanceAdapter.CampaignShare({
+                campaignId: keccak256(abi.encode("c", i)), subCampaignId: ZERO, cumulativeAmount: 100
+            });
+        }
+        _submitWithCampaigns(alice, address(arb), 300, shares);
+        distributor.setClaimed(alice, address(arb), uint208(200), uint48(block.timestamp), bytes32(0));
+
+        INAVCalculator.PositionBalance[] memory pos = adapter.getAdapterPositions(alice, address(0));
+        uint256 sum;
+        for (uint256 i; i < pos.length; ++i) {
+            sum += pos[i].amount;
+        }
+        assertEq(sum, 99, "33+33+33: one wei of dust dropped by flooring");
+        assertLe(sum, 100, "legs must never exceed the token's unclaimed total");
+    }
+
     function test_submit_revertsWhenCampaignSharesDontSumToTotal() public {
         bytes32 leaf = _leaf(alice, address(arb), 100 ether);
         distributor.setRoot(leaf);

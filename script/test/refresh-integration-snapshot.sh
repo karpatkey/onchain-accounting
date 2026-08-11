@@ -189,13 +189,16 @@ done
 # For each (account × chain), query the Merkl API for unclaimed reward entries and write
 # them to test/integration/merkl-proofs.json.
 #
-# ⚠️ NOTHING CONSUMES THIS FIXTURE TODAY. `_seedMerklProofs` was removed with the old Merkl adapter in #141 and has
-# not been restored — IntegrationFromConfigBase.fork.sol contains no Merkl code, and the re-added
-# MerklRewardsAttestedBalanceAdapter ships `enabled:false` on every chain. This step is kept so the fixture stays in
-# sync with the fork blocks (it must be captured AT bump time or not at all — see below), but the integration
-# baselines contain no Merkl positions. Re-wiring the harness is a tracked follow-up, coupled to per-chain enablement.
-# Once re-wired, the consumer submits each proof against the deployed adapter via `submitProofs`; failed submissions
-# are tolerated and logged (NAV treats them as 0).
+# ⚠️ DO NOT DELETE THIS STEP OR THE FIXTURE — one test hard-depends on it. The gap is narrower than "unused":
+# the JSON-DRIVEN INTEGRATION HARNESS does not seed Merkl (`_seedMerklProofs` was removed with the old Merkl
+# adapter in #141 and has not been restored — IntegrationFromConfigBase.fork.sol contains no Merkl code, and
+# MerklRewardsAttestedBalanceAdapter ships `enabled:false` on every chain), so the integration baselines contain
+# no Merkl positions and a green integration run is NOT coverage of this adapter. But the DEDICATED FORK TEST does
+# consume this fixture: MerklRewardsAttestedBalanceAdapterRealProofForkTest._setupFork reads it with `vm.readFile`
+# and replays a real captured proof against the live Distributor root — the only test that pins Merkl's leaf
+# encoding against reality. Removing this step, the fixture, or its `expectedRoot` field removes that coverage.
+# Re-wiring the integration harness is a tracked follow-up, coupled to per-chain enablement. Once re-wired, the
+# consumer submits each proof via `submitProofs`; failed submissions are tolerated and logged (NAV treats them as 0).
 #
 # Why this is here, after the fork-block bump and before the NAV snapshot: proofs from
 # the Merkl API are valid against `Distributor.getMerkleRoot()` at the *current* moment.

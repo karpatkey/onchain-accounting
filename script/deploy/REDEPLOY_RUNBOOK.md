@@ -1614,7 +1614,7 @@ requests — not as proof of a skip, and not as proof nothing needed correcting.
 own.** A non-empty units response counts as active even when it reads `0` (`:136-140`), and a failed
 request is substituted with `[]` and the anchor written anyway: a failed `all_complex_protocol_list`
 warns *"protocol totals will be 0"* (`:538-541`) and a failed `token_list` warns *"using protocol total
-only"* (`:631-634`). So a run can change ACCOUNT_1 correctly while **silently writing partial totals over
+only"* (`:634-636`). So a run can change ACCOUNT_1 correctly while **silently writing partial totals over
 other accounts' anchors**. Accept the re-baseline only when all **four** hold: **positive units**, **no
 `[warn] … request failed` lines in the output**, **every enabled anchor reviewed** (not just the one this
 fix targets), and **no failed or skipped chains**.
@@ -1653,6 +1653,16 @@ allowlist is broken again; **one address means a PARTIAL regression** — if eit
 is absent or misnamed the helper returns a single token, and an empty-only check would wave that
 through and let the costly refresh proceed with the other token still omitted. This is the check whose
 absence let the defect run for ~8 weeks, and it costs nothing **only when invoked this way**.
+
+⚠️ **This gate checks a DIFFERENT implementation from the one the refresh uses, so it is necessary but
+not sufficient.** `adapter_aggregated_addrs` is `generate-comparison-report.py`'s Python helper
+(`:222`); the costly refresh builds its own allowlist in **jq**
+(`refresh-integration-snapshot.sh:566-587`). Both read the same source of truth
+(`script/test/wallet-aggregating-adapters.json`), so the *data* cannot diverge — but the *logic* can:
+a regression confined to the jq expression would leave this pre-check printing the expected pair and
+the refresh still omitting a token. Until the refresh exposes a no-network "print allowlist" mode, or
+the two are centralised on one implementation, a passing pre-check means the Python path is intact,
+not that the refresh's path is.
 
 > **Methodology warning — the harness can answer confidently and emptily.** The first instrument used to
 > ask "does any account hold these tokens?" returned **"no chain-1 accounts, nothing to check"** and a

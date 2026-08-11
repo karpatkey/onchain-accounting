@@ -92,7 +92,7 @@ contract BridgeAdapterTest is BridgeTestBase {
     }
 
     // ============ completeBridge() ============
-    // completeBridge is tested in adapter-specific tests (Across, CCTP, etc.) because it calls releaseByInvoiceId on escrow and requires valid messagePayload + destination escrow. We test revert when not manager and when empty payload.
+    // completeBridge is tested in adapter-specific tests (Across, CCTP, etc.) because it records the delivery into escrow custody and requires valid messagePayload + destination escrow. We test revert when not manager and when empty payload.
 
     function test_completeBridge_revertsWhenNotManager() public {
         InvoiceDataLib.InvoiceData memory data =

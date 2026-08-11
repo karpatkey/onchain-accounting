@@ -91,23 +91,41 @@ contract BridgeEscrowTest is BridgeEscrowTestBase {
         assertEq(bridgeEscrow.getInTransitBalanceForAsset(address(0), account), amount, "In-transit native balance");
     }
 
-    // ============ releaseByInvoiceId ============
+    // ============ recordDelivery + claim (destination hold-then-claim, ADR 0024) ============
 
-    function test_releaseByInvoiceId_success() public {
+    function test_recordDelivery_holdsFundsThenClaimPaysAccount() public {
         (BridgeEscrow destEscrow, bytes memory messagePayload, MockBridgeAdapter destMock) =
             _setupDestinationAndValidPayload(address(usdc), 1000e6);
-        // Funded pass-through (ADR 0012): the escrow pulls the amount from the calling adapter, which holds
-        // the delivered funds and approves the escrow. It is never paid from the escrow's standing balance.
+        // Step 1 (ADR 0024): an authorized adapter records the delivery, handing the escrow the funds it holds.
+        // The escrow pulls exactly `amount` from the calling adapter (which approves it) and HOLDS it — the
+        // account is NOT paid here.
         usdc.mint(address(destMock), 1000e6);
         vm.prank(address(destMock));
         usdc.approve(address(destEscrow), 1000e6);
 
-        uint256 balanceBefore = usdc.balanceOf(account);
+        uint256 accountBefore = usdc.balanceOf(account);
+        uint256 escrowBefore = usdc.balanceOf(address(destEscrow));
         vm.prank(address(destMock));
-        destEscrow.releaseByInvoiceId(messagePayload);
-        assertEq(usdc.balanceOf(account), balanceBefore + 1000e6, "Account should receive tokens");
+        destEscrow.recordDelivery(messagePayload);
+
         bytes32 invoiceHash = bytes32(uint256(uint192(InvoiceDataLib.decode(messagePayload).checksum24)));
-        assertTrue(destEscrow.isInvoiceCompleted(invoiceHash), "Invoice should be completed");
+        assertEq(usdc.balanceOf(account), accountBefore, "account must NOT be paid on record");
+        assertEq(usdc.balanceOf(address(destEscrow)), escrowBefore + 1000e6, "escrow now holds the delivery");
+        assertEq(destEscrow.getHeldBalanceForAsset(address(usdc), account), 1000e6, "held-for-account == amount");
+        assertEq(destEscrow.getHeldBalanceForAsset(address(usdc), address(0)), 1000e6, "held aggregate == amount");
+        assertTrue(destEscrow.isInvoiceCompleted(invoiceHash), "Invoice should be completed on record");
+        (,,,,, bool claimedAfterRecord) = destEscrow.destinationCustody(invoiceHash);
+        assertFalse(claimedAfterRecord, "custody not claimed yet");
+
+        // Step 2 (ADR 0024): MANAGER claims — funds move to the recorded account, custody drains.
+        vm.prank(manager);
+        destEscrow.claim(invoiceHash);
+        assertEq(usdc.balanceOf(account), accountBefore + 1000e6, "account credited on claim");
+        assertEq(usdc.balanceOf(address(destEscrow)), escrowBefore, "escrow drained back to pre-record balance");
+        assertEq(destEscrow.getHeldBalanceForAsset(address(usdc), account), 0, "held-for-account cleared");
+        assertEq(destEscrow.getHeldBalanceForAsset(address(usdc), address(0)), 0, "held aggregate cleared");
+        (,,,,, bool claimedAfter) = destEscrow.destinationCustody(invoiceHash);
+        assertTrue(claimedAfter, "custody marked claimed");
     }
 
     // ============ cancelInvoice ============

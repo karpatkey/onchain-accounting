@@ -96,7 +96,7 @@ Read [`src/prices/PRICE_ADAPTERS.md`](../src/prices/PRICE_ADAPTERS.md) for the f
 
 ## 6. Bridge module (separate concern)
 
-`BridgeEscrow` holds assets per chain and tracks **invoices** (BRIDGING → COMPLETED). An authorized account calls `depositAndBridge(destinationChainId, assetSymbol, amount, adapter)`; the escrow creates an invoice, hands tokens to the adapter, and the adapter calls into the underlying bridge protocol (Across, CCIP, CCTP, Stargate, Superchain, Gnosis). On the destination chain, completion calls `releaseByInvoiceId(messagePayload)` which validates a checksum and releases funds. Source-side closure (`markInvoiceCompleted`) is an operator action.
+`BridgeEscrow` holds assets per chain and tracks **invoices** (BRIDGING → COMPLETED). An authorized account calls `depositAndBridge(destinationChainId, assetSymbol, amount, adapter)`; the escrow creates an invoice, hands tokens to the adapter, and the adapter calls into the underlying bridge protocol (Across, CCIP, CCTP, Stargate, Superchain, Gnosis). On the destination chain, an authenticated adapter calls `recordDelivery(messagePayload)` (checksum-validated), which **holds** the delivered funds in a per-invoice custody record; a MANAGER `claim(invoiceHash)` then releases them to the account (ADR 0024, hold-then-claim). Held-but-unclaimed value is counted in NAV by `BridgeHeldBalanceAdapter`. Source-side closure (`markInvoiceCompleted`) is an operator action.
 
 Bridge has its own complete reference: [`src/bridge/BRIDGE_ADAPTERS.md`](../src/bridge/BRIDGE_ADAPTERS.md). It is independent of the balances/prices/NAV stack — a contributor can work on bridge without understanding NAV and vice versa.
 

@@ -66,8 +66,8 @@ contract GnosisBridgeAdapter is BridgeAdapter, IGnosisBridgeAdapter {
     ///      the AMB is executing a message), so it completes only the exact transfer recorded here at genuine
     ///      delivery — keying by the invoice hash (not `invoiceId`, which is shared by every transfer on the same
     ///      route) prevents a same-lane sibling from being completed on another transfer's authentication. The
-    ///      flag is set once and never cleared; double-release is additionally prevented by the escrow's
-    ///      `completedInvoices` replay guard in `releaseByInvoiceId` (a second completion reverts there).
+    ///      flag is set once and never cleared; a double-record is additionally prevented by the escrow's
+    ///      `completedInvoices` replay guard in `recordDelivery` (a second completion reverts there).
     mapping(bytes32 => bool) public authenticatedInvoice;
 
     //

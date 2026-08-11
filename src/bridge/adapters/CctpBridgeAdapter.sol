@@ -17,8 +17,8 @@ import {InvalidArguments} from "src/errors.sol";
 ///      MessageTransmitter, NOT a msg.sender/protocol-callback check. On the destination chain
 ///      USDC mints directly to this adapter (mintRecipient == destinationCaller == address(this));
 ///      _completeBridge then leaves the minted USDC on this adapter, and the base BridgeAdapter
-///      pulls it into the escrow and releases it to the account via _fundAndRelease ->
-///      releaseByInvoiceId AFTER _completeBridge returns (funded pass-through, ADR 0012).
+///      pulls it into the escrow and records the delivery into custody via _fundAndRelease ->
+///      recordDelivery AFTER _completeBridge returns (ADR 0024); a MANAGER claim later pays the account.
 /// @author KPK
 contract CctpBridgeAdapter is BridgeAdapter, ICctpBridgeAdapter {
     using SafeERC20 for IERC20;
@@ -190,9 +190,9 @@ contract CctpBridgeAdapter is BridgeAdapter, ICctpBridgeAdapter {
     /// @inheritdoc BridgeAdapter
     /// @dev Receives the Circle-attested CCTP message: verifies the message matches the invoice, then
     ///      mints USDC to THIS adapter and leaves it here — it does NOT forward the USDC to the escrow.
-    ///      Does NOT call releaseByInvoiceId either — the base BridgeAdapter.completeBridge invokes
+    ///      Does NOT call recordDelivery either — the base BridgeAdapter.completeBridge invokes
     ///      _fundAndRelease immediately after this returns, and the escrow pulls the minted balance and
-    ///      releases it to the account (funded pass-through, ADR 0012).
+    ///      records the delivery into custody (ADR 0024); a MANAGER claim later pays the account.
     function _completeBridge(bytes calldata messagePayload, bytes calldata protocolData) internal override {
         // Decode protocol data: the raw CCTP message and Circle's attestation over it.
         (bytes memory cctpMessage, bytes memory attestation) = abi.decode(protocolData, (bytes, bytes));

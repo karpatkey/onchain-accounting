@@ -14,19 +14,21 @@ import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import "test/mocks/tokens.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/constants.sol";
+import {NotAuthorized, InvoiceNotFound} from "src/errors.sol";
 
 /// @notice REGRESSION (ADR 0012, C1 — UNAUTHENTICATED drain vector closed in this PR): the escrow no longer
-///         has a `fallback()` dispatcher, and `releaseByInvoiceId` is callable only by an authorized adapter
-///         (never reachable through a public fallback). The original exploit fabricated a valid messagePayload
-///         (the checksum is keccak256 of public data — no signing key) and pushed it through
-///         escrow.fallback -> adapter.lzReceive -> escrow.releaseByInvoiceId to drain the escrow with no real
-///         bridge delivery. This test asserts that exact unauthenticated attack now FAILS: the raw call does
-///         not drain the escrow, balances are unchanged, and the forged invoice is NOT marked completed.
-/// @dev    SCOPE: this closes the *permissionless* drain. It does NOT yet make release fully provable — in
-///         this PR release still pays from the escrow's standing balance, and a MANAGER can drive
-///         adapter.completeBridge (no provenance check yet) with a forged payload to release from that
-///         balance. Full closure — per-adapter provenance + per-invoice funded pass-through (H9/D4) so release
-///         draws only the funds the genuine delivery brought in — is the follow-up adapter-provenance PR.
+///         has a `fallback()` dispatcher, and `recordDelivery` (the destination custody writer, ADR 0024) is
+///         callable only by an authorized adapter (never reachable through a public fallback). The original
+///         exploit fabricated a valid messagePayload (the checksum is keccak256 of public data — no signing
+///         key) and pushed it through escrow.fallback -> adapter.lzReceive -> escrow.releaseByInvoiceId (the
+///         old pass-through) to drain the escrow with no real bridge delivery. This test asserts that exact
+///         unauthenticated attack now FAILS: the raw call does not drain the escrow, balances are unchanged,
+///         and the forged invoice is NOT marked completed.
+/// @dev    SCOPE: this closes the *permissionless* drain against the destination path. Under ADR 0024,
+///         `recordDelivery` only WRITES custody (it does not pay the account) and pulls the funds from the
+///         calling adapter in the same call, and `claim` — the only payout — moves exactly the recorded amount
+///         to the recorded account and is MANAGER-gated. So neither a forged fallback call nor stray funds sent
+///         directly to the escrow can be turned into a payout to an attacker.
 contract Poc_BridgeEscrowFallbackSpoof is Test {
     address public admin = makeAddr("admin");
     address public manager = makeAddr("manager");
@@ -117,7 +119,7 @@ contract Poc_BridgeEscrowFallbackSpoof is Test {
         );
 
         // 3. Anyone (the attacker) calls the escrow with this data. With no fallback dispatcher, the call
-        //    cannot be coaxed into reaching releaseByInvoiceId.
+        //    cannot be coaxed into reaching recordDelivery (the only custody writer, adapter-gated).
         vm.prank(attacker);
         (bool success,) = address(destEscrow).call(lzReceiveCalldata);
         assertFalse(success, "no fallback dispatcher: the spoof call must not succeed");
@@ -136,6 +138,73 @@ contract Poc_BridgeEscrowFallbackSpoof is Test {
         // 5. The forged invoice was never marked completed on the destination.
         bytes32 invoiceHash = bytes32(uint256(uint192(checksum24)));
         assertFalse(destEscrow.isInvoiceCompleted(invoiceHash), "forged invoice must NOT be marked completed");
+    }
+
+    /// @notice ADR 0024: a forged `recordDelivery` from a NON-adapter reverts NotAuthorized, writes no custody
+    ///         record, and leaves nothing claimable. The custody writer is adapter-gated; a fabricated payload
+    ///         (public checksum, no key) does not help an attacker who is not an authorized adapter.
+    function test_forgedRecordDeliveryFromNonAdapterIsUnreachable() public {
+        uint256 amt = 500_000e6;
+        bytes32 invoiceId = _packInvoiceId(SOURCE_CHAIN_ID, DEST_CHAIN_ID, account, USDC_SYMBOL_BYTES6);
+        uint64 ts = uint64(block.timestamp);
+        uint256 nonce = 0;
+        bytes24 checksum24 = InvoiceDataLib.calculateChecksum(invoiceId, amt, ts, nonce);
+        InvoiceDataLib.InvoiceData memory fake = InvoiceDataLib.InvoiceData({
+            invoiceId: invoiceId,
+            sourceChainId: SafeCast.toUint24(SOURCE_CHAIN_ID),
+            destinationChainId: SafeCast.toUint24(DEST_CHAIN_ID),
+            account: account,
+            assetSymbol: USDC_SYMBOL_BYTES6,
+            amount: amt,
+            nonce: nonce,
+            timestamp: ts,
+            checksum24: checksum24
+        });
+        bytes memory payload = InvoiceDataLib.encode(fake);
+
+        // The attacker is not an authorized adapter → recordDelivery reverts before any custody is written.
+        vm.prank(attacker);
+        vm.expectRevert(abi.encodeWithSelector(NotAuthorized.selector));
+        destEscrow.recordDelivery(payload);
+
+        // No custody record exists, so the forged invoice is not claimable.
+        bytes32 invoiceHash = bytes32(uint256(uint192(checksum24)));
+        (,, uint256 recordedAmount,,, bool claimed) = destEscrow.destinationCustody(invoiceHash);
+        assertEq(recordedAmount, 0, "no custody amount recorded for the forged invoice");
+        assertFalse(claimed, "no custody record means not claimed");
+        assertFalse(destEscrow.isInvoiceCompleted(invoiceHash), "forged invoice not completed");
+        assertEq(destEscrow.getHeldBalanceForAsset(address(usdc), account), 0, "nothing held for the account");
+
+        // Even MANAGER cannot claim it — there is no record.
+        vm.prank(admin); // admin holds MANAGER_ROLE (granted in setUp)
+        vm.expectRevert(abi.encodeWithSelector(InvoiceNotFound.selector));
+        destEscrow.claim(invoiceHash);
+    }
+
+    /// @notice ADR 0024 (I1/I6): stray funds transferred DIRECTLY to the escrow (bypassing recordDelivery) are
+    ///         never counted as held custody and can never be claimed — there is no custody record keying them.
+    function test_strayFundsTransferredToEscrowAreUnclaimable() public {
+        uint256 stray = 250_000e6;
+        uint256 heldBefore = destEscrow.getHeldBalanceForAsset(address(usdc), address(0));
+
+        // Anyone can push tokens straight to the escrow; this must NOT create claimable custody.
+        usdc.mint(attacker, stray);
+        vm.prank(attacker);
+        // forge-lint: disable-next-line(erc20-unchecked-transfer)
+        usdc.transfer(address(destEscrow), stray);
+
+        assertEq(
+            destEscrow.getHeldBalanceForAsset(address(usdc), address(0)),
+            heldBefore,
+            "stray transfer does NOT increase held custody"
+        );
+        assertEq(destEscrow.getHeldBalanceForAsset(address(usdc), account), 0, "stray transfer is not attributed");
+
+        // There is no custody hash for the stray funds; a fabricated/derived hash has no record and cannot be claimed.
+        bytes32 fabricatedHash = keccak256(abi.encodePacked("stray", stray, account));
+        vm.prank(admin);
+        vm.expectRevert(abi.encodeWithSelector(InvoiceNotFound.selector));
+        destEscrow.claim(fabricatedHash);
     }
 
     function _packInvoiceId(uint64 srcId, uint64 dstId, address acct, bytes6 sym) internal pure returns (bytes32) {

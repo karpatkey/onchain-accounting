@@ -23,8 +23,8 @@ import "test/mocks/tokens.sol";
 /// @notice Test suite for the re-architected CCTP Bridge Adapter (attestation-provenance model).
 /// @dev On the destination chain the adapter mints USDC to ITSELF (mintRecipient ==
 ///      destinationCaller == adapter), verifies the attested CCTP message body against the invoice,
-///      dedups by nonce, forwards the minted USDC to the escrow, and the base BridgeAdapter releases
-///      it to the account via releaseByInvoiceId.
+///      dedups by nonce, forwards the minted USDC to the escrow, and the base BridgeAdapter records the
+///      delivery into escrow custody (ADR 0024). A subsequent MANAGER `claim` pays the account.
 contract CctpBridgeAdapterTest is BridgeScenarioHelper {
     CctpBridgeAdapter public adapter;
     MockProvenanceTokenMessenger public tokenMessenger;
@@ -201,17 +201,29 @@ contract CctpBridgeAdapterTest is BridgeScenarioHelper {
         uint256 initialPortfolioBalance = usdc.balanceOf(account);
         assertEq(usdc.balanceOf(address(destBridgeEscrow)), 0, "escrow starts empty (CCTP mints)");
 
+        // Step 1 (ADR 0024): completeBridge records the delivery — the escrow HOLDS the funds, no payout yet.
         vm.prank(manager);
         destAdapter.completeBridge(messagePayload, protocolData);
 
-        // Account received the bridged USDC; escrow and adapter hold none afterwards.
-        assertEq(usdc.balanceOf(account) - initialPortfolioBalance, amount, "account received minted USDC");
-        assertEq(usdc.balanceOf(address(destBridgeEscrow)), 0, "escrow empty after release");
-        assertEq(usdc.balanceOf(address(destAdapter)), 0, "adapter empty after forwarding");
-        assertTrue(destBridgeEscrow.isInvoiceCompleted(invoiceHash), "invoice completed");
+        assertEq(usdc.balanceOf(account), initialPortfolioBalance, "account NOT paid on record");
+        assertEq(usdc.balanceOf(address(destBridgeEscrow)), amount, "escrow holds the delivered USDC");
+        assertEq(usdc.balanceOf(address(destAdapter)), 0, "adapter empty after forwarding to escrow");
+        assertEq(destBridgeEscrow.getHeldBalanceForAsset(address(usdc), account), amount, "held for account");
+        assertTrue(destBridgeEscrow.isInvoiceCompleted(invoiceHash), "invoice completed on record");
+        (,,,,, bool claimedAfterRecord) = destBridgeEscrow.destinationCustody(invoiceHash);
+        assertFalse(claimedAfterRecord, "custody not claimed yet");
 
         // Nonce recorded for replay protection.
         assertTrue(destAdapter.usedNonces(SOURCE_DOMAIN, nonce), "nonce marked used");
+
+        // Step 2 (ADR 0024): MANAGER claims — funds move to the account, escrow drains.
+        vm.prank(manager);
+        destBridgeEscrow.claim(invoiceHash);
+        assertEq(usdc.balanceOf(account) - initialPortfolioBalance, amount, "account received minted USDC on claim");
+        assertEq(usdc.balanceOf(address(destBridgeEscrow)), 0, "escrow empty after claim");
+        assertEq(destBridgeEscrow.getHeldBalanceForAsset(address(usdc), account), 0, "held cleared after claim");
+        (,,,,, bool claimedAfter) = destBridgeEscrow.destinationCustody(invoiceHash);
+        assertTrue(claimedAfter, "custody marked claimed");
     }
 
     function test_completeBridge_revertsOnReplayedNonce() public {
@@ -379,7 +391,7 @@ contract CctpBridgeAdapterTest is BridgeScenarioHelper {
     }
 
     /// @notice Full round-trip: depositAndBridge on source -> payload from invoice -> deliver via
-    ///         attested receiveMessage -> completeBridge releases to account.
+    ///         attested receiveMessage -> completeBridge records custody -> MANAGER claim pays the account.
     function test_realistic_fullRoundTrip() public {
         uint256 amount = 1000 * 10 ** usdc.decimals();
 
@@ -402,8 +414,17 @@ contract CctpBridgeAdapterTest is BridgeScenarioHelper {
         destAdapter.completeBridge(messagePayload, protocolData);
 
         bytes32 expectedInvoiceHash = bytes32(uint256(uint192(InvoiceDataLib.decode(messagePayload).checksum24)));
-        assertTrue(destBridgeEscrow.isInvoiceCompleted(expectedInvoiceHash), "invoice completed");
+        assertTrue(destBridgeEscrow.isInvoiceCompleted(expectedInvoiceHash), "invoice completed on record");
+        // Record holds the funds; the account is paid only after MANAGER claim (ADR 0024).
+        assertEq(usdc.balanceOf(account), portfolioBalanceBeforeRelease, "account not paid on record");
+        assertEq(
+            destBridgeEscrow.getHeldBalanceForAsset(address(usdc), account), amount, "escrow holds for the account"
+        );
+
+        vm.prank(manager);
+        destBridgeEscrow.claim(expectedInvoiceHash);
         assertEq(usdc.balanceOf(account) - portfolioBalanceBeforeRelease, amount, "account received bridged amount");
+        assertEq(destBridgeEscrow.getHeldBalanceForAsset(address(usdc), account), 0, "held cleared after claim");
     }
 
     function test_completeBridge_validatesChecksum() public {
@@ -416,7 +437,7 @@ contract CctpBridgeAdapterTest is BridgeScenarioHelper {
         bytes32 nonce = bytes32(uint256(123));
         bytes memory protocolData = _prepareCctpProtocolData(nonce, amount, address(destAdapter));
 
-        // Corrupt messagePayload (invalid checksum) — releaseByInvoiceId in the base reverts.
+        // Corrupt messagePayload (invalid checksum) — recordDelivery in the base reverts.
         bytes memory corruptedPayload = abi.encode(
             invoiceData.invoiceId,
             invoiceData.amount,

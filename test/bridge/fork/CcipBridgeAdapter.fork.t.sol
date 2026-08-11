@@ -135,7 +135,8 @@ contract CcipBridgeAdapterForkTest is BridgeTestBase {
     }
 
     /// @notice The genuine CCIP Router delivers `ccipReceive` to the adapter: it authenticates the router, the
-    ///         source selector + sender and the delivered token, then funds the escrow and releases to account.
+    ///         source selector + sender and the delivered token, then records the delivery into escrow custody
+    ///         (ADR 0024). A subsequent MANAGER claim pays the account.
     function testFork_ccip_ccipReceive_authenticatesRouterAndReleases() public {
         uint256 amount = TEST_AMOUNT_USDC;
 
@@ -167,10 +168,20 @@ contract CcipBridgeAdapterForkTest is BridgeTestBase {
         vm.prank(CCIP_ROUTER_MAINNET);
         destAdapter.ccipReceive(message);
 
-        assertEq(IERC20(MAINNET_USDC).balanceOf(account) - portfolioBefore, amount, "account received bridged USDC");
-        assertEq(IERC20(MAINNET_USDC).balanceOf(address(destAdapter)), 0, "adapter forwarded all tokens");
-        assertEq(IERC20(MAINNET_USDC).balanceOf(address(destEscrow)), 0, "escrow holds no standing balance");
-        assertTrue(destEscrow.isInvoiceCompleted(invoiceHash), "invoice marked completed");
+        // ADR 0024: delivery records custody and HOLDS; the account is paid only on MANAGER claim.
+        assertEq(IERC20(MAINNET_USDC).balanceOf(account), portfolioBefore, "account NOT paid on delivery");
+        assertEq(IERC20(MAINNET_USDC).balanceOf(address(destAdapter)), 0, "adapter forwarded all tokens to escrow");
+        assertEq(IERC20(MAINNET_USDC).balanceOf(address(destEscrow)), amount, "escrow holds the delivery");
+        assertEq(destEscrow.getHeldBalanceForAsset(MAINNET_USDC, account), amount, "held for account");
+        assertTrue(destEscrow.isInvoiceCompleted(invoiceHash), "invoice marked completed on record");
+
+        vm.prank(manager);
+        destEscrow.claim(invoiceHash);
+        assertEq(
+            IERC20(MAINNET_USDC).balanceOf(account) - portfolioBefore, amount, "account received bridged USDC on claim"
+        );
+        assertEq(IERC20(MAINNET_USDC).balanceOf(address(destEscrow)), 0, "escrow drained after claim");
+        assertEq(destEscrow.getHeldBalanceForAsset(MAINNET_USDC, account), 0, "held cleared after claim");
     }
 
     /// @notice ccipReceive reverts when not called by the genuine Router (only the real protocol path authenticates).

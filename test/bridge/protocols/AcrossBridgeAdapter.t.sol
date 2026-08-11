@@ -243,13 +243,22 @@ contract AcrossBridgeAdapterTest is BridgeScenarioHelper {
 
         bytes memory protocolData = abi.encode(uint32(123), uint256(SOURCE_CHAIN_ID));
 
+        // Step 1 (ADR 0024): completeBridge records the delivery — escrow HOLDS, no payout yet.
         vm.prank(manager);
         destAdapter.completeBridge(messagePayload, protocolData);
 
-        assertEq(usdc.balanceOf(account) - initialPortfolioBalance, amount, "Account should receive tokens");
-        assertEq(usdc.balanceOf(address(destAdapter)), 0, "Adapter should have zero balance after release");
-        assertEq(usdc.balanceOf(address(destBridgeEscrow)), 0, "Escrow holds no standing balance");
-        assertTrue(destBridgeEscrow.isInvoiceCompleted(invoiceHash), "Invoice should be marked as completed");
+        assertEq(usdc.balanceOf(account), initialPortfolioBalance, "account NOT paid on record");
+        assertEq(usdc.balanceOf(address(destAdapter)), 0, "adapter forwarded delivered tokens to escrow");
+        assertEq(usdc.balanceOf(address(destBridgeEscrow)), amount, "escrow holds the delivery");
+        assertEq(destBridgeEscrow.getHeldBalanceForAsset(address(usdc), account), amount, "held for account");
+        assertTrue(destBridgeEscrow.isInvoiceCompleted(invoiceHash), "invoice completed on record");
+
+        // Step 2 (ADR 0024): MANAGER claim pays the account.
+        vm.prank(manager);
+        destBridgeEscrow.claim(invoiceHash);
+        assertEq(usdc.balanceOf(account) - initialPortfolioBalance, amount, "account received tokens on claim");
+        assertEq(usdc.balanceOf(address(destBridgeEscrow)), 0, "escrow drained after claim");
+        assertEq(destBridgeEscrow.getHeldBalanceForAsset(address(usdc), account), 0, "held cleared after claim");
     }
 
     /// @notice MANAGER completion reverts when the source chain is not a configured trusted remote.
@@ -280,7 +289,8 @@ contract AcrossBridgeAdapterTest is BridgeScenarioHelper {
     // ============ Realistic round-trip (source payload + delivery via genuine SpokePool fill) ============
 
     /// @notice Full round-trip: depositAndBridge on source → payload from deposit → fill on destination
-    ///         SpokePool which delivers tokens to the adapter and calls handleV3AcrossMessage directly.
+    ///         SpokePool which delivers tokens to the adapter and calls handleV3AcrossMessage directly,
+    ///         recording custody (ADR 0024); a MANAGER claim then pays the account.
     function test_realistic_fullRoundTrip_sourcePayloadAndDeliveryViaFillDeposit() public {
         uint256 amount = 1000 * 10 ** usdc.decimals();
 
@@ -310,10 +320,18 @@ contract AcrossBridgeAdapterTest is BridgeScenarioHelper {
         destSpokePool.fillDeposit(relayDepositId, address(usdc), amount);
 
         bytes32 expectedInvoiceHash = bytes32(uint256(uint192(InvoiceDataLib.decode(messagePayload).checksum24)));
-        assertTrue(destBridgeEscrow.isInvoiceCompleted(expectedInvoiceHash), "invoice completed");
+        assertTrue(destBridgeEscrow.isInvoiceCompleted(expectedInvoiceHash), "invoice completed on record");
+        // ADR 0024: delivery records custody; the account is paid only on MANAGER claim.
+        assertEq(usdc.balanceOf(account), portfolioBalanceBeforeRelease, "account NOT paid on delivery");
+        assertEq(usdc.balanceOf(address(destAdapter)), 0, "adapter forwarded everything to escrow");
+        assertEq(usdc.balanceOf(address(destBridgeEscrow)), amount, "escrow holds the delivery");
+        assertEq(destBridgeEscrow.getHeldBalanceForAsset(address(usdc), account), amount, "held for account");
+
+        vm.prank(manager);
+        destBridgeEscrow.claim(expectedInvoiceHash);
         assertEq(usdc.balanceOf(account) - portfolioBalanceBeforeRelease, amount, "account received bridged amount");
-        assertEq(usdc.balanceOf(address(destAdapter)), 0, "adapter balance zero after release");
-        assertEq(usdc.balanceOf(address(destBridgeEscrow)), 0, "escrow holds no standing balance");
+        assertEq(usdc.balanceOf(address(destBridgeEscrow)), 0, "escrow drained after claim");
+        assertEq(destBridgeEscrow.getHeldBalanceForAsset(address(usdc), account), 0, "held cleared after claim");
     }
 
     function test_completeBridge_validatesChecksum() public {
@@ -340,7 +358,7 @@ contract AcrossBridgeAdapterTest is BridgeScenarioHelper {
         bytes memory protocolData = abi.encode(uint32(123), uint256(SOURCE_CHAIN_ID));
 
         vm.prank(manager);
-        vm.expectRevert(); // Should revert because checksum is invalid (in releaseByInvoiceId)
+        vm.expectRevert(); // Should revert because checksum is invalid (in recordDelivery)
         destAdapter.completeBridge(corruptedPayload, protocolData);
     }
 
@@ -365,8 +383,9 @@ contract AcrossBridgeAdapterTest is BridgeScenarioHelper {
     // ============ Across V3 Receiver Tests (adapter is the direct protocol receiver) ============
 
     /// @notice Auto path: the genuine SpokePool delivers tokens to the adapter and calls handleV3AcrossMessage,
-    ///         which authenticates and releases. The payload is stored and retrievable.
-    function test_handleV3AcrossMessage_releasesAndStoresPayload() public {
+    ///         which authenticates and records the delivery into escrow custody (ADR 0024). A MANAGER claim then
+    ///         pays the account. The payload is stored and retrievable.
+    function test_handleV3AcrossMessage_recordsCustodyThenClaimPaysAndStoresPayload() public {
         uint256 amount = 1000 * 10 ** usdc.decimals();
         InvoiceDataLib.InvoiceData memory invoiceData =
             _createInvoiceData(SOURCE_CHAIN_ID, DEST_CHAIN_ID, account, USDC_SYMBOL_BYTES6, amount);
@@ -383,9 +402,17 @@ contract AcrossBridgeAdapterTest is BridgeScenarioHelper {
         uint256 before = usdc.balanceOf(account);
         destSpokePool.fillDeposit(relayDepositId, address(usdc), amount);
 
-        assertEq(usdc.balanceOf(account) - before, amount, "account received bridged amount");
+        // ADR 0024: delivery records custody and HOLDS; account not paid until claim.
+        bytes32 invoiceHash = bytes32(uint256(uint192(invoiceData.checksum24)));
+        assertEq(usdc.balanceOf(account), before, "account NOT paid on delivery");
+        assertEq(destEscrow.getHeldBalanceForAsset(address(usdc), account), amount, "held for account");
         bytes memory storedPayload = destAdapter.getMessagePayload(invoiceData.invoiceId);
         assertEq(storedPayload.length, messagePayload.length, "MessagePayload should be stored via callback");
+
+        vm.prank(manager);
+        destEscrow.claim(invoiceHash);
+        assertEq(usdc.balanceOf(account) - before, amount, "account received bridged amount on claim");
+        assertEq(destEscrow.getHeldBalanceForAsset(address(usdc), account), 0, "held cleared after claim");
     }
 
     /// @notice handleV3AcrossMessage reverts when not called by the SpokePool (only the genuine protocol path).

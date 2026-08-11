@@ -20,14 +20,14 @@ import "src/constants.sol";
 
 /// @title BridgeEscrow
 /// @notice Tracks assets in transit across chains and maintains the invoice ledger.
-/// @dev See ADR 0012. There is no `fallback()` dispatcher — protocol callbacks are received and authenticated
-///      by the adapters directly, and `releaseByInvoiceId` is callable only by an authorized adapter (never a
-///      public fallback, never MANAGER directly), which closes the *unauthenticated* forged-payload drain
-///      (C1's permissionless vector). Release is a per-invoice funded pass-through: the authenticating adapter
-///      supplies the funds in the same call (the escrow pulls exactly `amount` from it, or requires
-///      `msg.value == amount` for native) and the escrow forwards them to the account, never paying from a
-///      standing balance. So one invoice can never be funded by another's tokens and a release cannot drain
-///      pre-existing funds (H2/H9).
+/// @dev See ADR 0012 and ADR 0024. There is no `fallback()` dispatcher — protocol callbacks are received and
+///      authenticated by the adapters directly, and `recordDelivery` is callable only by an authorized adapter
+///      (never a public fallback, never MANAGER directly), which closes the *unauthenticated* forged-payload
+///      drain (C1's permissionless vector). Under the hold-then-claim model, `recordDelivery` writes a
+///      per-invoice custody record funded by the authenticating adapter in the same call (the escrow pulls
+///      exactly `amount` from it, or requires `msg.value == amount` for native) and HOLDS the funds; the
+///      MANAGER-gated `claim` later pays exactly the recorded amount to the recorded account. So one invoice
+///      can never be funded by another's tokens and a claim cannot drain pre-existing funds (H2/H9).
 /// @author KPK
 contract BridgeEscrow is
     AccessControlUpgradeable,
@@ -98,6 +98,18 @@ contract BridgeEscrow is
     /// @notice Cached in-transit balances across all accounts per asset
     /// @dev Invariant: equals the sum of _inTransitBalances[account][asset] across all accounts
     mapping(address => uint256) private _inTransitBalancesAllAccounts;
+
+    /// @notice Destination-side custody records (ADR 0024), keyed by invoiceHash. Written by `recordDelivery`,
+    ///         drained by `claim`. The delivered funds are HELD here until claimed.
+    mapping(bytes32 => DestinationCustody) public destinationCustody;
+
+    /// @notice Held-but-unclaimed custody per asset (aggregate)
+    /// @dev Invariant I1: `balanceOf(asset) >= _heldClaimable[asset]`, and equals the sum of unclaimed
+    ///      `destinationCustody` amounts for that asset (== Σ _heldByAccount[*][asset]).
+    mapping(address => uint256) private _heldClaimable;
+
+    /// @notice Held-but-unclaimed custody per account and asset (for per-account NAV attribution)
+    mapping(address => mapping(address => uint256)) private _heldByAccount;
 
     //
     // Constructor
@@ -206,22 +218,21 @@ contract BridgeEscrow is
     }
 
     /// @inheritdoc IBridgeEscrow
-    /// @dev Destination-side funded pass-through (ADR 0012). Callable ONLY by an authorized adapter — there
-    ///      is no `fallback()` dispatcher and MANAGER cannot call this directly, so an attacker can never
-    ///      reach the release path (C1). The adapter, having authenticated the genuine inbound protocol
-    ///      message and source sender, supplies the funds in the SAME call: the escrow pulls exactly
-    ///      `amount` of the asset from the adapter (or requires `msg.value == amount` for native) and
-    ///      forwards it to the account. The escrow never pays from a standing balance, so one invoice can
-    ///      never be funded by another's tokens (H2) and a release cannot drain pre-existing funds (H9).
-    function releaseByInvoiceId(bytes calldata messagePayload) external payable nonReentrant whenNotPaused {
+    /// @dev Destination-side delivery recorder (ADR 0024, supersedes the ADR-0012 pass-through here). Callable
+    ///      ONLY by an authorized adapter — there is no `fallback()` dispatcher and MANAGER cannot call this
+    ///      directly, so an attacker can never reach the custody path (C1). The adapter, having authenticated
+    ///      the genuine inbound protocol message and source sender, hands over the funds in the SAME call: the
+    ///      escrow pulls exactly `amount` from the adapter (or requires `msg.value == amount` for native),
+    ///      MEASURES the balance-delta actually received, writes a `destinationCustody` record, and HOLDS the
+    ///      funds. Release to the account happens only via `claim`. Provenance is the adapter (I2); the checksum
+    ///      is integrity/replay only.
+    function recordDelivery(bytes calldata messagePayload) external payable nonReentrant whenNotPaused {
         if (!_authorizedAdapters.contains(msg.sender)) revert NotAuthorized();
 
         InvoiceDataLib.InvoiceData memory data = InvoiceDataLib.decode(messagePayload);
 
-        // Validate the source-stamped timestamp is not implausibly in the future. A skew tolerance
-        // absorbs cross-chain clock differences on fast lanes, where a genuine deposit's source
-        // timestamp can read a few seconds ahead of the destination block time (which otherwise reverts
-        // a legitimate completion). Replay/integrity are enforced by the checksum + completedInvoices.
+        // Validate the source-stamped timestamp is not implausibly in the future. A skew tolerance absorbs
+        // cross-chain clock differences on fast lanes. Replay/integrity are enforced by checksum + record.
         uint64 currentTimestamp = uint64(block.timestamp);
         if (data.timestamp > currentTimestamp + TIMESTAMP_SKEW_TOLERANCE) {
             revert InvalidTimestamp(data.timestamp, currentTimestamp);
@@ -235,7 +246,10 @@ contract BridgeEscrow is
         }
 
         bytes32 invoiceHash = bytes32(uint256(uint192(data.checksum24)));
-        if (completedInvoices[invoiceHash]) revert InvoiceAlreadyExists();
+        // Replay guard: a delivery for this invoice must not already be recorded.
+        if (completedInvoices[invoiceHash] || destinationCustody[invoiceHash].amount != 0) {
+            revert InvoiceAlreadyExists();
+        }
 
         if (uint64(data.destinationChainId) != chainId) revert InvalidArguments();
         if (!_authorizedAccounts.contains(data.account)) revert NotAuthorized();
@@ -243,20 +257,80 @@ contract BridgeEscrow is
         address asset = _assetRegistry[data.assetSymbol];
         if (_registeredSymbolsIndex[data.assetSymbol] == 0) revert InvalidArguments();
 
-        completedInvoices[invoiceHash] = true;
-        emit InvoiceCompleted(invoiceHash, data.invoiceId);
-
-        // Funded pass-through: take the funds from the calling adapter, forward to the account.
+        // Pull the delivered funds from the adapter and MEASURE what actually arrived (fee-on-transfer /
+        // post-fee safe, I7). The escrow now HOLDS them until `claim`.
+        uint256 measured;
         if (_isNativeToken(asset)) {
             if (msg.value != data.amount) revert InvalidValue();
-            (bool success,) = data.account.call{value: data.amount}("");
-            if (!success) revert TransferFailed();
+            measured = msg.value;
         } else {
             if (msg.value != 0) revert InvalidValue();
-            IERC20(asset).safeTransferFrom(msg.sender, data.account, data.amount);
+            uint256 balBefore = IERC20(asset).balanceOf(address(this));
+            IERC20(asset).safeTransferFrom(msg.sender, address(this), data.amount);
+            measured = IERC20(asset).balanceOf(address(this)) - balBefore;
+            if (measured == 0) revert InvalidArguments();
         }
 
-        emit AssetsReleased(data.invoiceId, data.sourceChainId, asset, data.amount, data.account);
+        completedInvoices[invoiceHash] = true;
+        destinationCustody[invoiceHash] = DestinationCustody({
+            account: data.account,
+            asset: asset,
+            amount: measured,
+            adapter: msg.sender,
+            deliveredAt: currentTimestamp,
+            claimed: false
+        });
+        _heldClaimable[asset] += measured;
+        _heldByAccount[data.account][asset] += measured;
+
+        emit InvoiceCompleted(invoiceHash, data.invoiceId);
+        emit DeliveryRecorded(data.invoiceId, invoiceHash, asset, measured, data.account, msg.sender);
+    }
+
+    /// @inheritdoc IBridgeEscrow
+    /// @dev MANAGER-gated. Moves a held delivery to the recorded account (the safe). Because it can only ever
+    ///      pay the account stored at `recordDelivery`, and exactly the recorded amount, the gate controls only
+    ///      the TIMING of when funds enter the safe (I4). Strict CEI in `_claim`.
+    function claim(bytes32 invoiceHash) external override nonReentrant whenNotPaused onlyRole(MANAGER_ROLE) {
+        _claim(invoiceHash);
+    }
+
+    /// @inheritdoc IBridgeEscrow
+    function claim(bytes32[] calldata invoiceHashes)
+        external
+        override
+        nonReentrant
+        whenNotPaused
+        onlyRole(MANAGER_ROLE)
+    {
+        for (uint256 i = 0; i < invoiceHashes.length; i++) {
+            _claim(invoiceHashes[i]);
+        }
+    }
+
+    /// @notice Releases one held destination delivery to its recorded account (strict CEI; I3/I4).
+    function _claim(bytes32 invoiceHash) internal {
+        DestinationCustody storage rec = destinationCustody[invoiceHash];
+        address account = rec.account;
+        address asset = rec.asset;
+        uint256 amount = rec.amount;
+        if (amount == 0) revert InvoiceNotFound();
+        if (rec.claimed) revert AlreadyClaimed();
+
+        // Effects before interaction: flip claimed + decrement the custody aggregates.
+        rec.claimed = true;
+        _heldClaimable[asset] -= amount;
+        _heldByAccount[account][asset] -= amount;
+
+        // Interaction: pay exactly the recorded amount to the recorded account, and no one else.
+        if (_isNativeToken(asset)) {
+            (bool success,) = account.call{value: amount}("");
+            if (!success) revert TransferFailed();
+        } else {
+            IERC20(asset).safeTransfer(account, amount);
+        }
+
+        emit AssetsClaimed(invoiceHash, asset, amount, account);
     }
 
     //
@@ -460,6 +534,41 @@ contract BridgeEscrow is
     function getInTransitBalanceForAsset(address asset, address account) external view override returns (uint256) {
         if (account == address(0)) return _inTransitBalancesAllAccounts[asset];
         return _inTransitBalances[account][asset];
+    }
+
+    /// @inheritdoc IBridgeEscrow
+    function getHeldBalanceForAsset(address asset, address account) external view override returns (uint256) {
+        if (account == address(0)) return _heldClaimable[asset];
+        return _heldByAccount[account][asset];
+    }
+
+    /// @inheritdoc IBridgeEscrow
+    /// @dev Enumerates registered assets (bounded, small) and reports the account's held-but-unclaimed custody.
+    function getHeldBalancesForAccount(address account)
+        external
+        view
+        override
+        returns (address[] memory assets, uint256[] memory amounts)
+    {
+        uint256 symCount = _registeredSymbols.length;
+        address[] memory tempAssets = new address[](symCount);
+        uint256[] memory tempAmounts = new uint256[](symCount);
+        uint256 n = 0;
+        for (uint256 i = 0; i < symCount; i++) {
+            address asset = _assetRegistry[_registeredSymbols[i]];
+            uint256 amt = _heldByAccount[account][asset];
+            if (amt != 0) {
+                tempAssets[n] = asset;
+                tempAmounts[n] = amt;
+                n++;
+            }
+        }
+        assets = new address[](n);
+        amounts = new uint256[](n);
+        for (uint256 i = 0; i < n; i++) {
+            assets[i] = tempAssets[i];
+            amounts[i] = tempAmounts[i];
+        }
     }
 
     /// @inheritdoc IBridgeEscrow
@@ -758,7 +867,8 @@ contract BridgeEscrow is
     /// @notice Authorizes upgrades to new implementations (DEFAULT_ADMIN_ROLE / security council)
     function _authorizeUpgrade(address newImplementation) internal override onlyRole(DEFAULT_ADMIN_ROLE) {}
 
-    /// @dev Storage gap for future upgrades. Layout was rewritten clean pre-launch (ADR 0012);
-    ///      normal append-only discipline applies from here.
-    uint256[50] private _gap;
+    /// @dev Storage gap for future upgrades. Layout was rewritten clean pre-launch (ADR 0012); the ADR-0024
+    ///      destination-custody maps (destinationCustody, _heldClaimable, _heldByAccount) consumed 3 slots.
+    ///      Normal append-only discipline applies from here.
+    uint256[47] private _gap;
 }

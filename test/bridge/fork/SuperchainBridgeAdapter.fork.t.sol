@@ -361,9 +361,18 @@ contract SuperchainBridgeAdapterForkTest is BridgeTestBase {
 
         vm.clearMockedCalls();
 
-        assertEq(account.balance - portfolioBefore, amount, "account received bridged ETH");
-        assertEq(address(l2Adapter).balance, 0, "adapter forwarded all delivered ETH");
-        assertTrue(l2BridgeEscrow.isInvoiceCompleted(invoiceHash), "invoice marked completed");
+        // ADR 0024: delivery records custody and HOLDS the native ETH; the account is paid only on MANAGER claim.
+        assertEq(account.balance, portfolioBefore, "account NOT paid on delivery");
+        assertEq(address(l2Adapter).balance, 0, "adapter forwarded all delivered ETH to escrow");
+        assertEq(address(l2BridgeEscrow).balance, amount, "escrow holds the delivered ETH");
+        assertEq(l2BridgeEscrow.getHeldBalanceForAsset(address(0), account), amount, "held for account");
+        assertTrue(l2BridgeEscrow.isInvoiceCompleted(invoiceHash), "invoice marked completed on record");
+
+        vm.prank(manager);
+        l2BridgeEscrow.claim(invoiceHash);
+        assertEq(account.balance - portfolioBefore, amount, "account received bridged ETH on claim");
+        assertEq(address(l2BridgeEscrow).balance, 0, "escrow drained after claim");
+        assertEq(l2BridgeEscrow.getHeldBalanceForAsset(address(0), account), 0, "held cleared after claim");
     }
 
     /// @notice completeDeposit reverts when not called by the genuine L2CrossDomainMessenger.

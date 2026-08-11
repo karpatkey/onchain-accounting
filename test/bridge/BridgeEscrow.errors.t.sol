@@ -9,6 +9,7 @@ import {
     NotAuthorized,
     InvalidArguments,
     InvoiceNotFound,
+    InvoiceAlreadyExists,
     AssetHasActiveInvoices,
     AssetNotRegistered
 } from "src/errors.sol";
@@ -76,77 +77,172 @@ contract BridgeEscrowErrorTest is BridgeEscrowTestBase {
         bridgeEscrow.depositAndBridge{value: 0.5 ether}(DEST_CHAIN_ID, WETH_SYMBOL, 1 ether, address(mockAdapter));
     }
 
-    // ============ releaseByInvoiceId reverts ============
+    // ============ recordDelivery reverts (ADR 0024) ============
 
-    function test_RevertWhen_releaseByInvoiceId_callerNotAuthorizedAdapter() public {
+    function test_RevertWhen_recordDelivery_callerNotAuthorizedAdapter() public {
         (BridgeEscrow destEscrow, bytes memory messagePayload,) =
             _setupDestinationAndValidPayload(address(usdc), 1000e6);
         usdc.mint(address(destEscrow), 1000e6);
         vm.prank(unauthorized);
         vm.expectRevert(abi.encodeWithSelector(NotAuthorized.selector));
-        destEscrow.releaseByInvoiceId(messagePayload);
+        destEscrow.recordDelivery(messagePayload);
     }
 
-    /// @notice ADR 0012 (H9): MANAGER can no longer call releaseByInvoiceId directly — only an authorized
-    ///         adapter (after its provenance check) may. A MANAGER-direct call reverts NotAuthorized.
-    function test_RevertWhen_releaseByInvoiceId_callerIsManager() public {
+    /// @notice ADR 0024/0012 (H9): MANAGER can no longer record deliveries directly — only an authorized
+    ///         adapter (after its provenance check) may. A MANAGER-direct call reverts NotAuthorized. Timing of
+    ///         the payout to the account is what MANAGER controls, via {claim}, not the custody write.
+    function test_RevertWhen_recordDelivery_callerIsManager() public {
         (BridgeEscrow destEscrow, bytes memory messagePayload,) =
             _setupDestinationAndValidPayload(address(usdc), 1000e6);
         usdc.mint(address(destEscrow), 1000e6);
         vm.prank(manager);
         vm.expectRevert(abi.encodeWithSelector(NotAuthorized.selector));
-        destEscrow.releaseByInvoiceId(messagePayload);
+        destEscrow.recordDelivery(messagePayload);
     }
 
-    function test_RevertWhen_releaseByInvoiceId_invalidChecksum() public {
+    function test_RevertWhen_recordDelivery_invalidChecksum() public {
         (BridgeEscrow destEscrow,, MockBridgeAdapter destMock) = _setupDestinationAndValidPayload(address(usdc), 1000e6);
         InvoiceDataLib.InvoiceData memory data =
             _createInvoiceData(SOURCE_CHAIN_ID, DEST_CHAIN_ID, account, USDC_SYMBOL_BYTES6, 1000e6);
         data.checksum24 = bytes24(uint192(uint256(uint192(data.checksum24)) ^ 1)); // corrupt
         bytes memory badPayload = InvoiceDataLib.encode(data);
-        usdc.mint(address(destEscrow), 1000e6);
+        usdc.mint(address(destMock), 1000e6);
+        vm.prank(address(destMock));
+        usdc.approve(address(destEscrow), 1000e6);
 
         vm.prank(address(destMock));
-        vm.expectRevert(); // InvalidChecksum
-        destEscrow.releaseByInvoiceId(badPayload);
+        vm.expectRevert(); // InvalidChecksum (before any funds are pulled)
+        destEscrow.recordDelivery(badPayload);
     }
 
-    function test_RevertWhen_releaseByInvoiceId_futureTimestamp() public {
+    function test_RevertWhen_recordDelivery_futureTimestamp() public {
         vm.chainId(uint256(DEST_CHAIN_ID));
         BridgeEscrow destEscrow = _setupDestinationChainEscrow(DEST_CHAIN_ID);
         MockBridgeAdapter destMock = _deployMockAdapterForEscrow(destEscrow);
         vm.prank(admin);
         destEscrow.authorizeAdapter(address(destMock));
 
-        uint64 futureTs = uint64(block.timestamp + 1);
+        // Beyond the 1h skew tolerance so the timestamp check (not a funding failure) is the revert cause. The
+        // adapter is fully funded + approved, so InvalidTimestamp is the ONLY reason recordDelivery can revert.
+        uint64 futureTs = uint64(block.timestamp) + destEscrow.TIMESTAMP_SKEW_TOLERANCE() + 1;
         InvoiceDataLib.InvoiceData memory data = _createInvoiceDataWithTimestamp(
             SOURCE_CHAIN_ID, DEST_CHAIN_ID, account, USDC_SYMBOL_BYTES6, 1000e6, futureTs
         );
         bytes memory messagePayload = InvoiceDataLib.encode(data);
-        usdc.mint(address(destEscrow), 1000e6);
+        usdc.mint(address(destMock), 1000e6);
+        vm.prank(address(destMock));
+        usdc.approve(address(destEscrow), 1000e6);
 
         vm.prank(address(destMock));
-        vm.expectRevert(); // InvalidTimestamp
-        destEscrow.releaseByInvoiceId(messagePayload);
+        // InvalidTimestamp(provided, current) — asserted with args so it cannot be masked by a funding revert.
+        vm.expectRevert(
+            abi.encodeWithSelector(IBridgeEscrow.InvalidTimestamp.selector, futureTs, uint64(block.timestamp))
+        );
+        destEscrow.recordDelivery(messagePayload);
     }
 
-    function test_RevertWhen_releaseByInvoiceId_insufficientBalance() public {
+    /// @notice The adapter does not hold (nor approve) the delivered funds, so the escrow's pull reverts —
+    ///         the escrow never records a delivery it was not actually funded for (I7).
+    function test_RevertWhen_recordDelivery_insufficientBalance() public {
         (BridgeEscrow destEscrow, bytes memory messagePayload, MockBridgeAdapter destMock) =
             _setupDestinationAndValidPayload(address(usdc), 1000e6);
         vm.prank(address(destMock));
-        vm.expectRevert(); // InsufficientBalance
-        destEscrow.releaseByInvoiceId(messagePayload);
+        vm.expectRevert(); // transferFrom pull reverts (adapter holds nothing)
+        destEscrow.recordDelivery(messagePayload);
     }
 
-    function test_RevertWhen_releaseByInvoiceId_whenPaused() public {
+    function test_RevertWhen_recordDelivery_whenPaused() public {
         (BridgeEscrow destEscrow, bytes memory messagePayload, MockBridgeAdapter destMock) =
             _setupDestinationAndValidPayload(address(usdc), 1000e6);
-        usdc.mint(address(destEscrow), 1000e6);
+        usdc.mint(address(destMock), 1000e6);
+        vm.prank(address(destMock));
+        usdc.approve(address(destEscrow), 1000e6);
         vm.prank(admin);
         destEscrow.pause();
         vm.prank(address(destMock));
         vm.expectRevert();
-        destEscrow.releaseByInvoiceId(messagePayload);
+        destEscrow.recordDelivery(messagePayload);
+    }
+
+    function test_RevertWhen_recordDelivery_replayAlreadyRecorded() public {
+        (BridgeEscrow destEscrow, bytes memory messagePayload, MockBridgeAdapter destMock) =
+            _setupDestinationAndValidPayload(address(usdc), 1000e6);
+        // Fund enough for two attempts; the second must revert on the replay guard, not on a pull failure.
+        usdc.mint(address(destMock), 2000e6);
+        vm.prank(address(destMock));
+        usdc.approve(address(destEscrow), 2000e6);
+
+        vm.prank(address(destMock));
+        destEscrow.recordDelivery(messagePayload);
+
+        vm.prank(address(destMock));
+        vm.expectRevert(abi.encodeWithSelector(InvoiceAlreadyExists.selector));
+        destEscrow.recordDelivery(messagePayload);
+    }
+
+    // ============ claim reverts (ADR 0024) ============
+
+    function test_RevertWhen_claim_invoiceNotFound() public {
+        (BridgeEscrow destEscrow,,) = _setupDestinationAndValidPayload(address(usdc), 1000e6);
+        vm.prank(manager);
+        vm.expectRevert(abi.encodeWithSelector(InvoiceNotFound.selector));
+        destEscrow.claim(keccak256("no-such-custody"));
+    }
+
+    function test_RevertWhen_claim_alreadyClaimed() public {
+        (BridgeEscrow destEscrow, bytes memory messagePayload, MockBridgeAdapter destMock) =
+            _setupDestinationAndValidPayload(address(usdc), 1000e6);
+        usdc.mint(address(destMock), 1000e6);
+        vm.prank(address(destMock));
+        usdc.approve(address(destEscrow), 1000e6);
+        vm.prank(address(destMock));
+        destEscrow.recordDelivery(messagePayload);
+
+        bytes32 invoiceHash = bytes32(uint256(uint192(InvoiceDataLib.decode(messagePayload).checksum24)));
+        vm.prank(manager);
+        destEscrow.claim(invoiceHash);
+
+        vm.prank(manager);
+        vm.expectRevert(abi.encodeWithSelector(IBridgeEscrow.AlreadyClaimed.selector));
+        destEscrow.claim(invoiceHash);
+    }
+
+    function test_RevertWhen_claim_callerNotManager() public {
+        (BridgeEscrow destEscrow, bytes memory messagePayload, MockBridgeAdapter destMock) =
+            _setupDestinationAndValidPayload(address(usdc), 1000e6);
+        usdc.mint(address(destMock), 1000e6);
+        vm.prank(address(destMock));
+        usdc.approve(address(destEscrow), 1000e6);
+        vm.prank(address(destMock));
+        destEscrow.recordDelivery(messagePayload);
+
+        bytes32 invoiceHash = bytes32(uint256(uint192(InvoiceDataLib.decode(messagePayload).checksum24)));
+        // A non-MANAGER cannot claim (AccessControl gate).
+        vm.prank(unauthorized);
+        vm.expectRevert();
+        destEscrow.claim(invoiceHash);
+
+        // MANAGER can.
+        vm.prank(manager);
+        destEscrow.claim(invoiceHash);
+        assertEq(usdc.balanceOf(account), INITIAL_BALANCE + 1000e6, "MANAGER claim pays the account");
+    }
+
+    function test_RevertWhen_claim_whenPaused() public {
+        (BridgeEscrow destEscrow, bytes memory messagePayload, MockBridgeAdapter destMock) =
+            _setupDestinationAndValidPayload(address(usdc), 1000e6);
+        usdc.mint(address(destMock), 1000e6);
+        vm.prank(address(destMock));
+        usdc.approve(address(destEscrow), 1000e6);
+        vm.prank(address(destMock));
+        destEscrow.recordDelivery(messagePayload);
+
+        bytes32 invoiceHash = bytes32(uint256(uint192(InvoiceDataLib.decode(messagePayload).checksum24)));
+        vm.prank(admin);
+        destEscrow.pause();
+        vm.prank(manager);
+        vm.expectRevert();
+        destEscrow.claim(invoiceHash);
     }
 
     // ============ cancelInvoice reverts ============

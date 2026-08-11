@@ -34,7 +34,7 @@ abstract contract BridgeEscrowTestBase is BridgeTestBase {
         vm.label(address(mockAdapter), "MockBridgeAdapter");
     }
 
-    /// @notice Destination chain + valid payload for releaseByInvoiceId tests
+    /// @notice Destination chain + valid payload for recordDelivery / claim tests
     function _setupDestinationAndValidPayload(
         address,
         /* asset */

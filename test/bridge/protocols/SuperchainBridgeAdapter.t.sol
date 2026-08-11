@@ -221,9 +221,17 @@ contract SuperchainBridgeAdapterTest is BridgeScenarioHelper {
             abi.encodeCall(SuperchainBridgeAdapter.completeDeposit, (messagePayload))
         );
 
-        assertTrue(destEscrow.isInvoiceCompleted(invoiceHash), "invoice completed");
-        assertEq(usdc.balanceOf(account) - portfolioBefore, amount, "account received tokens");
-        assertEq(usdc.balanceOf(address(destAdapter)), 0, "adapter forwarded all tokens");
+        assertTrue(destEscrow.isInvoiceCompleted(invoiceHash), "invoice completed on record");
+        // ADR 0024: the relay records custody and HOLDS; the account is paid only on MANAGER claim.
+        assertEq(usdc.balanceOf(account), portfolioBefore, "account NOT paid on delivery");
+        assertEq(usdc.balanceOf(address(destEscrow)), amount, "escrow holds the delivery");
+        assertEq(destEscrow.getHeldBalanceForAsset(address(usdc), account), amount, "held for account");
+        assertEq(usdc.balanceOf(address(destAdapter)), 0, "adapter forwarded all tokens to escrow");
+
+        vm.prank(manager);
+        destEscrow.claim(invoiceHash);
+        assertEq(usdc.balanceOf(account) - portfolioBefore, amount, "account received tokens on claim");
+        assertEq(destEscrow.getHeldBalanceForAsset(address(usdc), account), 0, "held cleared after claim");
     }
 
     function test_completeDeposit_revertsIfCallerNotMessenger() public {
@@ -363,13 +371,21 @@ contract SuperchainBridgeAdapterTest is BridgeScenarioHelper {
 
         uint256 portfolioBefore = account.balance;
 
-        // Manager completes: adapter finalizes (portal delivers ETH to adapter), base releases to account.
+        // Manager completes: adapter finalizes (portal delivers ETH to adapter), base records the delivery into
+        // escrow custody (ADR 0024). The escrow HOLDS the ETH; a subsequent MANAGER claim pays the account.
         vm.prank(manager);
         l1Ad.completeBridge(messagePayload, abi.encode(wtx));
 
-        assertTrue(l1Escrow.isInvoiceCompleted(invoiceHash), "invoice completed");
-        assertEq(account.balance - portfolioBefore, amount, "account received withdrawn ETH");
-        assertEq(address(l1Ad).balance, 0, "adapter forwarded all ETH");
+        assertTrue(l1Escrow.isInvoiceCompleted(invoiceHash), "invoice completed on record");
+        assertEq(account.balance, portfolioBefore, "account NOT paid on record");
+        assertEq(address(l1Escrow).balance, amount, "escrow holds the withdrawn ETH");
+        assertEq(l1Escrow.getHeldBalanceForAsset(address(0), account), amount, "held for account");
+        assertEq(address(l1Ad).balance, 0, "adapter forwarded all ETH to escrow");
+
+        vm.prank(manager);
+        l1Escrow.claim(invoiceHash);
+        assertEq(account.balance - portfolioBefore, amount, "account received withdrawn ETH on claim");
+        assertEq(l1Escrow.getHeldBalanceForAsset(address(0), account), 0, "held cleared after claim");
     }
 
     /// @notice proveWithdrawal reverts when the supplied l2ChainId disagrees with the invoice's encoded source

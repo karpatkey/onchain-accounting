@@ -19,8 +19,9 @@ import "test/bridge/mocks/MockBridgeProtocols.sol";
 ///    delivering via the mock's public relay API only—never calling the adapter's receive callback from the test).
 /// 3. DESTINATION CHAIN: Bridge contract sends tokens to adapter and calls adapter.handleX(..., messagePayload).
 ///    - We simulate by calling mock.fillDeposit() / mock.deliverMessage() so the callback comes from the mock.
-/// 4. Manager calls adapter.completeBridge(messagePayload, protocolData).
-///    - Adapter transfers tokens to escrow and calls escrow.releaseByInvoiceId(messagePayload).
+/// 4. Manager calls adapter.completeBridge(messagePayload, protocolData) (or the genuine auto-callback fires).
+///    - Adapter hands the escrow the delivered tokens via escrow.recordDelivery(messagePayload), which HOLDS
+///      them in destination custody (ADR 0024). A subsequent MANAGER escrow.claim(invoiceHash) pays the account.
 ///
 /// ## Realism rules
 /// - messagePayload MUST come from the source run (e.g. from the deposit created in step 1), not hand-built.

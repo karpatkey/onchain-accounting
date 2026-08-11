@@ -23,7 +23,7 @@ contract MockBridgeAdapter is BridgeAdapter {
         // No-op: base tests verify caller check and event emission only
     }
 
-    /// @notice No-op completion implementation; releaseByInvoiceId is called by base after this
+    /// @notice No-op completion implementation; the base records the delivery into escrow custody after this
     function _completeBridge(bytes calldata, bytes calldata) internal pure override {
         // No-op
     }

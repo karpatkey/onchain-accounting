@@ -244,12 +244,21 @@ contract CcipBridgeAdapterTest is BridgeScenarioHelper {
             data: messagePayload,
             destTokenAmounts: new Client.EVMTokenAmount[](0)
         });
+        // Step 1 (ADR 0024): completeBridge records the delivery — escrow HOLDS, no payout yet.
         vm.prank(manager);
         destAdapter.completeBridge(messagePayload, abi.encode(minimalMessage));
 
-        assertEq(usdc.balanceOf(account) - initialPortfolioBalance, amount, "Account should receive tokens");
-        assertEq(usdc.balanceOf(address(destBridgeEscrow)), 0, "Escrow should have zero balance after release");
-        assertTrue(destBridgeEscrow.isInvoiceCompleted(invoiceHash), "Invoice should be marked as completed");
+        assertEq(usdc.balanceOf(account), initialPortfolioBalance, "account NOT paid on record");
+        assertEq(usdc.balanceOf(address(destBridgeEscrow)), amount, "escrow holds the delivery");
+        assertEq(destBridgeEscrow.getHeldBalanceForAsset(address(usdc), account), amount, "held for account");
+        assertTrue(destBridgeEscrow.isInvoiceCompleted(invoiceHash), "invoice completed on record");
+
+        // Step 2 (ADR 0024): MANAGER claim pays the account.
+        vm.prank(manager);
+        destBridgeEscrow.claim(invoiceHash);
+        assertEq(usdc.balanceOf(account) - initialPortfolioBalance, amount, "account received tokens on claim");
+        assertEq(usdc.balanceOf(address(destBridgeEscrow)), 0, "escrow drained after claim");
+        assertEq(destBridgeEscrow.getHeldBalanceForAsset(address(usdc), account), 0, "held cleared after claim");
     }
 
     function test_completeBridge_validatesChecksum() public {
@@ -390,9 +399,17 @@ contract CcipBridgeAdapterTest is BridgeScenarioHelper {
         destAdapter.completeBridge(messagePayload, abi.encode(ccipMessage));
 
         bytes32 expectedInvoiceHash = bytes32(uint256(uint192(InvoiceDataLib.decode(messagePayload).checksum24)));
-        assertTrue(destBridgeEscrow.isInvoiceCompleted(expectedInvoiceHash), "invoice completed");
+        assertTrue(destBridgeEscrow.isInvoiceCompleted(expectedInvoiceHash), "invoice completed on record");
+        // ADR 0024: completeBridge records custody and HOLDS; the account is paid only on MANAGER claim.
+        assertEq(usdc.balanceOf(account), portfolioBalanceBeforeRelease, "account NOT paid on record");
+        assertEq(
+            destBridgeEscrow.getHeldBalanceForAsset(address(usdc), account), amount, "escrow holds for the account"
+        );
+
+        vm.prank(manager);
+        destBridgeEscrow.claim(expectedInvoiceHash);
         assertEq(usdc.balanceOf(account) - portfolioBalanceBeforeRelease, amount, "account received bridged amount");
-        assertEq(usdc.balanceOf(address(destBridgeEscrow)), 0, "escrow balance zero after release");
+        assertEq(usdc.balanceOf(address(destBridgeEscrow)), 0, "escrow balance zero after claim");
     }
 
     /// @notice Manager completion path stores the message payload on the adapter

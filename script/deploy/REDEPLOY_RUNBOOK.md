@@ -509,8 +509,17 @@ git submodule status | grep -v '^ ' && echo "DRIFT — fix before building" || e
 
 The Alchemy app behind `ALCHEMY_API_KEY` has most networks **disabled**; only
 `eth / opt / gnosis / base / arb` answer. `ConfigReader` resolves 22 of the 24 chains through
-`$ALCHEMY` alone (`ConfigReader._resolveRpcUrl`, `ConfigReader.sol:837`), so a bare `forge script`
-**cannot reach 19 of them**, including **polygon (137), a configured chain**.
+`$ALCHEMY` alone (`ConfigReader._resolveRpcUrl`, `ConfigReader.sol:837`), so **19 of the 24 configured
+endpoints do not answer** — including **polygon (137), a configured chain**.
+
+**That is endpoint availability, not Foundry reachability, and conflating the two is a trap.**
+`ConfigReader` assigns the resolved URL to `chainConfig.rpc` (`ConfigReader.sol:163`) and
+`BaseDeployScript.setUp` loads it (`BaseDeployScript.sol:28`) — but **nothing reads it after that**.
+There is no production read of `chainConfig.rpc` anywhere under `script/`, and `foundry.toml` declares
+neither `[rpc_endpoints]` nor `eth_rpc_url`, so Foundry never sees these URLs at all. The practical
+consequence is **stronger** than "19 chains are unreachable": a broadcast needs `--rpc-url` (or
+`eth_rpc_url`) on **every** chain, including the five where Alchemy does answer. A resolvable `rpc`
+field is not a substitute on any of them.
 
 Either enable the networks on the Alchemy app, or pass `--rpc-url` explicitly per chain from the
 per-chain `*_URL` vars. Confirm the full inventory first:
@@ -524,7 +533,10 @@ Resolving each chain the way `ConfigReader` does (`chainlib.resolve_rpc(config_o
 exists for exactly this question) and then issuing a real `eth_blockNumber`:
 
 - **Alchemy answers on exactly 5 chains** — `1, 10, 100, 8453, 42161`, i.e. eth / opt / gnosis / base / arb.
-- **A bare `forge script` reaches 5 and cannot reach 19**, polygon (137) among them.
+- **The configured endpoint answers for 5 and fails for 19**, polygon (137) among them. Read this as
+  *config endpoint health only* — per the note above, Foundry never consumes `chainConfig.rpc`, so this
+  split says nothing about what `forge script` can reach; without `--rpc-url` it has no endpoint on any
+  chain.
 - Exactly **22** chains carry `rpc: "$ALCHEMY"`; the other two are `$QUICKNODE_0G` (16661) and
   `$QUICKNODE_HEMI` (43111), neither of which is in the environment.
 

@@ -685,14 +685,17 @@ contract AdapterLabelOverridesTest is AdapterLabelOverridesBase {
         assertLt(miss - noRegistry, 8_000, "one distinct adapter must cost at most one pair of registry reads");
     }
 
-    /// @dev **The only test that catches the per-position regression, and its bound is set from a MUTATION, not from
-    ///      taste.** Two positions from ONE adapter: the lookup is cached at the `adapter != prevAdapter` boundary,
-    ///      so the surcharge must stay one pair of registry reads per DISTINCT adapter.
+    /// @dev **Catches the per-position regression WARM, with its bound set from a MUTATION, not from taste.** Two
+    ///      positions from ONE adapter: the lookup is cached at the `adapter != prevAdapter` boundary, so the
+    ///      surcharge must stay one pair of registry reads per DISTINCT adapter. `test_gas_coldVsWarm_twoAdapters` is
+    ///      the COLD counterpart; between them the caching property is defended warm and cold, and nothing else in
+    ///      this file defends it.
     ///
-    ///      Measured on clean HEAD: 9,790. Measured with `_adapterOverrides` moved out of the cache branch so it runs
-    ///      per position: 14,993. An earlier revision bounded this at 50,000 and therefore passed under that exact
-    ///      mutation — the regression it was written to catch shipped green. The bound is now 12,000: above the
-    ///      honest number with room for compiler drift, below the mutant.
+    ///      Measured on clean HEAD: 10,980. Measured with the lookup moved out of the cache branch so it runs per
+    ///      position: 16,308. An earlier revision bounded this at 50,000 and therefore passed under that exact
+    ///      mutation — the regression it was written to catch shipped green. The bound is 12,000: above the honest
+    ///      number, below the mutant. ⚠️ Headroom is now only ~9%, so a genuine cost increase here will surface as
+    ///      this test going red; re-derive the bound from the mutant rather than simply raising it.
     function test_gas_surchargeIsPerAdapter_notPerPosition() public {
         LabelledAdapter multi = new LabelledAdapter("Multi Protocol", "Market", "leaf");
         address[] memory assets = new address[](2);
@@ -748,7 +751,11 @@ contract AdapterLabelOverridesTest is AdapterLabelOverridesBase {
         assertTrue(found, "adapter position not found");
         // Two distinct adapters emit positions here (ERC20Default + ours), so the ceiling is 2 adapters x 2 reads x
         // 100k, plus the underlying read. Bounded well inside the verbose read's own budget.
-        assertLt(used, 600_000, "a stipend-burning registry must stay inside 2x_NAME_READ_GAS per distinct adapter");
+        assertLt(
+            used,
+            2 * 2 * 100_000 + 200_000,
+            "a stipend-burning registry must stay inside 2x_NAME_READ_GAS per distinct adapter, plus the underlying read"
+        );
     }
 
     /// @dev The CONFIGURATION-path hostile-registry ceiling, which nothing exercised before. The `_NAME_READ_GAS`
@@ -783,7 +790,11 @@ contract AdapterLabelOverridesTest is AdapterLabelOverridesBase {
         assertEq(names[2], "", "a non-adapter address yields an empty name, not a revert");
 
         // Ceiling: 2 x _NAME_READ_GAS (100k) per ENTRY, plus the adapters' own reads. Bounded well inside it.
-        assertLt(used, 3 * 2 * 100_000 + 400_000, "the configuration ceiling is 2x the stipend PER ENTRY");
+        assertLt(
+            used,
+            3 * 2 * 100_000 + 400_000,
+            "the configuration ceiling is 2x the stipend PER ENTRY, plus the adapters' own reads"
+        );
     }
 
     /// @dev Never-revert on the configuration surface for inputs that are not adapters at all.
@@ -998,7 +1009,11 @@ contract AdapterLabelOverridesTest is AdapterLabelOverridesBase {
         emit log_named_uint("1 adapter | cold premium         ", cold - warm);
 
         assertGt(cold, warm, "a cold registry must cost more than a warm one");
-        assertLt(cold - base, 20_000, "one distinct adapter, cold, must stay within one pair of cold reads");
+        // Bound set FROM A MUTANT, not from taste. The mutant is a second pair of registry reads per distinct adapter
+        // (duplicate the two lookups inside the `adapter != prevAdapter` branch) -- precisely the regression this
+        // message names. An earlier 20,000 passed under it (mutant 14,719) and so enforced nothing:
+        //   clean 9,443 PASS / mutant 14,755 FAIL / bound 12,000.
+        assertLt(cold - base, 12_000, "one distinct adapter, cold, must stay within one pair of cold reads");
     }
 
     /// @dev The same, with TWO distinct adapters emitting three positions, so the per-DISTINCT-ADAPTER property is
@@ -1154,7 +1169,6 @@ contract AdapterLabelOverridesTest is AdapterLabelOverridesBase {
     ///          `_coolAll` for the measured proof and the arithmetic. Size a gas limit from this PLUS that margin.
     function test_gas_configurationSurface_27Distinct_cold() public {
         address[] memory all = _growTo(27);
-        assertEq(all.length, 27, "fixture must hold 27 DISTINCT adapters");
 
         nav.getAdapterDisplayInfo(all); // warm everything
         uint256 t = gasleft();
@@ -1180,6 +1194,21 @@ contract AdapterLabelOverridesTest is AdapterLabelOverridesBase {
         emit log_named_uint("27 distinct | per entry ALL-COLD    ", allCold / 27);
         assertGt(regCold, warm, "cooling the registry must cost more");
         assertGt(allCold, regCold, "cooling the adapters too must cost more still");
+
+        // ⚠️ DISTINCTNESS IS ASSERTED HERE, AFTER THE MEASUREMENTS, AND THE POSITION IS LOAD-BEARING. A length check
+        // alone would pass on a padded array of repeats -- the exact flaw that makes the 555,122 figure unusable --
+        // so the premise of this fixture has to be enforced, not just named. But `assertTrue(bool, string)` allocates
+        // its message in memory on every call, and an O(N^2) sweep of 351 of them expands the test frame's memory
+        // enough that the SUBSEQUENT measured call pays materially more expansion: running it before the measurement
+        // inflated EVERYTHING-COLD by ~3,255. Assert after measuring, and accumulate into one bool so a single
+        // message is allocated.
+        bool distinct = true;
+        for (uint256 i = 0; i < all.length; i++) {
+            for (uint256 j = i + 1; j < all.length; j++) {
+                if (all[i] == all[j]) distinct = false;
+            }
+        }
+        assertTrue(distinct, "fixture adapters must be DISTINCT: repeats are warm after the first touch");
     }
 
     /// @dev Linearity at scale: totals at N = 1, 9, 18, 27 DISTINCT adapters, everything cold each time. If the

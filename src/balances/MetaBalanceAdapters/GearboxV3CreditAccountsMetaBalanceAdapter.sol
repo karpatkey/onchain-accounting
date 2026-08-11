@@ -19,8 +19,10 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 /// @dev **Why the credit account is the instance (not the CreditManager).** Gearbox V3 has no on-chain
 ///      borrower→creditAccount lookup — `ICreditManagerV3` exposes only the reverse
 ///      (`creditAccountInfo(ca).borrower`) plus `creditAccounts()` returning *every* open account. Keying on the
-///      CreditManager would therefore force an unbounded scan of all accounts inside the NAV read (an OOG there is
-///      NOT caught by NAVCalculator's try/catch, so it would brick the account's whole scan). Keying on the credit
+///      CreditManager would therefore force an unbounded scan of all accounts inside the NAV read (an OOG there IS
+///      caught — by `PriceFeedLib._getAdapterPositions`, not NAVCalculator — but is classified via
+///      `GasStipendLib.exhausted` and deliberately re-raised as `AdapterGasExhausted` instead of failing open, so it
+///      would still brick the account's whole scan). Keying on the credit
 ///      account instead makes discovery a governance concern: the fund's own credit accounts are curated as the
 ///      instance set (exactly like Morpho markets or Aave instances), and each read is O(#instances). Per instance:
 ///        - the adapter resolves the CreditManager from the credit account (`ICreditAccountV3.creditManager()`) and

@@ -1611,9 +1611,21 @@ own.** A non-empty units response counts as active even when it reads `0` (`:136
 request is substituted with `[]` and the anchor written anyway: a failed `all_complex_protocol_list`
 warns *"protocol totals will be 0"* (`:538-541`) and a failed `token_list` warns *"using protocol total
 only"* (`:631-634`). So a run can change ACCOUNT_1 correctly while **silently writing partial totals over
-other accounts' anchors**. Accept the re-baseline only when all three hold: **positive units**, **no
-`[warn] … request failed` lines in the output**, and **every enabled anchor reviewed**, not just the one
-this fix targets.
+other accounts' anchors**. Accept the re-baseline only when all **four** hold: **positive units**, **no
+`[warn] … request failed` lines in the output**, **every enabled anchor reviewed** (not just the one this
+fix targets), and **no failed or skipped chains**.
+
+That fourth condition is not covered by the other three. If step 2 fails for a chain,
+`finalize_step2_outcomes` rolls its `forkBlock` back, **narrows `chain_ids` to the survivors**
+(`refresh-integration-snapshot.sh:482-503`), and steps 3/4 then run normally over the rest — so DeBank
+can succeed everywhere it was asked and all three earlier checks pass while the skipped chain keeps
+**stale snapshots**. The script does say so: it prints `Incomplete run … NAV was not regenerated for
+chain(s): …` and exits 1 (`:684-689`), and exits 1 on `failed_chains` (`:762-764`).
+
+**So narrow the earlier exit-status warning to what it was about.** "The exit code proves nothing"
+applies to **detecting whether DeBank ran** — a skipped cross-check has no dedicated failure. It does
+**not** license ignoring a non-zero exit in general: `Incomplete run` / exit 1 is a real signal and must
+not be waved through.
 
 Before spending anything, re-verify the allowlist is non-empty — no RPC needed: confirm
 `generate-comparison-report.py`'s `adapter_aggregated_addrs('1')` returns both Cap token addresses.

@@ -211,6 +211,18 @@ contract BridgeHeldBalanceAdapterTest is Test {
         (uint256 aS,) = adapter.getAdapterBalanceForAsset(account, NATIVE);
         assertEq(a0, 8 ether, "address(0) query sums both native keys");
         assertEq(aS, 8 ether, "sentinel query sums both native keys");
+
+        // getAdapterBalances also merges the two native keys into a single sentinel entry (no raw address(0)).
+        (address[] memory bAssets, uint256[] memory bAmounts,) = adapter.getAdapterBalances(account);
+        uint256 natCount;
+        for (uint256 i; i < bAssets.length; ++i) {
+            assertTrue(bAssets[i] != address(0), "address(0) never surfaced raw");
+            if (bAssets[i] == NATIVE) {
+                natCount++;
+                assertEq(bAmounts[i], 8 ether, "getAdapterBalances merges native amount");
+            }
+        }
+        assertEq(natCount, 1, "getAdapterBalances emits a single native entry");
     }
 
     function test_positions_emptyForZeroAccount() public view {

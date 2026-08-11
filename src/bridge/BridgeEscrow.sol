@@ -335,7 +335,10 @@ contract BridgeEscrow is
         _heldClaimable[asset] -= amount;
         _heldByAccount[account][asset] -= amount;
 
-        // Interaction: pay exactly the recorded amount to the recorded account, and no one else.
+        // Interaction: transfer exactly the recorded `amount` of the recorded asset to the recorded account, and
+        // no one else. For every bridged asset (standard ERC20 + native) the account receives exactly `amount`;
+        // a fee-on-transfer token would deliver its own post-fee amount (the escrow can only *send* `amount`, not
+        // guarantee receipt) — but no fee-on-transfer token is a bridged asset, so the exact-payout holds here.
         if (_isNativeToken(asset)) {
             (bool success,) = account.call{value: amount}("");
             if (!success) revert TransferFailed();

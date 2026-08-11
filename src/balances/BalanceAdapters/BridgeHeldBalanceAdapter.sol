@@ -124,11 +124,38 @@ contract BridgeHeldBalanceAdapter is BalanceAdapterBase {
         returns (address[] memory assets, uint256[] memory amounts, bool[] memory isDebt)
     {
         if (account == address(0)) return (new address[](0), new uint256[](0), new bool[](0));
-        (assets, amounts) = BRIDGE_ESCROW.getHeldBalancesForAccount(account);
-        for (uint256 i; i < assets.length; ++i) {
-            if (assets[i] == address(0)) assets[i] = NATIVE_ASSET;
+        (address[] memory raw, uint256[] memory rawAmounts) = BRIDGE_ESCROW.getHeldBalancesForAccount(account);
+
+        // Normalize the escrow's address(0) native key to NAV's sentinel AND merge duplicates, so a dual-native-key
+        // (address(0) + sentinel) misconfig collapses to one entry — consistent with getAdapterPositions and the
+        // point getter, which also merge/sum both native keys.
+        address[] memory tmpA = new address[](raw.length);
+        uint256[] memory tmpV = new uint256[](raw.length);
+        uint256 n;
+        for (uint256 i; i < raw.length; ++i) {
+            address a = raw[i] == address(0) ? NATIVE_ASSET : raw[i];
+            bool found;
+            for (uint256 j; j < n; ++j) {
+                if (tmpA[j] == a) {
+                    tmpV[j] += rawAmounts[i];
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) {
+                tmpA[n] = a;
+                tmpV[n] = rawAmounts[i];
+                ++n;
+            }
         }
-        isDebt = new bool[](assets.length); // all false (credit)
+
+        assets = new address[](n);
+        amounts = new uint256[](n);
+        isDebt = new bool[](n); // all false (credit)
+        for (uint256 i; i < n; ++i) {
+            assets[i] = tmpA[i];
+            amounts[i] = tmpV[i];
+        }
     }
 
     /// @inheritdoc IBalanceAdapter

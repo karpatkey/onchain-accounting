@@ -76,7 +76,9 @@ require record exists and `!claimed`, flip `claimed`, decrement aggregates, tran
   unless `msg.sender` is an authorized adapter. The invoice checksum is integrity/replay only, never an
   authenticator — provenance remains in the adapter (unchanged from ADR 0012).
 - **I3 No double-claim:** `claimed` flips `false→true` once; aggregates decrement once.
-- **I4 Claim pays only the recorded account,** exactly `amount` of the recorded `asset`; no argument redirects it.
+- **I4 Claim pays only the recorded account,** transferring exactly `amount` of the recorded `asset`; no
+  argument redirects it. (For every bridged asset — standard ERC20 + native — the account receives exactly
+  `amount`; a fee-on-transfer token would deliver its own post-fee amount, but none is a bridged asset.)
 - **I5 Cancel/claim non-interference:** source-side `cancelInvoice` and destination `claim` touch different
   bookkeeping maps (`invoices`/in-transit vs `destinationCustody`), but on a single per-chain escrow they draw
   on the **same token balance** — the two fund pools commingle. So non-interference is NOT structural; it is

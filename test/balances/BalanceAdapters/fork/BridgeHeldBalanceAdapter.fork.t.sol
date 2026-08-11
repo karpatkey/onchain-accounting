@@ -74,7 +74,7 @@ contract BridgeHeldBalanceAdapterForkTest is BalanceAdapterTestBase {
         assertTrue(p[0].isLocked, "locked until claim");
         assertEq(uint256(p[0].positionKind), uint256(PositionKind.Supplied));
         assertEq(p[0].protocolBrand, ProtocolIds.BRIDGE_ESCROW);
-        assertEq(p[0].positionId, abi.encode(address(escrow)));
+        assertEq(p[0].positionId, abi.encode(address(escrow), MAINNET_USDC));
 
         // Getter surface agrees.
         (uint256 amt, bool isDebt) = adapter.getAdapterBalanceForAsset(safe, MAINNET_USDC);

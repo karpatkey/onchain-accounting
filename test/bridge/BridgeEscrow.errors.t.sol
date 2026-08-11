@@ -380,6 +380,53 @@ contract BridgeEscrowErrorTest is BridgeEscrowTestBase {
         bridgeEscrow.emergencyWithdraw(address(usdc), 1, makeAddr("r"));
     }
 
+    /// @notice The emergencyWithdraw surplus cap must protect native custody keyed under the ERC-7528 sentinel,
+    ///         not just the address(0) bucket (both are valid native registrations).
+    function test_emergencyWithdraw_nativeHeldUnderSentinel_isProtected() public {
+        (BridgeEscrow destEscrow,, MockBridgeAdapter destMock) = _setupDestinationAndValidPayload(address(usdc), 1);
+        address sentinel = destEscrow.NATIVE_ADDRESS_ERC7528();
+        vm.prank(manager);
+        destEscrow.registerAsset("ETH   ", sentinel);
+
+        InvoiceDataLib.InvoiceData memory data =
+            _createInvoiceData(SOURCE_CHAIN_ID, DEST_CHAIN_ID, account, bytes6("ETH   "), 1 ether);
+        bytes memory payload = InvoiceDataLib.encode(data);
+        vm.deal(address(destMock), 1 ether);
+        vm.prank(address(destMock));
+        destEscrow.recordDelivery{value: 1 ether}(payload); // held under _heldClaimable[sentinel]
+
+        vm.prank(admin);
+        destEscrow.pause();
+        // Surplus over native custody is 0 even though the held bucket is the sentinel, not address(0).
+        vm.prank(admin);
+        vm.expectRevert(abi.encodeWithSelector(IBridgeEscrow.InsufficientBalance.selector, address(0), 1 ether, 0));
+        destEscrow.emergencyWithdraw(address(0), 1 ether, account);
+    }
+
+    /// @notice Two symbols aliasing one token must not double-count held custody in getHeldBalancesForAccount.
+    function test_getHeldBalancesForAccount_dedupesAliasedSymbols() public {
+        (BridgeEscrow destEscrow, bytes memory payload, MockBridgeAdapter destMock) =
+            _setupDestinationAndValidPayload(address(usdc), 1000e6);
+        vm.prank(manager);
+        destEscrow.registerAsset("USDC2 ", address(usdc)); // second symbol -> same token
+
+        usdc.mint(address(destMock), 1000e6);
+        vm.prank(address(destMock));
+        usdc.approve(address(destEscrow), 1000e6);
+        vm.prank(address(destMock));
+        destEscrow.recordDelivery(payload);
+
+        (address[] memory assets, uint256[] memory amounts) = destEscrow.getHeldBalancesForAccount(account);
+        uint256 usdcCount;
+        for (uint256 i; i < assets.length; ++i) {
+            if (assets[i] == address(usdc)) {
+                usdcCount++;
+                assertEq(amounts[i], 1000e6, "held amount");
+            }
+        }
+        assertEq(usdcCount, 1, "aliased token deduped to a single entry");
+    }
+
     /// @notice emergencyWithdraw is capped to the surplus over held custody: it cannot touch funds backing
     ///         destination custody records, and those records stay fully claimable after unpause (I1).
     function test_emergencyWithdraw_cannotTakeHeldCustody() public {

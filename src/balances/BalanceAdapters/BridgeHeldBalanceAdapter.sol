@@ -80,9 +80,14 @@ contract BridgeHeldBalanceAdapter is BalanceAdapterBase {
     //
 
     /// @inheritdoc IBalanceAdapter
-    /// @notice The assets the escrow can hold custody of on this chain (its registered bridge assets).
+    /// @notice The assets the escrow can hold custody of on this chain (its registered bridge assets). The escrow's
+    ///         `address(0)` native key is surfaced as NAV's ERC-7528 sentinel so the NAV registry indexes this
+    ///         adapter under the same native address it prices under (otherwise it is undiscoverable for native).
     function underlyingAssetsSupported() external view override returns (address[] memory underlyingAssets) {
         (, underlyingAssets) = BRIDGE_ESCROW.registeredAssets();
+        for (uint256 i; i < underlyingAssets.length; ++i) {
+            if (underlyingAssets[i] == address(0)) underlyingAssets[i] = NATIVE_ASSET;
+        }
     }
 
     /// @inheritdoc IBalanceAdapter
@@ -122,7 +127,8 @@ contract BridgeHeldBalanceAdapter is BalanceAdapterBase {
 
     /// @inheritdoc IBalanceAdapter
     /// @notice One `Supplied` (`isLocked = true`) leg per held asset that is also registered on NAVCalculator, under
-    ///         `positionId = abi.encode(bridgeEscrow)`; the held token rides in `balanceAsset`.
+    ///         `positionId = abi.encode(bridgeEscrow, token)` (the canonical `bridge-escrow` decode schema); the
+    ///         held token also rides in `balanceAsset`.
     function getAdapterPositions(address account, address assetFilter)
         external
         view
@@ -133,7 +139,6 @@ contract BridgeHeldBalanceAdapter is BalanceAdapterBase {
 
         (address[] memory heldAssets, uint256[] memory heldAmounts) = BRIDGE_ESCROW.getHeldBalancesForAccount(account);
         INAVCalculator.Asset[] memory registered = NAV_CALCULATOR.getRegisteredAssets();
-        bytes memory pid = abi.encode(address(BRIDGE_ESCROW));
 
         INAVCalculator.PositionBalance[] memory tmp = new INAVCalculator.PositionBalance[](heldAssets.length);
         uint256 count;
@@ -156,7 +161,9 @@ contract BridgeHeldBalanceAdapter is BalanceAdapterBase {
                 protocolBrand: PROTOCOL_BRAND,
                 protocolId: PROTOCOL_ID,
                 protocolSubId: PROTOCOL_SUB_ID,
-                positionId: pid,
+                // Canonical `bridge-escrow` positionId decode schema: (address escrow, address token) — see
+                // ProtocolIds.sol and docs/howto/position-identity-schema.md. `asset` is the NAV-normalized token.
+                positionId: abi.encode(address(BRIDGE_ESCROW), asset),
                 positionKind: PositionKind.Supplied,
                 isLocked: true,
                 positionInstanceId: bytes32(0)

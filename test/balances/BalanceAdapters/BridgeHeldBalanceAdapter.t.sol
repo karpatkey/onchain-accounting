@@ -124,7 +124,7 @@ contract BridgeHeldBalanceAdapterTest is Test {
         assertEq(p[0].protocolBrand, ProtocolIds.BRIDGE_ESCROW);
         assertEq(p[0].protocolId, ProtocolIds.BRIDGE_ESCROW);
         assertEq(p[0].protocolSubId, ProtocolIds.BRIDGE_ESCROW);
-        assertEq(p[0].positionId, abi.encode(address(escrow)));
+        assertEq(p[0].positionId, abi.encode(address(escrow), address(usdc)));
         assertEq(p[0].positionInstanceId, bytes32(0));
 
         // WETH leg

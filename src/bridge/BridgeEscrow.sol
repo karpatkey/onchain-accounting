@@ -581,11 +581,21 @@ contract BridgeEscrow is
         for (uint256 i = 0; i < symCount; i++) {
             address asset = _assetRegistry[_registeredSymbols[i]];
             uint256 amt = _heldByAccount[account][asset];
-            if (amt != 0) {
-                tempAssets[n] = asset;
-                tempAmounts[n] = amt;
-                n++;
+            if (amt == 0) continue;
+            // Registration enforces unique symbols, not unique asset addresses; `_heldByAccount` is keyed by
+            // asset, so two symbols aliasing one token would otherwise emit that token (and its full held
+            // amount) twice — double-counting it downstream (e.g. in BridgeHeldBalanceAdapter). Dedupe by asset.
+            bool seen = false;
+            for (uint256 j = 0; j < n; j++) {
+                if (tempAssets[j] == asset) {
+                    seen = true;
+                    break;
+                }
             }
+            if (seen) continue;
+            tempAssets[n] = asset;
+            tempAmounts[n] = amt;
+            n++;
         }
         assets = new address[](n);
         amounts = new uint256[](n);
@@ -702,9 +712,12 @@ contract BridgeEscrow is
         if (amount == 0) revert InvalidArguments();
         if (!_authorizedAccounts.contains(to)) revert NotAuthorized();
 
-        // Never dip into funds backing held custody: cap to the surplus over `_heldClaimable` (I1).
-        address heldKey = _isNativeToken(asset) ? address(0) : asset;
-        uint256 held = _heldClaimable[heldKey];
+        // Never dip into funds backing held custody: cap to the surplus over `_heldClaimable` (I1). Native
+        // custody may be keyed under either native representation the registry accepted (`address(0)` by
+        // convention, or the ERC-7528 sentinel), so sum both buckets for native.
+        uint256 held = _isNativeToken(asset)
+            ? _heldClaimable[address(0)] + _heldClaimable[NATIVE_ADDRESS_ERC7528]
+            : _heldClaimable[asset];
 
         if (_isNativeToken(asset)) {
             uint256 balance = address(this).balance;

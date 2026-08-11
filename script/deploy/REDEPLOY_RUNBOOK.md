@@ -1600,8 +1600,9 @@ below. So a non-zero exit does not mean DeBank ran, and a zero exit does not mea
 field-change check is the authoritative verification, not the exit status** — the same doctrine this
 runbook already applies everywhere else ("gate every step on its post-condition, not on its exit code",
 and the `a step exits 0 having done nothing` row in the failure table). The whole point of this
-re-baseline is ACCOUNT_1's corrected anchor, so a run that skipped DeBank has not done it. **Prerequisites are therefore: authorisation for the unit spend AND
-a working key with units available.** Afterwards, confirm `expected."1".debankUsd` for ACCOUNT_1 actually
+re-baseline is ACCOUNT_1's corrected anchor, so a run that skipped DeBank has not done it.
+**Prerequisites are therefore: authorisation for the unit spend AND a working key with units
+available.** Afterwards, confirm `expected."1".debankUsd` for ACCOUNT_1 actually
 changed — an unchanged value means the step was skipped, not that nothing needed correcting.
 
 Before spending anything, re-verify the allowlist is non-empty — no RPC needed: confirm

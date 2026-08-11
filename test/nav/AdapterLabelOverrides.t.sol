@@ -1114,7 +1114,7 @@ contract AdapterLabelOverridesTest is AdapterLabelOverridesBase {
 
     /// @dev Cools every account a NAV read touches whose warmth this fixture controls: the registry, the supplied
     ///      adapters, the NAV PROXY (its own slots are read on every call and were previously left warm -- cooling
-    ///      them is worth a measured ~2,000, one cold-SLOAD delta), and the two accounts the call DELEGATECALLs into,
+    ///      them is worth a measured ~4,000, two cold-SLOAD deltas), and the two accounts the call DELEGATECALLs into,
     ///      the UUPS implementation and the externally linked `PriceFeedLib` (`getAdapterDisplayInfo` is a single
     ///      forward into it).
     ///
@@ -1132,9 +1132,13 @@ contract AdapterLabelOverridesTest is AdapterLabelOverridesBase {
     ///      `PriceFeedLib`, the registry -- at 2,500 each, so **~75,000 unmeasured**. The proxy is excluded: EIP-2929
     ///      pre-warms a transaction's `to`. Size a gas limit from the reported total PLUS that margin.
     function _coolAll(address[] memory xs) internal {
+        // ORDER IS LOAD-BEARING: `vm.load` WARMS the slot it reads, so reading the implementation slot after
+        // `vm.cool(address(nav))` would silently re-warm it and hand the measured call a warm SLOAD. Read first,
+        // cool second.
+        address impl = address(uint160(uint256(vm.load(address(nav), ERC1967_IMPL_SLOT))));
         vm.cool(address(registry));
         vm.cool(address(nav));
-        vm.cool(address(uint160(uint256(vm.load(address(nav), ERC1967_IMPL_SLOT)))));
+        vm.cool(impl);
         vm.cool(LibraryPins.PRICE_FEED_LIB);
         for (uint256 i = 0; i < xs.length; i++) {
             vm.cool(xs[i]);

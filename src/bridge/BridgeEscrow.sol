@@ -679,15 +679,14 @@ contract BridgeEscrow is
     /// @param asset The asset address to withdraw (address(0)/ERC-7528 for native)
     /// @param amount The amount to withdraw
     /// @param to The recipient — MUST be an authorized account (no arbitrary-address sweep)
-    /// @dev Recipient-restricted (ADR 0012, H10). Reconciles nothing else: this is the last-resort path. In
-    ///      particular it does NOT decrement the destination-custody aggregates (`_heldClaimable` /
-    ///      `_heldByAccount`) or flip any `destinationCustody` record — consistent with its "reconciles nothing"
-    ///      stance for source-side in-transit balances. Consequence to be aware of (ADR 0024): if a break-glass
-    ///      withdrawal removes funds that were backing held custody, those custody records become unclaimable
-    ///      (`claim` reverts on the transfer) and `getHeldBalance*` / `BridgeHeldBalanceAdapter` keep reporting
-    ///      the withdrawn value until the operator manually reconciles. Only reachable while paused, and `claim`
-    ///      is `whenNotPaused`, so no claim races the withdrawal; the residual is a post-unpause NAV over-report
-    ///      that operations must clear. This is an accepted property of the last-resort path, not a silent bug.
+    /// @dev Recipient-restricted (ADR 0012, H10). **Capped to the surplus over destination custody (ADR 0024):**
+    ///      the withdrawable amount is `balanceOf(asset) - _heldClaimable[asset]`, so a break-glass withdrawal can
+    ///      only ever move stray/surplus funds — never the funds backing outstanding `destinationCustody` records.
+    ///      This keeps I1 (`balanceOf >= _heldClaimable`) true through the emergency path, so held records stay
+    ///      fully claimable after unpause and `getHeldBalance*` / `BridgeHeldBalanceAdapter` never over-report.
+    ///      Held custody is not "stuck": `claim` releases it after unpause, and if the escrow itself must be
+    ///      abandoned the UUPS upgrade path is the true last resort for held funds. Native held is keyed at
+    ///      `address(0)` (the registry convention for the native asset), so the cap uses that key for native.
     function emergencyWithdraw(address asset, uint256 amount, address to)
         external
         onlyRole(DEFAULT_ADMIN_ROLE)
@@ -697,14 +696,20 @@ contract BridgeEscrow is
         if (amount == 0) revert InvalidArguments();
         if (!_authorizedAccounts.contains(to)) revert NotAuthorized();
 
+        // Never dip into funds backing held custody: cap to the surplus over `_heldClaimable` (I1).
+        address heldKey = _isNativeToken(asset) ? address(0) : asset;
+        uint256 held = _heldClaimable[heldKey];
+
         if (_isNativeToken(asset)) {
             uint256 balance = address(this).balance;
-            if (balance < amount) revert InsufficientBalance(asset, amount, balance);
+            uint256 withdrawable = balance > held ? balance - held : 0;
+            if (withdrawable < amount) revert InsufficientBalance(asset, amount, withdrawable);
             (bool success,) = to.call{value: amount}("");
             if (!success) revert TransferFailed();
         } else {
             uint256 balance = IERC20(asset).balanceOf(address(this));
-            if (balance < amount) revert InsufficientBalance(asset, amount, balance);
+            uint256 withdrawable = balance > held ? balance - held : 0;
+            if (withdrawable < amount) revert InsufficientBalance(asset, amount, withdrawable);
             IERC20(asset).safeTransfer(to, amount);
         }
 

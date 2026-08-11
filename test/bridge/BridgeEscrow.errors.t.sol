@@ -362,4 +362,37 @@ contract BridgeEscrowErrorTest is BridgeEscrowTestBase {
         vm.expectRevert();
         bridgeEscrow.emergencyWithdraw(address(usdc), 1, makeAddr("r"));
     }
+
+    /// @notice emergencyWithdraw is capped to the surplus over held custody: it cannot touch funds backing
+    ///         destination custody records, and those records stay fully claimable after unpause (I1).
+    function test_emergencyWithdraw_cannotTakeHeldCustody() public {
+        (BridgeEscrow destEscrow, bytes memory payload, MockBridgeAdapter destMock) =
+            _setupDestinationAndValidPayload(address(usdc), 1000e6);
+        usdc.mint(address(destMock), 1000e6);
+        vm.prank(address(destMock));
+        usdc.approve(address(destEscrow), 1000e6);
+        vm.prank(address(destMock));
+        destEscrow.recordDelivery(payload); // 1000e6 now held
+
+        vm.prank(admin);
+        destEscrow.pause();
+
+        // The held amount is not withdrawable (surplus over custody is 0).
+        vm.prank(admin);
+        vm.expectRevert(abi.encodeWithSelector(IBridgeEscrow.InsufficientBalance.selector, address(usdc), 1000e6, 0));
+        destEscrow.emergencyWithdraw(address(usdc), 1000e6, account);
+
+        // Stray/surplus funds ARE withdrawable.
+        usdc.mint(address(destEscrow), 5e6);
+        vm.prank(admin);
+        destEscrow.emergencyWithdraw(address(usdc), 5e6, account);
+
+        // Held custody survived intact and is claimable after unpause.
+        vm.prank(admin);
+        destEscrow.unpause();
+        bytes32 invoiceHash = bytes32(uint256(uint192(InvoiceDataLib.decode(payload).checksum24)));
+        vm.prank(manager);
+        destEscrow.claim(invoiceHash);
+        assertEq(destEscrow.getHeldBalanceForAsset(address(usdc), account), 0, "held cleared by claim");
+    }
 }

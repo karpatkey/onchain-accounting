@@ -148,7 +148,16 @@ and the invariant suite. Code review then surfaced points resolved as follows:
   record). A genuine payload never has `amount == 0`; the guard is defense-in-depth.
 - **`unregisterAsset` now also blocks while destination custody still holds the asset**, mirroring the
   existing source-side active-invoice guard, so held-but-claimable funds can't be hidden from `getHeldBalance*`.
-- **`emergencyWithdraw` intentionally does NOT reconcile the held aggregates** (consistent with its
-  "reconciles nothing" stance for in-transit balances). It is admin-only + paused-only, and `claim` is
-  `whenNotPaused`, so no claim races it; the residual is a post-unpause NAV over-report that operations must
-  clear. Documented on the function as an accepted property of the last-resort path, not a silent bug.
+- **Deploy wiring for `BridgeHeldBalanceAdapter` is a deliberate follow-up**, not part of this PR. It is not yet
+  dispatched by `04_DeployBalanceAdapters` / registered by `06_Configure`, because its constructor needs the
+  per-chain `BridgeEscrow` address and the hold-then-claim escrow is itself not yet in the production numbered
+  deploy flow (it deploys via the separate bridge track, and this model is pre-merge). It is registered as an
+  explicit step during the on-chain test campaign; the 04/06 + per-chain-config wiring lands when the
+  hold-then-claim escrow is promoted to a production deploy. Tracked so it is not silently forgotten (the
+  "deployed-but-never-registered" gap class).
+- **`emergencyWithdraw` is capped to the surplus over held custody** (`balanceOf(asset) - _heldClaimable[asset]`),
+  so a break-glass withdrawal can only move stray/surplus funds and never the funds backing outstanding
+  `destinationCustody` records — I1 holds through the emergency path, held records stay claimable after unpause,
+  and NAV never over-reports. Held custody is not stuck (`claim` releases it after unpause; a UUPS upgrade is
+  the true last resort if the escrow must be abandoned). Both reviewers flagged the earlier
+  reconciles-nothing behavior; this is the adopted fix.

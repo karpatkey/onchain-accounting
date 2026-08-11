@@ -1108,6 +1108,11 @@ contract AdapterLabelOverridesTest is AdapterLabelOverridesBase {
     }
 
     /// @dev Marginal per-ENTRY cost of the configuration surface: N=2 vs N=27, so fixed call overhead cancels.
+    ///
+    ///      ⚠️ This test MEASURES the marginal and does not BOUND it: the only assertion is the ordering. The
+    ///      per-entry figure it logs is also the PADDED one -- `pad` repeats the same two addresses, which are warm
+    ///      after the first touch -- so it is a warm floor, not a distinct-adapter number, and must not be quoted as
+    ///      one. `test_gas_configurationSurface_linearityAtScale` is where the marginal is actually bounded.
     function test_gas_configurationSurface_marginalPerEntry() public {
         address[] memory all = nav.getAllAdapters();
         address[] memory pad = new address[](27);
@@ -1268,8 +1273,12 @@ contract AdapterLabelOverridesTest is AdapterLabelOverridesBase {
         emit log_named_uint("linearity | marginal per entry, 9->18 ", mid);
         emit log_named_uint("linearity | marginal per entry, 18->27", last);
 
-        // Integer form of "last marginal is at most 5% above the first" -- see the mutation run above.
-        assertLe(last * 100, first * 105, "marginal per-entry cost must stay flat: the surface must not be superlinear");
+        // EVERY measured window is bounded, not just the last. Guarding only `last` would let a regression that
+        // spikes the 9->18 window and returns to baseline by 18->27 pass, while this message claims the marginals
+        // stay flat -- an assertion narrower than the property it names. Integer form of "no window may exceed the
+        // first by more than 5%"; see the mutation run above, where `mid` alone (+5.6%) already breaks it.
+        assertLe(mid * 100, first * 105, "marginal per-entry cost must stay flat across 9->18: no superlinear term");
+        assertLe(last * 100, first * 105, "marginal per-entry cost must stay flat across 18->27: no superlinear term");
     }
 
     /// @dev The ACCOUNT path at scale, cold, with 27 DISTINCT adapters -- the SCALE measurement, extended from N=2.

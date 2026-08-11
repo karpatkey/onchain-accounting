@@ -958,10 +958,12 @@ contract AdapterLabelOverridesTest is AdapterLabelOverridesBase {
         assertTrue(found, "adapter position not found in getAccountPositionsForAssetVerbose");
     }
 
-    /// @dev COLD-slot measurement. Every other gas test here warms the read first, so its surcharge is a FLOOR: a
+    /// @dev COLD-SLOT measurement. Every other gas test here warms the read first, so its surcharge is a FLOOR: a
     ///      real portfolio touches each adapter's registry slots cold. `vm.cool(registry)` marks the registry's
-    ///      account AND its storage slots cold again, which is the only clean way to produce that state inside one
-    ///      test transaction (EIP-2929 warmth otherwise persists for the whole call frame).
+    ///      storage SLOTS cold again, which is the only clean way to produce that state inside one test transaction
+    ///      (EIP-2929 warmth otherwise persists for the whole call frame). It does NOT restore the cold-ACCOUNT
+    ///      premium, despite its forge-std docstring -- see `_coolAll` for the measurement -- so this surcharge, like
+    ///      every other cold figure in this file, is slots-only and remains a floor on what a fresh call pays.
     ///
     ///      All three measurements share an identical baseline: the adapters are warmed once up front and are never
     ///      cooled, so the ONLY thing that differs between warm and cold is the registry. That isolation is what
@@ -1178,6 +1180,16 @@ contract AdapterLabelOverridesTest is AdapterLabelOverridesBase {
 
     /// @dev Linearity at scale: totals at N = 1, 9, 18, 27 DISTINCT adapters, everything cold each time. If the
     ///      marginal cost per entry is flat the surface is linear and safe to extrapolate; if it climbs, it is not.
+    ///
+    ///      The flatness is ASSERTED, not merely logged, because a logged-only measurement lets a super-linear
+    ///      regression through CI silently. Bound derived FROM A MUTANT, per this PR's own rule -- a plausible O(N^2)
+    ///      dedup scan over already-processed entries in `PriceFeedLib.adapterDisplayInfo`:
+    ///
+    ///        clean   35,087 vs 34,449  = +1.9%   PASS
+    ///        mutant  39,804 vs 35,456  = +12.3%  FAIL
+    ///        bound   +5%
+    ///
+    ///      Compares the LAST marginal against the FIRST, since super-linearity shows up as growth across windows.
     function test_gas_configurationSurface_linearityAtScale() public {
         address[] memory all = _growTo(27);
         uint256[4] memory ns = [uint256(1), 9, 18, 27];
@@ -1197,9 +1209,15 @@ contract AdapterLabelOverridesTest is AdapterLabelOverridesBase {
         emit log_named_uint("linearity | N=9  all-cold total", tot[1]);
         emit log_named_uint("linearity | N=18 all-cold total", tot[2]);
         emit log_named_uint("linearity | N=27 all-cold total", tot[3]);
-        emit log_named_uint("linearity | marginal per entry, 1->9  ", (tot[1] - tot[0]) / 8);
-        emit log_named_uint("linearity | marginal per entry, 9->18 ", (tot[2] - tot[1]) / 9);
-        emit log_named_uint("linearity | marginal per entry, 18->27", (tot[3] - tot[2]) / 9);
+        uint256 first = (tot[1] - tot[0]) / 8;
+        uint256 mid = (tot[2] - tot[1]) / 9;
+        uint256 last = (tot[3] - tot[2]) / 9;
+        emit log_named_uint("linearity | marginal per entry, 1->9  ", first);
+        emit log_named_uint("linearity | marginal per entry, 9->18 ", mid);
+        emit log_named_uint("linearity | marginal per entry, 18->27", last);
+
+        // Integer form of "last marginal is at most 5% above the first" -- see the mutation run above.
+        assertLe(last * 100, first * 105, "marginal per-entry cost must stay flat: the surface must not be superlinear");
     }
 
     /// @dev The ACCOUNT path at scale, cold, with 27 DISTINCT adapters -- the SCALE measurement, extended from N=2.
@@ -1208,7 +1226,8 @@ contract AdapterLabelOverridesTest is AdapterLabelOverridesBase {
     ///      in this fixture emits exactly ONE position, so per-adapter and per-position lookups are indistinguishable
     ///      here -- the per-position mutant left this test's surcharge unchanged. The per-DISTINCT-ADAPTER caching
     ///      property is defended SOLELY by `test_gas_coldVsWarm_twoAdapters` (2 adapters / 3 positions), whose bound
-    ///      IS derived from that mutant. What this test does prove is linearity of the surcharge at scale.
+    ///      IS derived from that mutant. What this test contributes is the MEASUREMENT of the surcharge at N=27; the
+    ///      linearity claim is asserted in `test_gas_configurationSurface_linearityAtScale`, not here.
     function test_gas_accountPath_27Distinct_cold() public {
         address[] memory all = _growTo(27);
         nav.getAccountPositionsVerbose(safe, address(0)); // warm

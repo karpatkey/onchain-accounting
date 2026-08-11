@@ -1605,6 +1605,15 @@ re-baseline is ACCOUNT_1's corrected anchor, so a run that skipped DeBank has no
 available.** Afterwards, confirm `expected."1".debankUsd` for ACCOUNT_1 actually
 changed — an unchanged value means the step was skipped, not that nothing needed correcting.
 
+**That single-field check is necessary but NOT sufficient, so do not treat it as authoritative on its
+own.** A non-empty units response counts as active even when it reads `0` (`:136-140`), and a failed
+request is substituted with `[]` and the anchor written anyway: a failed `all_complex_protocol_list`
+warns *"protocol totals will be 0"* (`:538-541`) and a failed `token_list` warns *"using protocol total
+only"* (`:631-634`). So a run can change ACCOUNT_1 correctly while **silently writing partial totals over
+other accounts' anchors**. Accept the re-baseline only when all three hold: **positive units**, **no
+`[warn] … request failed` lines in the output**, and **every enabled anchor reviewed**, not just the one
+this fix targets.
+
 Before spending anything, re-verify the allowlist is non-empty — no RPC needed: confirm
 `generate-comparison-report.py`'s `adapter_aggregated_addrs('1')` returns both Cap token addresses.
 This costs nothing and is the check whose absence let the defect run for ~8 weeks.

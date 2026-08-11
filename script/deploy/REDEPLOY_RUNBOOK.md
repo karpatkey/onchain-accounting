@@ -589,8 +589,11 @@ What that output does and does not cover, stated without inferring a verdict:
   quoted far below it. **This is conditional, not permanent** — a later quote above the threshold clears
   it, and plasma is the worked example: unpriceable in the 2026-07-29 reading, priced normally
   (need 0.00022) on 2026-08-10.
-- **Therefore 0.6 is OPEN for gnosis and scroll, not satisfied and not blocked.** The tool cannot close
-  it for them by construction. The paragraph below asserts their funding "has been confirmed sufficient
+- **Therefore two distinct facts, which must not be collapsed.** (a) The **funding status** of gnosis and
+  scroll is **UNKNOWN, not failed** — the tool makes no finding either way. (b) The **gate** is
+  **UNRESOLVED**, and per this section's own rule ("Do not start until **all** of these hold", §0) an
+  unresolved blocking prerequisite **does block the deploy**. Unknown funding is not permission to
+  proceed. The tool cannot close it for them by construction. The paragraph below asserts their funding "has been confirmed sufficient
   out of band" but records **no confirmer, no date and no sizing basis**, so it is not auditable and must
   not be read as closing the gate. **To close 0.6: record who confirmed, when, and against what estimate
   — or re-run once a quote clears the threshold and let the tool price them.**

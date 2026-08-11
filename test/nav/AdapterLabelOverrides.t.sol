@@ -682,7 +682,8 @@ contract AdapterLabelOverridesTest is AdapterLabelOverridesBase {
     ///      **What this test does and does not bound.** It bounds the surcharge for ONE distinct adapter emitting ONE
     ///      position. It CANNOT distinguish a per-adapter lookup from a per-position one, because with one position
     ///      the two are identical — an earlier revision's comment claimed otherwise and was simply wrong. The
-    ///      per-position regression is caught by {test_gas_surchargeIsPerAdapter_notPerPosition}, and only by it.
+    ///      per-position regression is caught by {test_gas_surchargeIsPerAdapter_notPerPosition} (warm) and
+    ///      {test_gas_coldVsWarm_twoAdapters} (cold), and by those two alone.
     function test_gas_registryLegIsBounded() public {
         _v(); // warm every path
 
@@ -1089,8 +1090,9 @@ contract AdapterLabelOverridesTest is AdapterLabelOverridesBase {
     function test_gas_configurationSurface_benignPath() public {
         address[] memory all = nav.getAllAdapters();
 
-        // Warm, then measure a full enumeration. Every emit is deferred until after the last measurement -- see
-        // {measureVerbose}; an emit allocates its message and would shift the frame the measurements sit in.
+        // Warm, then measure a full enumeration. The emits sit after the measurements only for readability now:
+        // {measureDisplay} times inside its own frame, so allocations out here cannot reach it. Before that helper
+        // existed this ordering was load-bearing.
         nav.getAdapterDisplayInfo(all);
         uint256 warm = this.measureDisplay(all);
 
@@ -1182,9 +1184,10 @@ contract AdapterLabelOverridesTest is AdapterLabelOverridesBase {
     ///      Two isolations are reported and they answer different questions:
     ///        - REGISTRY-COLD only: the registry surcharge, methodologically identical to the account-path numbers.
     ///        - EVERYTHING-COLD: every account this fixture can cool -- registry, adapters, the proxy's own slots, the
-    ///          UUPS implementation, `PriceFeedLib` -- with all SLOTS cold. It is a FLOOR on a fresh call, not the
-    ///          fresh-call cost: `vm.cool` does not reproduce cold-ACCOUNT premiums, leaving ~75,000 unmeasured. See
-    ///          `_coolAll` for the measured proof and the arithmetic. Size a gas limit from this PLUS that margin.
+    ///          UUPS implementation, `PriceFeedLib` -- with all SLOTS cold. It is a FLOOR, not the real cost:
+    ///          `vm.cool` does not reproduce cold-ACCOUNT premiums, leaving **~77,500** unmeasured under the
+    ///          contract-caller model these figures are measured in (31 accounts x 2,500). See `_coolAll` for the
+    ///          measured proof, the arithmetic, and why a plain EOA transaction takes a different correction.
     function test_gas_configurationSurface_27Distinct_cold() public {
         address[] memory all = _growTo(27);
 
@@ -1207,13 +1210,16 @@ contract AdapterLabelOverridesTest is AdapterLabelOverridesBase {
         assertGt(regCold, warm, "cooling the registry must cost more");
         assertGt(allCold, regCold, "cooling the adapters too must cost more still");
 
-        // ⚠️ DISTINCTNESS IS ASSERTED HERE, AFTER THE MEASUREMENTS, AND THE POSITION IS LOAD-BEARING. A length check
-        // alone would pass on a padded array of repeats -- the exact flaw that makes the 555,122 figure unusable --
-        // so the premise of this fixture has to be enforced, not just named. But `assertTrue(bool, string)` allocates
-        // its message in memory on every call, and an O(N^2) sweep of 351 of them expands the test frame's memory
-        // enough that the SUBSEQUENT measured call pays materially more expansion: running it before the measurement
-        // inflated EVERYTHING-COLD by ~3,255. Assert after measuring, and accumulate into one bool so a single
-        // message is allocated.
+        // The fixture's premise is BOTH halves, and each needs its own assertion: exactly 27 entries, and all of
+        // them distinct. Length alone would pass on a padded array of repeats (the flaw that makes the padded
+        // "N=27" figure unusable); uniqueness alone would pass if shared setup later registered a 28th adapter,
+        // while the totals above still divide by 27.
+        //
+        // Placement after the measurements is now only a convention: {measureDisplay} times inside its own frame,
+        // so this loop's allocations cannot reach it. It was genuinely load-bearing before that helper existed --
+        // running an O(N^2) sweep of `assertTrue(bool, string)` beforehand inflated EVERYTHING-COLD by ~3,255,
+        // because each message allocated in the test frame and the next measurement paid the expansion.
+        assertEq(all.length, 27, "fixture must hold exactly 27 adapters, or the per-entry divisors above are wrong");
         bool distinct = true;
         for (uint256 i = 0; i < all.length; i++) {
             for (uint256 j = i + 1; j < all.length; j++) {

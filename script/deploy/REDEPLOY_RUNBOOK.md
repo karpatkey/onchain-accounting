@@ -1597,8 +1597,10 @@ DeBank cross-check"* — in both cases it continues and **leaves every existing 
 DeBank, and the run can still exit non-zero for an unrelated reason: step 4 evaluates the *retained*
 anchors against tolerance and exits 2 on a violation — and ACCOUNT_1 already exceeds 1%, as recorded
 below. So a non-zero exit does not mean DeBank ran, and a zero exit does not mean it did. **The
-field-change check is the authoritative verification, not the exit status.** The whole point of this re-baseline is ACCOUNT_1's corrected anchor, so a run
-that skipped DeBank has not done it. **Prerequisites are therefore: authorisation for the unit spend AND
+field-change check is the authoritative verification, not the exit status** — the same doctrine this
+runbook already applies everywhere else ("gate every step on its post-condition, not on its exit code",
+and the `a step exits 0 having done nothing` row in the failure table). The whole point of this
+re-baseline is ACCOUNT_1's corrected anchor, so a run that skipped DeBank has not done it. **Prerequisites are therefore: authorisation for the unit spend AND
 a working key with units available.** Afterwards, confirm `expected."1".debankUsd` for ACCOUNT_1 actually
 changed — an unchanged value means the step was skipped, not that nothing needed correcting.
 

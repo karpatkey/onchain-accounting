@@ -613,9 +613,27 @@ but the estimate for it is now **0.00293**, not 0.02800 — the balance figure a
 > | chains | count | what the gate is worth |
 > | --- | --- | --- |
 > | 534352 scroll | 1 | **No finding.** `UNPRICEABLE` by design — no L1 term is modelled, so no number would be honest |
-> | 100 gnosis | 1 | **No finding.** `UNPRICEABLE` (near-zero base fee); funding rests on the out-of-band confirmation, see above |
+> | 100 gnosis | 1 | **Today: no finding** — `UNPRICEABLE` (near-zero base fee); funding rests on the out-of-band confirmation above. **After #284 lands** it is priced from a pinned 2 gwei and leaves this row |
 > | 10, 130, 204, 480, 5000, 8453, 42220, 57073 | 8 | **Priced, but on an understated basis** — OP-stack chains priced with **no L1-DA term**. Margins are large (optimism holds 0.0149 against a 0.00005 execution need) but that is unmeasured reasoning, not a measurement |
 > | the remaining 14 | 14 | Priced from the node with no known omission — **but "not named by #287" is absence of a measurement, not a clearance.** Arbitrum (42161) and linea (59144) are rollups too; their L1-cost handling has not been verified here |
+>
+> ### A PERSISTENT `not clear to deploy` IS THE GATE WORKING — do not read it as a regression
+>
+> **On `main` today** (`8fe1a949`, #284 not yet merged) the run reports **0 short, 0 unreachable,
+> 2 unpriceable** — gnosis and scroll — and exits non-zero.
+>
+> **Once #284 lands** gnosis and plasma are priced from pinned constants and scroll **fails closed**,
+> so the run becomes **0 short, 0 unreachable, 1 unpriceable** and *still* exits non-zero with
+> `not clear to deploy`. **It will keep saying that on every run until #287 lands or scroll is
+> explicitly waived.** That is the designed behaviour: scroll's L1-DA term is ~99.9% of its cost and is
+> not modelled, so the tool refuses to print a number it cannot stand behind rather than emitting a
+> green row from L2 gas alone.
+>
+> **So do not treat a red verdict here as something to fix, and do not "fix" it by raising a floor or
+> silencing the row.** The two legitimate exits are: land #287 so the fee is modelled, or record an
+> explicit waiver for scroll — a named person, a date, and the basis, exactly as 0.6 requires for any
+> chain the tool cannot clear. Deploy day is the wrong moment to first discover the gate is red by
+> design.
 >
 > **So a green run authorises nothing on 10 of 24 chains, and rests on unmeasured reasoning on 8 of
 > those.** Do not read "0 short" as "funding verified across the board". Until #287 lands, size scroll

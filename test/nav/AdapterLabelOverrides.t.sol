@@ -1241,11 +1241,14 @@ contract AdapterLabelOverridesTest is AdapterLabelOverridesBase {
     ///      regression through CI silently. Bound derived FROM A MUTANT, per this PR's own rule -- a plausible O(N^2)
     ///      dedup scan over already-processed entries in `PriceFeedLib.adapterDisplayInfo`:
     ///
-    ///        clean   34,741 vs 34,397  = +1.0%   PASS
-    ///        mutant  39,458 vs 35,404  = +11.4%  FAIL
-    ///        bound   +5%
+    ///        window      clean             mutant             verdict
+    ///        9 -> 18     34,564 (+0.5%)    37,373 (+5.6%)     mutant FAILS
+    ///        18 -> 27    34,741 (+1.0%)    39,458 (+11.4%)    mutant FAILS
+    ///        bound       +5% above the FIRST marginal, applied to every window
     ///
-    ///      Compares the LAST marginal against the FIRST, since super-linearity shows up as growth across windows.
+    ///      EVERY measured window is compared against the FIRST marginal, not just the last: a regression that
+    ///      spiked one window and returned to baseline by the next would otherwise pass while this doc claimed the
+    ///      marginals stay flat. Under the mutant `mid` is the binding one -- it trips before `last` is reached.
     function test_gas_configurationSurface_linearityAtScale() public {
         address[] memory all = _growTo(27);
         uint256[4] memory ns = [uint256(1), 9, 18, 27];

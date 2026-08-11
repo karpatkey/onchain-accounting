@@ -133,3 +133,22 @@ untouched. (Source side — `depositAndBridge`, `_bridge`, recipient = sibling a
    `recordDelivery` exact-amount) vs pull the full delivered balance into custody.
 6. **Batch `claim(bytes32[])`** for keeper gas, and an **optional min-hold** using `deliveredAt` for NAV
    snapshot alignment: include now vs defer.
+
+## Review remediation (PR #289)
+
+The first implementation pass shipped `claim(bytes32)` + `claim(bytes32[])`, the `BridgeHeldBalanceAdapter`,
+and the invariant suite. Code review then surfaced points resolved as follows:
+
+- **Batch `claim` is deliberately strict/all-or-nothing** (a bad hash reverts the whole batch), unlike
+  `markInvoiceCompleted`'s tolerant per-item batching — because `claim` MOVES funds, so an atomic batch is
+  auditable and never leaves a keeper guessing which subset settled. Keepers simulate first or fall back to
+  per-hash `claim`. Documented on the function.
+- **`recordDelivery` now rejects a zero-amount delivery symmetrically** for native + ERC20 (the ERC20 branch
+  already reverted on `measured == 0`; native previously wrote a "completed" but permanently-unclaimable
+  record). A genuine payload never has `amount == 0`; the guard is defense-in-depth.
+- **`unregisterAsset` now also blocks while destination custody still holds the asset**, mirroring the
+  existing source-side active-invoice guard, so held-but-claimable funds can't be hidden from `getHeldBalance*`.
+- **`emergencyWithdraw` intentionally does NOT reconcile the held aggregates** (consistent with its
+  "reconciles nothing" stance for in-transit balances). It is admin-only + paused-only, and `claim` is
+  `whenNotPaused`, so no claim races it; the residual is a post-unpause NAV over-report that operations must
+  clear. Documented on the function as an accepted property of the last-resort path, not a silent bug.

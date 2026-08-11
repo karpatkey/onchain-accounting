@@ -97,6 +97,8 @@ library ProtocolNames {
 
     /// @dev `ProtocolIds.NEXUS_MUTUAL`.
     string internal constant NEXUS_MUTUAL = "Nexus Mutual";
+    /// @dev `ProtocolIds.BRIDGE_ESCROW` — the destination bridge-escrow held-custody adapter (ADR 0024).
+    string internal constant BRIDGE_ESCROW = "Bridge Escrow";
 
     // ─────────────────────────────────────────────────────────────────────────────────────────────────────────────
     // protocolId → display name
@@ -144,6 +146,8 @@ library ProtocolNames {
         if (protocolId == ProtocolIds.ETHERFI) return ETHERFI;
         if (protocolId == ProtocolIds.ETHENA) return ETHENA;
         if (protocolId == ProtocolIds.NEXUS_MUTUAL) return NEXUS_MUTUAL;
+
+        if (protocolId == ProtocolIds.BRIDGE_ESCROW) return BRIDGE_ESCROW;
 
         if (protocolId == ProtocolIds.WALLET) return WALLET;
 

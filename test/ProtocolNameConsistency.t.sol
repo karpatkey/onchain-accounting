@@ -7,6 +7,7 @@ import {Vm} from "forge-std/Vm.sol";
 import {ProtocolNames} from "src/utils/ProtocolNames.sol";
 
 import {AaveUmbrellaBalanceAdapter} from "src/balances/BalanceAdapters/AaveUmbrellaBalanceAdapter.sol";
+import {BridgeHeldBalanceAdapter} from "src/balances/BalanceAdapters/BridgeHeldBalanceAdapter.sol";
 import {AaveV3SafetyModuleBalanceAdapter} from "src/balances/BalanceAdapters/AaveV3SafetyModuleBalanceAdapter.sol";
 import {CapBalanceAdapter} from "src/balances/BalanceAdapters/CapBalanceAdapter.sol";
 import {ERC20DefaultBalanceAdapter} from "src/balances/BalanceAdapters/ERC20DefaultBalanceAdapter.sol";
@@ -180,7 +181,7 @@ contract ProtocolNameConsistencyTest is Test {
     ///      `test_hardcodedAdapters_matchCanonicalNames`. This family is where the Umbrella bug actually happened,
     ///      and deriving the name fixed only the meta family — so without this census the exact defect this file
     ///      exists to prevent stays re-introducible here.
-    uint256 internal constant HARDCODED_ADAPTER_COUNT = 12;
+    uint256 internal constant HARDCODED_ADAPTER_COUNT = 13;
 
     BalancesHarness internal nav;
     address internal stub;
@@ -250,6 +251,9 @@ contract ProtocolNameConsistencyTest is Test {
             new ERC20DefaultBalanceAdapter(address(nav), new address[](0)).protocolName(),
             ProtocolNames.WALLET,
             "ERC20Default"
+        );
+        assertEq(
+            new BridgeHeldBalanceAdapter(address(nav), stub).protocolName(), ProtocolNames.BRIDGE_ESCROW, "BridgeHeld"
         );
     }
 

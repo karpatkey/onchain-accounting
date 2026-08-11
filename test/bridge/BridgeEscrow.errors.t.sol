@@ -180,6 +180,29 @@ contract BridgeEscrowErrorTest is BridgeEscrowTestBase {
         destEscrow.recordDelivery(messagePayload);
     }
 
+    /// @notice A zero-amount native delivery must revert (symmetry with the ERC20 measured==0 revert), not write a
+    ///         "completed" but permanently-unclaimable custody record. Regression for the native/ERC20 asymmetry.
+    function test_RevertWhen_recordDelivery_zeroAmountNative() public {
+        (BridgeEscrow destEscrow,, MockBridgeAdapter destMock) = _setupDestinationAndValidPayload(address(usdc), 1);
+        // Register a native symbol on the destination escrow so the native branch is reachable.
+        vm.prank(admin);
+        destEscrow.registerAsset("ETH   ", address(0));
+
+        InvoiceDataLib.InvoiceData memory data =
+            _createInvoiceData(SOURCE_CHAIN_ID, DEST_CHAIN_ID, account, bytes6("ETH   "), 0);
+        bytes memory payload = InvoiceDataLib.encode(data);
+
+        vm.prank(address(destMock));
+        vm.expectRevert(abi.encodeWithSelector(InvalidArguments.selector));
+        destEscrow.recordDelivery{value: 0}(payload);
+
+        // No zombie record: the invoice is neither completed nor claimable.
+        bytes32 invoiceHash = bytes32(uint256(uint192(data.checksum24)));
+        assertFalse(destEscrow.isInvoiceCompleted(invoiceHash), "no completed flag written");
+        (,, uint256 amount,,,) = destEscrow.destinationCustody(invoiceHash);
+        assertEq(amount, 0, "no custody record written");
+    }
+
     // ============ claim reverts (ADR 0024) ============
 
     function test_RevertWhen_claim_invoiceNotFound() public {
@@ -306,6 +329,22 @@ contract BridgeEscrowErrorTest is BridgeEscrowTestBase {
         vm.prank(admin);
         vm.expectRevert(abi.encodeWithSelector(AssetHasActiveInvoices.selector, USDC_SYMBOL));
         bridgeEscrow.unregisterAsset(USDC_SYMBOL);
+    }
+
+    /// @notice Unregistering an asset that still backs destination held custody must revert — otherwise
+    ///         getHeldBalance* (which enumerate registered symbols) would silently hide still-claimable funds.
+    function test_RevertWhen_unregisterAsset_withHeldCustody() public {
+        (BridgeEscrow destEscrow, bytes memory messagePayload, MockBridgeAdapter destMock) =
+            _setupDestinationAndValidPayload(address(usdc), 1000e6);
+        usdc.mint(address(destMock), 1000e6);
+        vm.prank(address(destMock));
+        usdc.approve(address(destEscrow), 1000e6);
+        vm.prank(address(destMock));
+        destEscrow.recordDelivery(messagePayload);
+
+        vm.prank(manager);
+        vm.expectRevert(abi.encodeWithSelector(AssetHasActiveInvoices.selector, USDC_SYMBOL));
+        destEscrow.unregisterAsset(USDC_SYMBOL);
     }
 
     // ============ emergencyWithdraw reverts ============

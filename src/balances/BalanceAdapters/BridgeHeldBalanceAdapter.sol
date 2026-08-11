@@ -12,6 +12,7 @@ import {RegisteredAssetLib} from "src/balances/RegisteredAssetLib.sol";
 import "src/errors.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
+import {ProtocolNames} from "src/utils/ProtocolNames.sol";
 
 /// @title Bridge Escrow Held-Balance Adapter (ADR 0024)
 /// @author KPK
@@ -54,7 +55,7 @@ contract BridgeHeldBalanceAdapter is BalanceAdapterBase {
     //
 
     function protocolName() external pure returns (string memory) {
-        return "Bridge Escrow";
+        return ProtocolNames.BRIDGE_ESCROW;
     }
 
     function positionLabels(bytes calldata) external pure override returns (string[] memory) {

@@ -231,6 +231,12 @@ contract BridgeEscrow is
 
         InvoiceDataLib.InvoiceData memory data = InvoiceDataLib.decode(messagePayload);
 
+        // Reject a zero-amount delivery symmetrically for native + ERC20. depositAndBridge already enforces
+        // amount > 0 and the checksum binds it, so a genuine payload never reaches here with amount == 0; this
+        // guard stops a zero-value native call from writing a "completed" but permanently unclaimable record
+        // (the ERC20 branch already reverts on measured == 0).
+        if (data.amount == 0) revert InvalidArguments();
+
         // Validate the source-stamped timestamp is not implausibly in the future. A skew tolerance absorbs
         // cross-chain clock differences on fast lanes. Replay/integrity are enforced by checksum + record.
         uint64 currentTimestamp = uint64(block.timestamp);
@@ -296,6 +302,13 @@ contract BridgeEscrow is
     }
 
     /// @inheritdoc IBridgeEscrow
+    /// @dev Deliberately **strict / all-or-nothing**: if any hash is unknown or already claimed, the whole batch
+    ///      reverts and no funds move. This differs from `markInvoiceCompleted`'s tolerant per-item batching
+    ///      (which only mutates bookkeeping and reports skips via `InvoiceCompletionFailed`) precisely because
+    ///      `claim` MOVES funds — atomic batches are auditable and never leave a keeper guessing which subset
+    ///      settled. A keeper that wants partial progress should simulate first, or fall back to per-hash
+    ///      `claim(bytes32)`. A hash claimed concurrently between simulation and inclusion reverts the batch;
+    ///      re-submit without it.
     function claim(bytes32[] calldata invoiceHashes)
         external
         override
@@ -435,6 +448,11 @@ contract BridgeEscrow is
         uint256 idx = _registeredSymbolsIndex[sym];
         if (idx == 0) revert AssetNotRegistered(symbol);
         if (_hasActiveInvoicesForAsset(sym)) revert AssetHasActiveInvoices(symbol);
+        // Also block unregistering while destination custody still holds this asset: getHeldBalance* enumerate
+        // registered symbols, so dropping the symbol would hide still-held (claimable) funds from NAV even though
+        // claim(invoiceHash) by raw hash would still pay them out. Held custody is an outstanding obligation, so
+        // it gates unregistration exactly like a source-side active invoice.
+        if (_heldClaimable[_assetRegistry[sym]] != 0) revert AssetHasActiveInvoices(symbol);
 
         uint256 lastIdx = _registeredSymbols.length;
         bytes6 lastSymbol = _registeredSymbols[lastIdx - 1];
@@ -661,7 +679,15 @@ contract BridgeEscrow is
     /// @param asset The asset address to withdraw (address(0)/ERC-7528 for native)
     /// @param amount The amount to withdraw
     /// @param to The recipient — MUST be an authorized account (no arbitrary-address sweep)
-    /// @dev Recipient-restricted (ADR 0012, H10). Reconciles nothing else: this is the last-resort path.
+    /// @dev Recipient-restricted (ADR 0012, H10). Reconciles nothing else: this is the last-resort path. In
+    ///      particular it does NOT decrement the destination-custody aggregates (`_heldClaimable` /
+    ///      `_heldByAccount`) or flip any `destinationCustody` record — consistent with its "reconciles nothing"
+    ///      stance for source-side in-transit balances. Consequence to be aware of (ADR 0024): if a break-glass
+    ///      withdrawal removes funds that were backing held custody, those custody records become unclaimable
+    ///      (`claim` reverts on the transfer) and `getHeldBalance*` / `BridgeHeldBalanceAdapter` keep reporting
+    ///      the withdrawn value until the operator manually reconciles. Only reachable while paused, and `claim`
+    ///      is `whenNotPaused`, so no claim races the withdrawal; the residual is a post-unpause NAV over-report
+    ///      that operations must clear. This is an accepted property of the last-resort path, not a silent bug.
     function emergencyWithdraw(address asset, uint256 amount, address to)
         external
         onlyRole(DEFAULT_ADMIN_ROLE)

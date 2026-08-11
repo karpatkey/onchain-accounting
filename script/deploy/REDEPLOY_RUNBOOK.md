@@ -517,12 +517,16 @@ endpoints do not answer** — including **polygon (137), a configured chain**.
 `BaseDeployScript.setUp` loads it (`BaseDeployScript.sol:28`) — but **nothing reads it after that**.
 There is no production read of `chainConfig.rpc` anywhere under `script/`, and `foundry.toml` declares
 neither `[rpc_endpoints]` nor `eth_rpc_url`, so Foundry never sees these URLs at all. The practical
-consequence is **stronger** than "19 chains are unreachable": a broadcast needs `--rpc-url` (or
-`eth_rpc_url`) on **every** chain, including the five where Alchemy does answer. A resolvable `rpc`
+consequence is **stronger** than "19 chains are unreachable": a broadcast needs an explicit
+`--rpc-url` on **every** chain, including the five where Alchemy does answer. A resolvable `rpc`
 field is not a substitute on any of them.
 
-Either enable the networks on the Alchemy app, or pass `--rpc-url` explicitly per chain from the
-per-chain `*_URL` vars. Confirm the full inventory first:
+**Supply the endpoint explicitly on every chain** — `--rpc-url` on every invocation, sourced from the
+per-chain `*_URL` vars. This is **not** an either/or with the Alchemy app:
+because `chainConfig.rpc` is inert (see below), enabling those networks does not hand Foundry an
+endpoint, so it is never a substitute for passing one. Enabling them is still worth doing — it gives you
+a good URL to pass and restores the preflight's first-choice candidate — but it is complementary, not an
+alternative. Confirm the full inventory first:
 
 ```bash
 python3 script/deploy/preflight/deployer_balances.py      # prints the endpoint each chain resolves to

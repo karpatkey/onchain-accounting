@@ -528,7 +528,7 @@ is nothing to source from: pass the provisioned endpoint to `--rpc-url` directly
 preflight to see it too, add the chain to `CHAIN_URL_ENV` (a code change, not config). Those five are the
 same chains that currently fall back to public RPCs — see the note below. This is **not** an either/or
 with the Alchemy app:
-because `chainConfig.rpc` is inert (see below), enabling those networks does not hand Foundry an
+because `chainConfig.rpc` is inert (see the paragraph above), enabling those networks does not hand Foundry an
 endpoint, so it is never a substitute for passing one. Enabling them is still worth doing — it gives you
 a good URL to pass and restores the preflight's first-choice candidate — but it is complementary, not an
 alternative. Confirm the full inventory first:

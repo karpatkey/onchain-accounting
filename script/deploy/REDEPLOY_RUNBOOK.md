@@ -1627,9 +1627,25 @@ applies to **detecting whether DeBank ran** — a skipped cross-check has no ded
 **not** license ignoring a non-zero exit in general: `Incomplete run` / exit 1 is a real signal and must
 not be waved through.
 
-Before spending anything, re-verify the allowlist is non-empty — no RPC needed: confirm
-`generate-comparison-report.py`'s `adapter_aggregated_addrs('1')` returns both Cap token addresses.
-This costs nothing and is the check whose absence let the defect run for ~8 weeks.
+Before spending anything, re-verify the allowlist is non-empty. **Do not run
+`generate-comparison-report.py` as a program to do this** — it fetches live DeBank data whenever
+`DEBANK_API_KEY` is set (`generate-comparison-report.py:1525-1529`, `:1560-1564`), which would spend the
+units this check exists to protect, and it does not print the set anyway. The helper has no CLI. Load
+the module without executing it, with the key forced empty:
+
+```bash
+DEBANK_API_KEY= python3 -c "
+import importlib.util
+s = importlib.util.spec_from_file_location('g', 'script/test/generate-comparison-report.py')
+m = importlib.util.module_from_spec(s); s.loader.exec_module(m)
+print(sorted(m.adapter_aggregated_addrs('1')))"
+```
+
+`main()` is behind an `if __name__ == "__main__"` guard (`:1724`), so importing runs no network code.
+Expect both Cap token addresses:
+`['0x88887be419578051ff9f4eb6c858a951921d8888', '0xcccc62962d17b8914c62d74ffb843d73b2a3cccc']`.
+An empty list means the allowlist is broken again — stop, do not spend units. This is the check whose
+absence let the defect run for ~8 weeks, and it costs nothing **only when invoked this way**.
 
 > **Methodology warning — the harness can answer confidently and emptily.** The first instrument used to
 > ask "does any account hold these tokens?" returned **"no chain-1 accounts, nothing to check"** and a

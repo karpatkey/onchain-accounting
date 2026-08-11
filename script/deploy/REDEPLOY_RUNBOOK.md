@@ -653,6 +653,76 @@ found later cannot be attributed: it will look like the redeploy caused it. Runn
 "did the deployed NAV already disagree with an independent source?" and establishes the reference
 figure for 2.3's before/after comparison.
 
+> ### ⚠️ SEQUENCE CHANGED — re-take the integration snapshot BEFORE capturing 0.9
+>
+> **Order: #286 (landed as `8fe1a949`) → re-take the integration snapshot → then capture 0.9.**
+>
+> **Be precise about what was wrong, because it is narrower than "0.9 is invalid".** 0.9's own method is
+> a hand capture from the DeBank UI compared against live `getAccountNavVerbose`; it does **not** read
+> `expected.<chain>.debankUsd`, so the defect below did not corrupt 0.9's output. What it corrupted is
+> the **integration harness anchor** in `test/integration/accounts.json`. Two consequences follow, and
+> both are reasons to re-take first:
+>
+> 1. **Do not cross-read the harness anchor while doing 0.9.** For `ACCOUNT_1` the committed
+>    `debankUsd` is wrong by ~5.6%, so using it as a sanity reference during the hand capture will make
+>    a correct DeBank reading look like a discrepancy — or mask a real one.
+> 2. **Capture both baselines on the same tree.** 0.9 and the harness anchor are the two DeBank-side
+>    references this deploy is judged against. Taking them from different trees leaves 2.3 comparing
+>    figures that never agreed.
+>
+> **The defect.** From the 2026-06-17 config split (`5e25464d`) until `8fe1a949`, three sites read
+> `chains/<id>.json .balanceAdapters` — a key the split removed — so the wallet-aggregating contribution
+> to the DeBank allowlist was **silently empty**. cUSD and stcUSD are deliberately not standalone
+> priceable assets, so that branch was their only path into the allowlist.
+>
+> **Evidence, so the next reader does not rediscover it.** `cast call balanceOf` for both tokens against
+> **all 12 accounts** at **mainnet block 25732915** (2026-08-11 16:21:47 UTC), symbols and decimals
+> checked at the same block:
+>
+> | account | cUSD (wei) | stcUSD (wei) |
+> | --- | --- | --- |
+> | **ACCOUNT_1** `0xa57F127099421cEffEd866C1d969f8B0F4fCdbc6` | **4990006294981847153** (~4.990006) | **4772012398045568762** (~4.772012) |
+> | the other 11 accounts | 0 | 0 |
+>
+> ```
+> omitted           ~ $9.76       (4.990006 cUSD + 4.772012 stcUSD at ~$1/token)
+> ACCOUNT_1 anchor    175.305516  (expected."1".debankUsd, as committed)
+>                     9.76 / 175.305516  =  ~5.6 %
+> harness tolerance   0.01 = 1 %
+>                     ~5.6 % / 1 %  =  roughly 5x
+> ```
+>
+> So it can **flip that account's parity assertion rather than hide in noise**, and **~5.6% is a FLOOR**:
+> stcUSD is a savings share and may price above $1. **Exposure is one account, not systemic** — the
+> other 11 hold zero of both tokens.
+>
+> ### The re-take SPENDS DEBANK UNITS — it is an explicit human authorisation, not an automatic step
+>
+> `refresh-integration-snapshot.sh` issues **one `/v1/user/all_complex_protocol_list` per account**
+> (`:537`, covers every chain) **plus one `/v1/user/token_list` per (chain × account)** (`:633`). It is
+> gated on `DEBANK_API_KEY`, and it queries `/v1/account/units` (`:127`) before spending. **Nobody
+> should run it as a side effect of "fixing the snapshot".** Decide the unit spend deliberately, and
+> expect the diff to move **exactly one account by roughly +$9.76 (~5.6%)** — that movement is the
+> correct outcome, not drift. A reviewer not told this will read a correct refresh as a regression.
+>
+> **Also re-verify the allowlist is non-empty before spending units**, no RPC needed: confirm
+> `adapter_aggregated_addrs('1')` returns both Cap token addresses. This is the check whose absence let
+> the defect run for ~8 weeks, and it costs nothing.
+>
+> ### Methodology warning — the harness can answer confidently and emptily
+>
+> The first instrument used to answer "does any account hold these tokens?" returned **"no chain-1
+> accounts, nothing to check"** and a benign verdict. It reported `chain1=no` for all 14 entries,
+> including `ACCOUNT_9_MAINNET_DIVERSIFIED`. Cause: a guessed schema key — the field is
+> **`enabledChains`**, not `chains`. Nothing errored; the wrong key returned an empty set, and an empty
+> set is indistinguishable from "clean".
+>
+> **The tell was that the result was too tidy given something already known:** `ACCOUNT_1`'s own
+> `$comment` advertises *"dust positions across Morpho/Aave V3/**Cap**/Sky/Ethena"*. The fixture was
+> built to exercise Cap. A reading showing no Cap exposure anywhere contradicted the fixture's own
+> description — and that contradiction, not the tooling, is what caught it. **Treat an empty result here
+> as unproven until something independent corroborates it.**
+
 Scope: each of the 7 configured chains, for each account in `test/integration/accounts.json` enabled
 on that chain (14 accounts; 9 on mainnet, 4 on optimism, 4 on base, 4 on arbitrum, 3 on gnosis,
 1 on polygon). Record every figure — this capture is not repeatable.

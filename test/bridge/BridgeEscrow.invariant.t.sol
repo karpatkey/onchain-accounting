@@ -64,6 +64,8 @@ contract BridgeEscrowInvariantTest is BridgeEscrowTestBase {
 
     // ============ Stateful invariant: destination custody (record + claim) ============
 
+    address internal account2 = makeAddr("custodyAccount2");
+
     function setUp() public override {
         super.setUp();
 
@@ -72,27 +74,35 @@ contract BridgeEscrowInvariantTest is BridgeEscrowTestBase {
         // the source-side unit tests above untouched.
         destEscrow = _setupDestinationChainEscrow(DEST_CHAIN_ID);
         destMock = _deployMockAdapterForEscrow(destEscrow);
-        vm.prank(admin);
+        vm.startPrank(admin);
         destEscrow.authorizeAdapter(address(destMock));
+        destEscrow.authorizeAccount(account2); // the escrow initializes with only `account` authorized
+        vm.stopPrank();
 
-        handler = new DestinationCustodyHandler(destEscrow, destMock, usdc, account, manager);
-
-        // Only the handler drives the fuzz sequences (record / claim / stray transfers).
+        // Two accounts × two assets (USDC "USDC  ", DAI "DAI   ") so the cross-account summation and per-asset
+        // separation of _heldClaimable / _heldByAccount are actually fuzzed (not trivially true).
+        handler = new DestinationCustodyHandler(destEscrow, destMock, usdc, dai, account, account2, manager);
         targetContract(address(handler));
     }
 
-    /// @notice I1 (conservation): held custody never exceeds the escrow's real balance; the aggregate equals
-    ///         both the ghost sum of unclaimed recorded amounts and the single account's held balance; and the
-    ///         escrow's balance is exactly unclaimed custody + stray funds (nothing is lost or double-counted).
+    /// @notice I1 (conservation), per asset: the aggregate (address(0)) held equals both the SUM of the two
+    ///         accounts' held balances (cross-account) and the ghost sum of unclaimed recorded amounts; and the
+    ///         escrow's real balance is exactly unclaimed custody + stray (nothing lost or double-counted).
     function invariant_I1_custodyConservation() public view {
-        uint256 heldAggregate = destEscrow.getHeldBalanceForAsset(address(usdc), address(0));
-        uint256 heldForAccount = destEscrow.getHeldBalanceForAsset(address(usdc), account);
-        uint256 escrowBalance = usdc.balanceOf(address(destEscrow));
+        for (uint256 t = 0; t < 2; t++) {
+            Mock_ERC20 tk = handler.tokenAt(t);
+            uint256 aggregate = destEscrow.getHeldBalanceForAsset(address(tk), address(0));
+            uint256 sumPerAccount = destEscrow.getHeldBalanceForAsset(address(tk), account)
+                + destEscrow.getHeldBalanceForAsset(address(tk), account2);
+            uint256 escrowBalance = tk.balanceOf(address(destEscrow));
 
-        assertEq(heldAggregate, handler.ghostUnclaimed(), "held aggregate == ghost unclaimed");
-        assertEq(heldAggregate, heldForAccount, "single account: aggregate == per-account held");
-        assertGe(escrowBalance, heldAggregate, "escrow balance covers held custody");
-        assertEq(escrowBalance, handler.ghostUnclaimed() + handler.ghostStray(), "balance == unclaimed + stray");
+            assertEq(aggregate, sumPerAccount, "aggregate == Sum of per-account held (cross-account)");
+            assertEq(aggregate, handler.ghostUnclaimedFor(t), "aggregate == ghost unclaimed (per asset)");
+            assertGe(escrowBalance, aggregate, "escrow balance covers held custody");
+            assertEq(
+                escrowBalance, handler.ghostUnclaimedFor(t) + handler.ghostStrayFor(t), "balance == unclaimed + stray"
+            );
+        }
     }
 
     /// @notice I3: a custody record claimed once can never be claimed again — a second claim reverts.
@@ -110,37 +120,41 @@ contract BridgeEscrowInvariantTest is BridgeEscrowTestBase {
         }
     }
 
-    /// @notice I6: stray funds transferred directly to the escrow are never counted as held custody, and no
-    ///         custody hash keys them (nothing to claim). The equality in I1 already excludes stray from held;
-    ///         here we additionally assert stray funds actually reached the escrow yet stayed unattributed.
+    /// @notice I6: stray funds transferred directly to the escrow are never counted as held custody. Per asset,
+    ///         stray reached the escrow yet held custody equals only the ghost unclaimed (stray excluded).
     function invariant_I6_strayFundsUnclaimable() public view {
-        assertGe(usdc.balanceOf(address(destEscrow)), handler.ghostStray(), "stray funds are in the escrow");
-        assertEq(
-            destEscrow.getHeldBalanceForAsset(address(usdc), address(0)),
-            handler.ghostUnclaimed(),
-            "stray never increases held custody"
-        );
+        for (uint256 t = 0; t < 2; t++) {
+            Mock_ERC20 tk = handler.tokenAt(t);
+            assertGe(tk.balanceOf(address(destEscrow)), handler.ghostStrayFor(t), "stray funds are in the escrow");
+            assertEq(
+                destEscrow.getHeldBalanceForAsset(address(tk), address(0)),
+                handler.ghostUnclaimedFor(t),
+                "stray never increases held custody"
+            );
+        }
     }
 }
 
-/// @notice Stateful invariant handler: an authorized mock adapter records deliveries for a fixed (account,
-///         asset) and a MANAGER claims recorded hashes, over random bounded sequences. Also transfers stray
-///         funds directly into the escrow (bypassing recordDelivery) to exercise I6. Tracks ghost sums.
+/// @notice Stateful invariant handler over **two accounts × two assets**: an authorized mock adapter records
+///         deliveries for a seed-chosen (account, token) and a MANAGER claims recorded hashes, over random
+///         bounded sequences. Also transfers stray funds directly into the escrow (bypassing recordDelivery) to
+///         exercise I6. Ghost sums are tracked PER ASSET so the cross-account/cross-asset half of I1 is fuzzed.
 contract DestinationCustodyHandler is Test {
     BridgeEscrow public immutable escrow;
     MockBridgeAdapter public immutable adapter;
-    Mock_ERC20 public immutable token;
-    address public immutable account;
     address public immutable manager;
+
+    Mock_ERC20[2] internal _tokens;
+    bytes6[2] internal _symbols;
+    address[2] internal _accounts;
 
     uint64 internal constant SRC_CHAIN_ID = 1;
     uint64 internal _destChainId;
-    bytes6 internal constant USDC_SYMBOL_BYTES6 = "USDC  ";
 
-    // Ghost accounting
-    uint256 public ghostRecorded; // Σ recorded (measured) amounts
-    uint256 public ghostClaimed; // Σ claimed amounts
-    uint256 public ghostStray; // Σ stray direct transfers
+    // Ghost accounting, per token index (0 == token0, 1 == token1)
+    uint256[2] internal _ghostRecorded; // Σ recorded (measured) amounts
+    uint256[2] internal _ghostClaimed; // Σ claimed amounts
+    uint256[2] internal _ghostStray; // Σ stray direct transfers
     uint256 internal _nonce;
 
     bytes32[] internal _recordedHashes;
@@ -150,20 +164,34 @@ contract DestinationCustodyHandler is Test {
     constructor(
         BridgeEscrow escrow_,
         MockBridgeAdapter adapter_,
-        Mock_ERC20 token_,
-        address account_,
+        Mock_ERC20 token0_,
+        Mock_ERC20 token1_,
+        address account0_,
+        address account1_,
         address manager_
     ) {
         escrow = escrow_;
         adapter = adapter_;
-        token = token_;
-        account = account_;
         manager = manager_;
+        _tokens[0] = token0_;
+        _tokens[1] = token1_;
+        _symbols[0] = "USDC  ";
+        _symbols[1] = "DAI   ";
+        _accounts[0] = account0_;
+        _accounts[1] = account1_;
         _destChainId = escrow_.chainId();
     }
 
-    function ghostUnclaimed() external view returns (uint256) {
-        return ghostRecorded - ghostClaimed;
+    function tokenAt(uint256 i) external view returns (Mock_ERC20) {
+        return _tokens[i];
+    }
+
+    function ghostUnclaimedFor(uint256 t) external view returns (uint256) {
+        return _ghostRecorded[t] - _ghostClaimed[t];
+    }
+
+    function ghostStrayFor(uint256 t) external view returns (uint256) {
+        return _ghostStray[t];
     }
 
     function claimedHashesLength() external view returns (uint256) {
@@ -174,23 +202,23 @@ contract DestinationCustodyHandler is Test {
         return _claimedHashes[i];
     }
 
-    /// @notice Record a delivery for a random amount via the authorized adapter (funds pulled from it).
-    function recordDelivery(uint256 amountSeed) external {
+    /// @notice Record a delivery for a random (account, token, amount) via the authorized adapter.
+    function recordDelivery(uint256 amountSeed, uint256 accSeed, uint256 tokSeed) external {
         uint256 amount = bound(amountSeed, 1, 1e30);
+        uint256 a = accSeed % 2;
+        uint256 t = tokSeed % 2;
         uint256 nonce = _nonce++;
-        bytes memory payload = _buildPayload(amount, nonce);
+        bytes memory payload = _buildPayload(_accounts[a], _symbols[t], amount, nonce);
 
-        // Fund the adapter and let the escrow pull exactly `amount` (standard, non-fee-on-transfer token).
-        token.mint(address(adapter), amount);
+        _tokens[t].mint(address(adapter), amount);
         vm.prank(address(adapter));
-        token.approve(address(escrow), amount);
+        _tokens[t].approve(address(escrow), amount);
 
         vm.prank(address(adapter));
         escrow.recordDelivery(payload);
 
-        bytes32 invoiceHash = bytes32(uint256(uint192(InvoiceDataLib.decode(payload).checksum24)));
-        _recordedHashes.push(invoiceHash);
-        ghostRecorded += amount;
+        _recordedHashes.push(bytes32(uint256(uint192(InvoiceDataLib.decode(payload).checksum24))));
+        _ghostRecorded[t] += amount;
     }
 
     /// @notice Claim a random previously-recorded, not-yet-claimed hash as MANAGER.
@@ -201,29 +229,38 @@ contract DestinationCustodyHandler is Test {
         for (uint256 k = 0; k < len; k++) {
             bytes32 h = _recordedHashes[(start + k) % len];
             if (_isClaimed[h]) continue;
-            (,, uint256 amount,,,) = escrow.destinationCustody(h);
+            (, address asset, uint256 amount,,,) = escrow.destinationCustody(h);
             vm.prank(manager);
             escrow.claim(h);
             _isClaimed[h] = true;
             _claimedHashes.push(h);
-            ghostClaimed += amount;
+            _ghostClaimed[_tokenIndex(asset)] += amount;
             return;
         }
     }
 
-    /// @notice Transfer stray funds directly to the escrow, bypassing recordDelivery (I6).
-    function strayTransfer(uint256 amountSeed) external {
+    /// @notice Transfer stray funds of a random token directly to the escrow, bypassing recordDelivery (I6).
+    function strayTransfer(uint256 amountSeed, uint256 tokSeed) external {
         uint256 amount = bound(amountSeed, 1, 1e24);
-        token.mint(address(this), amount);
+        uint256 t = tokSeed % 2;
+        _tokens[t].mint(address(this), amount);
         // forge-lint: disable-next-line(erc20-unchecked-transfer)
-        token.transfer(address(escrow), amount);
-        ghostStray += amount;
+        _tokens[t].transfer(address(escrow), amount);
+        _ghostStray[t] += amount;
     }
 
-    function _buildPayload(uint256 amount, uint256 nonce) internal view returns (bytes memory) {
+    function _tokenIndex(address asset) internal view returns (uint256) {
+        return asset == address(_tokens[0]) ? 0 : 1;
+    }
+
+    function _buildPayload(address account_, bytes6 symbol, uint256 amount, uint256 nonce)
+        internal
+        view
+        returns (bytes memory)
+    {
         bytes32 invoiceId = bytes32(
             (uint256(SafeCast.toUint24(SRC_CHAIN_ID)) << 232) | (uint256(SafeCast.toUint24(_destChainId)) << 208)
-                | (uint256(uint160(account)) << 48) | uint256(uint48(USDC_SYMBOL_BYTES6))
+                | (uint256(uint160(account_)) << 48) | uint256(uint48(symbol))
         );
         uint64 timestamp = uint64(block.timestamp);
         bytes24 checksum24 = InvoiceDataLib.calculateChecksum(invoiceId, amount, timestamp, nonce);
@@ -232,8 +269,8 @@ contract DestinationCustodyHandler is Test {
                 invoiceId: invoiceId,
                 sourceChainId: SafeCast.toUint24(SRC_CHAIN_ID),
                 destinationChainId: SafeCast.toUint24(_destChainId),
-                account: account,
-                assetSymbol: USDC_SYMBOL_BYTES6,
+                account: account_,
+                assetSymbol: symbol,
                 amount: amount,
                 nonce: nonce,
                 timestamp: timestamp,

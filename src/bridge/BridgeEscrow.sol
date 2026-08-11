@@ -365,8 +365,14 @@ contract BridgeEscrow is
         uint64 sourceChainId = invoice.sourceChainId;
         bytes32 invoiceId = invoice.invoiceId;
 
+        // Refund only from the surplus over destination held custody: this single contract is both the source
+        // escrow (this refund path) and the destination escrow (recordDelivery/claim), so their funds commingle
+        // in one balance. Dipping into _heldClaimable here would drain funds backing a recorded delivery and
+        // break I1, stranding that delivery's claim (ADR 0024).
         uint256 balance = _isNativeToken(asset) ? address(this).balance : IERC20(asset).balanceOf(address(this));
-        if (balance < amount) revert InsufficientBalance(asset, amount, balance);
+        uint256 held = _heldClaimableFor(asset);
+        uint256 available = balance > held ? balance - held : 0;
+        if (available < amount) revert InsufficientBalance(asset, amount, available);
 
         // Effects first (CEI).
         invoice.status = InvoiceStatus.CANCELLED;
@@ -712,12 +718,8 @@ contract BridgeEscrow is
         if (amount == 0) revert InvalidArguments();
         if (!_authorizedAccounts.contains(to)) revert NotAuthorized();
 
-        // Never dip into funds backing held custody: cap to the surplus over `_heldClaimable` (I1). Native
-        // custody may be keyed under either native representation the registry accepted (`address(0)` by
-        // convention, or the ERC-7528 sentinel), so sum both buckets for native.
-        uint256 held = _isNativeToken(asset)
-            ? _heldClaimable[address(0)] + _heldClaimable[NATIVE_ADDRESS_ERC7528]
-            : _heldClaimable[asset];
+        // Never dip into funds backing held custody: cap to the surplus over `_heldClaimable` (I1).
+        uint256 held = _heldClaimableFor(asset);
 
         if (_isNativeToken(asset)) {
             uint256 balance = address(this).balance;
@@ -757,6 +759,16 @@ contract BridgeEscrow is
     /// @notice Checks if an address represents a native token
     function _isNativeToken(address token) internal pure returns (bool) {
         return token == address(0) || token == NATIVE_ADDRESS_ERC7528;
+    }
+
+    /// @notice Total destination custody currently held for `asset` (ADR 0024).
+    /// @dev Sums both native representations (`address(0)` + the ERC-7528 sentinel) so native custody registered
+    ///      under either key is covered. Used to keep source-side refunds (`cancelInvoice`) and break-glass
+    ///      withdrawals (`emergencyWithdraw`) from dipping into funds that back recorded deliveries (invariant I1).
+    function _heldClaimableFor(address asset) internal view returns (uint256) {
+        return _isNativeToken(asset)
+            ? _heldClaimable[address(0)] + _heldClaimable[NATIVE_ADDRESS_ERC7528]
+            : _heldClaimable[asset];
     }
 
     /// @inheritdoc IBridgeEscrow

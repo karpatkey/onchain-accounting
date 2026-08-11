@@ -1,6 +1,6 @@
 # 0024 — Bridge destination: hold-then-claim (escrow custody + explicit `claim`)
 
-**Status:** proposed (supersedes the destination-release half of [ADR 0012](0012-bridge-provable-release-rearchitecture.md); several parameters below are open and flagged for sign-off)
+**Status:** accepted — implemented in PR #289 (supersedes the destination-release half of [ADR 0012](0012-bridge-provable-release-rearchitecture.md)). The parameters in "Open questions" below were **decided as part of this PR** (see the annotations there); only the cross-chain source-side interlock (item 4) remains a deliberate follow-up.
 
 ## Context
 
@@ -120,7 +120,9 @@ untouched. (Source side — `depositAndBridge`, `_bridge`, recipient = sibling a
   dest `isInvoiceCompleted`) or a prompt settlement keeper — the same source-side reconciliation the
   pass-through model already required; hold-then-claim does not remove it.
 
-## Open questions (sign-off needed — several are Santi's call)
+## Open questions → decisions (resolved in PR #289 unless noted)
+
+**Resolved and shipped in PR #289:** (1) `claim` authorization = **MANAGER/keeper** (`onlyRole(MANAGER_ROLE)`); (2) `claim` is **`whenNotPaused`**; (3) `completedInvoices` on the destination now means **"delivered into custody"** (set in `recordDelivery`); (5) reward/dust surplus is **left on the adapter** for `recoverStuckAssets` (`recordDelivery` records the exact measured amount); (6) **batch `claim(bytes32[])`** is included (strict all-or-nothing). **Still open (deliberate follow-up):** (4) the cross-chain source-side cancel/claim interlock — `cancelInvoice` is now capped so it cannot drain destination held custody (I1), but a broader source↔destination DISPATCHED interlock remains deferred. The original framing is kept below for the record.
 
 1. **`claim` authorization:** `MANAGER`/keeper (recommended — since `claim` can only pay the recorded
    account, the gate controls *timing only*, which is the whole goal) vs account-self-claim vs permissionless

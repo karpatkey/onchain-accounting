@@ -268,6 +268,95 @@ contract BridgeEscrowErrorTest is BridgeEscrowTestBase {
         destEscrow.claim(invoiceHash);
     }
 
+    /// @notice cancelInvoice must not refund a source invoice out of funds backing destination held custody:
+    ///         the two fund pools share one escrow balance, so the refund is capped to the surplus over
+    ///         _heldClaimable (I1). Regression for the hold-then-claim commingling.
+    function test_cancelInvoice_cannotDrainHeldCustody() public {
+        (BridgeEscrow destEscrow, bytes memory heldPayload, MockBridgeAdapter destMock) =
+            _setupDestinationAndValidPayload(address(usdc), 100e6);
+        // Destination custody: 100 USDC held for `account`.
+        usdc.mint(address(destMock), 100e6);
+        vm.prank(address(destMock));
+        usdc.approve(address(destEscrow), 100e6);
+        vm.prank(address(destMock));
+        destEscrow.recordDelivery(heldPayload);
+
+        // Source-side BRIDGING invoice A (50 USDC) on the same escrow.
+        usdc.mint(account, 50e6);
+        vm.prank(account);
+        usdc.approve(address(destEscrow), 50e6);
+        vm.prank(account);
+        bytes32 invoiceA = destEscrow.depositAndBridge(SOURCE_CHAIN_ID, USDC_SYMBOL, 50e6, address(destMock));
+
+        // Simulate A's funds having left the escrow to the bridge: force the balance back to exactly the held
+        // amount. Now only custody funds remain.
+        deal(address(usdc), address(destEscrow), 100e6);
+
+        // cancelInvoice(A) must revert rather than pay A out of B's custody (available surplus = 100 - 100 = 0).
+        vm.prank(manager);
+        vm.expectRevert(abi.encodeWithSelector(IBridgeEscrow.InsufficientBalance.selector, address(usdc), 50e6, 0));
+        destEscrow.cancelInvoice(invoiceA);
+
+        // Held custody is intact and still claimable.
+        bytes32 heldHash = bytes32(uint256(uint192(InvoiceDataLib.decode(heldPayload).checksum24)));
+        vm.prank(manager);
+        destEscrow.claim(heldHash);
+        assertEq(destEscrow.getHeldBalanceForAsset(address(usdc), account), 0, "held cleared by claim");
+    }
+
+    /// @notice Batch claim settles multiple records: each recorded amount is paid to the recorded account and the
+    ///         held aggregates are decremented per record.
+    function test_claimBatch_settlesMultipleRecords() public {
+        (BridgeEscrow destEscrow,, MockBridgeAdapter destMock) = _setupDestinationAndValidPayload(address(usdc), 1);
+
+        bytes memory p1 = InvoiceDataLib.encode(
+            _createInvoiceData(SOURCE_CHAIN_ID, DEST_CHAIN_ID, account, USDC_SYMBOL_BYTES6, 100e6)
+        );
+        bytes memory p2 = InvoiceDataLib.encode(
+            _createInvoiceData(SOURCE_CHAIN_ID, DEST_CHAIN_ID, account, USDC_SYMBOL_BYTES6, 200e6)
+        );
+        usdc.mint(address(destMock), 300e6);
+        vm.startPrank(address(destMock));
+        usdc.approve(address(destEscrow), 300e6);
+        destEscrow.recordDelivery(p1);
+        destEscrow.recordDelivery(p2);
+        vm.stopPrank();
+
+        bytes32[] memory hashes = new bytes32[](2);
+        hashes[0] = bytes32(uint256(uint192(InvoiceDataLib.decode(p1).checksum24)));
+        hashes[1] = bytes32(uint256(uint192(InvoiceDataLib.decode(p2).checksum24)));
+
+        uint256 before = usdc.balanceOf(account);
+        vm.prank(manager);
+        destEscrow.claim(hashes);
+
+        assertEq(usdc.balanceOf(account) - before, 300e6, "both records paid");
+        assertEq(destEscrow.getHeldBalanceForAsset(address(usdc), account), 0, "held fully cleared");
+    }
+
+    /// @notice Batch claim is strict/all-or-nothing: one bad hash reverts the whole batch and moves no funds.
+    function test_RevertWhen_claimBatch_atomicOnBadHash() public {
+        (BridgeEscrow destEscrow, bytes memory payload, MockBridgeAdapter destMock) =
+            _setupDestinationAndValidPayload(address(usdc), 100e6);
+        usdc.mint(address(destMock), 100e6);
+        vm.prank(address(destMock));
+        usdc.approve(address(destEscrow), 100e6);
+        vm.prank(address(destMock));
+        destEscrow.recordDelivery(payload);
+        bytes32 good = bytes32(uint256(uint192(InvoiceDataLib.decode(payload).checksum24)));
+
+        bytes32[] memory hashes = new bytes32[](2);
+        hashes[0] = good;
+        hashes[1] = keccak256("no-such-custody");
+
+        vm.prank(manager);
+        vm.expectRevert(abi.encodeWithSelector(InvoiceNotFound.selector));
+        destEscrow.claim(hashes);
+
+        // The good record was NOT settled — the whole batch reverted.
+        assertEq(destEscrow.getHeldBalanceForAsset(address(usdc), account), 100e6, "no partial settlement");
+    }
+
     // ============ cancelInvoice reverts ============
 
     function test_RevertWhen_cancelInvoice_notManager() public {

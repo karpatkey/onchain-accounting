@@ -135,8 +135,9 @@ abstract contract BridgeAdapter is AccessControl, ReentrancyGuard, IBridgeAdapte
     /// @inheritdoc IBridgeAdapter
     /// @dev MANAGER-operated completion path. The adapter's `_completeBridge` performs protocol-specific
     ///      verification (e.g. CCTP attestation, OP withdrawal finalization) and ensures the adapter holds
-    ///      the delivered `amount` of the asset; the base then funds the escrow and releases atomically
-    ///      (funded pass-through, ADR 0012).
+    ///      the delivered `amount` of the asset; the base then funds the escrow's per-invoice custody record via
+    ///      `_fundAndRelease` → `recordDelivery` (ADR 0024 hold-then-claim). It does **not** pay the account here —
+    ///      the escrow HOLDS the funds until a separate MANAGER `BridgeEscrow.claim(invoiceHash)`.
     function completeBridge(bytes calldata messagePayload, bytes calldata protocolData) external override nonReentrant {
         if (!hasRole(MANAGER_ROLE, msg.sender)) revert NotAuthorized();
         if (messagePayload.length == 0) revert InvalidCompletionData();

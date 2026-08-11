@@ -602,49 +602,6 @@ Note the
 2026-07-29 linea comparison above is now stale on its second number only: linea still holds 0.03066 ETH,
 but the estimate for it is now **0.00293**, not 0.02800 — the balance figure aged well, the estimate did not.
 
-> ### ⚠️ WHICH CHAINS THIS GATE IS AUTHORITATIVE FOR — it is not "all 24"
->
-> `none — every priced chain is funded` says the balance cleared **the estimate**. It does not say the
-> estimate included every cost the chain charges. Per **open issue #287**, it does not on 9 of 24:
-> `deployer_balances.py` prices as `(gasUnits × gasPrice) × headroom` and models **no L1
-> data-availability fee**, which rollups charge on top. On scroll that term measured **~99.9% of total
-> cost**, so an execution-only figure there is a **lower bound, not an estimate**.
->
-> | chains | count | what the gate is worth |
-> | --- | --- | --- |
-> | 534352 scroll | 1 | **No finding.** `UNPRICEABLE` by design — no L1 term is modelled, so no number would be honest |
-> | 100 gnosis | 1 | **Today: no finding** — `UNPRICEABLE` (near-zero base fee); funding rests on the out-of-band confirmation above. **After #284 lands** it is priced from a pinned 2 gwei and leaves this row |
-> | 10, 130, 204, 480, 5000, 8453, 42220, 57073 | 8 | **Priced, but on an understated basis** — OP-stack chains priced with **no L1-DA term**. Margins are large (optimism holds 0.0149 against a 0.00005 execution need) but that is unmeasured reasoning, not a measurement |
-> | the remaining 14 | 14 | Priced from the node with no known omission — **but "not named by #287" is absence of a measurement, not a clearance.** Arbitrum (42161) and linea (59144) are rollups too; their L1-cost handling has not been verified here |
->
-> ### A PERSISTENT `not clear to deploy` IS THE GATE WORKING — do not read it as a regression
->
-> **On `main` today** (`8fe1a949`, #284 not yet merged) the run reports **0 short, 0 unreachable,
-> 2 unpriceable** — gnosis and scroll — and exits non-zero.
->
-> **Once #284 lands** gnosis and plasma are priced from pinned constants and scroll **fails closed**,
-> so the run becomes **0 short, 0 unreachable, 1 unpriceable** and *still* exits non-zero with
-> `not clear to deploy`. **It will keep saying that on every run until #287 lands or scroll is
-> explicitly waived.** That is the designed behaviour: scroll's L1-DA term is ~99.9% of its cost and is
-> not modelled, so the tool refuses to print a number it cannot stand behind rather than emitting a
-> green row from L2 gas alone.
->
-> **So do not treat a red verdict here as something to fix, and do not "fix" it by raising a floor or
-> silencing the row.** The two legitimate exits are: land #287 so the fee is modelled, or record an
-> explicit waiver for scroll — a named person, a date, and the basis, exactly as 0.6 requires for any
-> chain the tool cannot clear. Deploy day is the wrong moment to first discover the gate is red by
-> design.
->
-> **So a green run authorises nothing on 10 of 24 chains, and rests on unmeasured reasoning on 8 of
-> those.** Do not read "0 short" as "funding verified across the board". Until #287 lands, size scroll
-> and the OP-stack chains from something other than this tool — or top their deployers up generously,
-> which removes the dependence on getting the measurement right at all.
->
-> Two things #287 already settled, so nobody re-derives them: use the oracle's own `getL1Fee(bytes)`
-> and never reconstruct the formula (a reconstruction understated the real figure **~27×**), and do not
-> quote a single-variable "flip point" — post-Curie the fee has two independent drivers, so
-> "flips once `l1BaseFee` > X" is not a flip condition.
-
 **The script still exits non-zero and prints `not clear to deploy`, and the reason is the two
 unpriceable chains, not a shortfall.** Measured the same day:
 
@@ -695,85 +652,6 @@ python3 script/deploy/preflight/bytecode_audit.py --self-test
 found later cannot be attributed: it will look like the redeploy caused it. Running it now answers
 "did the deployed NAV already disagree with an independent source?" and establishes the reference
 figure for 2.3's before/after comparison.
-
-> ### ⚠️ SEQUENCE CHANGED — re-take the integration snapshot BEFORE capturing 0.9
->
-> **Order: #286 (landed as `8fe1a949`) → re-take the integration snapshot → then capture 0.9.**
->
-> **The re-take is gated on exactly two things: #286, which has landed, and a human authorising the
-> DeBank unit spend below. Nothing else.** In particular it is **not** gated on any `src/` work. A
-> later change to which adapter supplies the wallet-aggregating tokens does not invalidate an anchor
-> captured now: the allowlist's output is the token addresses, and those are constructor arguments of
-> the Cap adapters whatever the adapter is called. If a future PR breaks that registry, that is a
-> defect to catch in *that* PR's review — not a reason to hold this capture. Do not couple the
-> snapshot re-take to the deploy-ordering work (fork-rehearsal invalidation, library-pin
-> regeneration); those gate the DEPLOY, not this snapshot.
->
-> **Be precise about what was wrong, because it is narrower than "0.9 is invalid".** 0.9's own method is
-> a hand capture from the DeBank UI compared against live `getAccountNavVerbose`; it does **not** read
-> `expected.<chain>.debankUsd`, so the defect below did not corrupt 0.9's output. What it corrupted is
-> the **integration harness anchor** in `test/integration/accounts.json`. Two consequences follow, and
-> both are reasons to re-take first:
->
-> 1. **Do not cross-read the harness anchor while doing 0.9.** For `ACCOUNT_1` the committed
->    `debankUsd` is wrong by ~5.6%, so using it as a sanity reference during the hand capture will make
->    a correct DeBank reading look like a discrepancy — or mask a real one.
-> 2. **Capture both baselines on the same tree.** 0.9 and the harness anchor are the two DeBank-side
->    references this deploy is judged against. Taking them from different trees leaves 2.3 comparing
->    figures that never agreed.
->
-> **The defect.** From the 2026-06-17 config split (`5e25464d`) until `8fe1a949`, three sites read
-> `chains/<id>.json .balanceAdapters` — a key the split removed — so the wallet-aggregating contribution
-> to the DeBank allowlist was **silently empty**. cUSD and stcUSD are deliberately not standalone
-> priceable assets, so that branch was their only path into the allowlist.
->
-> **Evidence, so the next reader does not rediscover it.** `cast call balanceOf` for both tokens against
-> **all 12 accounts** at **mainnet block 25732915** (2026-08-11 16:21:47 UTC), symbols and decimals
-> checked at the same block:
->
-> | account | cUSD (wei) | stcUSD (wei) |
-> | --- | --- | --- |
-> | **ACCOUNT_1** `0xa57F127099421cEffEd866C1d969f8B0F4fCdbc6` | **4990006294981847153** (~4.990006) | **4772012398045568762** (~4.772012) |
-> | the other 11 accounts | 0 | 0 |
->
-> ```
-> omitted           ~ $9.76       (4.990006 cUSD + 4.772012 stcUSD at ~$1/token)
-> ACCOUNT_1 anchor    175.305516  (expected."1".debankUsd, as committed)
->                     9.76 / 175.305516  =  ~5.6 %
-> harness tolerance   0.01 = 1 %
->                     ~5.6 % / 1 %  =  roughly 5x
-> ```
->
-> So it can **flip that account's parity assertion rather than hide in noise**, and **~5.6% is a FLOOR**:
-> stcUSD is a savings share and may price above $1. **Exposure is one account, not systemic** — the
-> other 11 hold zero of both tokens.
->
-> ### The re-take SPENDS DEBANK UNITS — it is an explicit human authorisation, not an automatic step
->
-> `refresh-integration-snapshot.sh` issues **one `/v1/user/all_complex_protocol_list` per account**
-> (`:537`, covers every chain) **plus one `/v1/user/token_list` per (chain × account)** (`:633`). It is
-> gated on `DEBANK_API_KEY`, and it queries `/v1/account/units` (`:127`) before spending. **Nobody
-> should run it as a side effect of "fixing the snapshot".** Decide the unit spend deliberately, and
-> expect the diff to move **exactly one account by roughly +$9.76 (~5.6%)** — that movement is the
-> correct outcome, not drift. A reviewer not told this will read a correct refresh as a regression.
->
-> **Also re-verify the allowlist is non-empty before spending units**, no RPC needed: confirm
-> `adapter_aggregated_addrs('1')` returns both Cap token addresses. This is the check whose absence let
-> the defect run for ~8 weeks, and it costs nothing.
->
-> ### Methodology warning — the harness can answer confidently and emptily
->
-> The first instrument used to answer "does any account hold these tokens?" returned **"no chain-1
-> accounts, nothing to check"** and a benign verdict. It reported `chain1=no` for all 14 entries,
-> including `ACCOUNT_9_MAINNET_DIVERSIFIED`. Cause: a guessed schema key — the field is
-> **`enabledChains`**, not `chains`. Nothing errored; the wrong key returned an empty set, and an empty
-> set is indistinguishable from "clean".
->
-> **The tell was that the result was too tidy given something already known:** `ACCOUNT_1`'s own
-> `$comment` advertises *"dust positions across Morpho/Aave V3/**Cap**/Sky/Ethena"*. The fixture was
-> built to exercise Cap. A reading showing no Cap exposure anywhere contradicted the fixture's own
-> description — and that contradiction, not the tooling, is what caught it. **Treat an empty result here
-> as unproven until something independent corroborates it.**
 
 Scope: each of the 7 configured chains, for each account in `test/integration/accounts.json` enabled
 on that chain (14 accounts; 9 on mainnet, 4 on optimism, 4 on base, 4 on arbitrum, 3 on gnosis,
@@ -1649,6 +1527,45 @@ expected NAVs from live addresses, and the redeploy replaces every one of them. 
 would pin the old stack and be invalidated by the deploy it was meant to guard — so the pre-deploy
 slot belongs to 0.9 (DeBank parity), which is only possible while the old stack exists, and the
 refresh belongs here, once the new addresses are recorded.
+
+**The allowlist defect this refresh used to carry is fixed — expect ACCOUNT_1's DeBank anchor to move.**
+From the 2026-06-17 config split (`5e25464d`) until `8fe1a949` (#286), three sites read
+`chains/<id>.json .balanceAdapters`, a key the split removed, so the wallet-aggregating contribution to
+the DeBank allowlist was **silently empty**. cUSD and stcUSD are deliberately not standalone priceable
+assets, so that branch was their only path in.
+
+Verified by direct read — `cast call balanceOf` for both tokens against **all 12 accounts** at **mainnet
+block 25732915** (2026-08-11 16:21:47 UTC): **ACCOUNT_1 holds ~4.990006 cUSD and ~4.772012 stcUSD**; the
+other 11 hold **zero of both**. So ~**$9.76** was missing from its anchor, against a recorded
+`debankUsd` of `175.305516` — about **5.6%** of that figure.
+
+**Material, but do not overstate it: it does not flip a parity verdict.** ACCOUNT_1's committed
+`navUsd8dp` is ~$218.96, so the NAV-vs-DeBank drift is ~19.9% before the fix and ~15.5% after — the
+account sits far outside the 1% tolerance either way, and its own `$comment` already documents an
+expected ~12% drift. The correction moves the anchor toward NAV; it does not change a pass into a fail.
+
+**This script is a full re-baseline, so more than one account will move.** It bumps every chain's
+`forkBlock`, recomputes every `navUsd8dp`, and refetches DeBank for every enabled (chain × account).
+Only the change *attributable to the allowlist fix* is isolated to ACCOUNT_1 — every other moved field
+still needs reviewing on its own merits.
+
+**It also spends DeBank units, so treat the run as an explicit authorisation, not a routine step.** One
+`/v1/user/all_complex_protocol_list` per account (`:537`, covers every chain) plus one
+`/v1/user/token_list` per (chain × account) (`:633`), gated on `DEBANK_API_KEY`, with
+`/v1/account/units` queried first (`:127`).
+
+Before spending anything, re-verify the allowlist is non-empty — no RPC needed: confirm
+`generate-comparison-report.py`'s `adapter_aggregated_addrs('1')` returns both Cap token addresses.
+This costs nothing and is the check whose absence let the defect run for ~8 weeks.
+
+> **Methodology warning — the harness can answer confidently and emptily.** The first instrument used to
+> ask "does any account hold these tokens?" returned **"no chain-1 accounts, nothing to check"** and a
+> benign verdict, reporting `chain1=no` for all 14 entries including `ACCOUNT_9_MAINNET_DIVERSIFIED`.
+> Cause: a guessed schema key — the field is **`enabledChains`**, not `chains`. Nothing errored; the
+> wrong key returned an empty set, and an empty set reads exactly like "clean". The tell was that the
+> result was **too tidy given something already known**: ACCOUNT_1's own `$comment` advertises *"dust
+> positions across Morpho/Aave V3/**Cap**/Sky/Ethena"*. Treat an empty result here as unproven until
+> something independent corroborates it.
 
 PR #174 (the bot's snapshot refresh) was **closed, not merged**, so nothing has refreshed these since
 before the wave. That is outstanding independently of this deploy and should not be mistaken for

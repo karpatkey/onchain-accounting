@@ -570,7 +570,12 @@ topped up once on 2026-07-27 without clearing, so measure rather than assume.
 
 **Re-measured 2026-08-10 against `main` @ `08cff61d`** (`python3 script/deploy/preflight/deployer_balances.py`):
 **24 chains scoped, 0 unreachable, 0 short, 2 unpriceable.** The top-up list came back
-`none — every priced chain is funded for the estimated gas`, so **funding is not the blocker**. Note the
+`none — every priced chain is funded for the estimated gas`. Read that scope literally: **it clears the
+22 priced chains and says nothing about the other two.** The script files gnosis and scroll under
+`NOT PRICED (these chains were not checked, and are not OK)`, so their funding adequacy is **not**
+established here — it rests on the out-of-band confirmation recorded in the UNPRICEABLE paragraph below.
+So: no priced chain needs a top-up, and what stops the deploy is the two unpriceable chains rather than
+a measured shortfall. Note the
 2026-07-29 linea comparison above is now stale on its second number only: linea still holds 0.03066 ETH,
 but the estimate for it is now **0.00293**, not 0.02800 — the balance figure aged well, the estimate did not.
 

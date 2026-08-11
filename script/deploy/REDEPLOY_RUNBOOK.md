@@ -579,8 +579,14 @@ topped up once on 2026-07-27 without clearing, so measure rather than assume.
 22 priced chains and says nothing about the other two.** The script files gnosis and scroll under
 `NOT PRICED (these chains were not checked, and are not OK)`, so their funding adequacy is **not**
 established here — it rests on the out-of-band confirmation recorded in the UNPRICEABLE paragraph below.
-So: no priced chain needs a top-up, and what stops the deploy is the two unpriceable chains rather than
-a measured shortfall. Note the
+So: **no priced chain needs a top-up**, and the two unpriceable chains are not a funding blocker either —
+this section's own record below states their funding "has been confirmed sufficient out of band". What
+stays non-green is the **script**, and it stays that way **permanently and by design**: `UNPRICEABLE`
+reflects the chain's own `eth_gasPrice`, not a state anyone can top up, so **re-running
+`deployer_balances.py` will never clear it**. Read 0.6 accordingly — for those two chains the gate is
+satisfied by the out-of-band confirmation and *not* by the tool, so record who confirmed it and when,
+because the tool structurally cannot. A non-zero exit here is the expected steady state, not a
+remediable failure. Note the
 2026-07-29 linea comparison above is now stale on its second number only: linea still holds 0.03066 ETH,
 but the estimate for it is now **0.00293**, not 0.02800 — the balance figure aged well, the estimate did not.
 

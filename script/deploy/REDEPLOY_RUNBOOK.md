@@ -611,7 +611,7 @@ but the estimate for it is now **0.00293**, not 0.02800 — the balance figure a
 >
 > | chains | n | status |
 > | --- | --- | --- |
-> | `10, 130, 204, 480, 5000, 8453, 42220, 57073` | 8 | **Pass, with a documented omission.** Measured: for any of these to flip, the L1-DA term would have to be **10× to 996× the entire current need**. The margins are not close, so the omission does not change their verdicts |
+> | `10, 130, 204, 480, 5000, 8453, 42220, 57073` | 8 | **Pass, with a documented omission.** Measured margins (balance ÷ current need) are **10× to 996×**. A row flips once the added fee exceeds `balance − need`, so the **flip thresholds are ~9× to ~995× the current need** — the two are different quantities, do not quote the margin as the threshold. Either way the margins are nowhere near close, so the omission does not change these verdicts |
 > | `534352` scroll | 1 | **Stays failed closed.** ~99.9% of its cost is the unmodelled term, so no honest number exists for it |
 > | `100` gnosis | 1 | Unpriceable today (near-zero base fee); priced from a pinned 2 gwei once #284 lands |
 > | the remaining 14 | 14 | No known omission — but that is **absence of a measurement, not a clearance** |
@@ -627,8 +627,9 @@ but the estimate for it is now **0.00293**, not 0.02800 — the balance figure a
 > #287 alone to make this preflight green while #284 is open, and do not read the residual gnosis
 > failure as a regression. That is the gate working, not a regression. **Do not "fix" it by raising a floor
 > or silencing the row** — a 1 gwei floor was already measured reporting `TOP UP` on **11 of 24**
-> amply-funded chains. The two legitimate exits are landing #287, or recording a waiver for scroll with
-> a named person, a date and the basis.
+> amply-funded chains. **Once #284 has landed**, the two legitimate exits are landing #287, or recording
+> a waiver for scroll with a named person, a date and the basis. **Neither is sufficient today** — while
+> #284 is open, gnosis holds the gate red regardless of what happens to scroll.
 >
 > One caveat on wording, because the mechanism is threshold-driven rather than intentional: on `main`
 > today scroll is unpriceable only because `priceable = quoted >= GAS_PRICE_IMPLAUSIBLE_WEI`
@@ -1591,8 +1592,12 @@ still needs reviewing on its own merits.
 **A skipped DeBank step is NOT an acceptable completion of this re-baseline, and it fails quietly.** The
 cross-check is conditional: with `DEBANK_API_KEY` unset the script prints *"DEBANK_API_KEY not set —
 DeBank cross-check skipped"*, and if the units probe returns no balance it prints *"proceeding without
-DeBank cross-check"* — in both cases it continues, exits normally, and **leaves every existing
-`debankUsd` untouched**. The whole point of this re-baseline is ACCOUNT_1's corrected anchor, so a run
+DeBank cross-check"* — in both cases it continues and **leaves every existing `debankUsd` untouched**.
+**Do not use the exit code to tell whether this happened.** There is no dedicated failure for skipping
+DeBank, and the run can still exit non-zero for an unrelated reason: step 4 evaluates the *retained*
+anchors against tolerance and exits 2 on a violation — and ACCOUNT_1 already exceeds 1%, as recorded
+below. So a non-zero exit does not mean DeBank ran, and a zero exit does not mean it did. **The
+field-change check is the authoritative verification, not the exit status.** The whole point of this re-baseline is ACCOUNT_1's corrected anchor, so a run
 that skipped DeBank has not done it. **Prerequisites are therefore: authorisation for the unit spend AND
 a working key with units available.** Afterwards, confirm `expected."1".debankUsd` for ACCOUNT_1 actually
 changed — an unchanged value means the step was skipped, not that nothing needed correcting.

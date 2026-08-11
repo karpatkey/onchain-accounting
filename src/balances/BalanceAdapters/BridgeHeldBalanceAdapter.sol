@@ -28,7 +28,10 @@ import {ProtocolNames} from "src/utils/ProtocolNames.sol";
 ///         cross-chain NAV that sums both escrows double-counts during that settlement gap. Netting source
 ///         in-transit against destination delivery (source `getActiveInvoices` × dest `isInvoiceCompleted`) or a
 ///         prompt settlement keeper is required to close it — the same operational requirement the source-side
-///         in-transit accounting already carries; hold-then-claim does not remove it.
+///         in-transit accounting already carries; hold-then-claim does not remove it. Note: the
+///         `isInvoiceCompleted(hash)` half only matches for bridges whose destination hash equals the source
+///         hash; Stargate re-encodes a post-fee payload (different hash), so a Stargate lane must be netted on
+///         the source `markInvoiceCompleted` signal, not by destination hash-matching.
 /// @dev Immutable, view-only, per-chain: pin the destination `BridgeEscrow` for this chain in the constructor. Every
 ///      leg is `PositionKind.Supplied` with `isLocked = true` (the account owns the value but cannot use it until a
 ///      claim moves it to the safe). Only assets registered on `NAVCalculator` are emitted (unregistered held assets
@@ -98,8 +101,11 @@ contract BridgeHeldBalanceAdapter is BalanceAdapterBase {
         view
         returns (uint256 amount, bool isDebt)
     {
-        if (account == address(0) || asset == address(0)) return (0, false);
-        if (asset == NATIVE_ASSET) {
+        if (account == address(0)) return (0, false);
+        // Native queried via either representation (`address(0)` — the escrow's key — or the ERC-7528 sentinel)
+        // sums both keys the escrow might hold custody under. `address(0)` here means "the native asset", not
+        // "no asset", consistent with this function's natspec and the escrow's registration convention.
+        if (asset == address(0) || asset == NATIVE_ASSET) {
             return (
                 BRIDGE_ESCROW.getHeldBalanceForAsset(address(0), account)
                     + BRIDGE_ESCROW.getHeldBalanceForAsset(NATIVE_ASSET, account),
@@ -152,6 +158,20 @@ contract BridgeHeldBalanceAdapter is BalanceAdapterBase {
 
             (INAVCalculator.Asset memory assetMeta, bool found) = RegisteredAssetLib.find(registered, asset);
             if (!found) continue; // unregistered assets cannot be priced — skip (under-report, safe direction)
+
+            // Merge into an existing leg for the same normalized asset instead of emitting a second one — a
+            // misconfigured escrow that keyed native under BOTH address(0) and the sentinel would otherwise
+            // produce two legs with an identical stable identity key (same positionId), colliding for an
+            // identity-keyed reconciliation consumer.
+            bool merged;
+            for (uint256 j; j < count; ++j) {
+                if (tmp[j].balanceAsset.asset == assetMeta.asset) {
+                    tmp[j].amount += amount;
+                    merged = true;
+                    break;
+                }
+            }
+            if (merged) continue;
 
             tmp[count++] = INAVCalculator.PositionBalance({
                 balanceAsset: assetMeta,

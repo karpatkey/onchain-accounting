@@ -77,9 +77,12 @@ require record exists and `!claimed`, flip `claimed`, decrement aggregates, tran
   authenticator — provenance remains in the adapter (unchanged from ADR 0012).
 - **I3 No double-claim:** `claimed` flips `false→true` once; aggregates decrement once.
 - **I4 Claim pays only the recorded account,** exactly `amount` of the recorded `asset`; no argument redirects it.
-- **I5 Cancel/claim non-interference:** source-side `cancelInvoice` (touches `invoices`/in-transit) and
-  destination `claim` (touches custody) are different maps on different chains/instances — they cannot
-  double-spend one balance.
+- **I5 Cancel/claim non-interference:** source-side `cancelInvoice` and destination `claim` touch different
+  bookkeeping maps (`invoices`/in-transit vs `destinationCustody`), but on a single per-chain escrow they draw
+  on the **same token balance** — the two fund pools commingle. So non-interference is NOT structural; it is
+  enforced explicitly: `cancelInvoice` (and `emergencyWithdraw`) cap their outflow to the **surplus over
+  `_heldClaimableFor(asset)`**, so a source refund can never spend the balance backing a recorded delivery,
+  and `claim` pays only from the recorded custody. That cap is what makes I1 hold across both paths.
 - **I6 Stray funds are never claimable:** funds arriving other than via `recordDelivery` (open `receive()`,
   direct transfer, surplus above the exact pull) are in `balanceOf` but not in `_heldClaimable`; only the
   paused, recipient-restricted `emergencyWithdraw` can move them. (Hence `>=`, not `==`, in I1.)
@@ -118,7 +121,10 @@ untouched. (Source side — `depositAndBridge`, `_bridge`, recipient = sibling a
   in-transit clears only at the later `markInvoiceCompleted`, so a cross-chain NAV summing both escrows
   double-counts during that settlement gap. Closing it needs read-time netting (source `getActiveInvoices` ×
   dest `isInvoiceCompleted`) or a prompt settlement keeper — the same source-side reconciliation the
-  pass-through model already required; hold-then-claim does not remove it.
+  pass-through model already required; hold-then-claim does not remove it. **Stargate caveat:** its destination
+  `invoiceHash` differs from the source (post-fee re-encode), so `isInvoiceCompleted(sourceHash)` never fires
+  on the destination — a Stargate lane must be netted via the source-side `markInvoiceCompleted`, not by
+  destination hash-matching, or a keeper following the literal recipe double-counts it.
 
 ## Open questions → decisions (resolved in PR #289 unless noted)
 

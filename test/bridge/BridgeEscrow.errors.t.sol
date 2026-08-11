@@ -373,6 +373,20 @@ contract BridgeEscrowErrorTest is BridgeEscrowTestBase {
         bridgeEscrow.cancelInvoice(invoiceHash);
     }
 
+    /// @notice cancelInvoice is whenNotPaused: like the other fund-moving entrypoints, a pause freezes it
+    ///         (emergencyWithdraw remains the paused break-glass).
+    function test_RevertWhen_cancelInvoice_whenPaused() public {
+        _approveToken(address(usdc), address(bridgeEscrow), BRIDGE_AMOUNT);
+        vm.prank(account);
+        bytes32 invoiceHash =
+            bridgeEscrow.depositAndBridge(DEST_CHAIN_ID, USDC_SYMBOL, BRIDGE_AMOUNT, address(mockAdapter));
+        vm.prank(admin);
+        bridgeEscrow.pause();
+        vm.prank(manager);
+        vm.expectRevert(); // EnforcedPause
+        bridgeEscrow.cancelInvoice(invoiceHash);
+    }
+
     function test_RevertWhen_cancelInvoice_invoiceNotFound() public {
         vm.prank(manager);
         vm.expectRevert(abi.encodeWithSelector(InvoiceNotFound.selector));

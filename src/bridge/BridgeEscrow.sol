@@ -353,7 +353,7 @@ contract BridgeEscrow is
     /// @inheritdoc IBridgeEscrow
     /// @dev Source-chain bridge-failure recovery. Full CEI + nonReentrant: all bookkeeping completes before
     ///      the refund transfer leaves the contract.
-    function cancelInvoice(bytes32 invoiceHash) external override onlyRole(MANAGER_ROLE) nonReentrant {
+    function cancelInvoice(bytes32 invoiceHash) external override onlyRole(MANAGER_ROLE) nonReentrant whenNotPaused {
         Invoice storage invoice = invoices[invoiceHash];
 
         if (invoice.invoiceId == bytes32(0)) revert InvoiceNotFound();
@@ -664,6 +664,11 @@ contract BridgeEscrow is
     ///      scans authorized accounts, so revoking an account with in-flight invoices would hide them and let
     ///      `registerAsset`/`unregisterAsset` repoint/remove a symbol that still has pending destination
     ///      releases. Blocking the revoke keeps that guard complete.
+    /// @dev Operational caveat: these guards only see state THIS escrow already holds. A cross-chain delivery
+    ///      that is in flight but not yet recorded on this (destination) escrow is invisible here, so revoking an
+    ///      account mid-flight will make its eventual `recordDelivery` revert (`NotAuthorized`) and leave the
+    ///      delivered funds on the adapter — recoverable via the adapter's `recoverStuckAssets`, but a manual
+    ///      step. Revoke an account only once it has no in-flight bridge transfers.
     function revokeAccount(address safe) external onlyRole(DEFAULT_ADMIN_ROLE) {
         if (_activeInvoices[safe].length > 0) revert AccountHasActiveInvoices(safe);
         // Also block revoke while the account still has outstanding destination held custody (ADR 0024): the

@@ -192,6 +192,27 @@ contract BridgeHeldBalanceAdapterTest is Test {
         assertTrue(seen, "native surfaced as the NAV sentinel");
     }
 
+    function test_positions_nativeDualKey_mergedNoCollision() public {
+        // A misconfigured escrow holds native custody under BOTH address(0) and the ERC-7528 sentinel.
+        escrow.registerAsset("ETH", address(0));
+        escrow.registerAsset("ETH2", NATIVE);
+        escrow.setHeld(account, address(0), 5 ether);
+        escrow.setHeld(account, NATIVE, 3 ether);
+        nav.registerAsset(NATIVE, 18, "ETH");
+
+        // Both keys normalize to the sentinel and MERGE into a single leg (no identical-positionId collision).
+        INAVCalculator.PositionBalance[] memory p = adapter.getAdapterPositions(account, address(0));
+        assertEq(p.length, 1, "dual native keys merge into one leg");
+        assertEq(p[0].balanceAsset.asset, NATIVE);
+        assertEq(p[0].amount, 8 ether, "amounts summed");
+
+        // Point queries via either native representation sum both keys consistently.
+        (uint256 a0,) = adapter.getAdapterBalanceForAsset(account, address(0));
+        (uint256 aS,) = adapter.getAdapterBalanceForAsset(account, NATIVE);
+        assertEq(a0, 8 ether, "address(0) query sums both native keys");
+        assertEq(aS, 8 ether, "sentinel query sums both native keys");
+    }
+
     function test_positions_emptyForZeroAccount() public view {
         INAVCalculator.PositionBalance[] memory p = adapter.getAdapterPositions(address(0), address(0));
         assertEq(p.length, 0);

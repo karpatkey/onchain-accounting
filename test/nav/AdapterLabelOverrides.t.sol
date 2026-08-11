@@ -10,6 +10,11 @@ import {aa} from "test/helpers/AdapterArray.sol";
 import {Mock_CustomBalanceAdapter} from "test/mocks/balance_adapters.sol";
 import {RawReplier} from "test/mocks/RawReplier.sol";
 
+/// @dev ERC-1967 implementation slot (`keccak256("eip1967.proxy.implementation") - 1`). Used to locate the UUPS
+///      implementation behind the NAV proxy so `_coolAll` can cool it: it is a separate account, and the proxy's
+///      first DELEGATECALL into it on a fresh call pays a cold-account premium.
+bytes32 constant ERC1967_IMPL_SLOT = 0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc;
+
 /// @notice Adapter shaped like the meta family: a constant `protocolName()` plus a `[category, leaf]` pair whose leaf
 ///         is re-read on every call, so a frozen leaf would be detectable.
 contract LabelledAdapter is Mock_CustomBalanceAdapter {
@@ -1105,8 +1110,30 @@ contract AdapterLabelOverridesTest is AdapterLabelOverridesBase {
         return nav.getAllAdapters();
     }
 
+    /// @dev Cools every account a NAV read touches whose warmth this fixture controls: the registry, the supplied
+    ///      adapters, the NAV PROXY (its own slots are read on every call and were previously left warm -- cooling
+    ///      them is worth a measured ~2,000, one cold-SLOAD delta), and the two accounts the call DELEGATECALLs into,
+    ///      the UUPS implementation and the externally linked `PriceFeedLib` (`getAdapterDisplayInfo` is a single
+    ///      forward into it).
+    ///
+    ///      ⚠️ **`vm.cool` cools SLOTS ONLY in forge 1.7.1, despite its forge-std docstring claiming it also marks
+    ///      "the account address as cold".** Measured, storage-free control: a warm call costs 514 gas and 540 after
+    ///      `vm.cool` -- +26, not the +2,500 a genuine cold-ACCOUNT access (2,600 vs 100) would add. So cooling the
+    ///      implementation and `PriceFeedLib` -- which hold no storage this path reads -- moves the total by only
+    ///      ~130. They are cooled anyway: it is correct in intent and becomes correct in effect if a later forge
+    ///      implements the address half.
+    ///
+    ///      The consequence is that EVERY "cold" number in this file is slots-cold, so it is a FLOOR: a real fresh
+    ///      call additionally pays one cold-account premium per distinct account it touches, which this cheatcode
+    ///      cannot reproduce inside a single test transaction (creating or calling an account warms it for the rest of
+    ///      the transaction). On the 27-adapter display path that is 30 accounts -- 27 adapters, the implementation,
+    ///      `PriceFeedLib`, the registry -- at 2,500 each, so **~75,000 unmeasured**. The proxy is excluded: EIP-2929
+    ///      pre-warms a transaction's `to`. Size a gas limit from the reported total PLUS that margin.
     function _coolAll(address[] memory xs) internal {
         vm.cool(address(registry));
+        vm.cool(address(nav));
+        vm.cool(address(uint160(uint256(vm.load(address(nav), ERC1967_IMPL_SLOT)))));
+        vm.cool(LibraryPins.PRICE_FEED_LIB);
         for (uint256 i = 0; i < xs.length; i++) {
             vm.cool(xs[i]);
         }
@@ -1115,7 +1142,10 @@ contract AdapterLabelOverridesTest is AdapterLabelOverridesBase {
     /// @dev THE 27-DISTINCT FIXTURE. 27 is mainnet's registered-adapter count per the fork rehearsal.
     ///      Two isolations are reported and they answer different questions:
     ///        - REGISTRY-COLD only: the registry surcharge, methodologically identical to the account-path numbers.
-    ///        - EVERYTHING-COLD: what a caller actually pays on a fresh call, which is what a gas limit is sized from.
+    ///        - EVERYTHING-COLD: every account this fixture can cool -- registry, adapters, the proxy's own slots, the
+    ///          UUPS implementation, `PriceFeedLib` -- with all SLOTS cold. It is a FLOOR on a fresh call, not the
+    ///          fresh-call cost: `vm.cool` does not reproduce cold-ACCOUNT premiums, leaving ~75,000 unmeasured. See
+    ///          `_coolAll` for the measured proof and the arithmetic. Size a gas limit from this PLUS that margin.
     function test_gas_configurationSurface_27Distinct_cold() public {
         address[] memory all = _growTo(27);
         assertEq(all.length, 27, "fixture must hold 27 DISTINCT adapters");
@@ -1172,8 +1202,13 @@ contract AdapterLabelOverridesTest is AdapterLabelOverridesBase {
         emit log_named_uint("linearity | marginal per entry, 18->27", (tot[3] - tot[2]) / 9);
     }
 
-    /// @dev The ACCOUNT path at scale, cold, with 27 DISTINCT adapters -- the result I am willing to stand behind,
-    ///      extended from N=2. Bound is set from the mutation below, not from taste.
+    /// @dev The ACCOUNT path at scale, cold, with 27 DISTINCT adapters -- the SCALE measurement, extended from N=2.
+    ///
+    ///      ⚠️ Its ceiling is a COARSE SCALE GUARD, not a caching defense, and is NOT mutation-derived. Every adapter
+    ///      in this fixture emits exactly ONE position, so per-adapter and per-position lookups are indistinguishable
+    ///      here -- the per-position mutant left this test's surcharge unchanged. The per-DISTINCT-ADAPTER caching
+    ///      property is defended SOLELY by `test_gas_coldVsWarm_twoAdapters` (2 adapters / 3 positions), whose bound
+    ///      IS derived from that mutant. What this test does prove is linearity of the surcharge at scale.
     function test_gas_accountPath_27Distinct_cold() public {
         address[] memory all = _growTo(27);
         nav.getAccountPositionsVerbose(safe, address(0)); // warm
@@ -1195,8 +1230,9 @@ contract AdapterLabelOverridesTest is AdapterLabelOverridesBase {
         emit log_named_uint("account path 27 distinct | baseline no-registry", base);
         emit log_named_uint("account path 27 distinct | COLD surcharge      ", surcharge);
         emit log_named_uint("account path 27 distinct | per adapter         ", surcharge / all.length);
-        // Bound derived from the per-position mutant; see the mutation run in the report.
-        assertLt(surcharge, 300_000, "cold surcharge must scale with DISTINCT ADAPTERS, not positions");
+        // Coarse scale ceiling, NOT mutation-derived: this fixture is one position per adapter, so the per-position
+        // mutant leaves `surcharge` unchanged. `test_gas_coldVsWarm_twoAdapters` is the mutation-derived guard.
+        assertLt(surcharge, 300_000, "cold surcharge must stay within the coarse 27-adapter scale ceiling");
     }
 
     // ------------------------------------------------------------------

@@ -850,8 +850,15 @@ def _self_test() -> int:
         failed = bool(k.fail)
         joined = " | ".join(k.fail)
         ok = (failed == must_fail) and (not expect_in or expect_in in joined)
-        results.append((ok, f"{'ok  ' if ok else 'FAIL'} {label}"
-                             f"{'' if ok else f'  -> expected {"fail" if must_fail else "pass"}, got: {joined or "pass"}'}"))
+        # Built by concatenation, NOT a nested f-string reusing the outer quote: that construct is
+        # PEP 701 and only parses on Python 3.12+, and a SyntaxError here is raised at IMPORT, which
+        # would take out every gate 1.1-1.8 on an older interpreter rather than just --self-test.
+        # No Python floor is pinned anywhere in this repo, so it must parse on 3.9+.
+        line = ("ok   " if ok else "FAIL ") + label
+        if not ok:
+            wanted = "fail" if must_fail else "pass"
+            line += "  -> expected " + wanted + ", got: " + (joined or "pass")
+        results.append((ok, line))
 
     cleared = {key: "" for key in UNIVERSAL}
     cleared["AssetKindRegistry"] = ""
@@ -907,6 +914,13 @@ def main() -> int:
                          "compare it against another's config.")
     args = ap.parse_args()
 
+    # MUTUALLY EXCLUSIVE, not "the flag wins". `verify_step.py 1.1 --self-test` must never print
+    # "8/8 arms passed" and exit 0 while naming a gate it did not run: this module exists because a
+    # clean exit has to mean work happened, and a self-test that silently replaces a 24-chain step
+    # is that exact failure wearing the tool's own output.
+    if args.self_test and args.step:
+        ap.error(f"--self-test runs no chain checks, so it cannot be combined with a step "
+                 f"(got {args.step!r}). Run them as two commands.")
     if args.self_test:
         return _self_test()
     if not args.step:

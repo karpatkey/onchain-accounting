@@ -28,7 +28,15 @@ import "src/constants.sol";
 ///      `NAVCalculator.getAdapterDisplayInfo`, once per listed adapter). Both read the same two ADAPTER-override
 ///      getters — {getAdapterProtocolName} and {getAdapterLabels} — through ONE shared precedence helper each, and
 ///      both overlay the label array through one shared `_applyLabelOverride`, so the two display surfaces cannot
-///      disagree. A third consumer, if one is ever added, must use those helpers too.
+///      disagree **about a segment they both emit**. A third consumer, if one is ever added, must use those helpers
+///      too.
+///
+///      ⚠️ **That guarantee is about CONTENT, not about SHAPE, and an earlier revision of this sentence stated it
+///      without the qualifier.** The two surfaces deliberately differ on emptiness: the ACCOUNT path leaves an empty
+///      reply empty, while the CONFIGURATION path grows it to the override's leading non-empty prefix. So an
+///      override of `["", "X"]` yields NOTHING on the configuration surface (the leading `""` stops the prefix scan)
+///      and applies `X` at index 1 on the account path. Both behaviours are intended — see
+///      `PriceFeedLib._overridePrefix` — but "cannot disagree" overstates them.
 ///      Note what did NOT change: the CLASSIFICATION half (the kinds and the per-asset labels) still has no on-chain
 ///      reader, and its value remains the atomic register+classify invariant on the write path, not the read. An
 ///      earlier version justified the contract with "a consumer makes two calls and caches the kinds indefinitely";
@@ -140,8 +148,9 @@ contract AssetKindRegistry is IAssetKindRegistry {
     ///      a per-adapter constant in all 13 of its definitions (`MetaBalanceAdapter.protocolName` folds
     ///      `ProtocolNames.forProtocolId(_protocolId())` at compile time and no concrete meta-adapter overrides it),
     ///      so one row per adapter covers every position that adapter can ever emit — at most one row per DEPLOYED
-    ///      adapter, i.e. ≤45 across all 7 chains (33 deployable contracts, 45 enabled deployments; the two figures
-    ///      count different things and an earlier revision used them interchangeably),
+    ///      adapter, i.e. ≤46 across all 7 chains (34 deployable contracts, 46 enabled deployments; the two figures
+    ///      count different things and an earlier revision used them interchangeably — both moved by one when the
+    ///      Cap split replaced one contract, and one chain-1 deployment, with two),
     ///      with nothing to re-write when `addMetaInstances` adds an instance.
     mapping(address adapter => string name) private _adapterProtocolName;
 

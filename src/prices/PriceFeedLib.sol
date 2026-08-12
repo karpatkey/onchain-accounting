@@ -2224,11 +2224,19 @@ library PriceFeedLib {
     ///      {_OVERRIDE_DECODE_GAS} term the account-path sentence two lines above already counts. It understated the
     ///      measured figure too: under a stipend-burning registry the configuration path costs ~241k marginal per
     ///      entry, above the 200k that "2x" implies.) That is bounded by the caller's own gas and its own array, not
-    ///      by the fleet size. The
-    ///      ACCOUNT-path ceiling is exercised by
-    ///      `AdapterLabelOverrides.t.sol::test_gas_hostileRegistryIsBoundedByTheStipend`, which wires a
-    ///      stipend-burning registry and measures the read (~422k, still fail-open), and the CONFIGURATION-path
-    ///      ceiling by `test_gas_configurationSurface_hostileRegistryIsBounded`.
+    ///      by the fleet size.
+    ///
+    ///      ⚠️ **The 3x is the DECLARED ceiling; 2x is what is measured, and the third component is unspendable.**
+    ///      Be exact about this, because the note below warns against precisely the sloppiness of claiming
+    ///      otherwise. `AdapterLabelOverrides.t.sol::test_gas_hostileRegistryIsBoundedByTheStipend` (ACCOUNT path,
+    ///      ~422k, still fail-open) and `test_gas_configurationSurface_hostileRegistryIsBounded` (CONFIGURATION
+    ///      path) both wire a registry that OOGs the staticcall — so {_safeStringArray} returns at its
+    ///      `!ok || ret.length < 64` guard and the decode shim is never entered. Those tests exercise the TWO read
+    ///      stipends, not the decode one. Nor can any fixture reach it: `decodeStringArray` runs a memory-source
+    ///      `abi.decode`, which bounds-rejects an over-declared array length against the blob length before
+    ///      allocating, so {_OVERRIDE_DECODE_GAS} is a cap on a cost nothing can actually incur. It stays because a
+    ///      cap that is never reached costs nothing and a missing one would be load-bearing the day the decoder
+    ///      changes.
     ///
     ///      ⚠️ Two earlier revisions of this note cited tests that did not cover what they were said to cover:
     ///      first `test_gas_registryLegIsBounded` (a well-behaved registry, nowhere near the ceiling), then

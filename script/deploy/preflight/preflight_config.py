@@ -549,15 +549,25 @@ def _check_chain(chain_id: int) -> list[tuple[str, str]]:
         "usdc": ("CapStablecoin", "CapSavings"),
     }
     for arg, siblings in SIBLING_SHARED_ARGS.items():
-        present = [n for n in siblings if n in dep_plain]
+        # ENABLED, not merely present. Every other adapter-coherence check in this function filters on `enabled`,
+        # and this one must too: a chain that carries a disabled stub sibling (no `constructor` block at all) is a
+        # correct config, and flagging it would halt the runbook on its "0 error(s) across 24 chains" gate for a
+        # deploy that would have succeeded.
+        present = [n for n in siblings
+                   if isinstance(dep_plain.get(n), dict) and dep_plain[n].get("enabled") is True]
         if len(present) < 2:
-            continue  # not both configured on this chain; nothing to compare
+            continue  # fewer than two ENABLED siblings on this chain; nothing to compare
         seen: dict[str, list[str]] = {}
         for name in present:
             val = (dep_plain.get(name, {}).get("constructor", {}) or {}).get(arg)
             if val is None:
                 f.append((ERROR, f"'{name}' is missing the shared constructor arg '{arg}' that its sibling(s) "
                                  f"{', '.join(x for x in present if x != name)} also take"))
+                continue
+            # Type-guard before `.lower()`: a numeric or null constructor value would otherwise raise an uncaught
+            # AttributeError out of _check_chain and take down the whole preflight run instead of reporting a row.
+            if not isinstance(val, str):
+                f.append((ERROR, f"'{name}'.constructor.{arg} is {type(val).__name__}, expected an address string"))
                 continue
             seen.setdefault(val.lower(), []).append(name)
         if len(seen) > 1:

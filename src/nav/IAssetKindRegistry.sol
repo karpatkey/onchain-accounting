@@ -324,7 +324,7 @@ interface IAssetKindRegistry {
     // ---------------------------------------------------------------------------------------------------------------
     // Balance-adapter display overrides
     //
-    // A ≤45-row, per-ADAPTER table that lets an operator correct an adapter's display strings — its protocol name and
+    // A ≤46-row, per-ADAPTER table that lets an operator correct an adapter's display strings — its protocol name and
     // any segment of its `positionLabels()` breadcrumb — without redeploying and re-registering it.
     //
     // **Any DEPTH is reachable, and `""` is how a segment is left alone.** {setAdapterLabels} takes an array that is

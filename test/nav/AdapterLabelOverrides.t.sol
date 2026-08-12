@@ -859,6 +859,14 @@ contract AdapterLabelOverridesTest is AdapterLabelOverridesBase {
         // adapter holds no balance for `safe` and emits nothing, which {test_gas_accountPath_27Distinct_cold} pins
         // independently (26 emitting of 27 registered). So the REGISTRY stipend component of this ceiling is
         // 1 adapter x 2 reads x _NAME_READ_GAS = 200,000, not 400,000 -- the bound has more slack than it looked.
+        //
+        // ⚠️ 2 reads is what this BURNER reaches, and it is not the declared ceiling. Since the per-segment label
+        // override landed, a hostile registry has THREE charges per distinct adapter — the protocol-name override
+        // read, the label-override read, and `_OVERRIDE_DECODE_GAS` for the decode shim (see
+        // `PriceFeedLib._NAME_READ_GAS`). This burner OOGs both staticcalls, so `_safeStringArray` bails at its
+        // `!ok` guard and the shim is never entered; the decode stipend is unspendable anyway, because a
+        // memory-source `abi.decode` bounds-rejects an over-declared length before allocating. 2 reads is therefore
+        // the right number FOR THIS FIXTURE and the wrong number for the ceiling, and the two must not be conflated.
         // The rest of the measured ~420,700 is the adapter's own work and the gas-capped label decode, which this
         // test does not attempt to bound; it bounds the registry's contribution and that the read still completes.
         uint256 emitting = _adaptersEmittingPositions(nav.getAllAdapters());
@@ -905,11 +913,19 @@ contract AdapterLabelOverridesTest is AdapterLabelOverridesBase {
         // that this path has no per-adapter cache so it is charged per ENTRY. (An earlier revision of this comment,
         // and of the `_NAME_READ_GAS` docstring it mirrored, said 2x, dropping the decode term.)
         //
-        // ⚠️ The NUMERIC bound below is deliberately NOT widened to match that 3x. It is an empirical
-        // mutation-catching guard, not the theoretical ceiling: at 1,000,000 it sits above the measured cost and
-        // below 3 x 3 x 100k, so it still fails if the per-entry cost regresses. Raising it to the theoretical
-        // ceiling would make it catch strictly less, and in this repo bounds are set from the mutant, not from
-        // taste.
+        // ⚠️ **What this burner actually exercises is 2x, not 3x.** `RawReplier.stageBurnGas` OOGs the staticcall,
+        // so `_safeStringArray` returns at its `if (!ok || ret.length < 64)` guard and the decode shim — the third
+        // component — is never entered. The decode stipend is in fact UNSPENDABLE: a memory-source `abi.decode`
+        // bounds-rejects an over-declared array length before allocating, so `_OVERRIDE_DECODE_GAS` is a ceiling
+        // nothing can reach. So the REACHABLE registry-controlled cost is 2 x 100k per entry; the 3x above is the
+        // declared ceiling, not a measured one. Saying otherwise here would be the exact failure the
+        // `_NAME_READ_GAS` docstring warns about — naming a test as proof of a bound it does not exercise.
+        //
+        // The bound is therefore 3 entries x 2 x 100k reachable registry burn + 400k for the adapters' own reads.
+        // Measured on this tree: 668,609. An earlier revision of this comment justified the bound as sitting
+        // "below 3 x 3 x 100k"; that was arithmetically false (900,000 < 1,000,000) and is corrected rather than
+        // quietly deleted. The bound is NOT widened: it is an empirical mutation-catching guard and tightness is
+        // the safe direction.
         assertLt(
             used,
             3 * 2 * 100_000 + 400_000,
@@ -1671,12 +1687,26 @@ contract AdapterLabelOverridesTest is AdapterLabelOverridesBase {
     ///      `NoLabelAdapter` replies `[]`, so `adapterDisplayInfo` takes the grow branch and returns the override's
     ///      full leading non-empty prefix.
     function test_labelsOverride_maximalOverrideSurvivesTheReturnWindow() public {
-        // Exactly 32 bytes each — `MAX_ASSET_LABEL_BYTES`, the largest the setter accepts. Distinct per index so a
-        // decode that mixed up element offsets cannot pass by returning the same string eight times.
-        string[] memory maximal = new string[](8);
-        for (uint256 i; i < 8; ++i) {
-            maximal[i] = string(abi.encodePacked("0123456789abcdef0123456789abcde", bytes1(uint8(0x41 + i))));
-            assertEq(bytes(maximal[i]).length, 32, "fixture must sit exactly at the byte cap, not near it");
+        // ⚠️ **The length is READ FROM THE CAP, never written as 32.** This is the whole mechanism of the test: a
+        // hardcoded 32 keeps the fixture inside the 896-byte window no matter what the registry's cap becomes, so
+        // the test would stay green through exactly the change it exists to catch. Deriving it means raising
+        // `MAX_ASSET_LABEL_BYTES` to 33 lifts each element to a 64-byte padded payload, the maximal override to
+        // 1,088 bytes, and this test goes red until `_OVERRIDE_RETURN_BYTES` is moved to match.
+        uint256 cap = registry.MAX_ASSET_LABEL_BYTES();
+        uint256 segments = registry.MAX_ADAPTER_LABEL_SEGMENTS();
+        assertGe(cap, 2, "fixture needs room for a filler byte plus a distinct suffix");
+
+        string[] memory maximal = new string[](segments);
+        for (uint256 i; i < segments; ++i) {
+            // `cap - 1` filler bytes plus one index-dependent byte: exactly at the cap, and distinct per index so a
+            // decode that mixed up element offsets cannot pass by returning the same string N times.
+            bytes memory seg = new bytes(cap);
+            for (uint256 j; j + 1 < cap; ++j) {
+                seg[j] = "a";
+            }
+            seg[cap - 1] = bytes1(uint8(0x41 + i));
+            maximal[i] = string(seg);
+            assertEq(bytes(maximal[i]).length, cap, "fixture must sit exactly AT the cap, not near it");
         }
 
         NoLabelAdapter silent = new NoLabelAdapter();
@@ -1685,8 +1715,8 @@ contract AdapterLabelOverridesTest is AdapterLabelOverridesBase {
         registry.setAdapterLabels(address(silent), maximal);
 
         string[] memory got = _configLabels(address(silent));
-        assertEq(got.length, 8, "all 8 segments must survive the 896-byte window; 0 would mean a failed decode");
-        for (uint256 i; i < 8; ++i) {
+        assertEq(got.length, segments, "every segment must survive the return window; 0 would mean a failed decode");
+        for (uint256 i; i < segments; ++i) {
             assertEq(got[i], maximal[i], "segment content must round-trip byte-for-byte at the cap");
         }
 

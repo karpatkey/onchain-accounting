@@ -79,14 +79,18 @@ wanted: `verify_step.py` requires it as the step 1.1 post-condition (`:252`).
 | the other 17 | ERC20Default only |
 
 Configured totals, reconciled from config **and** confirmed against the live NAV on 2026-07-27;
-feed count re-measured 2026-07-30 against the merged tree:
+feed count re-measured 2026-07-30 against the merged tree; meta instances amended 2026-08-12 (issue
+#296, see "Meta instances" below — that one figure post-dates the 2026-07-27 confirmation):
 **33 meta adapters, 111 meta instances, 12 plain adapters, 41 custom price feeds, 93 assets.**
 <!-- meta instances 110 -> 111 on 2026-08-12: one MorphoVaultsMeta instance added on chain 1 (issue #296). See the amendment under "Meta instances" below. -->
 
 The feed count is no longer pending anything — see the note under 1.4 for the two PRs that moved it.
 
 **Re-measured 2026-08-08 at `a3974686` with `preflight_config.py`: all five totals and every per-chain
-row below are unchanged.** `script/config/` did change in the interval (labels were retired in #275 and
+row below were unchanged AS OF THAT COMMIT.** (Superseded for ONE figure only: meta instances moved
+110 -> 111 and mainnet 66 -> 67 on 2026-08-12 for issue #296. The other four totals still hold. This
+attestation is left dated rather than restated — it was true of `a3974686` and is not a claim about
+today's tree.) `script/config/` did change in the interval (labels were retired in #275 and
 realigned to `ProtocolNames.sol`), so this was measured rather than assumed — but nothing moved a count.
 `0 error(s)` across all 24 chains; the warnings it prints are declared-heartbeat margin findings, which
 are a separate axis and not a count.
@@ -1739,10 +1743,14 @@ against, and 2.6 cannot run until the new addresses are recorded.
   `addMetaInstances` (issue #296) and to config in the same PR, so `diff_snapshots.py pre post` will
   print `GAINED meta instance 0x…7a72bcd2…` and `metaInstanceTotal 66 -> 67`. **This is a STRUCTURAL
   diff and this section's rule is that a structural diff is never explained by drift — which is exactly
-  why it is enumerated here rather than left to be waved through.** Expect a matching position entry,
-  and a `nav.value` increase beyond the residual band, for whichever Safe holds the vault: the whole
-  point of the addition is that NAV was under-reporting that position. A diff that does NOT show this
-  means the vault is missing and the reconciliation dropped it.
+  why it is enumerated here rather than left to be waved through.** **Expect the STRUCTURAL lines and NOTHING ELSE — no new position entry and no `nav.value`
+  movement.** Measured on mainnet 2026-08-12: the vault holds `totalAssets() = 1002452` (1.0025 USDC)
+  against `totalSupply() = 1e18`, and that entire supply sits at `0x…dEaD` — seed shares. Every tracked
+  chain-1 account holds ZERO, so no snapshotted account has a position to report. **The check to make is
+  the GAINED-instance line and `metaInstanceTotal 66 -> 67`; their ABSENCE means the reconciliation
+  dropped the vault.** Do NOT treat a flat `nav.value` as evidence of a drop — a $1 seed position could
+  not clear the residual band in any case, and an earlier revision of this entry said the opposite,
+  which would have halted a correct deploy at the last gate before cutover.
 
 - **ETHx drops from 2 monitor feeds to 1 on mainnet.** Redstone is retiring both of its ETHx push
   feeds, which backed both monitors. The direct Redstone **ETHx/USD** monitor `0xFaBEb147…` is gone
@@ -1945,7 +1953,7 @@ to the new proxy. The old stack keeps answering until they do; nothing needs unr
 | `01_2` reverts `NAVCalculator impl not linked against pinned …` | `foundry.toml [libraries]` drifted from `LibraryPins` | make them agree, rebuild |
 | `02_2` reverts inside `AtomicNAVProxyDeployer` | proxy address unchanged → code already there → `upgradeToAndCall` with no admin | bump `DeploySalts.NAV_PROXY` (0.2), then re-pin (0.3) |
 | `03`/`04` log "Already deployed at:" and deploy nothing | the record was not cleared | run 1.1, re-run |
-| `06` finishes but adapter/instance counts are short | an adapter never deployed; `06:113` skipped it silently | `preflight_config.py`, then re-run 1.6 and 1.7 |
+| `06` finishes but adapter/instance counts are short | an adapter never deployed; `06:113` skipped it silently | `preflight_config.py`, then re-run **1.7** (`04`, deploys the missing adapter) **and 1.8** (`06`, registers it and adds its meta instances). Re-running 1.6 alone leaves the adapter deployed but UNREGISTERED and the NAV still short |
 | `06` reverts `addMetaInstances failed … DuplicateMetaInstance` | duplicate coordinate in config | `preflight_config.py` flags it; fix nav-config |
 | `RegisterAssets` `MemoryOOG` on mainnet | default memory limit | `FOUNDRY_PROFILE=slow` |
 | `RegisterAssets` logs `[skip] primary feed unresolved (deploy it first)` | it ran before `03`, so Custom feeds are not in the record | run `03` first; re-run `RegisterAssets` (idempotent) and confirm `getAssetCount()` |

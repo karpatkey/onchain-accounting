@@ -20,7 +20,11 @@ above it.
   if `script/config` or `broadcast/` is dirty (`:63` — those two paths only, not the whole tree), and
   restores them byte-exactly with `git checkout --` on exit.
 
-Other tools write untracked report files under `--json`. Of all of these, only
+Other tools write report files under `--json`. **Every one of these destinations is
+caller-controlled** — `--json` and `--out` take arbitrary paths and are written verbatim
+(`snapshot_production.py:346,371`), so `--out script/config/deployments` would overwrite the
+deployment records with snapshots. Nothing in the tooling prevents that. Everything above describes
+the **documented invocations**, not a guarantee the tools enforce; at those invocations, only
 `reset_deployment_records.py --apply` discards state you would otherwise have to redeploy to recover.
 
 The ordered procedure these support is [`../REDEPLOY_RUNBOOK.md`](../REDEPLOY_RUNBOOK.md).

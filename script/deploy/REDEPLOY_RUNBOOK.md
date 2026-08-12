@@ -27,14 +27,19 @@ operator: **pin the fork block** (see the note at the rehearsal invocation — i
 path executes; it is not a deploy, and it is not an approval to deploy.
 
 Companion tooling lives in [`preflight/`](preflight/README.md). Nothing there broadcasts to a real
-chain. Three scripts write **tracked** content: `reset_deployment_records.py`, which archives and
-clears the deployment records — dry-run by default, writes only under `--apply`, undone with
-`--restore <tag>`; `rehearse_fork.sh`, which broadcasts only to a loopback anvil and restores the
-tracked config it touches with `git checkout --` on exit; and `declared_heartbeat_guard.py --refresh`,
-which rewrites the committed `chainlink_declared_heartbeats.json`. Several others write **untracked
-output artifacts** — `snapshot_production.py` writes `snapshots/<tag>/`, and the `--json` flags write
-report files. Everything else only reads. Of all of these, only `reset_deployment_records.py --apply`
-discards state you would otherwise have to redeploy to recover.
+chain. Four of its scripts write **git-tracked** files — and because that list has been wrong before,
+**`git status` is the check of record, not this paragraph**:
+
+- `reset_deployment_records.py --apply` — archives and clears `script/config/deployments/`. Dry-run by
+  default; undone with `--restore <tag>`.
+- `snapshot_production.py` — **defaults to `--out pre`**, which rewrites the committed `snapshots/pre/`
+  capture (25 tracked files). Pass an explicit `--out` to leave it alone.
+- `declared_heartbeat_guard.py --refresh` — rewrites the committed `chainlink_declared_heartbeats.json`.
+- `rehearse_fork.sh` — mutates `script/config/` during a rehearsal, refuses to start on a dirty tree,
+  and restores it byte-exactly with `git checkout --` on exit.
+
+Other tools write untracked report files under `--json`. Of all of these, only
+`reset_deployment_records.py --apply` discards state you would otherwise have to redeploy to recover.
 
 - **Scope:** exactly the **24 chains** that already have a `NAVCalculatorProxy`. Chain **1101**
   (Polygon zkEVM) is excluded — its deployment record is empty, so it was never deployed.
@@ -1466,7 +1471,9 @@ bug entirely and must not be attributed to this step.
 
 ```bash
 # per (chain, adapter): returns [] until the owner has submitted, then the coordinate blobs.
-# `coordsOf` is the only cache view getter (AssistedCoordCache.sol:110) — there is no count getter.
+# `coordsOf` is the shared raw-coordinate getter (AssistedCoordCache.sol:110); the concrete adapters
+# add decoded views — `tokenIdsOf` (Nexus `:80`, EtherFi `:75`), `positionsOf` (StakeWise `:84`).
+# None of them is a count getter: there is no way to ask how many coordinates a cache holds.
 cast call $ADAPTER 'coordsOf(address)(bytes[])' $OWNER_SAFE --rpc-url $RPC
 ```
 

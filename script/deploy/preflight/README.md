@@ -4,15 +4,20 @@ Tooling for preparing and verifying a from-scratch NAV redeploy. Nothing here br
 chain; the one script that broadcasts at all — `rehearse_fork.sh` — refuses any RPC that is not
 loopback.
 
-Three scripts write **tracked** content. `reset_deployment_records.py` archives and clears the
-deployment records, as its row below says — dry-run by default, writes only under `--apply`, undone
-with `--restore <tag>`. `rehearse_fork.sh` mutates tracked config under `script/config/` during a
-rehearsal, refuses to start if that tree is dirty, and restores it byte-exactly with `git checkout --`
-on exit. `declared_heartbeat_guard.py --refresh` rewrites the committed
-`chainlink_declared_heartbeats.json`.
+Four scripts write **git-tracked** files. This list has been wrong twice, so treat `git status` as the
+check of record rather than this paragraph — only three tracked paths live here
+(`chainlink_declared_heartbeats.json`, `redeploy_scope.json`, `snapshots/`), plus `script/config/`
+above it.
 
-Several others write **untracked output artifacts**: `snapshot_production.py` writes `snapshots/<tag>/`,
-and the `--json` flags write report files. Everything else only reads. Of all of these, only
+- `reset_deployment_records.py --apply` archives and clears the deployment records, as its row above
+  says — dry-run by default, undone with `--restore <tag>`.
+- `snapshot_production.py` **defaults to `--out pre`**, which rewrites the committed `snapshots/pre/`
+  capture described below. Pass an explicit `--out` to leave the committed capture alone.
+- `declared_heartbeat_guard.py --refresh` rewrites the committed `chainlink_declared_heartbeats.json`.
+- `rehearse_fork.sh` mutates tracked config under `script/config/` during a rehearsal, refuses to start
+  if that tree is dirty, and restores it byte-exactly with `git checkout --` on exit.
+
+Other tools write untracked report files under `--json`. Of all of these, only
 `reset_deployment_records.py --apply` discards state you would otherwise have to redeploy to recover.
 
 The ordered procedure these support is [`../REDEPLOY_RUNBOOK.md`](../REDEPLOY_RUNBOOK.md).

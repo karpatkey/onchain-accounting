@@ -515,7 +515,7 @@ Measured on `main` @ `f72dd48a`:
 | custom price feeds | **41** | `preflight_config.py`, re-measured 2026-07-30 (39 before #199, 40 before #224) |
 | assets | **93** | `preflight_config.py` |
 
-Per-chain meta instances: 66 / 16 / 16 / 4 / 4 / 4 / 0 for 1 / 42161 / 8453 / 10 / 100 / 137 / 56.
+Per-chain meta instances: 67 / 16 / 16 / 4 / 4 / 4 / 0 for 1 / 42161 / 8453 / 10 / 100 / 137 / 56.
 Adapter counts per chain: 27 / 8 / 7 / 4 / 3 / 2 / 1 for 1 / 42161 / 8453 / 100 / 10 / 137 / 56.
 
 **Scope: 24 chains** (declared in `redeploy_scope.json`, which no tool writes — see README).

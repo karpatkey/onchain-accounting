@@ -4,28 +4,37 @@ Tooling for preparing and verifying a from-scratch NAV redeploy. Nothing here br
 chain; the one script that broadcasts at all — `rehearse_fork.sh` — refuses any RPC that is not
 loopback.
 
-Four scripts write **git-tracked** files. This list has been wrong twice, so treat `git status` as the
-check of record rather than this paragraph — only three tracked paths live here
-(`chainlink_declared_heartbeats.json`, `redeploy_scope.json`, `snapshots/`), plus `script/config/`
-above it.
+Four scripts write **git-tracked** files. This list has been wrong before, so treat `git status` as
+the check of record rather than this paragraph. One thing `git status` shows that is *not* debris:
+`reset_deployment_records.py --apply` creates `archive/<tag>/` here, which is neither tracked nor
+ignored, and it is the only pre-clear copy of the records — do not sweep it away.
 
-- `reset_deployment_records.py --apply` archives and clears the deployment records, as its row below
-  says — dry-run by default, undone with `--restore <tag>`.
-- `snapshot_production.py` resolves `--out` to `snapshots/<out>/`, or to `<out>` verbatim when the
-  value contains a `/` (`:346`). It **defaults to `--out pre`**, the committed capture described below,
-  and the "Typical order" step passes `--out pre` deliberately. Judge safety by the resolved
-  destination, not the flag text: any run whose `out_dir` lands on `snapshots/pre/` overwrites it.
+- `reset_deployment_records.py --apply` archives every record under `archive/<tag>/`, then clears the
+  NAV keys in the deployment records, as its row below says; the bridge keys are deliberately kept.
+  Dry-run by default. `--restore <tag>` puts them back, but it resolves its chain scope from the
+  declared scope rather than from the archive, so a subset clear has to be undone by naming those
+  chains explicitly.
+- `snapshot_production.py` resolves `--out` to `snapshots/<out>/` here, or, when the value contains a
+  `/`, to that path **relative to your current directory** (`:346`). It **defaults to `--out pre`**,
+  the committed capture described below, and the "Typical order" step passes `--out pre` deliberately.
+  Judge safety by the resolved destination, not the flag text: any run whose `out_dir` lands on
+  `snapshots/pre/` overwrites it.
 - `declared_heartbeat_guard.py --refresh` rewrites the committed `chainlink_declared_heartbeats.json`.
 - `rehearse_fork.sh` mutates tracked config under `script/config/` during a rehearsal, refuses to start
   if `script/config` or `broadcast/` is dirty (`:63` — those two paths only, not the whole tree), and
-  restores them byte-exactly with `git checkout --` on exit.
+  on exit restores tracked files with `git checkout --` (`:386`) **and deletes untracked ones with
+  `git clean -fdq`** (`:393`) under those same two paths.
 
-Other tools write report files under `--json`. **Every one of these destinations is
-caller-controlled** — `--json` and `--out` take arbitrary paths and are written verbatim
-(`snapshot_production.py:346,371`), so `--out script/config/deployments` would overwrite the
-deployment records with snapshots. Nothing in the tooling prevents that. Everything above describes
-the **documented invocations**, not a guarantee the tools enforce; at those invocations, only
-`reset_deployment_records.py --apply` discards state you would otherwise have to redeploy to recover.
+The `--json` report paths these tools accept, and `snapshot_production.py`'s `--out`, are opened
+exactly as given, so they can be pointed anywhere: run from the repo root, `--out
+script/config/deployments` would write snapshots over the deployment records, and nothing in the
+tooling prevents it. The other three writers have no equivalent destination flag — the deployment
+records, the heartbeat snapshot and `script/config/` are fixed in code, and
+`reset_deployment_records.py`'s `--tag` names only the archive subdirectory. Everything above
+describes the **documented invocations**, not a guarantee the tools enforce. All four targets are
+git-tracked and the records are archived before they are cleared, so an accidental write is undone
+with `git checkout --` or `--restore <tag>` rather than a redeploy; what no command regenerates is
+the pre-deploy capture itself, because the stack it describes is gone once the cutover has happened.
 
 The ordered procedure these support is [`../REDEPLOY_RUNBOOK.md`](../REDEPLOY_RUNBOOK.md).
 

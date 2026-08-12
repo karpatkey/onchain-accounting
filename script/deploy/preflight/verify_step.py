@@ -164,18 +164,41 @@ def expected_sections(chain_id: int) -> set[str]:
     directory by camelCase -> kebab-case (`balanceAdapters` -> `balance-adapters`), derived rather
     than hard-coded so a third section needs no edit here.
     """
-    out: set[str] = set()
+    # `balanceAdapters` IS UNIVERSAL AND NO CONFIG DECLARES IT. Every deployed NAV carries
+    # `ERC20Default`, minted by `initialize` and written by 02/02_2 — measured on all 24 in-scope
+    # records (only out-of-scope 1101 lacks it, and its record is empty). An earlier revision derived
+    # this section from the plain-adapter config alone, which under-expected it on every chain whose
+    # adapters are all META (chain 10) or whose only entry is `ERC20Default` — so deleting the whole
+    # section there passed gate 1.1 SILENTLY. That is the dangerous direction: the bug this file
+    # fixes was a gate crying wolf, and a gate that stays quiet while the thing it guards is broken
+    # gets trusted instead of ignored.
+    out: set[str] = {"balanceAdapters"}
+
+    # The remaining sections come from config, and a section has MORE THAN ONE producing directory.
+    # Enumerated by measurement, not assumed: every `balanceAdapters` entry in the 25 committed
+    # records is declared by `balance-adapters` (12) or `meta-balance-adapters` (33), or is
+    # `ERC20Default` (24, declared nowhere); every `customPriceFeeds` entry by `custom-price-feeds`
+    # (38), except `stETH` on chain 1 which is declared nowhere either. Deriving the directory from
+    # the section name — `balanceAdapters` -> `balance-adapters` — found only the first of these and
+    # is why the miss happened, so the mapping is explicit rather than clever.
+    producers = {
+        "balanceAdapters": ("balance-adapters", "meta-balance-adapters"),
+        "customPriceFeeds": ("custom-price-feeds",),
+    }
     for sec in rd.CLEAR_SECTIONS:
-        kebab = re.sub(r"(?<!^)(?=[A-Z])", "-", sec).lower()
-        p = c.CONTRACTS_CONFIG_DIR / kebab / f"{chain_id}.json"
-        if not p.is_file():
+        if sec in out:
             continue
-        try:
-            cfg = json.loads(p.read_text())
-        except (OSError, ValueError):
-            continue
-        if any(isinstance(v, dict) and v.get("enabled") is True for v in cfg.values()):
-            out.add(sec)
+        for sub in producers.get(sec, ()):
+            p = c.CONTRACTS_CONFIG_DIR / sub / f"{chain_id}.json"
+            if not p.is_file():
+                continue
+            try:
+                cfg = json.loads(p.read_text())
+            except (OSError, ValueError):
+                continue
+            if any(isinstance(v, dict) and v.get("enabled") is True for v in cfg.values()):
+                out.add(sec)
+                break
     return out
 
 
@@ -1084,6 +1107,14 @@ def _self_test() -> int:
     run(dict(cleared), dict(arch_plain),
         "a FOREIGN archive passes the generation check yet cannot hide a deletion",
         must_fail=True, expect_in="config enables the adapter that deploys it", chain=ONE_ASSIST)
+
+    # THE FAIL-OPEN ARM. Chain 10 has NO enabled plain adapter — its adapters are all meta, plus the
+    # universal ERC20Default that no config declares — so an expectation derived from the
+    # plain-adapter config alone was EMPTY there and a deleted section passed silently. This arm ran
+    # only on chain 1 before, where config does declare, so the suite shared the blind spot it was
+    # meant to catch. It now runs where the hole actually was.
+    run(no_section, dict(arch_plain), "a deleted section on a META-ONLY chain is caught",
+        must_fail=True, expect_in="whole balanceAdapters section is ABSENT", chain=NO_ASSIST)
 
     for ok, line in results:
         print(line)

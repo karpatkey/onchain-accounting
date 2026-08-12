@@ -995,12 +995,16 @@ python3 script/deploy/preflight/reset_deployment_records.py
 python3 script/deploy/preflight/reset_deployment_records.py --apply --tag pre-redeploy
 ```
 
-Values are set to `""`, which `ConfigReader._readAddrOrZero` reads as `address(0)` while keeping the
-JSON key present. Keeping the key matters on the **read** path — `verify_step.step_record_cleared`
-fails any `CLEAR_TOP` key missing from the record, and `08_DeployAssetKindRegistry` branches on
-`readDeployedAddress("AssetKindRegistry")`. It is **not** needed for the write-back: measured on the
-pinned forge 1.7.1, `vm.writeJson` creates a missing key unaided, so a brand-new adapter needs no
-seeded key. The pre-clear record is archived to `preflight/archive/pre-redeploy/<CID>.json` and is
+Values are set to `""` rather than deleted, for **one** reason: `verify_step.step_record_cleared`
+does a literal `key not in rec`, making it the only reader that can tell an absent key from a blanked
+one. Everything reading through `ConfigReader._readAddrOrZero` gets `address(0)` for missing, empty
+and placeholder alike.
+
+Two things this is **not** about, both of which this runbook has previously claimed:
+`08_DeployAssetKindRegistry` needs the **value** cleared so it takes the deployment branch — it reads
+through `readDeployedAddress` and cannot see presence at all; and the **write-back** never needed the
+key, because `writeAdapterAddress` calls `vm.writeJson` directly and, measured on the pinned forge
+1.7.1, that creates a missing key unaided. A brand-new adapter needs no seeded key. The pre-clear record is archived to `preflight/archive/pre-redeploy/<CID>.json` and is
 the "old addresses" input for the before/after audits.
 
 - **Precondition:** `git status` clean; snapshot 0.7 captured.

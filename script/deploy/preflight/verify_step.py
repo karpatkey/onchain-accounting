@@ -227,21 +227,26 @@ class Chk:
 
 def step_record_cleared(k: Chk, rec: dict, exp: dict, url, base, tag) -> None:
     """The record must be cleared, the bridge must NOT be, and a rollback must exist."""
-    # `reset_deployment_records.py` writes "" rather than deleting, and the reason is THIS CHECK
-    # plus `08_DeployAssetKindRegistry`, which branches on `readDeployedAddress("AssetKindRegistry")`
-    # — both READ paths. A record whose keys were deleted by hand, by `jq del(...)`, or by
-    # regenerating from a template would read as cleared and slip past. Absence must fail, not pass.
+    # `reset_deployment_records.py` writes "" rather than deleting, and THIS CHECK is the only
+    # reason. The loop below does a literal `key not in rec`, which makes it the one reader able to
+    # tell an absent key from a blanked one; a record whose keys were deleted by hand, by
+    # `jq del(...)`, or by regenerating from a template would otherwise read as cleared and slip
+    # past. Absence must fail, not pass.
     #
-    # It is NOT about the write-back. An earlier version of this comment said `writeAdapterAddress`
-    # "writes into an EXISTING JSON pointer" and that deletion "breaks the write-back in 01_2/02_2".
-    # Measured 2026-08-12 on the pinned forge 1.7.1: `vm.writeJson` creates a missing key unaided,
-    # and `writeAdapterAddress` calls it directly without consulting `_readAddrOrZero`, which is a
-    # read helper. The write-back was never at risk.
+    # NOT `08_DeployAssetKindRegistry`, and not the write-back — two claims this comment has carried
+    # and both are category errors:
+    #   * 08 branches on `readDeployedAddress`, which funnels through `_readAddrOrZero` and returns
+    #     address(0) for missing, empty AND placeholder alike. It cannot distinguish absent from
+    #     blank, so it needs the VALUE cleared, never the key present.
+    #   * `writeAdapterAddress` calls `vm.writeJson` directly and never consults `_readAddrOrZero`,
+    #     which is a read helper. Measured 2026-08-12 on the pinned forge 1.7.1, `vm.writeJson`
+    #     creates a missing key unaided. The write-back was never at risk.
     for key in rd.CLEAR_TOP:
         if key not in rec:
-            k.fail.append(f"{key} is ABSENT from the record, not blanked. ConfigReader needs the key "
-                          f"to exist (vm.keyExists) for the deploy to write the new address back; "
-                          f"restore it as \"\" rather than deleting it")
+            k.fail.append(f"{key} is ABSENT from the record, not blanked. This check is the only "
+                          f"reader that can tell absent from blank, so an absent key hides whether "
+                          f"the record was cleared or mangled; restore it as \"\" rather than "
+                          f"deleting it")
             continue
         k.require(not c.is_address(rec[key]),
                   f"{key} is still populated ({rec[key]}) — 03/04 will skip-if-deployed and 06 "

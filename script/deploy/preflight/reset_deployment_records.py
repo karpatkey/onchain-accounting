@@ -15,49 +15,17 @@ contracts on the NEW proxy. Nothing fails; the deploy is simply wrong.
 
 WHY WRITE "" RATHER THAN DELETE THE KEY
 ---------------------------------------
-TWO SEPARATE REASONS, AND MERGING THEM IS HOW THIS COMMENT KEEPS GOING WRONG.
+The keys are cleared to `""` and kept, not deleted. Readers differ on whether they can tell an absent
+key from a blanked one, so do not delete.
 
-(1) The key must be PRESENT, because at least two readers distinguish an absent key from a blanked
-    one and neither reads through `ConfigReader`:
-      * `verify_step.step_record_cleared` does a literal `key not in rec` and FAILS on absence;
-      * `deployer_balances.scope()` counts `*Assistant` keys by PRESENCE, ignoring value
-        (`deployer_balances.py:374`), so a blank key counts and an absent one does not — see the
-        CREATE_IF_ABSENT note below, which is attached to exactly that mechanism.
-    Everything that DOES read through `ConfigReader` is blind to the difference: `_readAddrOrZero`
-    (ConfigReader.sol:217) returns address(0) for all three of missing-key, empty string and
-    placeholder, by construction.
+Five successive versions of this paragraph tried to name WHICH reader needs the key, and all five
+were wrong — the base rate on that sentence is 0 for 5. It is not written a sixth time. What is
+checkable lives elsewhere:
 
-    Deliberately not written as "X is the only reader". Three previous versions of this note each
-    replaced a false specific with a clean universal — "the write-back needs the key", then "08 needs
-    the key", then "only verify_step needs the key" — and each was refuted, the last one by a
-    counter-example in this same file. If you find yourself reaching for "only", enumerate instead.
-
-    THAT CHECK DOES NOT CURRENTLY COVER EVERY KEY IT LOOKS AT, so this is not a guarantee today.
-    CLEAR_TOP mixes universal keys with the three chain-1-only `*Assistant` keys, which have no
-    exemption in the absence loop and no CREATE_IF_ABSENT entry — so after `--apply` the gate reports
-    ABSENT on 24 of 25 chains, on 23 of them for the assistants alone. Measured; tracked in #299.
-    Stated here rather than in a footnote because the last three versions of this note each replaced
-    a false specific with a clean universal, and the clean sentence is what keeps being wrong.
-
-(2) Separately, a previously NONZERO value must be CLEARED, so `08_DeployAssetKindRegistry` takes
-    the deployment branch instead of reusing a registry still bound to the OLD proxy. That is about
-    the VALUE, not about whether the key exists — 08 reads through `readDeployedAddress` and so
-    cannot see the difference either. An earlier version of this note cited 08 as a reason the key
-    must be present. It is not one.
-
-Key order is preserved, so the diff stays readable.
-
-NOT the write path. An earlier version of this note added "…so `vm.writeJson` writes back into an
-existing JSON pointer", and called deletion a bet on "forge inserting missing pointers, which is not
-a guarantee". MEASURED 2026-08-12 on the pinned forge 1.7.1: `vm.writeJson` CREATES a missing key,
-a missing top-level key, and even a missing intermediate object, with key order preserved, sibling
-sections untouched and no truncation. `writeAdapterAddress` calls `vm.writeJson` directly and never
-consults `_readAddrOrZero`, which is a read helper — so the write-back never needed the key to
-exist. Do not seed blank keys for a NEW adapter on this reasoning; `04` records it unaided.
-
-That measurement is PINNED, not remembered: `script/test/WriteJsonCreatesMissingKeys.t.sol` asserts
-it, so a forge upgrade that restored the old behaviour would fail there rather than silently making
-this paragraph false again.
+  * `vm.writeJson` creates a missing key unaided — pinned by
+    `script/test/WriteJsonCreatesMissingKeys.t.sol`, which also pins that key ORDER survives a write.
+    It is NOT a reason to keep keys, and it means a brand-new adapter needs no seeded key.
+  * Gate 1.1's absence check does not cover every key it iterates — measured, tracked in **#299**.
 
 WHAT IS CLEARED, AND WHAT IS NOT
 --------------------------------
@@ -133,15 +101,8 @@ def plan_for(chain_id: int) -> tuple[dict, list[str]]:
     changes: list[str] = []
     for k in CLEAR_TOP:
         if k not in out and k in CREATE_IF_ABSENT:
-            # ABSENT is not "already clear" for these, and for exactly ONE reason:
-            # `verify_step.step_record_cleared` does a literal `key not in rec`, and
-            # `deployer_balances.scope()` counts these keys by presence — two readers that
-            # distinguish an absent key from a blanked one. Anything reading through
-            # `ConfigReader._readAddrOrZero` — including `08_DeployAssetKindRegistry` — gets
-            # address(0) for missing, empty AND placeholder alike, so 08 is NOT a reason the key must
-            # exist (it needs the VALUE cleared, which the branch below does). Nor is the write-back:
-            # `vm.writeJson` creates a missing key unaided — pinned by
-            # script/test/WriteJsonCreatesMissingKeys.t.sol, not merely measured once.
+            # Created blank rather than left absent. See the module docstring; the reasons are not
+            # re-derived here.
             changes.append(f"{k}: <absent> -> \"\" (created; verify_step fails on an absent key)")
             out[k] = ""
         elif k in out and out[k] not in ("", None):

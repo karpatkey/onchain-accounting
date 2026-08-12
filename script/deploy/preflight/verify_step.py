@@ -227,18 +227,10 @@ class Chk:
 
 def step_record_cleared(k: Chk, rec: dict, exp: dict, url, base, tag) -> None:
     """The record must be cleared, the bridge must NOT be, and a rollback must exist."""
-    # `reset_deployment_records.py` writes "" rather than deleting, and this check is one reason —
-    # not the only one. The loop below does a literal `key not in rec`, so a record whose keys were
-    # deleted by hand, by `jq del(...)`, or by regenerating from a template would otherwise read as
-    # cleared and slip past. Absence must fail, not pass. `deployer_balances.scope()` also counts
-    # `*Assistant` keys by PRESENCE ignoring value (deployer_balances.py:374), which is why
-    # CREATE_IF_ABSENT deliberately excludes them.
+    # The loop below does a literal `key not in rec`, so a record whose keys were deleted rather
+    # than blanked reads as cleared and slips past. Absence must fail, not pass.
     #
-    # BUT IT DOES NOT COVER EVERY KEY IT ITERATES, so do not read the line above as a guarantee.
-    # CLEAR_TOP mixes universal keys with the three chain-1-only `*Assistant` keys, which get no
-    # exemption here and are not in CREATE_IF_ABSENT — so after `--apply` this fails on 24 of 25
-    # chains, on 23 of them for the assistants alone. Measured; tracked in #299 and deliberately not
-    # fixed in the documentation PR that found it.
+    # This check does NOT cover every key it iterates — measured, tracked in #299.
     #
     # NOT `08_DeployAssetKindRegistry`, and not the write-back — two claims this comment has carried
     # and both are category errors:

@@ -995,18 +995,14 @@ python3 script/deploy/preflight/reset_deployment_records.py
 python3 script/deploy/preflight/reset_deployment_records.py --apply --tag pre-redeploy
 ```
 
-Values are set to `""` rather than deleted because more than one reader checks PRESENCE rather than
-value: `verify_step.step_record_cleared` does a literal `key not in rec` and fails on absence, and
-`deployer_balances.scope()` counts `*Assistant` keys by presence ignoring value. Everything reading
-through `ConfigReader._readAddrOrZero` is blind to the difference — it returns `address(0)` for
-missing, empty and placeholder alike.
+Values are set to `""` and the keys kept, not deleted.
 
-> **That check does not cover every key it iterates, so expect noise here.** `CLEAR_TOP` mixes
-> universal keys with the three chain-1-only `*Assistant` keys, which have no exemption in the
-> absence loop and no `CREATE_IF_ABSENT` entry — so after `--apply` the gate reports ABSENT on
-> **24 of 25** chains, on 23 of them for the assistants alone. Measured, tracked in **#299**, and not
-> fixed here on purpose: a docs PR that quietly repairs a deploy gate hides the repair in a docs
-> review.
+> **Expect ABSENT noise from gate 1.1 here.** Its absence check does not cover every key it iterates —
+> measured, tracked in **#299**, and deliberately not fixed in the docs PR that found it.
+>
+> Separately: `vm.writeJson` creates a missing key unaided, so a brand-new adapter needs **no** seeded
+> key. Pinned by `script/test/WriteJsonCreatesMissingKeys.t.sol`, which also pins that key order
+> survives a write.
 
 Two things this is **not** about, both of which this runbook has previously claimed:
 `08_DeployAssetKindRegistry` needs the **value** cleared so it takes the deployment branch — it reads

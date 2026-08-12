@@ -196,8 +196,46 @@ The 17 impl+proxy chains run the canonical layer only; custom price feeds and ba
 | RWIV | `0x01147052bCc24Ff24a1758eD30B343e80ABE19Fd` |
 | sGHO | `0x7030835F6Eb93f3fDfC7A54b89e3cFe9478F5149` |
 | LDO | `0x16B1607457D0aA6DD6cd6Bd7980d126DE6479580` |
-| OETH | `0xE59C72C9DdAA728010F92e8Df8d2c6ac0DfF57Bc` |
+| OETH *(RETIRED — see note below)* | `0xE59C72C9DdAA728010F92e8Df8d2c6ac0DfF57Bc` |
 | ankrETH | `0x237657576a422a1ab3f4A82834574b5ed2ea8687` |
+
+> **`OETH` is a RETIRED FEED at a LIVE ADDRESS — the row above is kept deliberately.** The contract is
+> still deployed at `0xE59C72C9DdAA728010F92e8Df8d2c6ac0DfF57Bc` and will stay there; this file and
+> `deployments/<id>.json` record what IS deployed, not what is in service, so deleting the row would
+> leave the repo unable to recognise its own address in a trace, an explorer view or an old NAV read.
+> What was removed is INTENT: OETH is gone from `nav-config/assets-and-price-feeds/1.json` and from
+> `contracts-deployment-config/custom-price-feeds/1.json`, because Chainlink is sunsetting the
+> `OETH/ETH` rate feed `0x703118C4CbccCBF2AB31913e0f8075fbbb15f563` that this `CrossRateCustomPriceFeed`
+> consumes as its `RATE_FEED`. **We hold no OETH, so this is a planned retirement and not an incident.**
+>
+> **The address lives in `retiredCustomPriceFeeds`, NOT in `customPriceFeeds`, and that is load-bearing
+> rather than tidy.** `reset_deployment_records.CLEAR_SECTIONS` is `["balanceAdapters",
+> "customPriceFeeds"]`, and its loop blanks **every** non-empty value in a listed section — keys it has
+> never heard of included. Measured on this record: an OETH entry left under `customPriceFeeds`, together
+> with a `$comment` explaining why it was kept, comes back from step 1.1 as `"" / ""`. **The retention
+> note would have been destroyed by the very reset that makes the record worth annotating**, and a
+> `$comment` holding an object is blanked too, so no shape of in-place annotation survives.
+> `retiredCustomPriceFeeds` is in neither `CLEAR_TOP` nor `CLEAR_SECTIONS`, so `plan_for` never touches
+> it — verified by simulating the reset against this file, with `customPriceFeeds.wstETH` blanking in the
+> same run as the control.
+>
+> **Expected after the redeploy:** `03_DeployPriceFeeds` is config-gated and will not redeploy this feed.
+> Because the address now sits outside `customPriceFeeds`, it is also outside `verify_step`'s step-1.5
+> NAV-pointer check and outside `bytecode_audit`'s `customPriceFeeds.*` scan, so the `STALE_NAV` report an
+> earlier revision of this note predicted **no longer fires**. That is deliberate: a permanently-red gate
+> on a deliberately-retired feed is the kind of noise operators learn to step around, and the next real
+> finding gets stepped around with it.
+>
+> **What is NOT weakened:** `verify_step.previous_generation_feeds` unions the archive with
+> `snapshots/pre/<chainId>.json`, and this feed is present in the snapshot as a `Custom` feed
+> (`0xe59c72c9…`, one of 24), so it is still recognised as old-generation. The union is monotone — losing
+> the archive source cannot hide it.
+>
+> **It is still REGISTERED on the live NAV.** Measured 2026-08-12: `getRegisteredAssets()` on
+> `0x80eD5cc6cEbAe4fEE1eD8687279aa492A50afa8d` returns 43 assets including OETH
+> `0x856c4Efb76C1D1AE02e20CEB03A2A6a08b0b8dC3`. This change is config intent; it does not deregister
+> anything on-chain.
+
 | NXM | `0xF0D44e332395762f5A93271DcA0De587B10703CC` |
 | wNXM | `0x11382AbB9FF238a4f4E7fAc9CCe084F038aab78f` |
 

@@ -112,7 +112,16 @@ Example structure (top-level keys are symbols — no chainId wrapper):
   - `Appreciating` — the **exchange rate** grows while the balance is static (ERC-4626 shares, wstETH, most LSTs).
   - `None` — neither; value moves only with the market price.
   - **The trap worth naming:** a token whose yield accrues only through a *separate* wrapper is `None`, and the wrapper is `Appreciating`. So DAI is `None` and sDAI is `Appreciating`; USDe is `None` and sUSDe is `Appreciating`. Classify the token in front of you, not the family.
-  - It describes the **token**, not a position in it. A token can be `Rebasing` while a particular holder does not rebase (an LP, or a contract that the issuer's token auto-migrated to non-rebasing) — see OETH's `$kindComment` for a worked case.
+  - It describes the **token**, not a position in it. A token can be `Rebasing` while a particular holder does not rebase (an LP, or a contract that the issuer's token auto-migrated to non-rebasing). The worked case was OETH's `$kindComment`; OETH was retired on 2026-08-12 (Chainlink sunset its OETH/ETH feed), so it is **preserved here verbatim rather than left as a dangling reference** — it is the clearest example in the repo of the token/position distinction, and its being retired does not make it less instructive:
+
+    > Origin ETH; rebasing to holders, priced via a market OETH/ETH cross-rate. `accrualKind`
+    > describes the TOKEN, not this system's positions: Origin's OToken auto-migrates CONTRACT
+    > holders to non-rebasing on their first balance-changing interaction, and that has already
+    > happened to a registered account here — ACCOUNT_11 (`0x0EFcCBb9E2C09Ea29551879bd9Da32362b32fc89`)
+    > carries `nonRebasingCreditsPerToken = 1e18` with `rebaseState = NotSet`, i.e. auto-classified
+    > with nobody opting out. So do NOT infer balance growth for a Safe's OETH position from
+    > `Rebasing`. No registered account held OETH when this was measured (mainnet block 25656631;
+    > 36% of OETH supply was non-rebasing).
   - **Its consumers are on `main`.** `08_DeployAssetKindRegistry.s.sol`, `ConfigReader.readAssetAccrualKind` and the `AccrualKind` enum (`src/utils/AssetKind.sol`) shipped with the AssetKindRegistry change (#241). Parsing is **fail-closed with no default** — an absent, empty or unrecognized value aborts that chain's `08` deploy (`AssetKindMissingOrInvalid(symbol, field)`) rather than defaulting, because a defaulted classification is indistinguishable from a real one once it is on-chain. `script/manage/RegisterAssets.s.sol` applies the same rule up front (`AssetAccrualKindMissingOrInvalid(symbol)`).
   - Values are **strings, not integers, deliberately**: a stale integer silently re-maps if the enum gains a member; an unknown string cannot be mistaken for a valid one.
 

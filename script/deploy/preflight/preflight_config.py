@@ -304,7 +304,7 @@ def heartbeat_findings(chain_id: int, assets: dict, dep_feeds: dict) -> list[tup
     ASSERT `>=`, NEVER `==` — the asymmetry is the entire point:
 
       * a LOOSER derived heartbeat cannot over-report, because the derived feed inherits the base's own
-        staleness verdict regardless. wstETH/stETH/lsETH/weETH/eETH/OETH/LDO at 86400 against WETH's
+        staleness verdict regardless. wstETH/stETH/lsETH/weETH/eETH/LDO at 86400 against WETH's
         3600 are CORRECT and must not be flagged.
       * a TIGHTER one cannot make a price fresher. It can only manufacture a stale verdict while the
         base is fresh, which values the asset at $0 and lists it in `stalePriceAssets`.

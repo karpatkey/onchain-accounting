@@ -31,8 +31,15 @@ import {ProtocolNames} from "src/utils/ProtocolNames.sol";
 /// @dev **Permissionless & submit-on-behalf-of.** `submitProofs(user, …)` takes an explicit `user` and is callable by
 ///      anyone — no roles, no AccessControl. The intended feeder is a keeper EOA (cron job) that periodically submits
 ///      the tracked accounts' allocations, but because every write is proof-verified, opening it to anyone adds no
-///      fabrication risk: the worst a griefer can do is pay gas to cache a user's *real* Merkl allocation (bounded to
-///      that user's actual reward footprint). This is the permissionless "v2" ADR 0007 anticipated. It does NOT use
+///      fabrication risk *in the amounts*: no caller can make this adapter report value the account does not hold.
+///      **That is not the same as "a griefer can do nothing", and this notice used to overstate it.** The proof binds
+///      the per-token cumulative but NOT the campaign split — only the shares' SUM is checked — so a third party
+///      holding an account's (public) proof can re-submit it split into up to {MAX_CAMPAIGNS_PER_TOKEN} fabricated
+///      campaign legs, inflating a real token's leg COUNT and putting attacker-chosen `campaignId`s on reported
+///      positions. It is bounded (the token set stays proof-bounded, the leg product is capped, and each token is
+///      read in its own stipended frame), it never inflates NAV, and it is repairable in one transaction by
+///      re-submitting the correct breakdown — but it is a real fabrication of position *identity*, not nothing.
+///      This is the permissionless "v2" ADR 0007 anticipated. It does NOT use
 ///      the coordinate-cache {IAssistedBalanceAdapter} family — that marker is `msg.sender`-keyed and caches
 ///      coordinates never amounts, and Merkl is neither (it submits on-behalf-of and caches a proof-verified amount);
 ///      its "under-report only" guarantee rests on proof-verification + stale-root→0 instead. `clearAllocation` is

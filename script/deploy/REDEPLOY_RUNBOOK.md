@@ -125,7 +125,7 @@ and scope below rather than being restated as covering the later change.)*
 > transaction fixed — see issue #296.
 >
 > **What was rewritten and what was not, deliberately.** The per-chain DERIVATION TABLE below, the
-> headline totals, and the summary row **have been updated to 111 / 67**, because `:104` designates that
+> headline totals, and the summary row **have been updated to 111 / 67**, because the note under the summary table designates that
 > table as "where they are derived and which is the authoritative one if the two ever disagree" — a table
 > derived from config must move when config moves, or the document's own source of truth becomes the one
 > wrong place. What is NOT rewritten is the **dated claim in this heading**: "confirmed on-chain

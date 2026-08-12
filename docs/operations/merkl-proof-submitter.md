@@ -125,7 +125,7 @@ The adapter is **permissionless**: `submitProofs(user, allocs)` / `submitProofsB
 
 Periodically (weekly is fine):
 
-- **Prune fully-claimed entries.** For each `(account, token)` in the adapter's per-user list, if `cached.cumulativeAmount == Distributor.claimed(account, token).amount`, call `clearAllocation(account, token)`. This is housekeeping — leaving them in place is correct but wastes storage and read gas.
+- **Prune fully-claimed entries — covered by the steady-state GC pass, not a separate weekly job.** The per-cycle pass under Responsibilities already clears every cached token that reads 0, which includes fully-claimed ones (`cached.cumulativeAmount <= Distributor.claimed(account, token).amount`). Listed here only so the audit is complete; do **not** schedule it weekly instead, because at a weekly cadence stale entries can reach `MAX_TOKENS_PER_USER` (64) between runs and block every refresh.
 - **Audit cache vs. API.** Run a one-shot job that compares the adapter's cache to the Merkl API for every tracked account. Flag drift > 1 cycle as a potential bot stall.
 - **Verify root proofs end-to-end.** Independently fetch Merkl's IPFS-hosted tree (`Distributor.tree().ipfsHash`), reconstruct leaves locally, and confirm the cached values match. This is the "anyone can audit" property exercised internally.
 
@@ -158,7 +158,7 @@ Which is correct: the user's true total is `cum_{N+1}`, the latest cumulative al
 
 ## What the bot must NOT do
 
-- Do not call `clearAllocation` automatically — it's a manual operator action triggered by either pruning (above) or an `AmountRegression` investigation.
+- **Do NOT treat `clearAllocation` as manual-only.** An earlier revision of this guide said "do not call `clearAllocation` automatically"; that instruction is **withdrawn**, and following it walks an account into the `TooManyTokens` outage described under Responsibilities. GC is automatic and runs on the submit cadence. It is safe to automate precisely because it is stale-gated: a call against a still-live entry reverts `AllocationStillLive`, so an automated pass cannot suppress real value.
 - There is no ownership to transfer. The adapter has no `Ownable`, no `AccessControl` and no admin — nothing to hand over, and no Safe involvement in its operation.
 - Do not submit proofs for accounts that aren't in the operator's tracked list. Submitting for arbitrary external accounts is harmless on the adapter (the proof still verifies), but inflates per-user storage and confuses NAV consumers — the adapter is intended only for accounts whose NAV is computed by the OIV.
 - Do not retry indefinitely on a single failed submission. One retry per cycle is enough; the next cycle will catch what was missed.

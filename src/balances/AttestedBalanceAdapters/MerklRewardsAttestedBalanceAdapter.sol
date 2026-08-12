@@ -509,8 +509,17 @@ contract MerklRewardsAttestedBalanceAdapter is IAttestedBalanceAdapter, IPositio
             // do not shrink it — which is what MAX_TOKENS_PER_USER x MAX_CAMPAIGNS_PER_TOKEN is for. The two are
             // not substitutes: isolation alone still leaves a well-behaved 8192-leg read unaffordable, and the
             // caps alone still lose the whole set to one reverting token.
+            // SHARE the budget across the tokens still to value — do NOT hand each one 63/64 of everything left.
+            // `GasStipendLib.stipendFrom` alone is the right shape for a SINGLE forwarded call, but wrong inside a
+            // loop: the first token would take 63/64 of the frame, leaving 1/64 for every remaining token AND for
+            // the final array construction. Measured, that is not theoretical — with two live tokens and the griefer
+            // first, a 400,000-gas read values both tokens fine WITHOUT the griefer and reverts ENTIRELY with it,
+            // because the outer frame is left too poor to finish. That is precisely the whole-read failure this
+            // isolation exists to prevent, reintroduced by the stipend. Dividing by the remaining count bounds each
+            // token to its fair slice; because `gasleft()` is re-read every iteration, tokens that finish cheaply
+            // hand their unused share to the ones after them, so the healthy path is not starved.
             uint256 available = gasleft();
-            uint256 stipend = GasStipendLib.stipendFrom(available);
+            uint256 stipend = GasStipendLib.stipendFrom(available) / (tokens.length - i);
             try this.tokenLegsSelf{gas: stipend}(account, tokens[i], meta) returns (
                 INAVCalculator.PositionBalance[] memory legs
             ) {

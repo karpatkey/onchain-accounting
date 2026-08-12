@@ -1138,6 +1138,26 @@ contract MerklRewardsAttestedBalanceAdapterTest is BalanceAdapterTestBase {
         assertEq(pos[0].amount, 100 ether, "survivor unaffected by the neighbour's failure");
     }
 
+    /// @dev THE ORDERING CASE. The griefed token comes FIRST, so it is valued before the healthy one. This is what
+    ///      distinguishes real isolation from the appearance of it: a per-token stipend of 63/64 of ALL remaining gas
+    ///      lets the first token consume nearly the whole budget before failing, starving every token after it — so
+    ///      the healthy token is dropped too and the "one bad token cannot corrupt the others" property does not
+    ///      actually hold. Both other isolation tests place the griefer SECOND, where the bug is invisible.
+    function test_isolation_griefingTokenFirstDoesNotStarveTheRest() public {
+        _seedTwoLive(100 ether, 50 ether);
+        assertEq(adapter.userTokens(alice)[0], address(arb), "fixture: the griefed token must be valued FIRST");
+        distributor.setBurnsFor(address(arb), true);
+
+        // 400_000 is measured, not arbitrary: WITHOUT the griefer this budget values both tokens fine (control run),
+        // and WITH it the whole read reverts. Above ~800_000 the defect is invisible — the griefer costs only its own
+        // token — which is why a budget has to be chosen where the 63/64 stipend actually bites.
+        INAVCalculator.PositionBalance[] memory pos = adapter.getAdapterPositions{gas: 400_000}(alice, address(0));
+
+        assertEq(pos.length, 1, "the token AFTER the griefer must still be valued");
+        assertEq(pos[0].balanceAsset.asset, address(op), "op survives a griefer that ran before it");
+        assertEq(pos[0].amount, 50 ether, "and its amount is untouched");
+    }
+
     /// @dev Seeds arb AND op as SIMULTANEOUSLY LIVE via a two-leaf tree. `_seedAllocation`/`_fillTokenCache` rotate
     ///      the root on every call, so with them only the last token stays fresh and every earlier one reads 0
     ///      through the stale-root branch — which would make an isolation test pass without ever reaching the

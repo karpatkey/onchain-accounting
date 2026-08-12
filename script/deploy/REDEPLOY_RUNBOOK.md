@@ -106,7 +106,12 @@ are a separate axis and not a count.
 `meta adapters` and `meta instances` columns above are a summary of the table immediately below, which
 is where they are derived and which is the authoritative one if the two ever disagree.)
 
-#### Meta instances: **110**, reconciled from config and confirmed on-chain (2026-07-29)
+#### Meta instances: **111** — the figure to compare a tool's output against
+
+*(**110** was derived from config and confirmed on-chain across all 24 chains on 2026-07-29 by the method
+below; **+1 on 2026-08-12** for issue #296, one `MorphoVaultsMeta` instance on chain 1. The heading
+carries the CURRENT number because step 1.8 compares against it; the dated derivation keeps its own date
+and scope below rather than being restated as covering the later change.)*
 
 > ⚠️ **AMENDED 2026-08-12 — the expected total is now 111, and `mainnet` is 67 rather than 66.** One
 > `MorphoVaultsMeta` instance was added to chain 1's config (the KPK USDC Yield RWA vault,
@@ -142,9 +147,12 @@ is where they are derived and which is the authoritative one if the two ever dis
 > coordinate, not a raw `bytes32` marketId. Re-derived from config at this branch's head rather than
 > assumed: mainnet's `instances` sum to 53 and `instancesRaw` to 14 across the 15 enabled meta adapters.
 >
-> Step 1.8 should therefore expect **111**. Where this document derives from 110 downstream (the
-> `110 + 3 = 113` disabled-adapter arithmetic, and the step-1.7 re-registration count), read 111 + 3 = 114
-> and 111.
+> **Every ACTIONABLE figure in this document has been updated in place to 111 / 67** — the headline
+> totals, the summary row, the derivation table, the two independent confirmations, the disabled-adapter
+> arithmetic (now 111 + 3 = 114) and the step-1.8 post-condition. An operator is never asked to
+> mentally substitute a value: where a number is compared against a tool's output, it is the current
+> number. What is preserved as dated prose is the METHOD and DATE of the 2026-07-29 derivation, not its
+> totals — the same figure was doing two jobs with opposite requirements, and they are now separated.
 
 This number is what tells you at step 1.8 whether `06_Configure`'s reconciliation succeeded, so it is
 settled here rather than at execution time. Three figures had been circulating — 104, 110 and 113.
@@ -162,18 +170,18 @@ settled here rather than at execution time. Three figures had been circulating �
 
 Counted from `script/config/nav-config/meta-balance-adapters/<chainId>.json`, taking only adapters
 with `enabled: true` and summing `instances` + `instancesRaw`. Two independent confirmations: the
-deduplicated count is also 110 (no coordinate repeats within an adapter, so `06` cannot revert
-`DuplicateMetaInstance`), and unique `(chain, coordinate)` pairs across *all* adapters is also 110
+deduplicated count is also 111 (no coordinate repeats within an adapter, so `06` cannot revert
+`DuplicateMetaInstance`), and unique `(chain, coordinate)` pairs across *all* adapters is also 111
 (no coordinate is claimed by two adapters on one chain). **`verify_step.py 1.8` then compared each
 adapter's on-chain `getMetaInstances()` against config as a SET on all 7 configured chains and passed
 — so config and the live NAV agree exactly, not merely in total.**
 
 **Where the other two figures come from:**
 
-- **113** = every adapter in the files, ignoring `enabled`. The difference is exactly three disabled
+- **114** = every adapter in the files, ignoring `enabled`. The difference is exactly three disabled
   adapters carrying one instance each: mainnet `BalancerV2PoolsMeta`, mainnet `BalancerV2GaugesMeta`,
   bsc `PancakeSwapV2PoolsMeta`. `ConfigReader.isAdapterEnabled` gates registration and a missing key
-  reads as **false** (`ConfigReader.sol:367-368`), so `06` will not register any of them. 110 + 3 = 113.
+  reads as **false** (`ConfigReader.sol:367-368`), so `06` will not register any of them. 111 + 3 = 114.
 - **104** is not reproducible from the current tree by any derivation — not `instances` alone (90),
   not the deploy-config tree (0, it holds no instance lists), not any enabled-filter variant. It
   predates the config split in `f4873617` and should be treated as retired, not reconciled.
@@ -302,7 +310,7 @@ NAV address is invalidated by construction:
 | every custom price feed is redeployed — each holds `INAVCalculator public immutable NAV` (ADR 0019) | **41**: mainnet 26, arbitrum 8, base 4, gnosis 3 | 1.4 |
 | every asset with its primary + monitor feeds is re-registered | **93** assets | 1.5 |
 | every plain and meta adapter is redeployed | 12 plain + 33 meta | 1.6 |
-| every meta instance is re-registered | **110** | 1.7 |
+| every meta instance is re-registered | **111** | 1.8 |
 | each assisted adapter drags its assistant, which holds `immutable ADAPTER` | **4 pairs on 2 chains** | 2.1 |
 | downstream consumers repoint off the old proxy | kpkShares, portal, agents, subgraphs | 2.7 |
 
@@ -313,7 +321,7 @@ looking attractive — it is genuinely far smaller. It is also wrong.
 > **If another document says 39 or 40 feeds, it predates two merges — it is not a disagreement to
 > split.** 39 was correct until #199 (merged 2026-07-29), 40 until #224 (merged 2026-07-30). The merged
 > tree is **41**, re-measured with `preflight_config.py` on `e4307cb3`: mainnet 26, arbitrum 8, base 4,
-> gnosis 3. The full derivation is under 1.4. The **110** meta instances and the cutover off
+> gnosis 3. The full derivation is under 1.4. The **111** meta instances and the cutover off
 > `0x80eD5cc6cEbAe4fEE1eD8687279aa492A50afa8d` are unaffected and agree everywhere.
 
 The old stack is **abandoned in place**, not decommissioned. It keeps answering on
@@ -1395,8 +1403,8 @@ touched at all by this step, not merely touched idempotently.
 - **Post-condition:** `python3 script/deploy/preflight/verify_step.py 1.8` — `getAdapterCount()`
   matches 1.6, every recorded adapter reports `isAdapterRegistered`, nothing is registered that is not
   in the record, and each meta adapter's `getMetaInstances()` **set equals** its configured coordinate
-  set, summing to the total in the meta-instance table at the top of this document (**110** as
-  reconciled 2026-07-29). The per-chain breakdown lives in that table only — it is not repeated here,
+  set, summing to the total in the meta-instance table at the top of this document (**111**; 110 as
+  reconciled 2026-07-29, +1 on 2026-08-12 for issue #296). The per-chain breakdown lives in that table only — it is not repeated here,
   so there is one place to correct if config changes.
 
 > **Watch for the silent skip.** `06` does `if (deployed == address(0)) continue;` (`06:113` for

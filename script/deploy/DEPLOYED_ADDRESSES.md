@@ -188,8 +188,25 @@ The 17 impl+proxy chains run the canonical layer only; custom price feeds and ba
 | RWIV | `0x01147052bCc24Ff24a1758eD30B343e80ABE19Fd` |
 | sGHO | `0x7030835F6Eb93f3fDfC7A54b89e3cFe9478F5149` |
 | LDO | `0x16B1607457D0aA6DD6cd6Bd7980d126DE6479580` |
-| OETH | `0xE59C72C9DdAA728010F92e8Df8d2c6ac0DfF57Bc` |
+| OETH *(RETIRED — see note below)* | `0xE59C72C9DdAA728010F92e8Df8d2c6ac0DfF57Bc` |
 | ankrETH | `0x237657576a422a1ab3f4A82834574b5ed2ea8687` |
+
+> **`OETH` is a RETIRED FEED at a LIVE ADDRESS — the row above is kept deliberately.** The contract is
+> still deployed at `0xE59C72C9DdAA728010F92e8Df8d2c6ac0DfF57Bc` and will stay there; this file and
+> `deployments/<id>.json` record what IS deployed, not what is in service, so deleting the row would
+> leave the repo unable to recognise its own address in a trace, an explorer view or an old NAV read.
+> What was removed is INTENT: OETH is gone from `nav-config/assets-and-price-feeds/1.json` and from
+> `contracts-deployment-config/custom-price-feeds/1.json`, because Chainlink is sunsetting the
+> `OETH/ETH` rate feed `0x703118C4CbccCBF2AB31913e0f8075fbbb15f563` that this `CrossRateCustomPriceFeed`
+> consumes as its `RATE_FEED`. **We hold no OETH, so this is a planned retirement and not an incident.**
+>
+> **Expected after the redeploy:** `03_DeployPriceFeeds` is config-gated, so it will not redeploy this
+> feed. Its record therefore keeps the OLD address, whose immutable `NAV()` still points at the OLD
+> proxy — so `bytecode_audit.py` will report `STALE_NAV` for it (`bytecode_audit.py:254`). That is
+> correct behaviour on a correct state, not an anomaly. A `retiredCustomPriceFeeds` section that removes
+> the need to remember this is planned as a follow-up, deliberately deferred until #300 lands because it
+> is rewriting which sections of `deployments/<id>.json` are expected.
+
 | NXM | `0xF0D44e332395762f5A93271DcA0De587B10703CC` |
 | wNXM | `0x11382AbB9FF238a4f4E7fAc9CCe084F038aab78f` |
 

@@ -80,7 +80,8 @@ wanted: `verify_step.py` requires it as the step 1.1 post-condition (`:252`).
 
 Configured totals, reconciled from config **and** confirmed against the live NAV on 2026-07-27;
 feed count re-measured 2026-07-30 against the merged tree:
-**33 meta adapters, 110 meta instances, 12 plain adapters, 41 custom price feeds, 93 assets.**
+**33 meta adapters, 110 meta instances, 12 plain adapters, 40 custom price feeds, 92 assets.**
+<!-- feeds 41 -> 40 and assets 93 -> 92 on 2026-08-12: OETH removed from mainnet, Chainlink sunsetting its OETH/ETH rate feed 0x703118C4CbccCBF2AB31913e0f8075fbbb15f563. -->
 The feed count is no longer pending anything — see the note under 1.4 for the two PRs that moved it.
 
 **Re-measured 2026-08-08 at `a3974686` with `preflight_config.py`: all five totals and every per-chain
@@ -929,7 +930,7 @@ This **differs from the original plan**, which had `RegisterAssets` before `03`.
 (`RegisterAssets.s.sol:19` states the dependency outright), so run first it logs
 `[skip] primary feed unresolved (deploy it first)` and moves on. Measured on a mainnet fork in the
 plan's order: **20 of 43 assets skipped** — wstETH, eETH, weETH, rETH, ezETH, rsETH, ETHx, osETH,
-stETH, lsETH, sUSDe, sUSDS, syrupUSDC, RWIV, sGHO, LDO, OETH, ankrETH, NXM, wNXM. `RegisterAssets` is
+stETH, lsETH, sUSDe, sUSDS, syrupUSDC, RWIV, sGHO, LDO, ankrETH, NXM, wNXM. `RegisterAssets` is
 idempotent so a later re-run tops them up, but the first pass leaves nearly half of mainnet
 unregistered while reporting nothing worse than a skip line.
 

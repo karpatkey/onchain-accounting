@@ -440,7 +440,7 @@ deploy-valid. It is **not in `main`** (`_assertDeployProfile` appears nowhere th
 shape: an **allowlist** (`default`, `slow`) rather than a denylist, with no bypass env var, on the
 reasoning that forgetting to extend a denylist fails silently and on-chain. Its own comment already states
 this requirement in the strongest terms available — "`slow` … **REQUIRED, not merely tolerated**: the
-redeploy runbook runs `RegisterAssets` under it, because mainnet's 43 assets otherwise `MemoryOOG`" —
+redeploy runbook runs `RegisterAssets` under it, because mainnet's 42 assets otherwise `MemoryOOG`" —
 which makes four places, and still did not stop the rehearsal running without it. Reviving #188 is the
 durable fix; the design question is settled, not open.
 
@@ -489,7 +489,7 @@ Four traps that have each already cost a run:
   > unreadable` on every phantom address) — that is the gate working, and it is the reason to gate
   > every step rather than trusting exit codes.
 - **1.5 must precede 1.6.** `RegisterAssets` resolves Custom feeds from the record; run first it skips
-  **20 of mainnet's 43 assets** with `[skip] primary feed unresolved`.
+  **20 of mainnet's 42 assets** with `[skip] primary feed unresolved`.
 
 ### Gate every step on its post-condition, not its exit code
 
@@ -512,7 +512,7 @@ Measured on `main` @ `f72dd48a`:
 | meta adapters | **33** | `preflight_config.py` |
 | meta instances | **110** | `preflight_config.py`; per-chain table in the runbook |
 | plain adapters | **12** (+1 `ERC20Default` per chain) | `preflight_config.py` |
-| custom price feeds | **41** | `preflight_config.py`, re-measured 2026-07-30 (39 before #199, 40 before #224) |
+| custom price feeds | **40** | `preflight_config.py`, re-measured 2026-07-30 (39 before #199, 40 before #224) |
 | assets | **93** | `preflight_config.py` |
 
 Per-chain meta instances: 66 / 16 / 16 / 4 / 4 / 4 / 0 for 1 / 42161 / 8453 / 10 / 100 / 137 / 56.

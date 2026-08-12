@@ -55,6 +55,7 @@
     "osETHCrossRate": "0xfD6CeB9E6eE4D8Ff9Da2f21617A496595B50C3F2",
     "rETHCrossRate": "0x09cd6a20ddD9DB835ceb60154c1B9a41Af79f8C8",
     "OETH": "0xE59C72C9DdAA728010F92e8Df8d2c6ac0DfF57Bc",
+    "$OETH_retired": "RETIRED 2026-08-12. The contract IS still deployed at the address above and this record is kept deliberately: deployments/<id>.json is the ONLY place addresses live, so deleting it would leave the repo unable to recognise its own address in a trace or an old NAV read. What was removed is INTENT, not reality: OETH is gone from nav-config/assets-and-price-feeds/1.json and from contracts-deployment-config/custom-price-feeds/1.json, because Chainlink is sunsetting the OETH/ETH rate feed 0x703118C4CbccCBF2AB31913e0f8075fbbb15f563 that this CrossRate feed consumes. We hold no OETH, so this is a planned retirement and NOT an incident. NOTE FOR THE REDEPLOY: because 03 is config-gated it will not redeploy this feed, so after the new proxy goes live bytecode_audit will report STALE_NAV for it (its immutable NAV() still points at the OLD proxy). That is expected and is why a retiredCustomPriceFeeds section is planned as a follow-up once #300 lands.",
     "ankrETH": "0x237657576a422a1ab3f4A82834574b5ed2ea8687",
     "NXM": "0xF0D44e332395762f5A93271DcA0De587B10703CC",
     "wNXM": "0x11382AbB9FF238a4f4E7fAc9CCe084F038aab78f"

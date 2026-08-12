@@ -3,6 +3,7 @@ pragma solidity ^0.8;
 
 import {Test} from "forge-std/Test.sol";
 import {VmSafe} from "forge-std/Vm.sol";
+import {ConfigReader} from "script/utils/ConfigReader.sol";
 
 /// @title PositionLabelsProbeCoverage
 /// @author KPK
@@ -111,6 +112,16 @@ contract PositionLabelsProbeCoverageTest is Test {
             string[] memory keys = vm.parseJsonKeys(json, ".balanceAdapters");
             for (uint256 k; k < keys.length; ++k) {
                 if (_contains(keys[k], "Meta")) continue;
+                // A key with a blank or placeholder VALUE is a slot reserved for an adapter that is not deployed
+                // yet, not a registered adapter. `04_DeployBalanceAdapters` needs the key to pre-exist because
+                // `ConfigReader.writeAdapterAddress` writes straight through `vm.writeJson` at a computed pointer
+                // with no create-if-absent path — so reserving the slot is REQUIRED, and this tripwire must not
+                // read the reservation as a registration. Asked through `ConfigReader._readAddrOrZero`, which is
+                // the same code the deploy path uses, so "placeholder" has exactly one definition in this repo.
+                if (ConfigReader._readAddrOrZero(vm, json, string.concat(".balanceAdapters.", keys[k])) == address(0))
+                {
+                    continue;
+                }
                 if (_has3(acc, n, keys[k])) continue;
                 require(n < acc.length, "PositionLabelsProbeCoverage: accumulator overflow");
                 acc[n++] = keys[k];

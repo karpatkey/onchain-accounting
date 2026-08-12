@@ -214,7 +214,11 @@ library ConfigReader {
         vm.writeJson(vm.toString(deployedAddress), _deploymentsPath(vm, chainId), jsonPath);
     }
 
-    function _readAddrOrZero(Vm vm, string memory json, string memory jsonPath) private view returns (address) {
+    /// @dev `internal` rather than `private` so the deployment-config tripwires under `test/` can ask the same
+    ///      question the deploy path asks — "is this key a real address?" — through THIS code rather than a
+    ///      second copy of the predicate. Two definitions of "placeholder" in one repo drift, and the drift
+    ///      is invisible until a deploy.
+    function _readAddrOrZero(Vm vm, string memory json, string memory jsonPath) internal view returns (address) {
         if (!vm.keyExists(json, jsonPath)) return address(0);
         string memory addrStr = json.readString(jsonPath);
         if (bytes(addrStr).length == 0 || _isPlaceholder(addrStr)) return address(0);

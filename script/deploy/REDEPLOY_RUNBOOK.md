@@ -159,7 +159,9 @@ and scope below rather than being restated as covering the later change.)*
 > totals — the same figure was doing two jobs with opposite requirements, and they are now separated.
 
 This number is what tells you at step 1.8 whether `06_Configure`'s reconciliation succeeded, so it is
-settled here rather than at execution time. Three figures had been circulating — 104, 110 and 113.
+settled here rather than at execution time. Three figures had been circulating — 104, 110 and 113
+(the latter two now 111 and 114 after the 2026-08-12 amendment; the historical figures are named here
+as they circulated, and the paragraphs below explain the CURRENT values).
 
 | chain | enabled meta adapters | `instances` | `instancesRaw` | total |
 | --- | --- | --- | --- | --- |
@@ -192,7 +194,7 @@ against the amended config has NOT been done, and this paragraph does not claim 
   adapters carrying one instance each: mainnet `BalancerV2PoolsMeta`, mainnet `BalancerV2GaugesMeta`,
   bsc `PancakeSwapV2PoolsMeta`. `ConfigReader.isAdapterEnabled` gates registration and a missing key
   reads as **false** (`ConfigReader.sol:367-368`), so `06` will not register any of them. 111 + 3 = 114.
-- **104** is not reproducible from the current tree by any derivation — not `instances` alone (90),
+- **104** is not reproducible from the current tree by any derivation — not `instances` alone (91),
   not the deploy-config tree (0, it holds no instance lists), not any enabled-filter variant. It
   predates the config split in `f4873617` and should be treated as retired, not reconciled.
 

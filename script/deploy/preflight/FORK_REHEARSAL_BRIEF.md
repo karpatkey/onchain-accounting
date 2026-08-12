@@ -510,7 +510,7 @@ Measured on `main` @ `f72dd48a`:
 | | count | source |
 |---|---|---|
 | meta adapters | **33** | `preflight_config.py` |
-| meta instances | **111** | `preflight_config.py`; per-chain table in the runbook |
+| meta instances | **111** | `preflight_config.py`; per-chain table in the runbook. **NOT measured at `f72dd48a`** — that commit held 110; amended on this branch for issue #296 (+1 `MorphoVaultsMeta` instance on chain 1) |
 | plain adapters | **12** (+1 `ERC20Default` per chain) | `preflight_config.py` |
 | custom price feeds | **41** | `preflight_config.py`, re-measured 2026-07-30 (39 before #199, 40 before #224) |
 | assets | **93** | `preflight_config.py` |

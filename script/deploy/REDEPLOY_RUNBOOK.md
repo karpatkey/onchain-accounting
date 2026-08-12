@@ -176,9 +176,15 @@ Counted from `script/config/nav-config/meta-balance-adapters/<chainId>.json`, ta
 with `enabled: true` and summing `instances` + `instancesRaw`. Two independent confirmations: the
 deduplicated count is also 111 (no coordinate repeats within an adapter, so `06` cannot revert
 `DuplicateMetaInstance`), and unique `(chain, coordinate)` pairs across *all* adapters is also 111
-(no coordinate is claimed by two adapters on one chain). **`verify_step.py 1.8` then compared each
-adapter's on-chain `getMetaInstances()` against config as a SET on all 7 configured chains and passed
-— so config and the live NAV agree exactly, not merely in total.**
+(no coordinate is claimed by two adapters on one chain). Both dedup figures are re-derived from
+today's config and so carry the amended 111.
+
+**The all-chain set comparison below is NOT re-derived — it is a dated result and it covers the 110
+state.** On 2026-07-29 `verify_step.py 1.8` compared each adapter's on-chain `getMetaInstances()`
+against config as a SET on all 7 configured chains and passed, so config and the live NAV agreed
+exactly, not merely in total — **at that time, at 110**. The 2026-08-12 check behind the +1 was much
+narrower: `getMetaInstances(MorphoVaultsMeta)` on chain 1 only. Re-running 1.8 across all 7 chains
+against the amended config has NOT been done, and this paragraph does not claim it has.
 
 **Where the other two figures come from:**
 

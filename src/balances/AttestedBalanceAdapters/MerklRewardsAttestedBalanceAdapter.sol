@@ -127,6 +127,18 @@ contract MerklRewardsAttestedBalanceAdapter is IAttestedBalanceAdapter, IPositio
     ///         size a budget against is the PRODUCT of the two caps, never either one alone. Lowered 32 -> 8
     ///         together with {MAX_TOKENS_PER_USER} 256 -> 64: the product falls 8192 -> 512 legs, i.e. a worst case
     ///         of ~10.3M gas instead of order 1e9, which no read could ever pay.
+    ///
+    ///         **Why these stay FAIL-LOUD rather than degrading like `NAVCalculator._MAX_LABEL_ELEMENTS`.** That cap
+    ///         and these do different jobs, and matching its convention here would be wrong. `_MAX_LABEL_ELEMENTS`
+    ///         is a READ-side guard on UNTRUSTED returndata — an arbitrary, permissionlessly-deployed adapter's
+    ///         `positionLabels()` reply, read over a low-level staticcall — where the NAV cannot control what
+    ///         arrives and must degrade, so an over-limit reply becomes an EMPTY array via the caller's catch. These
+    ///         two are WRITE-side storage admission, enforced by the contract that owns the storage, before the data
+    ///         exists: over-limit reverts the submit (`TooManyCampaigns` / `TooManyTokens`). Rejecting at write is
+    ///         precisely what keeps the read bounded, so softening it to "accept and store nothing" would let an
+    ///         oversized submit silently no-op while the feeder believed it had landed. The one place
+    ///         `_MAX_LABEL_ELEMENTS`'s convention DOES apply is the read-side drop in {buildPositionsSelf} — never
+    ///         emit a partial answer that reads as a complete one — and it is cited there.
     uint256 public constant MAX_CAMPAIGNS_PER_TOKEN = 8;
 
     /// @notice Upper bound on distinct reward tokens cached per user. Bounds the read-side fan-out (the position/

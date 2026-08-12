@@ -1065,7 +1065,7 @@ Recoverable (`setAssetKinds` + `setAssetLabels`), but only once somebody notices
 #### What the adapter-label override surface costs to read — measured on merged `main`
 
 The registry this step deploys also holds #278's adapter-keyed overrides
-(`setAdapterProtocolName` / `setAdapterLabelCategory` and their `clear…` pair). Reading them is not free,
+(`setAdapterProtocolName` / `setAdapterLabels` and their `clear…` pair). Reading them is not free,
 and **the day-one cost is the higher of the two figures.** Measured on merged `main` at `a3974686` — not on
 a branch, and not on the superseded head that earlier numbers came from:
 
@@ -1074,8 +1074,13 @@ a branch, and not on the superseded head that earlier numbers came from:
 | override **MISS** — **what an operator pays today** | **114,552** |
 | override **HIT** | 112,169 |
 
+> ⚠️ **Both figures predate #285**, which replaced the segment-0-only scalar `setAdapterLabelCategory` with
+> the per-segment `setAdapterLabels(address, string[])`. The label half of the read is now an ARRAY fetch
+> through an isolating decode shim rather than a flat `string`, so **treat these as a floor and re-measure
+> against the merged tree** before quoting them at deploy time. The MISS-dearer-than-HIT shape is unchanged.
+
 **MISS is dearer than HIT, and every adapter is a MISS today.** No overrides exist on `main`; one comes
-into being only when a `MANAGER` calls `setAdapterProtocolName` or `setAdapterLabelCategory`. A hit skips
+into being only when a `MANAGER` calls `setAdapterProtocolName` or `setAdapterLabels`. A hit skips
 the adapter's `protocolName()` staticcall entirely; a miss pays the registry lookup **and still makes the
 adapter call**, so a miss is strictly a superset of the work. **You pay the higher number from day one, for
 zero benefit until an override is actually set.**

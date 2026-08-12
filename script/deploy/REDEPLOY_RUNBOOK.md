@@ -120,7 +120,7 @@ and scope below rather than being restated as covering the later change.)*
 > ⚠️ **AMENDED 2026-08-12 — the expected total is now 111, and `mainnet` is 67 rather than 66.** One
 > `MorphoVaultsMeta` instance was added to chain 1's config (the KPK USDC Yield RWA vault,
 > `0x7a72bcD2c3F7F7e4D6679170a0625bAB15D7DDa1`) to match a change already made on the LIVE NAV by
-> `addMetaInstances` on 2026-08-12 (tx `0x1b86d482…b7024`, block 25738578). Without it `06_Configure`
+> `addMetaInstances` on 2026-08-12 (tx `0x1b86d482…b7024`, block 25739090). Without it `06_Configure`
 > would reconcile the on-chain set back DOWN and drop the vault, re-introducing the under-reporting that
 > transaction fixed — see issue #296.
 >
@@ -128,9 +128,11 @@ and scope below rather than being restated as covering the later change.)*
 > headline totals, and the summary row **have been updated to 111 / 67**, because the note under the summary table designates that
 > table as "where they are derived and which is the authoritative one if the two ever disagree" — a table
 > derived from config must move when config moves, or the document's own source of truth becomes the one
-> wrong place. What is NOT rewritten is the **dated claim in this heading**: "confirmed on-chain
-> (2026-07-29)" was a 24-chain on-chain verification, and this change is one adapter on one chain, so
-> restating that date's scope as though it covered today would destroy the provenance of both. What was
+> wrong place. What is NOT rewritten is the **dated 2026-07-29 claim**, which now sits in the italic
+> note directly under the heading rather than in the heading itself. Its scope was: derived from config
+> across all 24 chains, and confirmed ON-CHAIN on the 7 configured chains (see the 1.8 set comparison
+> below, and step 0.6). This change is one adapter on one chain, so restating that date's scope as
+> though it covered today would destroy the provenance of both. What was
 > measured today
 > is narrower and is stated as such: `getMetaInstances(MorphoVaultsMeta)` on the live NAV
 > (`0x80eD5cc6cEbAe4fEE1eD8687279aa492A50afa8d`) returns **10** entries for chain 1, and chain 1's config
@@ -190,10 +192,13 @@ against the amended config has NOT been done, and this paragraph does not claim 
 
 **Where the other two figures come from:**
 
-- **114** = every adapter in the files, ignoring `enabled`. The difference is exactly three disabled
-  adapters carrying one instance each: mainnet `BalancerV2PoolsMeta`, mainnet `BalancerV2GaugesMeta`,
-  bsc `PancakeSwapV2PoolsMeta`. `ConfigReader.isAdapterEnabled` gates registration and a missing key
-  reads as **false** (`ConfigReader.sol:367-368`), so `06` will not register any of them. 111 + 3 = 114.
+- **114** = every adapter in the files, ignoring `enabled`. The difference is **four** disabled meta
+  adapters (37 in the files, 33 enabled), and they do NOT carry one instance each — the +3 is a
+  coincidence of which ones are non-empty. Measured from `nav-config/meta-balance-adapters/*.json`:
+  mainnet `BalancerV2PoolsMeta` (`instances` 0, `instancesRaw` 1), mainnet `BalancerV2GaugesMeta`
+  (1, 0), bsc `PancakeSwapV2PoolsMeta` (1, 0), and base `PancakeSwapV3PoolsMeta` (0, 0) — the last
+  contributes nothing **today**, so the day it gains an instance this reconciliation goes short. `ConfigReader.isAdapterEnabled` gates registration and a missing key
+  reads as **false** (`ConfigReader.sol:368-369`), so `06` will not register any of them. 111 + 3 = 114.
 - **104** is not reproducible from the current tree by any derivation — not `instances` alone (91),
   not the deploy-config tree (0, it holds no instance lists), not any enabled-filter variant. It
   predates the config split in `f4873617` and should be treated as retired, not reconciled.
@@ -1419,10 +1424,10 @@ touched at all by this step, not merely touched idempotently.
   every recorded adapter reports `isAdapterRegistered`, nothing is registered that is not
   in the record, and each meta adapter's `getMetaInstances()` **set equals** its configured coordinate
   set, summing to the total in the meta-instance table at the top of this document (**111**; 110 as
-  reconciled 2026-07-29, +1 on 2026-08-12 for issue #296). The per-chain breakdown lives in that table only — it is not repeated here,
-  though note this PR had to correct that table AND this line together, so "one place" understates it:
-  the summary row above the table carries the same totals and moves with it.
-  so there is one place to correct if config changes.
+  reconciled 2026-07-29, +1 on 2026-08-12 for issue #296). The per-chain breakdown lives in that table only and is not repeated here, so the table
+  is where a config change is corrected — but "one place" understates it: this PR had to move the
+  derivation table, the summary row above it, and this post-condition line together. Treat those three
+  as one unit.
 
 > **Watch for the silent skip.** `06` does `if (deployed == address(0)) continue;` (`06:113` for
 > meta, same shape for plain), so an adapter that failed to deploy is skipped **without an error**.

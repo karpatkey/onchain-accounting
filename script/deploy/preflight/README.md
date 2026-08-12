@@ -100,7 +100,9 @@ chain's reads are pinned to a single block.
   longer matches config.** On 2026-08-12 one `MorphoVaultsMeta` instance was added to chain 1 (issue
   #296), so config is now 111 (chain 1: 67). A snapshot records what was on chain when it was taken —
   restating it would destroy that — but the "matching config exactly" property it was captured with no
-  longer holds, and `diff_snapshots.py` will surface the difference as a structural DIFF.
+  longer holds, and `diff_snapshots.py` will surface the difference as a structural DIFF — **provided you diff against the
+committed `pre/` snapshot**. §0.7 sanctions refreshing `pre/`; a snapshot refreshed after this change
+already contains the vault and shows no difference at all.
 - **`excludedFromDefaultAdapter` is empty on all 24 chains** — every registered asset is included in
   the default adapter, so there is no exclusion state to re-apply after the redeploy.
 - The deployer EOA holds `DEFAULT_ADMIN_ROLE` + `MANAGER` and the security-council Safe holds neither,

@@ -8,7 +8,7 @@
       "name": "mainnet",
       "alchemyNetwork": "eth-mainnet",
       "debankChainId": "eth",
-      "forkBlock": 25426915,
+      "forkBlock": 25735412,
       "supportedDeBankProtocols": [
         "aave2",
         "aave3",
@@ -41,7 +41,7 @@
       "name": "optimism",
       "alchemyNetwork": "opt-mainnet",
       "debankChainId": "op",
-      "forkBlock": 153590310,
+      "forkBlock": 155448290,
       "supportedDeBankProtocols": [
         "aave3",
         "compound3",
@@ -52,7 +52,7 @@
       "name": "gnosis",
       "alchemyNetwork": "gnosis-mainnet",
       "debankChainId": "xdai",
-      "forkBlock": 46953622,
+      "forkBlock": 47678791,
       "supportedDeBankProtocols": [
         "aave3",
         "lido",
@@ -63,7 +63,7 @@
       "name": "base",
       "alchemyNetwork": "base-mainnet",
       "debankChainId": "base",
-      "forkBlock": 47995025,
+      "forkBlock": 49853005,
       "$untracked_by_design": "WALLET / REWARD TOKENS with no price feed: COW. PERMANENT — no COW price feed exists on any chain and none is planned, so this needs no periodic re-evaluation. The Base PancakeSwap V3 WETH/COW pool (PancakeSwapV3_WETH_COW in script/config/contracts-deployment-config/balance-adapters/8453.json) is enabled=false for the same reason: if enabled, NAVCalculator's per-asset registry filter would drop the COW leg and value the LP on its WETH side only, understating it by roughly half — worse than not reporting it. Because no COW-bearing adapter is enabled, NAV reports no COW position on Base and DeBank's COW value lands in this report's 'Untracked by design' section rather than as unexplained drift. Declared here so the classification does not depend on that adapter's enabled flag: if someone ever enables it, this entry still explains why the value is excluded. This key is documentation only — no code reads it (the report emits it as a human pointer). Scope note: it lists ONLY what has been audited for this chain, so absence of an entry is not evidence of full coverage.",
       "supportedDeBankProtocols": [
         "aave3",
@@ -79,7 +79,7 @@
       "name": "arbitrum",
       "alchemyNetwork": "arb-mainnet",
       "debankChainId": "arb",
-      "forkBlock": 478750897,
+      "forkBlock": 493597721,
       "supportedDeBankProtocols": [
         "aave3",
         "balancer3",
@@ -108,24 +108,24 @@
       ],
       "expected": {
         "1": {
-          "navUsd8dp": "21896078268",
-          "debankUsd": "175.305516"
+          "navUsd8dp": "30197654006",
+          "debankUsd": "276.320333"
         },
         "10": {
           "navUsd8dp": "0",
           "debankUsd": "0.000000"
         },
         "100": {
-          "navUsd8dp": "500819715",
-          "debankUsd": "5.010016"
+          "navUsd8dp": "501762427",
+          "debankUsd": "5.019467"
         },
         "8453": {
-          "navUsd8dp": "999731969",
-          "debankUsd": "10.013366"
+          "navUsd8dp": "999946566",
+          "debankUsd": "10.009357"
         },
         "42161": {
-          "navUsd8dp": "1004307231",
-          "debankUsd": "10.054219"
+          "navUsd8dp": "1006326377",
+          "debankUsd": "10.068308"
         }
       }
     },
@@ -142,16 +142,16 @@
       ],
       "expected": {
         "1": {
-          "navUsd8dp": "79019130176381",
-          "debankUsd": "785312.264927"
+          "navUsd8dp": "93208977209409",
+          "debankUsd": "933136.276845"
         },
         "10": {
           "navUsd8dp": "0",
           "debankUsd": "0.000000"
         },
         "100": {
-          "navUsd8dp": "0",
-          "debankUsd": "0.000000"
+          "navUsd8dp": "999674",
+          "debankUsd": "0.009999"
         },
         "8453": {
           "navUsd8dp": "0",
@@ -175,8 +175,8 @@
       ],
       "expected": {
         "1": {
-          "navUsd8dp": "18868020220",
-          "debankUsd": "187.788650"
+          "navUsd8dp": "22215093402",
+          "debankUsd": "222.393399"
         },
         "10": {
           "navUsd8dp": "0",
@@ -205,8 +205,8 @@
       ],
       "expected": {
         "1": {
-          "navUsd8dp": "1212932153864",
-          "debankUsd": "12072.366022"
+          "navUsd8dp": "1433310390395",
+          "debankUsd": "14348.397124"
         }
       }
     },
@@ -219,13 +219,13 @@
       ],
       "expected": {
         "1": {
-          "navUsd8dp": "818463597472474",
-          "debankUsd": "8190254.891996"
+          "navUsd8dp": "823639313785323",
+          "debankUsd": "8239804.075340"
         }
       }
     },
     {
-      "$comment": "Compound V3 holder on Optimism. Cross-chain holdings (cUSDCv3 base + other Comet markets / Aave / wallet ERC20s) sum to ~$2.76M at fork block.",
+      "$comment": "Compound V3 holder on Optimism. THE ~$2.76M COMET POSITION HAS EXITED — verified on chain, not from DeBank: direct `cast balanceOf` reads at fork block 155448290 return 0 for cUSDCv3 (0x2e44e174), cUSDTv3 (0x995E394b) and cWETHv3 (0xE36A30D2), with WETH collateral 0 on all three; at the previous fork block 153590310 the same reads returned 759945622027 and 2013575324876 (~$2.77M). NAV (2,773,065.71 -> 3,387.91) and DeBank (2,774,554.74 -> 3,394.55) both fell by the same amount, so this is an exit and not a DeBank parser regression — the chain read is what distinguishes those, since it depends on neither. The remaining ~$3.4K is wallet ERC20s (refresh log: protocols=0.0000 tokens=3394.5523). The old anchor was stale, not wrong at capture.",
       "address": "0xD20E007881ea62B5922B06D025c9dc1D41962953",
       "label": "ACCOUNT_6_COMPOUND_OPTIMISM",
       "enabledChains": [
@@ -233,8 +233,8 @@
       ],
       "expected": {
         "10": {
-          "navUsd8dp": "277306571345551",
-          "debankUsd": "2774554.736292"
+          "navUsd8dp": "338791065223",
+          "debankUsd": "3394.552284"
         }
       }
     },
@@ -247,8 +247,8 @@
       ],
       "expected": {
         "42161": {
-          "navUsd8dp": "186706924088079",
-          "debankUsd": "1870068.994448"
+          "navUsd8dp": "187474802257199",
+          "debankUsd": "1876507.461567"
         }
       }
     },
@@ -261,13 +261,13 @@
       ],
       "expected": {
         "8453": {
-          "navUsd8dp": "68523830630095",
-          "debankUsd": "686337.220655"
+          "navUsd8dp": "57623058053329",
+          "debankUsd": "576737.873766"
         }
       }
     },
     {
-      "$comment": "Mainnet diversified holder (~$23.6M Debank). ITS STATED UNISWAP V3 PURPOSE IS VOID, AND UNLIKE ACCOUNT_12's IT IS STRUCTURALLY UNRECOVERABLE — not rotted. It was added to exercise the UniswapV3 adapter dispatch via a WETH/COW 0.3% LP NFT, but COW has no price feed on any chain and none is planned (see chains.1.$untracked_by_design), so BOTH routes to that pool are permanently closed: the per-instance `UniswapV3_WETH_COW_3000` entry is `enabled: false` in contracts-deployment-config/balance-adapters/1.json, and the pool is deliberately absent from UniswapV3PoolsMeta's governed instance list in nav-config/meta-balance-adapters/1.json (enabling either would be WORSE than the gap — the per-asset registry filter drops the COW leg and values the LP on its WETH side only). Measured 2026-07-30 at mainnet block 25646689: all five NonfungiblePositionManager NFTs this account holds (#1129129, #1200794, #1206590, #1213124, #1342394) are in the WETH/COW 0.3% pool, four of them with liquidity == 0 — so the account emits ZERO Uniswap V3 legs, confirmed by nav-positions-1.json recording none for it. Uniswap V3 coverage for the suite lives on ACCOUNT_11_MAINNET_COMPOUND_UNISWAP instead; do not re-derive it from this comment. Other Mainnet positions (Morpho ~$5.75M, Lido stETH ~$2.13M, USDC wallet ~$9.66M) are already covered by existing harness adapters. The small ~$560 StakeWise osETH position is covered as a Custom-priced ERC20 (osToken_CustomPriceFeed / priceFeeds.osETH) reported by ERC20DefaultBalanceAdapter. Known structural drift vs Debank-filtered: COW token ($4M wallet + ~$278K Uni V3 leg) is unpriced on Mainnet — register a custom COW feed in a follow-up to reduce drift. Sablier ($1.5M COW deposit) is still unaccounted by NAV (no Sablier adapter); excluded from supportedDeBankProtocols allowlist for chain 1 so filtered Debank stays consistent.",
+      "$comment": "Mainnet diversified holder (~$23.6M Debank). ITS STATED UNISWAP V3 PURPOSE IS VOID, AND UNLIKE ACCOUNT_12's IT IS STRUCTURALLY UNRECOVERABLE — not rotted. It was added to exercise the UniswapV3 adapter dispatch via a WETH/COW 0.3% LP NFT, but COW has no price feed on any chain and none is planned (see chains.1.$untracked_by_design), so BOTH routes to that pool are permanently closed: the per-instance `UniswapV3_WETH_COW_3000` entry is `enabled: false` in contracts-deployment-config/balance-adapters/1.json, and the pool is deliberately absent from UniswapV3PoolsMeta's governed instance list in nav-config/meta-balance-adapters/1.json (enabling either would be WORSE than the gap — the per-asset registry filter drops the COW leg and values the LP on its WETH side only). Measured 2026-07-30 at mainnet block 25646689: all five NonfungiblePositionManager NFTs this account holds (#1129129, #1200794, #1206590, #1213124, #1342394) are in the WETH/COW 0.3% pool, four of them with liquidity == 0 — so the account emits ZERO Uniswap V3 legs, confirmed by nav-positions-1.json recording none for it. Uniswap V3 coverage for the suite lives on ACCOUNT_11_MAINNET_COMPOUND_UNISWAP instead; do not re-derive it from this comment. Other Mainnet positions (Morpho ~$5.75M, Lido stETH ~$2.13M, USDC wallet ~$9.66M) are already covered by existing harness adapters. The small ~$560 StakeWise osETH position is covered as a Custom-priced ERC20 (osToken_CustomPriceFeed / priceFeeds.osETH) reported by ERC20DefaultBalanceAdapter. Known structural drift vs Debank-filtered: COW token ($4M wallet + ~$278K Uni V3 leg) is unpriced on Mainnet — register a custom COW feed in a follow-up to reduce drift. Sablier ($1.5M COW deposit) is still unaccounted by NAV (no Sablier adapter); excluded from supportedDeBankProtocols allowlist for chain 1 so filtered Debank stays consistent. RESIDUAL, MEASURED 2026-08-12 AT BLOCK 25735412: the tolerance gap is -$275,774.68 (nav 16,352,543.23 vs filtered-DeBank 16,628,317.91, 1.66%), while the named cause — the allowlisted `uniswap3` WETH/COW leg — is $308,758.23. The cause OVER-EXPLAINS the gap by ~$33K, so something else offsets it by that much and is NOT itemised. Do not read 1.66% as fully accounted for.",
       "address": "0x616dE58c011F8736fa20c7Ae5352F7f6FB9F0669",
       "label": "ACCOUNT_9_MAINNET_DIVERSIFIED",
       "enabledChains": [
@@ -275,8 +275,8 @@
       ],
       "expected": {
         "1": {
-          "navUsd8dp": "1721719028553325",
-          "debankUsd": "17754006.895508"
+          "navUsd8dp": "1635254323450495",
+          "debankUsd": "16628317.910421"
         }
       }
     },
@@ -289,8 +289,8 @@
       ],
       "expected": {
         "1": {
-          "navUsd8dp": "6925461514987288",
-          "debankUsd": "69084631.615773"
+          "navUsd8dp": "7731999304481522",
+          "debankUsd": "77366213.861779"
         }
       }
     },
@@ -303,8 +303,8 @@
       ],
       "expected": {
         "1": {
-          "navUsd8dp": "480530676118428",
-          "debankUsd": "5311790.484139"
+          "navUsd8dp": "607449022545642",
+          "debankUsd": "6438136.903777"
         }
       }
     },
@@ -317,8 +317,8 @@
       ],
       "expected": {
         "1": {
-          "navUsd8dp": "3071031106",
-          "debankUsd": "38.787358"
+          "navUsd8dp": "3560049046",
+          "debankUsd": "45.298842"
         }
       }
     },

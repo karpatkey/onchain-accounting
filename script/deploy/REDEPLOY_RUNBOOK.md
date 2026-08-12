@@ -26,8 +26,11 @@ operator: **pin the fork block** (see the note at the rehearsal invocation — i
 **None of this means the system is deployed. It is not.** A fork rehearsal is evidence that the deploy
 path executes; it is not a deploy, and it is not an approval to deploy.
 
-Companion tooling lives in [`preflight/`](preflight/README.md). Everything there is read-only except
-`rehearse_fork.sh`, which only ever broadcasts to a loopback anvil.
+Companion tooling lives in [`preflight/`](preflight/README.md). Nothing there broadcasts to a real
+chain. Exactly two scripts write anything, and only these two: `rehearse_fork.sh`, which broadcasts
+only to a loopback anvil and restores the tracked config it touches with `git checkout --` on exit;
+and `reset_deployment_records.py`, which archives and clears the deployment records — dry-run by
+default, writes only under `--apply`, undone with `--restore <tag>`. Everything else is read-only.
 
 - **Scope:** exactly the **24 chains** that already have a `NAVCalculatorProxy`. Chain **1101**
   (Polygon zkEVM) is excluded — its deployment record is empty, so it was never deployed.
@@ -916,7 +919,7 @@ alternative out, before proposing a smaller deploy.
 > **There is no `initialAssets` argument.** `initialize(admin_, chainlinkL2SequencerUptimeFeed_,
 > nativeTokenSymbol_)` hardcodes the ERC20Default seed to `[NATIVE_ADDRESS]`
 > (`NAVCalculator.sol:70-86`). The asset set is *not* frozen at genesis — every `registerAsset` calls
-> `addSupportedAsset` on it (`NAVCalculator.sol:141`), and
+> `addSupportedAsset` on it (`NAVCalculator.sol:176`), and
 > `excludeAssetFromDefaultAdapter`/`includeAssetInDefaultAdapter` (`:248`/`:255`) mutate it later.
 > Nothing needs preparing here, and `script/manage/update-erc20-default-from-chain.sh` is dead code
 > (it reads `chains/<id>.json .deployed.NAVCalculatorProxy`, a path that no longer exists, and skips
@@ -1459,7 +1462,7 @@ bug entirely and must not be attributed to this step.
 
 ```bash
 # per (chain, adapter): returns [] until the owner has submitted, then the coordinate blobs.
-# `coordsOf` is the only cache view getter (AssistedCoordCache.sol:81) — there is no count getter.
+# `coordsOf` is the only cache view getter (AssistedCoordCache.sol:110) — there is no count getter.
 cast call $ADAPTER 'coordsOf(address)(bytes[])' $OWNER_SAFE --rpc-url $RPC
 ```
 

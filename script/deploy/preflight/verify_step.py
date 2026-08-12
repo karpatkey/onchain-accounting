@@ -227,11 +227,17 @@ class Chk:
 
 def step_record_cleared(k: Chk, rec: dict, exp: dict, url, base, tag) -> None:
     """The record must be cleared, the bridge must NOT be, and a rollback must exist."""
-    # `reset_deployment_records.py` writes "" rather than deleting, and THIS CHECK is the only
-    # reason. The loop below does a literal `key not in rec`, which makes it the one reader able to
-    # tell an absent key from a blanked one; a record whose keys were deleted by hand, by
-    # `jq del(...)`, or by regenerating from a template would otherwise read as cleared and slip
-    # past. Absence must fail, not pass.
+    # `reset_deployment_records.py` writes "" rather than deleting, and THIS CHECK is why. The loop
+    # below does a literal `key not in rec`, which makes it the one reader able to tell an absent key
+    # from a blanked one; a record whose keys were deleted by hand, by `jq del(...)`, or by
+    # regenerating from a template would otherwise read as cleared and slip past. Absence must fail,
+    # not pass.
+    #
+    # BUT IT DOES NOT COVER EVERY KEY IT ITERATES, so do not read the line above as a guarantee.
+    # CLEAR_TOP mixes universal keys with the three chain-1-only `*Assistant` keys, which get no
+    # exemption here and are not in CREATE_IF_ABSENT — so after `--apply` this fails on 24 of 25
+    # chains, on 23 of them for the assistants alone. Measured; tracked in #299 and deliberately not
+    # fixed in the documentation PR that found it.
     #
     # NOT `08_DeployAssetKindRegistry`, and not the write-back — two claims this comment has carried
     # and both are category errors:
@@ -239,8 +245,9 @@ def step_record_cleared(k: Chk, rec: dict, exp: dict, url, base, tag) -> None:
     #     address(0) for missing, empty AND placeholder alike. It cannot distinguish absent from
     #     blank, so it needs the VALUE cleared, never the key present.
     #   * `writeAdapterAddress` calls `vm.writeJson` directly and never consults `_readAddrOrZero`,
-    #     which is a read helper. Measured 2026-08-12 on the pinned forge 1.7.1, `vm.writeJson`
-    #     creates a missing key unaided. The write-back was never at risk.
+    #     which is a read helper. `vm.writeJson` creates a missing key unaided — pinned by
+    #     script/test/WriteJsonCreatesMissingKeys.t.sol, so a forge upgrade that changed it fails
+    #     there instead of silently making this comment wrong. The write-back was never at risk.
     for key in rd.CLEAR_TOP:
         if key not in rec:
             k.fail.append(f"{key} is ABSENT from the record, not blanked. This check is the only "

@@ -995,16 +995,25 @@ python3 script/deploy/preflight/reset_deployment_records.py
 python3 script/deploy/preflight/reset_deployment_records.py --apply --tag pre-redeploy
 ```
 
-Values are set to `""` rather than deleted, for **one** reason: `verify_step.step_record_cleared`
-does a literal `key not in rec`, making it the only reader that can tell an absent key from a blanked
-one. Everything reading through `ConfigReader._readAddrOrZero` gets `address(0)` for missing, empty
-and placeholder alike.
+Values are set to `""` rather than deleted because `verify_step.step_record_cleared` does a literal
+`key not in rec`, making it the only reader that can tell an absent key from a blanked one —
+everything reading through `ConfigReader._readAddrOrZero` gets `address(0)` for missing, empty and
+placeholder alike.
+
+> **That check does not cover every key it iterates, so expect noise here.** `CLEAR_TOP` mixes
+> universal keys with the three chain-1-only `*Assistant` keys, which have no exemption in the
+> absence loop and no `CREATE_IF_ABSENT` entry — so after `--apply` the gate reports ABSENT on
+> **24 of 25** chains, on 23 of them for the assistants alone. Measured, tracked in **#299**, and not
+> fixed here on purpose: a docs PR that quietly repairs a deploy gate hides the repair in a docs
+> review.
 
 Two things this is **not** about, both of which this runbook has previously claimed:
 `08_DeployAssetKindRegistry` needs the **value** cleared so it takes the deployment branch — it reads
 through `readDeployedAddress` and cannot see presence at all; and the **write-back** never needed the
-key, because `writeAdapterAddress` calls `vm.writeJson` directly and, measured on the pinned forge
-1.7.1, that creates a missing key unaided. A brand-new adapter needs no seeded key. The pre-clear record is archived to `preflight/archive/pre-redeploy/<CID>.json` and is
+key, because `writeAdapterAddress` calls `vm.writeJson` directly and that creates a missing key
+unaided. A brand-new adapter needs no seeded key. **That behaviour is pinned by
+`script/test/WriteJsonCreatesMissingKeys.t.sol`** — if a forge upgrade ever restores the old
+behaviour, the test fails rather than this paragraph quietly becoming wrong again. The pre-clear record is archived to `preflight/archive/pre-redeploy/<CID>.json` and is
 the "old addresses" input for the before/after audits.
 
 - **Precondition:** `git status` clean; snapshot 0.7 captured.

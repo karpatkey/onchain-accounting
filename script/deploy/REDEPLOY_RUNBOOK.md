@@ -596,11 +596,20 @@ That linea comparison is **stale on its second number only**: linea still holds 
 estimate is now **0.00293**, not 0.02800 — the balance figure aged well, the estimate did not. Which is
 the general lesson for this section: re-measure both sides, not just the balance.
 
-**Current state: `0 short, 1 unpriceable, 0 unreachable — not clear to deploy`.** **`0 short` means no
-PRICED chain is short — it is not a statement that nothing is under-funded.** Scroll is unpriced, so its
-funding is **UNKNOWN, not verified**, and this report is no evidence that it needs none. Gnosis and plasma
-are priced from pinned constants and their rows are authoritative; **scroll is the single blocker** and it
-fails closed deliberately. The three chains that used to sit in
+**Current state: `0 short, 2 unpriceable, 0 unreachable — not clear to deploy`.** **`0 short` means no
+PRICED chain is short — it is not a statement that nothing is under-funded.** Scroll **and hemi** are
+unpriced, so their funding is **UNKNOWN, not verified**, and this report is no evidence that they need
+none. Gnosis and plasma are priced from pinned constants and their rows are authoritative; **scroll and
+hemi are the two blockers** and both fail closed deliberately.
+
+> **hemi (43111) joined scroll late, and it was a fail-open before that.** It charges an L1
+> data-availability fee measured at **5.485e-5 ETH against a whole `need` of 2.801e-5 ETH — 1.96x the
+> entire estimate** (2026-08-12, OP GasPriceOracle at `0x420…0F`), and it sat in **neither** L1
+> collection, so it received no regime probe, no headroom floor, and printed a clean `OK` at roughly a
+> third of its real cost. It had a `WORKAROUNDS` entry for its fee floor the whole time, which is exactly
+> what made it look handled. The gate now also **probes every unclassified chain's oracle at runtime** and
+> fails the row closed on a non-zero reading, so the next missed chain names itself instead of waiting for
+> a reviewer. The three chains that used to sit in
 `UNPRICEABLE` because their *quote* was unusable turned out to be three different mechanisms, each
 measured in `deployer_balances.py`:
 
@@ -628,14 +637,23 @@ day.
 > | --- | --- | --- |
 > | `10, 130, 204, 480, 5000, 8453, 42220, 57073` | 8 | **Pass, with a documented omission.** Measured margins (balance ÷ current need) are **10× to 996×**. A row flips once the added fee exceeds `balance − need`, so the **flip thresholds are ~9× to ~995× the current need** — the two are different quantities, do not quote the margin as the threshold. Either way the margins are nowhere near close, so the omission does not change these verdicts |
 > | `534352` scroll | 1 | **Stays failed closed.** ~99.9% of its cost is the unmodelled term, so no honest number exists for it |
-> | the remaining 15 | 15 | No known omission — but that is **absence of a measurement, not a clearance** |
+> | `43111` hemi | 1 | **Now failed closed.** The unmodelled term measured **1.96× its entire `need`** (5.485e-5 ETH vs 2.801e-5 ETH, 2026-08-12) — scroll's category, not the eight's. It was in neither collection and printed a clean `OK` |
+> | the remaining 14 | 14 | No known omission — but that is **absence of a measurement, not a clearance**, and hemi is what that distinction costs when it is ignored |
 >
-> **So the gate is authoritative for the 8 above and for the remaining 15 as far as anything has been
-> checked — gnosis and plasma are among those 15, both priced from pinned constants — and it is NOT
-> authoritative for scroll.** The three groups partition the 24: **8 + 1 scroll + 15 = 24.**
+> **So the gate is authoritative for the 8 above and for the remaining 14 as far as anything has been
+> checked — gnosis and plasma are among those 14, both priced from pinned constants — and it is NOT
+> authoritative for scroll or hemi.** The four groups partition the 24: **8 + 1 scroll + 1 hemi + 14 = 24.**
 >
-> **Scroll is now the sole blocker.** It will keep printing `not clear to deploy` on every full-scope run
-> until **#287 lands**. That is the gate working, not a regression. **Do not "fix" it by raising a floor or
+> **"No known omission" is now partly enforced rather than merely asserted.** Every chain in neither L1
+> collection has its OP GasPriceOracle probed at runtime, and a non-zero reading fails the row closed
+> naming itself. That closes the hemi shape specifically. It does **not** cover a DA surcharge levied
+> without that predeploy, and two of the 14 (`999` hyperevm, `9745` plasma) were unreachable from the
+> environment this was measured in, so they are **unverified, not cleared**. arbitrum (`42161`) was
+> checked and has no such predeploy: Nitro charges its L1 component by inflating gas units, which
+> `gas × price` already captures.
+>
+> **Scroll and hemi are the blockers.** They will keep printing `not clear to deploy` on every full-scope
+> run until **#287 lands**. That is the gate working, not a regression. **Do not "fix" it by raising a floor or
 > silencing the row** — a 1 gwei floor was already measured reporting `TOP UP` on **11 of 24** amply-funded
 > chains.
 >
@@ -653,7 +671,9 @@ day.
 
 #### The eight OP-stack chains: a decision that was taken, not a default
 
-**Ruling: pass the eight as implemented.** `L1_FEE_UNMODELLED` stays **scroll-only**. The alternative —
+**Ruling: pass the eight as implemented.** `L1_FEE_UNMODELLED` holds **scroll and hemi** (it was
+scroll-only when this ruling was written; hemi was added after measurement put it in scroll's category,
+which does not disturb the ruling about the eight). The alternative —
 failing all nine closed — was proposed repeatedly in review and is defensible on principle: those chains
 do charge a fee this estimator omits, and a large balance does not make a verdict authoritative. It was
 rejected for two reasons: the omitted term is **~2.7e-5 native** against those margins and **no chain's

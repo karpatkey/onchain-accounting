@@ -396,6 +396,54 @@ class TestExitCode(unittest.TestCase):
                 self.assertIsNone(row["priceNote"])
                 self.assertEqual(row["gasPriceWei"], pinned)
 
+    def test_unclassified_chain_charging_an_l1_fee_fails_closed(self):
+        # The structural end of the missed-chain class. Every review round of this branch found another
+        # chain that belonged in an L1 collection and was not in one — hemi worst, at 1.96x its whole
+        # `need`. A hand-maintained list is a documentary guard; this makes it self-checking. OVERRIDDEN
+        # (100) is in NEITHER collection, so a non-zero oracle reading must condemn it.
+        row, _ = run_one(OVERRIDDEN, balance=10**24, big=12_345)
+        self.assertIsNone(row["sufficient"], "an unmodelled L1 fee must not be priced past")
+        self.assertIn("UNCLASSIFIED L1 FEE", row["l1Note"])
+        self.assertIn("12345", row["l1Note"], "the reading itself is the evidence; print it")
+
+    def test_unclassified_chain_with_no_l1_fee_still_prices(self):
+        # Guards the guard against failing every unclassified chain closed. A zero reading is the real
+        # case for xlayer (196), which HAS the predeploy and returns 0, exactly like celo.
+        row, _ = run_one(OVERRIDDEN, balance=10**24, big=0)
+        self.assertIsNotNone(row["sufficient"])
+        self.assertIsNone(row["l1Note"])
+
+    def test_unclassified_chain_probe_failure_does_not_block(self):
+        # An absent predeploy returns empty `0x` (ValueError) and an RPC blip raises too. Neither is
+        # evidence of a fee, and this guard protects chains nobody classified — so there is no baseline
+        # and nothing being certified. Blocking a 24-chain deploy on an unrelated blip would be a worse
+        # failure than the one this prevents. Only a POSITIVE reading is actionable.
+        row, _ = run_one(OVERRIDDEN, balance=10**24, eth_call_raises=ValueError("invalid literal for int"))
+        self.assertIsNotNone(row["sufficient"], "a failed discovery probe must not fail the row closed")
+
+    def test_zero_gas_units_is_not_a_pass(self):
+        # The other multiplicand. `need = gas * price * headroom`, so gas=0 collapses `need` to 0 and
+        # `bal >= need` holds for ANY balance — the same tautology GAS_PRICE_IMPLAUSIBLE_WEI prevents on
+        # the price side, reached from the side that had no floor. Realistic input: a --gas-units file
+        # keyed `{"gas": ...}` instead of `{"total": ...}` reads as 0.
+        row, _ = run_one(PRICED, balance=0, gas=0)
+        self.assertIsNone(row["sufficient"], "a zero-gas estimate must never certify a balance")
+        self.assertFalse(row["priceable"])
+        self.assertIn("total", row["gasNote"], "the note must name the key that was mis-transcribed")
+        out, code = run_main([row])
+        self.assertEqual(code, 1)
+        self.assertIn("UNPRICEABLE", out)
+
+    def test_gas_units_just_under_the_floor_is_not_a_pass(self):
+        row, _ = run_one(PRICED, balance=10**24, gas=db.GAS_UNITS_IMPLAUSIBLE - 1)
+        self.assertIsNone(row["sufficient"])
+
+    def test_plausible_gas_units_still_price(self):
+        # Guards the guard: the floor must not fail every row closed.
+        row, _ = run_one(PRICED, balance=10**24, gas=db.GAS_UNITS_IMPLAUSIBLE)
+        self.assertIsNotNone(row["sufficient"])
+        self.assertIsNone(row["gasNote"])
+
     def test_stale_pin_guard_needs_no_plausibility_term(self):
         # Replaces a test that asserted an explicit `quoted >= GAS_PRICE_IMPLAUSIBLE_WEI` conjunct by
         # mock-patching in a pin BELOW the floor — a configuration the module raises ValueError on at
@@ -457,13 +505,21 @@ class TestImportTimeInvariants(unittest.TestCase):
     # forces the decision here rather than defaulting to "unclassified".
     NON_FEE_WORKAROUNDS = {
         # Block GAS LIMIT, not price: the ~12.5M-gas impl deploy does not fit HyperEVM's ~3M small
-        # blocks, so the workaround toggles big blocks. NOTE its L1-fee status is UNMEASURED — the
-        # endpoint is not reachable from the environment this suite runs in, and HyperEVM is
-        # Hyperliquid's own execution layer rather than a rollup posting data to Ethereum. Treated as
-        # not-fee-related on that basis, not on a reading. If it is ever confirmed to charge a
-        # data-availability fee, it belongs in one of the two L1 collections.
+        # blocks, so the workaround toggles big blocks. L1-fee status UNMEASURED — endpoint not
+        # reachable from where this suite runs, and HyperEVM is Hyperliquid's own execution layer
+        # rather than a rollup posting data to Ethereum.
         999,
+        # gnosis — a standalone L1, not a rollup. MEASURED 2026-08-12: no OP GasPriceOracle at
+        # 0x420...0F (codesize 0). Its workaround is purely gas-PRICE (tip-driven inclusion).
+        100,
+        # plasma — workaround is purely gas-PRICE (the node pads eth_gasPrice with a tip nobody pays).
+        # L1-fee status UNMEASURED: endpoint not reachable from where this suite runs.
+        9745,
     }
+    # NOTE none of these three is CERTIFIED fee-free; two are unmeasured. That is tolerable only because
+    # the runtime guard in `one()` probes every unclassified chain's OP GasPriceOracle on-chain and fails
+    # the row closed on a non-zero reading. This static check is the second line: it forces a written
+    # decision per workaround chain so a missing entry is visible without a network round-trip.
 
     def test_every_workaround_chain_is_classified(self):
         # hemi hid in plain sight: it had a WORKAROUNDS entry for its fee floor, which made it look
@@ -471,8 +527,11 @@ class TestImportTimeInvariants(unittest.TestCase):
         # under-funded. A chain singled out as needing special treatment is exactly the kind a
         # hand-maintained set misses, so every such chain must be deliberately classified — priced with
         # omission, failed closed, pinned, or explicitly recorded above as not a fee case.
-        classified = (db.L1_FEE_OMITTED_PRICED | db.L1_FEE_UNMODELLED
-                      | set(db.GAS_PRICE_OVERRIDE_WEI) | self.NON_FEE_WORKAROUNDS)
+        # GAS_PRICE_OVERRIDE_WEI is deliberately NOT accepted as classification. It is the gas-PRICE
+        # axis; this check polices the L1-FEE axis, and the two are independent — hemi proved it by
+        # having a price-side workaround while its fee side was the thing that was wrong. Counting a pin
+        # as "classified" would let exactly that combination through the check written to catch it.
+        classified = (db.L1_FEE_OMITTED_PRICED | db.L1_FEE_UNMODELLED | self.NON_FEE_WORKAROUNDS)
         for cid in db.WORKAROUNDS:
             with self.subTest(chain=cid):
                 self.assertIn(cid, classified,

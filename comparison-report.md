@@ -1,6 +1,6 @@
 # NAV vs DeBank — Detailed Comparison Report
 
-Generated: 2026-08-12 03:14 UTC  
+Generated: 2026-08-12 05:37 UTC  
 Tolerance: 1%
 
 DeBank anchor: read from `test/integration/debank-cache/` (no live API call).  

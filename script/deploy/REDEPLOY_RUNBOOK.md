@@ -578,9 +578,11 @@ That linea comparison is **stale on its second number only**: linea still holds 
 estimate is now **0.00293**, not 0.02800 — the balance figure aged well, the estimate did not. Which is
 the general lesson for this section: re-measure both sides, not just the balance.
 
-**Current state: `0 short, 1 unpriceable, 0 unreachable — not clear to deploy`.** Nothing is
-under-funded. Gnosis and plasma are priced from pinned constants and their rows are authoritative;
-**scroll is the single blocker** and it fails closed deliberately. The three chains that used to sit in
+**Current state: `0 short, 1 unpriceable, 0 unreachable — not clear to deploy`.** **`0 short` means no
+PRICED chain is short — it is not a statement that nothing is under-funded.** Scroll is unpriced, so its
+funding is **UNKNOWN, not verified**, and this report is no evidence that it needs none. Gnosis and plasma
+are priced from pinned constants and their rows are authoritative; **scroll is the single blocker** and it
+fails closed deliberately. The three chains that used to sit in
 `UNPRICEABLE` because their *quote* was unusable turned out to be three different mechanisms, each
 measured in `deployer_balances.py`:
 
@@ -609,8 +611,9 @@ day.
 > | `534352` scroll | 1 | **Stays failed closed.** ~99.9% of its cost is the unmodelled term, so no honest number exists for it |
 > | the remaining 15 | 15 | No known omission — but that is **absence of a measurement, not a clearance** |
 >
-> **So the gate is authoritative for the 8 above, for gnosis and plasma, and for the remaining 15 as far
-> as anything has been checked; it is NOT authoritative for scroll.**
+> **So the gate is authoritative for the 8 above and for the remaining 15 as far as anything has been
+> checked — gnosis and plasma are among those 15, both priced from pinned constants — and it is NOT
+> authoritative for scroll.** The three groups partition the 24: **8 + 1 scroll + 15 = 24.**
 >
 > **Scroll is now the sole blocker.** It will keep printing `not clear to deploy` on every full-scope run
 > until **#287 lands** or **scroll is explicitly waived** with a named person, a date and the sizing

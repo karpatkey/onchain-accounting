@@ -41,6 +41,7 @@ usage:
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import sys
 from concurrent.futures import ThreadPoolExecutor
@@ -137,12 +138,17 @@ if _bad_overrides:
 #
 # The eight OP-stack chains are deliberately NOT listed, and that decision was MEASURED rather than
 # assumed. Each chain's own getL1Fee (OP-stack GasPriceOracle predeploy 0x420...0F, present on all eight)
-# was summed per transaction over the shell payload: the addition is at most 4.5e-7 ETH against margins of
-# 10x (celo) to 996x (opbnb), and NO chain's verdict flips.
+# was summed per transaction over the shell payload. That measurement was originally recorded as at most
+# 4.5e-7 ETH; it used a compressible payload, so the figure is understated ~59x and the corrected worst
+# case is ~2.7e-5 ETH (mantle). THAT NUMBER IS SCALED FROM THE MEASURED RATIO, NOT RE-MEASURED PER
+# TRANSACTION — the per-transaction split is still #287's, and an aggregate call is known to misprice
+# against a sum of parts, so treat it as an order of magnitude and not a figure to quote.
 #
-# The robustness is what decides it, not the point estimate: for any of the eight to flip, the L1 term
-# would have to be 10x-996x the entire current need, so even wrong by three orders of magnitude nothing
-# flips. Including the term changes no verdict and each row by less than a rounding digit.
+# The robustness is what decides it, not the point estimate, and it survives the correction with room:
+# for any of the eight to flip, the L1 term would have to be 10x-996x the entire current `need`. On the
+# tightest row (celo, `need` 5.60 native — and celo measures 0 for every payload at both probe sizes) that
+# threshold is ~56 native against ~2.7e-5. The correction consumed 1.8 orders of magnitude of an argument
+# built to tolerate three, so no chain's verdict flips and none of the eight needs to fail closed.
 #
 # Scroll is categorically different — there the omitted term is ~99.9% of the cost — which is exactly why
 # it alone fails closed, and why failing these eight closed would block a deploy over a margin that does
@@ -173,9 +179,10 @@ L1_FEE_UNMODELLED = {534352}
 # What #287 still owns is FULL FEE PRICING: adding the L1 term to `need`. The probe below only asks whether
 # fee conditions still match the regime the margin table was measured under; it never prices the deploy.
 #
-# Sizing the residual that the probe tolerates rather than waving at it: the largest addition measured
-# across the eight was 4.5e-7 native (mantle) against a 1e-3 floor, so fee conditions would have to worsen
-# ~2,000x to breach it on a chain sitting right at the floor, and all eight sit far above.
+# Sizing the residual that the probe tolerates rather than waving at it: the largest addition is ~2.7e-5
+# native (mantle) against a 1e-3 floor, so fee conditions would have to worsen ~38x to breach it on a chain
+# sitting right at the floor, and all eight sit far above. That factor was ~2,000x while this file measured
+# the term with a compressible probe payload; see the payload note at _probe_payload.
 #
 # WHY A GUARD AT ALL. The measurement (see below) shows the omitted term does not flip any verdict — but
 # that bounds error in the FEE, not a falling BALANCE. An earlier revision handled this with a runbook
@@ -186,9 +193,11 @@ L1_FEE_UNMODELLED = {534352}
 # WHY ABSOLUTE HEADROOM AND NOT A RATIO. The "10x need" rule was wrong on its own terms: celo sits at
 # 9.95x (55.70020691 / 5.60002800) and would have been failed closed the moment the rule was enforced,
 # despite ~50 CELO of headroom against a measured L1 addition of ~0. A ratio ignores the measured SIZE of
-# the omitted term. So the guard is an absolute floor instead, derived from that size: 1e-3 native is
-# ~2,200x the largest addition measured across the eight (mantle, 4.5e-7). Today every one clears it by
-# 10x to 50,000x; if a balance falls so headroom drops under it, the row goes UNPRICEABLE by itself.
+# the omitted term. So the guard is an absolute floor instead, derived from that size: 1e-3 native is ~38x
+# the largest addition across the eight (mantle, ~2.7e-5 — corrected up from 4.5e-7, which was measured
+# with a compressible probe payload). The floor VALUE is unchanged and still covers the term; only its
+# stated margin shrinks, from ~2,200x to ~38x. If a balance falls so headroom drops under it, the row goes
+# UNPRICEABLE by itself.
 # THE UNDER-COMPUTED TOP-UP GAP, and why the guard is not the whole answer. `shortfallEth` is
 # `need - bal`, and `need` OMITS the L1 fee on any chain that charges one — so a shortfall printed for
 # such a chain tells the operator to send TOO LITTLE. That is wrong under either policy (fail all nine
@@ -211,29 +220,37 @@ L1_OMITTED_MIN_HEADROOM_WEI = 10**15  # 1e-3 native
 # it only answers "are fee conditions still the ones the margin table was measured under?" Modelling the
 # fee properly is still #287.
 #
-# TWO PROBE SIZES, AND THE SMALL ONE ALONE WAS USELESS. An earlier version probed at 4,096 bytes only. That
-# was measured to have ZERO sensitivity to payload size: on base, getL1Fee(0) and getL1Fee(4096) returned an
-# identical 971,132,088 wei, because 4 KB sits entirely below the size-dependent region. The marginal cost
-# only appears above it (63,164 wei/byte at 16 KB, 92,954 wei/byte at 64,887 — itself super-linear). So the
-# old probe tracked the size-INDEPENDENT term and could not have detected a size-curve or fee-mode change of
-# any magnitude — the very risk it was added for. This repeated, on the fee axis, the mistake this file
-# already records about scroll: a small sample cannot be extrapolated when the fee is super-linear in size.
+# TWO PROBE SIZES. An earlier version probed at 4,096 bytes only, and was measured to have ZERO
+# sensitivity to payload size: on base, getL1Fee(0) and getL1Fee(4096) returned an identical 971,132,088
+# wei. THE ORIGINAL EXPLANATION FOR THAT WAS WRONG. This comment used to say 4 KB "sits entirely below the
+# size-dependent region"; the actual cause was the compressible `"ff"` payload described above — 4 KB of a
+# single repeated byte compresses to almost nothing, so both readings landed in the flat region. With the
+# incompressible payload the size signal is present at both sizes, and the big/small ratio is 15.7787x
+# rather than the 6.44x measured before (that 6.44x reproduces exactly on `"ff"`, which is how the artefact
+# was identified). The consequence for the design is unchanged — one size alone cannot separate a base-fee
+# move from a curve move — but the reason is compression, not a threshold in the fee schedule.
 #
 # Now both:
 #   BIG (64,887 bytes)   — the region the real deploy payload occupies. Primary signal.
-#   SMALL (4,096 bytes)  — the size-independent term, so a base-fee move can be told apart from a curve move.
-# Either exceeding L1_REGIME_MAX_RISE trips the fail-closed. Measured big/small ratio was 6.44x on every
-# chain that charges (celo returns 0 for both, i.e. no such fee), so a change in that ratio is itself a
-# curve change even if both readings stay under the limit individually.
+#   SMALL (4,096 bytes)  — the second point on the curve, so a base-fee move can be told apart from a
+#                          curve move. NOT a "size-independent term": that framing was the artefact.
+# Either exceeding L1_REGIME_MAX_RISE trips the fail-closed. Measured big/small ratio is 15.7787x on every
+# chain that charges — identical to four decimals across all seven, which is itself the evidence that the
+# fee is linear in compressed size with a per-chain scalar (celo returns 0 for both, i.e. no such fee). A
+# change in that ratio is a curve change even if both readings stay under the limit individually.
 #
 # One probe pair captures both fee inputs and both scalars at once, which is why this is used instead of
 # reading l1BaseFee/blobBaseFee separately. (It also avoids a selector trap: OP-stack exposes
 # `blobBaseFee()` 0xf8206140 while scroll exposes `l1BlobBaseFee()` 0x84189161 — reusing scroll's selector
 # on an OP chain reverts.)
 #
-# THRESHOLD. Headroom is ~2,000x the largest measured addition (mantle 4.5e-7 native against a 1e-3 floor),
-# and the fee is linear in its base-fee inputs, so a 100x rise still leaves ~20x slack. 100x is therefore
-# conservative and is used only to TRIP a fail-closed, never to price — so error in the safe direction.
+# THRESHOLD. Headroom is ~38x the largest addition (mantle ~2.7e-5 native against a 1e-3 floor), so a 100x
+# rise would breach the floor and the limit is NOT slack-covered the way an earlier revision claimed
+# (it said ~2,000x headroom and ~20x slack after a 100x rise, both computed from the understated
+# compressible-payload figure). 100x is retained deliberately: it is the point past which the omitted term
+# can no longer be argued immaterial, it only ever TRIPS a fail-closed and never prices, and a rise that
+# large is a regime change an operator must look at whatever the arithmetic says. Sizing the term properly
+# — so this can be a computed bound rather than a judgement — is #287.
 #
 # FEE MODE IS NOT VALIDATED, and the reason is measured rather than assumed. The other half of the review
 # remedy was "validate the active mode". The OP mode getters are NOT uniform across these chains, measured
@@ -253,16 +270,54 @@ L1_OMITTED_MIN_HEADROOM_WEI = 10**15  # 1e-3 native
 L1_REGIME_PROBE_BYTES_SMALL = 4_096
 L1_REGIME_PROBE_BYTES_BIG = 64_887
 L1_REGIME_BASELINE_SMALL_WEI = {
-    10: 1_471_592_718, 130: 853_734_606, 204: 5_549_779_265, 480: 2_033_099_355,
-    5000: 30_393_602_073, 8453: 999_458_381, 42220: 0, 57073: 1_229_559_062,
+    10: 29_154_587_307, 130: 16_807_919_621, 204: 222_625_229_120, 480: 37_886_158_749,
+    5000: 561_191_527_000, 8453: 19_604_525_626, 42220: 0, 57073: 23_987_529_457,
 }
 L1_REGIME_BASELINE_WEI = {
-    10: 9_479_719_218, 130: 5_563_309_222, 204: 35_765_336_265, 480: 13_096_837_726,
-    5000: 195_789_779_380, 8453: 6_438_319_997, 42220: 0, 57073: 7_920_584_636,
+    10: 460_022_809_041, 130: 265_207_883_646, 204: 3_512_746_799_722, 480: 597_796_051_356,
+    5000: 8_854_898_199_511, 8453: 309_334_817_654, 42220: 0, 57073: 378_493_118_983,
 }
 L1_REGIME_MAX_RISE = 100
 OP_GAS_ORACLE = "0x420000000000000000000000000000000000000F"
 OP_GET_L1_FEE = "0x49948e0e"
+
+# THE PROBE PAYLOAD MUST BE INCOMPRESSIBLE, and the reason is measured, not stylistic. Post-Fjord
+# `getL1Fee` prices the FASTLZ-COMPRESSED size of the payload, not its raw length — and `isFjord()` is 1
+# on seven of these eight chains (only mantle reverts every mode getter, yet behaves identically here).
+# An earlier version of this probe sent `"ff" * n`, which is near-maximally compressible, and the
+# baselines were measured with it. Measured 2026-08-12 at one pinned block per chain, the ratio to this
+# incompressible payload is IDENTICAL to four significant figures on every chain that charges:
+#
+#     size          zero/ff    incompressible/ff    real-creation-bytecode/ff
+#     4,096 bytes    1.0000              35.4684                      25.6562
+#    64,887 bytes    1.0000              86.9003                      59.1957
+#
+# So the old probe understated real deploy calldata by ~59x, and the chain-independence of the ratio
+# says the fee is linear in compressed size with a per-chain scalar. That also retires the reasoning
+# behind an earlier note in this file: "1000 zero bytes == 1000 0xff bytes, so the fee is not
+# byte-value sensitive". Both operands were maximally compressible, so equal prices were the expected
+# result either way and the experiment could not distinguish the hypotheses.
+_PROBE_SEED = b"onchain-accounting/deployer_balances/regime-probe/v1"
+
+
+def _probe_payload(n: int) -> str:
+    """Hex for an `n`-byte regime probe, ABI-padded to a 32-byte boundary.
+
+    An iterated-sha256 keystream: incompressible in practice, and DETERMINISTIC FOREVER, which is what
+    baseline comparability requires — a baseline is only meaningful against the exact bytes it was
+    measured with. Real artifact bytecode was rejected as the probe payload for that reason: it is more
+    representative, but it changes whenever a contract changes, which would silently invalidate every
+    baseline below. Representativeness is #287's problem (real per-transaction `input` bytes from the
+    fork rehearsal); this function's only job is to be a stable, hard-to-compress yardstick.
+
+    DO NOT change the seed or this construction without re-measuring all 16 baselines in the same pass.
+    """
+    buf = bytearray()
+    h = hashlib.sha256(_PROBE_SEED).digest()
+    while len(buf) < n:
+        buf += h
+        h = hashlib.sha256(h).digest()
+    return bytes(buf[:n]).hex() + "00" * (-n % 32)
 
 _missing_baseline = (L1_FEE_OMITTED_PRICED - set(L1_REGIME_BASELINE_WEI)) | (
     L1_FEE_OMITTED_PRICED - set(L1_REGIME_BASELINE_SMALL_WEI))
@@ -392,7 +447,7 @@ def one(chain_id: int, gas_units: dict) -> dict:
             probe_block = c.rpc(url, "eth_blockNumber", [])
             tripped = None
             for n, base, axis in pairs:
-                payload = "ff" * n + "00" * (-n % 32)
+                payload = _probe_payload(n)
                 now = int(c.rpc(url, "eth_call", [{"to": OP_GAS_ORACLE,
                                                    "data": OP_GET_L1_FEE + f"{32:064x}" + f"{n:064x}"
                                                    + payload}, probe_block]), 16)

@@ -272,6 +272,25 @@ jobs:
           ALCHEMY_API_KEY: ${{ secrets.ALCHEMY_API_KEY }}
         run: forge test --match-path "test/integration/*" -vvv --threads 1
 
+  # Verdict truth table for the deploy-funding gate. Cheap and hermetic: stdlib unittest, no network, no
+  # secrets, no forge — every RPC read is faked, so this never touches a chain. It exists because
+  # `deployer_balances.py` decides whether a redeploy may proceed and previously had NO automated coverage
+  # at all: three of its fail-closed guards were re-broken by later edits and caught only by hand. No
+  # submodules and no build artifacts needed.
+  preflight:
+    name: Preflight gate tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verdict truth table (deployer_balances)
+        # -O as well as plain: the import-time invariants use `raise`, not `assert`, precisely so that
+        # optimised runs cannot strip them. Running both ways keeps that property honest.
+        working-directory: script/deploy/preflight
+        run: |
+          python3 -m unittest test_deployer_balances -v
+          python3 -O -m unittest test_deployer_balances
+
   # Format check
   lockfile:
     name: Lockfile

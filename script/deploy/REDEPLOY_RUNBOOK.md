@@ -648,21 +648,41 @@ authoritative**, and if they disagree with this paragraph the code is right.
   drives the non-zero exit. **Verified on all eight** by forcing each balance under its `need`: every one
   reported `UNPRICEABLE`, none reached a `TOP UP` verdict. **Why an absolute floor and not a ratio:**
   celo sits at 9.95× margin with ~50 CELO of headroom against a measured addition of ~0, so a "10× need"
-  rule would have failed it spuriously. `1e-3` native is ~2,200× the largest addition measured (mantle,
-  4.5e-7).
+  rule would have failed it spuriously. `1e-3` native is **~38×** the largest addition (mantle, ~2.7e-5).
+  That factor read ~2,200× until 2026-08-12, when the probe payload was found to be compressible and the
+  term was corrected upward ~59× (see **Why two probe sizes** below). The floor VALUE still covers the
+  term; only its margin shrank.
 * **Fee side** — a **two-point regime probe**: the oracle's own `getL1Fee` on **64,887 bytes**
   (`L1_REGIME_PROBE_BYTES_BIG`, the region the real payload occupies) **and** on **4,096 bytes**
-  (`L1_REGIME_PROBE_BYTES_SMALL`, the size-independent term), each against a per-chain baseline
+  (`L1_REGIME_PROBE_BYTES_SMALL`, the second point on the curve), each against a per-chain baseline
   (`L1_REGIME_BASELINE_WEI`, `L1_REGIME_BASELINE_SMALL_WEI`). Either exceeding `L1_REGIME_MAX_RISE`
   (**100×**) sends the row to `UNPRICEABLE`, naming which axis moved. A read failure also fails closed.
   **Both probes pin to one block**, because `l1BaseFee` was observed moving `298,580,940 → 320,948,895`
   wei inside a 20-second window.
 
-**Why two probe sizes.** A single 4,096-byte probe was measured to have **zero sensitivity to payload
-size**: on base, `getL1Fee(0)` and `getL1Fee(4096)` returned an identical `971,132,088` wei, because 4 KB
-sits entirely below the size-dependent region (marginal cost appears only above it — 63,164 wei/byte at
-16 KB, 92,954 at 64,887). So it could not have detected a size-curve or fee-mode change of any magnitude,
-which is the risk it existed for.
+**Why two probe sizes, and why the probe payload is incompressible.** A single 4,096-byte probe was
+measured to have **zero sensitivity to payload size**: on base, `getL1Fee(0)` and `getL1Fee(4096)`
+returned an identical `971,132,088` wei. **The original explanation for that was wrong** — this section
+used to say 4 KB "sits entirely below the size-dependent region". The real cause was the probe payload:
+it was `"ff" * n`, and post-Fjord `getL1Fee` prices the **FastLZ-compressed** size, so a single repeated
+byte compresses to almost nothing and both readings landed in the flat region. `isFjord()` is 1 on seven
+of the eight chains (mantle reverts every mode getter yet behaves identically).
+
+Measured 2026-08-12, one pinned block per chain, ratios **identical to four significant figures on every
+charging chain**:
+
+| payload at 64,887 bytes | ratio to `"ff"` |
+| --- | --- |
+| all-zero | 1.0000 |
+| incompressible (iterated sha256) | **86.9003** |
+| real creation bytecode | **59.1957** |
+
+So the old probe understated real deploy calldata ~59×, and the chain-independence says the fee is linear
+in compressed size with a per-chain scalar. The probe now sends a deterministic incompressible keystream
+(`_probe_payload`), and **all 16 baselines were re-measured with those exact bytes** — a baseline is only
+meaningful against the payload it was measured with. Real bytecode was rejected as the probe payload
+despite being more representative: it changes whenever a contract changes, which would silently invalidate
+every baseline. Representativeness is #287's (real per-transaction `input` bytes from the rehearsal).
 
 **A shortfall figure for an affected chain is a LOWER BOUND.** `need` omits the L1 fee, so a printed
 top-up amount for one of those chains would tell the operator to send too little. The row carries
@@ -671,9 +691,10 @@ unreachable for the eight today, but **unreachable is not correct** — it holds
 exists and only for chains in one of the two sets.
 
 **Residuals this does not remove.** A fee-mode change that leaves both probe readings under the limit
-while altering the curve shape would not trip; the measured big/small ratio (**6.44×** on every charging
+while altering the curve shape would not trip; the measured big/small ratio (**15.7787×** on every charging
 chain, 0 on celo which charges nothing) is the signal, deliberately not enforced with an invented
-tolerance. And `L1_FEE_OMITTED_PRICED` membership is by **rollup family, not per-chain measurement** —
+tolerance. That ratio was recorded as 6.44× before 2026-08-12; 6.44× is what the compressible `"ff"`
+payload yields and is how the artefact was identified, so a reading near it is now itself suspicious. And `L1_FEE_OMITTED_PRICED` membership is by **rollup family, not per-chain measurement** —
 mantle reverts on all three OP fee-mode getters while `getL1Fee` works, so it is not a standard OP-stack
 oracle.
 

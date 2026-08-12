@@ -219,7 +219,7 @@ yield-bearing savings token (stcUSD). The leg is identified by the token in `pos
 // Leg 1 — held cUSD (label ["Stablecoin", "cUSD"])
 PositionBalance({
     balanceAsset:  Asset({ asset: 0xA0b8…6eB48, symbol: "USDC", decimals: 6 }),
-    balanceAdapter: 0x<CapAdapter>,
+    balanceAdapter: 0x<CapStablecoinAdapter>, // the cUSD leg's OWN adapter
     amount:        2_000_000_000,          // 2 000 USDC
     isDebt:        false,
     protocolSubId: keccak256("cap"),
@@ -229,7 +229,7 @@ PositionBalance({
 // Leg 2 — staked stcUSD (label ["Savings", "stcUSD"])
 PositionBalance({
     balanceAsset:  Asset({ asset: 0xA0b8…6eB48, symbol: "USDC", decimals: 6 }),
-    balanceAdapter: 0x<CapAdapter>,
+    balanceAdapter: 0x<CapSavingsAdapter>, // DIFFERENT adapter from leg 1 — see the note below
     amount:        1_000_000_000,          // 1 000 USDC (stcUSD → cUSD → USDC)
     isDebt:        false,
     protocolSubId: keccak256("cap"),
@@ -237,6 +237,13 @@ PositionBalance({
     positionKind:  PositionKind.Staking   // stcUSD is staked cUSD
 })
 ```
+
+> ⚠️ **The two legs report DIFFERENT `balanceAdapter` addresses.** Before the per-leg split one Cap adapter
+> emitted both, and a reconciliation could key Cap on a single adapter address. It no longer can:
+> `CapStablecoinBalanceAdapter` emits the cUSD leg and `CapSavingsBalanceAdapter` the stcUSD leg, and
+> `balanceAdapter` is the documented audit-trail join field. `protocolBrand` / `protocolId` / `protocolSubId`
+> are unchanged and identical across both legs, so **group Cap on `protocolSubId`, not on `balanceAdapter`** —
+> keying on the adapter address will silently drop whichever leg the integrator did not know about.
 
 #### `KelpWithdrawalQueue` — rsETH exit queue
 

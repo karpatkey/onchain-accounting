@@ -276,7 +276,7 @@ Mechanics:
 | Adapter family | Where the name comes from | How it is kept canonical |
 |---|---|---|
 | Meta (`MetaBalanceAdapter`) | **Derived** — `protocolName()` returns `ProtocolNames.forProtocolId(_protocolId())` | **True by construction.** The name is a pure function of the typed identity the adapter already declares, so two adapters sharing a `protocolId` cannot disagree: they evaluate the same expression over the same input. There is no constructor argument, no config value, and no deploy-time input to get wrong. |
-| Plain / assisted (hardcoded) | String literal in the adapter → baked into bytecode | Return a `src/utils/ProtocolNames.sol` constant, not a literal. `string internal constant` inlines identically, so adopting it is bytecode-neutral. All 12 are pinned to their constants by `test/ProtocolNameConsistency.t.sol`. |
+| Plain / assisted (hardcoded) | String literal in the adapter → baked into bytecode | Return a `src/utils/ProtocolNames.sol` constant, not a literal. `string internal constant` inlines identically, so adopting it is bytecode-neutral. All 13 are pinned to their constants by `test/ProtocolNameConsistency.t.sol` (`HARDCODED_ADAPTER_COUNT`). |
 
 An unknown `protocolId` reverts (`UnknownProtocolId`) rather than returning `""` — a meta adapter is immutable, so a silent empty name would be permanent. Reverting is safe because `protocolName()` is only ever reached through NAVCalculator's fail-open staticcall, so it degrades to an empty display name on a *verbose* read and can never break a NAV read.
 
@@ -289,7 +289,7 @@ An unknown `protocolId` reverts (`UnknownProtocolId`) rather than returning `""`
 1. **Only a segment that is the SAME for every position the adapter can emit may be given a literal.** The override table is keyed by adapter, so it cannot express a per-position value. A segment that varies by position must be passed `""`.
 2. **A COMPUTED segment should normally be `""` too.** Overriding one freezes a derivation that is the feature: for a meta-adapter it stamps one leaf onto every instance, it does not track `addMetaInstances`, and a wrong leaf almost always means the derivation is wrong across every instance — which a single row masks rather than fixes.
 
-The table below is the sweep of every `positionLabels` implementation in `src/balances/` (31 bodies across 33 deployable adapters — `PancakeSwapV2PoolsMeta` and `PancakeSwapV3PoolsMeta` inherit theirs from the Uniswap adapters). `U` = literal and uniform across positions (safe to override), `C` = computed live (pass `""` unless you intend to freeze it), `—` = the adapter never emits that index.
+The table below is the sweep of every `positionLabels` implementation in `src/balances/` (31 bodies across 34 deployable adapters — `PancakeSwapV2PoolsMeta` and `PancakeSwapV3PoolsMeta` inherit theirs from the Uniswap adapters, and both Cap legs share `CapBalanceAdapterBase`, so 32 table rows collapse to 31 bodies). `U` = literal and uniform across positions (safe to override), `C` = computed live (pass `""` unless you intend to freeze it), `—` = the adapter never emits that index.
 
 | Adapter | seg 0 | seg 1 | seg 2 | reply length | notes |
 |---|---|---|---|---|---|

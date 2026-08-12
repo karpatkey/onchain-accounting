@@ -337,7 +337,7 @@ interface IAssetKindRegistry {
     // **What is possible is wider than what is advisable, and the mechanism does not police the difference.** Two
     // classes of segment should normally be given `""`:
     //
-    //   1. **A COMPUTED segment.** 21 of the 33 deployable adapters derive their leaf from live on-chain state
+    //   1. **A COMPUTED segment.** 23 of the 34 deployable adapters derive their leaf from live on-chain state
     //      (`UniswapV3PoolsMetaBalanceAdapter` builds `"WETH/USDC 0.05%"` from live `token0()` / `token1()` / `fee()`
     //      probes; `FluidVaultsMetaBalanceAdapter` reads `vaultInfo` plus the registered-asset array). A stored value
     //      freezes a derivation that IS the feature, is stamped onto EVERY instance of a meta-adapter, does not track

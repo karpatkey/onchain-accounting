@@ -1634,6 +1634,61 @@ contract AdapterLabelOverridesTest is AdapterLabelOverridesBase {
 
         assertEq(_v().labels.length, 2, "the adapter emitted 2 segments, so 2 is what comes back");
         assertEq(_configLabels(address(adapter)).length, 2, "and the same on the configuration surface");
+        // ⚠️ CONTENT, not just length. The two length assertions above pass identically whether the override was
+        // applied-and-truncated or never decoded at all — the adapter's own reply is already 2 elements. Without
+        // these two, an `_OVERRIDE_RETURN_BYTES` sized too small would ship green.
+        assertEq(_v().labels[0], "seg", "truncated to 2, but the surviving segments must be the OVERRIDE's");
+        assertEq(_v().labels[1], "seg", "index 1 too: otherwise the override could have been dropped wholesale");
+    }
+
+    /// @notice The TRUE worst legitimate override — 8 segments of exactly `MAX_ASSET_LABEL_BYTES` (32) bytes, i.e.
+    ///         832 bytes of returndata against `PriceFeedLib._OVERRIDE_RETURN_BYTES = 896` — survives the read
+    ///         window intact, on BOTH display surfaces, asserted by CONTENT.
+    /// @dev **This is the behavioural pin for a coupling the compiler does not check.** `_OVERRIDE_RETURN_BYTES` is
+    ///      written as `64 + 96 * MAX_OVERRIDE_SEGMENTS + 64`, so raising the SEGMENT count is compiler-checked — but
+    ///      the `96` embeds `AssetKindRegistry.MAX_ASSET_LABEL_BYTES = 32` as a literal (`32 offset + 32 length + 32
+    ///      padded payload`), and that constant lives in another contract. Because payloads are `ceil32`-padded,
+    ///      raising the byte cap to just 33 takes each element to 128 bytes and a maximal override to 1,088 — over
+    ///      the unchanged 896-byte window, so it fails to decode and **the whole override vanishes with no event and
+    ///      no error**. Exactly the silent loss the count-axis warning at `PriceFeedLib.MAX_OVERRIDE_SEGMENTS`
+    ///      describes, on the axis that warning omitted.
+    ///
+    ///      Two axes at once is the point: `test_setAdapterLabels_atMaxSegments` drives 8 short segments and only
+    ///      asserts the registry getter (never the read path), and `test_setAdapterLabels_elementAtMaxLength` drives
+    ///      one 32-byte segment. Neither crosses them, so neither exercises the 832-vs-896 margin.
+    ///
+    ///      The 8 segments are observed through the CONFIGURATION surface, because that is the only one where all of
+    ///      them are visible: the position path is bounded by `min(reply, override)` and this adapter replies with 2.
+    ///      `NoLabelAdapter` replies `[]`, so `adapterDisplayInfo` takes the grow branch and returns the override's
+    ///      full leading non-empty prefix.
+    function test_labelsOverride_maximalOverrideSurvivesTheReturnWindow() public {
+        // Exactly 32 bytes each — `MAX_ASSET_LABEL_BYTES`, the largest the setter accepts. Distinct per index so a
+        // decode that mixed up element offsets cannot pass by returning the same string eight times.
+        string[] memory maximal = new string[](8);
+        for (uint256 i; i < 8; ++i) {
+            maximal[i] = string(abi.encodePacked("0123456789abcdef0123456789abcde", bytes1(uint8(0x41 + i))));
+            assertEq(bytes(maximal[i]).length, 32, "fixture must sit exactly at the byte cap, not near it");
+        }
+
+        NoLabelAdapter silent = new NoLabelAdapter();
+        _register(silent);
+        vm.prank(navCalculatorManager);
+        registry.setAdapterLabels(address(silent), maximal);
+
+        string[] memory got = _configLabels(address(silent));
+        assertEq(got.length, 8, "all 8 segments must survive the 896-byte window; 0 would mean a failed decode");
+        for (uint256 i; i < 8; ++i) {
+            assertEq(got[i], maximal[i], "segment content must round-trip byte-for-byte at the cap");
+        }
+
+        // And the same override on the position path, where the reply bounds it to 2 — content-asserted for the
+        // same reason as the test above: lengths alone cannot tell "applied" from "silently dropped".
+        vm.prank(navCalculatorManager);
+        registry.setAdapterLabels(address(adapter), maximal);
+        INAVCalculator.VerbosePosition memory v = _v();
+        assertEq(v.labels.length, 2, "bounded by the adapter's 2-element reply");
+        assertEq(v.labels[0], maximal[0], "and carrying the maximal override's bytes, not the adapter's");
+        assertEq(v.labels[1], maximal[1], "index 1 too");
     }
 
     function test_RevertIf_setAdapterLabels_tooManySegments() public {

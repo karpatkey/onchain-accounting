@@ -493,7 +493,7 @@ contract AssetKindRegistry is IAssetKindRegistry {
     ///      matters, is that the leaf is not overridden BY DEFAULT and the mechanism is opt-in per segment: `""` at an
     ///      index leaves that segment derived live, and it is the value an operator is told to pass for every
     ///      computed index (see the sweep in `src/balances/BALANCE_ADAPTERS.md` §6.2). Overriding a computed leaf is
-    ///      possible and is documented as a hazard rather than prevented: 21 of the 33 deployable adapters build the
+    ///      possible and is documented as a hazard rather than prevented: 23 of the 34 deployable adapters build the
     ///      leaf from on-chain state, so a stored value freezes a derivation across every instance, does not track
     ///      `addMetaInstances`, and masks a broken derivation one row at a time.
     ///

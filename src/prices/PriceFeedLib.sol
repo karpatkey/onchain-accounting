@@ -2078,7 +2078,8 @@ library PriceFeedLib {
     ///
     ///      **The three bounds are TIGHTER here than for the adapter read, deliberately.** Reusing
     ///      {_LABEL_READ_GAS}/{_LABELS_RETURN_BYTES}/{_LABEL_DECODE_GAS} (1M / 4 KB / 1M) would have raised the
-    ///      hostile-registry ceiling from 2x{_NAME_READ_GAS} to ~2.1M **per distinct adapter**, which on a
+    ///      hostile-registry ceiling from 3x{_NAME_READ_GAS} (name-override read + label-override read + decode
+    ///      shim, 300k) to ~2.1M **per distinct adapter**, which on a
     ///      fifteen-adapter account is over 31M gas — an availability regression on the verbose path introduced by a
     ///      display feature. A legitimate override is at most {_OVERRIDE_RETURN_BYTES} bytes of returndata and
     ///      one `SLOAD` chain, so the tight triple is orders of magnitude more than it needs.
@@ -2217,8 +2218,13 @@ library PriceFeedLib {
     ///      stipend: a hostile registry can burn 2x this per DISTINCT ADAPTER on the ACCOUNT path, which caches per
     ///      adapter — plus {_OVERRIDE_DECODE_GAS} for the array read's decode shim, so 3x this in total.
     ///      ⚠️ The CONFIGURATION path ({adapterDisplayInfo}) has no such cache — it is a flat loop over the caller's
-    ///      array — so there the ceiling is 2x this per ARRAY ENTRY, and a caller passing the same adapter N times
-    ///      pays N times. That is bounded by the caller's own gas and its own array, not by the fleet size. The
+    ///      array — so there the ceiling is the SAME 3x, but per ARRAY ENTRY rather than per distinct adapter, and a
+    ///      caller passing the same adapter N times pays N times. **The composition is identical on both paths; only
+    ///      the denominator differs.** (An earlier revision of this sentence said 2x here, silently dropping the
+    ///      {_OVERRIDE_DECODE_GAS} term the account-path sentence two lines above already counts. It understated the
+    ///      measured figure too: under a stipend-burning registry the configuration path costs ~241k marginal per
+    ///      entry, above the 200k that "2x" implies.) That is bounded by the caller's own gas and its own array, not
+    ///      by the fleet size. The
     ///      ACCOUNT-path ceiling is exercised by
     ///      `AdapterLabelOverrides.t.sol::test_gas_hostileRegistryIsBoundedByTheStipend`, which wires a
     ///      stipend-burning registry and measures the read (~422k, still fail-open), and the CONFIGURATION-path
@@ -2271,6 +2277,18 @@ library PriceFeedLib {
     ///      `MAX_ADAPTER_LABEL_SEGMENTS` past 8 would see the write succeed and the whole override vanish on read.
     ///      All three numbers (`_MAX_LABEL_ELEMENTS`, `MAX_ADAPTER_LABEL_SEGMENTS`, this one) are 8 and must move
     ///      together.
+    ///
+    ///      ⚠️ **`AssetKindRegistry.MAX_ASSET_LABEL_BYTES = 32` is a FOURTH member of that set, on the byte axis
+    ///      rather than the count axis, and it is the one most easily missed.** {_OVERRIDE_RETURN_BYTES} below
+    ///      hardcodes `96` bytes per element as `32 offset + 32 length + 32 padded payload`; that last 32 IS
+    ///      `MAX_ASSET_LABEL_BYTES`, rounded up to a word. Because payloads are `ceil32`-padded, raising the byte cap
+    ///      to just 33 makes each element cost 128 instead of 96, so a maximal 8-segment override encodes to 1,088
+    ///      bytes against an unchanged 896-byte window: it overflows, fails to decode, and the override vanishes IN
+    ///      FULL with no event and no error — the identical silent-loss failure this note already describes for the
+    ///      count axis. The coupling is NOT compiler-checked (the constant lives in `AssetKindRegistry`, and pulling
+    ///      it in would put a `src/nav` dependency on the pricing library for a compile-time literal), so it is held
+    ///      by `test_labelsOverride_maximalOverrideSurvivesTheReturnWindow` instead, which drives the true worst case
+    ///      (8 x 32 bytes = 832 bytes, 64 bytes of slack) through the read path and asserts CONTENT, not lengths.
     uint256 private constant MAX_OVERRIDE_SEGMENTS = 8;
 
     /// @notice Bytes of `getAdapterLabels()` returndata copied into this frame.
@@ -2278,7 +2296,9 @@ library PriceFeedLib {
     ///      `n` such elements encodes as
     ///      `32 (array offset) + 32 (length) + n*32 (element offsets) + n*(32 length + 32 padded payload)`
     ///      = `64 + 96n`, plus two words of slack. **Written as the expression rather than the number** so the
-    ///      derivation is checked by the compiler and {MAX_OVERRIDE_SEGMENTS} is load-bearing instead of decorative;
+    ///      SEGMENT-COUNT half of the derivation is checked by the compiler and {MAX_OVERRIDE_SEGMENTS} is
+    ///      load-bearing instead of decorative — note the BYTE half is not, since the `96` embeds
+    ///      `MAX_ASSET_LABEL_BYTES = 32` as a literal (see the warning on {MAX_OVERRIDE_SEGMENTS});
     ///      it folds to 896 at compile time and costs nothing. A reply exceeding the window is truncated, fails to
     ///      decode, and yields no override — display degrades, nothing reverts. Two orders of magnitude tighter than
     ///      {_LABELS_RETURN_BYTES}, and that is the point: see {_labelOverride}.

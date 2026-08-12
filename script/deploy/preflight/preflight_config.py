@@ -532,6 +532,40 @@ def _check_chain(chain_id: int) -> list[tuple[str, str]]:
             f.append((WARN, f"'{name}' enabled in deploy-config but not in nav-config — it will be "
                             f"deployed and then never registered on the NAV"))
 
+    # --- constructor args SHARED across sibling adapters --------------------
+    # Splitting one adapter into per-leg siblings duplicates whatever constructor args the legs have in common,
+    # and a JSON file cannot express "these two must be equal". Before the Cap split one key supplied `cUsd` and
+    # `usdc` once, so divergence was structurally impossible; now a typo in either block deploys cleanly and
+    # AddressCheckLib.requireContract still passes, because a WRONG contract is still a contract. The failure is
+    # silent and expensive: a divergent `cUsd` points CapSavings at the wrong burn-quote oracle, so the stcUSD leg
+    # either reverts (dropped from NAV by the per-adapter try/catch) or returns a garbage USDC amount summed in as
+    # real value; a divergent `usdc` makes the two legs report different balanceAsset, so they stop summing to the
+    # pre-split total the fork test pins.
+    #
+    # Keyed by the shared arg name -> the sibling adapters that must agree on it. Add a row when you split an
+    # adapter, not after the divergence is found on-chain.
+    SIBLING_SHARED_ARGS: dict[str, tuple[str, ...]] = {
+        "cUsd": ("CapStablecoin", "CapSavings"),
+        "usdc": ("CapStablecoin", "CapSavings"),
+    }
+    for arg, siblings in SIBLING_SHARED_ARGS.items():
+        present = [n for n in siblings if n in dep_plain]
+        if len(present) < 2:
+            continue  # not both configured on this chain; nothing to compare
+        seen: dict[str, list[str]] = {}
+        for name in present:
+            val = (dep_plain.get(name, {}).get("constructor", {}) or {}).get(arg)
+            if val is None:
+                f.append((ERROR, f"'{name}' is missing the shared constructor arg '{arg}' that its sibling(s) "
+                                 f"{', '.join(x for x in present if x != name)} also take"))
+                continue
+            seen.setdefault(val.lower(), []).append(name)
+        if len(seen) > 1:
+            detail = "; ".join(f"{v} <- {', '.join(ns)}" for v, ns in seen.items())
+            f.append((ERROR, f"sibling adapters disagree on the shared constructor arg '{arg}': {detail} — "
+                             f"they were split from ONE adapter and must pass the identical address; a wrong "
+                             f"one still deploys (it is a contract) and misprices or drops the leg silently"))
+
     # --- meta instance sets -------------------------------------------------
     for name, entry in nav_meta.items():
         if entry.get("enabled") is not True:

@@ -9,7 +9,6 @@ import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
 import {IAttestedBalanceAdapter} from "src/balances/IAttestedBalanceAdapter.sol";
 import {IPositionDescribable} from "src/balances/IPositionDescribable.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
-import {RegisteredAssetLib} from "src/balances/RegisteredAssetLib.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/errors.sol";
 import {GasStipendLib} from "src/utils/GasStipendLib.sol";
@@ -78,6 +77,13 @@ contract MerklRewardsAttestedBalanceAdapter is IAttestedBalanceAdapter, IPositio
     /// @param subCampaignId    Merkl sub-campaign id (a `bytes32`; encode/hash Merkl's identifier if not natively
     ///                         32 bytes). Together with `campaignId` it forms the position's `positionInstanceId`
     ///                         (`keccak256(abi.encode(campaignId, subCampaignId))`).
+    ///                         **Duplicates are NOT rejected.** Nothing here requires the `(campaignId,
+    ///                         subCampaignId)` pairs within one token's breakdown to be distinct, so two legs of
+    ///                         the same token can carry an identical `positionInstanceId`. Harmless on-chain —
+    ///                         `positionInstanceId` is excluded from the stable reconciliation key and NAV SUMS
+    ///                         legs rather than deduping them — but a downstream consumer keying on the instance
+    ///                         coordinate cannot tell a fabricated repeat from a genuine one. Campaign identity is
+    ///                         display-grade, not audit-grade; the per-token total is the proof-backed figure.
     /// @param cumulativeAmount This campaign's cumulative contribution to the token total. NOT individually
     ///                         proof-backed (Merkl proves only the per-token total); the contract instead enforces
     ///                         that the campaign shares of a token SUM to the proof-verified per-token total, so a
@@ -328,8 +334,15 @@ contract MerklRewardsAttestedBalanceAdapter is IAttestedBalanceAdapter, IPositio
 
     /// @notice Drop a cached allocation — **stale-gated GC**. Permissionless, but reverts `AllocationStillLive` if the
     ///         entry still contributes to NAV (cached root matches the live root AND it has an unclaimed balance): a
-    ///         live entry can only be *replaced* via `submitProofs`, never cleared, so no caller can suppress another
-    ///         account's valid reward. Clears entries that are stale (root rotated) or fully claimed.
+    ///         live entry can only be *replaced* via `submitProofs`, never cleared, so no caller can suppress an
+    ///         **already-admitted** valid reward. Clears entries that are stale (root rotated) or fully claimed.
+    ///         **Scope, precisely:** this protects entries that are IN the cache. It does not guarantee that an
+    ///         entry can GET in — admission is capped at {MAX_TOKENS_PER_USER} and fails loud, and because Merkl
+    ///         proofs are public a third party can occupy slots with the account's own genuinely-earned but
+    ///         low-value tokens. Those squatted entries are themselves live, hence un-clearable here, so the
+    ///         valuable token cannot be admitted until a root rotation makes them stale. Direction is
+    ///         under-report (never over-report), and the remedy is an open design call — see "Known gaps" in
+    ///         `docs/operations/merkl-proof-submitter.md`.
     /// @dev Garbage-collects tokens whose proof no longer validates or that the user has fully claimed — keeps storage
     ///      and the per-user enumeration list bounded. Not required for correctness (such entries already read as 0).
     function clearAllocation(address user, address token) external {
@@ -482,10 +495,10 @@ contract MerklRewardsAttestedBalanceAdapter is IAttestedBalanceAdapter, IPositio
 
         // Nothing cached for this account (the overwhelmingly common case, since this adapter is registered globally
         // and queried for every account): return before the self-call, so an empty cache does not pay for the extra
-        // frame OR for `buildPositionsSelf`'s whole-registry `getRegisteredAssets()` copy. Mirrors the sibling plain
-        // adapters, which all early-return before that fetch (e.g. StaderWithdrawalQueueBalanceAdapter's empty-id
-        // check, LidoWithdrawalQueue's `balanceOf == 0`). The registry copy is super-linear in registered assets, and
-        // it is charged against the per-adapter stipend `PriceFeedLib._getAdapterPositions` forwards.
+        // frame OR for `buildPositionsSelf`'s per-token registry lookups. Mirrors the sibling plain adapters, which
+        // all early-return before resolving registry metadata (e.g. StaderWithdrawalQueueBalanceAdapter's empty-id
+        // check, LidoWithdrawalQueue's `balanceOf == 0`). Those lookups are charged against the per-adapter stipend
+        // `PriceFeedLib._getAdapterPositions` forwards.
         if (tokensToProcess.length == 0) return new INAVCalculator.PositionBalance[](0);
 
         // Build via an external self-staticcall so the row-building frame's only params are `(account, tokens)` —
@@ -503,17 +516,23 @@ contract MerklRewardsAttestedBalanceAdapter is IAttestedBalanceAdapter, IPositio
         returns (INAVCalculator.PositionBalance[] memory positions)
     {
         if (msg.sender != address(this)) revert NotAuthorized();
-        INAVCalculator.Asset[] memory registered = NAV_CALCULATOR.getRegisteredAssets();
 
         // PRE-FILTER to the tokens that will actually be VALUED. Resolving registry metadata up front is not a
         // tidy-up: the stipend denominator below must count only tokens that get a frame. Counting tokens that are
         // then skipped as unregistered reserves budget nothing ever spends, so an early registered reward is funded
         // as if 63 others were still coming and can be dropped for want of gas while most of the frame goes unused.
+        //
+        // Resolve each token through the O(1) `getRegisteredAsset(address)` index, NOT the O(N) whole-registry
+        // `getRegisteredAssets()` copy. The latter ABI-copies every registered Asset (strings included) across the
+        // call boundary on EVERY read regardless of how many tokens are cached, and its cost is super-linear in the
+        // registry size, not in this account's token count — so it is charged to the per-adapter stipend for data
+        // that is almost entirely discarded. `INAVCalculator.getRegisteredAsset` exists for exactly this lookup and
+        // its own docstring says so; `MetaBalanceAdapter` and `ERC20DefaultBalanceAdapter` already use it.
         address[] memory live = new address[](tokens.length);
         INAVCalculator.Asset[] memory metas = new INAVCalculator.Asset[](tokens.length);
         uint256 liveCount;
         for (uint256 i; i < tokens.length; ++i) {
-            (INAVCalculator.Asset memory meta, bool found) = RegisteredAssetLib.find(registered, tokens[i]);
+            (INAVCalculator.Asset memory meta, bool found) = NAV_CALCULATOR.getRegisteredAsset(tokens[i]);
             if (!found) continue;
             live[liveCount] = tokens[i];
             metas[liveCount] = meta;

@@ -14,6 +14,8 @@ import {IPositionDescribable} from "src/balances/IPositionDescribable.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol";
 import {Mock_ERC20} from "test/mocks/tokens.sol";
+import {ProtocolIds} from "src/utils/ProtocolIds.sol";
+import {PositionKind} from "src/utils/PositionKind.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/errors.sol";
 
@@ -982,6 +984,73 @@ contract MerklRewardsAttestedBalanceAdapterTest is BalanceAdapterTestBase {
         assertEq(arbOnly[0].amount, 100 ether);
         assertFalse(arbOnly[0].isDebt);
         assertEq(arbOnly[0].balanceAdapter, address(adapter));
+    }
+
+    /// @notice A live root that RETURNS to a value it previously held must re-activate the cached entry at exactly
+    ///         the figure that root attests — never resurrect a superseded one.
+    /// @dev    Merkl's root is not monotonic. `getMerkleRoot()` serves `lastTree.merkleRoot` during the dispute
+    ///         window, and `Distributor.revokeTree()` sets `tree = lastTree`, so the live root can go R2 -> R3 -> R2.
+    ///         Nothing in the suite covered this before. It matters because the staleness rule is an EXACT-MATCH on
+    ///         the cached root rather than any "cached is older, so trust it" heuristic — and exact-match is
+    ///         precisely what makes oscillation safe. A recency-based rule would read the R2 entry as valid while
+    ///         R3 is live (over-report on a revoked tree), which is the direction this family forbids. Asserting the
+    ///         round trip pins that choice so a later "optimisation" to a timestamp or ordering comparison fails here.
+    function test_rootOscillation_revokeBackReactivatesAtAttestedFigure() public {
+        // Cache 100 ARB under root R2.
+        _seedAllocation(alice, address(arb), 100 ether);
+        bytes32 r2 = _leaf(alice, address(arb), 100 ether);
+        assertEq(distributor.getMerkleRoot(), r2, "precondition: live root is R2");
+
+        (uint256 amt,) = adapter.getAdapterBalanceForAsset(alice, address(arb));
+        assertEq(amt, 100 ether, "live under R2");
+
+        // Merkl rotates to R3. The cached entry's root no longer matches -> stale -> reads 0 (conservative).
+        bytes32 r3 = keccak256("R3");
+        distributor.setRoot(r3);
+        (amt,) = adapter.getAdapterBalanceForAsset(alice, address(arb));
+        assertEq(amt, 0, "stale under R3 -> 0, never extrapolated across a rotation");
+        assertEq(adapter.getAdapterPositions(alice, address(0)).length, 0, "no leg emitted while stale");
+
+        // R3 is disputed and revoked: the live root RETURNS to R2. The cached entry is genuinely attested by the
+        // live root again, so it must come back at its real figure — not stay dead, and not come back inflated.
+        distributor.setRoot(r2);
+        (amt,) = adapter.getAdapterBalanceForAsset(alice, address(arb));
+        assertEq(amt, 100 ether, "re-activates at exactly the figure R2 attests");
+
+        INAVCalculator.PositionBalance[] memory positions = adapter.getAdapterPositions(alice, address(0));
+        assertEq(positions.length, 1, "leg returns after the revoke");
+        assertEq(positions[0].amount, 100 ether, "and at the attested amount, not a stale or doubled one");
+    }
+
+    /// @notice Pins the FULL canonical position identity, not just `protocolId`.
+    /// @dev    Until this test existed, no test in the suite asserted `positionId`, `protocolBrand`,
+    ///         `protocolSubId` or `isLocked` on any emitted leg — the fork test checked `protocolId` and
+    ///         `positionKind` only, and this unit suite checked none of them. That gap is load-bearing:
+    ///         `positionId` is the STABLE RECONCILIATION KEY that every downstream consumer JOINs on, so a
+    ///         plausible-looking change like `abi.encode(DISTRIBUTOR)` -> `abi.encode(token)` ("the reward token
+    ///         identifies the position") would silently re-key every historical Merkl row while leaving the whole
+    ///         suite, and CI, green. Each assertion below is here to fail loudly for exactly that class of change.
+    function test_getAdapterPositions_pinsCanonicalIdentity() public {
+        _seedAllocation(alice, address(arb), 100 ether);
+
+        INAVCalculator.PositionBalance[] memory positions = adapter.getAdapterPositions(alice, address(0));
+        assertEq(positions.length, 1, "one untagged leg");
+
+        // The reconciliation key: the Distributor (the claim target / trust anchor), NOT the reward token.
+        assertEq(positions[0].positionId, abi.encode(address(distributor)), "positionId == abi.encode(DISTRIBUTOR)");
+
+        // Full 3-level taxonomy — all three are ProtocolIds.MERKL for this single-product ecosystem.
+        assertEq(positions[0].protocolBrand, ProtocolIds.MERKL, "protocolBrand == MERKL");
+        assertEq(positions[0].protocolId, ProtocolIds.MERKL, "protocolId == MERKL");
+        assertEq(positions[0].protocolSubId, ProtocolIds.MERKL, "protocolSubId == MERKL");
+
+        // Remaining identity/status fields.
+        assertTrue(positions[0].positionKind == PositionKind.Rewards, "positionKind == Rewards");
+        assertFalse(positions[0].isLocked, "unclaimed Merkl rewards are claimable now, never locked");
+        assertFalse(positions[0].isDebt, "rewards are always a credit");
+        assertEq(positions[0].balanceAdapter, address(adapter), "balanceAdapter == address(this)");
+        assertEq(positions[0].balanceAsset.asset, address(arb), "reward token rides in balanceAsset");
+        assertEq(positions[0].positionInstanceId, bytes32(0), "untagged when no campaign breakdown");
     }
 
     function test_getAdapterPositions_skipsClaimedAndStale() public {

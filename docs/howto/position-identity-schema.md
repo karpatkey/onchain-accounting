@@ -277,7 +277,7 @@ PositionBalance({
 
 #### `MerklRewards` — unclaimed Merkl allocation
 
-> Note: the Merkl adapter (`MerklRewardsAttestedBalanceAdapter`, the `attested` family — [ADR 0022](../decisions/0022-attested-balance-adapter-family.md)) is being re-added and is not yet deployed on `main`. The schema below describes it.
+> Note: the Merkl adapter is `MerklRewardsAttestedBalanceAdapter`, the `attested` family — [ADR 0022](../decisions/0022-attested-balance-adapter-family.md). Per-chain enablement and deployment are a separate follow-up; the schema below is what it emits.
 
 ```solidity
 // One leg per cached CAMPAIGN SHARE of a reward token (not one per token): the token's unclaimed total is split
@@ -717,7 +717,7 @@ ERC721 request id in the typed `positionInstanceId`.
 
 #### `MerklRewards` — unclaimed rewards
 
-Scenario: 250 CRV unclaimed in Merkl distributor. (Schema shown for the pending re-add — no Merkl adapter is live on `main` today.)
+Scenario: 250 CRV unclaimed in Merkl distributor. (Per-chain enablement and deployment are a separate follow-up.)
 
 | asset | amount | value (USD) | positionKind | protocolName | labels |
 |-------|--------|-------------|--------------|--------------|---------------|
@@ -996,7 +996,7 @@ schemas are in the next section and in the per-adapter table above.)
 | `stakewise-v3-vaults` | `STAKEWISE_V3_VAULTS` | `StakeWiseV3VaultsMetaBalanceAdapter` — StakeWise V3 vault stake + osToken debt |
 | `nexus-mutual-staking-pools` | `NEXUS_MUTUAL_STAKING_POOLS` | `NexusMutualStakingPoolsAssistedBalanceAdapter` — Nexus Mutual StakingNFT stake + rewards |
 | `cap` | `CAP` | `CapBalanceAdapter` — Cap cUSD (held) and stcUSD (staked) |
-| `merkl` | `MERKL` | Merkl-rewards slug — `MerklRewardsAttestedBalanceAdapter` (`attested` family, ADR 0022); re-add in progress, not yet deployed on `main`. Emits unclaimed (claimable) Merkl reward tokens |
+| `merkl` | `MERKL` | `MerklRewardsAttestedBalanceAdapter` (`attested` family, ADR 0022) — emits unclaimed (claimable) Merkl reward tokens, one leg per cached campaign share. Per-chain enablement/deploy is a separate follow-up |
 | `lido-withdrawal` | `LIDO_WITHDRAWAL` | `LidoWithdrawalQueueBalanceAdapter` — ETH owed from the Lido stETH withdrawal queue |
 | `stader-withdrawal` | `STADER_WITHDRAWAL` | `StaderWithdrawalQueueBalanceAdapter` — ETH owed from the Stader ETHx withdrawal queue |
 | `kelp-withdrawal` | `KELP_WITHDRAWAL` | `KelpWithdrawalQueueBalanceAdapter` — assets owed from the Kelp rsETH exit queue |
@@ -1586,7 +1586,17 @@ the same on every chain. Default `positionId` = base `_instancePositionId` (inst
 | `StakeWiseV3ExitQueueAssistedBalanceAdapter` | `stakewise-v3-exit` | `"StakeWise V3"` (const) | `["Exit Queue", <receiptSymbol>]` (gov — constructor arg; bare `["Exit Queue"]` when empty) | `abi.encode(address vault)` (per vault) | Supplied — **per request (ticket)** with the `positionTicket` in `positionInstanceId`, up to two legs (claimable + still-queued) sharing the per-vault positionId | `["StakeWise V3","Exit Queue","osETH"]` |
 | `NexusMutualStakingPoolsAssistedBalanceAdapter` | `nexus-mutual-staking-pools` | `"Nexus Mutual"` (const) | `["Staking Pools", "Pool #<id>"]` (derived) | `abi.encode(address stakingPool)` | Staking / Rewards | `["Nexus Mutual","Staking Pools","Pool #5"]` |
 
-(`MerklRewardsAttestedBalanceAdapter` (attested family, ADR 0022) is being re-added and is not yet on `main`; the `merkl` slug is reserved for it — see the note in the `protocolSubId` table above.)
+#### Attested adapters (`src/balances/AttestedBalanceAdapters/`)
+
+| Adapter | `protocolSubId` | `protocolName()` | `positionLabels()` → (source) | `positionId` schema | `PositionKind` legs | Example breadcrumb |
+|---|---|---|---|---|---|---|
+| `MerklRewardsAttestedBalanceAdapter` | `merkl` | `"Merkl"` (const) | `["Claimable Rewards"]` (const) | `abi.encode(address distributor)` (static — the reward token rides in `balanceAsset`) | Rewards — one leg **per cached campaign share**, `keccak256(abi.encode(campaignId, subCampaignId))` in `positionInstanceId` (or `bytes32(0)` when submitted untagged), all sharing the one positionId | `["Merkl","Claimable Rewards"]` |
+
+> **Campaign legs: SUM, do not dedupe** — and treat their attribution as display-grade. Every campaign leg of one
+> reward token shares an identical stable key (`positionInstanceId` is excluded from it), so a consumer that drops
+> repeated keys under-reports that token by up to 8x. The campaign coordinates are **not** proof-bound and are
+> submitter-controlled, so duplicate or fabricated `campaignId`s are possible; the proof-backed figure is the
+> per-token total, i.e. the sum of a token's legs. See the worked example above.
 
 #### What each `positionId` value is
 

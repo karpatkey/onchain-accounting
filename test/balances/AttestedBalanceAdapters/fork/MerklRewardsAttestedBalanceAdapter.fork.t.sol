@@ -205,7 +205,13 @@ contract MerklRewardsAttestedBalanceAdapterRealProofForkTest is BalanceAdapterTe
         assertEq(positions[0].amount, expectedUnclaimed, "leg amount == unclaimed");
         assertFalse(positions[0].isDebt);
         assertTrue(positions[0].positionKind == PositionKind.Rewards, "positionKind == Rewards");
+        // Full canonical identity, not just protocolId — `positionId` in particular is the stable reconciliation
+        // key downstream consumers JOIN on, so re-keying it must fail a test rather than pass silently.
+        assertEq(positions[0].positionId, abi.encode(MERKL_DISTRIBUTOR), "positionId == abi.encode(DISTRIBUTOR)");
+        assertEq(positions[0].protocolBrand, ProtocolIds.MERKL, "protocolBrand == MERKL");
         assertEq(positions[0].protocolId, ProtocolIds.MERKL, "protocolId == MERKL");
+        assertEq(positions[0].protocolSubId, ProtocolIds.MERKL, "protocolSubId == MERKL");
+        assertFalse(positions[0].isLocked, "unclaimed Merkl rewards are never locked");
         assertEq(positions[0].positionInstanceId, bytes32(0), "untagged (no campaign breakdown)");
         assertEq(adapter.protocolName(), "Merkl", "protocolName == Merkl");
     }

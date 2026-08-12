@@ -87,9 +87,26 @@ contract BridgeHeldBalanceAdapter is BalanceAdapterBase {
     ///         `address(0)` native key is surfaced as NAV's ERC-7528 sentinel so the NAV registry indexes this
     ///         adapter under the same native address it prices under (otherwise it is undiscoverable for native).
     function underlyingAssetsSupported() external view override returns (address[] memory underlyingAssets) {
-        (, underlyingAssets) = BRIDGE_ESCROW.registeredAssets();
-        for (uint256 i; i < underlyingAssets.length; ++i) {
-            if (underlyingAssets[i] == address(0)) underlyingAssets[i] = NATIVE_ASSET;
+        (, address[] memory raw) = BRIDGE_ESCROW.registeredAssets();
+        // Map the escrow's address(0) native key to NAV's sentinel AND merge duplicates, so a dual-native-key
+        // (address(0) + sentinel) misconfig collapses to one entry — consistent with getAdapterBalances,
+        // getAdapterPositions and the point getter, which all merge/sum both native keys.
+        address[] memory tmp = new address[](raw.length);
+        uint256 n;
+        for (uint256 i; i < raw.length; ++i) {
+            address a = raw[i] == address(0) ? NATIVE_ASSET : raw[i];
+            bool seen;
+            for (uint256 j; j < n; ++j) {
+                if (tmp[j] == a) {
+                    seen = true;
+                    break;
+                }
+            }
+            if (!seen) tmp[n++] = a;
+        }
+        underlyingAssets = new address[](n);
+        for (uint256 i; i < n; ++i) {
+            underlyingAssets[i] = tmp[i];
         }
     }
 

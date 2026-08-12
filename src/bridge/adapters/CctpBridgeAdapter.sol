@@ -242,8 +242,9 @@ contract CctpBridgeAdapter is BridgeAdapter, ICctpBridgeAdapter {
         }
 
         // The adapter now holds the freshly-minted USDC. The base BridgeAdapter.completeBridge calls
-        // _fundAndRelease after we return (funded pass-through, ADR 0012): the escrow pulls exactly
-        // `amount` from this adapter and forwards it to the account. We do NOT push/release here.
+        // _fundAndRelease after we return (hold-then-claim, ADR 0024): the escrow pulls exactly
+        // `amount` from this adapter and records it into destination custody (held until a MANAGER claim).
+        // We do NOT push/release here.
         emit CctpBridgeCompleted(data.invoiceId, data.invoiceId, sourceDomain);
     }
 

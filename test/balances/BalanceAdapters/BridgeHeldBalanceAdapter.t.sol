@@ -278,6 +278,23 @@ contract BridgeHeldBalanceAdapterTest is Test {
         assertEq(a[2], address(unregistered));
     }
 
+    /// F1 (audit): underlyingAssetsSupported must map address(0)->sentinel AND dedup, matching the other three
+    /// getters, so a dual-native-key escrow misconfig surfaces native exactly once (no duplicate for NAV to
+    /// double-index). Before the fix this returned native twice (address(0)->sentinel + the explicit sentinel).
+    function test_underlyingAssetsSupported_nativeDualKey_deduped() public {
+        escrow.registerAsset("ETH0", address(0)); // escrow's native key
+        escrow.registerAsset("ETH2", NATIVE); // the ERC-7528 sentinel, second native key
+        address[] memory a = adapter.underlyingAssetsSupported();
+        // usdc, weth, unregistered (3) + native collapsed to ONE entry = 4
+        assertEq(a.length, 4, "native dual-key deduped to one");
+        uint256 nativeCount;
+        for (uint256 i; i < a.length; ++i) {
+            assertTrue(a[i] != address(0), "address(0) mapped to sentinel");
+            if (a[i] == NATIVE) ++nativeCount;
+        }
+        assertEq(nativeCount, 1, "native appears exactly once");
+    }
+
     function test_describable() public view {
         assertEq(adapter.protocolName(), "Bridge Escrow");
         string[] memory labels = adapter.positionLabels("");

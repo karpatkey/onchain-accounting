@@ -571,7 +571,11 @@ contract BridgeEscrow is
 
     /// @inheritdoc IBridgeEscrow
     function getHeldBalanceForAsset(address asset, address account) external view override returns (uint256) {
-        if (account == address(0)) return _heldClaimable[asset];
+        // Aggregate (account == 0) query routes through _heldClaimableFor so a native query sums BOTH native
+        // representations (address(0) + the ERC-7528 sentinel), matching the cancelInvoice/emergencyWithdraw
+        // surplus caps and BridgeHeldBalanceAdapter's point getter; a raw single-key lookup here would
+        // under-report native held custody when queried via the "other" native key. Non-native is unchanged.
+        if (account == address(0)) return _heldClaimableFor(asset);
         return _heldByAccount[account][asset];
     }
 

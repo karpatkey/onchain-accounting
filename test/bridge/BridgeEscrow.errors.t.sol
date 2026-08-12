@@ -509,6 +509,30 @@ contract BridgeEscrowErrorTest is BridgeEscrowTestBase {
         destEscrow.emergencyWithdraw(address(0), 1 ether, account);
     }
 
+    /// F2 (audit): the aggregate (account==0) getHeldBalanceForAsset must sum BOTH native keys, matching
+    /// _heldClaimableFor and BridgeHeldBalanceAdapter's point getter. Native held under address(0) must be
+    /// visible when the aggregate is queried via the ERC-7528 sentinel too. Before the fix the sentinel query
+    /// returned _heldClaimable[sentinel] == 0, silently under-reporting aggregate native held custody.
+    function test_getHeldBalanceForAsset_aggregateNative_sumsBothKeys() public {
+        (BridgeEscrow destEscrow,, MockBridgeAdapter destMock) = _setupDestinationAndValidPayload(address(usdc), 1);
+        address sentinel = destEscrow.NATIVE_ADDRESS_ERC7528();
+        vm.prank(admin);
+        destEscrow.registerAsset("ETH   ", address(0)); // native keyed under address(0)
+
+        InvoiceDataLib.InvoiceData memory data =
+            _createInvoiceData(SOURCE_CHAIN_ID, DEST_CHAIN_ID, account, bytes6("ETH   "), 1 ether);
+        bytes memory payload = InvoiceDataLib.encode(data);
+        vm.deal(address(destMock), 1 ether);
+        vm.prank(address(destMock));
+        destEscrow.recordDelivery{value: 1 ether}(payload); // held under _heldClaimable[address(0)]
+
+        // Aggregate (account == address(0)) via EITHER native key returns the full held native custody.
+        assertEq(destEscrow.getHeldBalanceForAsset(address(0), address(0)), 1 ether, "aggregate via address(0)");
+        assertEq(
+            destEscrow.getHeldBalanceForAsset(sentinel, address(0)), 1 ether, "aggregate via sentinel sums both keys"
+        );
+    }
+
     /// @notice Two symbols aliasing one token must not double-count held custody in getHeldBalancesForAccount.
     function test_getHeldBalancesForAccount_dedupesAliasedSymbols() public {
         (BridgeEscrow destEscrow, bytes memory payload, MockBridgeAdapter destMock) =

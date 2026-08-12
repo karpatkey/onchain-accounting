@@ -18,8 +18,8 @@ import "src/errors.sol";
 ///      directly on it. The adapter authenticates the mediator (`msg.sender == omnibridge`) and the AMB-reported
 ///      source (`amb.messageSender()` == the trusted source Omnibridge mediator `trustedMediator[srcChainId]` — NOT
 ///      the sibling adapter, `amb.messageSourceChainId()` == the expected source chain), verifies that the
-///      delivered token+amount match the invoice, then funds the escrow and
-///      releases (funded pass-through, ADR 0012). There is no escrow fallback dispatcher.
+///      delivered token+amount match the invoice, then records the delivery into escrow custody
+///      (hold-then-claim, ADR 0024). There is no escrow fallback dispatcher.
 /// @author KPK
 contract GnosisBridgeAdapter is BridgeAdapter, IGnosisBridgeAdapter {
     using SafeERC20 for IERC20;
@@ -193,7 +193,7 @@ contract GnosisBridgeAdapter is BridgeAdapter, IGnosisBridgeAdapter {
     /// @dev MANAGER fallback completion: the Omnibridge mediator normally calls `onTokenTransfer` directly
     ///      (auto path). This manager path is used only if that did not run. It re-authenticates the AMB-reported
     ///      source the same way, records the AMB transaction hash, and verifies the adapter holds the delivered
-    ///      tokens; the base then funds the escrow and releases (funded pass-through).
+    ///      tokens; the base then records the delivery into escrow custody (hold-then-claim).
     function _completeBridge(
         bytes calldata messagePayload,
         bytes calldata /* protocolData */
@@ -360,7 +360,7 @@ contract GnosisBridgeAdapter is BridgeAdapter, IGnosisBridgeAdapter {
     /// @inheritdoc IGnosisBridgeAdapter
     receive() external payable {
         // Native tokens are not bridged by this adapter (see _bridge: NativeTokenNotSupported). Kept payable so
-        // the funded pass-through native branch in the base can never strand value on a misconfigured call.
+        // the native release branch in the base can never strand value on a misconfigured call.
     }
 
     //

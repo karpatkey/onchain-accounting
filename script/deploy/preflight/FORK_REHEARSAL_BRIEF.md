@@ -203,6 +203,15 @@ The snapshot and the rehearsal are at different blocks, so **every priced positi
 
 Each of these is a hardening fix doing its job. None is a regression.
 
+**Expect ONE MORE meta instance on mainnet, and NO value change from it.** Chain 1's
+`MorphoVaultsMeta` gains `0x7a72bcD2c3F7F7e4D6679170a0625bAB15D7DDa1` (KPK USDC Yield RWA, issue #296),
+so mainnet reads **67** instances rather than 66 and the fleet **111** rather than 110 — **provided the
+baseline you compare against predates the change**; a `pre/` snapshot refreshed after it already contains
+the vault and shows no delta. It carries no
+value in the comparison: measured 2026-08-12, the vault holds 1.0025 USDC total with the entire `1e18`
+supply at `0x…dEaD`, and every tracked chain-1 account holds zero. So a structural +1 with a flat NAV
+is the CORRECT result here — the absence of a value change is not a missing position.
+
 **Expect FEWER legs or positions, from a deliberately suppressed unreportable leg:**
 
 - **Assisted-adapter caches start EMPTY — but expect NO reduction, because the live ones are empty
@@ -510,12 +519,12 @@ Measured on `main` @ `f72dd48a`:
 | | count | source |
 |---|---|---|
 | meta adapters | **33** | `preflight_config.py` |
-| meta instances | **110** | `preflight_config.py`; per-chain table in the runbook |
+| meta instances | **111** | `preflight_config.py`; per-chain table in the runbook. **NOT measured at `f72dd48a`** — that commit held 110; amended on this branch for issue #296 (+1 `MorphoVaultsMeta` instance on chain 1) |
 | plain adapters | **12** (+1 `ERC20Default` per chain) | `preflight_config.py` |
 | custom price feeds | **40** | `preflight_config.py`, re-derived from config 2026-08-12 (41 before OETH's retirement; 39 before #199, 40 before #224) |
 | assets | **92** | `preflight_config.py`, re-derived from config 2026-08-12 (93 before OETH's retirement) |
 
-Per-chain meta instances: 66 / 16 / 16 / 4 / 4 / 4 / 0 for 1 / 42161 / 8453 / 10 / 100 / 137 / 56.
+Per-chain meta instances: 67 / 16 / 16 / 4 / 4 / 4 / 0 for 1 / 42161 / 8453 / 10 / 100 / 137 / 56.
 Adapter counts per chain: 27 / 8 / 7 / 4 / 3 / 2 / 1 for 1 / 42161 / 8453 / 100 / 10 / 137 / 56.
 
 **Scope: 24 chains** (declared in `redeploy_scope.json`, which no tool writes — see README).
@@ -663,6 +672,9 @@ the re-run. Everything else is secondary.
   `ERC20Default` `0x4Bc39Dce61245F5A63189d1FA03E6D76646f1EE6`, matching on-chain.
 - **All three assistant `ADAPTER()` pointers paired correctly** — the fix for the four live orphans.
 - `preflight_config.py`: 0 errors across 24 chains, totals exactly as §6 (33 / 110 / 12 / 40 / 93).
+  *(Recorded result, left as run. §6's meta-instance expectation has since moved 110 → 111 — one
+  `MorphoVaultsMeta` instance added on chain 1, issue #296 — so a re-run should read 111 here. The
+  recorded 110 was correct when this rehearsal ran and is not restated.)*
 - The disposable-config rail restored `script/config` and `broadcast/` byte-exactly; `deployments/1.json`
   verified identical to `HEAD` by hash afterwards. **Always check this** — 18 phantom addresses in a
   deployments record is the worst thing that could leak out of a rehearsal.

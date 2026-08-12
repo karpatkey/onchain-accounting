@@ -630,7 +630,8 @@ day.
 >
 > `deployer_balances.py` prices as `(gasUnits × gasPrice) × headroom` and models **no L1
 > data-availability fee** (open issue **#287**). That term is not a rounding error — on scroll it
-> measured **~99.9% of total cost**. Nine of 24 chains are affected, and the question is **settled by
+> measured **~99.9% of total cost**. **Ten** of 24 chains are affected (the eight below, plus scroll and
+> hemi), and the question is **settled by
 > measurement rather than left as reasoning**:
 >
 > | chains | n | status |
@@ -674,7 +675,7 @@ day.
 **Ruling: pass the eight as implemented.** `L1_FEE_UNMODELLED` holds **scroll and hemi** (it was
 scroll-only when this ruling was written; hemi was added after measurement put it in scroll's category,
 which does not disturb the ruling about the eight). The alternative —
-failing all nine closed — was proposed repeatedly in review and is defensible on principle: those chains
+failing all ten closed — was proposed repeatedly in review and is defensible on principle: those chains
 do charge a fee this estimator omits, and a large balance does not make a verdict authoritative. It was
 rejected for two reasons: the omitted term is **~2.7e-5 native** against those margins and **no chain's
 verdict flips** when it is added; and an over-strict gate gets bypassed, for which the 11-of-24
@@ -685,7 +686,8 @@ magnitude. The ruling is unaffected: flipping any of the eight needs the term to
 whole `need`, and the correction consumed 1.8 of the 3 orders that argument tolerates. **Scroll is treated differently because there the
 omitted term is ~99.9% of the cost** — applying the same treatment to the eight would be theatre.
 
-Full pricing for all nine remains **issue #287**, which carries everything already measured.
+Full pricing for all **ten** remains **issue #287**, which carries everything already measured. **#287's
+own scope still says nine and should be widened** — it predates hemi's reclassification.
 
 #### Both expiry axes are enforced — but neither models the omitted fee
 

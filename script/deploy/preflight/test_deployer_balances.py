@@ -82,9 +82,13 @@ class Fake:
     """Minimal RPC stand-in. Records calls so ordering claims can be asserted, not assumed."""
 
     def __init__(self, balance, quoted=GOOD_PRICE, big=None, small=None,
-                 eth_call_raises=None, block="0x2f8b950"):
+                 eth_call_raises=None, block="0x2f8b950", raw_eth_call=None):
         self.balance, self.quoted, self.block = balance, quoted, block
         self.big, self.small, self.eth_call_raises = big, small, eth_call_raises
+        # Returned VERBATIM from eth_call when set, so a test can exercise the returndata itself
+        # ("0x" vs garbage) rather than only the exception paths. The distinction is load-bearing:
+        # `0x` is evidence of an absent predeploy, garbage is a node answering badly.
+        self.raw_eth_call = raw_eth_call
         self.calls = []
         self.payloads = []
 
@@ -99,6 +103,8 @@ class Fake:
         if method == "eth_call":
             if self.eth_call_raises:
                 raise self.eth_call_raises
+            if self.raw_eth_call is not None:
+                return self.raw_eth_call
             self.payloads.append(_payload_of(params[0]["data"]))
             n = _n_of(params[0]["data"])
             v = self.big if n == db.L1_REGIME_PROBE_BYTES_BIG else self.small
@@ -111,14 +117,14 @@ class Fake:
 
 
 def run_one(cid, *, balance, quoted=GOOD_PRICE, gas=GAS, big=None, small=None,
-            eth_call_raises=None, drop_baseline=False):
+            eth_call_raises=None, drop_baseline=False, raw_eth_call=None):
     """Drive db.one() against a fake chain. Returns (row, fake)."""
     base_big = db.L1_REGIME_BASELINE_WEI.get(cid, 0)
     base_small = db.L1_REGIME_BASELINE_SMALL_WEI.get(cid, 0)
     fake = Fake(balance, quoted,
                 big=base_big if big is None else big,
                 small=base_small if small is None else small,
-                eth_call_raises=eth_call_raises)
+                eth_call_raises=eth_call_raises, raw_eth_call=raw_eth_call)
     patched_big = {k: v for k, v in db.L1_REGIME_BASELINE_WEI.items() if not (drop_baseline and k == cid)}
     with mock.patch.object(db, "scope", lambda _cid: {
             "metaAdapters": 0, "plainAdapters": 0, "assistants": 0,
@@ -413,13 +419,36 @@ class TestExitCode(unittest.TestCase):
         self.assertIsNotNone(row["sufficient"])
         self.assertIsNone(row["l1Note"])
 
-    def test_unclassified_chain_probe_failure_does_not_block(self):
-        # An absent predeploy returns empty `0x` (ValueError) and an RPC blip raises too. Neither is
-        # evidence of a fee, and this guard protects chains nobody classified — so there is no baseline
-        # and nothing being certified. Blocking a 24-chain deploy on an unrelated blip would be a worse
-        # failure than the one this prevents. Only a POSITIVE reading is actionable.
-        row, _ = run_one(OVERRIDDEN, balance=10**24, eth_call_raises=ValueError("invalid literal for int"))
-        self.assertIsNotNone(row["sufficient"], "a failed discovery probe must not fail the row closed")
+    def test_probe_failure_on_an_unverified_chain_fails_closed(self):
+        # ABSENCE OF EVIDENCE IS NOT EVIDENCE OF ABSENCE. An L1_FEE_UNVERIFIED chain has no prior
+        # measurement by definition; if the probe also cannot complete, the row is backed by nothing
+        # at all — and the first version of this guard printed OK anyway, because it swallowed a
+        # transport failure and an absent predeploy through the same `except Exception: pass`.
+        unverified = sorted(db.L1_FEE_UNVERIFIED)[0]
+        row, _ = run_one(unverified, balance=10**24,
+                         eth_call_raises=c.RpcError("eth_call failed after 4 attempts"))
+        self.assertIsNone(row["sufficient"], "unknown fee status must not render as a pass")
+        self.assertIn("UNKNOWN", row["l1Note"])
+        self.assertIn("not a fee-free chain", row["l1Note"])
+
+    def test_probe_failure_on_a_measured_chain_does_not_block(self):
+        # The other side of the same distinction, and why the two sets were worth separating: a chain
+        # in L1_FEE_NONE_VERIFIED was already MEASURED fee-free, so the probe is drift-detection there,
+        # not the only evidence. A blip must not fail it closed and stall a 24-chain deploy.
+        measured = sorted(db.L1_FEE_NONE_VERIFIED)[0]
+        row, _ = run_one(measured, balance=10**24,
+                         eth_call_raises=c.RpcError("eth_call failed after 4 attempts"))
+        self.assertIsNotNone(row["sufficient"], "a measured-fee-free chain has prior evidence")
+
+    def test_empty_returndata_is_read_as_absence_but_garbage_is_not(self):
+        # `0x` means the node ANSWERED and there is no predeploy — evidence. Garbage means the node
+        # answered badly — ambiguous. Both used to raise ValueError from `int(x, 16)` and be swallowed
+        # identically, which is why this checks the RETURNDATA rather than narrowing the exception.
+        unverified = sorted(db.L1_FEE_UNVERIFIED)[0]
+        row, _ = run_one(unverified, balance=10**24, raw_eth_call="0x")
+        self.assertIsNotNone(row["sufficient"], "an answered `0x` is evidence of no predeploy")
+        row, _ = run_one(unverified, balance=10**24, raw_eth_call="0xZZnothex")
+        self.assertIsNone(row["sufficient"], "unparseable returndata is not evidence of absence")
 
     def test_zero_gas_units_is_not_a_pass(self):
         # The other multiplicand. `need = gas * price * headroom`, so gas=0 collapses `need` to 0 and
@@ -516,6 +545,56 @@ class TestImportTimeInvariants(unittest.TestCase):
                                 f"gas={gas} quoted={quoted} bal={bal} — below the {floor} floor the "
                                 f"guards are supposed to enforce, i.e. a tautological pass")
         self.assertGreater(checked, 200, "the grid collapsed; this test would pass vacuously")
+
+    def test_oracle_returning_unreadable_data_is_permanent_not_transient(self):
+        # Branch coverage found this arm untested — it was added in pass 2 and never exercised, which
+        # is the dead-code-reading-as-coverage class the guard itself was written to fix. `int(x, 16)`
+        # raises ValueError on empty `0x` returndata, i.e. a chain with no OP GasPriceOracle predeploy,
+        # which is PERMANENT. It must not tell an operator to retry, and it must not advise the fix
+        # that drops the chain into neither collection (the hemi state).
+        row, _ = run_one(PRICED, balance=10**24,
+                         eth_call_raises=ValueError("invalid literal for int() with base 16: '0x'"))
+        self.assertIsNone(row["sufficient"])
+        self.assertIn("RETRYING WILL NOT HELP", row["l1Note"])
+        self.assertNotIn("may be transient", row["l1Note"])
+        self.assertIn("NEITHER", row["l1Note"], "must warn against the fix that re-creates the hemi gap")
+
+    def test_transient_rpc_failure_on_the_probe_is_still_reported_as_retryable(self):
+        # The other side of the same fork: a genuine network blip must NOT be relabelled permanent.
+        # Asserting both arms so a future edit cannot collapse them into one message.
+        row, _ = run_one(PRICED, balance=10**24, eth_call_raises=TimeoutError("read timed out"))
+        self.assertIsNone(row["sufficient"])
+        self.assertIn("may be transient", row["l1Note"])
+
+    def test_rpc_failure_reading_balance_is_an_error_row_not_a_verdict(self):
+        # :577-584 were uncovered. An unreachable chain must produce an error row, never OK.
+        fake = Fake(0)
+        def boom(url, method, params, *a, **k):
+            if method == "eth_getBalance":
+                raise ConnectionError("connection refused")
+            return fake.rpc(url, method, params)
+        with mock.patch.object(db, "scope", lambda _cid: {
+                "metaAdapters": 0, "plainAdapters": 0, "assistants": 0,
+                "feeds": 0, "assets": 0, "metaInstances": 0}), \
+                mock.patch.object(c, "chain_config", lambda _cid: {
+                    "name": "x", "nativeTokenSymbol": "TOK", "addresses": {"admin": "0x" + "11" * 20}}), \
+                mock.patch.object(c, "probe_rpc", lambda _cid: ("http://fake", "fake", [])), \
+                mock.patch.object(c, "rpc", boom):
+            row = db.one(PRICED, {str(PRICED): {"total": GAS}})
+        self.assertIn("error", row)
+        self.assertNotIn("sufficient", row, "an unreachable chain must not carry a verdict at all")
+
+    def test_builtin_gas_estimate_is_used_when_no_override_is_supplied(self):
+        # :558 was uncovered — every test passed --gas-units, so the built-in per-step estimate that
+        # runs on a real deploy day had NO coverage. It must clear the implausibility floor by
+        # construction, since GAS_SHELL alone is 14x it.
+        s = {"metaAdapters": 2, "plainAdapters": 3, "assistants": 1,
+             "feeds": 4, "assets": 10, "metaInstances": 5}
+        est = db.gas_estimate(s, None)
+        self.assertGreaterEqual(est, db.GAS_SHELL)
+        self.assertGreater(est, db.GAS_UNITS_IMPLAUSIBLE)
+        self.assertEqual(db.gas_estimate({k: 0 for k in s}, None), db.GAS_SHELL,
+                         "an empty scope should still cost the shell deploy")
 
     def test_l1_classification_covers_the_whole_deploy_scope(self):
         # SILENCE IS NOT AN ANSWER. Before this, a chain absent from both L1 sets was implicitly "no

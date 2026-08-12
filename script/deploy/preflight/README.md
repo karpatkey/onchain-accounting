@@ -1,8 +1,7 @@
 # Deploy preflight tooling
 
-Tooling for preparing and verifying a from-scratch NAV redeploy. Nothing here broadcasts to a real
-chain; the one script that broadcasts at all — `rehearse_fork.sh` — refuses any RPC that is not
-loopback.
+Tooling for preparing and verifying a from-scratch NAV redeploy. The only script here that broadcasts
+at all is `rehearse_fork.sh`, whose RPC is built as loopback (`:49`) and refused otherwise (`:57`).
 
 Four scripts write **git-tracked** files. This list has been wrong before, so treat `git status` as
 the check of record rather than this paragraph. `reset_deployment_records.py --apply` also creates
@@ -26,16 +25,16 @@ behind is a killed rehearsal, not a rollback copy.)
   and on exit restores tracked files with `git checkout --` (`:386`) **and deletes untracked,
   non-ignored ones with `git clean -fdq`** (`:393`) under those same two paths.
 
-Every destination these tools take from you — each `--json` report path, `snapshot_production.py`'s
-`--out`, `reset_deployment_records.py`'s `--tag`, and `rehearse_fork.sh`'s `$REHEARSAL_DIR` — is
-unvalidated: nothing checks where it lands. From the repo root `--out script/config/deployments` would
-write snapshots over the deployment records, and `--tag /tmp/x` puts the archive outside the repo.
-The four bullets above describe the **documented invocations**, not a guarantee the tools enforce.
+These tools take destinations from you — each `--json` report path, `snapshot_production.py`'s
+`--out`, `reset_deployment_records.py`'s `--tag`, `rehearse_fork.sh`'s `$REHEARSAL_DIR`. Do not
+expect one to stop you pointing it somewhere harmful: from the repo root `--out
+script/config/deployments` would write snapshots over the deployment records, and `--tag /tmp/x` puts
+the archive outside the repo. The four bullets above describe the **documented invocations**, not a
+guarantee the tools enforce.
 
 Reversibility is a property of *when you are*, not of the tool, so check what the target holds before
-assuming an undo exists: once a step has written new addresses into `script/config/deployments/` —
-the record every later step reads — `git checkout --` discards them and `--restore <tag>` writes the
-previous generation back over them.
+assuming an undo exists: once a step has written new addresses into `script/config/deployments/`,
+`git checkout --` discards them and `--restore <tag>` writes the previous generation back over them.
 
 The ordered procedure these support is [`../REDEPLOY_RUNBOOK.md`](../REDEPLOY_RUNBOOK.md).
 

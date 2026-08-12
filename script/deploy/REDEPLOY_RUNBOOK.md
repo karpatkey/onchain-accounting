@@ -26,8 +26,9 @@ operator: **pin the fork block** (see the note at the rehearsal invocation — i
 **None of this means the system is deployed. It is not.** A fork rehearsal is evidence that the deploy
 path executes; it is not a deploy, and it is not an approval to deploy.
 
-Companion tooling lives in [`preflight/`](preflight/README.md). Nothing there broadcasts to a real
-chain. Four of its scripts write **git-tracked** files — and because that list has been wrong before,
+Companion tooling lives in [`preflight/`](preflight/README.md). The only script there that broadcasts
+at all is `rehearse_fork.sh`, whose RPC is built as loopback (`:49`) and refused otherwise (`:57`).
+Four of its scripts write **git-tracked** files — and because that list has been wrong before,
 **`git status` is the check of record, not this paragraph**:
 
 - `reset_deployment_records.py --apply` — archives the in-scope records under
@@ -45,18 +46,18 @@ chain. Four of its scripts write **git-tracked** files — and because that list
   files with `git checkout --` (`:386`) **and deletes untracked, non-ignored ones with
   `git clean -fdq`** (`:393`) under those same two paths.
 
-Every destination these tools take from you — each `--json` report path, `snapshot_production.py`'s
-`--out`, `reset_deployment_records.py`'s `--tag`, and `rehearse_fork.sh`'s `$REHEARSAL_DIR` — is
-unvalidated: nothing checks where it lands. From the repo root `--out script/config/deployments` would
-write snapshots over the deployment records, and `--tag /tmp/x` puts the archive outside the repo.
-The four bullets above describe the **documented invocations**, not a guarantee the tools enforce.
+These tools take destinations from you — each `--json` report path, `snapshot_production.py`'s
+`--out`, `reset_deployment_records.py`'s `--tag`, `rehearse_fork.sh`'s `$REHEARSAL_DIR`. Do not
+expect one to stop you pointing it somewhere harmful: from the repo root `--out
+script/config/deployments` would write snapshots over the deployment records, and `--tag /tmp/x` puts
+the archive outside the repo. The four bullets above describe the **documented invocations**, not a
+guarantee the tools enforce.
 
 Reversibility is a property of *when you are*, not of the tool, so check what the target holds before
-assuming an undo exists: once a step has written new addresses into `script/config/deployments/` —
-the record every later step reads — `git checkout --` discards them and `--restore <tag>` writes the
-previous generation back over them. Keep `archive/<tag>/` until the deploy has been *verified*, not
-merely until rollback stops being wanted: `verify_step.py` requires it as the step 1.1 post-condition
-(`:252`).
+assuming an undo exists: once a step has written new addresses into `script/config/deployments/`,
+`git checkout --` discards them and `--restore <tag>` writes the previous generation back over them.
+Keep `archive/<tag>/` until the deploy has been *verified*, not merely until rollback stops being
+wanted: `verify_step.py` requires it as the step 1.1 post-condition (`:252`).
 
 - **Scope:** exactly the **24 chains** that already have a `NAVCalculatorProxy`. Chain **1101**
   (Polygon zkEVM) is excluded — its deployment record is empty, so it was never deployed.

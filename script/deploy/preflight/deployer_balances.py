@@ -606,7 +606,12 @@ def main() -> int:
         if r["sufficient"] is None:
             unpriceable.append({"chainId": r["chainId"], "name": r["name"], "nativeSymbol": sym,
                                 "gasPriceWei": r["gasPriceWei"],
-                                "reason": r.get("l1Note") or "gas-price quote too low to size from",
+                                # `priceNote` must be consulted here too, not just in the status line
+                                # above: the default tail says the quote was too LOW, which is the exact
+                                # opposite of the stale-pin cause (a quote too HIGH for the pin), and
+                                # this string is what the `--json` consumers read.
+                                "reason": (r.get("l1Note") or r.get("priceNote")
+                                           or "gas-price quote too low to size from"),
                                 "haveEth": round(r["balanceEth"], 6)})
         elif not r["sufficient"]:
             topup.append({"chainId": r["chainId"], "name": r["name"],

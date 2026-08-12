@@ -375,6 +375,12 @@ class TestExitCode(unittest.TestCase):
         self.assertIn("UNPRICEABLE", out)
         # Must name the pin as the cause, not send the reader to the node like the generic message does.
         self.assertIn("GAS_PRICE_OVERRIDE_WEI", out)
+        # The NOT PRICED summary is a SECOND rendering of the reason, and its default tail claims the
+        # quote was too LOW — the opposite of this cause. Asserting on the summary line specifically,
+        # because the status line above passed while this one was still wrong.
+        summary = out.split("--- NOT PRICED")[1]
+        self.assertNotIn("quote too low to size from", summary)
+        self.assertIn("no longer bounds the price", summary)
 
     def test_pin_at_or_above_the_quote_still_prices(self):
         # The boundary is `quoted > override`, not `>=`: a quote that merely reaches the pin is still

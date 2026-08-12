@@ -1053,6 +1053,17 @@ def _self_test() -> int:
     # Those are wrong fixtures, not duplicate ones.) A count of arms is not coverage, so the suite
     # proves distinctness rather than asserting it: every arm's full input signature is recorded and
     # any collision fails.
+    #
+    # WHAT THIS PROVES, EXACTLY, AND WHAT IT DOES NOT. It proves BYTE-distinctness of arm INPUTS. It
+    # does NOT prove distinct BEHAVIOUR: two arms differing only in a field `step_record_cleared`
+    # never reads hash differently and both pass, so the same code path can still be covered twice
+    # while the tally counts two. Demonstrated, not assumed — adding an arm identical but for an
+    # unread `rec` key yields "no two arms build identical fixtures: ok" at 23/23.
+    #
+    # The cheap property is asserted here because it is the one that has actually bitten twice.
+    # Distinct-BEHAVIOUR needs branch or path coverage, which is a different and more expensive
+    # instrument, and is the honest next step rather than a stronger reading of this one. Do not
+    # trust this check for more than it says.
     seen_sigs: dict[str, str] = {}
     dupes: list[tuple[str, str]] = []
 

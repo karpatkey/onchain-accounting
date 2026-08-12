@@ -9,13 +9,15 @@ check of record rather than this paragraph — only three tracked paths live her
 (`chainlink_declared_heartbeats.json`, `redeploy_scope.json`, `snapshots/`), plus `script/config/`
 above it.
 
-- `reset_deployment_records.py --apply` archives and clears the deployment records, as its row above
+- `reset_deployment_records.py --apply` archives and clears the deployment records, as its row below
   says — dry-run by default, undone with `--restore <tag>`.
-- `snapshot_production.py` **defaults to `--out pre`**, which rewrites the committed `snapshots/pre/`
-  capture described below. Pass an explicit `--out` to leave the committed capture alone.
+- `snapshot_production.py` writes `snapshots/<out>/` and **defaults to `--out pre`**, the committed
+  capture described below. It is the value, not the explicitness, that matters — the "Typical order"
+  step below passes `--out pre` deliberately. Any other `--out` leaves the capture alone.
 - `declared_heartbeat_guard.py --refresh` rewrites the committed `chainlink_declared_heartbeats.json`.
 - `rehearse_fork.sh` mutates tracked config under `script/config/` during a rehearsal, refuses to start
-  if that tree is dirty, and restores it byte-exactly with `git checkout --` on exit.
+  if `script/config` or `broadcast/` is dirty (`:63` — those two paths only, not the whole tree), and
+  restores them byte-exactly with `git checkout --` on exit.
 
 Other tools write untracked report files under `--json`. Of all of these, only
 `reset_deployment_records.py --apply` discards state you would otherwise have to redeploy to recover.

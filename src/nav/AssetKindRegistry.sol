@@ -35,14 +35,17 @@ import "src/constants.sol";
 ///      without the qualifier.** The two surfaces deliberately differ on emptiness: the ACCOUNT path leaves an empty
 ///      reply empty, while the CONFIGURATION path grows it to the override's leading non-empty prefix.
 ///
-///      The divergence needs an adapter whose reply is EMPTY (every meta-adapter, which answers `positionLabels("")`
-///      with `[]`) and an override with a NON-EMPTY leading segment. Measured: `["Cat", ""]` on such an adapter
-///      yields `["Cat"]` on the configuration surface and `[]` on the account path. Against an adapter that DOES
-///      reply, the two agree exactly. (An earlier revision illustrated this with `["", "X"]`, which demonstrates no
-///      divergence at all: the leading `""` stops the prefix scan, so an empty-replying adapter yields nothing on
-///      EITHER surface, and a replying adapter gets `X` at index 1 on BOTH. An example added to walk back an
-///      over-broad claim, that showed the opposite of the claim it was correcting.) Both behaviours are intended —
-///      see `PriceFeedLib._overridePrefix`.
+///      ⚠️ **Be careful which "empty" is meant — two revisions of this note got it wrong by conflating them.** A
+///      meta-adapter answers the CONFIGURATION probe `positionLabels("")` with `[]`, but on the ACCOUNT path it is
+///      handed a real 32-byte positionId and returns a normal breadcrumb. It is empty-replying on one surface only,
+///      so it is NOT the class that demonstrates the divergence.
+///
+///      The class that does is an adapter answering `[]` for EVERY positionId. There, an override with a non-empty
+///      leading segment appears on the configuration surface (grown from the prefix) and not on the account path
+///      (nothing to overlay). For a meta-adapter the two surfaces simply differ in shape — config shows the grown
+///      prefix, account shows the overlaid real reply. Both behaviours are intended; see
+///      `PriceFeedLib._overridePrefix` and the tests in `AdapterLabelOverrides.t.sol`, which are the authority for
+///      the exact per-shape outputs.
 ///      Note what did NOT change: the CLASSIFICATION half (the kinds and the per-asset labels) still has no on-chain
 ///      reader, and its value remains the atomic register+classify invariant on the write path, not the read. An
 ///      earlier version justified the contract with "a consumer makes two calls and caches the kinds indefinitely";
@@ -183,7 +186,8 @@ contract AssetKindRegistry is IAssetKindRegistry {
     ///      complement. Keeping both would have meant two stores writing one display value with no principled
     ///      precedence between them — and two mechanisms that must agree about one display value is precisely the
     ///      failure this feature has already hit twice (the `protocolName` phantom-sibling split, and the empty-reply
-    ///      divergence that left the two surfaces disagreeing for 21 of the 34 adapters). Migration cost was zero:
+    ///      divergence that left the two surfaces disagreeing for most of the adapter fleet). Migration cost was
+    ///      zero:
     ///      `AssetKindRegistry` appears in no `script/config/deployments/*.json`, so no chain has ever had one and
     ///      `setAdapterLabelCategory` was never callable in production.
     ///

@@ -860,13 +860,10 @@ contract AdapterLabelOverridesTest is AdapterLabelOverridesBase {
         // independently (26 emitting of 27 registered). So the REGISTRY stipend component of this ceiling is
         // 1 adapter x 2 reads x _NAME_READ_GAS = 200,000, not 400,000 -- the bound has more slack than it looked.
         //
-        // ⚠️ 2 reads is what this BURNER reaches, and it is not the declared ceiling. Since the per-segment label
-        // override landed, a hostile registry has THREE charges per distinct adapter — the protocol-name override
-        // read, the label-override read, and `_OVERRIDE_DECODE_GAS` for the decode shim (see
-        // `PriceFeedLib._NAME_READ_GAS`). This burner OOGs both staticcalls, so `_safeStringArray` bails at its
-        // `!ok` guard and the shim is never entered; the decode stipend is unspendable anyway, because a
-        // memory-source `abi.decode` bounds-rejects an over-declared length before allocating. 2 reads is therefore
-        // the right number FOR THIS FIXTURE and the wrong number for the ceiling, and the two must not be conflated.
+        // ⚠️ 2 reads is what this BURNER reaches, and it is not the declared ceiling. A hostile registry has THREE
+        // gas-capped charges per distinct adapter (see `PriceFeedLib._NAME_READ_GAS`); this burner OOGs both
+        // staticcalls, so `_safeStringArray` bails at its `!ok` guard and the decode shim is never entered. 2 reads
+        // is therefore the right number FOR THIS FIXTURE and the wrong number for the ceiling; do not conflate them.
         // The rest of the measured ~420,700 is the adapter's own work and the gas-capped label decode, which this
         // test does not attempt to bound; it bounds the registry's contribution and that the read still completes.
         uint256 emitting = _adaptersEmittingPositions(nav.getAllAdapters());
@@ -913,19 +910,16 @@ contract AdapterLabelOverridesTest is AdapterLabelOverridesBase {
         // that this path has no per-adapter cache so it is charged per ENTRY. (An earlier revision of this comment,
         // and of the `_NAME_READ_GAS` docstring it mirrored, said 2x, dropping the decode term.)
         //
-        // ⚠️ **What this burner actually exercises is 2x, not 3x.** `RawReplier.stageBurnGas` OOGs the staticcall,
-        // so `_safeStringArray` returns at its `if (!ok || ret.length < 64)` guard and the decode shim — the third
-        // component — is never entered. The decode stipend is in fact UNSPENDABLE: a memory-source `abi.decode`
-        // bounds-rejects an over-declared array length before allocating, so `_OVERRIDE_DECODE_GAS` is a ceiling
-        // nothing can reach. So the REACHABLE registry-controlled cost is 2 x 100k per entry; the 3x above is the
-        // declared ceiling, not a measured one. Saying otherwise here would be the exact failure the
-        // `_NAME_READ_GAS` docstring warns about — naming a test as proof of a bound it does not exercise.
+        // ⚠️ **What this burner exercises is 2 read stipends per entry, not the full declared ceiling.**
+        // `RawReplier.stageBurnGas` OOGs the staticcall, so `_safeStringArray` returns at its
+        // `if (!ok || ret.length < 64)` guard and the decode shim is never entered. Saying otherwise here would be
+        // the exact failure the `_NAME_READ_GAS` docstring warns about — naming a test as proof of a bound it does
+        // not exercise.
         //
-        // The bound is therefore 3 entries x 2 x 100k reachable registry burn + 400k for the adapters' own reads.
-        // Measured on this tree: 668,609. An earlier revision of this comment justified the bound as sitting
-        // "below 3 x 3 x 100k"; that was arithmetically false (900,000 < 1,000,000) and is corrected rather than
-        // quietly deleted. The bound is NOT widened: it is an empirical mutation-catching guard and tightness is
-        // the safe direction.
+        // The bound below is an empirical mutation-catching guard, NOT a derived ceiling, and it is deliberately not
+        // widened: tightness is the safe direction. Deriving it in prose is what this comment used to attempt, and
+        // three successive revisions each got the arithmetic wrong in a different way. The number that matters is
+        // the assertion itself.
         assertLt(
             used,
             3 * 2 * 100_000 + 400_000,
@@ -1710,9 +1704,8 @@ contract AdapterLabelOverridesTest is AdapterLabelOverridesBase {
             for (uint256 j; j + 1 < cap; ++j) {
                 seg[j] = "a";
             }
-            // The suffix byte is the index itself, not `0x41 + i`: the offset form truncates once the segment
-            // count passes 191 and the fixture would silently lose its anti-offset-aliasing property. Readability
-            // is worth nothing here; distinctness is the whole job, and `uint8(i)` is distinct for every i < 256.
+            // Distinct per index, so a decode that mixed up element offsets cannot pass by returning the same
+            // string N times. `assertLe(segments, 256)` above is what keeps this injective.
             seg[cap - 1] = bytes1(uint8(i));
             maximal[i] = string(seg);
             assertEq(bytes(maximal[i]).length, cap, "fixture must sit exactly AT the cap, not near it");

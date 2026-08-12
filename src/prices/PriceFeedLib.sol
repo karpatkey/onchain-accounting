@@ -2180,7 +2180,7 @@ library PriceFeedLib {
                 _applyLabelOverride(labels[i], over);
             } else {
                 // **The empty case diverges from the position path ON PURPOSE, and getting this wrong left the two
-                // surfaces disagreeing for 21 of 33 adapters.** Every meta-adapter answers `positionLabels("")` with
+                // surfaces disagreeing across most of the fleet.** Every meta-adapter answers `positionLabels("")` with
                 // `[]` — `MetaBalanceAdapter._pidAddress` rejects a non-32-byte pid, so `_addressLabels` returns an
                 // empty array — which is the interface's documented "no positionId, breadcrumb is per-position"
                 // reply. Skipping the override there (as the position path does) meant an operator who set a
@@ -2224,38 +2224,23 @@ library PriceFeedLib {
     ///      {_OVERRIDE_DECODE_GAS} term the account-path sentence two lines above already counts.) That is bounded
     ///      by the caller's own gas and its own array, not by the fleet size.
     ///
-    ///      ⚠️ **The 3x is the DECLARED ceiling; ~2x is what the tracked fixtures reach. The decode stipend IS
-    ///      spendable — an earlier revision of this note said it was not, and that was wrong in a way worth
-    ///      spelling out, because the wrong reason generalises dangerously.**
+    ///      The decode shim's stipend IS spendable: a registry returning a well-formed `string[]` head clears
+    ///      {_safeStringArray}'s `>= 64` guard, the decode runs and costs gas, and only then is the reply rejected
+    ///      on `_MAX_LABEL_ELEMENTS` — after paying. It stays comfortably inside {_OVERRIDE_DECODE_GAS} because
+    ///      {_OVERRIDE_RETURN_BYTES} bounds the work by the size of the copy window, not by anything the decoder
+    ///      does. ⚠️ Do NOT restate that as a property of `abi.decode`: generalised to the ADAPTER read, whose
+    ///      window is {_LABELS_RETURN_BYTES} = 4 KB, it is false — `NAVCalculator.decodeStringArray` records a
+    ///      measured ~30x aliasing expansion there, which is precisely what {_LABEL_DECODE_GAS} guards.
     ///
-    ///      What the fixtures reach: `AdapterLabelOverrides.t.sol::test_gas_hostileRegistryIsBoundedByTheStipend`
-    ///      (ACCOUNT path) and `test_gas_configurationSurface_hostileRegistryIsBounded` (CONFIGURATION path) both
-    ///      wire a registry that OOGs the staticcall, so {_safeStringArray} returns at its `!ok || ret.length < 64`
-    ///      guard and the shim is never entered. Measured marginal cost ~1.93x per distinct adapter and ~2.20x per
-    ///      array entry respectively; a registry that burns its stipend and STILL returns a decodable blob reaches
-    ///      ~1.99x / ~2.28x. Fail-open held on every shape.
-    ///
-    ///      Why the shim is nonetheless reachable and its stipend real: a registry returning a well-formed
-    ///      `string[]` head clears the `>= 64` guard, the decode RUNS and costs gas, and only then is the reply
-    ///      rejected on `_MAX_LABEL_ELEMENTS` — after paying. Swept over every shape fitting the window, that decode
-    ///      peaks at **~28k gas**, roughly 6k of it on the real read path. It cannot approach {_OVERRIDE_DECODE_GAS}
-    ///      because {_OVERRIDE_RETURN_BYTES} bounds the work at O(896 bytes), leaving ~3.6x margin.
-    ///
-    ///      ⚠️ **The bound is the WINDOW, not the decoder — do not restate this as a property of `abi.decode`.**
-    ///      The superseded claim was that a memory-source decode bounds-rejects an over-declared length before
-    ///      allocating. That is true only for the over-declared-length shape (a flat ~939 gas, no allocation) and is
-    ///      NOT why the cap is unreachable. Generalised to the ADAPTER read, where the window is
-    ///      {_LABELS_RETURN_BYTES} = 4 KB, it is actively false: `NAVCalculator.decodeStringArray` documents a
-    ///      measured ~30x aliasing expansion for a 4 KB blob whose element offsets all point at one payload. Reading
-    ///      the retired sentence as a decoder fact would argue for dropping {_LABEL_DECODE_GAS}, which is the guard
-    ///      against exactly that.
-    ///
-    ///      ⚠️ Two earlier revisions of this note cited tests that did not cover what they were said to cover:
-    ///      first `test_gas_registryLegIsBounded` (a well-behaved registry, nowhere near the ceiling), then
-    ///      `test_gas_hostileRegistryIsBoundedByTheStipend` for the CONFIGURATION path — that test only calls
-    ///      `getAccountPositionsVerbose` and never reaches {adapterDisplayInfo}. A doc naming a test as proof of a
-    ///      bound the test never exercises is worse than admitting the bound is unmeasured, so the missing test was
-    ///      written rather than the sentence deleted.
+    ///      ⚠️ **NO GAS FIGURES ARE QUOTED HERE, DELIBERATELY. Do not add any.** Four successive revisions of this
+    ///      note stated the ceiling's composition and its measured cost in prose, and every one was wrong in a
+    ///      different way — a multiple below its own arithmetic floor, a total reported as a marginal, a 4 KB
+    ///      measurement attached to the 896-byte window, an ordering inverted, and twice a test named as evidence
+    ///      for a bound it never reaches. The figures are unverifiable by CI, so nothing catches them when they rot.
+    ///      What is true and checkable lives in the constants above and in the two assertions that bound this path:
+    ///      `AdapterLabelOverrides.t.sol::test_gas_hostileRegistryIsBoundedByTheStipend` (ACCOUNT) and
+    ///      `test_gas_configurationSurface_hostileRegistryIsBounded` (CONFIGURATION). If you need a number, measure
+    ///      it and put it in an assertion — not in this comment.
     uint256 private constant _NAME_READ_GAS = 100_000;
 
     /// @notice Gas stipend for the outer `positionLabels()` staticcall. An order of magnitude above
@@ -2331,11 +2316,12 @@ library PriceFeedLib {
     ///      precise about WHICH shape it defends against, because an earlier revision named the wrong one.
     ///
     ///      NOT the over-declared length: a declared array length is independent of the returndata size, but a
-    ///      memory-source `abi.decode` bounds-checks it against the blob and rejects at a flat ~939 gas, with no
-    ///      allocation. The shape that costs is ALIASING — element offsets all pointing at one payload, so a reply
-    ///      that fits the window decodes to a multiple of it (`NAVCalculator.decodeStringArray` measures ~30x for a
-    ///      4 KB blob). Here that is bounded by the 896-byte window to ~28k gas, comfortably inside this stipend;
-    ///      on the ADAPTER path, with a 4 KB window, it is what {_LABEL_DECODE_GAS} exists for.
+    ///      memory-source `abi.decode` bounds-checks it against the blob and rejects it cheaply, without allocating.
+    ///      The expensive shapes are the ones that DECODE — many elements, and offsets aliasing one payload, so a
+    ///      reply that fits the window expands to a multiple of it (`NAVCalculator.decodeStringArray` records ~30x
+    ///      for a 4 KB blob). Inside this 896-byte window that expansion stays well under this stipend; on the
+    ///      ADAPTER path, with a 4 KB window, it is what {_LABEL_DECODE_GAS} exists for. No figure is quoted here on
+    ///      purpose — see the note on {_NAME_READ_GAS}.
     uint256 private constant _OVERRIDE_DECODE_GAS = 100_000;
 
     /// @notice Staticcall bounded in BOTH directions — a gas stipend on the callee and a fixed output window on
@@ -2449,10 +2435,10 @@ library PriceFeedLib {
     ///         `NAVCalculator.decodeStringArray`), and that expansion is allocated inside this frame. The declared
     ///         array length is independent of the returndata size, which is why `_safeString`'s head validation has
     ///         no analogue here and the decode must be isolated instead. (An earlier revision attributed the cost to
-    ///         a huge DECLARED length "burning ~63/64 of the remaining gas". Measured, that shape is the cheap one:
-    ///         a memory-source `abi.decode` bounds-checks the length against the blob and rejects at ~939 gas. The
-    ///         expensive shape is aliasing, which is well-formed and decodes successfully before being rejected on
-    ///         the element cap.)
+    ///         a huge DECLARED length "burning ~63/64 of the remaining gas". That shape is the cheap one: a
+    ///         memory-source `abi.decode` bounds-checks the length against the blob and rejects it without
+    ///         allocating. The expensive shapes are the ones that DECODE — many elements, or offsets aliasing one
+    ///         payload — which succeed and are only then rejected on the element cap.)
     ///      2. `gasStipend` on the call — the shim's cap says nothing about the callee itself, which can loop and
     ///         never return.
     ///      3. `maxReturnBytes` on the reply — a gas stipend alone leaves the `returndatacopy` this frame

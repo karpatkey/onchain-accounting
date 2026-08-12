@@ -16,10 +16,10 @@ import {VmSafe} from "forge-std/Vm.sol";
 ///      This test closes that by pinning the non-meta adapter set itself, against TWO sources:
 ///        - `script/config/deployments/` — what is actually DEPLOYED (the only place deployed addresses live);
 ///        - `script/config/contracts-deployment-config/balance-adapters/` — what is ENABLED to deploy next.
-///      Enforcing at config rather than at the source tree is deliberate on two counts: it fires at the moment an
-///      adapter actually becomes registered and therefore actually reaches a configuration view, and `script/` is
-///      already inside `fs_permissions` (`src/` and `test/` are not, so a source-tree walk would need foundry.toml
-///      widened repo-wide for one test).
+///      Enforcing at config rather than at the source tree is deliberate: it fires at the moment an adapter
+///      actually becomes registered or scheduled to be, and therefore actually reaches a configuration view. (An
+///      earlier revision gave a second reason — that `src/` is outside `fs_permissions` — which is simply false:
+///      foundry.toml grants `{ access = "read", path = "src" }`. The first reason is the real one and stands alone.)
 ///
 ///      ⚠️ **Reading BOTH sources is what makes a green result mean something.** Keyed on the deployment record
 ///      alone, this test passed throughout the `Cap` -> `CapStablecoin`/`CapSavings` split purely because
@@ -82,8 +82,15 @@ contract PositionLabelsProbeCoverageTest is Test {
     ///
     ///      Keying on the union fixes that without weakening either direction: an adapter that is neither deployed
     ///      NOR configured still fails direction 2 as rot, and anything deployed still fails direction 1 if it has
-    ///      no probe decision. It also retires the deploy-day chore — when `04` writes the two new addresses and
-    ///      `Cap` leaves the record, this test needs no edit at all.
+    ///      no probe decision.
+    ///
+    ///      ⚠️ **This REDUCES the deploy-day chore; it does not retire it, and an earlier revision of this note
+    ///      claimed it did.** The two ADDITIONS are now free — `CapStablecoin`/`CapSavings` are already accepted via
+    ///      the configured arm, so `04` writing their addresses changes nothing here. The REMOVAL is not: `Cap` is
+    ///      in the deployment record and in no deploy config, so the moment `04` drops it from the record it is in
+    ///      neither set and direction 2 fails on it. Deleting the `Cap` line at that point is correct and is the
+    ///      whole remaining chore. It cannot be pre-empted — removing it now fails direction 1, because `Cap` is
+    ///      still deployed today.
     function _configuredNonMetaAdapters() internal view returns (string[] memory) {
         string memory dir =
             string.concat(vm.projectRoot(), "/script/config/contracts-deployment-config/balance-adapters");
@@ -97,7 +104,12 @@ contract PositionLabelsProbeCoverageTest is Test {
             string memory json = vm.readFile(entries[i].path);
             string[] memory keys = vm.parseJsonKeys(json, "$");
             for (uint256 k; k < keys.length; ++k) {
-                if (_contains(keys[k], "Meta")) continue;
+                // ⚠️ NOT `_contains(key, "Meta")`. That is the routing convention for the DEPLOYMENT RECORD, where
+                // meta adapters live under the same `balanceAdapters` object as plain ones and the substring is the
+                // only discriminator. Here the FILE already tells us: this directory is the plain-adapter deploy
+                // config, and `meta-balance-adapters/` is a sibling. Reusing the substring test silently exempted
+                // `StakeWiseV3Vault_MetaVault` — a PLAIN adapter whose key happens to contain "Meta" — from the
+                // very arm this function feeds. It is `enabled: false` today, so the gap was latent, not live.
                 if (_has3(acc, n, keys[k])) continue;
                 // Only ENABLED entries: a disabled stub is not "configured to deploy".
                 if (!vm.parseJsonBool(json, string.concat(".", keys[k], ".enabled"))) continue;

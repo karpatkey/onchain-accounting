@@ -38,6 +38,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from concurrent.futures import ThreadPoolExecutor
 
@@ -154,6 +155,28 @@ def baseline() -> dict[int, dict]:
 def archived(tag: str, chain_id: int) -> dict | None:
     p = rd.ARCHIVE_DIR / tag / f"{chain_id}.json"
     return json.loads(p.read_text()) if p.is_file() else None
+
+
+def expected_sections(chain_id: int) -> set[str]:
+    """Which `CLEAR_SECTIONS` blocks this chain is SUPPOSED to carry, derived from CONFIG.
+
+    Same oracle and same reasoning as `expected_clear_top`. The section name maps to its config
+    directory by camelCase -> kebab-case (`balanceAdapters` -> `balance-adapters`), derived rather
+    than hard-coded so a third section needs no edit here.
+    """
+    out: set[str] = set()
+    for sec in rd.CLEAR_SECTIONS:
+        kebab = re.sub(r"(?<!^)(?=[A-Z])", "-", sec).lower()
+        p = c.CONTRACTS_CONFIG_DIR / kebab / f"{chain_id}.json"
+        if not p.is_file():
+            continue
+        try:
+            cfg = json.loads(p.read_text())
+        except (OSError, ValueError):
+            continue
+        if any(isinstance(v, dict) and v.get("enabled") is True for v in cfg.values()):
+            out.add(sec)
+    return out
 
 
 def expected_clear_top(chain_id: int) -> set[str]:
@@ -323,6 +346,7 @@ def step_record_cleared(k: Chk, rec: dict, exp: dict, url, base, tag) -> None:
     # BEFORE the reset was missing from both and looked like one that never existed). Config has
     # neither property: it is per-chain, and it is independent of the record.
     expected = expected_clear_top(k.chain_id)
+    section_expected = expected_sections(k.chain_id)
 
     # ABSENCE IS ONLY A DEFECT WHERE THE KEY WAS SUPPOSED TO BE. This asserts the post-condition
     # `reset_deployment_records.plan_for` actually establishes:
@@ -369,6 +393,18 @@ def step_record_cleared(k: Chk, rec: dict, exp: dict, url, base, tag) -> None:
         # else: config does not expect it here and no archive witnesses it — never existed. Correct.
 
     for sec in rd.CLEAR_SECTIONS:
+        # A WHOLLY ABSENT SECTION IS NOT A CLEARED ONE — the same absent-vs-blank defect as the loop
+        # above, one level up, and it hid a bigger loss: `populated(None)` is empty, so deleting the
+        # entire `balanceAdapters` block (27 entries on mainnet) read as "correctly cleared" and
+        # passed. `reset_deployment_records` blanks VALUES and preserves KEYS (`block[name] = ""`),
+        # so it never removes a section. Same monotone rule: expected if config or the archive says
+        # so, and either source can only add a failure.
+        if sec not in rec:
+            if sec in section_expected or (arch is not None and arch.get(sec)):
+                k.fail.append(f"the whole {sec} section is ABSENT from the record, not blanked — "
+                              f"`reset_deployment_records.py` blanks values and keeps keys, so it "
+                              f"never removes a section; this record has lost one")
+            continue
         still = populated(rec.get(sec))
         k.require(not still,
                   f"{sec} still holds {len(still)} address(es): {sorted(still)[:6]}"
@@ -969,6 +1005,10 @@ def _self_test() -> int:
 
     cleared = {key: "" for key in UNIVERSAL}
     cleared["AssetKindRegistry"] = ""
+    # Sections PRESENT and EMPTY is what "cleared" means — `reset` blanks values and keeps keys.
+    # Omitting them made arms on a chain whose config expects sections fail for the wrong reason.
+    cleared["balanceAdapters"] = {}
+    cleared["customPriceFeeds"] = {}
     # A chain that never deployed assistants: the archive has none either. THE #299 CASE.
     arch_plain = {key: ADDR for key in UNIVERSAL} | {"NAVCalculatorProxy": ADDR}
 
@@ -1020,6 +1060,12 @@ def _self_test() -> int:
     run(dict(cleared), dict(arch_plain),
         "HOLE 7: a deletion PREDATING the reset (absent from the archive too) is caught",
         must_fail=True, expect_in="config enables the adapter that deploys it", chain=ALL_ASSIST)
+    # The same absent-vs-blank defect one level up: a WHOLLY deleted section read as "cleared"
+    # because `populated(None)` is empty. Chain 1's config enables both sections.
+    no_section = {k_: v for k_, v in cleared.items() if k_ != "balanceAdapters"}
+    run(no_section, dict(arch_plain) | {"balanceAdapters": {"ERC20Default": ADDR}},
+        "a WHOLLY ABSENT CLEAR_SECTIONS block is caught, not read as cleared",
+        must_fail=True, expect_in="whole balanceAdapters section is ABSENT", chain=ALL_ASSIST)
 
     for ok, line in results:
         print(line)
@@ -1077,7 +1123,8 @@ def main() -> int:
     base = baseline()
     if not base:
         print("WARNING: snapshots/pre/index.json is missing — the 'address actually moved' checks "
-              "in 1.2/1.3 will be skipped.")
+              "in 1.2/1.3 will be skipped, and 1.1 will report that it cannot confirm the archive "
+              "is this record's pre-image (absence is still judged from config, so it stays sound).")
 
     print(f"scope: {len(chains)} chain(s) from {scope_src}")
     for s in steps:

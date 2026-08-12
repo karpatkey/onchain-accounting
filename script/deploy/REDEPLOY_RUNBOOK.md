@@ -106,6 +106,24 @@ is where they are derived and which is the authoritative one if the two ever dis
 
 #### Meta instances: **110**, reconciled from config and confirmed on-chain (2026-07-29)
 
+> ⚠️ **AMENDED 2026-08-12 — the expected total is now 111, and `mainnet` is 67 rather than 66.** One
+> `MorphoVaultsMeta` instance was added to chain 1's config (the KPK USDC Yield RWA vault,
+> `0x7a72bcD2c3F7F7e4D6679170a0625bAB15D7DDa1`) to match a change already made on the LIVE NAV by
+> `addMetaInstances` on 2026-08-12 (tx `0x1b86d482…b7024`, block 25738578). Without it `06_Configure`
+> would reconcile the on-chain set back DOWN and drop the vault, re-introducing the under-reporting that
+> transaction fixed — see issue #296.
+>
+> **The 2026-07-29 figures below are left as recorded rather than rewritten**, because they were a
+> 24-chain derivation confirmed on-chain on that date and this amendment is not. What was measured today
+> is narrower and is stated as such: `getMetaInstances(MorphoVaultsMeta)` on the live NAV
+> (`0x80eD5cc6cEbAe4fEE1eD8687279aa492A50afa8d`) returns **10** entries for chain 1, and chain 1's config
+> list now matches it exactly — same members, same order. Every other adapter and chain is untouched, so
+> the only figures that move are the mainnet row and the total: **66 → 67** and **110 → 111**.
+>
+> Step 1.8 should therefore expect **111**. Where this document derives from 110 downstream (the
+> `110 + 3 = 113` disabled-adapter arithmetic, and the step-1.7 re-registration count), read 111 + 3 = 114
+> and 111.
+
 This number is what tells you at step 1.8 whether `06_Configure`'s reconciliation succeeded, so it is
 settled here rather than at execution time. Three figures had been circulating — 104, 110 and 113.
 

@@ -10,6 +10,11 @@ import {aa} from "test/helpers/AdapterArray.sol";
 import {Mock_CustomBalanceAdapter} from "test/mocks/balance_adapters.sol";
 import {RawReplier} from "test/mocks/RawReplier.sol";
 
+/// @dev ERC-1967 implementation slot (`keccak256("eip1967.proxy.implementation") - 1`). Used to locate the UUPS
+///      implementation behind the NAV proxy so `_coolAll` can cool it: it is a separate account, and the proxy's
+///      first DELEGATECALL into it on a fresh call pays a cold-account premium.
+bytes32 constant ERC1967_IMPL_SLOT = 0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc;
+
 /// @notice Adapter shaped like the meta family: a constant `protocolName()` plus a `[category, leaf]` pair whose leaf
 ///         is re-read on every call, so a frozen leaf would be detectable.
 contract LabelledAdapter is Mock_CustomBalanceAdapter {
@@ -709,36 +714,61 @@ contract AdapterLabelOverridesTest is AdapterLabelOverridesBase {
     // Gas: the registry leg must stay bounded
     // ------------------------------------------------------------------
 
+    /// @dev **EVERY gas figure in this file is measured through one of these two helpers, and that is load-bearing.**
+    ///      Measuring several arms sequentially in ONE frame does not put them on equal footing: each call's dynamic
+    ///      return (`string[]`, `string[][]`, `VerbosePosition[]`) is ABI-decoded into the CALLER's memory, advancing
+    ///      the free-memory pointer, and memory cost is quadratic in the frame total. So every successive arm pays
+    ///      more expansion than the last for identical work. Measured on this fixture, repeating the SAME call:
+    ///
+    ///        same frame    display   493,378 -> 498,752   (+1,343 per call)
+    ///                      account 2,154,364 -> 2,215,762 (+20,466 per call)
+    ///        fresh frame   display   491,676 every time, account 2,093,268 every time -- bit-identical
+    ///
+    ///      An external call gets a fresh memory region, so the measurement inside is independent of whatever the
+    ///      test frame already allocated. `vm.cool` / `vm.store` are applied OUTSIDE, before entering: account
+    ///      warmth and storage are frame-independent, memory is not.
+    ///
+    ///      ⚠️ **Do not inline `gasleft()` around a call in a test body.** The inline form silently attributes the
+    ///      harness's own memory growth to the code under test: it put ~20,500 of drift into the account-path
+    ///      surcharge and ~61,000 into its absolute total, and no assertion in this file would have caught it.
+    function measureVerbose(address account) external view returns (uint256 used) {
+        uint256 t = gasleft();
+        nav.getAccountPositionsVerbose(account, address(0));
+        used = t - gasleft();
+    }
+
+    /// @dev Configuration-surface counterpart of {measureVerbose}; see there for why the fresh frame is required.
+    function measureDisplay(address[] calldata adapters) external view returns (uint256 used) {
+        uint256 t = gasleft();
+        nav.getAdapterDisplayInfo(adapters);
+        used = t - gasleft();
+    }
+
     /// @dev Measures the registry surcharge against a real no-registry baseline.
     ///
-    ///      **The baseline is measured FIRST, deliberately.** An earlier revision measured it last, after two prior
-    ///      verbose reads had already grown this frame's memory; since memory cost is quadratic in the frame total,
-    ///      that biased the baseline UP and the published surcharge DOWN. Ordering is part of the measurement.
+    ///      Arm ORDER no longer biases anything: each arm is measured in its own frame via {measureVerbose}, so the
+    ///      memory baseline is identical for all three. (An earlier revision had to measure the baseline first to
+    ///      limit that bias; with fresh frames the ordering is free.)
     ///
     ///      **What this test does and does not bound.** It bounds the surcharge for ONE distinct adapter emitting ONE
     ///      position. It CANNOT distinguish a per-adapter lookup from a per-position one, because with one position
     ///      the two are identical — an earlier revision's comment claimed otherwise and was simply wrong. The
-    ///      per-position regression is caught by {test_gas_surchargeIsPerAdapter_notPerPosition}, and only by it.
+    ///      per-position regression is caught by {test_gas_surchargeIsPerAdapter_notPerPosition} (warm) and
+    ///      {test_gas_coldVsWarm_twoAdapters} (cold), and by those two alone.
     function test_gas_registryLegIsBounded() public {
         _v(); // warm every path
 
         bytes32 rslot = _registrySlot();
         uint256 saved = uint256(vm.load(address(nav), rslot));
         vm.store(address(nav), rslot, bytes32(0));
-        uint256 before = gasleft();
-        nav.getAccountPositionsVerbose(safe, address(0));
-        uint256 noRegistry = before - gasleft();
+        uint256 noRegistry = this.measureVerbose(safe);
         vm.store(address(nav), rslot, bytes32(saved));
 
-        before = gasleft();
-        nav.getAccountPositionsVerbose(safe, address(0));
-        uint256 miss = before - gasleft();
+        uint256 miss = this.measureVerbose(safe);
 
         vm.prank(navCalculatorManager);
         registry.setAdapterProtocolName(address(adapter), "Overridden Protocol");
-        before = gasleft();
-        nav.getAccountPositionsVerbose(safe, address(0));
-        uint256 hit = before - gasleft();
+        uint256 hit = this.measureVerbose(safe);
 
         emit log_named_uint("verbose read gas, NO registry ", noRegistry);
         emit log_named_uint("verbose read gas, override HIT", hit);
@@ -747,31 +777,35 @@ contract AdapterLabelOverridesTest is AdapterLabelOverridesBase {
 
         assertLt(noRegistry, hit, "no registry must be cheapest");
         assertLt(hit, miss, "a hit must be cheaper than a miss (it skips the adapter staticcall)");
-        // ⚠️ **Measured 7,563 on the array-override tree, against a bound of 8,000 — a margin of 437, or ~5.8%.**
-        // It was ~5.1k under the retired scalar `_safeString` read; the `string[]` read behind the decode shim is
-        // what closed the gap. The bound is deliberately NOT raised to make room: it is a mutation-catching
-        // assertion, and tightness is the safe direction for one. Raising it on taste rather than from a measured
-        // mutant is precisely how `test_gas_surchargeIsPerAdapter_notPerPosition` once shipped a 50,000 bound that
-        // passed under the exact regression it was written to catch. If solc drift ever pushes this over 8,000, the
-        // fix is to MEASURE the second-pair-of-reads mutant and set the bound between — not to add headroom.
+        // Bound derived from the second-pair mutant (duplicate the two lookups inside the cache branch), which is
+        // exactly the regression this message names. #283's fresh-frame instrument: clean 5,311 / mutant 10,623 /
+        // bound 8,000.
+        //
+        // ⚠️ **This PR moves the CLEAN arm: the registry read went from one flat `string` to a `string[]` behind the
+        // isolating decode shim, so the leg is genuinely more expensive.** Re-measured on the merged tree with
+        // #283's {measureVerbose} — see the emitted `surcharge, 1 adapter / 1 position`. If that value approaches
+        // 8,000, RE-DERIVE the bound from the second-pair mutant; do not raise it to make room. Raising a bound to
+        // make a test pass is how the 50,000 below came to enforce nothing.
         assertLt(miss - noRegistry, 8_000, "one distinct adapter must cost at most one pair of registry reads");
     }
 
-    /// @dev **The only test that catches the per-position regression, and its bound is set from a MUTATION, not from
-    ///      taste.** Two positions from ONE adapter: the lookup is cached at the `adapter != prevAdapter` boundary,
-    ///      so the surcharge must stay one pair of registry reads per DISTINCT adapter.
+    /// @dev **Catches the per-position regression WARM, with its bound set from a MUTATION, not from taste.** Two
+    ///      positions from ONE adapter: the lookup is cached at the `adapter != prevAdapter` boundary, so the
+    ///      surcharge must stay one pair of registry reads per DISTINCT adapter. `test_gas_coldVsWarm_twoAdapters` is
+    ///      the COLD counterpart; between them the caching property is defended warm and cold, and nothing else in
+    ///      this file defends it.
     ///
-    ///      ⚠️ **Re-measured when the segment-0-only category override became the per-segment
-    ///      {IAssetKindRegistry.setAdapterLabels} array override, which made this leg genuinely more expensive.** The
-    ///      registry read went from one flat `string` to a `string[]` behind the isolating decode shim, so the
-    ///      surcharge rose from 9,790 to **15,343**, and the 12,000 bound below it had to move. That is a real cost
-    ///      increase, not measurement noise, and it is stated rather than absorbed.
+    ///      Measured with #283's fresh-frame {measureVerbose}, on the pre-array-override tree: clean 10,650, mutant
+    ///      (lookup moved out of the cache branch so it runs per position) 15,978, bound 12,000.
     ///
-    ///      Both arms, on this tree: **15,343** clean vs **20,292** with the override read moved out of the cache
-    ///      branch so it runs per position. The bound is **17,500** — above the honest number with room for compiler
-    ///      drift, below the mutant. (History worth keeping: an earlier revision bounded this at 50,000 and therefore
-    ///      PASSED under that exact mutation, so the regression it was written to catch shipped green. The bound is
-    ///      set from the mutant every time for that reason.)
+    ///      ⚠️ **This PR moves the CLEAN arm and the bound with it.** The segment-0-only category override became the
+    ///      per-segment {IAssetKindRegistry.setAdapterLabels} ARRAY override, so the registry read is now a
+    ///      `string[]` behind the decode shim rather than a flat `string`. That is a real cost increase, stated
+    ///      rather than absorbed. Both arms re-measured on the merged tree are recorded at the assertion below.
+    ///
+    ///      ⚠️ When this goes red, RE-DERIVE the bound from the mutant; do not simply raise it. Raising a bound to
+    ///      make a test pass is how the 50,000 above, the 34,000 on the cold counterpart and the 20,000 on
+    ///      {test_gas_coldVsWarm_oneAdapter} all came to enforce nothing.
     function test_gas_surchargeIsPerAdapter_notPerPosition() public {
         LabelledAdapter multi = new LabelledAdapter("Multi Protocol", "Market", "leaf");
         address[] memory assets = new address[](2);
@@ -785,18 +819,13 @@ contract AdapterLabelOverridesTest is AdapterLabelOverridesBase {
         nav.addBalanceAdapters(aa(address(multi)));
         nav.getAccountPositionsVerbose(safe, address(0)); // warm
 
-        // Baseline FIRST, for the same ordering reason as above.
         bytes32 rslot = _registrySlot();
         uint256 saved = uint256(vm.load(address(nav), rslot));
         vm.store(address(nav), rslot, bytes32(0));
-        uint256 before = gasleft();
-        nav.getAccountPositionsVerbose(safe, address(0));
-        uint256 noRegistry = before - gasleft();
+        uint256 noRegistry = this.measureVerbose(safe);
         vm.store(address(nav), rslot, bytes32(saved));
 
-        before = gasleft();
-        nav.getAccountPositionsVerbose(safe, address(0));
-        uint256 withRegistry = before - gasleft();
+        uint256 withRegistry = this.measureVerbose(safe);
 
         uint256 surcharge = withRegistry - noRegistry;
         emit log_named_uint("surcharge, 2 adapters / 3 positions", surcharge);
@@ -812,9 +841,9 @@ contract AdapterLabelOverridesTest is AdapterLabelOverridesBase {
         vm.prank(navCalculatorManager);
         nav.setAssetKindRegistry(address(burner));
 
-        uint256 before = gasleft();
+        // Gas in its own frame; the returned data is fetched separately, since only the CONTENT is asserted on.
+        uint256 used = this.measureVerbose(safe);
         INAVCalculator.VerbosePosition[] memory all = nav.getAccountPositionsVerbose(safe, address(0));
-        uint256 used = before - gasleft();
 
         emit log_named_uint("verbose read gas, stipend-burning registry", used);
         // Fail-open still holds: the adapter's own values come back.
@@ -825,9 +854,20 @@ contract AdapterLabelOverridesTest is AdapterLabelOverridesBase {
             assertEq(all[i].protocolName, "Mock Protocol", "a burning registry must fall back, not override");
         }
         assertTrue(found, "adapter position not found");
-        // Two distinct adapters emit positions here (ERC20Default + ours), so the ceiling is 2 adapters x 2 reads x
-        // 100k, plus the underlying read. Bounded well inside the verbose read's own budget.
-        assertLt(used, 600_000, "a stipend-burning registry must stay inside 2x_NAME_READ_GAS per distinct adapter");
+
+        // ⚠️ Only ONE adapter emits here, not two. An earlier comment claimed "ERC20Default + ours"; the default ERC20
+        // adapter holds no balance for `safe` and emits nothing, which {test_gas_accountPath_27Distinct_cold} pins
+        // independently (26 emitting of 27 registered). So the REGISTRY stipend component of this ceiling is
+        // 1 adapter x 2 reads x _NAME_READ_GAS = 200,000, not 400,000 -- the bound has more slack than it looked.
+        // The rest of the measured ~420,700 is the adapter's own work and the gas-capped label decode, which this
+        // test does not attempt to bound; it bounds the registry's contribution and that the read still completes.
+        uint256 emitting = _adaptersEmittingPositions(nav.getAllAdapters());
+        assertEq(emitting, 1, "fixture shape: exactly one adapter emits a position for safe");
+        assertLt(
+            used,
+            emitting * 2 * 100_000 + 400_000,
+            "a stipend-burning registry must stay inside 2x_NAME_READ_GAS per EMITTING adapter, plus the adapter's own work"
+        );
     }
 
     /// @dev The CONFIGURATION-path hostile-registry ceiling, which nothing exercised before. The `_NAME_READ_GAS`
@@ -849,9 +889,8 @@ contract AdapterLabelOverridesTest is AdapterLabelOverridesBase {
         three[1] = address(adapter);
         three[2] = address(usdc); // not an adapter at all; must still not revert
 
-        uint256 before = gasleft();
+        uint256 used = this.measureDisplay(three);
         (string[] memory names, string[][] memory labels) = nav.getAdapterDisplayInfo(three);
-        uint256 used = before - gasleft();
         emit log_named_uint("configuration surface gas, stipend-burning registry, 3 entries", used);
 
         // Fail-open: a burning registry must degrade to the adapter's own value, never revert the enumeration.
@@ -862,7 +901,11 @@ contract AdapterLabelOverridesTest is AdapterLabelOverridesBase {
         assertEq(names[2], "", "a non-adapter address yields an empty name, not a revert");
 
         // Ceiling: 2 x _NAME_READ_GAS (100k) per ENTRY, plus the adapters' own reads. Bounded well inside it.
-        assertLt(used, 3 * 2 * 100_000 + 400_000, "the configuration ceiling is 2x the stipend PER ENTRY");
+        assertLt(
+            used,
+            3 * 2 * 100_000 + 400_000,
+            "the configuration ceiling is 2x the stipend PER ENTRY, plus the adapters' own reads"
+        );
     }
 
     /// @dev Never-revert on the configuration surface for inputs that are not adapters at all.
@@ -1035,6 +1078,359 @@ contract AdapterLabelOverridesTest is AdapterLabelOverridesBase {
             assertEq(all[i].labels[1], "wstETH/USDC", "leaf still live");
         }
         assertTrue(found, "adapter position not found in getAccountPositionsForAssetVerbose");
+    }
+
+    /// @dev COLD-SLOT measurement. Every other gas test here warms the read first, so its surcharge is a FLOOR: a
+    ///      real portfolio touches each adapter's registry slots cold. `vm.cool(registry)` marks the registry's
+    ///      storage SLOTS cold again, which is the only clean way to produce that state inside one test transaction
+    ///      (EIP-2929 warmth otherwise persists for the whole call frame). It does NOT restore the cold-ACCOUNT
+    ///      premium, despite its forge-std docstring -- see `_coolAll` for the measurement -- so this surcharge, like
+    ///      every other cold figure in this file, is slots-only and remains a floor on what a fresh call pays.
+    ///
+    ///      All three measurements share an identical baseline: the adapters are warmed once up front and are never
+    ///      cooled, so the ONLY thing that differs between warm and cold is the registry. That isolation is what
+    ///      makes the delta attributable.
+    function test_gas_coldVsWarm_oneAdapter() public {
+        nav.getAccountPositionsVerbose(safe, address(0)); // warm everything
+
+        bytes32 rslot = _registrySlot();
+        uint256 saved = uint256(vm.load(address(nav), rslot));
+
+        // Baseline: registry not consulted at all. Adapters warm.
+        vm.store(address(nav), rslot, bytes32(0));
+        uint256 base = this.measureVerbose(safe);
+        vm.store(address(nav), rslot, bytes32(saved));
+
+        // Registry WARM (its slots were touched by the warm-up read).
+        uint256 warm = this.measureVerbose(safe);
+
+        // Registry COLD. Cooled OUTSIDE the measured frame -- warmth is frame-independent, memory is not.
+        vm.cool(address(registry));
+        uint256 cold = this.measureVerbose(safe);
+
+        emit log_named_uint("1 adapter | baseline no-registry ", base);
+        emit log_named_uint("1 adapter | surcharge WARM       ", warm - base);
+        emit log_named_uint("1 adapter | surcharge COLD       ", cold - base);
+        emit log_named_uint("1 adapter | cold premium         ", cold - warm);
+
+        assertGt(cold, warm, "a cold registry must cost more than a warm one");
+        // Bound set FROM A MUTANT, not from taste. The mutant is a second pair of registry reads per distinct adapter
+        // (duplicate the two lookups inside the `adapter != prevAdapter` branch) -- precisely the regression this
+        // message names. An earlier 20,000 passed under it (mutant 14,719) and so enforced nothing:
+        //   clean 9,311 PASS / mutant 14,623 FAIL / bound 12,000.
+        assertLt(cold - base, 12_000, "one distinct adapter, cold, must stay within one pair of cold reads");
+    }
+
+    /// @dev The same, with TWO distinct adapters emitting three positions, so the per-DISTINCT-ADAPTER property is
+    ///      testable cold as well as warm. The bound is what the mutation below has to break.
+    function test_gas_coldVsWarm_twoAdapters() public {
+        LabelledAdapter multi = new LabelledAdapter("Multi Protocol", "Market", "leaf");
+        address[] memory assets = new address[](2);
+        assets[0] = address(usdc);
+        assets[1] = address(dai);
+        multi.setBalances(nav);
+        multi.setUnderlyingAssetsSupported(assets);
+        multi.setBalance(address(usdc), safe, 5 * 10 ** usdc.decimals(), false);
+        multi.setBalance(address(dai), safe, 5 * 10 ** dai.decimals(), false);
+        vm.prank(navCalculatorManager);
+        nav.addBalanceAdapters(aa(address(multi)));
+
+        nav.getAccountPositionsVerbose(safe, address(0)); // warm everything
+
+        bytes32 rslot = _registrySlot();
+        uint256 saved = uint256(vm.load(address(nav), rslot));
+
+        vm.store(address(nav), rslot, bytes32(0));
+        uint256 base = this.measureVerbose(safe);
+        vm.store(address(nav), rslot, bytes32(saved));
+
+        uint256 warm = this.measureVerbose(safe);
+
+        vm.cool(address(registry));
+        uint256 cold = this.measureVerbose(safe);
+
+        emit log_named_uint("2 adapters/3 positions | baseline ", base);
+        emit log_named_uint("2 adapters/3 positions | WARM     ", warm - base);
+        emit log_named_uint("2 adapters/3 positions | COLD     ", cold - base);
+        emit log_named_uint("2 adapters/3 positions | premium  ", cold - warm);
+
+        assertGt(cold, warm, "cold must exceed warm");
+        // Cold surcharge must still scale with DISTINCT ADAPTERS, not positions. A per-position lookup on this
+        // 3-position fixture inflates it past this bound -- which the mutation test proves.
+        // Bound set FROM THE MUTATION, not from taste: clean 18,650 / per-position mutant 23,978.
+        // An earlier 34,000 passed under that mutant and was therefore worthless.
+        assertLt(cold - base, 22_000, "cold surcharge must scale with distinct adapters, not positions");
+    }
+
+    /// @dev The BENIGN path of the configuration surface. Only its hostile-registry ceiling was ever measured, which
+    ///      is not much use to an operator.
+    ///
+    ///      ⚠️ This fixture registers only TWO adapters, so a full enumeration here is N=2 and dividing its total by
+    ///      2 would attribute fixed call overhead to each entry. The MARGINAL per-entry cost is measured separately
+    ///      below by comparing N=2 against N=27 (mainnet's registered-adapter count per the fork rehearsal), padding
+    ///      with repeated addresses. Repeats are warm after the first touch, so that marginal figure is a WARM
+    ///      per-entry loop cost and a floor, not a cold one.
+    function test_gas_configurationSurface_benignPath() public {
+        address[] memory all = nav.getAllAdapters();
+
+        // Warm, then measure a full enumeration. The emits sit after the measurements only for readability now:
+        // {measureDisplay} times inside its own frame, so allocations out here cannot reach it. Before that helper
+        // existed this ordering was load-bearing.
+        nav.getAdapterDisplayInfo(all);
+        uint256 warm = this.measureDisplay(all);
+
+        vm.cool(address(registry));
+        uint256 cold = this.measureDisplay(all);
+
+        emit log_named_uint("configuration surface | adapters actually registered in fixture", all.length);
+        emit log_named_uint("configuration surface | WARM, full enumeration", warm);
+        emit log_named_uint("configuration surface | COLD, full enumeration", cold);
+        emit log_named_uint("configuration surface | per entry WARM        ", warm / all.length);
+        emit log_named_uint("configuration surface | per entry COLD        ", cold / all.length);
+        assertGt(cold, warm, "cold enumeration must cost more than warm");
+    }
+
+    /// @dev Marginal per-ENTRY cost of the configuration surface: N=2 vs N=27, so fixed call overhead cancels.
+    ///
+    ///      ⚠️ This test MEASURES the marginal and does not BOUND it: the only assertion is the ordering. The
+    ///      per-entry figure it logs is also the PADDED one -- `pad` repeats the same two addresses, which are warm
+    ///      after the first touch -- so it is a warm floor, not a distinct-adapter number, and must not be quoted as
+    ///      one. `test_gas_configurationSurface_linearityAtScale` is where the marginal is actually bounded.
+    function test_gas_configurationSurface_marginalPerEntry() public {
+        address[] memory all = nav.getAllAdapters();
+        address[] memory pad = new address[](27);
+        for (uint256 i = 0; i < 27; i++) {
+            pad[i] = all[i % all.length];
+        }
+        nav.getAdapterDisplayInfo(all);
+        nav.getAdapterDisplayInfo(pad); // warm both shapes
+
+        uint256 gN = this.measureDisplay(all);
+        uint256 g27 = this.measureDisplay(pad);
+
+        emit log_named_uint("config surface | N=2  total ", gN);
+        emit log_named_uint("config surface | N=27 total ", g27);
+        emit log_named_uint("config surface | MARGINAL per entry (warm)", (g27 - gN) / (27 - all.length));
+        assertGt(g27, gN, "more entries must cost more");
+    }
+
+    /// @dev Registers distinct adapters until the NAV holds `target` of them, returning the full set.
+    ///      Each is a SEPARATE contract, so each occupies its own registry mapping slots -- which is the whole point:
+    ///      repeated addresses are warm after the first touch and understate a real enumeration.
+    function _growTo(uint256 target) internal returns (address[] memory) {
+        while (nav.getAllAdapters().length < target) {
+            LabelledAdapter a = new LabelledAdapter("Proto", "Market", "leaf");
+            _register(a);
+        }
+        return nav.getAllAdapters();
+    }
+
+    /// @dev Cools every account a NAV read touches whose warmth this fixture controls: the registry, the supplied
+    ///      adapters, the NAV PROXY (its own slots are read on every call and were previously left warm -- cooling
+    ///      them is worth a measured 4,000 exactly, two cold-SLOAD deltas), and the two accounts it DELEGATECALLs into,
+    ///      the UUPS implementation and the externally linked `PriceFeedLib` (`getAdapterDisplayInfo` is a single
+    ///      forward into it).
+    ///
+    ///      ⚠️ **`vm.cool` cools SLOTS ONLY in forge 1.7.1, despite its forge-std docstring claiming it also marks
+    ///      "the account address as cold".** Measured, storage-free control: a warm call costs 514 gas and 540 after
+    ///      `vm.cool` -- +26, not the +2,500 a genuine cold-ACCOUNT access (2,600 vs 100) would add. So cooling the
+    ///      implementation and `PriceFeedLib` -- which hold no storage this path reads -- moves the total by
+    ///      EXACTLY ZERO (measured: 930,471 either way). An earlier revision recorded ~130 here; that was drift from
+    ///      same-frame measurement, not an effect. They are cooled anyway: correct in intent, and correct in effect
+    ///      if a later forge implements the address half.
+    ///
+    ///      The consequence is that EVERY "cold" number in this file is slots-cold, so it is a FLOOR: a real fresh
+    ///      call additionally pays one cold-account premium per distinct account it touches, which this cheatcode
+    ///      cannot reproduce inside a single test transaction (creating or calling an account warms it for the rest of
+    ///      the transaction).
+    ///
+    ///      ⚠️ **The size of that correction depends on the CALL MODEL, and mixing the two is a mistake.** Everything
+    ///      here is the CONTRACT-CALLER model: measured from inside a Solidity call (see {measureVerbose}), so the
+    ///      totals include caller-side calldata construction and returndata decoding, and the proxy is a cold account
+    ///      like any other. For that model the 27-adapter display path first-touches **31** accounts -- the proxy, 27
+    ///      adapters, the implementation, `PriceFeedLib`, the registry -- at 2,500 each: **~77,500 unmeasured**.
+    ///
+    ///      **That figure is for a contract reader, and it is the ONLY path these fixtures size.** Add ~77,500 to a
+    ///      reported total to size a contract that calls the NAV.
+    ///
+    ///      ⚠️ **A direct EOA transaction is a SEPARATE accounting model and cannot be derived from these numbers.**
+    ///      An earlier revision claimed it "differs twice" -- proxy pre-warmed, no on-chain decode -- and concluded
+    ///      these totals overstate it. That enumeration was incomplete and the conclusion was unmeasured. A
+    ///      transaction also OMITS the caller-side ABI encoding and the CALL overhead this helper includes, and ADDS
+    ///      the 21,000 intrinsic cost plus per-calldata-byte gas. Those push in opposite directions, so the sign of
+    ///      the difference is not established here and no arithmetic on the ~77,500 recovers it. **Sizing the
+    ///      transaction path needs its own measurement; this file does not provide one.**
+    function _coolAll(address[] memory xs) internal {
+        // ORDER IS LOAD-BEARING: `vm.load` WARMS the slot it reads, so reading the implementation slot after
+        // `vm.cool(address(nav))` would silently re-warm it and hand the measured call a warm SLOAD. Read first,
+        // cool second.
+        address impl = address(uint160(uint256(vm.load(address(nav), ERC1967_IMPL_SLOT))));
+        vm.cool(address(registry));
+        vm.cool(address(nav));
+        vm.cool(impl);
+        vm.cool(LibraryPins.PRICE_FEED_LIB);
+        for (uint256 i = 0; i < xs.length; i++) {
+            vm.cool(xs[i]);
+        }
+    }
+
+    /// @dev THE 27-DISTINCT FIXTURE. 27 is mainnet's registered-adapter count per the fork rehearsal.
+    ///      Two isolations are reported and they answer different questions:
+    ///        - REGISTRY-COLD only: the registry surcharge, methodologically identical to the account-path numbers.
+    ///        - EVERYTHING-COLD: every account this fixture can cool -- registry, adapters, the proxy's own slots, the
+    ///          UUPS implementation, `PriceFeedLib` -- with all SLOTS cold. It is a FLOOR, not the real cost:
+    ///          `vm.cool` does not reproduce cold-ACCOUNT premiums, leaving **~77,500** unmeasured under the
+    ///          contract-caller model these figures are measured in (31 accounts x 2,500). See `_coolAll` for the
+    ///          measured proof and the arithmetic. It sizes a CONTRACT reader only -- the transaction path is a
+    ///          separate accounting model this file does not measure.
+    function test_gas_configurationSurface_27Distinct_cold() public {
+        address[] memory all = _growTo(27);
+
+        nav.getAdapterDisplayInfo(all); // warm everything
+        uint256 warm = this.measureDisplay(all);
+
+        vm.cool(address(registry));
+        uint256 regCold = this.measureDisplay(all);
+
+        nav.getAdapterDisplayInfo(all); // re-warm
+        _coolAll(all);
+        uint256 allCold = this.measureDisplay(all);
+
+        emit log_named_uint("27 distinct | WARM total            ", warm);
+        emit log_named_uint("27 distinct | REGISTRY-COLD total   ", regCold);
+        emit log_named_uint("27 distinct | EVERYTHING-COLD total ", allCold);
+        emit log_named_uint("27 distinct | registry premium      ", regCold - warm);
+        emit log_named_uint("27 distinct | per entry WARM        ", warm / 27);
+        emit log_named_uint("27 distinct | per entry ALL-COLD    ", allCold / 27);
+        assertGt(regCold, warm, "cooling the registry must cost more");
+        assertGt(allCold, regCold, "cooling the adapters too must cost more still");
+
+        // The fixture's premise is BOTH halves, and each needs its own assertion: exactly 27 entries, and all of
+        // them distinct. Length alone would pass on a padded array of repeats (the flaw that makes the padded
+        // "N=27" figure unusable); uniqueness alone would pass if shared setup later registered a 28th adapter,
+        // while the totals above still divide by 27.
+        //
+        // Placement after the measurements is now only a convention: {measureDisplay} times inside its own frame,
+        // so this loop's allocations cannot reach it. It was genuinely load-bearing before that helper existed --
+        // running an O(N^2) sweep of `assertTrue(bool, string)` beforehand inflated EVERYTHING-COLD by ~3,255,
+        // because each message allocated in the test frame and the next measurement paid the expansion.
+        assertEq(all.length, 27, "fixture must hold exactly 27 adapters, or the per-entry divisors above are wrong");
+        bool distinct = true;
+        for (uint256 i = 0; i < all.length; i++) {
+            for (uint256 j = i + 1; j < all.length; j++) {
+                if (all[i] == all[j]) distinct = false;
+            }
+        }
+        assertTrue(distinct, "fixture adapters must be DISTINCT: repeats are warm after the first touch");
+    }
+
+    /// @dev Linearity at scale: totals at N = 1, 9, 18, 27 DISTINCT adapters, everything cold each time. If the
+    ///      marginal cost per entry is flat the surface is linear and safe to extrapolate; if it climbs, it is not.
+    ///
+    ///      The flatness is ASSERTED, not merely logged, because a logged-only measurement lets a super-linear
+    ///      regression through CI silently. Bound derived FROM A MUTANT, per this PR's own rule -- a plausible O(N^2)
+    ///      dedup scan over already-processed entries in `PriceFeedLib.adapterDisplayInfo`:
+    ///
+    ///        window      clean             mutant             verdict
+    ///        9 -> 18     34,564 (+0.5%)    37,373 (+5.6%)     mutant FAILS
+    ///        18 -> 27    34,741 (+1.0%)    39,458 (+11.4%)    mutant FAILS
+    ///        bound       +5% above the FIRST marginal, applied to every window
+    ///
+    ///      EVERY measured window is compared against the FIRST marginal, not just the last: a regression that
+    ///      spiked one window and returned to baseline by the next would otherwise pass while this doc claimed the
+    ///      marginals stay flat. Under the mutant `mid` is the binding one -- it trips before `last` is reached.
+    function test_gas_configurationSurface_linearityAtScale() public {
+        address[] memory all = _growTo(27);
+        uint256[4] memory ns = [uint256(1), 9, 18, 27];
+        uint256[4] memory tot;
+        for (uint256 k = 0; k < 4; k++) {
+            address[] memory sub = new address[](ns[k]);
+            for (uint256 i = 0; i < ns[k]; i++) {
+                sub[i] = all[i];
+            }
+            nav.getAdapterDisplayInfo(sub); // warm, then cool everything for an equal footing
+            _coolAll(sub);
+            // Fresh frame per sample. Without it the loop measured ascending N in ONE frame, so each sample sat on
+            // more accumulated memory than the last -- an N-correlated term that the +5% assertion below could have
+            // read as super-linearity coming from the harness rather than from the surface.
+            tot[k] = this.measureDisplay(sub);
+        }
+        emit log_named_uint("linearity | N=1  all-cold total", tot[0]);
+        emit log_named_uint("linearity | N=9  all-cold total", tot[1]);
+        emit log_named_uint("linearity | N=18 all-cold total", tot[2]);
+        emit log_named_uint("linearity | N=27 all-cold total", tot[3]);
+        uint256 first = (tot[1] - tot[0]) / 8;
+        uint256 mid = (tot[2] - tot[1]) / 9;
+        uint256 last = (tot[3] - tot[2]) / 9;
+        emit log_named_uint("linearity | marginal per entry, 1->9  ", first);
+        emit log_named_uint("linearity | marginal per entry, 9->18 ", mid);
+        emit log_named_uint("linearity | marginal per entry, 18->27", last);
+
+        // EVERY measured window is bounded, not just the last. Guarding only `last` would let a regression that
+        // spikes the 9->18 window and returns to baseline by 18->27 pass, while this message claims the marginals
+        // stay flat -- an assertion narrower than the property it names. Integer form of "no window may exceed the
+        // first by more than 5%"; see the mutation run above, where `mid` alone (+5.6%) already breaks it.
+        assertLe(mid * 100, first * 105, "marginal per-entry cost must stay flat across 9->18: no superlinear term");
+        assertLe(last * 100, first * 105, "marginal per-entry cost must stay flat across 18->27: no superlinear term");
+    }
+
+    /// @dev The ACCOUNT path at scale, cold, with 27 DISTINCT adapters -- the SCALE measurement, extended from N=2.
+    ///
+    ///      ⚠️ Its ceiling is a COARSE SCALE GUARD, not a caching defense, and is NOT mutation-derived. Every adapter
+    ///      that emits here emits exactly ONE position, so per-adapter and per-position lookups are indistinguishable
+    ///      -- the per-position mutant left this test's surcharge unchanged. The per-DISTINCT-ADAPTER caching
+    ///      property is defended by TWO tests, both mutation-derived: `test_gas_surchargeIsPerAdapter_notPerPosition`
+    ///      (warm) and `test_gas_coldVsWarm_twoAdapters` (cold), each 2 adapters / 3 positions. What THIS test
+    ///      contributes is the MEASUREMENT of the surcharge at scale; the linearity claim is asserted in
+    ///      `test_gas_configurationSurface_linearityAtScale`, not here.
+    ///
+    ///      ⚠️ **27 adapters are REGISTERED but only 26 EMIT.** The fixture's `ERC20DefaultBalanceAdapter` holds no
+    ///      balance for `safe`, so it contributes no position and the override lookup never runs for it. The
+    ///      per-adapter figure therefore divides by the EMITTING count, which is measured rather than assumed; an
+    ///      earlier revision divided by 27 and published a per-adapter number ~4% low.
+    function test_gas_accountPath_27Distinct_cold() public {
+        address[] memory all = _growTo(27);
+        nav.getAccountPositionsVerbose(safe, address(0)); // warm
+
+        bytes32 rslot = _registrySlot();
+        uint256 saved = uint256(vm.load(address(nav), rslot));
+        vm.store(address(nav), rslot, bytes32(0));
+        uint256 base = this.measureVerbose(safe);
+        vm.store(address(nav), rslot, bytes32(saved));
+
+        vm.cool(address(registry));
+        uint256 cold = this.measureVerbose(safe);
+
+        // Counted AFTER the measurements: it is a full verbose read plus an O(N^2) scan.
+        uint256 emitting = _adaptersEmittingPositions(all);
+        uint256 surcharge = cold - base;
+
+        emit log_named_uint("account path | adapters REGISTERED        ", all.length);
+        emit log_named_uint("account path | adapters EMITTING positions", emitting);
+        emit log_named_uint("account path | baseline no-registry       ", base);
+        emit log_named_uint("account path | COLD surcharge             ", surcharge);
+        emit log_named_uint("account path | per EMITTING adapter       ", surcharge / emitting);
+
+        // Coarse scale ceiling, NOT mutation-derived: one position per emitting adapter, so the per-position mutant
+        // leaves `surcharge` unchanged. `test_gas_coldVsWarm_twoAdapters` is the mutation-derived guard.
+        assertLt(surcharge, 300_000, "cold surcharge must stay within the coarse 27-adapter scale ceiling");
+        assertEq(all.length, 27, "fixture must hold 27 registered adapters");
+        assertEq(emitting, 26, "fixture shape: 26 of the 27 emit; the default ERC20 adapter holds no balance for safe");
+    }
+
+    /// @dev How many of `xs` actually produce at least one position for `safe`. Deliberately NOT `xs.length`: a
+    ///      registered adapter with nothing to report never reaches the override lookup, so using the registered
+    ///      count as a divisor understates the true per-adapter cost.
+    function _adaptersEmittingPositions(address[] memory xs) internal view returns (uint256 n) {
+        INAVCalculator.VerbosePosition[] memory v = nav.getAccountPositionsVerbose(safe, address(0));
+        for (uint256 i = 0; i < xs.length; i++) {
+            for (uint256 j = 0; j < v.length; j++) {
+                if (v[j].position.balanceAdapter == xs[i]) {
+                    n++;
+                    break;
+                }
+            }
+        }
     }
 
     // ------------------------------------------------------------------
@@ -1376,12 +1772,16 @@ contract AdapterLabelOverridesTest is AdapterLabelOverridesBase {
     ///      `test_gas_surchargeIsPerAdapter_notPerPosition`, whose original 50,000 bound passed under the exact
     ///      mutation it was written to catch.
     ///
-    ///      Measured on this tree, both arms: **20,746 cached** vs **30,033** with `_labelOverride` moved out of the
-    ///      `adapter != prevAdapter` branch and into the loop body. The bound is **25,000** — above the honest number
-    ///      with room for compiler drift, and comfortably below the mutant. (An earlier revision of this line quoted
-    ///      "12,349 vs 19,469"; those numbers were never measured and the 15,000 bound derived from them failed
-    ///      against the honest tree. Recorded rather than quietly replaced, because a fabricated measurement in a
-    ///      comment is the exact failure this file's other gas notes keep warning about.)
+    ///      ⚠️ **Both arms were re-measured on #283's fresh-frame instrument, and the earlier figures are retired.**
+    ///      This line previously quoted 20,746 clean vs 30,033 mutant with a 25,000 bound; those were taken with
+    ///      inline `gasleft()` in the test body, which {measureVerbose}'s docstring shows mis-attributes this frame's
+    ///      memory growth to the code under test (~20,500 of drift on the account path) — i.e. the contamination was
+    ///      of the same order as the quantity being bounded. The current figures are recorded at the assertion.
+    ///
+    ///      (Further history worth keeping: a revision before that quoted "12,349 vs 19,469", numbers that were never
+    ///      measured at all and whose derived bound failed against the honest tree. A fabricated measurement in a
+    ///      comment is the exact failure this file's other gas notes keep warning about — and an honestly-measured
+    ///      one taken on a biased instrument is the subtler version of it.)
     function test_gas_labelOverride_isPerAdapter_notPerPosition() public {
         LabelledAdapter multi = new LabelledAdapter("Multi Protocol", "Market", "leaf");
         address[] memory assets = new address[](2);
@@ -1398,19 +1798,17 @@ contract AdapterLabelOverridesTest is AdapterLabelOverridesBase {
         registry.setAdapterLabels(address(multi), two("Lending Market", ""));
         nav.getAccountPositionsVerbose(safe, address(0)); // warm
 
-        // Baseline FIRST — memory cost is quadratic in the frame total, so measuring it last biases it upward and the
-        // surcharge downward. Same ordering discipline as the tests above.
+        // Both arms measured through #283's {measureVerbose}, NOT inline `gasleft()`. The inline form attributes this
+        // frame's own memory growth to the code under test — measured at ~20,500 gas of drift on the account path —
+        // which would land squarely inside the surcharge this test bounds. With a fresh frame per arm the ordering
+        // is also free, so the baseline no longer has to be measured first to limit the bias.
         bytes32 rslot = _registrySlot();
         uint256 saved = uint256(vm.load(address(nav), rslot));
         vm.store(address(nav), rslot, bytes32(0));
-        uint256 before = gasleft();
-        nav.getAccountPositionsVerbose(safe, address(0));
-        uint256 noRegistry = before - gasleft();
+        uint256 noRegistry = this.measureVerbose(safe);
         vm.store(address(nav), rslot, bytes32(saved));
 
-        before = gasleft();
-        nav.getAccountPositionsVerbose(safe, address(0));
-        uint256 withRegistry = before - gasleft();
+        uint256 withRegistry = this.measureVerbose(safe);
 
         uint256 surcharge = withRegistry - noRegistry;
         emit log_named_uint("label-override surcharge, 2 adapters / 3 positions", surcharge);

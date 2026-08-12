@@ -534,19 +534,59 @@ git submodule status | grep -v '^ ' && echo "DRIFT — fix before building" || e
 
 The Alchemy app behind `ALCHEMY_API_KEY` has most networks **disabled**; only
 `eth / opt / gnosis / base / arb` answer. `ConfigReader` resolves 22 of the 24 chains through
-`$ALCHEMY` alone (`ConfigReader.sol:759`), so a bare `forge script` **cannot reach 19 of them**,
-including **polygon (137), a configured chain**.
+`$ALCHEMY` alone (`ConfigReader._resolveRpcUrl`, `ConfigReader.sol:837`), so **19 of the 24 configured
+endpoints do not answer** — including **polygon (137), a configured chain**.
 
-Either enable the networks on the Alchemy app, or pass `--rpc-url` explicitly per chain from the
-per-chain `*_URL` vars. Confirm the full inventory first:
+**That is endpoint availability, not Foundry reachability, and conflating the two is a trap.**
+`ConfigReader` assigns the resolved URL to `chainConfig.rpc` (`ConfigReader.sol:163`) and
+`BaseDeployScript.setUp` loads it (`BaseDeployScript.sol:28`) — but **nothing reads it after that**.
+There is no production read of `chainConfig.rpc` anywhere under `script/`, and `foundry.toml` declares
+neither `[rpc_endpoints]` nor `eth_rpc_url`, so Foundry never sees these URLs at all. The practical
+consequence is **stronger** than "19 chains are unreachable": a broadcast needs an explicit
+`--rpc-url` on **every** chain, including the five where Alchemy does answer. A resolvable `rpc`
+field is not a substitute on any of them.
+
+**Supply the endpoint explicitly on every chain** — `--rpc-url` on every invocation. For **19 of the 24**
+the URL comes from that chain's `*_URL` var (`CHAIN_URL_ENV`, `chainlib.py:63-69`). **The remaining five —
+`143 monad`, `196 xlayer`, `204 opbnb`, `16661 0g`, `43111 hemi` — have no `*_URL` var at all**, so there
+is nothing to source from: pass the provisioned endpoint to `--rpc-url` directly, and if you want the
+preflight to see it too, add the chain to `CHAIN_URL_ENV` (a code change, not config). Those five are the
+same chains that currently fall back to public RPCs — see the note below. This is **not** an either/or
+with the Alchemy app:
+because `chainConfig.rpc` is inert (see the paragraph above), enabling those networks does not hand Foundry an
+endpoint, so it is never a substitute for passing one. Enabling them is still worth doing — it gives you
+a good URL to pass and restores the preflight's first-choice candidate — but it is complementary, not an
+alternative. Confirm the full inventory first:
 
 ```bash
 python3 script/deploy/preflight/deployer_balances.py      # prints the endpoint each chain resolves to
 ```
 
+**Re-confirmed 2026-08-10 against `main` @ `08cff61d`, by measurement, and every number above held.**
+Resolving each chain the way `ConfigReader` does (`chainlib.resolve_rpc(config_only=True)`, which
+exists for exactly this question) and then issuing a real `eth_blockNumber`:
+
+- **Alchemy answers on exactly 5 chains** — `1, 10, 100, 8453, 42161`, i.e. eth / opt / gnosis / base / arb.
+- **The configured endpoint answers for 5 and fails for 19**, polygon (137) among them. Read this as
+  *config endpoint health only* — per the note above, Foundry never consumes `chainConfig.rpc`, so this
+  split says nothing about what `forge script` can reach; without `--rpc-url` it has no endpoint on any
+  chain.
+- Exactly **22** chains carry `rpc: "$ALCHEMY"`; the other two are `$QUICKNODE_0G` (16661) and
+  `$QUICKNODE_HEMI` (43111), neither of which is in the environment.
+
+> ⚠️ **`deployer_balances.py` reporting `0 unreachable` does NOT contradict any of this, and must not be
+> read as clearing 0.5.** That script is deliberately more capable than a bare `forge script`:
+> `chainlib.probe_rpc` tries the configured endpoint, then the per-chain `*_URL` var, then a public
+> fallback. On 2026-08-10 all 24 chains answered — but only 5 answered *via Alchemy*; 14 answered only
+> because a `*_URL` var was set (polygon among them, via `POLYGON_URL`), and 5 only via a public
+> fallback. So a green `0 unreachable` is evidence the **preflight** can read every chain, never
+> evidence that `forge script` without `--rpc-url` can.
+
 Chains with no `*_URL` and no Alchemy access — `143 monad`, `196 xlayer`, `204 opbnb`, `16661 0g`,
 `43111 hemi` — currently fall back to public RPCs. Public endpoints are fine for reads but should be
-replaced with real ones before broadcasting.
+replaced with real ones before broadcasting. (Re-verified individually 2026-08-10: all five have no
+`*_URL` set and all five resolved to the public fallback. 143/196/204 resolve to Alchemy and are
+refused; 16661/43111 do not resolve at all, their `$QUICKNODE_*` vars being absent.)
 
 ### 0.6 Fund the deployer
 
@@ -557,6 +597,83 @@ python3 script/deploy/preflight/deployer_balances.py --json topup.json
 Re-measured **2026-07-29, after the linea top-up landed**: every priced chain is funded, linea
 included (0.03066 ETH against an estimated 0.02800). Re-check on the day — linea had already been
 topped up once on 2026-07-27 without clearing, so measure rather than assume.
+
+**Re-measured 2026-08-10 against `main` @ `08cff61d`** (`python3 script/deploy/preflight/deployer_balances.py`):
+**24 chains scoped, 0 unreachable, 0 short, 2 unpriceable.** The top-up list came back
+`none — every priced chain is funded for the estimated gas`, and the run exited non-zero with
+`not clear to deploy`.
+
+What that output does and does not cover, stated without inferring a verdict:
+
+- **Covers:** the 22 priced chains. None needs a top-up at the estimates in force that day.
+- **Does not cover:** gnosis and scroll. The script files them under
+  `NOT PRICED (these chains were not checked, and are not OK)` and sets `sufficient = None`, so it makes
+  **no finding either way** about their funding.
+- **Why, and under what condition:** `priceable = quoted >= GAS_PRICE_IMPLAUSIBLE_WEI`, where the
+  threshold is `1_000_000` wei / 0.001 gwei (`deployer_balances.py:51`, test at `:117`). Both chains
+  quoted far below it. **This is conditional, not permanent** — a later quote above the threshold clears
+  it, and plasma is the worked example: unpriceable in the 2026-07-29 reading, priced normally
+  (need 0.00022) on 2026-08-10.
+- **Therefore two distinct facts, which must not be collapsed.** (a) The **funding status** of gnosis and
+  scroll is **UNKNOWN, not failed** — the tool makes no finding either way. (b) The **gate** is
+  **UNRESOLVED**, and per this section's own rule ("Do not start until **all** of these hold", §0) an
+  unresolved blocking prerequisite **does block the deploy**. Unknown funding is not permission to
+  proceed. The tool cannot close it for them by construction. The paragraph below asserts their funding "has been confirmed sufficient
+  out of band" but records **no confirmer, no date and no sizing basis**, so it is not auditable and must
+  not be read as closing the gate. **To close 0.6: record who confirmed, when, and against what estimate
+  — or re-run once a quote clears the threshold and let the tool price them.**
+
+Note the
+2026-07-29 linea comparison above is now stale on its second number only: linea still holds 0.03066 ETH,
+but the estimate for it is now **0.00293**, not 0.02800 — the balance figure aged well, the estimate did not.
+
+> ### ⚠️ SCOPE OF THIS GATE, AND WHY IT STAYS RED
+>
+> `deployer_balances.py` prices as `(gasUnits × gasPrice) × headroom` and models **no L1
+> data-availability fee** (open issue **#287**). That term is not a rounding error — on scroll it
+> measured **~99.9% of total cost**. Nine of 24 chains are affected, and the question is now **settled
+> by measurement rather than left as reasoning**:
+>
+> | chains | n | status |
+> | --- | --- | --- |
+> | `10, 130, 204, 480, 5000, 8453, 42220, 57073` | 8 | **Pass, with a documented omission.** Measured margins (balance ÷ current need) are **10× to 996×**. A row flips once the added fee exceeds `balance − need`, so the **flip thresholds are ~9× to ~995× the current need** — the two are different quantities, do not quote the margin as the threshold. Either way the margins are nowhere near close, so the omission does not change these verdicts |
+> | `534352` scroll | 1 | **Stays failed closed.** ~99.9% of its cost is the unmodelled term, so no honest number exists for it |
+> | `100` gnosis | 1 | Unpriceable today (near-zero base fee); priced from a pinned 2 gwei once #284 lands |
+> | the remaining 14 | 14 | No known omission — but that is **absence of a measurement, not a clearance** |
+>
+> **So the gate is authoritative for the 8 above and for the remaining 14 as far as anything has been
+> checked; it is NOT authoritative for scroll, and makes no finding on gnosis today.**
+>
+> **Today the blocker is TWO chains, not one.** With #284 unmerged, `deployer_balances.py` leaves both
+> gnosis and scroll unpriceable, so landing #287 or waiving scroll **cannot by itself clear this gate** —
+> gnosis would still hold it red. **Once #284 has landed** (gnosis priced from a pinned 2 gwei, plasma
+> likewise), scroll is the sole remaining blocker, and only then does it **keep printing
+> `not clear to deploy` on every run until #287 lands or scroll is explicitly waived.** Do not expect
+> #287 alone to make this preflight green while #284 is open, and do not read the residual gnosis
+> failure as a regression. That is the gate working, not a regression. **Do not "fix" it by raising a floor
+> or silencing the row** — a 1 gwei floor was already measured reporting `TOP UP` on **11 of 24**
+> amply-funded chains. **Once #284 has landed**, the two legitimate exits are landing #287, or recording
+> a waiver for scroll with a named person, a date and the basis. **Neither is sufficient today** — while
+> #284 is open, gnosis holds the gate red regardless of what happens to scroll.
+>
+> One caveat on wording, because the mechanism is threshold-driven rather than intentional: on `main`
+> today scroll is unpriceable only because `priceable = quoted >= GAS_PRICE_IMPLAUSIBLE_WEI`
+> (`deployer_balances.py:117`), so a higher quote would price it **while still omitting L1 DA**. It is
+> #284 that makes the refusal deliberate rather than incidental.
+
+**The script still exits non-zero and prints `not clear to deploy`, and the reason is the two
+unpriceable chains, not a shortfall.** Measured the same day:
+
+| chain | holds | `eth_gasPrice` quote | state |
+|---|---|---|---|
+| **100 gnosis** — a **CONFIGURED** chain (it carries `nav-config/` entries, so it is in the deploy's asset/adapter scope, not a shell) | 7.90011 xDAI | ~2.3k wei (0.0000023 gwei) | `UNPRICEABLE` |
+| 534352 scroll | 0.00648 ETH | 120108 wei (0.0001201 gwei) | `UNPRICEABLE` |
+
+Treat the gnosis quote as a **live, drifting value, not a constant**: two runs minutes apart on
+2026-08-10 read **2266 wei** and **2283 wei**. Quote it as an order of magnitude, and note it now sits
+*below* the "~5–10k wei" band recorded in the paragraph that follows. Plasma priced normally in this run
+(need 0.00022), which is what "intermittently" means — its absence from the unpriceable list on any one
+day is not a fix.
 
 **Some chains report `UNPRICEABLE`, which is a third state and not a pass.** Gnosis, scroll and
 intermittently plasma quote an `eth_gasPrice` far below any usable price (gnosis ~5–10k wei, scroll
@@ -1469,6 +1586,117 @@ expected NAVs from live addresses, and the redeploy replaces every one of them. 
 would pin the old stack and be invalidated by the deploy it was meant to guard — so the pre-deploy
 slot belongs to 0.9 (DeBank parity), which is only possible while the old stack exists, and the
 refresh belongs here, once the new addresses are recorded.
+
+**The allowlist defect this refresh used to carry is fixed — expect ACCOUNT_1's DeBank anchor to move.**
+From the 2026-06-17 config split (`5e25464d`) until `8fe1a949` (#286), three sites read
+`chains/<id>.json .balanceAdapters`, a key the split removed, so the wallet-aggregating contribution to
+the DeBank allowlist was **silently empty**. cUSD and stcUSD are deliberately not standalone priceable
+assets, so that branch was their only path in.
+
+Verified by direct read — `cast call balanceOf` for both tokens against **all 12 accounts** at **mainnet
+block 25732915** (2026-08-11 16:21:47 UTC): **ACCOUNT_1 holds ~4.990006 cUSD and ~4.772012 stcUSD**; the
+other 11 hold **zero of both**. So ~**$9.76** was missing from its anchor, against a recorded
+`debankUsd` of `175.305516` — about **5.6%** of that figure.
+
+**Material, but do not overstate it: it does not flip a parity verdict.** ACCOUNT_1's committed
+`navUsd8dp` is ~$218.96, so the drift is **~19.9% before the fix and ~15.5% after** when expressed
+against NAV (**~24.9% → ~18.3%** against the anchor — state the denominator, the two differ). The
+account sits far outside the 1% tolerance either way, and its own `$comment` already documents an
+expected ~12% drift. The correction moves the anchor toward NAV; it does not change a pass into a fail.
+
+**This script is a full re-baseline, so more than one account will move.** It bumps every chain's
+`forkBlock`, recomputes every `navUsd8dp`, and refetches DeBank for every enabled (chain × account).
+Only the change *attributable to the allowlist fix* is isolated to ACCOUNT_1 — every other moved field
+still needs reviewing on its own merits.
+
+**It also spends DeBank units, so treat the run as an explicit authorisation, not a routine step.** One
+`/v1/user/all_complex_protocol_list` per account (`:537`, covers every chain) plus one
+`/v1/user/token_list` per (chain × account) (`:633`), gated on `DEBANK_API_KEY`, with
+`/v1/account/units` queried first (`:127`).
+
+**A skipped DeBank step is NOT an acceptable completion of this re-baseline, and it fails quietly.** The
+cross-check is conditional: with `DEBANK_API_KEY` unset the script prints *"DEBANK_API_KEY not set —
+DeBank cross-check skipped"*, and if the units probe returns no balance it prints *"proceeding without
+DeBank cross-check"* — in both cases it continues and **leaves every existing `debankUsd` untouched**.
+**Do not use the exit code to tell whether this happened.** There is no dedicated failure for skipping
+DeBank, and the run can still exit non-zero for an unrelated reason: step 4 evaluates the *retained*
+anchors against tolerance and exits 2 on a violation — and ACCOUNT_1 already exceeds 1%, as recorded
+below. So a non-zero exit does not mean DeBank ran, and a zero exit does not mean it did. **The
+field-change check below is necessary but not sufficient; acceptance rests on the four conditions
+after it, never on the exit status** — the same doctrine this
+runbook already applies everywhere else ("gate every step on its post-condition, not on its exit code",
+and the `a step exits 0 having done nothing` row in the failure table). The whole point of this
+re-baseline is ACCOUNT_1's corrected anchor, so a run that skipped DeBank has not done it.
+**Prerequisites are therefore: authorisation for the unit spend AND a working key with units
+available.** Afterwards, confirm the DeBank requests for ACCOUNT_1 actually completed, and reconcile
+`expected."1".debankUsd` against ACCOUNT_1's **current** holdings.
+**An unchanged value does not prove the step was skipped.** The ~$9.76 figure is ACCOUNT_1's position at
+block **25732915**; this refresh reads *current* state, so the holding may have moved, or unrelated
+changes may offset it, before the runbook is executed. Treat an unchanged value as a prompt to check the
+requests — not as proof of a skip, and not as proof nothing needed correcting.
+
+**That single-field check is necessary but NOT sufficient, so do not treat it as authoritative on its
+own.** A non-empty units response counts as active even when it reads `0` (`:136-140`), and a failed
+request is substituted with `[]` and the anchor written anyway: a failed `all_complex_protocol_list`
+warns *"protocol totals will be 0"* (`:538-541`) and a failed `token_list` warns *"using protocol total
+only"* (`:634-636`). So a run can change ACCOUNT_1 correctly while **silently writing partial totals over
+other accounts' anchors**. Accept the re-baseline only when all **four** hold: **positive units**, **no
+`[warn] … request failed` lines in the output**, **every enabled anchor reviewed** (not just the one this
+fix targets), and **no failed or skipped chains**.
+
+That fourth condition is not covered by the other three. If step 2 fails for a chain,
+`finalize_step2_outcomes` rolls its `forkBlock` back, **narrows `chain_ids` to the survivors**
+(`refresh-integration-snapshot.sh:482-503`), and steps 3/4 then run normally over the rest — so DeBank
+can succeed everywhere it was asked and all three earlier checks pass while the skipped chain keeps
+**stale snapshots**. The script does say so: it prints `Incomplete run … NAV was not regenerated for
+chain(s): …` and exits 1 (`:684-689`), and exits 1 on `failed_chains` (`:762-764`).
+
+**So narrow the earlier exit-status warning to what it was about.** "The exit code proves nothing"
+applies to **detecting whether DeBank ran** — a skipped cross-check has no dedicated failure. It does
+**not** license ignoring a non-zero exit in general: `Incomplete run` / exit 1 is a real signal and must
+not be waved through.
+
+Before spending anything, re-verify the allowlist matches its exact expected pair. **Do not run
+`generate-comparison-report.py` as a program to do this** — it fetches live DeBank data whenever
+`DEBANK_API_KEY` is set (`generate-comparison-report.py:1525-1529`, `:1560-1564`), which would spend the
+units this check exists to protect, and it does not print the set anyway. The helper has no CLI. Load
+the module without executing it, with the key forced empty:
+
+```bash
+DEBANK_API_KEY= python3 -c "
+import importlib.util
+s = importlib.util.spec_from_file_location('g', 'script/test/generate-comparison-report.py')
+m = importlib.util.module_from_spec(s); s.loader.exec_module(m)
+print(sorted(m.adapter_aggregated_addrs('1')))"
+```
+
+`main()` is behind an `if __name__ == "__main__"` guard (`:1724`), so importing runs no network code.
+Expect both Cap token addresses:
+`['0x88887be419578051ff9f4eb6c858a951921d8888', '0xcccc62962d17b8914c62d74ffb843d73b2a3cccc']`.
+**Require exact equality with that pair, and stop on any other output.** An empty list means the
+allowlist is broken again; **one address means a PARTIAL regression** — if either constructor parameter
+is absent or misnamed the helper returns a single token, and an empty-only check would wave that
+through and let the costly refresh proceed with the other token still omitted. This is the check whose
+absence let the defect run for ~8 weeks, and it costs nothing **only when invoked this way**.
+
+⚠️ **This gate checks a DIFFERENT implementation from the one the refresh uses, so it is necessary but
+not sufficient.** `adapter_aggregated_addrs` is `generate-comparison-report.py`'s Python helper
+(`:222`); the costly refresh builds its own allowlist in **jq**
+(`refresh-integration-snapshot.sh:566-587`). Both read the same source of truth
+(`script/test/wallet-aggregating-adapters.json`), so the *data* cannot diverge — but the *logic* can:
+a regression confined to the jq expression would leave this pre-check printing the expected pair and
+the refresh still omitting a token. Until the refresh exposes a no-network "print allowlist" mode, or
+the two are centralised on one implementation, a passing pre-check means the Python path is intact,
+not that the refresh's path is.
+
+> **Methodology warning — the harness can answer confidently and emptily.** The first instrument used to
+> ask "does any account hold these tokens?" returned **"no chain-1 accounts, nothing to check"** and a
+> benign verdict, reporting `chain1=no` for all 14 entries including `ACCOUNT_9_MAINNET_DIVERSIFIED`.
+> Cause: a guessed schema key — the field is **`enabledChains`**, not `chains`. Nothing errored; the
+> wrong key returned an empty set, and an empty set reads exactly like "clean". The tell was that the
+> result was **too tidy given something already known**: ACCOUNT_1's own `$comment` advertises *"dust
+> positions across Morpho/Aave V3/**Cap**/Sky/Ethena"*. Treat an empty result here as unproven until
+> something independent corroborates it.
 
 PR #174 (the bot's snapshot refresh) was **closed, not merged**, so nothing has refreshed these since
 before the wave. That is outstanding independently of this deploy and should not be mistaken for

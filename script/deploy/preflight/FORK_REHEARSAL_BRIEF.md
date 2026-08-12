@@ -295,8 +295,14 @@ forge clean && forge build        # local clean build only (see §3)
 
 mkdir -p safe-transactions        # else RegisterAssets aborts AFTER broadcasting
 
-ANVIL_PORT=8600 script/deploy/preflight/rehearse_fork.sh 1   # mainnet fork; asserts the proxy moved
+ANVIL_PORT=8600 script/deploy/preflight/rehearse_fork.sh 1 25708060   # PIN THE BLOCK (2nd arg); asserts the proxy moved
 ```
+
+> **The second argument is the fork block, and omitting it is not neutral.** Unpinned, you fork `latest`:
+> forge and anvil resolve it at different moments against a load-balanced endpoint (the source of the
+> ~1.2 M-block gap), and the run re-fetches rather than reading the RPC cache — **209 s pinned versus a
+> 2,915 s hang**. Pick a recent finalized block; the value above is only the one the 2026-08-08 rehearsal
+> used.
 
 **Pick a port outside 8546–8550.** A five-chain local dev stack occupies that whole range on this box,
 including a **mainnet** fork on 8546 — the script's own default — so the collision is guaranteed, not

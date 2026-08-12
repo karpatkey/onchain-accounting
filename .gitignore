@@ -24,3 +24,9 @@ pr1_body.md
 
 # Agent/tooling session scaffolding (plans, specs, run ledgers) — local only, like .claude/
 .omo/
+
+# Coverage databases. Machine-specific SQLite state rewritten on every run, so a tracked copy
+# conflicts with itself forever and no reviewer will ever read it. Tracked once by a `git add -A`
+# after a coverage run; ignored here so the cause is fixed and not just the instance.
+.coverage
+.coverage.*

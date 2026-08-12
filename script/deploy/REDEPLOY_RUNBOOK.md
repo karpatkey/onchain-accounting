@@ -35,7 +35,10 @@ Four of its scripts write **git-tracked** files — and because that list has be
   `script/deploy/preflight/archive/<tag>/`, then clears the NAV keys in `script/config/deployments/`
   (and adds a blank `AssetKindRegistry` where a record lacks one); the bridge keys are deliberately
   kept (see 1.1). Dry-run by default. `--restore <tag>` reads that archive back — pass the same chain
-  ids you cleared, or the run reports every other declared chain as `MISSING` and exits 1.
+  ids you cleared, or the run reports every other declared chain as `MISSING` and exits 1. **Note the
+  dry-run default guards `--apply` only:** `--restore` is dispatched before it and writes
+  unconditionally, keeping no archive of what it overwrote — judge by the flag you passed, not by
+  the absence of `--apply`.
 - `snapshot_production.py` — an `--out` value with no `/` names a directory under
   `preflight/snapshots/`; one containing a `/` is taken as a path in its own right (`:346`). It
   **defaults to `--out pre`**, the committed capture, and the documented pre-deploy step passes
@@ -44,7 +47,11 @@ Four of its scripts write **git-tracked** files — and because that list has be
 - `rehearse_fork.sh` — mutates `script/config/` and `broadcast/` during a rehearsal, refuses to start
   if either is dirty (`:63` — those two paths only, not the whole tree), and on exit restores tracked
   files with `git checkout --` (`:386`) **and deletes untracked, non-ignored ones with
-  `git clean -fdq`** (`:393`) under those same two paths.
+  `git clean -fdq`** (`:393`) under those same two paths. Two of its outputs land outside that
+  cleanup and outside `git status`: `safe-transactions/` in the repo root, which is **gitignored**, so
+  it survives every rehearsal and does not show up even under `--untracked-files=all` (use
+  `--ignored`, or just look); and `steps.tsv`, `config-before`/`config-after` and `anvil.log` under
+  `$WORK`, which defaults to `/tmp/nav-rehearsal-<chainId>`.
 
 These tools take destinations from you — each `--json` report path, `snapshot_production.py`'s
 `--out`, `reset_deployment_records.py`'s `--tag`, `rehearse_fork.sh`'s `$REHEARSAL_DIR`. Do not
@@ -307,8 +314,9 @@ the ordering rule in its second row is still the rule, and because that rule was
 The "measured, not predicted" instruction in the first row still applies to every future pin question,
 and 0.3 is where it now lives.
 
-**Both pinned values will be regenerated, but for two independent reasons — do not attribute either to
-the other.**
+**Both pinned values WERE regenerated, for two independent reasons — do not attribute either to the
+other.** (Historical: this is the record of why each moved, not an outstanding instruction. The regen is
+done — see 0.3 — and the pin moved again afterwards in #278; nothing here asks for another.)
 
 - **`PriceFeedLib` moved because #187 edited `src/prices/PriceFeedLib.sol` directly.**
 - **`NAVRegistryLib` was already drifted on `main`** before #187 existed, independently of anything in
@@ -603,93 +611,208 @@ Re-measured **2026-07-29, after the linea top-up landed**: every priced chain is
 included (0.03066 ETH against an estimated 0.02800). Re-check on the day — linea had already been
 topped up once on 2026-07-27 without clearing, so measure rather than assume.
 
-**Re-measured 2026-08-10 against `main` @ `08cff61d`** (`python3 script/deploy/preflight/deployer_balances.py`):
-**24 chains scoped, 0 unreachable, 0 short, 2 unpriceable.** The top-up list came back
-`none — every priced chain is funded for the estimated gas`, and the run exited non-zero with
-`not clear to deploy`.
+That linea comparison is **stale on its second number only**: linea still holds 0.03066 ETH, but its
+estimate is now **0.00293**, not 0.02800 — the balance figure aged well, the estimate did not. Which is
+the general lesson for this section: re-measure both sides, not just the balance.
 
-What that output does and does not cover, stated without inferring a verdict:
+**Current state: `0 short, 2 unpriceable, 0 unreachable — not clear to deploy`.** **`0 short` means no
+PRICED chain is short — it is not a statement that nothing is under-funded.** Scroll **and hemi** are
+unpriced, so their funding is **UNKNOWN, not verified**, and this report is no evidence that they need
+none. Gnosis and plasma are priced from pinned constants and their rows are authoritative; **scroll and
+hemi are the two blockers** and both fail closed deliberately.
 
-- **Covers:** the 22 priced chains. None needs a top-up at the estimates in force that day.
-- **Does not cover:** gnosis and scroll. The script files them under
-  `NOT PRICED (these chains were not checked, and are not OK)` and sets `sufficient = None`, so it makes
-  **no finding either way** about their funding.
-- **Why, and under what condition:** `priceable = quoted >= GAS_PRICE_IMPLAUSIBLE_WEI`, where the
-  threshold is `1_000_000` wei / 0.001 gwei (`deployer_balances.py:51`, test at `:117`). Both chains
-  quoted far below it. **This is conditional, not permanent** — a later quote above the threshold clears
-  it, and plasma is the worked example: unpriceable in the 2026-07-29 reading, priced normally
-  (need 0.00022) on 2026-08-10.
-- **Therefore two distinct facts, which must not be collapsed.** (a) The **funding status** of gnosis and
-  scroll is **UNKNOWN, not failed** — the tool makes no finding either way. (b) The **gate** is
-  **UNRESOLVED**, and per this section's own rule ("Do not start until **all** of these hold", §0) an
-  unresolved blocking prerequisite **does block the deploy**. Unknown funding is not permission to
-  proceed. The tool cannot close it for them by construction. The paragraph below asserts their funding "has been confirmed sufficient
-  out of band" but records **no confirmer, no date and no sizing basis**, so it is not auditable and must
-  not be read as closing the gate. **To close 0.6: record who confirmed, when, and against what estimate
-  — or re-run once a quote clears the threshold and let the tool price them.**
+> **hemi (43111) joined scroll late, and it was a fail-open before that.** It charges an L1
+> data-availability fee measured at **5.485e-5 ETH against a whole `need` of 2.801e-5 ETH — 1.96x the
+> entire estimate** (2026-08-12, OP GasPriceOracle at `0x420…0F`), and it sat in **neither** L1
+> collection, so it received no regime probe, no headroom floor, and printed a clean `OK` at roughly a
+> third of its real cost. It had a `WORKAROUNDS` entry for its fee floor the whole time, which is exactly
+> what made it look handled. The gate now also **probes every unclassified chain's oracle at runtime** and
+> fails the row closed on a non-zero reading, so the next missed chain names itself instead of waiting for
+> a reviewer. The three chains that used to sit in
+`UNPRICEABLE` because their *quote* was unusable turned out to be three different mechanisms, each
+measured in `deployer_balances.py`:
 
-Note the
-2026-07-29 linea comparison above is now stale on its second number only: linea still holds 0.03066 ETH,
-but the estimate for it is now **0.00293**, not 0.02800 — the balance figure aged well, the estimate did not.
+| chain | what the quote actually is | handling | trust the row? |
+| --- | --- | --- | --- |
+| **100 gnosis** — a **CONFIGURED** chain (it carries `nav-config/` entries) | an honest but near-zero **base** fee (43–64 wei measured, blocks 6.7–98.1% full). Inclusion is **tip**-driven: the median landed tx paid `1,000,000,048` wei — base fee plus a 1 gwei client-default tip, 20-block tip p90 of 9.8 gwei | priced from a pinned **2 gwei** (`GAS_PRICE_OVERRIDE_WEI`) | **yes** |
+| **9745 plasma** | the **inverse** — the node pads the quote with a suggested tip nobody pays: `8,000,318` wei quoted against a **9 wei** median landed price, over an 8 wei constant base fee | priced from a pinned `0.01` gwei, above **both** observed values — so the verdict does not flip on *which* of the two the node happens to return | **yes** |
+| **534352 scroll** | **correct, and exactly what txs pay.** A hard floor: exactly `120,008` wei at −0/−5k/−50k/−200k/−1,000,000 blocks, tips a flat 100 wei | its quote is usable, but ~99.9% of its cost is an unmodelled L1 fee, so it **fails closed** | **no** |
+| **43111 hemi** | a fee-floor quote of `1,000,252` wei — usable, and it cleared the old `1_000_000` implausibility floor too | **the quote is not the problem: the omitted L1 fee is `5.485e-5` ETH against a whole `need` of `2.801e-5` ETH, i.e. 1.96x the entire estimate** (measured 2026-08-12 via the OP GasPriceOracle at `0x420…0F`). Scroll's category, not the eight OP chains'. **Fails closed** | **no** |
+
+**Treat the gnosis quote as a live, drifting value, not a constant.** Readings across days: `2266`,
+`2283`, then `53`–`60` wei, later `3209`. That drift is the evidence it tracks a real near-zero base fee
+rather than being a stuck bad value — and it is why plasma's old "intermittently unpriceable" behaviour
+was never a fix when it happened to price on a given day. Both are now pinned, so neither depends on the
+day.
 
 > ### ⚠️ SCOPE OF THIS GATE, AND WHY IT STAYS RED
 >
 > `deployer_balances.py` prices as `(gasUnits × gasPrice) × headroom` and models **no L1
 > data-availability fee** (open issue **#287**). That term is not a rounding error — on scroll it
-> measured **~99.9% of total cost**. Nine of 24 chains are affected, and the question is now **settled
-> by measurement rather than left as reasoning**:
+> measured **~99.9% of total cost**. **Ten** of 24 chains are affected (the eight below, plus scroll and
+> hemi), and the question is **settled by
+> measurement rather than left as reasoning**:
 >
 > | chains | n | status |
 > | --- | --- | --- |
 > | `10, 130, 204, 480, 5000, 8453, 42220, 57073` | 8 | **Pass, with a documented omission.** Measured margins (balance ÷ current need) are **10× to 996×**. A row flips once the added fee exceeds `balance − need`, so the **flip thresholds are ~9× to ~995× the current need** — the two are different quantities, do not quote the margin as the threshold. Either way the margins are nowhere near close, so the omission does not change these verdicts |
 > | `534352` scroll | 1 | **Stays failed closed.** ~99.9% of its cost is the unmodelled term, so no honest number exists for it |
-> | `100` gnosis | 1 | Unpriceable today (near-zero base fee); priced from a pinned 2 gwei once #284 lands |
-> | the remaining 14 | 14 | No known omission — but that is **absence of a measurement, not a clearance** |
+> | `43111` hemi | 1 | **Now failed closed.** The unmodelled term measured **1.96× its entire `need`** (5.485e-5 ETH vs 2.801e-5 ETH, 2026-08-12) — scroll's category, not the eight's. It was in neither collection and printed a clean `OK` |
+> | the remaining 14 | 14 | No known omission — but that is **absence of a measurement, not a clearance**, and hemi is what that distinction costs when it is ignored |
 >
 > **So the gate is authoritative for the 8 above and for the remaining 14 as far as anything has been
-> checked; it is NOT authoritative for scroll, and makes no finding on gnosis today.**
+> checked — gnosis and plasma are among those 14, both priced from pinned constants — and it is NOT
+> authoritative for scroll or hemi.** The four groups partition the 24: **8 + 1 scroll + 1 hemi + 14 = 24.**
 >
-> **Today the blocker is TWO chains, not one.** With #284 unmerged, `deployer_balances.py` leaves both
-> gnosis and scroll unpriceable, so landing #287 or waiving scroll **cannot by itself clear this gate** —
-> gnosis would still hold it red. **Once #284 has landed** (gnosis priced from a pinned 2 gwei, plasma
-> likewise), scroll is the sole remaining blocker, and only then does it **keep printing
-> `not clear to deploy` on every run until #287 lands or scroll is explicitly waived.** Do not expect
-> #287 alone to make this preflight green while #284 is open, and do not read the residual gnosis
-> failure as a regression. That is the gate working, not a regression. **Do not "fix" it by raising a floor
-> or silencing the row** — a 1 gwei floor was already measured reporting `TOP UP` on **11 of 24**
-> amply-funded chains. **Once #284 has landed**, the two legitimate exits are landing #287, or recording
-> a waiver for scroll with a named person, a date and the basis. **Neither is sufficient today** — while
-> #284 is open, gnosis holds the gate red regardless of what happens to scroll.
+> **"No known omission" is now partly enforced rather than merely asserted.** Every chain in neither L1
+> collection has its OP GasPriceOracle probed at runtime, and a non-zero reading fails the row closed
+> naming itself. That closes the hemi shape specifically. It does **not** cover a DA surcharge levied
+> without that predeploy, and **eight** of the 14 (`56` bsc, `137` polygon, `146` sonic, `999`
+> hyperevm, `9745` plasma, `43114` avalanche, `59144` linea, `80094` berachain) were unreachable from the
+> environment this was measured in, so they are **unverified, not cleared**. arbitrum (`42161`) was
+> checked and has no such predeploy: Nitro charges its L1 component by inflating gas units, which
+> `gas × price` already captures.
 >
-> One caveat on wording, because the mechanism is threshold-driven rather than intentional: on `main`
-> today scroll is unpriceable only because `priceable = quoted >= GAS_PRICE_IMPLAUSIBLE_WEI`
-> (`deployer_balances.py:117`), so a higher quote would price it **while still omitting L1 DA**. It is
-> #284 that makes the refusal deliberate rather than incidental.
+> **Scroll and hemi are the blockers.** They will keep printing `not clear to deploy` on every full-scope
+> run until **#287 lands**. That is the gate working, not a regression. **Do not "fix" it by raising a floor or
+> silencing the row** — a 1 gwei floor was already measured reporting `TOP UP` on **11 of 24** amply-funded
+> chains.
+>
+> **A waiver does not turn the gate green, and there is no flag, env var or input that does.** This
+> paragraph used to say the row persists "until #287 lands or scroll is explicitly waived", which reads as
+> though a waiver is a second way to clear the check. It is not: a waiver is a human decision to **proceed
+> despite a red exit**, recorded outside this script with a named person, a date and the sizing basis. The
+> run still exits non-zero and the row still reads `UNPRICEABLE`, which is the intended outcome — the
+> record of the override lives with the person who made it, not in the tool's exit code.
+>
+> **The one thing that does make it exit `0` is SCOPE.** The script takes positional chain ids, so
+> `deployer_balances.py 1 100` omits scroll and exits successfully. It prints a
+> `SUBSET: N declared chain(s) not covered` line, so the narrowing is visible — but **a green exit is only
+> ever authoritative for the scope shown on the first line.** A subset run is a debugging aid, not a gate.
 
-**The script still exits non-zero and prints `not clear to deploy`, and the reason is the two
-unpriceable chains, not a shortfall.** Measured the same day:
+#### The eight OP-stack chains: a decision that was taken, not a default
 
-| chain | holds | `eth_gasPrice` quote | state |
-|---|---|---|---|
-| **100 gnosis** — a **CONFIGURED** chain (it carries `nav-config/` entries, so it is in the deploy's asset/adapter scope, not a shell) | 7.90011 xDAI | ~2.3k wei (0.0000023 gwei) | `UNPRICEABLE` |
-| 534352 scroll | 0.00648 ETH | 120108 wei (0.0001201 gwei) | `UNPRICEABLE` |
+**Ruling: pass the eight as implemented.** `L1_FEE_UNMODELLED` holds **scroll and hemi** (it was
+scroll-only when this ruling was written; hemi was added after measurement put it in scroll's category,
+which does not disturb the ruling about the eight). The alternative —
+failing all ten closed — was proposed repeatedly in review and is defensible on principle: those chains
+do charge a fee this estimator omits, and a large balance does not make a verdict authoritative. It was
+rejected for two reasons: the omitted term is **~2.7e-5 native** against those margins and **no chain's
+verdict flips** when it is added; and an over-strict gate gets bypassed, for which the 11-of-24
+false-alarm measurement above is the precedent. That figure read `~1e-7` until 2026-08-12, when the probe
+payload was found to be compressible; **it is INFERENCE, not measurement** — the pre-correction number
+scaled by the measured 59.1957× ratio, not re-measured per transaction, so treat it as an order of
+magnitude. The ruling is unaffected: flipping any of the eight needs the term to exceed the whole
+`need` by between one and three ORDERS OF MAGNITUDE depending on the row — stated that way
+deliberately, because the table above forbids quoting the measured **10× to 996×** margin as the flip
+threshold, and the module declines to quote those figures for the same reason. The correction consumed
+1.8 of the 3 orders that argument tolerates. **Scroll is treated differently because there the
+omitted term is ~99.9% of the cost** — applying the same treatment to the eight would be theatre.
 
-Treat the gnosis quote as a **live, drifting value, not a constant**: two runs minutes apart on
-2026-08-10 read **2266 wei** and **2283 wei**. Quote it as an order of magnitude, and note it now sits
-*below* the "~5–10k wei" band recorded in the paragraph that follows. Plasma priced normally in this run
-(need 0.00022), which is what "intermittently" means — its absence from the unpriceable list on any one
-day is not a fix.
+Full pricing for all **ten** remains **issue #287**, which carries everything already measured. **#287's
+own scope still says nine and should be widened** — it predates hemi's reclassification.
 
-**Some chains report `UNPRICEABLE`, which is a third state and not a pass.** Gnosis, scroll and
-intermittently plasma quote an `eth_gasPrice` far below any usable price (gnosis ~5–10k wei, scroll
-~120k), so `need` computes to roughly zero and `balance >= need` is true for *any* balance. The test
-is a tautology and its `True` means nothing, so the script reports `sufficient = None`, lists those
-chains under `NOT PRICED`, and exits non-zero. The estimate is deliberately **not** inflated to
-compensate: a floor generous enough to cover gnosis over-states the cheap rollups by three to four
-orders of magnitude, and a 1 gwei floor was measured reporting `TOP UP` on 11 of 24 amply-funded
-chains. Funding on those chains has been confirmed sufficient out of band; the state exists so nobody
-later reads a green row as evidence the chain was checked. Hemi's fee floor (1.10) is the same species
-with a known workaround.
+#### Both expiry axes are enforced — but neither models the omitted fee
+
+The measured margins are a snapshot, so two structural guards keep them honest. Values below are marked
+*at time of writing*; **the constants in `script/deploy/preflight/deployer_balances.py` are
+authoritative**, and if they disagree with this paragraph the code is right.
+
+* **Balance side** — `L1_OMITTED_MIN_HEADROOM_WEI`, applied to `L1_FEE_OMITTED_PRICED`. If a chain's
+  headroom (`balance − need`) falls below that floor (**1e-3 native**), the row goes `UNPRICEABLE` and
+  drives the non-zero exit. **Verified on all eight** by forcing each balance under its `need`: every one
+  reported `UNPRICEABLE`, none reached a `TOP UP` verdict. **Why an absolute floor and not a ratio:**
+  celo sits at 9.95× margin with ~50 CELO of headroom against a measured addition of ~0, so a "10× need"
+  rule would have failed it spuriously. `1e-3` native is **~38×** the largest addition (mantle, ~2.7e-5).
+  That factor read ~2,200× until 2026-08-12, when the probe payload was found to be compressible and the
+  term was corrected upward ~59× (see **Why two probe sizes** below). The floor VALUE still covers the
+  term; only its margin shrank.
+* **Fee side** — a **two-point regime probe**: the oracle's own `getL1Fee` on **64,887 bytes**
+  (`L1_REGIME_PROBE_BYTES_BIG`, the region the real payload occupies) **and** on **4,096 bytes**
+  (`L1_REGIME_PROBE_BYTES_SMALL`, the second point on the curve), each against a per-chain baseline
+  (`L1_REGIME_BASELINE_WEI`, `L1_REGIME_BASELINE_SMALL_WEI`). Either exceeding `L1_REGIME_MAX_RISE`
+  (**100×**) sends the row to `UNPRICEABLE`, naming which **probe** tripped (`big-payload` /
+  `small-payload`) — not what caused it, which one reading cannot establish. A read failure also fails
+  closed.
+  **Both probes pin to one block**, because `l1BaseFee` was observed moving `298,580,940 → 320,948,895`
+  wei inside a 20-second window.
+
+**Why two probe sizes, and why the probe payload is incompressible.** A single 4,096-byte probe was
+measured to have **zero sensitivity to payload size**: on base, `getL1Fee(0)` and `getL1Fee(4096)`
+returned an identical `971,132,088` wei. **The original explanation for that was wrong** — this section
+used to say 4 KB "sits entirely below the size-dependent region". The real cause was the probe payload:
+it was `"ff" * n`, and post-Fjord `getL1Fee` prices the **FastLZ-compressed** size, so a single repeated
+byte compresses to almost nothing and both readings landed in the flat region. `isFjord()` is 1 on seven
+of the eight chains (mantle reverts every mode getter yet behaves identically).
+
+Measured 2026-08-12, one pinned block per chain, ratios **identical to four significant figures on every
+charging chain**:
+
+| payload at 64,887 bytes | ratio to `"ff"` |
+| --- | --- |
+| all-zero | 1.0000 |
+| incompressible (iterated sha256) | **86.9003** |
+| real creation bytecode | **59.1957** |
+
+So the old probe understated real deploy calldata ~59×, and the chain-independence says the fee is linear
+in compressed size with a per-chain scalar. The probe now sends a deterministic incompressible keystream
+(`_probe_payload`), and **all 16 baselines were re-measured with those exact bytes** — a baseline is only
+meaningful against the payload it was measured with. Real bytecode was rejected as the probe payload
+despite being more representative: it changes whenever a contract changes, which would silently invalidate
+every baseline. Representativeness is #287's (real per-transaction `input` bytes from the rehearsal).
+
+**A shortfall figure for an affected chain is a LOWER BOUND.** `need` omits the L1 fee, so a printed
+top-up amount for one of those chains would tell the operator to send too little. The row carries
+`shortfallExcludesL1` and the instruction says `LOWER BOUND … SEND MORE`. The headroom guard makes this
+unreachable for the eight today, but **unreachable is not correct** — it holds only while that guard
+exists and only for chains in one of the two sets.
+
+**Residuals this does not remove.** A fee-mode change that leaves both probe readings under the limit
+while altering the curve shape would not trip; the measured big/small ratio (**15.7787×** on every charging
+chain, 0 on celo which charges nothing) is the signal, deliberately not enforced with an invented
+tolerance. That ratio was recorded as 6.44× before 2026-08-12; 6.44× is what the compressible `"ff"`
+payload yields and is how the artefact was identified, so a reading near it is now itself suspicious. And `L1_FEE_OMITTED_PRICED` membership is by **rollup family, not per-chain measurement** —
+mantle reverts on all three OP fee-mode getters while `getL1Fee` works, so it is not a standard OP-stack
+oracle.
+
+> 🛑 **SCROLL IS DELIBERATELY UNPRICED, and its figure was wrong three times before it was refused.**
+>
+> | attempted model | error | verdict it produced |
+> | --- | --- | --- |
+> | the oracle's **retired** `overhead`/`scalar` pair (`isCurie()` is `1`) | understated ~27× | false `OK` |
+> | `getL1Fee` over the **aggregate** byte count | overstates 2.29× | false `TOP UP` |
+> | `getL1Fee` summed over a split proportional to deployed runtime sizes | fourth payload undercounted — `02_2` broadcasts `new AtomicNAVProxyDeployer(...)` (`02_2_DeployNAVProxy.s.sol:114`), so DA is charged on that outer creation input, not the 89-byte proxy | `OK` narrowly — withdrawn |
+>
+> The shell total is **64,887 bytes, artifact-derived**: that settles the *sum* but not the
+> *per-transaction split*, and the split matters because the fee is super-linear. **What unblocks it is a
+> real broadcast record** — run the fork rehearsal and read per-transaction `input` byte counts from
+> `broadcast/*/run-latest.json`. **Pin the fork block** (second positional argument to
+> `rehearse_fork.sh`); omitting it forks `latest` and reproduces a 2,915 s hang.
+>
+> **Funding scroll generously is the other route**, and the only one that does not wait on a measurement.
+
+> ⚠️ **`--with-gas-price` ALONE DOES NOT FIX GNOSIS, and the failure is silent.** Per `forge script
+> --help`, `--with-gas-price` is *"Gas price for legacy transactions, or **max fee per gas** for EIP1559
+> transactions"* — it does **not** set `maxPriorityFeePerGas`. Gnosis inclusion is **tip**-driven and the
+> node suggests only **~31 wei**, so a broadcast carrying only `--with-gas-price` keeps that unusably
+> small tip and can sit unmined **while appearing to have applied the 2 gwei workaround**. Pass both:
+> `--with-gas-price 2000000000 --priority-gas-price 2000000000`. `--legacy` also works.
+
+> ⚠️ **`deployer_balances.py` HAS AUTOMATED COVERAGE OF ITS VERDICT LOGIC, AND NONE OF ITS NUMBERS.**
+> `preflight/test_deployer_balances.py` is a verdict truth table run by the `Preflight gate tests` CI job
+> under both `python3` and `python3 -O`; it derives its expectations from the invariants in this section
+> rather than from the module, and it is mutation-tested. It replaces the earlier warning that there was no
+> test at all.
+>
+> **What it does NOT cover, which is the part that has actually gone wrong:** every live value is faked.
+> RPC readings, oracle prices and the **16 measured baselines** are constants in the test, so the suite
+> cannot detect a stale baseline, a chain that changed its fee mode, or a payload that measures the wrong
+> thing — the last of which is exactly the defect that forced all 16 baselines to be re-measured. Those
+> claims still rest on **manual measurement**, and a regression in them is caught by a human reading the
+> output or not at all. **`forge test` and the library-pin job DO run on a change to this file** —
+`.github/workflows/foundry.yml` puts no `paths:` filter on its `pull_request` trigger, so Build,
+unit tests, fork tests and Library pins all run on a preflight-only PR, as this PR's own runs show.
+An earlier version of this line claimed the opposite.
 
 ### 0.7 Capture the pre-deploy production state — **irreplaceable, do it before anything else**
 
@@ -1365,6 +1488,19 @@ cast call $PROXY 'hasRole(bytes32,address)(bool)' $MANAGER $COUNCIL --rpc-url $R
   The chain's reported block gas limit still shows 3M — that is expected.
 - **hemi (43111):** the chain enforces a fee floor; a tx priced off a naive `eth_gasPrice` is
   rejected. Raise `--with-gas-price`.
+- **gnosis (100) — PASS BOTH FLAGS, and the failure mode is a silent stall.** Its base fee is
+  near-zero (43–64 wei measured) but inclusion is **tip**-driven: the median landed tx pays base fee
+  plus a **1 gwei** tip, and the node suggests only **~31 wei**. Broadcast with **both**:
+
+  ```bash
+  forge script … --chain-id 100 --with-gas-price 2000000000 --priority-gas-price 2000000000
+  ```
+
+  **`--with-gas-price` on its own is not enough.** Per `forge script --help` it sets *"max fee per gas
+  for EIP1559 transactions"* — it does **not** set `maxPriorityFeePerGas`, so a broadcast carrying only
+  that flag keeps the ~31 wei tip and can sit unmined **while looking like the workaround was applied.**
+  `--legacy` also works, since a legacy transaction has a single gas price and no separate tip.
+  Full reasoning in 0.6.
 
 ---
 

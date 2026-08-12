@@ -54,10 +54,14 @@
     "ETHxCrossRate": "0xE9b348d0c0Aa97da22FB1D2e171cEC0415cc2742",
     "osETHCrossRate": "0xfD6CeB9E6eE4D8Ff9Da2f21617A496595B50C3F2",
     "rETHCrossRate": "0x09cd6a20ddD9DB835ceb60154c1B9a41Af79f8C8",
-    "OETH": "0xE59C72C9DdAA728010F92e8Df8d2c6ac0DfF57Bc",
     "ankrETH": "0x237657576a422a1ab3f4A82834574b5ed2ea8687",
     "NXM": "0xF0D44e332395762f5A93271DcA0De587B10703CC",
     "wNXM": "0x11382AbB9FF238a4f4E7fAc9CCe084F038aab78f"
+  },
+  "retiredCustomPriceFeeds": {
+    "$comment": "Deployed feed contracts no longer configured as NAV price sources. A SIBLING of customPriceFeeds, not a member of it, and that is the whole point: reset_deployment_records.CLEAR_SECTIONS is [\"balanceAdapters\", \"customPriceFeeds\"] and its loop blanks EVERY non-empty value in a listed section, so a retirement note stored inside customPriceFeeds is destroyed by the very step-1.1 reset that makes the record worth annotating. Measured, not assumed: both the address and the note come back as \"\". This section is in neither CLEAR_TOP nor CLEAR_SECTIONS, so plan_for never touches it.",
+    "OETH": "0xE59C72C9DdAA728010F92e8Df8d2c6ac0DfF57Bc",
+    "$OETH": "RETIRED 2026-08-12. The contract IS still deployed at the address above and this record is kept deliberately: deployments/<id>.json is the ONLY place addresses live, so deleting it would leave the repo unable to recognise its own address in a trace or an old NAV read. What was removed is INTENT, not reality: OETH is gone from nav-config/assets-and-price-feeds/1.json and from contracts-deployment-config/custom-price-feeds/1.json, because Chainlink is sunsetting the OETH/ETH rate feed 0x703118C4CbccCBF2AB31913e0f8075fbbb15f563 that this CrossRate feed consumes. We hold no OETH, so this is a planned retirement and NOT an incident. IT IS STILL REGISTERED ON THE LIVE NAV — measured 2026-08-12, getRegisteredAssets() on 0x80eD5cc6cEbAe4fEE1eD8687279aa492A50afa8d returns 43 assets including OETH 0x856c4Efb76C1D1AE02e20CEB03A2A6a08b0b8dC3 — so this change is config intent, not an on-chain deregistration. NOTE FOR THE REDEPLOY: 03 is config-gated and will not redeploy this feed. Moving it out of customPriceFeeds also moves it out of verify_step's step-1.5 NAV-pointer check and out of bytecode_audit's customPriceFeeds.* scan, so the STALE_NAV report the earlier note predicted no longer fires — deliberate, because a permanently-red gate on a deliberately-retired feed is the kind of noise operators learn to step around. The previous-generation-feed guard is NOT weakened: verify_step.previous_generation_feeds unions the archive with snapshots/pre/<chainId>.json, and this feed is present there as a Custom feed, so it is still recognised as old-generation."
   },
   "NexusMutualStakingPoolsAssistant": "0x8a887C7Fa17dbba626497024833778354785c580",
   "EtherFiWithdrawalQueueAssistant": "0xd45cB5B6791156f657D682b3c70689980f4fe8D5",

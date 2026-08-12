@@ -634,7 +634,18 @@ CANONICAL_KEYS = {
     "StakeWiseV3ExitQueueAssistant": "StakeWiseV3ExitQueueAssistant",
 }
 
-NESTED_KEYS = ("balanceAdapters", "customPriceFeeds", "bridgeAdapters")
+# `retiredCustomPriceFeeds` is here for COMPLETENESS, and leaving it out was the trap. A section that
+# is not listed falls through to the `is_address(v)` branch below, where `v` is a dict and the check is
+# False — so the whole section is skipped SILENTLY, and `enumerate_deployed`'s own promise ("walks the
+# whole record ... nothing was missed") quietly stops holding for every address in it. Measured: 58
+# entries without it, 59 with, the difference being the retired OETH feed.
+#
+# Listing it does NOT reintroduce the `STALE_NAV` noise the retired section exists to remove:
+# `bytecode_audit` selects NAV()-pointer targets with `key.startswith("customPriceFeeds.")`, which is
+# anchored and does not match `retiredCustomPriceFeeds.OETH`. So the address is bytecode-audited like
+# every other deployed contract, while being exempt from the pointer check that a deliberately
+# un-redeployed feed can never pass. Both properties were verified by running the enumeration.
+NESTED_KEYS = ("balanceAdapters", "customPriceFeeds", "retiredCustomPriceFeeds", "bridgeAdapters")
 
 
 def is_address(v) -> bool:

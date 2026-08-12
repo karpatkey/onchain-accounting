@@ -81,23 +81,26 @@ wanted: `verify_step.py` requires it as the step 1.1 post-condition (`:252`).
 Configured totals, reconciled from config **and** confirmed against the live NAV on 2026-07-27;
 feed count re-measured 2026-07-30 against the merged tree; meta instances amended 2026-08-12 (issue
 #296, see "Meta instances" below — that one figure post-dates the 2026-07-27 confirmation):
-**33 meta adapters, 111 meta instances, 12 plain adapters, 41 custom price feeds, 93 assets.**
+**33 meta adapters, 111 meta instances, 12 plain adapters, 40 custom price feeds, 92 assets.**
 <!-- meta instances 110 -> 111 on 2026-08-12: one MorphoVaultsMeta instance added on chain 1 (issue #296). See the amendment under "Meta instances" below. -->
+<!-- feeds 41 -> 40 and assets 93 -> 92 on 2026-08-12: OETH removed from mainnet, Chainlink sunsetting its OETH/ETH rate feed 0x703118C4CbccCBF2AB31913e0f8075fbbb15f563. -->
 
 The feed count is no longer pending anything — see the note under 1.5 for the two PRs that moved it.
 
 **Re-measured 2026-08-08 at `a3974686` with `preflight_config.py`: all five totals and every per-chain
-row below were unchanged AS OF THAT COMMIT.** (Superseded for ONE figure only: meta instances moved
-110 -> 111 and mainnet 66 -> 67 on 2026-08-12 for issue #296. The other four totals still hold. This
-attestation is left dated rather than restated — it was true of `a3974686` and is not a claim about
-today's tree.) `script/config/` did change in the interval (labels were retired in #275 and
+row below were unchanged AS OF THAT COMMIT.** (Superseded for THREE figures only, both amendments
+dated 2026-08-12: meta instances moved 110 -> 111 and mainnet 66 -> 67 for issue #296; and OETH's
+retirement moved custom price feeds 41 -> 40 and assets 93 -> 92 fleet-wide, and mainnet 26 -> 25
+feeds and 43 -> 42 assets. The other two totals still hold. This attestation is left dated rather than
+restated — it was true of `a3974686` and is not a claim about today's tree.) `script/config/` did
+change in the interval (labels were retired in #275 and
 realigned to `ProtocolNames.sol`), so this was measured rather than assumed — but nothing moved a count.
 `0 error(s)` across all 24 chains; the warnings it prints are declared-heartbeat margin findings, which
 are a separate axis and not a count.
 
 | chain | meta adapters | meta instances | plain | feeds | assets |
 | --- | --- | --- | --- | --- | --- |
-| 1 mainnet | 15 | 67 | 11 | 26 | 43 |
+| 1 mainnet | 15 | 67 | 11 | 25 | 42 |
 | 42161 arbitrum | 7 | 16 | 0 | 8 | 11 |
 | 8453 base | 6 | 16 | 0 | 4 | 11 |
 | 10 optimism | 2 | 4 | 0 | 0 | 6 |
@@ -965,7 +968,7 @@ threshold with no recorded baseline cannot detect drift.
 1.2  01_2_DeployNAVImplementation     libraries + NAV impl        PERSIST_DEPLOYMENTS=1
 1.3  02_2_DeployNAVProxy              new proxy + ERC20Default    PERSIST_DEPLOYMENTS=1
 1.4  08_DeployAssetKindRegistry       registry + MANAGER grant    <- MOVED, must precede 1.6
-1.5  03_DeployPriceFeeds              41 custom feeds             <- BEFORE RegisterAssets
+1.5  03_DeployPriceFeeds              40 custom feeds             <- BEFORE RegisterAssets
 1.6  RegisterAssets                   assets + feeds + kinds + LABELS, via the registry
 1.7  04_DeployBalanceAdapters         adapters + assistants       PERSIST_DEPLOYMENTS=1  <- assistants
 1.8  06_Configure                     register + reconcile
@@ -993,8 +996,11 @@ This **differs from the original plan**, which had `RegisterAssets` before `03`.
 `RegisterAssets` resolves each `Custom` feed from `deployments/<id>.json .customPriceFeeds.<name>`
 (`RegisterAssets.s.sol:19` states the dependency outright), so run first it logs
 `[skip] primary feed unresolved (deploy it first)` and moves on. Measured on a mainnet fork in the
-plan's order: **20 of 43 assets skipped** — wstETH, eETH, weETH, rETH, ezETH, rsETH, ETHx, osETH,
-stETH, lsETH, sUSDe, sUSDS, syrupUSDC, RWIV, sGHO, LDO, OETH, ankrETH, NXM, wNXM. `RegisterAssets` is
+plan's order: **19 of 42 assets skipped** — wstETH, eETH, weETH, rETH, ezETH, rsETH, ETHx, osETH,
+stETH, lsETH, sUSDe, sUSDS, syrupUSDC, RWIV, sGHO, LDO, ankrETH, NXM, wNXM. (The dated fork
+measurement was **20 of 43**, the twentieth being OETH; both figures drop by one with its retirement,
+and the list below the headline is the authoritative one — it now enumerates exactly 19.)
+`RegisterAssets` is
 idempotent so a later re-run tops them up, but the first pass leaves nearly half of mainnet
 unregistered while reporting nothing worse than a skip line.
 
@@ -1311,7 +1317,7 @@ not an observation that happened to hold on one fixture.
 > stipend-burning registry. There is **no normal-operation measurement** of it. Do not infer one from the
 > hostile figure, and do not present that ceiling as a typical cost.
 
-### 1.5 `03_DeployPriceFeeds` — 41 custom feeds
+### 1.5 `03_DeployPriceFeeds` — 40 custom feeds
 
 ```bash
 forge script script/deploy/03_DeployPriceFeeds.s.sol $BROADCAST
@@ -1362,7 +1368,7 @@ mkdir -p safe-transactions        # REQUIRED — see below
 FOUNDRY_PROFILE=slow forge script script/manage/RegisterAssets.s.sol $BROADCAST
 ```
 
-`FOUNDRY_PROFILE=slow` (16 GiB) is required on mainnet — 43 assets otherwise `MemoryOOG`.
+`FOUNDRY_PROFILE=slow` (16 GiB) is required on mainnet — 42 assets otherwise `MemoryOOG`.
 
 `safe-transactions/` must exist: the script ends by writing a Safe-TX batch there, and if the
 directory is missing it aborts with
@@ -1372,7 +1378,7 @@ idempotent, but the run reports failure. The directory is not in the repo, so cr
 checkout.
 
 - **Precondition:** **1.5 done** (`03_DeployPriceFeeds`; 1.4 is `08`, which writes no feed addresses) — Custom feeds resolve through
-  `deployments/<id>.json .customPriceFeeds.<name>`, and without them 20 of mainnet's 43 assets are
+  `deployments/<id>.json .customPriceFeeds.<name>`, and without them 19 of mainnet's 42 assets are
   silently skipped (see the authoritative order at the top of section 1).
 - **Post-condition:** `python3 script/deploy/preflight/verify_step.py 1.6` — `getAssetCount()` equals
   the configured count (43 / 11 / 11 / 6 / 11 / 5 / 6 for chains 1 / 42161 / 8453 / 10 / 100 / 137 /

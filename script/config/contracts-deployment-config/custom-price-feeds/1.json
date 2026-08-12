@@ -132,7 +132,7 @@
   },
   "RWIV": {
     "enabled": true,
-    "$comment": "Nexus Mutual RWI Vault (RWIV) — ERC-4626 share, USDC underlying. Priced USDC/USD x convertToAssets(10^decimals)/10^decimals (same pattern as syrupUSDC). Makes RWIV a registered priced asset so the UniV3 USDC/RWIV pool LP (held by the Nexus Safe) can be valued by UniswapV3PoolsMeta (pool 0x764D50759FF278b7CfB2E0e8464B742E9aB40C97 must be in that adapter's instance list).",
+    "$comment": "Nexus Mutual RWI Vault (RWIV) \u2014 ERC-4626 share, USDC underlying. Priced USDC/USD x convertToAssets(10^decimals)/10^decimals (same pattern as syrupUSDC). Makes RWIV a registered priced asset so the UniV3 USDC/RWIV pool LP (held by the Nexus Safe) can be valued by UniswapV3PoolsMeta (pool 0x764D50759FF278b7CfB2E0e8464B742E9aB40C97 must be in that adapter's instance list).",
     "constructor": {
       "rwiv": "0xCafEaa466736ac01e0AC9CA72644BeF348694731",
       "baseAsset": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"
@@ -140,27 +140,10 @@
   },
   "sGHO": {
     "enabled": true,
-    "$comment": "Aave sGHO savings vault — ERC-4626 share, GHO underlying. Priced GHO/USD (Chainlink) x convertToAssets(10^decimals)/10^decimals (same pattern as RWIV/syrupUSDC). Makes sGHO a registered priced asset, so registerAsset auto-adds it to ERC20DefaultBalanceAdapter and the wallet adapter reports the direct sGHO holding at sGHO/USD — no balance adapter needed.",
+    "$comment": "Aave sGHO savings vault \u2014 ERC-4626 share, GHO underlying. Priced GHO/USD (Chainlink) x convertToAssets(10^decimals)/10^decimals (same pattern as RWIV/syrupUSDC). Makes sGHO a registered priced asset, so registerAsset auto-adds it to ERC20DefaultBalanceAdapter and the wallet adapter reports the direct sGHO holding at sGHO/USD \u2014 no balance adapter needed.",
     "constructor": {
       "sgho": "0xE1753F2e00940cC31213dd92013cF019DFE4ca1d",
       "baseAsset": "0x40D16FC0246aD3160Ccc09B8D0D3A2cD28aE6C2f"
-    }
-  },
-  "OETH": {
-    "enabled": true,
-    "$comment": "CrossRate: OETH/USD = ETH/USD x OETH/ETH (Chainlink). underlyingAsset=OETH (Y), xToUsdFeed=ETH/USD (X), yToXFeed=OETH/ETH.",
-    "constructor": {
-      "underlyingAsset": "0x856c4Efb76C1D1AE02e20CEB03A2A6a08b0b8dC3",
-      "yToXFeed": "0x703118C4CbccCBF2AB31913e0f8075fbbb15f563",
-      "yToXHeartbeat": "90000",
-      "baseAsset": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
-    },
-    "rateFeedGuard": {
-      "$comment": "Pair identity + plausibility band for the rate feed named by `param`. Enforced pre-deploy by RateFeedGuard and asserted in the fork tests. description() verified live on-chain 2026-07-30.",
-      "param": "yToXFeed",
-      "description": "OETH / ETH",
-      "minRate1e18": "900000000000000000",
-      "maxRate1e18": "1500000000000000000"
     }
   },
   "LDO": {
@@ -208,7 +191,7 @@
   },
   "ezETHCrossRate": {
     "enabled": true,
-    "$comment": "ezETH divergence monitor (ezETH_CrossRateCustomPriceFeed). CrossRate: ezETH/USD = ETH/USD x ezETH/ETH. yToXFeed migrated 2026-07-22 to the RedStone multi-feed ezETH_FUNDAMENTAL feed (0x701e83Bd…) after the old Classic-Push ezETH/ETH market feed (0xF4a3e183…) was sunset by RedStone (per Slack C03BP6L2A9W / Nicolas). Still independent of the primary (Renzo RestakeManager on-chain rate) — RedStone's rate vs Renzo's, plus the NAV ETH/USD leg. Feed is 8-dec, ~12h update cadence; heartbeat kept at 24h for margin.",
+    "$comment": "ezETH divergence monitor (ezETH_CrossRateCustomPriceFeed). CrossRate: ezETH/USD = ETH/USD x ezETH/ETH. yToXFeed migrated 2026-07-22 to the RedStone multi-feed ezETH_FUNDAMENTAL feed (0x701e83Bd\u2026) after the old Classic-Push ezETH/ETH market feed (0xF4a3e183\u2026) was sunset by RedStone (per Slack C03BP6L2A9W / Nicolas). Still independent of the primary (Renzo RestakeManager on-chain rate) \u2014 RedStone's rate vs Renzo's, plus the NAV ETH/USD leg. Feed is 8-dec, ~12h update cadence; heartbeat kept at 24h for margin.",
     "constructor": {
       "underlyingAsset": "0xbf5495Efe5DB9ce00f80364C8B423567e58d2110",
       "yToXFeed": "0x701e83Bd1B84D02c10587f0De9Dfad5A22419DF7",
@@ -242,7 +225,7 @@
   },
   "ezETHCrossRateMarket": {
     "enabled": true,
-    "$comment": "ezETH MARKET divergence monitor — the SECOND monitor for ezETH, added alongside (never replacing) ezETHCrossRate. Closes audit finding #2: ezETH's primary is Renzo's RestakeManager rate (fundamental) and its only existing monitor, ezETHCrossRate, was migrated 2026-07-22 to RedStone's ezETH_FUNDAMENTAL feed, so the divergence check compared one fundamental rate against another. The source was independent; the methodology was not. Two fundamental sources agreeing says nothing about market price, so ezETH's 250 bps tolerance could not fire on the depeg it exists to catch. Post-ADR-0019 both legs read base/USD from the same NAV, so the ETH/USD term cancels exactly and the comparison reduces to rate-vs-rate with no residual signal. yToXFeed here is the RedStone Classic Push ezETH/ETH MARKET feed 0xF4a3e183F59D2599ee3DF213ff78b1B3b1923696 — the feed ezETHCrossRate used before the migration. NOTE it is recorded as SUNSET by RedStone (Slack C03BP6L2A9W / Nicolas) and IS DEPRECATED, which is deliberate and safe here for three reasons: (1) it is a MONITOR, never a primary, so it can never price the NAV; (2) monitors are heartbeat-gated in PriceFeedLib._readFeedPrice, which returns (0,false) past the heartbeat, and _monitorDivergence does `if (!ok) continue` — so a frozen feed SELF-EXCLUDES rather than contributing a stale rate, and monitorFeedCount drops 2->1 making the degradation observable; (3) the downside is therefore bounded to today's behaviour while the upside is real depeg detection immediately. MEASURED, not assumed, over 64 AnswerUpdated events across 29.5 days (rounds 1988-2051): the feed is very much alive - gaps median 43212 s, MAX 43224 s, jitter 12 s, unimodal at 12 h (57 of 63 intervals; the other 6 are all SHORTER, i.e. deviation-triggered, which means during a real depeg it publishes EARLY and is freshest exactly when it matters). yToXHeartbeat 46800 = max observed gap 43224 + 3576 s margin (8.3%, ~298x the observed jitter). NOT 86400 (that was copied from the fundamental feed's config and would treat ~12 h of frozen data as fresh) and NOT 43200, which would sit 24 s TIGHTER than the observed max - the exact finding-#8 trap of setting a heartbeat equal to the publisher's cadence. The reason for the tight heartbeat is to halve the detection latency of the monitor's OWN DEATH, NOT to prevent false alarms: measured primary drift is +0.595 bps/day (ezETH fundamental rate moved +16.30 bps over 27.38 days, ~2.17%/yr restaking yield), so a frozen monitor would need ~389 days to false-trip 250 bps. Divergence tolerance stays 250 bps, confirmed against a distribution rather than one sample: market-vs-fundamental spread over 331 samples / ~27.5 days was min 7.85, median 18.39, p90 27.90, max 37.55 bps, never above 50 - 6.7x headroom - with market BELOW fundamental in 331/331 samples (a persistent 8-38 bps discount with a stable sign, which is what a depeg detector wants: it fires on the magnitude growing off a steady baseline). Deployed via the GENERIC _deployCrossRateMonitor(\"ezETHCrossRateMarket\") since this constructor block matches that helper's shape; the raw feed CANNOT be registered as a monitor directly because monitors are compared in USD while this feed reports ezETH/ETH (~1.08e8), so against the primary's ~2063e8 it would read ~9994 bps and mark ezETH permanently irregular. The CrossRateCustomPriceFeed wrapper returns NAV_DECIMALS (8), satisfying MonitorFeedDecimalsMismatch.",
+    "$comment": "ezETH MARKET divergence monitor \u2014 the SECOND monitor for ezETH, added alongside (never replacing) ezETHCrossRate. Closes audit finding #2: ezETH's primary is Renzo's RestakeManager rate (fundamental) and its only existing monitor, ezETHCrossRate, was migrated 2026-07-22 to RedStone's ezETH_FUNDAMENTAL feed, so the divergence check compared one fundamental rate against another. The source was independent; the methodology was not. Two fundamental sources agreeing says nothing about market price, so ezETH's 250 bps tolerance could not fire on the depeg it exists to catch. Post-ADR-0019 both legs read base/USD from the same NAV, so the ETH/USD term cancels exactly and the comparison reduces to rate-vs-rate with no residual signal. yToXFeed here is the RedStone Classic Push ezETH/ETH MARKET feed 0xF4a3e183F59D2599ee3DF213ff78b1B3b1923696 \u2014 the feed ezETHCrossRate used before the migration. NOTE it is recorded as SUNSET by RedStone (Slack C03BP6L2A9W / Nicolas) and IS DEPRECATED, which is deliberate and safe here for three reasons: (1) it is a MONITOR, never a primary, so it can never price the NAV; (2) monitors are heartbeat-gated in PriceFeedLib._readFeedPrice, which returns (0,false) past the heartbeat, and _monitorDivergence does `if (!ok) continue` \u2014 so a frozen feed SELF-EXCLUDES rather than contributing a stale rate, and monitorFeedCount drops 2->1 making the degradation observable; (3) the downside is therefore bounded to today's behaviour while the upside is real depeg detection immediately. MEASURED, not assumed, over 64 AnswerUpdated events across 29.5 days (rounds 1988-2051): the feed is very much alive - gaps median 43212 s, MAX 43224 s, jitter 12 s, unimodal at 12 h (57 of 63 intervals; the other 6 are all SHORTER, i.e. deviation-triggered, which means during a real depeg it publishes EARLY and is freshest exactly when it matters). yToXHeartbeat 46800 = max observed gap 43224 + 3576 s margin (8.3%, ~298x the observed jitter). NOT 86400 (that was copied from the fundamental feed's config and would treat ~12 h of frozen data as fresh) and NOT 43200, which would sit 24 s TIGHTER than the observed max - the exact finding-#8 trap of setting a heartbeat equal to the publisher's cadence. The reason for the tight heartbeat is to halve the detection latency of the monitor's OWN DEATH, NOT to prevent false alarms: measured primary drift is +0.595 bps/day (ezETH fundamental rate moved +16.30 bps over 27.38 days, ~2.17%/yr restaking yield), so a frozen monitor would need ~389 days to false-trip 250 bps. Divergence tolerance stays 250 bps, confirmed against a distribution rather than one sample: market-vs-fundamental spread over 331 samples / ~27.5 days was min 7.85, median 18.39, p90 27.90, max 37.55 bps, never above 50 - 6.7x headroom - with market BELOW fundamental in 331/331 samples (a persistent 8-38 bps discount with a stable sign, which is what a depeg detector wants: it fires on the magnitude growing off a steady baseline). Deployed via the GENERIC _deployCrossRateMonitor(\"ezETHCrossRateMarket\") since this constructor block matches that helper's shape; the raw feed CANNOT be registered as a monitor directly because monitors are compared in USD while this feed reports ezETH/ETH (~1.08e8), so against the primary's ~2063e8 it would read ~9994 bps and mark ezETH permanently irregular. The CrossRateCustomPriceFeed wrapper returns NAV_DECIMALS (8), satisfying MonitorFeedDecimalsMismatch.",
     "constructor": {
       "underlyingAsset": "0xbf5495Efe5DB9ce00f80364C8B423567e58d2110",
       "yToXFeed": "0xF4a3e183F59D2599ee3DF213ff78b1B3b1923696",
@@ -250,7 +233,7 @@
       "baseAsset": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
     },
     "rateFeedGuard": {
-      "$comment": "Pair identity is UNVERIFIABLE for this feed and that is a property of the provider, not an omission. Measured on-chain 2026-07-31: description() returns the constant \"Redstone Price Feed\" — no pair, no asset — which is identical across every RedStone Classic-Push feed on every pair, so an exact-match assertion is unimplementable for this family. decimals()=8, latestRoundData()=1.08118954 (=1.0812 normalised to 1e18). The band and the contract-readability check still apply; only the pair assertion is dropped, and it is DECLARED rather than silently skipped.",
+      "$comment": "Pair identity is UNVERIFIABLE for this feed and that is a property of the provider, not an omission. Measured on-chain 2026-07-31: description() returns the constant \"Redstone Price Feed\" \u2014 no pair, no asset \u2014 which is identical across every RedStone Classic-Push feed on every pair, so an exact-match assertion is unimplementable for this family. decimals()=8, latestRoundData()=1.08118954 (=1.0812 normalised to 1e18). The band and the contract-readability check still apply; only the pair assertion is dropped, and it is DECLARED rather than silently skipped.",
       "param": "yToXFeed",
       "description": "$UNVERIFIABLE",
       "descriptionUnverifiableReason": "RedStone Classic-Push: description() is the constant \"Redstone Price Feed\", carrying no pair information.",

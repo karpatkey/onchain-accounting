@@ -396,16 +396,20 @@ class TestExitCode(unittest.TestCase):
                 self.assertIsNone(row["priceNote"])
                 self.assertEqual(row["gasPriceWei"], pinned)
 
-    def test_implausible_quote_above_the_pin_does_not_trip_the_guard(self):
-        # gnosis's real case: its quote sits FAR below GAS_PRICE_IMPLAUSIBLE_WEI, and an unusable quote
-        # is not evidence about the pin in either direction. Only a plausible quote can condemn a pin.
-        # Constructed rather than assumed: patch the pin under the floor so `quoted > override` holds
-        # while `quoted` is still implausible — the one combination that separates the two conditions.
-        pinned = db.GAS_PRICE_IMPLAUSIBLE_WEI - 100
-        with mock.patch.object(db, "GAS_PRICE_OVERRIDE_WEI", {OVERRIDDEN: pinned}):
-            row, _ = run_one(OVERRIDDEN, balance=10**24, quoted=pinned + 1)
-        self.assertTrue(row["priceable"], "an implausible quote must not condemn the pin")
-        self.assertIsNone(row["priceNote"])
+    def test_stale_pin_guard_needs_no_plausibility_term(self):
+        # Replaces a test that asserted an explicit `quoted >= GAS_PRICE_IMPLAUSIBLE_WEI` conjunct by
+        # mock-patching in a pin BELOW the floor — a configuration the module raises ValueError on at
+        # import, so it certified a state that cannot exist and the conjunct it defended was dead code.
+        #
+        # What is actually true is a COUPLING between two guards, and that is what this asserts: the
+        # import-time invariant forces every pin >= the floor, so `quoted > override` already implies
+        # `quoted >= GAS_PRICE_IMPLAUSIBLE_WEI`. If someone relaxes the import invariant, this fails
+        # and the stale-pin guard needs its plausibility term back.
+        for cid, pin in db.GAS_PRICE_OVERRIDE_WEI.items():
+            with self.subTest(chain=cid):
+                self.assertGreaterEqual(
+                    pin, db.GAS_PRICE_IMPLAUSIBLE_WEI,
+                    "the stale-pin guard omits a plausibility term because this holds")
 
 
 class TestImportTimeInvariants(unittest.TestCase):
@@ -429,12 +433,52 @@ class TestImportTimeInvariants(unittest.TestCase):
 
     def test_chain_in_both_l1_collections_is_rejected_at_import(self):
         with self.assertRaises(ValueError):
-            self._exec_with("L1_FEE_UNMODELLED = {534352}", "L1_FEE_UNMODELLED = {534352, 8453}")
+            self._exec_with("L1_FEE_UNMODELLED = {534352, 43111}",
+                            "L1_FEE_UNMODELLED = {534352, 43111, 8453}")
 
     def test_unpatched_source_imports_cleanly(self):
         # Guards the three tests above: if the module raised for an unrelated reason they would pass
         # for the wrong reason.
         self._exec_with("GAS_PRICE_OVERRIDE_WEI = {", "GAS_PRICE_OVERRIDE_WEI = {")
+
+    def test_hemi_is_failed_closed(self):
+        # Regression pin. hemi (43111) was in NEITHER L1 collection, so it received no regime probe, no
+        # headroom floor and shortfallExcludesL1=False, and printed a clean OK while ~3x under-funded:
+        # measured 2026-08-12, its omitted L1 fee is 5.485e-5 ETH against a whole `need` of 2.801e-5 ETH
+        # (1.96x the entire estimate). Asserting membership rather than behaviour because the fee is a
+        # live on-chain reading — this only has to stop a silent removal.
+        self.assertIn(43111, db.L1_FEE_UNMODELLED,
+                      "hemi's omitted L1 fee exceeds its whole `need`; it must fail closed like scroll")
+        self.assertNotIn(43111, db.L1_FEE_OMITTED_PRICED,
+                         "hemi must not be in the priced set — its omitted term is not immaterial")
+
+    # Workaround chains whose special handling is deliberately NOT about fees, each with the reason it
+    # needs no L1-fee or gas-price classification. Kept next to the assertion so adding a workaround
+    # forces the decision here rather than defaulting to "unclassified".
+    NON_FEE_WORKAROUNDS = {
+        # Block GAS LIMIT, not price: the ~12.5M-gas impl deploy does not fit HyperEVM's ~3M small
+        # blocks, so the workaround toggles big blocks. NOTE its L1-fee status is UNMEASURED — the
+        # endpoint is not reachable from the environment this suite runs in, and HyperEVM is
+        # Hyperliquid's own execution layer rather than a rollup posting data to Ethereum. Treated as
+        # not-fee-related on that basis, not on a reading. If it is ever confirmed to charge a
+        # data-availability fee, it belongs in one of the two L1 collections.
+        999,
+    }
+
+    def test_every_workaround_chain_is_classified(self):
+        # hemi hid in plain sight: it had a WORKAROUNDS entry for its fee floor, which made it look
+        # handled while it sat outside both L1 collections, and it printed a clean OK while ~3x
+        # under-funded. A chain singled out as needing special treatment is exactly the kind a
+        # hand-maintained set misses, so every such chain must be deliberately classified — priced with
+        # omission, failed closed, pinned, or explicitly recorded above as not a fee case.
+        classified = (db.L1_FEE_OMITTED_PRICED | db.L1_FEE_UNMODELLED
+                      | set(db.GAS_PRICE_OVERRIDE_WEI) | self.NON_FEE_WORKAROUNDS)
+        for cid in db.WORKAROUNDS:
+            with self.subTest(chain=cid):
+                self.assertIn(cid, classified,
+                              f"chain {cid} has a WORKAROUNDS entry but no L1-fee or gas-price "
+                              f"classification — decide which it is, or add it to "
+                              f"NON_FEE_WORKAROUNDS with the reason")
 
     def test_invariants_use_raise_not_assert(self):
         # `python -O` strips assert, which would silently delete both gates.

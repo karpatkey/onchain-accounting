@@ -13,10 +13,11 @@ a 24-chain deploy is far more expensive than over-funding.
 
 `gasPrice` is the node's `eth_gasPrice` for most chains, but NOT for all: chains in
 GAS_PRICE_OVERRIDE_WEI are priced from a pinned measured constant because their quote is not a usable
-sizing input, and those rows say so in the output. The estimate does NOT include the L1 data-availability fee that rollups charge on top; on scroll that
-fee measured ~99.9% of the total cost, so scroll fails closed rather than being priced. See
-L1_FEE_UNMODELLED and issue #287. Read `priceSource` on each row — `need` is not in general "the live
-quote times gas".
+sizing input, and those rows say so in the output. The estimate does NOT include the L1
+data-availability fee that rollups charge on top. Where that fee dominates, the chain fails closed
+rather than being priced: scroll (~99.9% of total cost) and hemi (the omitted fee is 1.96x the entire
+`need`, measured 2026-08-12). See L1_FEE_UNMODELLED and issue #287. Read `priceSource` on each row —
+`need` is not in general "the live quote times gas".
 
 Chain-specific workarounds are recorded in WORKAROUNDS below because they are easy to forget and
 several have already cost a deploy. Two concern block/fee limits:
@@ -145,10 +146,15 @@ if _bad_overrides:
 # against a sum of parts, so treat it as an order of magnitude and not a figure to quote.
 #
 # The robustness is what decides it, not the point estimate, and it survives the correction with room:
-# for any of the eight to flip, the L1 term would have to be 10x-996x the entire current `need`. On the
-# tightest row (celo, `need` 5.60 native — and celo measures 0 for every payload at both probe sizes) that
-# threshold is ~56 native against ~2.7e-5. The correction consumed 1.8 orders of magnitude of an argument
-# built to tolerate three, so no chain's verdict flips and none of the eight needs to fail closed.
+# for any of the eight to flip, the L1 term would have to exceed the entire current `need` by between one
+# and three ORDERS OF MAGNITUDE, depending on the row. Deliberately stated that way and not as the precise
+# ratio it was computed from: those ratios come from the same getL1Fee readings the paragraph above says
+# to treat as an order of magnitude "and not a figure to quote", so quoting them here would break that
+# rule two paragraphs later. On the tightest row (celo, `need` 5.60 native — and celo measures 0 for every
+# payload at both probe sizes) the threshold is ~10^1 native against ~10^-5. The correction consumed 1.8
+# orders of magnitude of an argument built to tolerate three, so no chain's verdict flips and none of the
+# eight needs to fail closed. THE CONCLUSION IS WHAT IS CERTIFIED, NOT THE MARGIN — it holds across three
+# orders of magnitude of error in the readings, which is why the imprecision does not weaken it.
 #
 # Scroll is categorically different — there the omitted term is ~99.9% of the cost — which is exactly why
 # it alone fails closed, and why failing these eight closed would block a deploy over a margin that does
@@ -165,7 +171,31 @@ if _bad_overrides:
 # 8.35e-9 ETH for the payload scroll charges ~1e-3 for, and a hand-check from its scalars did not reproduce
 # it). Only the flip conclusion is certified, because it holds across three orders of magnitude of error.
 # Modelling all nine properly is #287.
-L1_FEE_UNMODELLED = {534352}
+#
+# HEMI (43111) WAS MISSING FROM BOTH COLLECTIONS AND PRINTED A CLEAN `OK` WHILE ~3x UNDER-FUNDED.
+# Measured live 2026-08-12 against the same OP-stack GasPriceOracle predeploy every other rollup here
+# uses (0x420...0F is present, 2,059 bytes of code):
+#
+#     getL1Fee(64,887-byte incompressible payload) = 54,845,469,617,243 wei = 5.485e-5 ETH
+#     need (14e6 gas x 1,000,252 wei quote x 2)    = 28,007,056,000,000 wei = 2.801e-5 ETH
+#     omitted L1 fee / entire need                 = 1.96x
+#
+# So the term this script does not model is TWICE the whole estimate, and roughly two thirds of hemi's
+# real cost — categorically scroll's situation (dominant), not the eight OP chains' (immaterial, where
+# the fee would have to exceed `need` by one to three orders of magnitude to flip). It reaches the fail-open scroll
+# would have: fund the deployer to `need` and the gate says funded while the deploy costs ~3x that.
+#
+# Being in NEITHER collection meant hemi got none of the three guards — no regime probe, no
+# L1_OMITTED_MIN_HEADROOM_WEI floor, and `shortfallExcludesL1=False`, so even its TOP UP figure would
+# have been printed as if complete. It is failed closed here, like scroll, rather than added to the
+# priced set: an execution-only figure for it is a LOWER BOUND, not an estimate, and no baseline
+# measured under a regime this far from the others would make it one.
+#
+# NOTE this is not a defect this branch introduced — hemi's fee-floor quote (1,000,252 wei) cleared the
+# OLD 1_000_000 floor too, so it was already priceable. What this branch did was build the L1-fee
+# machinery and enumerate which chains charge one, and that enumeration missed a chain. hemi has its own
+# WORKAROUNDS entry for the same fee floor, which is how it was hiding in plain sight.
+L1_FEE_UNMODELLED = {534352, 43111}
 
 # The eight chains that ALSO omit an L1 fee but are allowed to price, and the STRUCTURAL guard that keeps
 # that safe. Naming them explicitly rather than leaving them as "everything not in L1_FEE_UNMODELLED",
@@ -455,17 +485,29 @@ def one(chain_id: int, gas_units: dict) -> dict:
         # reintroduce precisely the node-dependence the pin was created to remove. A pin that no longer
         # bounds the price has one correct response — remeasure it — so the row demands that.
         #
-        # THE TWO MARGINS ARE ASYMMETRIC, and only one of them is comfortable:
-        #   gnosis (100)  — quote 95 wei against a 2 gwei pin (measured 2026-08-12), i.e. the pin is ~2e7x
-        #     the quote. This cannot trip without a genuine regime change, and if it trips the pin IS
-        #     stale, because gnosis's quote is an honest lower bound (baseFee + suggested tip).
-        #   plasma (9745) — quote 8_000_318 wei against a 10_000_000 wei pin: only 1.25x. A modest change
-        #     in the node's padding trips this. Such a trip is a FALSE alarm about plasma's real cost
-        #     (trivial, ~0.00028 XPL) but it is a fail-CLOSED one: it asks for a remeasurement instead of
-        #     quietly sizing from a constant that no longer covers the quote.
-        # The plausibility gate matters for gnosis specifically: its quote sits far BELOW
-        # GAS_PRICE_IMPLAUSIBLE_WEI, and an unusable quote is not evidence about the pin either way.
-        if quoted >= GAS_PRICE_IMPLAUSIBLE_WEI and quoted > override:
+        # WHAT THIS DOES NOT COVER, STATED PLAINLY, BECAUSE THE TWO PINS FAIL DIFFERENTLY:
+        #   plasma (9745) — quote 8_000_318 wei against a 10_000_000 wei pin: only 1.25x. The node's
+        #     padding is what this guard watches, and it is the thing that moves, so the guard is
+        #     meaningful here. A trip is a FALSE alarm about plasma's real cost (trivial, ~0.00028 XPL)
+        #     but a fail-CLOSED one: it asks for a remeasurement rather than sizing from a stale pin.
+        #   gnosis (100)  — THE GUARD IS STRUCTURALLY BLIND TO THE WAY THIS PIN ACTUALLY GOES STALE, and
+        #     saying otherwise would overstate the coverage. The 2 gwei pin was derived from the observed
+        #     TIP (median landed 1 gwei + 100%), but `eth_gasPrice` here returns baseFee + a ~31 wei
+        #     suggestion and does NOT track that tip — measured 95 wei against a 2e9 pin, ~2e7x apart.
+        #     So the inclusion price can rise past 2 gwei with the quote barely moving, and this guard
+        #     will not fire. It only ever catches the case where the QUOTE overtakes the pin. Detecting
+        #     gnosis's real staleness mode needs tip sampling (a percentile over recent blocks), which
+        #     this script does not do; re-derive the pin by hand when gnosis fees are in question.
+        #
+        # NO PLAUSIBILITY TERM HERE, AND THAT IS A COUPLING WORTH NAMING. An earlier version read
+        # `quoted >= GAS_PRICE_IMPLAUSIBLE_WEI and quoted > override`, whose first conjunct is DEAD:
+        # the import-time `_bad_overrides` check (:114-121) forces every pin >= that floor, so
+        # `quoted > override` already implies `quoted >= GAS_PRICE_IMPLAUSIBLE_WEI`. Worse, the comment
+        # justified it as mattering "for gnosis specifically" — false, since gnosis fails `quoted >
+        # override` first and never reaches it — and the test covering it had to patch in a pin BELOW
+        # the floor, a configuration the module raises on at import, so it certified a state that
+        # cannot exist. If that import invariant is ever relaxed, restore a plausibility term here.
+        if quoted > override:
             priceable = False
             price_note = (f"the pinned gas price ({override} wei) is BELOW the node's plausible quote "
                           f"({quoted} wei), so the pin no longer bounds the price and sizing from it "
@@ -534,6 +576,20 @@ def one(chain_id: int, gas_units: dict) -> dict:
                        f"but is missing a L1_REGIME_BASELINE_WEI / L1_REGIME_BASELINE_SMALL_WEI entry, so its fee "
                        f"regime cannot be verified. "
                        f"Retrying will not help — add a baseline or remove the chain. See #287")
+        except ValueError as e:
+            # NOT retryable, and it used to be reported as if it were. `int(x, 16)` raises ValueError
+            # when the oracle returns something that is not a hex number — most importantly EMPTY `0x`
+            # returndata, which is what a `staticcall` to a chain WITHOUT the OP GasPriceOracle
+            # predeploy yields (no revert, no data). That is a permanent property of the chain, so
+            # "this may be transient, so retry" sent an operator into a loop that can never clear. It
+            # is the same shape as the KeyError case above: a config error wearing a network error's
+            # clothes. Distinguished here rather than by inspecting the returndata, because every
+            # decode failure of this reading is permanent for the same reason.
+            priceable = False
+            l1_note = (f"the L1 fee oracle at {OP_GAS_ORACLE} did not return a readable number "
+                       f"({type(e).__name__}: {e}); empty `0x` returndata means the OP GasPriceOracle "
+                       f"predeploy is absent, so this chain does not belong in L1_FEE_OMITTED_PRICED. "
+                       f"RETRYING WILL NOT HELP — fix the membership or model the chain. See #287")
         except Exception as e:  # noqa: BLE001
             priceable = False
             l1_note = (f"could not verify L1 fee conditions against the measured baseline "
@@ -563,6 +619,19 @@ def one(chain_id: int, gas_units: dict) -> dict:
                # `need` omits the L1 data-availability fee on any chain that charges one, so a
                # shortfall derived from it is a LOWER BOUND, not the amount to send. Carried as a flag
                # rather than inferred at print time, so the JSON consumers see it too.
+               #
+               # THE TOP-UP WARNING THIS FLAG DRIVES IS CURRENTLY UNREACHABLE, and that is a property of
+               # the two collections rather than a bug in the flag — recorded so nobody reads the warning
+               # as live coverage. A row only reaches the TOP UP branch when `sufficient is False`, which
+               # needs `priceable`; but every member of both collections loses `priceable` first:
+               # L1_FEE_UNMODELLED unconditionally, and L1_FEE_OMITTED_PRICED via the
+               # L1_OMITTED_MIN_HEADROOM_WEI floor, which fires whenever `bal - need` drops under 1e-3
+               # native — and a row that is actually short has `bal - need < 0`. So a short chain in
+               # either set prints UNPRICEABLE, never TOP UP, and the "SEND MORE" line never renders.
+               # The flag is still correct and still worth emitting for the JSON consumers; it is the
+               # print-side warning that is dead. It becomes live the moment a chain that charges an L1
+               # fee is priced WITHOUT the headroom floor — which is exactly the hemi shape, and hemi is
+               # now failed closed rather than being the exception that makes the warning reachable.
                shortfallExcludesL1=chain_id in L1_FEE_OMITTED_PRICED or chain_id in L1_FEE_UNMODELLED,
                sufficient=(bal >= need) if priceable else None)
     return row
@@ -619,6 +688,12 @@ def main() -> int:
                                 # above: the default tail says the quote was too LOW, which is the exact
                                 # opposite of the stale-pin cause (a quote too HIGH for the pin), and
                                 # this string is what the `--json` consumers read.
+                                # The node quote belongs in the entry too. On an override chain
+                                # `gasPriceWei` is the PIN, so without this the one number that
+                                # condemned the pin — the quote that overtook it — is absent from the
+                                # JSON, and a consumer sees a pin with no evidence against it.
+                                "quotedGasPriceWei": r["quotedGasPriceWei"],
+                                "priceSource": r["priceSource"],
                                 "reason": (r.get("l1Note") or r.get("priceNote")
                                            or "gas-price quote too low to size from"),
                                 "haveEth": round(r["balanceEth"], 6)})

@@ -281,8 +281,15 @@ jobs:
   # under test imports chainlib, which imports third-party `requests` (chainlib.py:21). Without this step
   # the job still passed — because the runner image happens to ship `requests` — which made it green for a
   # reason nobody had established and unreproducible on a clean Python. There is no requirements file in
-  # this repo, so the dependency is pinned by name here; if chainlib gains another third-party import, this
-  # job fails loudly rather than silently depending on the image again.
+  # this repo, so the dependency is declared by name here.
+  #
+  # WHAT THIS DOES NOT BUY, stated because an earlier version of this comment claimed it did: this step
+  # does NOT make a future third-party import fail loudly. It installs one named package into the image's
+  # own site-packages — no version pin, no requirements file, no `--no-deps`, no clean-environment
+  # isolation — so if chainlib later imports anything ubuntu-latest already ships, the job goes green on
+  # the image exactly as before and nothing here notices. This declares one known dependency; it is not a
+  # dependency GATE. Making it one needs a requirements file plus an isolated interpreter (venv with
+  # `--no-site-packages` semantics, or a container), which is not set up here.
   preflight:
     name: Preflight gate tests
     runs-on: ubuntu-latest

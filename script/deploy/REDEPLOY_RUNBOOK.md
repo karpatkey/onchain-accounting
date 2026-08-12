@@ -607,8 +607,9 @@ measured in `deployer_balances.py`:
 | chain | what the quote actually is | handling | trust the row? |
 | --- | --- | --- | --- |
 | **100 gnosis** — a **CONFIGURED** chain (it carries `nav-config/` entries) | an honest but near-zero **base** fee (43–64 wei measured, blocks 6.7–98.1% full). Inclusion is **tip**-driven: the median landed tx paid `1,000,000,048` wei — base fee plus a 1 gwei client-default tip, 20-block tip p90 of 9.8 gwei | priced from a pinned **2 gwei** (`GAS_PRICE_OVERRIDE_WEI`) | **yes** |
-| **9745 plasma** | the **inverse** — the node pads the quote with a suggested tip nobody pays: `8,000,318` wei quoted against a **9 wei** median landed price, over an 8 wei constant base fee | priced from a pinned `0.01` gwei, above **both** observed values so the verdict cannot flip between runs | **yes** |
+| **9745 plasma** | the **inverse** — the node pads the quote with a suggested tip nobody pays: `8,000,318` wei quoted against a **9 wei** median landed price, over an 8 wei constant base fee | priced from a pinned `0.01` gwei, above **both** observed values — so the verdict does not flip on *which* of the two the node happens to return | **yes** |
 | **534352 scroll** | **correct, and exactly what txs pay.** A hard floor: exactly `120,008` wei at −0/−5k/−50k/−200k/−1,000,000 blocks, tips a flat 100 wei | its quote is usable, but ~99.9% of its cost is an unmodelled L1 fee, so it **fails closed** | **no** |
+| **43111 hemi** | a fee-floor quote of `1,000,252` wei — usable, and it cleared the old `1_000_000` implausibility floor too | **the quote is not the problem: the omitted L1 fee is `5.485e-5` ETH against a whole `need` of `2.801e-5` ETH, i.e. 1.96x the entire estimate** (measured 2026-08-12 via the OP GasPriceOracle at `0x420…0F`). Scroll's category, not the eight OP chains'. **Fails closed** | **no** |
 
 **Treat the gnosis quote as a live, drifting value, not a constant.** Readings across days: `2266`,
 `2283`, then `53`–`60` wei, later `3209`. That drift is the evidence it tracks a real near-zero base fee

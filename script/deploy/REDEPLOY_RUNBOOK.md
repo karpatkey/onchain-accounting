@@ -27,10 +27,14 @@ operator: **pin the fork block** (see the note at the rehearsal invocation — i
 path executes; it is not a deploy, and it is not an approval to deploy.
 
 Companion tooling lives in [`preflight/`](preflight/README.md). Nothing there broadcasts to a real
-chain. Exactly two scripts write anything, and only these two: `rehearse_fork.sh`, which broadcasts
-only to a loopback anvil and restores the tracked config it touches with `git checkout --` on exit;
-and `reset_deployment_records.py`, which archives and clears the deployment records — dry-run by
-default, writes only under `--apply`, undone with `--restore <tag>`. Everything else is read-only.
+chain. Three scripts write **tracked** content: `reset_deployment_records.py`, which archives and
+clears the deployment records — dry-run by default, writes only under `--apply`, undone with
+`--restore <tag>`; `rehearse_fork.sh`, which broadcasts only to a loopback anvil and restores the
+tracked config it touches with `git checkout --` on exit; and `declared_heartbeat_guard.py --refresh`,
+which rewrites the committed `chainlink_declared_heartbeats.json`. Several others write **untracked
+output artifacts** — `snapshot_production.py` writes `snapshots/<tag>/`, and the `--json` flags write
+report files. Everything else only reads. Of all of these, only `reset_deployment_records.py --apply`
+discards state you would otherwise have to redeploy to recover.
 
 - **Scope:** exactly the **24 chains** that already have a `NAVCalculatorProxy`. Chain **1101**
   (Polygon zkEVM) is excluded — its deployment record is empty, so it was never deployed.
@@ -918,9 +922,9 @@ alternative out, before proposing a smaller deploy.
 
 > **There is no `initialAssets` argument.** `initialize(admin_, chainlinkL2SequencerUptimeFeed_,
 > nativeTokenSymbol_)` hardcodes the ERC20Default seed to `[NATIVE_ADDRESS]`
-> (`NAVCalculator.sol:70-86`). The asset set is *not* frozen at genesis — every `registerAsset` calls
+> (`NAVCalculator.sol:99-118`). The asset set is *not* frozen at genesis — every `registerAsset` calls
 > `addSupportedAsset` on it (`NAVCalculator.sol:176`), and
-> `excludeAssetFromDefaultAdapter`/`includeAssetInDefaultAdapter` (`:248`/`:255`) mutate it later.
+> `excludeAssetFromDefaultAdapter`/`includeAssetInDefaultAdapter` (`:356`/`:363`) mutate it later.
 > Nothing needs preparing here, and `script/manage/update-erc20-default-from-chain.sh` is dead code
 > (it reads `chains/<id>.json .deployed.NAVCalculatorProxy`, a path that no longer exists, and skips
 > every chain).

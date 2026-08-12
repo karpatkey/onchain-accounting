@@ -4,11 +4,16 @@ Tooling for preparing and verifying a from-scratch NAV redeploy. Nothing here br
 chain; the one script that broadcasts at all — `rehearse_fork.sh` — refuses any RPC that is not
 loopback.
 
-Exactly two scripts write locally, and only these two. `rehearse_fork.sh` mutates tracked config under
-`script/config/` during a rehearsal, refuses to start if that tree is dirty, and restores it
-byte-exactly with `git checkout --` on exit. `reset_deployment_records.py` archives and clears the
-deployment records, as its row below says — it is dry-run by default, writes only under `--apply`, and
-is undone with `--restore <tag>`. Every other script here only reads.
+Three scripts write **tracked** content. `reset_deployment_records.py` archives and clears the
+deployment records, as its row below says — dry-run by default, writes only under `--apply`, undone
+with `--restore <tag>`. `rehearse_fork.sh` mutates tracked config under `script/config/` during a
+rehearsal, refuses to start if that tree is dirty, and restores it byte-exactly with `git checkout --`
+on exit. `declared_heartbeat_guard.py --refresh` rewrites the committed
+`chainlink_declared_heartbeats.json`.
+
+Several others write **untracked output artifacts**: `snapshot_production.py` writes `snapshots/<tag>/`,
+and the `--json` flags write report files. Everything else only reads. Of all of these, only
+`reset_deployment_records.py --apply` discards state you would otherwise have to redeploy to recover.
 
 The ordered procedure these support is [`../REDEPLOY_RUNBOOK.md`](../REDEPLOY_RUNBOOK.md).
 

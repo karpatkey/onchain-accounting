@@ -299,6 +299,14 @@ jobs:
       - name: Install the one third-party dependency chainlib needs
         run: python3 -m pip install --no-cache-dir requests
 
+      - name: Gate 1.1 absence rule (verify_step --self-test)
+        # The 19 paired arms are billed in-code as the regression guard for issue #299, and until
+        # this step existed they ran NOWHERE — a guard nothing executes is documentation. It needs
+        # no network and no toolchain: it drives `step_record_cleared` against synthetic records and
+        # a tempdir archive, resolving expectations from the committed config tree.
+        working-directory: script/deploy/preflight
+        run: python3 verify_step.py --self-test
+
       - name: Verdict truth table (deployer_balances)
         # -O as well as plain: the import-time invariants use `raise`, not `assert`, precisely so that
         # optimised runs cannot strip them. Running both ways keeps that property honest.

@@ -160,9 +160,11 @@ def archived(tag: str, chain_id: int) -> dict | None:
 def expected_sections(chain_id: int) -> set[str]:
     """Which `CLEAR_SECTIONS` blocks this chain is SUPPOSED to carry, derived from CONFIG.
 
-    Same oracle and same reasoning as `expected_clear_top`. The section name maps to its config
-    directory by camelCase -> kebab-case (`balanceAdapters` -> `balance-adapters`), derived rather
-    than hard-coded so a third section needs no edit here.
+    Same oracle and same reasoning as `expected_clear_top`. The section -> config-directory mapping
+    is an EXPLICIT table below, NOT derived from the name: deriving it found only `balance-adapters`
+    and missed `meta-balance-adapters`, which is what made this check dead on chains 10/137/8453/42161.
+    A third `CLEAR_SECTIONS` entry therefore needs a `producers` entry — without one,
+    `producers.get(sec, ())` yields no expectation and the section fails open.
     """
     # `balanceAdapters` IS UNIVERSAL AND NO CONFIG DECLARES IT. Every deployed NAV carries
     # `ERC20Default`, minted by `initialize` and written by 02/02_2 — measured on all 24 in-scope
@@ -224,7 +226,10 @@ def expected_clear_top(chain_id: int) -> set[str]:
         # the ORACLE being unavailable, not a chain legitimately carrying nothing — and that
         # difference decides whether an absent assistant is a deletion or a non-event. Returning the
         # universal keys is still safe because evidence is monotone: the archive independently
-        # witnesses anything this misses. Surfaced by the caller as a warning, not a failure.
+        # witnesses anything this misses. NOTHING SURFACES THIS TO THE OPERATOR — an earlier version
+        # of this comment claimed it was "surfaced by the caller as a warning" and no such warning was
+        # ever emitted. The bound is real; the mitigation was not. It bites only when the archive ALSO
+        # lacks the key: a deletion predating the reset, on a chain with no readable config.
         return keys
     enabled = set(pc.enabled_keys(cfg))
     for adapter_key, assistant_key in ASSISTED_PAIRS:
@@ -344,8 +349,10 @@ def step_record_cleared(k: Chk, rec: dict, exp: dict, url, base, tag) -> None:
     # archive is worth reporting on its own, and that it CAN detect.
     #
     # (Coupling: re-capturing `snapshots/pre` after the cutover moves the baseline and makes this
-    # report a mismatch. Steps 1.3 and 1.4 already depend on that baseline, so it is a pre-existing
-    # systemic dependency rather than one introduced here.)
+    # report a mismatch. 1.3 (`step_new_proxy`) and 1.5 (`step_custom_price_feeds`) already read
+    # `base`, so it is a pre-existing systemic dependency rather than one introduced here. Verified
+    # by AST over this file, not asserted: 1.2 and 1.4 read it ZERO times, and an earlier version of
+    # this comment named 1.4 — the justification for the coupling was itself unchecked.)
     old_proxy = (base.get(k.chain_id) or {}).get("proxy") if base else None
     if arch is not None:
         if not old_proxy:
@@ -1004,8 +1011,13 @@ def _self_test() -> int:
     one edit away from a check that never fires at all. So every arm below is paired: for each case
     that must PASS there is a mutation of the same fixture that must FAIL.
 
-    Driven against synthetic records and a tempdir archive rather than the committed ones, because an
-    arm reading real config would pass or fail for reasons that have nothing to do with the rule.
+    Records and archives are synthetic and the archive lives in a tempdir, but the EXPECTATION is
+    resolved against the COMMITTED CONFIG TREE on purpose: `ALL_ASSIST/ONE_ASSIST/NO_ASSIST` are real
+    chain ids and every arm routes `chain=` through `expected_clear_top`. The rule under test is
+    "what should this chain carry", and a synthetic answer to that tests the fixture, not the rule.
+    The consequence belongs here rather than in a surprise: enabling or disabling an assisted adapter
+    in `contracts-deployment-config/` changes what these arms assert, so a config edit can turn
+    `--self-test` red. That is the coupling working.
     """
     import tempfile
     from pathlib import Path
@@ -1016,8 +1028,9 @@ def _self_test() -> int:
     # The committed pre-deploy baseline the archive must match to count as this record's pre-image.
     # Real chain ids, chosen from config: chain 1 enables all three assisted adapters, chain 100
     # enables StakeWise only, chain 10 enables none. The rule is per-chain now, so the arms must be.
-    ALL_ASSIST, ONE_ASSIST, NO_ASSIST = 1, 100, 10
-    BASE = {ALL_ASSIST: {"proxy": ADDR}, ONE_ASSIST: {"proxy": ADDR}, NO_ASSIST: {"proxy": ADDR}}
+    ALL_ASSIST, ONE_ASSIST, NO_ASSIST, META_WITH_FEEDS = 1, 100, 10, 42161
+    BASE = {ALL_ASSIST: {"proxy": ADDR}, ONE_ASSIST: {"proxy": ADDR},
+            NO_ASSIST: {"proxy": ADDR}, META_WITH_FEEDS: {"proxy": ADDR}}
     results: list[tuple[bool, str]] = []
 
     def run(rec: dict, arch: dict | None, label: str, must_fail: bool, expect_in: str = "",
@@ -1139,6 +1152,12 @@ def _self_test() -> int:
     # meant to catch. It now runs where the hole actually was.
     run(no_section, dict(arch_plain), "a deleted section on a META-ONLY chain is caught",
         must_fail=True, expect_in="is missing or is not an object", chain=NO_ASSIST)
+    # %24's formulation of this defect named FOUR chains — 10, 137, 8453, 42161 — all with zero
+    # enabled PLAIN adapters. Chain 10 alone under-specifies it: 8453/42161 also expect
+    # `customPriceFeeds`, so they exercise the config-DERIVED section on a meta-only chain, which
+    # chain 10 cannot. A per-chain arm is not redundant while the two sections resolve differently.
+    run(no_section, dict(arch_plain), "a deleted section on a meta-only chain WITH feeds is caught",
+        must_fail=True, expect_in="is missing or is not an object", chain=META_WITH_FEEDS)
 
     # DESTROYED != DELETED. null / {} / [] each destroy the key set without removing the name, and
     # an earlier revision keyed on `sec not in rec` and passed all three.
@@ -1207,7 +1226,7 @@ def main() -> int:
     base = baseline()
     if not base:
         print("WARNING: snapshots/pre/index.json is missing — the 'address actually moved' checks "
-              "in 1.2/1.3 will be skipped, and 1.1 will report that it cannot confirm the archive "
+              "in 1.3/1.5 will be skipped, and 1.1 will report that it cannot confirm the archive "
               "is this record's pre-image (absence is still judged from config, so it stays sound).")
 
     print(f"scope: {len(chains)} chain(s) from {scope_src}")

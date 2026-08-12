@@ -35,6 +35,7 @@ which this line used to claim, so the writers are named instead of implied:
 | `reset_deployment_records.py` | tracked `deployments/<cid>.json` (archives the old copy first) | only under `--apply`; the default is a dry run |
 | `declared_heartbeat_guard.py` | tracked `preflight/chainlink_declared_heartbeats.json` | its `refresh` mode; the checking modes do not write |
 | `snapshot_production.py` | tracked `preflight/snapshots/<out>/*.json` and the index | every run, default `--out pre` |
+| `rehearse_fork.sh` | **mutates tracked `script/config` and `broadcast/`**, then restores them byte-exact with `git checkout --` and deletes untracked leftovers (`:35-39`, `:61-67`); also writes its work dir, `steps.tsv`, `config-before`/`config-after` copies and `safe-transactions/` (`:84-93`, `:380-381`) | every run — which is why it refuses to start from a dirty tree |
 
 Five more (`deployer_balances.py`, `verify_step.py`, `preflight_config.py`, `bytecode_audit.py`,
 `diff_snapshots.py`) write a report only where `--json` points, and nothing otherwise.
@@ -647,9 +648,13 @@ day.
 **Ruling: pass the eight as implemented.** `L1_FEE_UNMODELLED` stays **scroll-only**. The alternative —
 failing all nine closed — was proposed repeatedly in review and is defensible on principle: those chains
 do charge a fee this estimator omits, and a large balance does not make a verdict authoritative. It was
-rejected for two reasons: the omitted term measures **~1e-7 native** against those margins and **no
-chain's verdict flips** when it is added; and an over-strict gate gets bypassed, for which the 11-of-24
-false-alarm measurement above is the precedent. **Scroll is treated differently because there the
+rejected for two reasons: the omitted term is **~2.7e-5 native** against those margins and **no chain's
+verdict flips** when it is added; and an over-strict gate gets bypassed, for which the 11-of-24
+false-alarm measurement above is the precedent. That figure read `~1e-7` until 2026-08-12, when the probe
+payload was found to be compressible; **it is INFERENCE, not measurement** — the pre-correction number
+scaled by the measured 59.1957× ratio, not re-measured per transaction, so treat it as an order of
+magnitude. The ruling is unaffected: flipping any of the eight needs the term to exceed 10×–996× the
+whole `need`, and the correction consumed 1.8 of the 3 orders that argument tolerates. **Scroll is treated differently because there the
 omitted term is ~99.9% of the cost** — applying the same treatment to the eight would be theatre.
 
 Full pricing for all nine remains **issue #287**, which carries everything already measured.

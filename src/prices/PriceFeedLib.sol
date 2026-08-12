@@ -1966,7 +1966,9 @@ library PriceFeedLib {
     ///      segments rather than a regression to be optimised away. Still per DISTINCT ADAPTER, not per position —
     ///      that is the property `test_gas_labelOverride_isPerAdapter_notPerPosition` and
     ///      `test_gas_surchargeIsPerAdapter_notPerPosition` exist to hold, and both bounds are set from a MUTATION
-    ///      (the read moved into the loop body: 30,033 and 20,292 respectively), never from taste.
+    ///      (the read moved into the loop body), never from taste. The mutant figures are deliberately not quoted
+    ///      here: an earlier revision named a pair that those tests' own docstrings had already retired as
+    ///      instrument-contaminated, so this comment contradicted the tests it cited.
     ///
     ///      ⚠️ Two earlier revisions of this note quoted a "~9.6k cold, from an independent 20-adapter sweep"
     ///      figure; that measurement was made outside this repo and NOTHING here reproduces it, so it was removed
@@ -2305,8 +2307,10 @@ library PriceFeedLib {
     ///      load-bearing instead of decorative — note the BYTE half is not, since the `96` embeds
     ///      `MAX_ASSET_LABEL_BYTES = 32` as a literal (see the warning on {MAX_OVERRIDE_SEGMENTS});
     ///      it folds to 896 at compile time and costs nothing. A reply exceeding the window is truncated, fails to
-    ///      decode, and yields no override — display degrades, nothing reverts. Two orders of magnitude tighter than
-    ///      {_LABELS_RETURN_BYTES}, and that is the point: see {_labelOverride}.
+    ///      decode, and yields no override — display degrades, nothing reverts. Far tighter than
+    ///      {_LABELS_RETURN_BYTES}, and that is the point: see {_labelOverride}. (An earlier revision said "two
+    ///      orders of magnitude"; the two constants are visible three lines apart, so quantifying the ratio in prose
+    ///      bought nothing and was wrong by roughly twentyfold.)
     uint256 private constant _OVERRIDE_RETURN_BYTES = 64 + 96 * MAX_OVERRIDE_SEGMENTS + 64;
 
     /// @notice Gas stipend for the `decodeStringArray` shim when decoding a label OVERRIDE (see {_labelOverride}).

@@ -450,7 +450,7 @@ contract ProtocolNameConsistencyTest is Test {
 
     /// @notice A new plain or assisted adapter must not be able to slip past `test_hardcodedAdapters_matchCanonicalNames`.
     /// @dev The mirror of `test_metaAdapterCensus` for the family whose display name is a hardcoded literal. That
-    ///      test asserts the twelve names it explicitly lists, so it cannot notice a THIRTEENTH adapter — and a
+    ///      test asserts only the names it explicitly lists, so it cannot notice a NEW adapter — and a
     ///      hardcoded name is exactly what went wrong with Umbrella ("Aave Umbrella" for `ProtocolIds.AAVE_V3`).
     ///      Deriving the name closed that hole for meta adapters only; this census closes the reporting gap for the
     ///      family that still writes the string by hand, so a new adapter naming a PRODUCT, or naming a protocol

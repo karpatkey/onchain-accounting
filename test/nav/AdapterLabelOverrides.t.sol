@@ -801,7 +801,9 @@ contract AdapterLabelOverridesTest is AdapterLabelOverridesBase {
     ///      ⚠️ **This PR moves the CLEAN arm and the bound with it.** The segment-0-only category override became the
     ///      per-segment {IAssetKindRegistry.setAdapterLabels} ARRAY override, so the registry read is now a
     ///      `string[]` behind the decode shim rather than a flat `string`. That is a real cost increase, stated
-    ///      rather than absorbed. Both arms re-measured on the merged tree are recorded at the assertion below.
+    ///      rather than absorbed. The bound below is the only figure this file maintains; run the test and read the
+    ///      `log_named_uint` for the current clean arm. (An earlier revision said both arms were "recorded at the
+    ///      assertion below" — they were not, so the RE-DERIVE instruction had no baseline to derive from.)
     ///
     ///      ⚠️ When this goes red, RE-DERIVE the bound from the mutant; do not simply raise it. Raising a bound to
     ///      make a test pass is how the 50,000 above, the 34,000 on the cold counterpart and the 20,000 on
@@ -1894,7 +1896,10 @@ contract AdapterLabelOverridesTest is AdapterLabelOverridesBase {
     ///      This line previously quoted 20,746 clean vs 30,033 mutant with a 25,000 bound; those were taken with
     ///      inline `gasleft()` in the test body, which {measureVerbose}'s docstring shows mis-attributes this frame's
     ///      memory growth to the code under test (~20,500 of drift on the account path) — i.e. the contamination was
-    ///      of the same order as the quantity being bounded. The current figures are recorded at the assertion.
+    ///      of the same order as the quantity being bounded. The re-measured figures are deliberately NOT written
+    ///      down: the bound in the assertion is the only number this file maintains, and the clean arm is emitted by
+    ///      the `log_named_uint` beside it when you run the test. An earlier revision promised they were "recorded at
+    ///      the assertion" when no figure was ever put there — a pointer to a baseline that did not exist.
     ///
     ///      (Further history worth keeping: a revision before that quoted "12,349 vs 19,469", numbers that were never
     ///      measured at all and whose derived bound failed against the honest tree. A fabricated measurement in a

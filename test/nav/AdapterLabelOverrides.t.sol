@@ -900,11 +900,20 @@ contract AdapterLabelOverridesTest is AdapterLabelOverridesBase {
         assertEq(names[1], "Mock Protocol", "and on the duplicate entry too");
         assertEq(names[2], "", "a non-adapter address yields an empty name, not a revert");
 
-        // Ceiling: 2 x _NAME_READ_GAS (100k) per ENTRY, plus the adapters' own reads. Bounded well inside it.
+        // Ceiling: the registry-controlled burn is 3 x 100k per ENTRY — the protocol-name override read, the
+        // label-override read, and the decode shim — identically composed to the ACCOUNT path, differing only in
+        // that this path has no per-adapter cache so it is charged per ENTRY. (An earlier revision of this comment,
+        // and of the `_NAME_READ_GAS` docstring it mirrored, said 2x, dropping the decode term.)
+        //
+        // ⚠️ The NUMERIC bound below is deliberately NOT widened to match that 3x. It is an empirical
+        // mutation-catching guard, not the theoretical ceiling: at 1,000,000 it sits above the measured cost and
+        // below 3 x 3 x 100k, so it still fails if the per-entry cost regresses. Raising it to the theoretical
+        // ceiling would make it catch strictly less, and in this repo bounds are set from the mutant, not from
+        // taste.
         assertLt(
             used,
             3 * 2 * 100_000 + 400_000,
-            "the configuration ceiling is 2x the stipend PER ENTRY, plus the adapters' own reads"
+            "configuration-path cost regressed past its empirical bound (theoretical ceiling is 3x the stipend per entry)"
         );
     }
 

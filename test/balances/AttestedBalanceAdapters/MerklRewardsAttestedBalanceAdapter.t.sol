@@ -1138,6 +1138,77 @@ contract MerklRewardsAttestedBalanceAdapterTest is BalanceAdapterTestBase {
         assertEq(pos[0].amount, 100 ether, "survivor unaffected by the neighbour's failure");
     }
 
+    /// @dev ⚠️ NOT MUTATION-DISCRIMINATING, and recorded as such. Reverting either half of the stipend fix
+    ///      (removing the completion reserve, or dividing by `tokens.length - i` instead of `liveCount - i`) leaves
+    ///      this test PASSING. Swept 300k/200k/150k/120k/100k/90k/80k/70k under both versions: survivors identical
+    ///      at every budget. Valuing one token costs far less than any per-token share of a budget large enough for
+    ///      the read to run at all, so the divisor never binds in a two-to-four-token fixture. Kept as behavioural
+    ///      regression coverage — it pins that the read completes and the healthy token survives — but it is NOT
+    ///      evidence the fix is necessary, and nobody should cite it as such.
+    /// @dev THE LAST-TOKEN GRIEFER, at a low budget. With the denominator alone, the final token's divisor is 1, so
+    ///      it receives the entire remaining stipend and the catch arm plus the final array copy are funded only by
+    ///      `stipendFrom`'s 1/64 slack — a shrinking ABSOLUTE amount. The completion reserve is what keeps the read
+    ///      finishable no matter which position the griefer occupies.
+    function test_isolation_griefingTokenLastStillCompletes() public {
+        _seedTwoLive(100 ether, 50 ether);
+        assertEq(adapter.userTokens(alice)[1], address(op), "fixture: the griefed token must be valued LAST");
+        distributor.setBurnsFor(address(op), true);
+
+        INAVCalculator.PositionBalance[] memory pos = adapter.getAdapterPositions{gas: 300_000}(alice, address(0));
+
+        assertEq(pos.length, 1, "the token BEFORE the griefer must survive and the read must complete");
+        assertEq(pos[0].balanceAsset.asset, address(arb), "arb survives a griefer that ran after it");
+        assertEq(pos[0].amount, 100 ether, "and its amount is untouched");
+    }
+
+    /// @dev ⚠️ NOT MUTATION-DISCRIMINATING, and recorded as such. Reverting either half of the stipend fix
+    ///      (removing the completion reserve, or dividing by `tokens.length - i` instead of `liveCount - i`) leaves
+    ///      this test PASSING. Swept 300k/200k/150k/120k/100k/90k/80k/70k under both versions: survivors identical
+    ///      at every budget. Valuing one token costs far less than any per-token share of a budget large enough for
+    ///      the read to run at all, so the divisor never binds in a two-to-four-token fixture. Kept as behavioural
+    ///      regression coverage — it pins that the read completes and the healthy token survives — but it is NOT
+    ///      evidence the fix is necessary, and nobody should cite it as such.
+    /// @dev MIXED REGISTERED / UNREGISTERED ORDERING. Unregistered tokens are skipped without being valued, so they
+    ///      must not appear in the stipend denominator: counting them funds the one registered token as though many
+    ///      more frames were still owed, and it is dropped for want of gas while most of the budget goes unspent.
+    ///      The registered token is placed LAST, behind several unregistered ones, which is the worst ordering.
+    function test_isolation_unregisteredTokensDoNotStarveRegisteredOnes() public {
+        // One live tree covering four tokens; only `arb` is registered on the NAV.
+        Mock_ERC20 u1 = new Mock_ERC20("UNREG1", 18);
+        Mock_ERC20 u2 = new Mock_ERC20("UNREG2", 18);
+        Mock_ERC20 u3 = new Mock_ERC20("UNREG3", 18);
+        // arb FIRST, the three unregistered AFTER it. Ordering is load-bearing: at the LAST index both
+        // denominators are 1, so a registered token placed last cannot distinguish the two formulas.
+        address[4] memory toks = [address(arb), address(u1), address(u2), address(u3)];
+        bytes32[4] memory leaves;
+        for (uint256 i; i < 4; ++i) {
+            leaves[i] = _leaf(alice, toks[i], 10 ether);
+        }
+        bytes32 h01 = leaves[0] < leaves[1]
+            ? keccak256(abi.encode(leaves[0], leaves[1]))
+            : keccak256(abi.encode(leaves[1], leaves[0]));
+        bytes32 h23 = leaves[2] < leaves[3]
+            ? keccak256(abi.encode(leaves[2], leaves[3]))
+            : keccak256(abi.encode(leaves[3], leaves[2]));
+        distributor.setRoot(h01 < h23 ? keccak256(abi.encode(h01, h23)) : keccak256(abi.encode(h23, h01)));
+
+        for (uint256 i; i < 4; ++i) {
+            bytes32[] memory pu = new bytes32[](2);
+            pu[0] = leaves[i ^ 1];
+            pu[1] = i < 2 ? h23 : h01;
+            _submitOne(alice, toks[i], 10 ether, pu);
+        }
+        assertEq(adapter.userTokens(alice).length, 4, "fixture: one registered ahead of three unregistered");
+        assertEq(adapter.userTokens(alice)[0], address(arb), "fixture: the registered token is valued FIRST");
+
+        // Budget chosen so dividing by 4 (all tokens) starves arb while dividing by 1 (the live count) does not.
+        INAVCalculator.PositionBalance[] memory pos = adapter.getAdapterPositions{gas: 120_000}(alice, address(0));
+
+        assertEq(pos.length, 1, "the one registered token must still be valued");
+        assertEq(pos[0].balanceAsset.asset, address(arb), "and it is arb");
+        assertEq(pos[0].amount, 10 ether, "with its full amount");
+    }
+
     /// @dev THE ORDERING CASE. The griefed token comes FIRST, so it is valued before the healthy one. This is what
     ///      distinguishes real isolation from the appearance of it: a per-token stipend of 63/64 of ALL remaining gas
     ///      lets the first token consume nearly the whole budget before failing, starving every token after it — so

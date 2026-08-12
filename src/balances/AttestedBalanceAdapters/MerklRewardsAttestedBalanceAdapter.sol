@@ -170,6 +170,12 @@ contract MerklRewardsAttestedBalanceAdapter is IAttestedBalanceAdapter, IPositio
     ///         reverts the refresh of the account's OTHER tokens too.
     uint256 public constant MAX_TOKENS_PER_USER = 64;
 
+    /// @dev Gas withheld from the per-token stipends, per leg of the scratch buffer, so the read can always
+    ///      complete after the last token consumes everything it was given. It pays for the catch arm plus the
+    ///      final `PositionBalance[]` allocation and copy, which is O(legs) — hence per-leg rather than a flat
+    ///      figure that would be too small at the 512-leg cap and wasteful at one leg.
+    uint256 private constant _COMPLETION_RESERVE_PER_LEG = 256;
+
     /// @notice Merkl Distributor (Angle Labs). Same address on every supported EVM chain.
     address public immutable DISTRIBUTOR;
 
@@ -486,19 +492,41 @@ contract MerklRewardsAttestedBalanceAdapter is IAttestedBalanceAdapter, IPositio
         if (msg.sender != address(this)) revert NotAuthorized();
         INAVCalculator.Asset[] memory registered = NAV_CALCULATOR.getRegisteredAssets();
 
-        // Size the scratch buffer to the leg upper bound: one leg per cached campaign share per token (or one
-        // untagged leg for a token with no breakdown). Zero-amount legs drop below it.
-        uint256 cap;
-        for (uint256 i; i < tokens.length; ++i) {
-            uint256 c = _campaigns[account][tokens[i]].length;
-            cap += c == 0 ? 1 : c;
-        }
-
-        INAVCalculator.PositionBalance[] memory tmp = new INAVCalculator.PositionBalance[](cap);
-        uint256 count;
+        // PRE-FILTER to the tokens that will actually be VALUED. Resolving registry metadata up front is not a
+        // tidy-up: the stipend denominator below must count only tokens that get a frame. Counting tokens that are
+        // then skipped as unregistered reserves budget nothing ever spends, so an early registered reward is funded
+        // as if 63 others were still coming and can be dropped for want of gas while most of the frame goes unused.
+        address[] memory live = new address[](tokens.length);
+        INAVCalculator.Asset[] memory metas = new INAVCalculator.Asset[](tokens.length);
+        uint256 liveCount;
         for (uint256 i; i < tokens.length; ++i) {
             (INAVCalculator.Asset memory meta, bool found) = RegisteredAssetLib.find(registered, tokens[i]);
             if (!found) continue;
+            live[liveCount] = tokens[i];
+            metas[liveCount] = meta;
+            ++liveCount;
+        }
+        if (liveCount == 0) return new INAVCalculator.PositionBalance[](0);
+
+        // Size the scratch buffer to the leg upper bound over the LIVE set: one leg per cached campaign share per
+        // token (or one untagged leg for a token with no breakdown). Zero-amount legs drop below it.
+        uint256 cap;
+        for (uint256 i; i < liveCount; ++i) {
+            uint256 c = _campaigns[account][live[i]].length;
+            cap += c == 0 ? 1 : c;
+        }
+
+        // COMPLETION RESERVE. Held back from every stipend so the loop can always finish: the catch arm and the
+        // final `positions` allocation-and-copy must stay affordable even after the LAST token exhausts everything
+        // it was given. Without it the last token's denominator is 1, so it receives the whole remaining stipend
+        // and completion is funded only by `stipendFrom`'s 1/64 slack — which is a shrinking absolute amount.
+        // Scaled by the leg cap because the copy is what the reserve pays for, and that is O(legs).
+        uint256 reserve = _COMPLETION_RESERVE_PER_LEG * cap;
+
+        INAVCalculator.PositionBalance[] memory tmp = new INAVCalculator.PositionBalance[](cap);
+        uint256 count;
+        for (uint256 i; i < liveCount; ++i) {
+            INAVCalculator.Asset memory meta = metas[i];
 
             // PER-TOKEN ISOLATION. Each token is valued in its own stipended frame, so one token cannot corrupt
             // every other token's reading. Without this, a single token's failure escapes the whole adapter in one
@@ -520,8 +548,9 @@ contract MerklRewardsAttestedBalanceAdapter is IAttestedBalanceAdapter, IPositio
             // token to its fair slice; because `gasleft()` is re-read every iteration, tokens that finish cheaply
             // hand their unused share to the ones after them, so the healthy path is not starved.
             uint256 available = gasleft();
-            uint256 stipend = GasStipendLib.stipendFrom(available) / (tokens.length - i);
-            try this.tokenLegsSelf{gas: stipend}(account, tokens[i], meta) returns (
+            uint256 budget = available > reserve ? available - reserve : 0;
+            uint256 stipend = GasStipendLib.stipendFrom(budget) / (liveCount - i);
+            try this.tokenLegsSelf{gas: stipend}(account, live[i], meta) returns (
                 INAVCalculator.PositionBalance[] memory legs
             ) {
                 for (uint256 j; j < legs.length; ++j) {

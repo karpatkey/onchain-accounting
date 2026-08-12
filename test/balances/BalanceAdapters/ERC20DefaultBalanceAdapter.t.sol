@@ -280,8 +280,9 @@ contract ERC20DefaultBalanceAdapterTest is Test {
     /// @dev A malformed positionId degrades to `[]`; it must never revert. `positionLabels` is display-only and
     ///      this is the one adapter registered on all 24 chains, so a configuration view that generalises
     ///      "per-position adapters answer the probe with []" and probes with anything other than exactly `""`
-    ///      must still get an answer. Matches the `[]` its `CapBalanceAdapter` /
-    ///      `NexusMutualStakingPoolsAssistedBalanceAdapter` siblings return for the same inputs.
+    ///      must still get an answer. Matches the `[]` its `CapStablecoinBalanceAdapter` /
+    ///      `CapSavingsBalanceAdapter` / `NexusMutualStakingPoolsAssistedBalanceAdapter` siblings return for the
+    ///      same inputs. (Named `CapBalanceAdapter` until that contract was split one-per-leg.)
     ///
     ///      Both halves are load-bearing against the guard, not just against a revert:
     ///        - truncated (1..31 bytes) would revert in `abi.decode` without the `length >= 32` check;

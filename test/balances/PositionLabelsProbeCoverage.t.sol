@@ -30,8 +30,10 @@ import {VmSafe} from "forge-std/Vm.sol";
 ///          the whole answer: the shape is already reachable from a configuration view;
 ///        - breadcrumb is derived per positionId -> the probe returns `[]`, which on its own is indistinguishable
 ///          from a broken adapter. **Implement {IPositionEnumerable} as well** so the shapes are reachable: its
-///          `positionIds()` lists them and its ERC-165 bit marks the `[]` as deliberate. `CapBalanceAdapter` is
-///          the worked example — see its `test_positionIds_*` cases.
+///          `positionIds()` lists them and its ERC-165 bit marks the `[]` as deliberate. The Cap leg adapters are
+///          the worked example — see the `test_positionIds_*` cases in
+///          `test/balances/BalanceAdapters/cap/CapStablecoinBalanceAdapter.t.sol`. (This used to point at
+///          `CapBalanceAdapter.t.sol`, which no longer exists: the combined adapter was split one-per-leg.)
 ///
 ///      Only the second branch needs the extra interface, and it is a real decision either way — an adapter whose
 ///      shapes are discovered per ACCOUNT (a per-account coordinate cache) has no account-independent answer and

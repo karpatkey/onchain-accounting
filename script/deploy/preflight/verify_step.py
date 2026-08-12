@@ -432,13 +432,29 @@ def step_record_cleared(k: Chk, rec: dict, exp: dict, url, base, tag) -> None:
         # passed. `reset_deployment_records` blanks VALUES and preserves KEYS (`block[name] = ""`),
         # so it never removes a section. Same monotone rule: expected if config or the archive says
         # so, and either source can only add a failure.
-        if sec not in rec:
-            if sec in section_expected or (arch is not None and arch.get(sec)):
-                k.fail.append(f"the whole {sec} section is ABSENT from the record, not blanked — "
-                              f"`reset_deployment_records.py` blanks values and keeps keys, so it "
-                              f"never removes a section; this record has lost one")
-            continue
-        still = populated(rec.get(sec))
+        block = rec.get(sec)
+        arch_block = arch.get(sec) if isinstance(arch, dict) else None
+        if sec in section_expected or arch_block:
+            # DESTROYED IS NOT THE SAME AS DELETED, and an earlier revision only caught deletion.
+            # `sec not in rec` misses `null`, `{}` and `[]` — all three destroy the identical key
+            # set and all three passed. Test the CONTENT, not the presence of the name: the section
+            # must be an object, and `reset_deployment_records` preserves keys while blanking
+            # values, so it must still hold every entry the pre-clear archive recorded.
+            if not isinstance(block, dict):
+                k.fail.append(f"{sec} is missing or is not an object ({block!r}) — this chain is "
+                              f"expected to carry it and `reset_deployment_records.py` blanks values "
+                              f"while keeping keys, so it never removes or empties a section")
+                continue
+            lost = sorted(set(arch_block or {}) - set(block))
+            if lost:
+                k.fail.append(f"{sec} has LOST {len(lost)} entr(y/ies) present in "
+                              f"archive/{tag}/{k.chain_id}.json: {lost[:6]}"
+                              f"{' …' if len(lost) > 6 else ''} — blanked values keep their keys, so "
+                              f"these were deleted")
+            elif not block:
+                k.fail.append(f"{sec} is EMPTY. Every in-scope chain carries at least `ERC20Default` "
+                              f"here, so an empty section is a destroyed one, not a cleared one")
+        still = populated(block if isinstance(block, dict) else None)
         k.require(not still,
                   f"{sec} still holds {len(still)} address(es): {sorted(still)[:6]}"
                   f"{' …' if len(still) > 6 else ''}")
@@ -1040,8 +1056,11 @@ def _self_test() -> int:
     cleared["AssetKindRegistry"] = ""
     # Sections PRESENT and EMPTY is what "cleared" means — `reset` blanks values and keeps keys.
     # Omitting them made arms on a chain whose config expects sections fail for the wrong reason.
-    cleared["balanceAdapters"] = {}
-    cleared["customPriceFeeds"] = {}
+    # Blanked-but-POPULATED, which is what a cleared section looks like: `reset` sets values to ""
+    # and keeps keys. An empty dict is a DESTROYED section and the rule now says so, so an empty
+    # fixture would make every arm fail for the wrong reason.
+    cleared["balanceAdapters"] = {"ERC20Default": "", "AaveV3InstancesMeta": ""}
+    cleared["customPriceFeeds"] = {"wstETH": ""}
     # A chain that never deployed assistants: the archive has none either. THE #299 CASE.
     arch_plain = {key: ADDR for key in UNIVERSAL} | {"NAVCalculatorProxy": ADDR}
 
@@ -1098,7 +1117,7 @@ def _self_test() -> int:
     no_section = {k_: v for k_, v in cleared.items() if k_ != "balanceAdapters"}
     run(no_section, dict(arch_plain) | {"balanceAdapters": {"ERC20Default": ADDR}},
         "a WHOLLY ABSENT CLEAR_SECTIONS block is caught, not read as cleared",
-        must_fail=True, expect_in="whole balanceAdapters section is ABSENT", chain=ALL_ASSIST)
+        must_fail=True, expect_in="is missing or is not an object", chain=ALL_ASSIST)
 
     # PINS THE STATED LIMITATION. The generation check cannot attest chain provenance, so a foreign
     # archive passes it silently — that is documented, not fixed. What must hold is that the verdict
@@ -1114,7 +1133,18 @@ def _self_test() -> int:
     # only on chain 1 before, where config does declare, so the suite shared the blind spot it was
     # meant to catch. It now runs where the hole actually was.
     run(no_section, dict(arch_plain), "a deleted section on a META-ONLY chain is caught",
-        must_fail=True, expect_in="whole balanceAdapters section is ABSENT", chain=NO_ASSIST)
+        must_fail=True, expect_in="is missing or is not an object", chain=NO_ASSIST)
+
+    # DESTROYED != DELETED. null / {} / [] each destroy the key set without removing the name, and
+    # an earlier revision keyed on `sec not in rec` and passed all three.
+    arch_full = dict(arch_plain) | {"balanceAdapters": {"ERC20Default": ADDR, "AaveV3InstancesMeta": ADDR}}
+    for bad, tag_ in ((None, "null"), ({}, "an empty object"), ([], "a list")):
+        run(dict(cleared) | {"balanceAdapters": bad}, arch_full,
+            f"a section set to {tag_} is caught, not read as cleared", must_fail=True,
+            # With an archive holding entries, an emptied section trips LOST before EMPTY —
+            # EMPTY is only reachable when no archive witnesses the lost keys.
+            expect_in="has LOST" if bad == {} else "is missing or is not an object",
+            chain=ALL_ASSIST)
 
     for ok, line in results:
         print(line)

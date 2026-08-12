@@ -1159,7 +1159,17 @@ contract AdapterLabelOverridesTest is AdapterLabelOverridesBase {
         // 3-position fixture inflates it past this bound -- which the mutation test proves.
         // Bound set FROM THE MUTATION, not from taste: clean 18,650 / per-position mutant 23,978.
         // An earlier 34,000 passed under that mutant and was therefore worthless.
-        assertLt(cold - base, 22_000, "cold surcharge must scale with distinct adapters, not positions");
+        // ⚠️ RE-DERIVED FROM THE MUTANT on the array-override tree, not raised to make room. The per-segment
+        // `string[]` override behind the decode shim genuinely costs more than the scalar `string` read this bound
+        // was derived against, so the clean arm moved and the bound moved with it — measured, both arms:
+        //
+        //     clean 23,025   <   BOUND 25,500   <   mutant 27,974
+        //
+        // The mutant is the regression this message names: `_labelOverride` moved out of the `adapter != prevAdapter`
+        // branch so it runs per position. Margin is ~10.8% above clean and ~8.8% below the mutant. When this goes red
+        // again, RE-MEASURE BOTH ARMS; do not add headroom. A bound raised on taste is how the 50,000 that once stood
+        // here came to pass under the exact regression it existed to catch.
+        assertLt(cold - base, 25_500, "cold surcharge must scale with distinct adapters, not positions");
     }
 
     /// @dev The BENIGN path of the configuration surface. Only its hostile-registry ceiling was ever measured, which
@@ -1413,7 +1423,19 @@ contract AdapterLabelOverridesTest is AdapterLabelOverridesBase {
 
         // Coarse scale ceiling, NOT mutation-derived: one position per emitting adapter, so the per-position mutant
         // leaves `surcharge` unchanged. `test_gas_coldVsWarm_twoAdapters` is the mutation-derived guard.
-        assertLt(surcharge, 300_000, "cold surcharge must stay within the coarse 27-adapter scale ceiling");
+        //
+        // ⚠️ **That insensitivity is now MEASURED, not just asserted**: under the per-position mutant this test
+        // reports 304,561 — byte-identical to the clean arm. So a mutant-derived bound is IMPOSSIBLE here, and the
+        // ceiling must come from scale instead. Do not mistake this assertion for a caching guard; it will pass
+        // under the caching regression.
+        //
+        // Re-derived from scale on the array-override tree: the sibling single-adapter test measures 11,496 cold per
+        // distinct adapter, and this fixture has 26 EMITTING adapters -> ~298.9k expected, 304,561 observed. Ceiling
+        // set at 26 x ~13,077 = 340,000, i.e. ~12% headroom over the observed value for solc/EVM drift. It was
+        // 300,000 under the scalar `string` read; the per-segment `string[]` override raised the per-adapter cost and
+        // this moved with it. What this still catches is a SCALE break — cost going super-linear in adapters, or
+        // per-position — which would overshoot by far more than the headroom.
+        assertLt(surcharge, 340_000, "cold surcharge must stay within the coarse 27-adapter scale ceiling");
         assertEq(all.length, 27, "fixture must hold 27 registered adapters");
         assertEq(emitting, 26, "fixture shape: 26 of the 27 emit; the default ERC20 adapter holds no balance for safe");
     }

@@ -20,7 +20,9 @@ the family via ERC-165 and the one universal mutator, the stale-gated `clearAcco
 - **Permissionless, submit-on-behalf-of.** The submit mutator takes an explicit `account`; anyone can call it (one
   agent feeds many accounts). No roles, no `AccessControl`, no `delegatecall` assistant.
 - **Proof-verified.** A write lands only if its proof validates against the protocol's live root → a faulty/malicious
-  feeder can only cache an account's **real** data: **under-report, never over-report**.
+  feeder can only cache an account's **real proof-bound VALUE**: **under-report, never over-report** on the number.
+  The guarantee stops at what the proof commits to — auxiliary metadata cached alongside it (Merkl's campaign ids
+  and split, only their SUM checked) is NOT attested and must be documented by the member.
 - **Upsert, never suppress.** A submit adds/refreshes the elements it carries and **never drops** an omitted one;
   removal is only via the **stale-gated** `clearAccount` / a per-element clear (which revert while any entry is live).
   So a third party can neither inflate nor suppress an account's balance.

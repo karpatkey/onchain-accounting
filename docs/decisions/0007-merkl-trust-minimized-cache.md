@@ -16,9 +16,10 @@ The constructor drops `admin_`/`assistant_` and is now `(distributor_, navCalcul
 **Why this is safe (the griefing objection in Alternatives #1 no longer holds).** Alternatives #1 rejected
 permissionless submission for v1 over "spam / storage griefing — any attacker can populate `(user, token)` entries for
 arbitrary users." Proof-verification defuses this: a submission for `user` only lands if its proof validates against
-Merkl's real root for that user's leaf, so a caller can only ever cache a user's **real, Merkl-attested** allocation —
+Merkl's real root for that user's leaf, so a caller can only ever cache a user's **real, Merkl-attested** per-token AMOUNT —
 bounded to that user's *actual* reward footprint. Worst case a griefer pays gas to report a real balance (helpful, not
-harmful); they cannot fabricate, inflate, or populate fake entries. So the completeness dependency on a *trusted*
+harmful); they cannot fabricate or inflate the AMOUNT. **They can, however, fabricate campaign IDENTITY:** the proof
+binds the per-token cumulative but not the split, so a third party holding the (public) proof can re-submit it divided into up to `MAX_CAMPAIGNS_PER_TOKEN` attacker-chosen campaign legs. Bounded, never inflating NAV, and repairable by one upsert — but it is a real fabrication of position identity, so "cannot populate fake entries" was too strong and is withdrawn. So the completeness dependency on a *trusted*
 assistant is removed — anyone (a public keeper, or the account itself) can refresh — while the "cannot over-report"
 Iron Law is preserved by the same proof check.
 

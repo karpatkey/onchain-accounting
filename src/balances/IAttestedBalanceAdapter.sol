@@ -10,7 +10,11 @@ import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
 ///         plain keeper EOA / cron, **not** a `delegatecall` assistant contract — that submits, **on behalf of** a
 ///         tracked account, that account's cached elements. The defining trait is that **every write carries a
 ///         protocol-specific validity proof verified on-chain** (an *attestation*): a write only lands if its proof
-///         validates, so the cached data is always the account's real, protocol-attested data.
+///         validates, so the **proof-bound value** is always the account's real, protocol-attested figure.
+///         **The attestation covers that value and nothing else.** A member may cache auxiliary metadata the proof
+///         does NOT commit to — Merkl's campaign ids and per-campaign split are submitter-controlled, with only
+///         their SUM checked against the proven per-token total — so consumers must not treat cached position
+///         IDENTITY as attested. A member that caches such metadata must document it.
 /// @dev **How this differs from {IAssistedBalanceAdapter}** (the other externally-fed family):
 ///      - {IAssistedBalanceAdapter} is `msg.sender`-keyed and fed by a `delegatecall` assistant so the adapter sees
 ///        `msg.sender = the position owner`; it caches **coordinates only, never amounts** and re-verifies ownership
@@ -23,7 +27,8 @@ import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
 ///      accounts, integrity does NOT come from `msg.sender`-keying or live-ownership re-verification. Instead **every
 ///      write carries a protocol-specific validity proof checked on-chain** (e.g. Merkl merkle-proof verification
 ///      against the live `Distributor.getMerkleRoot()`), so a faulty or malicious feeder can only ever cache an
-///      account's **real** data — **under-report, never over-report**. Writes are a per-element **upsert** (add /
+///      account's **real proof-bound VALUE** — **under-report, never over-report** on the number. It does NOT
+///      extend to auxiliary metadata a member caches beside that value, which may be submitter-controlled. Writes are a per-element **upsert** (add /
 ///      refresh a proven element); a submit **never drops** an element it omits, so a third party can never suppress
 ///      a live entry by submitting a partial or empty set. Removal is only via the stale-gated `clearAccount` (below)
 ///      / a per-protocol per-element clear. Stale entries read as 0 (e.g. cached root ≠ live root).

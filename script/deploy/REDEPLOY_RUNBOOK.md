@@ -317,9 +317,9 @@ NAV address is invalidated by construction:
 
 | consequence | scale | done at |
 | --- | --- | --- |
-| every custom price feed is redeployed — each holds `INAVCalculator public immutable NAV` (ADR 0019) | **41**: mainnet 26, arbitrum 8, base 4, gnosis 3 | 1.4 |
-| every asset with its primary + monitor feeds is re-registered | **93** assets | 1.5 |
-| every plain and meta adapter is redeployed | 12 plain + 33 meta | 1.6 |
+| every custom price feed is redeployed — each holds `INAVCalculator public immutable NAV` (ADR 0019) | **41**: mainnet 26, arbitrum 8, base 4, gnosis 3 | 1.5 |
+| every asset with its primary + monitor feeds is re-registered | **93** assets | 1.6 |
+| every plain and meta adapter is redeployed | 12 plain + 33 meta | 1.7 |
 | every meta instance is re-registered | **111** | 1.8 |
 | each assisted adapter drags its assistant, which holds `immutable ADAPTER` | **4 pairs on 2 chains** | 2.1 |
 | downstream consumers repoint off the old proxy | kpkShares, portal, agents, subgraphs | 2.7 |
@@ -1409,9 +1409,12 @@ with `--slow`.
 configuration` (`06:37`) and skips the entire bridge block. The deferred bridge is therefore not
 touched at all by this step, not merely touched idempotently.
 
-- **Precondition:** 1.5 and 1.6 done.
+- **Precondition:** 1.5, 1.6 **and 1.7** done. 1.7 (`04`) is the step that DEPLOYS the adapters this
+  step registers — run `06` without it and every adapter is absent from the record, so `06` takes
+  `if (deployed == address(0)) continue;` for all of them, registers nothing, and exits 0.
 - **Post-condition:** `python3 script/deploy/preflight/verify_step.py 1.8` — `getAdapterCount()`
-  matches 1.6, every recorded adapter reports `isAdapterRegistered`, nothing is registered that is not
+  matches 1.7 (`04` is what deploys adapters; 1.6 is `RegisterAssets` and produces no adapter count),
+  every recorded adapter reports `isAdapterRegistered`, nothing is registered that is not
   in the record, and each meta adapter's `getMetaInstances()` **set equals** its configured coordinate
   set, summing to the total in the meta-instance table at the top of this document (**111**; 110 as
   reconciled 2026-07-29, +1 on 2026-08-12 for issue #296). The per-chain breakdown lives in that table only — it is not repeated here,
@@ -1753,8 +1756,12 @@ against, and 2.6 cannot run until the new addresses are recorded.
   movement.** Measured on mainnet 2026-08-12: the vault holds `totalAssets() = 1002452` (1.0025 USDC)
   against `totalSupply() = 1e18`, and that entire supply sits at `0x…dEaD` — seed shares. Every tracked
   chain-1 account holds ZERO, so no snapshotted account has a position to report. **The check to make is
-  the GAINED-instance line and `metaInstanceTotal 66 -> 67`; their ABSENCE means the reconciliation
-  dropped the vault.** Do NOT treat a flat `nav.value` as evidence of a drop — a $1 seed position could
+  the GAINED-instance line and `metaInstanceTotal 66 -> 67`.** Their ABSENCE means the reconciliation
+  dropped the vault — **but ONLY when diffing against the COMMITTED `pre/` snapshot (block 25625439),
+  which holds 9 instances.** §0.7 sanctions refreshing `pre/`; if it is refreshed AFTER this change,
+  both lines legitimately disappear and their absence proves nothing. Check `pre/1.json`'s
+  `MorphoVaultsMeta` length first: 9 means the absence test is valid, 10 means it is not and the
+  structural check has already been absorbed into the baseline. Do NOT treat a flat `nav.value` as evidence of a drop — a $1 seed position could
   not clear the residual band in any case, and an earlier revision of this entry said the opposite,
   which would have halted a correct deploy at the last gate before cutover.
 

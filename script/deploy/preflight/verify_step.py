@@ -189,14 +189,7 @@ def expected_sections(chain_id: int) -> set[str]:
         if sec in out:
             continue
         for sub in producers.get(sec, ()):
-            p = c.CONTRACTS_CONFIG_DIR / sub / f"{chain_id}.json"
-            if not p.is_file():
-                continue
-            try:
-                cfg = json.loads(p.read_text())
-            except (OSError, ValueError):
-                continue
-            if any(isinstance(v, dict) and v.get("enabled") is True for v in cfg.values()):
+            if pc.enabled_keys(pc.dcfg(sub, chain_id)):
                 out.add(sec)
                 break
     return out
@@ -216,25 +209,27 @@ def expected_clear_top(chain_id: int) -> set[str]:
 
     The three `*Assistant` keys exist only where the matching assisted adapter is enabled (today:
     chain 1 all three, chain 100 StakeWise only). Every other `CLEAR_TOP` key is part of the NAV
-    stack that every in-scope chain gets. The `…Assistant` record key maps to the `…Assisted*`
-    config key by stem; the mapping is derived here rather than hard-coded so a fourth assisted
-    protocol needs no edit.
+    stack that every in-scope chain gets.
+
+    The adapter -> assistant mapping comes from `ASSISTED_PAIRS`, the SAME table gate 1.7 uses, so
+    the two gates cannot silently disagree about which pairs exist. An earlier revision re-derived
+    it by stem-prefix string surgery, which is a second source of truth for a fact the file already
+    states once. Config loading goes through `preflight_config`, whose `enabled_keys` already
+    mirrors `ConfigReader.isAdapterEnabled` (a MISSING `enabled` reads as false).
     """
-    keys = {k for k in rd.CLEAR_TOP if not k.endswith("Assistant")}
-    cfg_path = c.CONTRACTS_CONFIG_DIR / "balance-adapters" / f"{chain_id}.json"
-    if not cfg_path.is_file():
+    keys = {key for key in rd.CLEAR_TOP if not key.endswith("Assistant")}
+    cfg = pc.dcfg("balance-adapters", chain_id)
+    if not cfg:
+        # SAY SO rather than silently shrinking the expectation. An absent or unreadable config is
+        # the ORACLE being unavailable, not a chain legitimately carrying nothing — and that
+        # difference decides whether an absent assistant is a deletion or a non-event. Returning the
+        # universal keys is still safe because evidence is monotone: the archive independently
+        # witnesses anything this misses. Surfaced by the caller as a warning, not a failure.
         return keys
-    try:
-        cfg = json.loads(cfg_path.read_text())
-    except (OSError, ValueError):
-        return keys
-    enabled = {name for name, v in cfg.items() if isinstance(v, dict) and v.get("enabled") is True}
-    for key in rd.CLEAR_TOP:
-        if not key.endswith("Assistant"):
-            continue
-        stem = key[: -len("Assistant")]
-        if any(name.startswith(stem) and "Assisted" in name for name in enabled):
-            keys.add(key)
+    enabled = set(pc.enabled_keys(cfg))
+    for adapter_key, assistant_key in ASSISTED_PAIRS:
+        if adapter_key in enabled:
+            keys.add(assistant_key)
     return keys
 
 
@@ -354,9 +349,14 @@ def step_record_cleared(k: Chk, rec: dict, exp: dict, url, base, tag) -> None:
     old_proxy = (base.get(k.chain_id) or {}).get("proxy") if base else None
     if arch is not None:
         if not old_proxy:
-            k.fail.append(f"snapshots/pre/index.json has no baseline proxy for chain {k.chain_id}, so "
+            # WARN, NOT FAIL. This is the ORACLE being unavailable, not the record being wrong.
+            # Measured: as a failure it turned gate 1.1 RED on 24 of 24 correctly-cleared chains
+            # when `snapshots/pre/index.json` is missing or re-captured — reintroducing the exact
+            # #299 mass-red this file exists to remove, from the check added to diagnose it.
+            # Absence is judged from config, which does not need the baseline.
+            k.warn.append(f"snapshots/pre/index.json has no baseline proxy for chain {k.chain_id}, so "
                           f"archive/{tag}/{k.chain_id}.json cannot be confirmed as the generation "
-                          f"being replaced (absence is judged from config, so the gate stays sound)")
+                          f"being replaced — absence is judged from config, so this is not a failure")
         elif str(arch.get("NAVCalculatorProxy", "")).lower() != str(old_proxy).lower():
             k.fail.append(f"archive/{tag}/{k.chain_id}.json records NAVCalculatorProxy "
                           f"{arch.get('NAVCalculatorProxy')!r}, but the committed pre-deploy snapshot "
@@ -1021,7 +1021,7 @@ def _self_test() -> int:
     results: list[tuple[bool, str]] = []
 
     def run(rec: dict, arch: dict | None, label: str, must_fail: bool, expect_in: str = "",
-            base: dict | None = None, chain: int = NO_ASSIST) -> None:
+            base: dict | None = None, chain: int = NO_ASSIST, expect_warn: str = "") -> None:
         # The chain id is a REAL one and it matters: expectation is now derived per chain from
         # config, so an arm modelling "a chain that never had assistants" must not be run against a
         # chain whose config enables three of them. An earlier revision of this suite hardcoded
@@ -1041,7 +1041,9 @@ def _self_test() -> int:
                 rd.ARCHIVE_DIR = real_dir
         failed = bool(k.fail)
         joined = " | ".join(k.fail)
-        ok = (failed == must_fail) and (not expect_in or expect_in in joined)
+        warned = " | ".join(k.warn)
+        ok = (failed == must_fail) and (not expect_in or expect_in in joined) \
+            and (not expect_warn or expect_warn in warned)
         # Built by concatenation, NOT a nested f-string reusing the outer quote: that construct is
         # PEP 701 and only parses on Python 3.12+, and a SyntaxError here is raised at IMPORT, which
         # would take out every gate 1.1-1.8 on an older interpreter rather than just --self-test.
@@ -1098,9 +1100,12 @@ def _self_test() -> int:
     run(dict(cleared), wrong_gen,
         "...and a wrong-generation archive cannot excuse an expected key", must_fail=True,
         expect_in="config enables the adapter", chain=ONE_ASSIST)
+    # PINS #6: a missing baseline must WARN, never FAIL. As a failure it turned 24 of 24
+    # correctly-cleared chains red — the #299 mass-red, reintroduced by the diagnostic added to
+    # detect it. If someone re-promotes this to k.fail, this arm goes red.
     run(dict(cleared), dict(arch_plain),
-        "no baseline for the chain => reported, absence judged on config", must_fail=True,
-        expect_in="no baseline proxy", base={})
+        "a missing baseline WARNS and does not fail the gate", must_fail=False,
+        expect_warn="no baseline proxy", base={})
 
     # HOLES 6 AND 7 — both let a real deletion pass while the archive was the SOLE oracle. These
     # arms are the regression guards for the config-derived rule that replaced it. Chain 1 is used

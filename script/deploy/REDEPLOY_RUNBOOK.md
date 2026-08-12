@@ -995,10 +995,11 @@ python3 script/deploy/preflight/reset_deployment_records.py
 python3 script/deploy/preflight/reset_deployment_records.py --apply --tag pre-redeploy
 ```
 
-Values are set to `""` rather than deleted because `verify_step.step_record_cleared` does a literal
-`key not in rec`, making it the only reader that can tell an absent key from a blanked one —
-everything reading through `ConfigReader._readAddrOrZero` gets `address(0)` for missing, empty and
-placeholder alike.
+Values are set to `""` rather than deleted because more than one reader checks PRESENCE rather than
+value: `verify_step.step_record_cleared` does a literal `key not in rec` and fails on absence, and
+`deployer_balances.scope()` counts `*Assistant` keys by presence ignoring value. Everything reading
+through `ConfigReader._readAddrOrZero` is blind to the difference — it returns `address(0)` for
+missing, empty and placeholder alike.
 
 > **That check does not cover every key it iterates, so expect noise here.** `CLEAR_TOP` mixes
 > universal keys with the three chain-1-only `*Assistant` keys, which have no exemption in the

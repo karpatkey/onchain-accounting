@@ -227,11 +227,12 @@ class Chk:
 
 def step_record_cleared(k: Chk, rec: dict, exp: dict, url, base, tag) -> None:
     """The record must be cleared, the bridge must NOT be, and a rollback must exist."""
-    # `reset_deployment_records.py` writes "" rather than deleting, and THIS CHECK is why. The loop
-    # below does a literal `key not in rec`, which makes it the one reader able to tell an absent key
-    # from a blanked one; a record whose keys were deleted by hand, by `jq del(...)`, or by
-    # regenerating from a template would otherwise read as cleared and slip past. Absence must fail,
-    # not pass.
+    # `reset_deployment_records.py` writes "" rather than deleting, and this check is one reason —
+    # not the only one. The loop below does a literal `key not in rec`, so a record whose keys were
+    # deleted by hand, by `jq del(...)`, or by regenerating from a template would otherwise read as
+    # cleared and slip past. Absence must fail, not pass. `deployer_balances.scope()` also counts
+    # `*Assistant` keys by PRESENCE ignoring value (deployer_balances.py:374), which is why
+    # CREATE_IF_ABSENT deliberately excludes them.
     #
     # BUT IT DOES NOT COVER EVERY KEY IT ITERATES, so do not read the line above as a guarantee.
     # CLEAR_TOP mixes universal keys with the three chain-1-only `*Assistant` keys, which get no
@@ -250,10 +251,10 @@ def step_record_cleared(k: Chk, rec: dict, exp: dict, url, base, tag) -> None:
     #     there instead of silently making this comment wrong. The write-back was never at risk.
     for key in rd.CLEAR_TOP:
         if key not in rec:
-            k.fail.append(f"{key} is ABSENT from the record, not blanked. This check is the only "
-                          f"reader that can tell absent from blank, so an absent key hides whether "
-                          f"the record was cleared or mangled; restore it as \"\" rather than "
-                          f"deleting it")
+            k.fail.append(f"{key} is ABSENT from the record, not blanked. Absent and blank differ "
+                          f"to the readers that check presence rather than value (this check, and "
+                          f"deployer_balances' assistant count), so an absent key hides whether the "
+                          f"record was cleared or mangled; restore it as \"\" rather than deleting it")
             continue
         k.require(not c.is_address(rec[key]),
                   f"{key} is still populated ({rec[key]}) — 03/04 will skip-if-deployed and 06 "

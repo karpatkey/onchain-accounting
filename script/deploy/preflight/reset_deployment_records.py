@@ -17,11 +17,20 @@ WHY WRITE "" RATHER THAN DELETE THE KEY
 ---------------------------------------
 TWO SEPARATE REASONS, AND MERGING THEM IS HOW THIS COMMENT KEEPS GOING WRONG.
 
-(1) The key must be PRESENT — and `verify_step.step_record_cleared` is the only reader that can tell
-    an absent key from a blanked one, because it does a literal `key not in rec`. Everything reading
-    through `ConfigReader` cannot: `_readAddrOrZero` (ConfigReader.sol:217) returns address(0) for
-    ALL THREE of missing-key, empty string, and placeholder, so absent and blank are
-    indistinguishable to it by construction.
+(1) The key must be PRESENT, because at least two readers distinguish an absent key from a blanked
+    one and neither reads through `ConfigReader`:
+      * `verify_step.step_record_cleared` does a literal `key not in rec` and FAILS on absence;
+      * `deployer_balances.scope()` counts `*Assistant` keys by PRESENCE, ignoring value
+        (`deployer_balances.py:374`), so a blank key counts and an absent one does not — see the
+        CREATE_IF_ABSENT note below, which is attached to exactly that mechanism.
+    Everything that DOES read through `ConfigReader` is blind to the difference: `_readAddrOrZero`
+    (ConfigReader.sol:217) returns address(0) for all three of missing-key, empty string and
+    placeholder, by construction.
+
+    Deliberately not written as "X is the only reader". Three previous versions of this note each
+    replaced a false specific with a clean universal — "the write-back needs the key", then "08 needs
+    the key", then "only verify_step needs the key" — and each was refuted, the last one by a
+    counter-example in this same file. If you find yourself reaching for "only", enumerate instead.
 
     THAT CHECK DOES NOT CURRENTLY COVER EVERY KEY IT LOOKS AT, so this is not a guarantee today.
     CLEAR_TOP mixes universal keys with the three chain-1-only `*Assistant` keys, which have no
@@ -125,8 +134,9 @@ def plan_for(chain_id: int) -> tuple[dict, list[str]]:
     for k in CLEAR_TOP:
         if k not in out and k in CREATE_IF_ABSENT:
             # ABSENT is not "already clear" for these, and for exactly ONE reason:
-            # `verify_step.step_record_cleared` does a literal `key not in rec`, so it is the only
-            # reader that distinguishes an absent key from a blanked one. Anything reading through
+            # `verify_step.step_record_cleared` does a literal `key not in rec`, and
+            # `deployer_balances.scope()` counts these keys by presence — two readers that
+            # distinguish an absent key from a blanked one. Anything reading through
             # `ConfigReader._readAddrOrZero` — including `08_DeployAssetKindRegistry` — gets
             # address(0) for missing, empty AND placeholder alike, so 08 is NOT a reason the key must
             # exist (it needs the VALUE cleared, which the branch below does). Nor is the write-back:

@@ -192,6 +192,27 @@ contract CapBalanceAdaptersForkTest is BalanceAdapterTestBase {
         assertEq(sAssets.length, 0);
     }
 
+    /// @notice RESTORED. The pre-split fork suite had this and the split dropped it — the only fork-level check on
+    ///         `getAdapterBalanceForAsset` for an account with no holdings.
+    /// @dev ⚠️ **This is the least-protected of the three read surfaces, which is why losing it mattered.**
+    ///      `getAdapterBalances` and `getAdapterPositions` both short-circuit on `account == address(0)`;
+    ///      `SingleAssetBalanceAdapterBase.getAdapterBalanceForAsset` guards only the ASSET, never the account (a
+    ///      recorded decision — it is pre-existing and repo-wide across every single-asset adapter). So this surface
+    ///      relies entirely on the underlying `balanceOf` being zero, and this is the only test that exercises that
+    ///      against the real mainnet tokens.
+    ///
+    ///      It went missing the way deletions do: the split renamed or folded eleven of the old suite's twelve
+    ///      tests, so a by-name diff shows five "missing" of which four are renames — absent-because-fine and
+    ///      absent-because-lost look identical until each is checked. #285 has now reduced zero-account protection
+    ///      three separate times (a mutated-out guard, this deleted test, and the N1 deregistration), so the
+    ///      cheapest defence is that this test simply exist.
+    function test_getAdapterBalanceForAsset_unknownAccount() public view {
+        (uint256 a,) = stablecoin.getAdapterBalanceForAsset(unknownAccount, USDC);
+        assertEq(a, 0, "an account with no cUSD must report nothing on the single-asset surface");
+        (uint256 b,) = savings.getAdapterBalanceForAsset(unknownAccount, USDC);
+        assertEq(b, 0, "and likewise for stcUSD");
+    }
+
     function test_getAdapterBalanceForAsset_unsupportedAsset() public view {
         (uint256 a,) = stablecoin.getAdapterBalanceForAsset(SAFE, address(0xdead));
         assertEq(a, 0);

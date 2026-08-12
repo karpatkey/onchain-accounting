@@ -26,19 +26,33 @@ operator: **pin the fork block** (see the note at the rehearsal invocation — i
 **None of this means the system is deployed. It is not.** A fork rehearsal is evidence that the deploy
 path executes; it is not a deploy, and it is not an approval to deploy.
 
-Companion tooling lives in [`preflight/`](preflight/README.md). **Nothing there sends a transaction to a
-real chain** — `rehearse_fork.sh` broadcasts only to a loopback anvil. That is not the same as read-only,
-which this line used to claim, so the writers are named instead of implied:
+Companion tooling lives in [`preflight/`](preflight/README.md). Nothing there broadcasts to a real
+chain. Four of its scripts write **git-tracked** files — and because that list has been wrong before,
+**`git status` is the check of record, not this paragraph**:
 
-| script | writes | when |
-| --- | --- | --- |
-| `reset_deployment_records.py` | tracked `deployments/<cid>.json` (archives the old copy first) | only under `--apply`; the default is a dry run |
-| `declared_heartbeat_guard.py` | tracked `preflight/chainlink_declared_heartbeats.json` | its `refresh` mode; the checking modes do not write |
-| `snapshot_production.py` | tracked `preflight/snapshots/<out>/*.json` and the index | every run, default `--out pre` |
-| `rehearse_fork.sh` | **mutates tracked `script/config` and `broadcast/`**, then restores them byte-exact with `git checkout --` and deletes untracked leftovers (`:35-39`, `:61-67`); also writes its work dir, `steps.tsv`, `config-before`/`config-after` copies and `safe-transactions/` (`:84-93`, `:380-381`) | every run — which is why it refuses to start from a dirty tree |
+- `reset_deployment_records.py --apply` — archives and clears `script/config/deployments/`. Dry-run by
+  default; undone with `--restore <tag>`.
+- `snapshot_production.py` — resolves `--out` to `snapshots/<out>/`, or to `<out>` verbatim when the
+  value contains a `/` (`:346`). It **defaults to `--out pre`**, the committed capture (25 tracked
+  files), and the documented pre-deploy step passes `--out pre` deliberately. Judge safety by the
+  resolved destination, not the flag text: any run whose `out_dir` lands on `snapshots/pre/` — `pre`,
+  a relative path, or an absolute one — overwrites the capture.
+- `declared_heartbeat_guard.py --refresh` — rewrites the committed `chainlink_declared_heartbeats.json`.
+- `rehearse_fork.sh` — mutates `script/config/` during a rehearsal, refuses to start if `script/config`
+  or `broadcast/` is dirty (`:63` — those two paths only, not the whole tree), and restores them
+  byte-exactly with `git checkout --` on exit. It also creates `safe-transactions/` in the repo root
+  (`:93`), which is neither tracked nor ignored, so it survives the restore as untracked debris — one
+  more reason the check of record is `git status --untracked-files=all` and not a tracked-file diff.
+  Its remaining outputs (`steps.tsv`, `config-before`/`config-after`, `anvil.log`) go to `$WORK`,
+  which defaults to `/tmp/nav-rehearsal-<chainId>` (`:51`) — outside the repo unless `REHEARSAL_DIR`
+  points back into it.
 
-Five more (`deployer_balances.py`, `verify_step.py`, `preflight_config.py`, `bytecode_audit.py`,
-`diff_snapshots.py`) write a report only where `--json` points, and nothing otherwise.
+Other tools write report files under `--json`. **Every one of these destinations is
+caller-controlled** — `--json` and `--out` take arbitrary paths and are written verbatim
+(`snapshot_production.py:346,371`), so `--out script/config/deployments` would overwrite the
+deployment records with snapshots. Nothing in the tooling prevents that. Everything above describes
+the **documented invocations**, not a guarantee the tools enforce; at those invocations, only
+`reset_deployment_records.py --apply` discards state you would otherwise have to redeploy to recover.
 
 - **Scope:** exactly the **24 chains** that already have a `NAVCalculatorProxy`. Chain **1101**
   (Polygon zkEVM) is excluded — its deployment record is empty, so it was never deployed.
@@ -1010,9 +1024,9 @@ alternative out, before proposing a smaller deploy.
 
 > **There is no `initialAssets` argument.** `initialize(admin_, chainlinkL2SequencerUptimeFeed_,
 > nativeTokenSymbol_)` hardcodes the ERC20Default seed to `[NATIVE_ADDRESS]`
-> (`NAVCalculator.sol:70-86`). The asset set is *not* frozen at genesis — every `registerAsset` calls
-> `addSupportedAsset` on it (`NAVCalculator.sol:141`), and
-> `excludeAssetFromDefaultAdapter`/`includeAssetInDefaultAdapter` (`:248`/`:255`) mutate it later.
+> (`NAVCalculator.sol:99-118`). The asset set is *not* frozen at genesis — every `registerAsset` calls
+> `addSupportedAsset` on it (`NAVCalculator.sol:176`), and
+> `excludeAssetFromDefaultAdapter`/`includeAssetInDefaultAdapter` (`:356`/`:363`) mutate it later.
 > Nothing needs preparing here, and `script/manage/update-erc20-default-from-chain.sh` is dead code
 > (it reads `chains/<id>.json .deployed.NAVCalculatorProxy`, a path that no longer exists, and skips
 > every chain).
@@ -1567,7 +1581,10 @@ bug entirely and must not be attributed to this step.
 
 ```bash
 # per (chain, adapter): returns [] until the owner has submitted, then the coordinate blobs.
-# `coordsOf` is the only cache view getter (AssistedCoordCache.sol:81) — there is no count getter.
+# `coordsOf` is the shared raw-coordinate getter (AssistedCoordCache.sol:110); the concrete adapters
+# add decoded views — `tokenIdsOf` (Nexus `:80`, EtherFi `:75`), `positionsOf` (StakeWise `:84`).
+# None is a dedicated count getter — you count by fetching an array and reading its length, so
+# there is no cheap way to ask "how many?" without pulling the whole set back.
 cast call $ADAPTER 'coordsOf(address)(bytes[])' $OWNER_SAFE --rpc-url $RPC
 ```
 

@@ -82,13 +82,15 @@ class Fake:
     """Minimal RPC stand-in. Records calls so ordering claims can be asserted, not assumed."""
 
     def __init__(self, balance, quoted=GOOD_PRICE, big=None, small=None,
-                 eth_call_raises=None, block="0x2f8b950", raw_eth_call=None):
+                 eth_call_raises=None, block="0x2f8b950", raw_eth_call=None, force_raw=False):
         self.balance, self.quoted, self.block = balance, quoted, block
         self.big, self.small, self.eth_call_raises = big, small, eth_call_raises
         # Returned VERBATIM from eth_call when set, so a test can exercise the returndata itself
         # ("0x" vs garbage) rather than only the exception paths. The distinction is load-bearing:
         # `0x` is evidence of an absent predeploy, garbage is a node answering badly.
-        self.raw_eth_call = raw_eth_call
+        # `force_raw` because `raw_eth_call=None` is itself a case under test — a JSON-RPC
+        # `{"result": null}` — and cannot be distinguished from "unset" by the value alone.
+        self.raw_eth_call, self.force_raw = raw_eth_call, force_raw
         self.calls = []
         self.payloads = []
 
@@ -103,7 +105,7 @@ class Fake:
         if method == "eth_call":
             if self.eth_call_raises:
                 raise self.eth_call_raises
-            if self.raw_eth_call is not None:
+            if self.force_raw or self.raw_eth_call is not None:
                 return self.raw_eth_call
             self.payloads.append(_payload_of(params[0]["data"]))
             n = _n_of(params[0]["data"])
@@ -117,14 +119,14 @@ class Fake:
 
 
 def run_one(cid, *, balance, quoted=GOOD_PRICE, gas=GAS, big=None, small=None,
-            eth_call_raises=None, drop_baseline=False, raw_eth_call=None):
+            eth_call_raises=None, drop_baseline=False, raw_eth_call=None, force_raw=False):
     """Drive db.one() against a fake chain. Returns (row, fake)."""
     base_big = db.L1_REGIME_BASELINE_WEI.get(cid, 0)
     base_small = db.L1_REGIME_BASELINE_SMALL_WEI.get(cid, 0)
     fake = Fake(balance, quoted,
                 big=base_big if big is None else big,
                 small=base_small if small is None else small,
-                eth_call_raises=eth_call_raises, raw_eth_call=raw_eth_call)
+                eth_call_raises=eth_call_raises, raw_eth_call=raw_eth_call, force_raw=force_raw)
     patched_big = {k: v for k, v in db.L1_REGIME_BASELINE_WEI.items() if not (drop_baseline and k == cid)}
     with mock.patch.object(db, "scope", lambda _cid: {
             "metaAdapters": 0, "plainAdapters": 0, "assistants": 0,
@@ -289,11 +291,24 @@ class TestProbePayloadIsIncompressible(unittest.TestCase):
 class TestLowerBoundLabelling(unittest.TestCase):
     """I2 — a shortfall computed from an L1-omitting `need` must carry the flag and the warning."""
 
-    def test_flag_set_for_both_l1_collections(self):
-        for cid in (PRICED, UNMODELLED):
+    def test_flag_set_for_every_collection_where_the_term_may_be_present(self):
+        # Was `(PRICED, UNMODELLED)` only — the two arms this file itself documents as UNREACHABLE for
+        # the TOP UP branch, so the test exercised exactly the cases where the flag can never change an
+        # operator's action, and left the one live arm uncovered. L1_FEE_UNVERIFIED prices normally,
+        # gets no headroom floor, and CAN reach TOP UP with its fee status unknown; without it here the
+        # widening could have been reverted with the suite green.
+        for cid in (PRICED, UNMODELLED, sorted(db.L1_FEE_UNVERIFIED)[0]):
             with self.subTest(cid=cid):
                 row, _ = run_one(cid, balance=10**24)
                 self.assertTrue(row["shortfallExcludesL1"])
+
+    def test_flag_clear_for_a_measured_fee_free_chain(self):
+        # The deliberate exclusion, asserted so it cannot drift into "set for everything". These were
+        # MEASURED fee-free, so their shortfall is complete and labelling it would cry wolf.
+        for cid in sorted(db.L1_FEE_NONE_VERIFIED):
+            with self.subTest(cid=cid):
+                row, _ = run_one(cid, balance=10**24)
+                self.assertFalse(row["shortfallExcludesL1"])
 
     def test_flag_clear_for_a_chain_in_neither_collection(self):
         # NOTE, and it is a real residual gap rather than a property worth celebrating: the flag is set
@@ -418,6 +433,38 @@ class TestExitCode(unittest.TestCase):
         row, _ = run_one(OVERRIDDEN, balance=10**24, big=0)
         self.assertIsNotNone(row["sufficient"])
         self.assertIsNone(row["l1Note"])
+
+    def test_result_null_from_the_probe_is_not_evidence_of_absence(self):
+        # A FOURTH outcome the guard's own enumeration did not list. `c.rpc` returns `body["result"]`
+        # verbatim, so a node answering `{"result": null}` — no `error` key, so no RpcError — makes the
+        # returndata None. The previous code skipped the parse, set neither `found` nor `probe_failed`,
+        # and fell through BOTH branches leaving the row priced: chain 56 printed `sufficient=True`
+        # with `l1Note=None`, a green OK backed by nothing. Reproduced before fixing.
+        unverified = sorted(db.L1_FEE_UNVERIFIED)[0]
+        row, _ = run_one(unverified, balance=10**24, raw_eth_call=None, force_raw=True)
+        self.assertIsNone(row["sufficient"], "a null result is not an answer")
+        self.assertIn("UNKNOWN", row["l1Note"])
+
+    def test_non_string_probe_results_are_not_evidence_of_absence(self):
+        # Generalises the above: anything that is not a recognised answer must fail closed for an
+        # unverified chain, WITHOUT anyone having predicted its shape. That is the structural form of
+        # the fix — the guard no longer asks "which known failure is this?".
+        unverified = sorted(db.L1_FEE_UNVERIFIED)[0]
+        for weird in ({}, [], 0, True):
+            with self.subTest(result=repr(weird)):
+                row, _ = run_one(unverified, balance=10**24, raw_eth_call=weird, force_raw=True)
+                self.assertIsNone(row["sufficient"],
+                                  f"a {type(weird).__name__} result was treated as a usable answer")
+
+    def test_every_empty_returndata_sentinel_is_read_as_absence(self):
+        # The sentinel list had three arms and only `"0x"` was exercised, so `"0X"` and `""` could have
+        # been dropped with the suite staying green. Case and whitespace are node-dependent.
+        unverified = sorted(db.L1_FEE_UNVERIFIED)[0]
+        for empty in ("0x", "0X", "", "  0x  "):
+            with self.subTest(returndata=repr(empty)):
+                row, _ = run_one(unverified, balance=10**24, raw_eth_call=empty, force_raw=True)
+                self.assertIsNotNone(row["sufficient"],
+                                     f"{empty!r} is an answered-empty word and IS evidence of absence")
 
     def test_probe_failure_on_an_unverified_chain_fails_closed(self):
         # ABSENCE OF EVIDENCE IS NOT EVIDENCE OF ABSENCE. An L1_FEE_UNVERIFIED chain has no prior
@@ -630,6 +677,29 @@ class TestImportTimeInvariants(unittest.TestCase):
             row = db.one(PRICED, {str(PRICED): {"total": GAS}})
         self.assertIn("error", row)
         self.assertNotIn("sufficient", row, "an unreachable chain must not carry a verdict at all")
+
+    def test_malformed_gas_units_entries_do_not_abort_the_run(self):
+        # The pass-4 catch was entirely untested and, as written, incomplete: it caught TypeError and
+        # ValueError from `int()` but not the AttributeError raised when the per-chain VALUE is not a
+        # dict. `{"100": 36730000}` — the flat form — is at least as natural a mis-transcription as the
+        # wrong key, and it aborted the whole 24-chain run on a traceback, the exact outcome the
+        # adjacent comment claimed to prevent. Each of these must yield 0, which the floor then turns
+        # into a per-row UNPRICEABLE naming the chain.
+        # `None` and `{}` are deliberately NOT in this list: both are falsy, which is the module's
+        # signal for "no override supplied", and they correctly route to the built-in per-step estimate
+        # rather than to the catch. Including them would have asserted the opposite of the contract.
+        for bad in (36730000, "not-a-number", [1, 2], {"total": None}, {"total": "36,730,000"},
+                    {"totl": 36730000}):
+            with self.subTest(override=repr(bad)):
+                self.assertEqual(db.gas_estimate({}, bad), 0,
+                                 "a malformed --gas-units entry must degrade to 0, not raise")
+
+    def test_a_malformed_gas_units_entry_fails_only_its_own_row(self):
+        # End-to-end: the promise is per-ROW failure, not an aborted run. Driving `one()` with a flat
+        # entry must produce an UNPRICEABLE row for that chain rather than propagating.
+        row, _ = run_one(PRICED, balance=10**24, gas=0)
+        self.assertIsNone(row["sufficient"])
+        self.assertIn("total", row["gasNote"])
 
     def test_builtin_gas_estimate_is_used_when_no_override_is_supplied(self):
         # :558 was uncovered — every test passed --gas-units, so the built-in per-step estimate that

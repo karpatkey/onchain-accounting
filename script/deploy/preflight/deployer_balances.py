@@ -566,9 +566,19 @@ def gas_estimate(s: dict, override: dict | None) -> int:
         #
         # A bad value is now 0, which the GAS_UNITS_IMPLAUSIBLE floor turns into a per-row UNPRICEABLE
         # naming the chain — the behaviour the comment claimed all along.
+        # CATCH-ALL, AND DELIBERATELY SO. An earlier version caught only (TypeError, ValueError), which
+        # covers a bad `total` but NOT a bad shape: `{"100": 36730000}` — the flat form, at least as
+        # natural a mis-transcription as the wrong key — makes `override` an int, and `override.get`
+        # raises AttributeError, which escaped and aborted the whole 24-chain run. That is the outcome
+        # the paragraph above claims this prevents.
+        #
+        # Enumerating exception types here has the same defect as enumerating probe outcomes did: the
+        # next unexpected shape is unhandled. The contract is total — return a gas number, or 0, which
+        # the GAS_UNITS_IMPLAUSIBLE floor turns into a per-row UNPRICEABLE naming the chain. There is no
+        # failure mode where continuing with 0 is worse than aborting, because 0 cannot certify anything.
         try:
             return int(override.get("total", 0))
-        except (TypeError, ValueError):
+        except Exception:  # noqa: BLE001
             return 0
     return (GAS_SHELL
             + s["feeds"] * GAS_PER_FEED
@@ -787,12 +797,29 @@ def one(chain_id: int, gas_units: dict) -> dict:
                                            + _probe_payload(n)}, "latest"])
         except Exception as e:  # noqa: BLE001
             probe_failed = f"{type(e).__name__}: {str(e)[:120]}"
+        # FAIL CLOSED BY CONSTRUCTION, NOT BY ENUMERATION. The previous version listed the outcomes it
+        # expected — `0x`, an RpcError, a parseable word — and anything else fell through BOTH branches
+        # leaving the row priced. There was a fourth outcome: `c.rpc` returns `body["result"]` verbatim,
+        # so a node answering `{"result": null}` (no `error` key, so no RpcError) makes `raw` None, and
+        # a chain in L1_FEE_UNVERIFIED then printed a clean OK backed by nothing. Reproduced on chain 56.
+        #
+        # So the question is no longer "which known failure is this?" but "did I positively obtain a
+        # reading?". Anything that is not a recognised answer becomes `probe_failed`, which the branch
+        # below turns into UNPRICEABLE for an unverified chain. A new unexpected shape now fails closed
+        # on its own, without anyone having predicted it.
         found = None
-        if raw is not None and raw not in ("0x", "0X", ""):
-            try:
-                found = int(raw, 16)
-            except ValueError:
-                probe_failed = f"oracle returned unparseable data ({raw[:32]!r})"
+        if probe_failed is None:
+            if not isinstance(raw, str):
+                # `None` (result: null), or any non-string JSON value. Not an answer.
+                probe_failed = f"oracle returned a non-string result ({type(raw).__name__}: {raw!r:.40})"
+            elif raw.strip().lower() in ("0x", ""):
+                # The node ANSWERED with an empty word: no predeploy, no OP-stack fee. Evidence.
+                pass
+            else:
+                try:
+                    found = int(raw, 16)
+                except ValueError:
+                    probe_failed = f"oracle returned unparseable data ({raw[:32]!r})"
         if found:
             priceable = False
             l1_note = (f"UNCLASSIFIED L1 FEE: this chain is in neither L1_FEE_OMITTED_PRICED nor "
@@ -818,7 +845,14 @@ def one(chain_id: int, gas_units: dict) -> dict:
         l1_note = (f"headroom (balance - need) has fallen below {L1_OMITTED_MIN_HEADROOM_WEI / 1e18:g} "
                    f"native, so the L1 data-availability fee this script omits can no longer be assumed "
                    f"immaterial here — the 2026-08-12 measurement no longer covers this row; see #287")
-    if priceable and chain_id in L1_FEE_UNMODELLED:
+    # NOT gated on `priceable`, deliberately. This fail-closed is unconditional, so gating it meant a
+    # scroll/hemi row whose QUOTE also fell below the implausibility floor lost `priceable` earlier,
+    # skipped this branch, left `l1_note` unset, and printed the generic "node quotes N wei" message —
+    # attributing the failure to the gas price. That points the operator at raising `--with-gas-price`,
+    # which is precisely the remedy the runbook forbids for these chains: their problem is a fee this
+    # script does not model at all, and no price flag touches it. The reason a row is unpriceable has to
+    # survive a second, unrelated reason appearing first.
+    if chain_id in L1_FEE_UNMODELLED:
         priceable = False
         l1_note = ("its cost is dominated by an L1 data-availability fee this script does not model, so "
                    "an execution-only figure is a LOWER BOUND, not an estimate — see issue #287")
@@ -839,18 +873,22 @@ def one(chain_id: int, gas_units: dict) -> dict:
                # shortfall derived from it is a LOWER BOUND, not the amount to send. Carried as a flag
                # rather than inferred at print time, so the JSON consumers see it too.
                #
-               # THE TOP-UP WARNING THIS FLAG DRIVES IS CURRENTLY UNREACHABLE, and that is a property of
-               # the two collections rather than a bug in the flag — recorded so nobody reads the warning
-               # as live coverage. A row only reaches the TOP UP branch when `sufficient is False`, which
-               # needs `priceable`; but every member of both collections loses `priceable` first:
-               # L1_FEE_UNMODELLED unconditionally, and L1_FEE_OMITTED_PRICED via the
-               # L1_OMITTED_MIN_HEADROOM_WEI floor, which fires whenever `bal - need` drops under 1e-3
-               # native — and a row that is actually short has `bal - need < 0`. So a short chain in
-               # either set prints UNPRICEABLE, never TOP UP, and the "SEND MORE" line never renders.
-               # The flag is still correct and still worth emitting for the JSON consumers; it is the
-               # print-side warning that is dead. It becomes live the moment a chain that charges an L1
-               # fee is priced WITHOUT the headroom floor — which is exactly the hemi shape, and hemi is
-               # now failed closed rather than being the exception that makes the warning reachable.
+               # THE TOP-UP WARNING IS UNREACHABLE FOR THE TWO ORIGINAL SETS AND LIVE FOR THE THIRD.
+               # Stated per-set, because an earlier version of this comment said flatly that the warning
+               # "never renders" and "is dead" — and the very next clause below made it reachable. A
+               # blanket claim about a flag whose key had just been widened, twelve lines above the
+               # widening.
+               #
+               # Unreachable for L1_FEE_OMITTED_PRICED and L1_FEE_UNMODELLED: a row reaches TOP UP only
+               # when `sufficient is False`, which needs `priceable`, and every member of those two
+               # loses `priceable` first — L1_FEE_UNMODELLED unconditionally, L1_FEE_OMITTED_PRICED via
+               # the L1_OMITTED_MIN_HEADROOM_WEI floor, which fires whenever `bal - need` drops under
+               # 1e-3 native, and a row that is actually short has `bal - need < 0`.
+               #
+               # LIVE for L1_FEE_UNVERIFIED: those chains price normally, get no headroom floor, and can
+               # therefore reach TOP UP while their fee status is unknown — which is exactly when a
+               # shortfall figure is a LOWER BOUND and the operator must be told so. That is the hemi
+               # shape, minus the reclassification that removed hemi from it.
                # KEYED ON EVERY SET WHERE THE TERM MAY BE PRESENT, not just the two original ones.
                # L1_FEE_UNVERIFIED means nobody has established this chain charges no fee, so a
                # shortfall for it is a LOWER BOUND on exactly the same grounds — and it is reachable

@@ -702,11 +702,11 @@ verdict flips** when it is added; and an over-strict gate gets bypassed, for whi
 false-alarm measurement above is the precedent. That figure read `~1e-7` until 2026-08-12, when the probe
 payload was found to be compressible; **it is INFERENCE, not measurement** — the pre-correction number
 scaled by the measured 59.1957× ratio, not re-measured per transaction, so treat it as an order of
-magnitude. The ruling is unaffected: flipping any of the eight needs the term to exceed 10×–996× the
-whole `need` by between one and three ORDERS OF MAGNITUDE depending on the row — stated that way
-deliberately, because the table above forbids quoting the measured margin as the flip threshold and
-the module declines to quote those figures for the same reason. The correction consumed 1.8 of the 3
-orders that argument tolerates. **Scroll is treated differently because there the
+magnitude. The ruling is unaffected: flipping any of the eight needs the term to exceed the whole
+`need` by between one and three ORDERS OF MAGNITUDE depending on the row — stated that way
+deliberately, because the table above forbids quoting the measured **10× to 996×** margin as the flip
+threshold, and the module declines to quote those figures for the same reason. The correction consumed
+1.8 of the 3 orders that argument tolerates. **Scroll is treated differently because there the
 omitted term is ~99.9% of the cost** — applying the same treatment to the eight would be theatre.
 
 Full pricing for all **ten** remains **issue #287**, which carries everything already measured. **#287's

@@ -108,8 +108,8 @@ is where they are derived and which is the authoritative one if the two ever dis
 
 #### Meta instances: **111** — the figure to compare a tool's output against
 
-*(**110** was derived from config and confirmed on-chain across all 24 chains on 2026-07-29 by the method
-below; **+1 on 2026-08-12** for issue #296, one `MorphoVaultsMeta` instance on chain 1. The heading
+*(**110** was derived from config across all 24 chains, and confirmed ON-CHAIN on the 7 configured
+chains, on 2026-07-29 by the method below — the two scopes differ and are not interchangeable; **+1 on 2026-08-12** for issue #296, one `MorphoVaultsMeta` instance on chain 1. The heading
 carries the CURRENT number because step 1.8 compares against it; the dated derivation keeps its own date
 and scope below rather than being restated as covering the later change.)*
 

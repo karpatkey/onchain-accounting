@@ -226,9 +226,23 @@ contract CapStablecoinBalanceAdapterTest is Test {
         assertEq(amount, 100e6, "the quote's own denomination must survive the adapter untouched");
     }
 
-    function test_getAdapterBalanceForAsset_unknownAccount() public view {
+    /// @notice The reported balance must belong to the ACCOUNT ASKED FOR, not to whoever happens to hold cUSD.
+    /// @dev ⚠️ **A different account must hold a balance, or this asserts nothing.** Asking an empty adapter about an
+    ///      empty account returns 0 for trivial reasons. Staging a balance on `holder` gives the assertion something
+    ///      to discriminate against. This is the same vacuity class as the three asset-filter tests above, and it
+    ///      survived the first sweep, which is why it is spelled out rather than quietly fixed.
+    ///
+    ///      **Be precise about what it does and does not catch.** It catches an implementation that reads a
+    ///      POPULATED wrong source — `totalSupply`, a hardcoded treasury, the wrong member of a pair — which is the
+    ///      realistic shape. It does NOT catch one that reads a different EMPTY address, because that still returns
+    ///      zero. Mutating `_owedAmount` to `totalSupply()` does fail this test, but by reverting (the mock has no
+    ///      `totalSupply`) rather than by returning a wrong number, so treat that as a weaker demonstration than the
+    ///      fee/scale tests above, whose mutants fail on the value.
+    function test_getAdapterBalanceForAsset_unknownAccount() public {
+        address holder = makeAddr("holder");
+        mockCUsd.setBalance(holder, 100e18);
         (uint256 amount,) = adapter.getAdapterBalanceForAsset(alice, address(mockUsdc));
-        assertEq(amount, 0);
+        assertEq(amount, 0, "alice holds nothing even though holder does - the account argument must be honoured");
     }
 
     function test_getAdapterBalanceForAsset_cUsdHolding() public {

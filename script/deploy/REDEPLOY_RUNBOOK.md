@@ -26,8 +26,18 @@ operator: **pin the fork block** (see the note at the rehearsal invocation — i
 **None of this means the system is deployed. It is not.** A fork rehearsal is evidence that the deploy
 path executes; it is not a deploy, and it is not an approval to deploy.
 
-Companion tooling lives in [`preflight/`](preflight/README.md). Everything there is read-only except
-`rehearse_fork.sh`, which only ever broadcasts to a loopback anvil.
+Companion tooling lives in [`preflight/`](preflight/README.md). **Nothing there sends a transaction to a
+real chain** — `rehearse_fork.sh` broadcasts only to a loopback anvil. That is not the same as read-only,
+which this line used to claim, so the writers are named instead of implied:
+
+| script | writes | when |
+| --- | --- | --- |
+| `reset_deployment_records.py` | tracked `deployments/<cid>.json` (archives the old copy first) | only under `--apply`; the default is a dry run |
+| `declared_heartbeat_guard.py` | tracked `preflight/chainlink_declared_heartbeats.json` | its `refresh` mode; the checking modes do not write |
+| `snapshot_production.py` | tracked `preflight/snapshots/<out>/*.json` and the index | every run, default `--out pre` |
+
+Five more (`deployer_balances.py`, `verify_step.py`, `preflight_config.py`, `bytecode_audit.py`,
+`diff_snapshots.py`) write a report only where `--json` points, and nothing otherwise.
 
 - **Scope:** exactly the **24 chains** that already have a `NAVCalculatorProxy`. Chain **1101**
   (Polygon zkEVM) is excluded — its deployment record is empty, so it was never deployed.
@@ -616,9 +626,16 @@ day.
 > authoritative for scroll.** The three groups partition the 24: **8 + 1 scroll + 15 = 24.**
 >
 > **Scroll is now the sole blocker.** It will keep printing `not clear to deploy` on every full-scope run
-> until **#287 lands** or **scroll is explicitly waived** with a named person, a date and the sizing
-> basis. That is the gate working, not a regression. **Do not "fix" it by raising a floor or silencing the
-> row** — a 1 gwei floor was already measured reporting `TOP UP` on **11 of 24** amply-funded chains.
+> until **#287 lands**. That is the gate working, not a regression. **Do not "fix" it by raising a floor or
+> silencing the row** — a 1 gwei floor was already measured reporting `TOP UP` on **11 of 24** amply-funded
+> chains.
+>
+> **A waiver does not turn the gate green, and there is no flag, env var or input that does.** This
+> paragraph used to say the row persists "until #287 lands or scroll is explicitly waived", which reads as
+> though a waiver is a second way to clear the check. It is not: a waiver is a human decision to **proceed
+> despite a red exit**, recorded outside this script with a named person, a date and the sizing basis. The
+> run still exits non-zero and the row still reads `UNPRICEABLE`, which is the intended outcome — the
+> record of the override lives with the person who made it, not in the tool's exit code.
 >
 > **The one thing that does make it exit `0` is SCOPE.** The script takes positional chain ids, so
 > `deployer_balances.py 1 100` omits scroll and exits successfully. It prints a

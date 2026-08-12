@@ -232,10 +232,8 @@ def step_record_cleared(k: Chk, rec: dict, exp: dict, url, base, tag) -> None:
     # This check does not cover every key it iterates — tracked in #299.
     for key in rd.CLEAR_TOP:
         if key not in rec:
-            k.fail.append(f"{key} is ABSENT from the record, not blanked. Absent and blank differ "
-                          f"to the readers that check presence rather than value (this check, and "
-                          f"deployer_balances' assistant count), so an absent key hides whether the "
-                          f"record was cleared or mangled; restore it as \"\" rather than deleting it")
+            k.fail.append(f"{key} is ABSENT from the record, not blanked; restore it as \"\" "
+                          f"rather than deleting it")
             continue
         k.require(not c.is_address(rec[key]),
                   f"{key} is still populated ({rec[key]}) — 03/04 will skip-if-deployed and 06 "

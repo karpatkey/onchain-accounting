@@ -16,9 +16,34 @@ contract MockCUsd {
         balanceOf[account] = amount;
     }
 
-    /// @notice Returns amountIn as amountOut (1:1, no fee) for unit-test simplicity.
-    function getBurnAmount(address, uint256 amountIn) external pure returns (uint256 amountOut, uint256 fee) {
-        return (amountIn, 0);
+    /// @notice Burn fee in basis points, taken off `amountIn`. Default 0 — 1:1, the historical behaviour.
+    uint256 public feeBps;
+
+    /// @notice USDC out per 1e18 cUSD in, in 1e18 fixed point. Default 1e18 — 1:1, the historical behaviour.
+    /// @dev ⚠️ **Real cUSD is 18-decimal and USDC is 6-decimal, so the production quote rescales by ~1e12.** The
+    ///      identity default does NOT model that, which is why both suites assert 18-decimal figures against a
+    ///      6-decimal asset and read fine. That is tolerable for the arithmetic-invariance tests (the split must not
+    ///      move either leg's amount, and 1:1 makes the sum obvious) but it means an adapter that silently assumed
+    ///      1:1 would pass every one of them. `setScale` exists so at least one test drives a realistic rescale.
+    uint256 public scale = 1e18;
+
+    function setFeeBps(uint256 feeBps_) external {
+        feeBps = feeBps_;
+    }
+
+    function setScale(uint256 scale_) external {
+        scale = scale_;
+    }
+
+    /// @notice Quote mirroring the real signature: amount out AFTER fee, and the fee separately.
+    /// @dev Defaults to the historical `(amountIn, 0)` identity so existing expectations are unchanged; the
+    ///      settable fee and scale are what let a test prove the adapter PROPAGATES the quote rather than
+    ///      reproducing its input. With an identity quote, replacing `_usdcForCUsd`'s body with
+    ///      `return cUsdAmount` passes every assertion in both suites — the mock was hiding the call entirely.
+    function getBurnAmount(address, uint256 amountIn) external view returns (uint256 amountOut, uint256 fee) {
+        uint256 scaled = (amountIn * scale) / 1e18;
+        fee = (scaled * feeBps) / 10_000;
+        return (scaled - fee, fee);
     }
 }
 

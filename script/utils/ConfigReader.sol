@@ -369,6 +369,27 @@ library ConfigReader {
         return false;
     }
 
+    /// @notice Whether a nav-config entry explicitly asks for the adapter to be DEREGISTERED from the NAV.
+    /// @dev **Explicit intent, deliberately not derived.** The obvious alternative — treat "in the deployment record
+    ///      but not enabled in plain nav-config" as "deregister" — is catastrophically wrong here: on chain 1 that
+    ///      set contains `ERC20Default` (registered by `initialize()`, in no nav-config) and ALL SIXTEEN meta
+    ///      adapters (which live in the sibling `meta-balance-adapters` file). Measured against the live NAV, a
+    ///      derived reconciliation would have deregistered seventeen live adapters and zeroed most of the portfolio.
+    ///
+    ///      So deregistration requires an operator to write `"deregister": true` against the key. A missing or false
+    ///      flag can only ever mean "leave it alone", which makes the failure mode of this reader a no-op rather
+    ///      than a mass deregistration. Absent key -> false, exactly like {isAdapterEnabled}.
+    function isAdapterDeregisterRequested(Vm vm, uint256 chainId, string memory adapterType, string memory adapterName)
+        internal
+        view
+        returns (bool)
+    {
+        (string memory json, string memory prefix) = _resolveAdapterFile(vm, chainId, adapterType, adapterName);
+        string memory jsonPath = string(abi.encodePacked(prefix, ".", adapterName, ".deregister"));
+        if (vm.keyExists(json, jsonPath)) return json.readBool(jsonPath);
+        return false;
+    }
+
     /// @notice Reads an adapter constructor/initialize/bare param from the file selected by `adapterType`
     ///         (see `_adapterFileAndPrefix`; deploy-balance spans both plain + meta folders). "" if absent.
     function readAdapterParam(

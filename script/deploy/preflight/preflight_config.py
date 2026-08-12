@@ -532,6 +532,23 @@ def _check_chain(chain_id: int) -> list[tuple[str, str]]:
             f.append((WARN, f"'{name}' enabled in deploy-config but not in nav-config — it will be "
                             f"deployed and then never registered on the NAV"))
 
+    # --- explicit deregistration requests ------------------------------------
+    # `"deregister": true` in nav-config makes 06_Configure call removeBalanceAdapters. It is the ONLY way a plain
+    # adapter ever gets deregistered (meta instances reconcile bidirectionally; plain adapters are otherwise
+    # add-only), so a request that cannot execute is a silent no-op on the one path that matters — exactly how the
+    # retired `Cap` adapter would have stayed registered alongside its two replacements and double-counted.
+    for name, entry in nav_plain.items():
+        if not isinstance(entry, dict) or entry.get("deregister") is not True:
+            continue
+        if entry.get("enabled") is True:
+            f.append((ERROR, f"'{name}' is BOTH enabled and deregister=true — 06 would add and remove it in one "
+                             f"run; pick one"))
+        addr = (c.deployment(chain_id) or {}).get("balanceAdapters", {}).get(name)
+        if not isinstance(addr, str) or not c.is_address(addr):
+            f.append((WARN, f"'{name}' requests deregistration but the deployment record has no address for it "
+                            f"({addr!r}) — 06 will skip it. Harmless if the adapter was never deployed on this "
+                            f"chain; a silent no-op if it was and the record was already cleared."))
+
     # --- constructor args SHARED across sibling adapters --------------------
     # Splitting one adapter into per-leg siblings duplicates whatever constructor args the legs have in common,
     # and a JSON file cannot express "these two must be equal". Before the Cap split one key supplied `cUsd` and

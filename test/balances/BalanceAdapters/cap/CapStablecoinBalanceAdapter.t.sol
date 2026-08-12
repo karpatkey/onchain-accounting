@@ -184,15 +184,46 @@ contract CapStablecoinBalanceAdapterTest is Test {
         assertEq(assets[0], address(mockUsdc));
     }
 
-    function test_getAdapterBalanceForAsset_unsupportedAsset() public view {
+    /// @dev ⚠️ **The staged balance is what makes this discriminating.** With alice holding nothing, the asset
+    ///      guard at `SingleAssetBalanceAdapterBase:40` can be deleted outright and the fallthrough still returns 0,
+    ///      so the test passes over a removed guard — the same vacuity that let a deleted zero-account guard ship.
+    ///      `test_getAdapterPositions_assetFilterMismatch_returnsEmpty` in this file already stages one; this is
+    ///      that pattern applied to the surface that lacked it.
+    function test_getAdapterBalanceForAsset_unsupportedAsset() public {
+        mockCUsd.setBalance(alice, 100e18);
         (uint256 amount, bool isDebt) = adapter.getAdapterBalanceForAsset(alice, address(0xdead));
-        assertEq(amount, 0);
+        assertEq(amount, 0, "a non-underlying asset must report nothing even when the account HAS a balance");
         assertFalse(isDebt);
     }
 
-    function test_getAdapterBalanceForAsset_zeroAsset() public view {
+    function test_getAdapterBalanceForAsset_zeroAsset() public {
+        mockCUsd.setBalance(alice, 100e18);
         (uint256 amount,) = adapter.getAdapterBalanceForAsset(alice, address(0));
-        assertEq(amount, 0);
+        assertEq(amount, 0, "the zero asset must report nothing even when the account HAS a balance");
+    }
+
+    /// @notice The adapter must report what the BURN QUOTE returns, not what the account holds.
+    /// @dev ⚠️ **This is the test the identity mock made impossible.** With `getBurnAmount` returning `(amountIn, 0)`
+    ///      you can replace `_usdcForCUsd`'s entire body with `return cUsdAmount` and every other assertion in both
+    ///      Cap suites still passes — the quote call was never observable. A fee makes output differ from input, so
+    ///      the call has to actually happen and its result actually propagate.
+    function test_getAdapterBalanceForAsset_propagatesTheBurnFee() public {
+        mockCUsd.setBalance(alice, 100e18);
+        mockCUsd.setFeeBps(50); // 0.5%
+        (uint256 amount,) = adapter.getAdapterBalanceForAsset(alice, address(mockUsdc));
+        assertEq(amount, 99.5e18, "the fee must come off the reported amount, not be ignored");
+        assertTrue(amount != 100e18, "and the adapter must not be echoing its input");
+    }
+
+    /// @notice A non-1:1 quote must pass through unscaled by the adapter.
+    /// @dev Real cUSD is 18-decimal and USDC 6-decimal, so production quotes rescale by ~1e12 and the adapter must
+    ///      apply NO conversion of its own — `getBurnAmount` already returns USDC-denominated output. The identity
+    ///      default in the mock cannot distinguish "passes through" from "assumes 1:1"; this can.
+    function test_getAdapterBalanceForAsset_appliesNoScalingOfItsOwn() public {
+        mockCUsd.setBalance(alice, 100e18);
+        mockCUsd.setScale(1e6); // 1e18 cUSD -> 1e6 USDC, the real decimals delta
+        (uint256 amount,) = adapter.getAdapterBalanceForAsset(alice, address(mockUsdc));
+        assertEq(amount, 100e6, "the quote's own denomination must survive the adapter untouched");
     }
 
     function test_getAdapterBalanceForAsset_unknownAccount() public view {

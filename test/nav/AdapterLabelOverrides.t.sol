@@ -9,6 +9,9 @@ import {AssetKindRegistry} from "src/nav/AssetKindRegistry.sol";
 import {aa} from "test/helpers/AdapterArray.sol";
 import {Mock_CustomBalanceAdapter} from "test/mocks/balance_adapters.sol";
 import {RawReplier} from "test/mocks/RawReplier.sol";
+import {CapStablecoinBalanceAdapter} from "src/balances/BalanceAdapters/cap/CapStablecoinBalanceAdapter.sol";
+import {CapSavingsBalanceAdapter} from "src/balances/BalanceAdapters/cap/CapSavingsBalanceAdapter.sol";
+import {MockCUsd, MockStcUsd} from "test/balances/BalanceAdapters/cap/CapMocks.sol";
 
 /// @dev ERC-1967 implementation slot (`keccak256("eip1967.proxy.implementation") - 1`). Used to locate the UUPS
 ///      implementation behind the NAV proxy so `_coolAll` can cool it: it is a separate account, and the proxy's
@@ -1645,6 +1648,47 @@ contract AdapterLabelOverridesTest is AdapterLabelOverridesBase {
     ///      at the bound is accepted but cannot lengthen a 2-element reply — so `NAVCalculator`'s
     ///      `_MAX_LABEL_ELEMENTS = 8` is unreachable from the registry side. This is the element-cap property stated
     ///      as an assertion instead of a comment.
+    /// @notice One override on one Cap leg must leave the SIBLING leg untouched — on the REAL contracts.
+    /// @dev **This is the property the whole Cap split exists to create, and until now nothing executed it.**
+    ///      `test_labelsOverride_onPerPositionLiteralAdapter_rewritesBothLegs_documentedHazard` proves the PRE-split
+    ///      shape leaks, against a mock built to have that shape. This is the other half: the post-split contracts,
+    ///      overridden for real.
+    ///
+    ///      Isolation comes from `PriceFeedLib` keying the override on `balanceAdapter` ADDRESS — not from anything
+    ///      in the adapters themselves — so an adapter-side change that re-merged the two legs into one contract
+    ///      would leave every existing Cap test green and fail only here. That asymmetry is exactly why the test
+    ///      belongs on the real pair rather than on a mock.
+    ///
+    ///      Lives in this file rather than the Cap suites because the override path needs `nav`, `registry`,
+    ///      `navCalculatorManager` and a registered USDC, all of which `setupAll` already wires; the Cap suites use
+    ///      `Mock_NAVCalculator` and would have to build the lot.
+    function test_labelsOverride_onSplitCapAdapters_isPerLeg() public {
+        MockCUsd cUsd = new MockCUsd(address(usdc));
+        MockStcUsd stcUsd = new MockStcUsd();
+        CapStablecoinBalanceAdapter stable = new CapStablecoinBalanceAdapter(address(cUsd), address(usdc), address(nav));
+        CapSavingsBalanceAdapter savings =
+            new CapSavingsBalanceAdapter(address(cUsd), address(stcUsd), address(usdc), address(nav));
+        cUsd.setBalance(safe, 100e18);
+        stcUsd.setBalance(safe, 50e18);
+
+        vm.startPrank(navCalculatorManager);
+        nav.addBalanceAdapters(aa(address(stable)));
+        nav.addBalanceAdapters(aa(address(savings)));
+        // Registration must precede the override: setAdapterLabels calls _requireRegisteredAdapter.
+        registry.setAdapterLabels(address(stable), two("Synthetic Dollar", "cUSD"));
+        vm.stopPrank();
+
+        string[] memory overridden = _verboseFor(address(stable)).labels;
+        assertEq(overridden.length, 2);
+        assertEq(overridden[0], "Synthetic Dollar", "the overridden leg takes the new category");
+        assertEq(overridden[1], "cUSD", "and keeps its own leaf");
+
+        string[] memory sibling = _verboseFor(address(savings)).labels;
+        assertEq(sibling.length, 2);
+        assertEq(sibling[0], "Savings", "the SIBLING leg is untouched - the property the split buys");
+        assertEq(sibling[1], "stcUSD");
+    }
+
     function test_labelsOverride_cannotLengthenAReplyPastTheElementCap() public {
         string[] memory eight = new string[](8);
         for (uint256 i; i < 8; ++i) {

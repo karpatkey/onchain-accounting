@@ -11,6 +11,8 @@ import {IPositionDescribable} from "src/balances/IPositionDescribable.sol";
 import {IPositionEnumerable} from "src/balances/IPositionEnumerable.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
+import {ProtocolIds} from "src/utils/ProtocolIds.sol";
+import {ProtocolNames} from "src/utils/ProtocolNames.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/errors.sol";
@@ -190,9 +192,12 @@ contract CapSavingsBalanceAdapterTest is Test {
         assertEq(adapter.getAdapterPositions(alice, address(0)).length, 0, "and no position is emitted");
     }
 
-    function test_getAdapterBalanceForAsset_unsupportedAsset() public view {
+    /// @dev The staged balance is what makes this discriminating — see the sibling suite's note. Without it the
+    ///      asset guard at `SingleAssetBalanceAdapterBase:40` can be deleted and this still passes.
+    function test_getAdapterBalanceForAsset_unsupportedAsset() public {
+        mockStcUsd.setBalance(alice, 100e18);
         (uint256 amount,) = adapter.getAdapterBalanceForAsset(alice, address(0xdead));
-        assertEq(amount, 0);
+        assertEq(amount, 0, "a non-underlying asset must report nothing even when the account HAS a balance");
     }
 
     function test_getAdapterBalanceForAsset_ignoresTheSiblingLeg() public {
@@ -293,10 +298,20 @@ contract CapSavingsBalanceAdapterTest is Test {
         assertEq(a.length, 1);
         assertEq(b.length, 1);
 
-        assertEq(stablecoin.protocolName(), adapter.protocolName(), "one protocol, one display name");
-        assertEq(a[0].protocolBrand, b[0].protocolBrand, "same brand");
-        assertEq(a[0].protocolId, b[0].protocolId, "same protocolId");
-        assertEq(a[0].protocolSubId, b[0].protocolSubId, "same protocolSubId: one positionId decode schema");
+        // ⚠️ **Asserted against the CANONICAL constants, not against each other.** Both adapters inherit
+        // `protocolName()` and the three identity slugs from the same `CapBalanceAdapterBase`, so
+        // `assertEq(stablecoin.protocolName(), adapter.protocolName())` and `assertEq(a[0].protocolId,
+        // b[0].protocolId)` compare a constant to itself: they cannot fail, and nothing anywhere pinned the emitted
+        // slug to `ProtocolIds.CAP` — change the base and every one of them moves together, silently. Pinning the
+        // value catches that; pinning the agreement does not.
+        assertEq(stablecoin.protocolName(), ProtocolNames.CAP, "the stablecoin leg reports the canonical name");
+        assertEq(adapter.protocolName(), ProtocolNames.CAP, "and so does the savings leg");
+        assertEq(a[0].protocolBrand, ProtocolIds.CAP, "brand is the canonical slug");
+        assertEq(b[0].protocolBrand, ProtocolIds.CAP);
+        assertEq(a[0].protocolId, ProtocolIds.CAP, "protocolId is the canonical slug");
+        assertEq(b[0].protocolId, ProtocolIds.CAP);
+        assertEq(a[0].protocolSubId, ProtocolIds.CAP, "protocolSubId: one positionId decode schema");
+        assertEq(b[0].protocolSubId, ProtocolIds.CAP);
 
         assertTrue(keccak256(a[0].positionId) != keccak256(b[0].positionId), "the legs are told apart by positionId...");
         assertTrue(a[0].positionKind != b[0].positionKind, "...and by positionKind");

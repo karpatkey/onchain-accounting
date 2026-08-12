@@ -104,6 +104,11 @@ contract PositionLabelsProbeCoverageTest is Test {
             string memory json = vm.readFile(entries[i].path);
             string[] memory keys = vm.parseJsonKeys(json, "$");
             for (uint256 k; k < keys.length; ++k) {
+                // `$`-prefixed keys are comments, not adapters. Every other reader of these files filters them —
+                // `ConfigReader._filterDollar`, `deployer_balances.py`, `preflight_config.py`, `chainlib.py` — and
+                // without it the FIRST top-level `$comment` added to a balance-adapter config makes
+                // `vm.parseJsonBool(".$comment.enabled")` revert this whole suite with an opaque cheatcode error.
+                if (bytes(keys[k]).length != 0 && bytes(keys[k])[0] == "$") continue;
                 // ⚠️ NOT `_contains(key, "Meta")`. That is the routing convention for the DEPLOYMENT RECORD, where
                 // meta adapters live under the same `balanceAdapters` object as plain ones and the substring is the
                 // only discriminator. Here the FILE already tells us: this directory is the plain-adapter deploy

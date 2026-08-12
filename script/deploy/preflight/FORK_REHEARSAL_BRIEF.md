@@ -394,7 +394,7 @@ Two rules out of that, in order of importance:
 1.2  01_2_DeployNAVImplementation    libs + impl             PERSIST_DEPLOYMENTS=1
 1.3  02_2_DeployNAVProxy             new proxy + ERC20Default PERSIST_DEPLOYMENTS=1
 1.4  08_DeployAssetKindRegistry      asset-kind registry      <- BEFORE RegisterAssets
-1.5  03_DeployPriceFeeds             41 custom feeds          <- BEFORE RegisterAssets
+1.5  03_DeployPriceFeeds             40 custom feeds          <- BEFORE RegisterAssets
 1.6  RegisterAssets                  assets + feeds          FOUNDRY_PROFILE=slow  <- REQUIRED, see below
 1.7  04_DeployBalanceAdapters        adapters + assistants
 1.8  06_Configure                    register + reconcile
@@ -404,8 +404,8 @@ Two rules out of that, in order of importance:
 
 **`slow` does not mean "go slower to be safe". It raises `gas_limit` AND `memory_limit` from the default
 1 GiB to 16 GiB** (`foundry.toml:157-166`). `RegisterAssets` needs that because it registers the whole
-asset set inside **one call frame**, and EVM memory-expansion cost is **quadratic** — mainnet's 43 assets
-plan 86 actions and the frame simply outgrows a 1 GiB budget.
+asset set inside **one call frame**, and EVM memory-expansion cost is **quadratic** — mainnet's 42 assets
+plan 84 actions and the frame simply outgrows a 1 GiB budget.
 
 Without it, measured on mainnet 2026-07-30: **`EvmError: MemoryOOG` after wiring 19 of 43 assets**, with
 1 asset registered. With it: 79s, 43/43.
@@ -419,7 +419,7 @@ Without it, measured on mainnet 2026-07-30: **`EvmError: MemoryOOG` after wiring
 in **three** places before it cost a run:
 
 1. `REDEPLOY_RUNBOOK.md` §1.6's command line — `FOUNDRY_PROFILE=slow forge script … RegisterAssets`;
-2. the sentence right below it: "`FOUNDRY_PROFILE=slow` (16 GiB) is required on mainnet — 43 assets
+2. the sentence right below it: "`FOUNDRY_PROFILE=slow` (16 GiB) is required on mainnet — 42 assets
    otherwise `MemoryOOG`", plus a row in the runbook's troubleshooting table. Both present since the
    runbook was created (`7199e661`, 2026-07-27);
 3. this brief's own step table above.
@@ -489,7 +489,7 @@ Four traps that have each already cost a run:
   > unreadable` on every phantom address) — that is the gate working, and it is the reason to gate
   > every step rather than trusting exit codes.
 - **1.5 must precede 1.6.** `RegisterAssets` resolves Custom feeds from the record; run first it skips
-  **20 of mainnet's 42 assets** with `[skip] primary feed unresolved`.
+  **19 of mainnet's 42 assets** with `[skip] primary feed unresolved`.
 
 ### Gate every step on its post-condition, not its exit code
 
@@ -512,8 +512,8 @@ Measured on `main` @ `f72dd48a`:
 | meta adapters | **33** | `preflight_config.py` |
 | meta instances | **110** | `preflight_config.py`; per-chain table in the runbook |
 | plain adapters | **12** (+1 `ERC20Default` per chain) | `preflight_config.py` |
-| custom price feeds | **40** | `preflight_config.py`, re-measured 2026-07-30 (39 before #199, 40 before #224) |
-| assets | **93** | `preflight_config.py` |
+| custom price feeds | **40** | `preflight_config.py`, re-derived from config 2026-08-12 (41 before OETH's retirement; 39 before #199, 40 before #224) |
+| assets | **92** | `preflight_config.py`, re-derived from config 2026-08-12 (93 before OETH's retirement) |
 
 Per-chain meta instances: 66 / 16 / 16 / 4 / 4 / 4 / 0 for 1 / 42161 / 8453 / 10 / 100 / 137 / 56.
 Adapter counts per chain: 27 / 8 / 7 / 4 / 3 / 2 / 1 for 1 / 42161 / 8453 / 100 / 10 / 137 / 56.

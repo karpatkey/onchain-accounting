@@ -200,12 +200,33 @@ The 17 impl+proxy chains run the canonical layer only; custom price feeds and ba
 > `OETH/ETH` rate feed `0x703118C4CbccCBF2AB31913e0f8075fbbb15f563` that this `CrossRateCustomPriceFeed`
 > consumes as its `RATE_FEED`. **We hold no OETH, so this is a planned retirement and not an incident.**
 >
-> **Expected after the redeploy:** `03_DeployPriceFeeds` is config-gated, so it will not redeploy this
-> feed. Its record therefore keeps the OLD address, whose immutable `NAV()` still points at the OLD
-> proxy — so `bytecode_audit.py` will report `STALE_NAV` for it (`bytecode_audit.py:254`). That is
-> correct behaviour on a correct state, not an anomaly. A `retiredCustomPriceFeeds` section that removes
-> the need to remember this is planned as a follow-up, deliberately deferred until #300 lands because it
-> is rewriting which sections of `deployments/<id>.json` are expected.
+> **The address lives in `retiredCustomPriceFeeds`, NOT in `customPriceFeeds`, and that is load-bearing
+> rather than tidy.** `reset_deployment_records.CLEAR_SECTIONS` is `["balanceAdapters",
+> "customPriceFeeds"]`, and its loop blanks **every** non-empty value in a listed section — keys it has
+> never heard of included. Measured on this record: an OETH entry left under `customPriceFeeds`, together
+> with a `$comment` explaining why it was kept, comes back from step 1.1 as `"" / ""`. **The retention
+> note would have been destroyed by the very reset that makes the record worth annotating**, and a
+> `$comment` holding an object is blanked too, so no shape of in-place annotation survives.
+> `retiredCustomPriceFeeds` is in neither `CLEAR_TOP` nor `CLEAR_SECTIONS`, so `plan_for` never touches
+> it — verified by simulating the reset against this file, with `customPriceFeeds.wstETH` blanking in the
+> same run as the control.
+>
+> **Expected after the redeploy:** `03_DeployPriceFeeds` is config-gated and will not redeploy this feed.
+> Because the address now sits outside `customPriceFeeds`, it is also outside `verify_step`'s step-1.5
+> NAV-pointer check and outside `bytecode_audit`'s `customPriceFeeds.*` scan, so the `STALE_NAV` report an
+> earlier revision of this note predicted **no longer fires**. That is deliberate: a permanently-red gate
+> on a deliberately-retired feed is the kind of noise operators learn to step around, and the next real
+> finding gets stepped around with it.
+>
+> **What is NOT weakened:** `verify_step.previous_generation_feeds` unions the archive with
+> `snapshots/pre/<chainId>.json`, and this feed is present in the snapshot as a `Custom` feed
+> (`0xe59c72c9…`, one of 24), so it is still recognised as old-generation. The union is monotone — losing
+> the archive source cannot hide it.
+>
+> **It is still REGISTERED on the live NAV.** Measured 2026-08-12: `getRegisteredAssets()` on
+> `0x80eD5cc6cEbAe4fEE1eD8687279aa492A50afa8d` returns 43 assets including OETH
+> `0x856c4Efb76C1D1AE02e20CEB03A2A6a08b0b8dC3`. This change is config intent; it does not deregister
+> anything on-chain.
 
 | NXM | `0xF0D44e332395762f5A93271DcA0De587B10703CC` |
 | wNXM | `0x11382AbB9FF238a4f4E7fAc9CCe084F038aab78f` |

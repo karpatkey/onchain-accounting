@@ -306,7 +306,7 @@ All in `src/prices/protocols/`. Pattern is one file per asset; L2-specific varia
 | `ETHx_Price` **(base)** | ETHx | Stader `StaderStakePoolsManager.getExchangeRate` × ETH/USD |
 | `osToken_Price` **(base)** | osETH (Mainnet), osGNO (Gnosis) | StakeWise `OsTokenVaultController.convertToAssets(1e18)` × underlying/USD (ETH/USD for osETH, GNO/USD for osGNO). One generic contract per (osToken, controller, underlying/USD feed) — extensible to any future osToken. Held osTokens are wallet ERC20s reported by `ERC20DefaultBalanceAdapter`. |
 | `ankrETH_Price` | ankrETH (Mainnet) | ETH/USD × 1e18 / `ratio()` (ankrETH's `ratio()` is ankrETH-per-ETH, so ETH-per-ankrETH = 1e18/ratio) |
-| `OETH_Price` *(RETIRED 2026-08-12 — contract still deployed, no longer a registered asset)* | OETH (Mainnet) | OETH/ETH (Chainlink) × ETH/USD — a thin `CrossRateCustomPriceFeed` subclass; Origin OETH rebases ~1:1 to ETH and is priced off the Chainlink OETH/ETH feed |
+| `OETH_Price` *(RETIRED 2026-08-12 — contract still deployed, no longer CONFIGURED as a NAV asset; it is still REGISTERED on the live NAV, which this config change does not undo)* | OETH (Mainnet) | OETH/ETH (Chainlink) × ETH/USD — a thin `CrossRateCustomPriceFeed` subclass; Origin OETH rebases ~1:1 to ETH and is priced off the Chainlink OETH/ETH feed |
 
 ### Other derived
 

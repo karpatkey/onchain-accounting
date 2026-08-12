@@ -11,9 +11,10 @@ above it.
 
 - `reset_deployment_records.py --apply` archives and clears the deployment records, as its row below
   says — dry-run by default, undone with `--restore <tag>`.
-- `snapshot_production.py` writes `snapshots/<out>/` and **defaults to `--out pre`**, the committed
-  capture described below. It is the value, not the explicitness, that matters — the "Typical order"
-  step below passes `--out pre` deliberately. Any other `--out` leaves the capture alone.
+- `snapshot_production.py` resolves `--out` to `snapshots/<out>/`, or to `<out>` verbatim when the
+  value contains a `/` (`:346`). It **defaults to `--out pre`**, the committed capture described below,
+  and the "Typical order" step passes `--out pre` deliberately. Judge safety by the resolved
+  destination, not the flag text: any run whose `out_dir` lands on `snapshots/pre/` overwrites it.
 - `declared_heartbeat_guard.py --refresh` rewrites the committed `chainlink_declared_heartbeats.json`.
 - `rehearse_fork.sh` mutates tracked config under `script/config/` during a rehearsal, refuses to start
   if `script/config` or `broadcast/` is dirty (`:63` — those two paths only, not the whole tree), and

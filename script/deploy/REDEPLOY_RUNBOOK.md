@@ -32,9 +32,11 @@ chain. Four of its scripts write **git-tracked** files — and because that list
 
 - `reset_deployment_records.py --apply` — archives and clears `script/config/deployments/`. Dry-run by
   default; undone with `--restore <tag>`.
-- `snapshot_production.py` — writes `snapshots/<out>/` and **defaults to `--out pre`**, the committed
-  capture (25 tracked files). It is the value, not the explicitness, that matters: the documented
-  pre-deploy step passes `--out pre` deliberately. Any other `--out` leaves the capture alone.
+- `snapshot_production.py` — resolves `--out` to `snapshots/<out>/`, or to `<out>` verbatim when the
+  value contains a `/` (`:346`). It **defaults to `--out pre`**, the committed capture (25 tracked
+  files), and the documented pre-deploy step passes `--out pre` deliberately. Judge safety by the
+  resolved destination, not the flag text: any run whose `out_dir` lands on `snapshots/pre/` — `pre`,
+  a relative path, or an absolute one — overwrites the capture.
 - `declared_heartbeat_guard.py --refresh` — rewrites the committed `chainlink_declared_heartbeats.json`.
 - `rehearse_fork.sh` — mutates `script/config/` during a rehearsal, refuses to start if `script/config`
   or `broadcast/` is dirty (`:63` — those two paths only, not the whole tree), and restores them

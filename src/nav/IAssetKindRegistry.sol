@@ -136,8 +136,11 @@ interface IAssetKindRegistry {
 
     /// @notice More segments were supplied for one adapter's label override than
     ///         {AssetKindRegistry.MAX_ADAPTER_LABEL_SEGMENTS}.
-    /// @dev Not a read-path bound: the overlay applies only within the adapter's own reply, so extra segments are
-    ///      inert rather than dangerous. This bounds the operator's own gas and this contract's storage.
+    /// @dev Not a read-path bound: on the account path the overlay applies only within the adapter's own reply, so
+    ///      extra segments are inert rather than dangerous. (On the configuration surface an empty reply IS grown to
+    ///      the override's leading non-empty prefix, so segments there are not inert — still not dangerous, since
+    ///      the read-side `decodeStringArray` cap rejects anything longer than `_MAX_LABEL_ELEMENTS`.) This bounds
+    ///      the operator's own gas and this contract's storage.
     error TooManyAdapterLabels(address adapter, uint256 count, uint256 max);
 
     /// @notice One segment of an adapter's label override is longer than {AssetKindRegistry.MAX_ASSET_LABEL_BYTES}.
@@ -324,7 +327,8 @@ interface IAssetKindRegistry {
     // ---------------------------------------------------------------------------------------------------------------
     // Balance-adapter display overrides
     //
-    // A ≤46-row, per-ADAPTER table that lets an operator correct an adapter's display strings — its protocol name and
+    // A per-ADAPTER table — one row per registered adapter per chain, `ERC20Default` included — that lets an
+    // operator correct an adapter's display strings: its protocol name and
     // any segment of its `positionLabels()` breadcrumb — without redeploying and re-registering it.
     //
     // **Any DEPTH is reachable, and `""` is how a segment is left alone.** {setAdapterLabels} takes an array that is
@@ -426,9 +430,17 @@ interface IAssetKindRegistry {
     ///        `rewarderCoinSymbols` probe answers, and most of the meta family returns 0, 1 or 2 depending on whether
     ///        the leaf read succeeded. Writing index `i` of a shorter array is `Panic(0x32)`, which would destroy the
     ///        never-revert property the whole label path is built on.
-    ///      - It cannot LENGTHEN a reply either, which is what keeps `NAVCalculator`'s `_MAX_LABEL_ELEMENTS = 8`
-    ///        ceiling unreachable from this side. A segment past the adapter's own reply is silently inert; if a
-    ///        supplied segment does not appear, the adapter emitted fewer segments than you assumed.
+    ///      - On the ACCOUNT path it cannot LENGTHEN a reply either: a segment past the adapter's own reply is
+    ///        silently inert, so if a supplied segment does not appear there, the adapter emitted fewer segments
+    ///        than you assumed. ⚠️ **Not so on the CONFIGURATION surface**, and an earlier revision of this bullet
+    ///        stated it unconditionally: `getAdapterDisplayInfo` grows an EMPTY reply to the override's leading
+    ///        non-empty prefix, which is how a meta-adapter — every one of which answers `positionLabels("")` with
+    ///        `[]` — gets a breadcrumb on a configuration page at all.
+    ///      - `NAVCalculator`'s `_MAX_LABEL_ELEMENTS = 8` stays unreachable from this side either way, but NOT
+    ///        because of the overlay bound: the registry's reply reaches the read path through the same
+    ///        `decodeStringArray` shim an adapter's does, and that shim rejects any array longer than the cap. The
+    ///        write-side {AssetKindRegistry.MAX_ADAPTER_LABEL_SEGMENTS} is set equal to it so a legal write is
+    ///        always readable; the READ-side check is what makes the ceiling uncrossable.
     ///
     ///      **Which segments are safe to write is a property of the ADAPTER, and this contract cannot check it** — see
     ///      the section note above and the per-adapter sweep in `src/balances/BALANCE_ADAPTERS.md` §6.2. The one

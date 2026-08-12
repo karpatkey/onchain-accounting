@@ -1694,7 +1694,13 @@ contract AdapterLabelOverridesTest is AdapterLabelOverridesBase {
         // 1,088 bytes, and this test goes red until `_OVERRIDE_RETURN_BYTES` is moved to match.
         uint256 cap = registry.MAX_ASSET_LABEL_BYTES();
         uint256 segments = registry.MAX_ADAPTER_LABEL_SEGMENTS();
-        assertGe(cap, 2, "fixture needs room for a filler byte plus a distinct suffix");
+        // `cap >= 1` is the fixture's real requirement: at cap == 1 the filler loop simply does not run and the
+        // single byte is the distinct suffix. `segments >= 2` is a separate requirement of the position-path half
+        // below, which indexes `maximal[0]` and `maximal[1]` — without this it would fail with a bare Panic(0x32)
+        // instead of a named assertion.
+        assertGe(cap, 1, "fixture needs at least one byte per segment");
+        assertGe(segments, 2, "position-path half of this test indexes two segments");
+        assertLe(segments, 256, "suffix byte can only distinguish 256 segments; widen the fixture if this trips");
 
         string[] memory maximal = new string[](segments);
         for (uint256 i; i < segments; ++i) {
@@ -1704,7 +1710,10 @@ contract AdapterLabelOverridesTest is AdapterLabelOverridesBase {
             for (uint256 j; j + 1 < cap; ++j) {
                 seg[j] = "a";
             }
-            seg[cap - 1] = bytes1(uint8(0x41 + i));
+            // The suffix byte is the index itself, not `0x41 + i`: the offset form truncates once the segment
+            // count passes 191 and the fixture would silently lose its anti-offset-aliasing property. Readability
+            // is worth nothing here; distinctness is the whole job, and `uint8(i)` is distinct for every i < 256.
+            seg[cap - 1] = bytes1(uint8(i));
             maximal[i] = string(seg);
             assertEq(bytes(maximal[i]).length, cap, "fixture must sit exactly AT the cap, not near it");
         }

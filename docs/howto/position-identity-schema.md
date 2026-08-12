@@ -618,8 +618,12 @@ overrides — `setAdapterProtocolName` and `setAdapterLabels`, both `onlyNavMana
 wholesale; `setAdapterLabels` takes a `string[]` that is **index-aligned with the adapter's reply** and
 replaces it **segment by segment**, where `""` at an index means "leave that segment alone". So
 `["Lending Market", ""]` corrects a meta-adapter's category and leaves its computed leaf derived live.
-The overlay applies only for `i < min(reply.length, override.length)`, so an override can never write
-past — nor lengthen — the adapter's own reply: `labels.length` is always the adapter's answer.
+The overlay applies only for `i < min(reply.length, override.length)`, so on the **position** path — the one
+these `VerbosePosition` rows come from — an override can never write past nor lengthen the adapter's own reply:
+`labels.length` is always the adapter's answer. (The configuration surface `getAdapterDisplayInfo` differs on
+one case by design: an EMPTY reply is grown to the override's leading non-empty prefix, so a meta-adapter, which
+answers `positionLabels("")` with `[]`, still gets a breadcrumb on a configuration page. That surface is not what
+you reconcile against — use these position rows.)
 `src/balances/BALANCE_ADAPTERS.md` §6.2 carries the per-adapter sweep of which segment is a literal and
 which is computed.
 

@@ -559,13 +559,23 @@ def _check_chain(chain_id: int) -> list[tuple[str, str]]:
             continue  # fewer than two ENABLED siblings on this chain; nothing to compare
         seen: dict[str, list[str]] = {}
         for name in present:
-            val = (dep_plain.get(name, {}).get("constructor", {}) or {}).get(arg)
+            # Guard the BLOCK as well as the value. `or {}` catches the falsy shapes ({}, null, []) but a
+            # `"constructor": "0x…"` or a list would reach `.get` and raise AttributeError. This is the only place
+            # in _check_chain that reads `constructor` out of the balance-adapter deploy config, so the exposure
+            # would be new rather than shared with the feed checks.
+            ctor = dep_plain.get(name, {}).get("constructor") or {}
+            if not isinstance(ctor, dict):
+                f.append((ERROR, f"'{name}'.constructor is {type(ctor).__name__}, expected an object"))
+                continue
+            val = ctor.get(arg)
             if val is None:
                 f.append((ERROR, f"'{name}' is missing the shared constructor arg '{arg}' that its sibling(s) "
                                  f"{', '.join(x for x in present if x != name)} also take"))
                 continue
-            # Type-guard before `.lower()`: a numeric or null constructor value would otherwise raise an uncaught
-            # AttributeError out of _check_chain and take down the whole preflight run instead of reporting a row.
+            # Type-guard before `.lower()`: a numeric constructor value would otherwise raise AttributeError out of
+            # _check_chain. That is contained — `chain_report` catches per chain and reports "could NOT be fully
+            # checked ... coverage is INCOMPLETE" with a non-zero exit — so the cost is losing that chain's OTHER
+            # findings, not the whole run. Worth guarding for the findings, not for the containment.
             if not isinstance(val, str):
                 f.append((ERROR, f"'{name}'.constructor.{arg} is {type(val).__name__}, expected an address string"))
                 continue

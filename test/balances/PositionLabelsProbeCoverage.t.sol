@@ -13,13 +13,19 @@ import {VmSafe} from "forge-std/Vm.sol";
 ///      adapter: it would ship registered, answer the probe with whatever it happens to answer, and `forge test`
 ///      would stay green — the same silent drop-off from a configuration view that those tests exist to prevent.
 ///
-///      This test closes that by pinning the registered non-meta adapter set itself. It reads the deploy configs
-///      under `script/config/deployments/` (the only place deployed addresses live) and asserts the union of
-///      non-meta `balanceAdapters` keys across every chain is exactly the set below. Enforcing at the deployment
-///      config — rather than at the source tree — is deliberate on two counts: it fires at the moment an adapter
-///      actually becomes registered and therefore actually reaches a configuration view, and `script/` is already
-///      inside `fs_permissions` (`src/` and `test/` are not, so a source-tree walk would need foundry.toml
+///      This test closes that by pinning the non-meta adapter set itself, against TWO sources:
+///        - `script/config/deployments/` — what is actually DEPLOYED (the only place deployed addresses live);
+///        - `script/config/contracts-deployment-config/balance-adapters/` — what is ENABLED to deploy next.
+///      Enforcing at config rather than at the source tree is deliberate on two counts: it fires at the moment an
+///      adapter actually becomes registered and therefore actually reaches a configuration view, and `script/` is
+///      already inside `fs_permissions` (`src/` and `test/` are not, so a source-tree walk would need foundry.toml
 ///      widened repo-wide for one test).
+///
+///      ⚠️ **Reading BOTH sources is what makes a green result mean something.** Keyed on the deployment record
+///      alone, this test passed throughout the `Cap` -> `CapStablecoin`/`CapSavings` split purely because
+///      `deployments/1.json` still held the pre-split `Cap` — green on a stale record, not on agreement with the
+///      tree, and unable to accept the new names until `04` had run. The deploy-config arm fires at the moment the
+///      author changes the config, which is the moment they are in a position to add the probe decision.
 ///
 ///      Meta adapters are excluded: a configuration view enumerates them through
 ///      `getMetaInstances` + `positionLabels(instance)` and never needs the empty probe.
@@ -42,21 +48,65 @@ contract PositionLabelsProbeCoverageTest is Test {
     /// @dev Every non-meta adapter key that currently appears in any `script/config/deployments/<chainId>.json`.
     ///      Keep sorted by family, then alphabetically, so a diff to this list is easy to read in review.
     function _expectedNonMetaAdapters() internal pure returns (string[] memory names) {
-        names = new string[](12);
+        names = new string[](14);
         // Plain (src/balances/BalanceAdapters/)
         names[0] = "AaveUmbrella";
         names[1] = "AaveV3SafetyModule";
-        names[2] = "Cap";
-        names[3] = "ERC20Default";
-        names[4] = "EthenaCooldown";
-        names[5] = "KelpWithdrawalQueue";
-        names[6] = "LidoWithdrawalQueue";
-        names[7] = "SparkLend";
-        names[8] = "StaderWithdrawalQueue";
+        names[2] = "Cap"; // retired CONTRACT at a still-live ADDRESS; see {_configuredNonMetaAdapters}
+        names[3] = "CapSavings";
+        names[4] = "CapStablecoin";
+        names[5] = "ERC20Default";
+        names[6] = "EthenaCooldown";
+        names[7] = "KelpWithdrawalQueue";
+        names[8] = "LidoWithdrawalQueue";
+        names[9] = "SparkLend";
+        names[10] = "StaderWithdrawalQueue";
         // Assisted (src/balances/AssistedBalanceAdapters/)
-        names[9] = "EtherFiWithdrawalQueueAssisted";
-        names[10] = "NexusMutualStakingPoolsAssisted";
-        names[11] = "StakeWiseV3ExitQueueAssisted";
+        names[11] = "EtherFiWithdrawalQueueAssisted";
+        names[12] = "NexusMutualStakingPoolsAssisted";
+        names[13] = "StakeWiseV3ExitQueueAssisted";
+    }
+
+    /// @notice Adapter keys that are ENABLED in the per-chain deploy config — what `04` is configured to deploy next.
+    /// @dev **Direction 1b keys on this set, and direction 2 on the union of it and the deployment record. Together
+    ///      that is what lets the expected list track a rename at the moment the RENAME happens rather than at the
+    ///      moment the DEPLOY happens.**
+    ///
+    ///      Before this, the list could only be updated after `04` ran: adding `CapStablecoin`/`CapSavings` while
+    ///      they existed solely in config failed direction 2 ("no longer deployed on any chain"), and removing
+    ///      `Cap` failed direction 1, because `deployments/1.json` still holds the pre-split `Cap` at a live
+    ///      address. So the test was green on a stale deployment record rather than on agreement with the tree —
+    ///      passing for a reason unrelated to whether anyone had made a probe decision for the new adapters.
+    ///
+    ///      Keying on the union fixes that without weakening either direction: an adapter that is neither deployed
+    ///      NOR configured still fails direction 2 as rot, and anything deployed still fails direction 1 if it has
+    ///      no probe decision. It also retires the deploy-day chore — when `04` writes the two new addresses and
+    ///      `Cap` leaves the record, this test needs no edit at all.
+    function _configuredNonMetaAdapters() internal view returns (string[] memory) {
+        string memory dir = string.concat(vm.projectRoot(), "/script/config/contracts-deployment-config/balance-adapters");
+        VmSafe.DirEntry[] memory entries = vm.readDir(dir);
+
+        string[] memory acc = new string[](64);
+        uint256 n;
+        for (uint256 i; i < entries.length; ++i) {
+            if (entries[i].isDir) continue;
+            if (!_endsWith(entries[i].path, ".json")) continue;
+            string memory json = vm.readFile(entries[i].path);
+            string[] memory keys = vm.parseJsonKeys(json, "$");
+            for (uint256 k; k < keys.length; ++k) {
+                if (_contains(keys[k], "Meta")) continue;
+                if (_has3(acc, n, keys[k])) continue;
+                // Only ENABLED entries: a disabled stub is not "configured to deploy".
+                if (!vm.parseJsonBool(json, string.concat(".", keys[k], ".enabled"))) continue;
+                require(n < acc.length, "PositionLabelsProbeCoverage: configured accumulator overflow");
+                acc[n++] = keys[k];
+            }
+        }
+        string[] memory out = new string[](n);
+        for (uint256 i; i < n; ++i) {
+            out[i] = acc[i];
+        }
+        return out;
     }
 
     function test_everyRegisteredNonMetaAdapterHasAProbeDecision() public view {
@@ -78,14 +128,36 @@ contract PositionLabelsProbeCoverageTest is Test {
             );
         }
 
-        // Direction 2: the list has not rotted past adapters that were removed from every chain's config.
+        // Direction 1b: nothing CONFIGURED to deploy is missing from the list either. Direction 1 alone only sees
+        // the deployment record, so a renamed adapter would go unnoticed until `04` ran — which is exactly how the
+        // pre-split `Cap` -> `CapStablecoin`/`CapSavings` rename could have reached deploy day with no probe
+        // decision. This arm fires at the moment the CONFIG changes, which is the moment the author is looking.
+        string[] memory configuredNow = _configuredNonMetaAdapters();
+        for (uint256 i; i < configuredNow.length; ++i) {
+            assertTrue(
+                _has(expected, configuredNow[i]),
+                string.concat(
+                    "Balance adapter '",
+                    configuredNow[i],
+                    "' is enabled in a balance-adapter deploy config but is not in PositionLabelsProbeCoverage. "
+                    "Add a test_positionLabels_emptyProbe_* case to its own test suite deciding what "
+                    'positionLabels("") must answer, then add it here.'
+                )
+            );
+        }
+
+        // Direction 2: the list has not rotted past adapters that are neither DEPLOYED nor CONFIGURED to deploy.
+        // The union is load-bearing — see {_configuredNonMetaAdapters}. Keying on `found` alone made this test
+        // green on a stale deployment record and forced the expected list to lag every rename until deploy day.
+        string[] memory configured = _configuredNonMetaAdapters();
         for (uint256 i; i < expected.length; ++i) {
             assertTrue(
-                _has(found, expected[i]),
+                _has(found, expected[i]) || _has(configured, expected[i]),
                 string.concat(
                     "Balance adapter '",
                     expected[i],
-                    "' is listed in PositionLabelsProbeCoverage but is no longer deployed on any chain. "
+                    "' is listed in PositionLabelsProbeCoverage but is neither deployed on any chain NOR enabled "
+                    "in any chain's balance-adapter deploy config. "
                     "Remove it here (and retire its probe test) if the adapter is genuinely gone."
                 )
             );

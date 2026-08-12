@@ -33,10 +33,16 @@ import "src/constants.sol";
 ///
 ///      ⚠️ **That guarantee is about CONTENT, not about SHAPE, and an earlier revision of this sentence stated it
 ///      without the qualifier.** The two surfaces deliberately differ on emptiness: the ACCOUNT path leaves an empty
-///      reply empty, while the CONFIGURATION path grows it to the override's leading non-empty prefix. So an
-///      override of `["", "X"]` yields NOTHING on the configuration surface (the leading `""` stops the prefix scan)
-///      and applies `X` at index 1 on the account path. Both behaviours are intended — see
-///      `PriceFeedLib._overridePrefix` — but "cannot disagree" overstates them.
+///      reply empty, while the CONFIGURATION path grows it to the override's leading non-empty prefix.
+///
+///      The divergence needs an adapter whose reply is EMPTY (every meta-adapter, which answers `positionLabels("")`
+///      with `[]`) and an override with a NON-EMPTY leading segment. Measured: `["Cat", ""]` on such an adapter
+///      yields `["Cat"]` on the configuration surface and `[]` on the account path. Against an adapter that DOES
+///      reply, the two agree exactly. (An earlier revision illustrated this with `["", "X"]`, which demonstrates no
+///      divergence at all: the leading `""` stops the prefix scan, so an empty-replying adapter yields nothing on
+///      EITHER surface, and a replying adapter gets `X` at index 1 on BOTH. An example added to walk back an
+///      over-broad claim, that showed the opposite of the claim it was correcting.) Both behaviours are intended —
+///      see `PriceFeedLib._overridePrefix`.
 ///      Note what did NOT change: the CLASSIFICATION half (the kinds and the per-asset labels) still has no on-chain
 ///      reader, and its value remains the atomic register+classify invariant on the write path, not the read. An
 ///      earlier version justified the contract with "a consumer makes two calls and caches the kinds indefinitely";
@@ -148,9 +154,16 @@ contract AssetKindRegistry is IAssetKindRegistry {
     ///      a per-adapter constant in all 13 of its definitions (`MetaBalanceAdapter.protocolName` folds
     ///      `ProtocolNames.forProtocolId(_protocolId())` at compile time and no concrete meta-adapter overrides it),
     ///      so one row per adapter covers every position that adapter can ever emit — at most one row per DEPLOYED
-    ///      adapter, i.e. ≤46 across all 7 chains (34 deployable contracts, 46 enabled deployments; the two figures
-    ///      count different things and an earlier revision used them interchangeably — both moved by one when the
-    ///      Cap split replaced one contract, and one chain-1 deployment, with two),
+    ///      adapter. **Two different figures, and an earlier revision used them interchangeably: 34 deployable
+    ///      CONTRACTS in the tree, and 46 enabled DEPLOYMENTS across the 6 chains that configure any adapter.** Both
+    ///      moved by one when the Cap split replaced one contract, and one chain-1 deployment, with two.
+    ///
+    ///      ⚠️ Neither figure is the row bound, and an earlier revision quoted 46 as if it were. The 46 counts only
+    ///      adapters enabled in `nav-config`; `ERC20Default` is registered by `initialize()` on every chain and
+    ///      appears in no nav-config file, yet it is an overridable adapter like any other and can hold a row. It is
+    ///      present in all 24 deployment records. So the bound is 46 + one per chain — the exact number is not worth
+    ///      pinning in a comment that has already gone stale twice; treat it as "one row per registered adapter per
+    ///      chain, and ERC20Default counts",
     ///      with nothing to re-write when `addMetaInstances` adds an instance.
     mapping(address adapter => string name) private _adapterProtocolName;
 
@@ -170,7 +183,7 @@ contract AssetKindRegistry is IAssetKindRegistry {
     ///      complement. Keeping both would have meant two stores writing one display value with no principled
     ///      precedence between them — and two mechanisms that must agree about one display value is precisely the
     ///      failure this feature has already hit twice (the `protocolName` phantom-sibling split, and the empty-reply
-    ///      divergence that left the two surfaces disagreeing for 21 of 33 adapters). Migration cost was zero:
+    ///      divergence that left the two surfaces disagreeing for 21 of the 34 adapters). Migration cost was zero:
     ///      `AssetKindRegistry` appears in no `script/config/deployments/*.json`, so no chain has ever had one and
     ///      `setAdapterLabelCategory` was never callable in production.
     ///
@@ -196,10 +209,16 @@ contract AssetKindRegistry is IAssetKindRegistry {
     ///      `NAVCalculator`'s `_MAX_LABEL_ELEMENTS = 8` is exactly that ceiling, so a lower bound here would leave the
     ///      deepest addressable segments permanently uncorrectable.
     ///
-    ///      It cannot be used to LENGTHEN a reply. `PriceFeedLib` overlays only `i < min(reply.length,
-    ///      override.length)`, so a segment past the adapter's own reply is inert on both display surfaces — the
+    ///      It cannot be used to LENGTHEN a reply ON THE ACCOUNT PATH. `PriceFeedLib` overlays only
+    ///      `i < min(reply.length, override.length)`, so a segment past the adapter's own reply is inert there — the
     ///      longest reply anywhere in `src/balances/` today is 3 (`ConvexCurveLPStakingMetaBalanceAdapter`). This bound
     ///      therefore protects the operator's own gas and this contract's storage, not the read path's element cap.
+    ///
+    ///      ⚠️ **"Inert" is true of the ACCOUNT path only, and an earlier revision said "on both display surfaces".**
+    ///      `PriceFeedLib.adapterDisplayInfo` grows an EMPTY reply to the override's leading non-empty prefix, so on
+    ///      the configuration surface segments past the (zero-length) reply are emitted, not inert — that is how a
+    ///      meta-adapter gets a breadcrumb on a configuration page at all. Segments beyond the prefix, and segments
+    ///      past a NON-empty reply, are inert on both.
     uint256 public constant MAX_ADAPTER_LABEL_SEGMENTS = 8;
 
     /// @notice Longest one label may be, in BYTES (not characters — a multi-byte glyph costs more than one).

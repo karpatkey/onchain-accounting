@@ -474,7 +474,7 @@ Four traps that have each already cost a run:
   bridge state for a deferred stack.
 - **1.1 must precede 1.5 — and must be RE-RUN after any failed `03`.** Each of `03`'s 31 `_deploy*`
   helpers is skip-if-deployed and returns early without reverting, so a surviving `customPriceFeeds`
-  record makes `03` a silent no-op leaving all 41 feeds bound to the **old** proxy. `verify_step.py
+  record makes `03` a silent no-op leaving all 40 feeds bound to the **old** proxy. `verify_step.py
   1.5` enforces it by requiring every recorded feed address to be *new*, not merely non-zero.
 
   This is **not only a first-run ordering rule.** It is also the recovery procedure, because a `03`

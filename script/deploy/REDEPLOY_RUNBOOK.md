@@ -32,7 +32,7 @@ which this line used to claim, so the writers are named instead of implied:
 
 | script | writes | when |
 | --- | --- | --- |
-| `reset_deployment_records.py` | tracked `deployments/<cid>.json` (archives the old copy first) | only under `--apply`; the default is a dry run |
+| `reset_deployment_records.py` | tracked `deployments/<cid>.json` — **two different write paths** | `--apply` CLEARS them (archiving the old copy first; the default is a dry run). **`--restore <tag>` OVERWRITES them with no `--apply` and no archive of what it replaced** (`:213` dispatches to `do_restore` before the apply path; `:177` copies unconditionally). Judge by the FLAG, not by `--apply`: a bare `--restore` is a write |
 | `declared_heartbeat_guard.py` | tracked `preflight/chainlink_declared_heartbeats.json` | its `refresh` mode; the checking modes do not write |
 | `snapshot_production.py` | tracked `preflight/snapshots/<out>/*.json` and the index | every run, default `--out pre` |
 | `rehearse_fork.sh` | **mutates tracked `script/config` and `broadcast/`**, then restores them byte-exact with `git checkout --` and deletes untracked leftovers under those two paths (`:35-39`, `:61-67`); separately creates `safe-transactions/` in the repo root (`:93`) and writes `steps.tsv`, `config-before`/`config-after` and `anvil.log` under `$WORK` (`:84-93`, `:380-381`) | every run — which is why it refuses to start from a dirty tree |
@@ -648,7 +648,8 @@ day.
 > **"No known omission" is now partly enforced rather than merely asserted.** Every chain in neither L1
 > collection has its OP GasPriceOracle probed at runtime, and a non-zero reading fails the row closed
 > naming itself. That closes the hemi shape specifically. It does **not** cover a DA surcharge levied
-> without that predeploy, and two of the 14 (`999` hyperevm, `9745` plasma) were unreachable from the
+> without that predeploy, and **eight** of the 14 (`56` bsc, `137` polygon, `146` sonic, `999`
+> hyperevm, `9745` plasma, `43114` avalanche, `59144` linea, `80094` berachain) were unreachable from the
 > environment this was measured in, so they are **unverified, not cleared**. arbitrum (`42161`) was
 > checked and has no such predeploy: Nitro charges its L1 component by inflating gas units, which
 > `gas × price` already captures.
@@ -683,7 +684,10 @@ false-alarm measurement above is the precedent. That figure read `~1e-7` until 2
 payload was found to be compressible; **it is INFERENCE, not measurement** — the pre-correction number
 scaled by the measured 59.1957× ratio, not re-measured per transaction, so treat it as an order of
 magnitude. The ruling is unaffected: flipping any of the eight needs the term to exceed 10×–996× the
-whole `need`, and the correction consumed 1.8 of the 3 orders that argument tolerates. **Scroll is treated differently because there the
+whole `need` by between one and three ORDERS OF MAGNITUDE depending on the row — stated that way
+deliberately, because the table above forbids quoting the measured margin as the flip threshold and
+the module declines to quote those figures for the same reason. The correction consumed 1.8 of the 3
+orders that argument tolerates. **Scroll is treated differently because there the
 omitted term is ~99.9% of the cost** — applying the same treatment to the eight would be theatre.
 
 Full pricing for all **ten** remains **issue #287**, which carries everything already measured. **#287's
@@ -786,7 +790,10 @@ oracle.
 > cannot detect a stale baseline, a chain that changed its fee mode, or a payload that measures the wrong
 > thing — the last of which is exactly the defect that forced all 16 baselines to be re-measured. Those
 > claims still rest on **manual measurement**, and a regression in them is caught by a human reading the
-> output or not at all. `forge test` and the library-pin job still do not run on a change to this file.
+> output or not at all. **`forge test` and the library-pin job DO run on a change to this file** —
+`.github/workflows/foundry.yml` puts no `paths:` filter on its `pull_request` trigger, so Build,
+unit tests, fork tests and Library pins all run on a preflight-only PR, as this PR's own runs show.
+An earlier version of this line claimed the opposite.
 
 ### 0.7 Capture the pre-deploy production state — **irreplaceable, do it before anything else**
 

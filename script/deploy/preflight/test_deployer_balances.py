@@ -513,6 +513,28 @@ class TestImportTimeInvariants(unittest.TestCase):
             self._exec_with("L1_FEE_UNMODELLED = {534352, 43111}",
                             "L1_FEE_UNMODELLED = {534352, 43111, 8453}")
 
+    def test_zeroed_verdict_floors_are_rejected_at_import(self):
+        # `_dead_floors` was the newest import invariant and the only one with no test — every other
+        # one is exercised via _exec_with, so this one could have been deleted and the suite stayed
+        # green. Each of the three is a multiplicand or floor in the verdict path; at 0 they collapse
+        # `need` and make `balance >= need` a tautology.
+        for name in ("FEE_VOLATILITY_HEADROOM = 2",
+                     "GAS_PRICE_IMPLAUSIBLE_WEI = 50_000",
+                     "GAS_UNITS_IMPLAUSIBLE = 1_000_000"):
+            with self.subTest(constant=name.split(" =")[0]):
+                with self.assertRaises(ValueError):
+                    self._exec_with(name, f"{name.split(' =')[0]} = 0")
+
+    def test_a_chain_classified_two_ways_is_rejected_at_import(self):
+        # The disjointness check was widened from the original pair to all FOUR L1 sets; without a test
+        # it could silently narrow back, and a third set is exactly where a second classification hides.
+        with self.assertRaises(ValueError):
+            self._exec_with("L1_FEE_NONE_VERIFIED = {42161, 196, 1, 100, 143, 16661}",
+                            "L1_FEE_NONE_VERIFIED = {42161, 196, 1, 100, 143, 16661, 534352}")
+        with self.assertRaises(ValueError):
+            self._exec_with("L1_FEE_UNVERIFIED = {9745, 999, 59144, 56, 137, 146, 43114, 80094}",
+                            "L1_FEE_UNVERIFIED = {9745, 999, 59144, 56, 137, 146, 43114, 80094, 8453}")
+
     def test_unpatched_source_imports_cleanly(self):
         # Guards the three tests above: if the module raised for an unrelated reason they would pass
         # for the wrong reason.
@@ -529,8 +551,24 @@ class TestImportTimeInvariants(unittest.TestCase):
         # degenerate combination: an OK verdict REQUIRES a `need` at least as large as the smallest
         # estimate the floors are supposed to permit. It therefore fails for ANY future collapse route
         # — a third multiplicand, a headroom of 0, a new pricing branch — not just the two known ones.
-        floor = db.GAS_UNITS_IMPLAUSIBLE * db.GAS_PRICE_IMPLAUSIBLE_WEI * db.FEE_VOLATILITY_HEADROOM
+        # THE BOUND IS A LITERAL, NOT DERIVED FROM THE CONSTANTS IT CERTIFIES. An earlier version
+        # computed it as GAS_UNITS_IMPLAUSIBLE * GAS_PRICE_IMPLAUSIBLE_WEI * FEE_VOLATILITY_HEADROOM —
+        # circular, and provably so in the exact case its own comment advertised: set
+        # FEE_VOLATILITY_HEADROOM to 0 and the bound becomes 0, `needWei >= 0` holds for every row, and
+        # the test passes while the gate certifies an empty deployer. A test whose expectation moves
+        # with the code it checks cannot detect that code changing.
+        #
+        # 1e11 wei is the product of the floors as they stand (1e6 gas x 5e4 wei x 2). Pinned as a
+        # literal so a change to any of the three FAILS HERE and has to be justified, rather than
+        # silently redefining what the test means. If the floors are deliberately changed, change this
+        # number in the same commit — that is the point, not an inconvenience.
+        floor = 100_000_000_000
+        self.assertEqual(
+            floor,
+            db.GAS_UNITS_IMPLAUSIBLE * db.GAS_PRICE_IMPLAUSIBLE_WEI * db.FEE_VOLATILITY_HEADROOM,
+            "a verdict-path floor changed; re-derive this literal deliberately and say why")
         checked = 0
+        certified = 0
         for gas in (0, 1, db.GAS_UNITS_IMPLAUSIBLE - 1, db.GAS_UNITS_IMPLAUSIBLE, GAS):
             for quoted in (0, 1, db.GAS_PRICE_IMPLAUSIBLE_WEI - 1, db.GAS_PRICE_IMPLAUSIBLE_WEI,
                            GOOD_PRICE):
@@ -539,12 +577,21 @@ class TestImportTimeInvariants(unittest.TestCase):
                         row, _ = run_one(cid, balance=bal, quoted=quoted, gas=gas)
                         checked += 1
                         if row.get("sufficient") is True:
+                            certified += 1
                             self.assertGreaterEqual(
                                 row["needWei"], floor,
                                 f"chain {cid} certified OK on need={row['needWei']} from "
                                 f"gas={gas} quoted={quoted} bal={bal} — below the {floor} floor the "
                                 f"guards are supposed to enforce, i.e. a tautological pass")
-        self.assertGreater(checked, 200, "the grid collapsed; this test would pass vacuously")
+        # ANTI-VACUITY MUST COUNT ASSERTION-REACHING POINTS, NOT ITERATIONS. The earlier guard asserted
+        # `checked > 200`, which counts grid points EXAMINED — a number that stays high even if every
+        # single row came back UNPRICEABLE and the `assertGreaterEqual` never executed once. It could
+        # not detect the vacuity mode it was named for. `certified` counts the rows that actually
+        # reached the assertion, so a change making everything unpriceable now fails here.
+        self.assertGreater(checked, 200, "the grid collapsed")
+        self.assertGreater(certified, 0,
+                           "no row in the grid was ever certified OK, so the invariant under test was "
+                           "never evaluated — this test passed without asserting anything")
 
     def test_oracle_returning_unreadable_data_is_permanent_not_transient(self):
         # Branch coverage found this arm untested — it was added in pass 2 and never exercised, which

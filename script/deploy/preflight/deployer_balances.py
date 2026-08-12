@@ -186,7 +186,9 @@ if _bad_overrides:
 # LIMIT, stated: the magnitude of those getL1Fee figures could not be independently certified (base returns
 # 8.35e-9 ETH for the payload scroll charges ~1e-3 for, and a hand-check from its scalars did not reproduce
 # it). Only the flip conclusion is certified, because it holds across three orders of magnitude of error.
-# Modelling all nine properly is #287.
+# Modelling all TEN properly is #287 — the eight priced-with-omission chains plus scroll and hemi.
+# (This said "nine" while L1_FEE_UNMODELLED held scroll alone; adding hemi moved the count, and
+# #287's own issue text still says nine and should be widened.)
 #
 # HEMI (43111) WAS MISSING FROM BOTH COLLECTIONS AND PRINTED A CLEAN `OK` WHILE ~3x UNDER-FUNDED.
 # Measured live 2026-08-12 against the same OP-stack GasPriceOracle predeploy every other rollup here
@@ -246,7 +248,7 @@ L1_FEE_UNMODELLED = {534352, 43111}
 # UNPRICEABLE by itself.
 # THE UNDER-COMPUTED TOP-UP GAP, and why the guard is not the whole answer. `shortfallEth` is
 # `need - bal`, and `need` OMITS the L1 fee on any chain that charges one — so a shortfall printed for
-# such a chain tells the operator to send TOO LITTLE. That is wrong under either policy (fail all nine
+# such a chain tells the operator to send TOO LITTLE. That is wrong under either policy (fail all ten
 # closed, or pass eight with an expiring omission), so it is fixed here rather than deferred to #287.
 #
 # The headroom guard below makes it unreachable for these eight today: if `bal < need` then headroom is
@@ -552,9 +554,22 @@ if _dead_floors:
 def gas_estimate(s: dict, override: dict | None) -> int:
     if override:
         # `.get("total", 0)` kept, but 0 is no longer a silent pass — `one()` fails the row closed on
-        # anything under GAS_UNITS_IMPLAUSIBLE. Returning the raw value rather than raising here so the
-        # row can report WHICH chain and WHAT value, instead of killing the whole 24-chain run.
-        return int(override.get("total", 0))
+        # anything under GAS_UNITS_IMPLAUSIBLE. Returning a value rather than raising, so the row can
+        # report WHICH chain and WHAT value instead of killing the whole 24-chain run.
+        #
+        # THAT PROMISE WAS FALSE UNTIL THIS CATCH EXISTED, and the comment made it anyway. `gas_estimate`
+        # is called from `one()` OUTSIDE every try block, so a `total` that is not int-convertible — the
+        # string "36730000" is fine, but `null`, a list, or "36,730,000" is not — raised ValueError or
+        # TypeError straight out of `main()` and aborted the run on chain N, discarding the verdicts for
+        # every chain after it. A malformed --gas-units file is exactly the input this branch already
+        # showed an operator producing by hand.
+        #
+        # A bad value is now 0, which the GAS_UNITS_IMPLAUSIBLE floor turns into a per-row UNPRICEABLE
+        # naming the chain — the behaviour the comment claimed all along.
+        try:
+            return int(override.get("total", 0))
+        except (TypeError, ValueError):
+            return 0
     return (GAS_SHELL
             + s["feeds"] * GAS_PER_FEED
             + (s["metaAdapters"] + s["plainAdapters"] + s["assistants"]) * GAS_PER_ADAPTER
@@ -836,7 +851,17 @@ def one(chain_id: int, gas_units: dict) -> dict:
                # print-side warning that is dead. It becomes live the moment a chain that charges an L1
                # fee is priced WITHOUT the headroom floor — which is exactly the hemi shape, and hemi is
                # now failed closed rather than being the exception that makes the warning reachable.
-               shortfallExcludesL1=chain_id in L1_FEE_OMITTED_PRICED or chain_id in L1_FEE_UNMODELLED,
+               # KEYED ON EVERY SET WHERE THE TERM MAY BE PRESENT, not just the two original ones.
+               # L1_FEE_UNVERIFIED means nobody has established this chain charges no fee, so a
+               # shortfall for it is a LOWER BOUND on exactly the same grounds — and it is reachable
+               # there, unlike the two old sets, because an UNVERIFIED chain that prices and comes up
+               # short does reach TOP UP. Omitting it printed a bare `send >= X` with no warning for
+               # precisely the chains the module itself records as unmeasured.
+               # L1_FEE_NONE_VERIFIED is excluded deliberately: those were MEASURED fee-free, so
+               # their shortfall is complete and labelling it would cry wolf.
+               shortfallExcludesL1=(chain_id in L1_FEE_OMITTED_PRICED
+                                    or chain_id in L1_FEE_UNMODELLED
+                                    or chain_id in L1_FEE_UNVERIFIED),
                sufficient=(bal >= need) if priceable else None)
     return row
 

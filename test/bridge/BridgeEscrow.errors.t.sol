@@ -395,6 +395,22 @@ contract BridgeEscrowErrorTest is BridgeEscrowTestBase {
 
     // ============ markInvoiceCompleted reverts ============
 
+    /// @notice markInvoiceCompleted is whenNotPaused: it mutates in-transit NAV accounting (the same decrement
+    ///         cancelInvoice does), so a pause freezes it too for a consistent pause surface (audit super-review).
+    function test_RevertWhen_markInvoiceCompleted_whenPaused() public {
+        _approveToken(address(usdc), address(bridgeEscrow), BRIDGE_AMOUNT);
+        vm.prank(account);
+        bytes32 invoiceHash =
+            bridgeEscrow.depositAndBridge(DEST_CHAIN_ID, USDC_SYMBOL, BRIDGE_AMOUNT, address(mockAdapter));
+        vm.prank(admin);
+        bridgeEscrow.pause();
+        bytes32[] memory hashes = new bytes32[](1);
+        hashes[0] = invoiceHash;
+        vm.prank(manager);
+        vm.expectRevert(); // EnforcedPause
+        bridgeEscrow.markInvoiceCompleted(hashes);
+    }
+
     function test_RevertWhen_markInvoiceCompleted_notManager() public {
         _approveToken(address(usdc), address(bridgeEscrow), BRIDGE_AMOUNT);
         vm.prank(account);

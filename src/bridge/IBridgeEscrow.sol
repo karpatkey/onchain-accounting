@@ -225,6 +225,11 @@ interface IBridgeEscrow {
 
     /// @notice Cancels an invoice and returns assets (source chain, bridge-failure recovery)
     /// @param invoiceHash The hashed invoice ID (checksum) to cancel
+    /// @dev Refunds only from the surplus over destination held custody (never touches funds backing a recorded
+    ///      delivery, I1). There is NO on-chain source↔destination interlock, so this MUST only be called once the
+    ///      destination has provably not delivered and will not: cancelling a still-live invoice while the escrow
+    ///      holds unrelated surplus (e.g. stray funds) could refund the source AND let the destination later
+    ///      deliver, double-paying from that surplus. Enforced by MANAGER / settlement-keeper discipline.
     function cancelInvoice(bytes32 invoiceHash) external;
 
     /// @notice Marks invoices as completed for bookkeeping purposes (source chain only)
@@ -295,6 +300,11 @@ interface IBridgeEscrow {
     /// @notice Held-but-unclaimed destination custody for an asset (optionally filtered by account;
     ///         address(0) = all accounts). Mirrors {getInTransitBalanceForAsset} for the destination side so a
     ///         balance adapter can count delivered-but-not-yet-claimed value in NAV.
+    /// @dev Native dual-key: the aggregate (account == address(0)) path sums BOTH native representations
+    ///      (`address(0)` + the ERC-7528 sentinel); the per-account path returns the single exact key.
+    ///      `BridgeHeldBalanceAdapter` sums both native keys itself per account (so NAV is unaffected) — but a
+    ///      direct caller reading a specific account's native custody should query both keys (or use the adapter),
+    ///      otherwise it under-reports native held under the "other" key.
     function getHeldBalanceForAsset(address asset, address account) external view returns (uint256);
 
     /// @notice Returns all assets held-but-unclaimed for a specific account with their amounts (destination).

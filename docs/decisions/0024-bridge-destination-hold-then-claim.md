@@ -112,11 +112,12 @@ untouched. (Source side — `depositAndBridge`, `_bridge`, recipient = sibling a
   completion is one uniform `claim` for every bridge; the Gnosis auto path gains gating; the adapter diff is
   one line; provenance is unchanged and re-proven by the existing fork suite.
 - **Negative / cost:** the escrow now holds a standing destination balance, so H2/H9 move from a structural
-  guarantee to explicit accounting (I1–I7) that must be invariant-tested; a keeper (or the account) must call
-  `claim`, so delivered funds are not in the safe until claimed (they remain safe and claimable indefinitely;
+  guarantee to explicit accounting (I1–I7) that must be invariant-tested; a MANAGER-gated keeper must call
+  `claim` (both overloads are `onlyRole(MANAGER_ROLE)` — the account cannot self-claim), so delivered funds are
+  not in the safe until claimed (they remain safe and claimable indefinitely;
   `emergencyWithdraw` is the break-glass). Manual routes still need their proof step to get funds out of the
   bridge into the escrow — only the final escrow→safe step is unified.
-- **NAV hook (follow-up):** a destination getter `getHeldBalanceForAsset(asset, account)` + a
+- **NAV hook (shipped in this PR):** a destination getter `getHeldBalanceForAsset(asset, account)` + a
   `BridgeHeldBalanceAdapter` (`IBalanceAdapter`) lets NAV count held-but-unclaimed value. Windows **destination
   held → safe balance** are disjoint on the destination chain (`claim` is the single transition). But **source
   in-transit is NOT disjoint from destination held**: `recordDelivery` starts the held position while source
@@ -130,7 +131,7 @@ untouched. (Source side — `depositAndBridge`, `_bridge`, recipient = sibling a
 
 ## Open questions → decisions (resolved in PR #289 unless noted)
 
-**Resolved and shipped in PR #289:** (1) `claim` authorization = **MANAGER/keeper** (`onlyRole(MANAGER_ROLE)`); (2) `claim` is **`whenNotPaused`**; (3) `completedInvoices` on the destination now means **"delivered into custody"** (set in `recordDelivery`); (5) reward/dust surplus is **left on the adapter** for `recoverStuckAssets` (`recordDelivery` records the exact measured amount); (6) **batch `claim(bytes32[])`** is included (strict all-or-nothing). **Still open (deliberate follow-up):** (4) the cross-chain source-side cancel/claim interlock — `cancelInvoice` is now capped so it cannot drain destination held custody (I1), but a broader source↔destination DISPATCHED interlock remains deferred. The original framing is kept below for the record.
+**Resolved and shipped in PR #289:** (1) `claim` authorization = **MANAGER/keeper** (`onlyRole(MANAGER_ROLE)`); (2) `claim` is **`whenNotPaused`**; (3) `completedInvoices` on the destination now means **"delivered into custody"** (set in `recordDelivery`); (5) reward/dust surplus is **left on the adapter** for `recoverStuckAssets` (`recordDelivery` records the exact measured amount); (6) **batch `claim(bytes32[])`** is included (strict all-or-nothing). **Still open (deliberate follow-up):** (4) the cross-chain source-side cancel/claim interlock — `cancelInvoice` is now capped so it cannot drain destination held custody (I1), but a broader source↔destination DISPATCHED interlock remains deferred. **Operator note:** with no on-chain interlock, `cancelInvoice` must only be called once the destination has provably not delivered and will not — cancelling a still-live invoice while the escrow holds unrelated surplus (e.g. stray funds) could refund the source *and* let the destination later deliver, double-paying from that surplus (bounded by the surplus cap; it can never touch held custody). This is a MANAGER / settlement-keeper discipline until the interlock ships. The original framing is kept below for the record.
 
 1. **`claim` authorization:** `MANAGER`/keeper (recommended — since `claim` can only pay the recorded
    account, the gate controls *timing only*, which is the whole goal) vs account-self-claim vs permissionless

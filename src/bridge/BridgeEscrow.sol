@@ -395,7 +395,12 @@ contract BridgeEscrow is
     }
 
     /// @inheritdoc IBridgeEscrow
-    function markInvoiceCompleted(bytes32[] calldata invoiceHashes) external override onlyRole(MANAGER_ROLE) {
+    function markInvoiceCompleted(bytes32[] calldata invoiceHashes)
+        external
+        override
+        onlyRole(MANAGER_ROLE)
+        whenNotPaused
+    {
         uint256 length = invoiceHashes.length;
         bytes32[] memory failedInvoiceIds = new bytes32[](length);
         uint256 failedCount = 0;
@@ -719,13 +724,14 @@ contract BridgeEscrow is
     /// @param amount The amount to withdraw
     /// @param to The recipient — MUST be an authorized account (no arbitrary-address sweep)
     /// @dev Recipient-restricted (ADR 0012, H10). **Capped to the surplus over destination custody (ADR 0024):**
-    ///      the withdrawable amount is `balanceOf(asset) - _heldClaimable[asset]`, so a break-glass withdrawal can
-    ///      only ever move stray/surplus funds — never the funds backing outstanding `destinationCustody` records.
-    ///      This keeps I1 (`balanceOf >= _heldClaimable`) true through the emergency path, so held records stay
-    ///      fully claimable after unpause and `getHeldBalance*` / `BridgeHeldBalanceAdapter` never over-report.
+    ///      the withdrawable amount is `balanceOf(asset) - _heldClaimableFor(asset)`, so a break-glass withdrawal
+    ///      can only ever move stray/surplus funds — never the funds backing outstanding `destinationCustody`
+    ///      records. This keeps I1 (`balanceOf >= _heldClaimable`) true through the emergency path, so held records
+    ///      stay fully claimable after unpause and `getHeldBalance*` / `BridgeHeldBalanceAdapter` never over-report.
     ///      Held custody is not "stuck": `claim` releases it after unpause, and if the escrow itself must be
-    ///      abandoned the UUPS upgrade path is the true last resort for held funds. Native held is keyed at
-    ///      `address(0)` (the registry convention for the native asset), so the cap uses that key for native.
+    ///      abandoned the UUPS upgrade path is the true last resort for held funds. Native held may be keyed under
+    ///      `address(0)` (the registry convention) or the ERC-7528 sentinel; `_heldClaimableFor` sums BOTH native
+    ///      buckets, so the cap protects native custody registered under either key.
     function emergencyWithdraw(address asset, uint256 amount, address to)
         external
         onlyRole(DEFAULT_ADMIN_ROLE)

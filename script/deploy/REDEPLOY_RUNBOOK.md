@@ -84,7 +84,7 @@ feed count re-measured 2026-07-30 against the merged tree; meta instances amende
 **33 meta adapters, 111 meta instances, 12 plain adapters, 41 custom price feeds, 93 assets.**
 <!-- meta instances 110 -> 111 on 2026-08-12: one MorphoVaultsMeta instance added on chain 1 (issue #296). See the amendment under "Meta instances" below. -->
 
-The feed count is no longer pending anything — see the note under 1.4 for the two PRs that moved it.
+The feed count is no longer pending anything — see the note under 1.5 for the two PRs that moved it.
 
 **Re-measured 2026-08-08 at `a3974686` with `preflight_config.py`: all five totals and every per-chain
 row below were unchanged AS OF THAT COMMIT.** (Superseded for ONE figure only: meta instances moved
@@ -333,7 +333,7 @@ looking attractive — it is genuinely far smaller. It is also wrong.
 > **If another document says 39 or 40 feeds, it predates two merges — it is not a disagreement to
 > split.** 39 was correct until #199 (merged 2026-07-29), 40 until #224 (merged 2026-07-30). The merged
 > tree is **41**, re-measured with `preflight_config.py` on `e4307cb3`: mainnet 26, arbitrum 8, base 4,
-> gnosis 3. The full derivation is under 1.4. The **111** meta instances and the cutover off
+> gnosis 3. The full derivation is under 1.5. The **111** meta instances and the cutover off
 > `0x80eD5cc6cEbAe4fEE1eD8687279aa492A50afa8d` are unaffected and agree everywhere.
 
 The old stack is **abandoned in place**, not decommissioned. It keeps answering on
@@ -1008,7 +1008,7 @@ BROADCAST="--rpc-url $RPC --broadcast --account my-deployer --password-file <pwf
 > top-level address writes on it. Without it `01_2`/`02_2` only *log* the new library, impl and proxy
 > addresses; `script/config/deployments/<CID>.json` keeps the OLD ones, and steps 1.5–1.8 then build
 > feeds against the old NAV and register adapters on the old proxy. Nothing errors.
-> **`PERSIST_DEPLOYMENTS=1` is also mandatory on 1.6 — and the reason is a split inside one script.**
+> **`PERSIST_DEPLOYMENTS=1` is also mandatory on 1.7 — and the reason is a split inside one script.**
 > The per-**adapter** writes in `03`/`04` are NOT gated: they go through `ConfigReader.writeAdapterAddress`
 > (`04:241`) and always write. But the three **`*Assistant`** writes go through `saveDeployedAddress`
 > (`04:272,290,298`), which is the gated helper — `BaseDeployScript.sol:69-86` early-returns when the flag
@@ -1360,7 +1360,7 @@ on-chain registrations have already been broadcast. The chain state is fine and 
 idempotent, but the run reports failure. The directory is not in the repo, so create it once per
 checkout.
 
-- **Precondition:** **1.4 done** — Custom feeds resolve through
+- **Precondition:** **1.5 done** (`03_DeployPriceFeeds`; 1.4 is `08`, which writes no feed addresses) — Custom feeds resolve through
   `deployments/<id>.json .customPriceFeeds.<name>`, and without them 20 of mainnet's 43 assets are
   silently skipped (see the authoritative order at the top of section 1).
 - **Post-condition:** `python3 script/deploy/preflight/verify_step.py 1.6` — `getAssetCount()` equals
@@ -1420,6 +1420,8 @@ touched at all by this step, not merely touched idempotently.
   in the record, and each meta adapter's `getMetaInstances()` **set equals** its configured coordinate
   set, summing to the total in the meta-instance table at the top of this document (**111**; 110 as
   reconciled 2026-07-29, +1 on 2026-08-12 for issue #296). The per-chain breakdown lives in that table only — it is not repeated here,
+  though note this PR had to correct that table AND this line together, so "one place" understates it:
+  the summary row above the table carries the same totals and moves with it.
   so there is one place to correct if config changes.
 
 > **Watch for the silent skip.** `06` does `if (deployed == address(0)) continue;` (`06:113` for
@@ -1775,7 +1777,7 @@ against, and 2.6 cannot run until the new addresses are recorded.
   So the diff shows ETHx's `monitorFeeds` 2 → 1, and the cross-rate feed at a new address (every feed
   is redeployed anyway). **This change is feed-count-neutral** — it swaps ETHx's rate leg rather than
   adding or dropping a feed contract; the totals moved to 26 mainnet / 41 for unrelated reasons (#199
-  and #224, see 1.4). ETHx keeps its divergence/`irregular` signal at 250 bps.
+  and #224, see 1.5). ETHx keeps its divergence/`irregular` signal at 250 bps.
   ETHx's **primary** price was never involved — `ETHx_CustomPriceFeed` reads Stader's on-chain rate
   via `stakePoolsManager` — so `nav.value` should not move.
   Verified on-chain before adopting: `description() == "ETHx / ETH"`, 18 decimals, answer
@@ -1968,7 +1970,7 @@ to the new proxy. The old stack keeps answering until they do; nothing needs unr
 | `01_2` reverts `NAVCalculator impl not linked against pinned …` | `foundry.toml [libraries]` drifted from `LibraryPins` | make them agree, rebuild |
 | `02_2` reverts inside `AtomicNAVProxyDeployer` | proxy address unchanged → code already there → `upgradeToAndCall` with no admin | bump `DeploySalts.NAV_PROXY` (0.2), then re-pin (0.3) |
 | `03`/`04` log "Already deployed at:" and deploy nothing | the record was not cleared | run 1.1, re-run |
-| `06` finishes but adapter/instance counts are short | an adapter never deployed; `06:113` skipped it silently | `preflight_config.py`, then re-run **1.7** (`04`, deploys the missing adapter) **and 1.8** (`06`, registers it and adds its meta instances). Re-running 1.6 alone leaves the adapter deployed but UNREGISTERED and the NAV still short |
+| `06` finishes but adapter/instance counts are short | an adapter never deployed; `06:113` skipped it silently | `preflight_config.py`, then re-run **1.7** (`04`, deploys the missing adapter) **and 1.8** (`06`, registers it and adds its meta instances). Re-running 1.7 alone leaves the adapter deployed but UNREGISTERED and the NAV still short |
 | `06` reverts `addMetaInstances failed … DuplicateMetaInstance` | duplicate coordinate in config | `preflight_config.py` flags it; fix nav-config |
 | `RegisterAssets` `MemoryOOG` on mainnet | default memory limit | `FOUNDRY_PROFILE=slow` |
 | `RegisterAssets` logs `[skip] primary feed unresolved (deploy it first)` | it ran before `03`, so Custom feeds are not in the record | run `03` first; re-run `RegisterAssets` (idempotent) and confirm `getAssetCount()` |

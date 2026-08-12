@@ -205,7 +205,9 @@ Each of these is a hardening fix doing its job. None is a regression.
 
 **Expect ONE MORE meta instance on mainnet, and NO value change from it.** Chain 1's
 `MorphoVaultsMeta` gains `0x7a72bcD2c3F7F7e4D6679170a0625bAB15D7DDa1` (KPK USDC Yield RWA, issue #296),
-so mainnet reads **67** instances rather than 66 and the fleet **111** rather than 110. It carries no
+so mainnet reads **67** instances rather than 66 and the fleet **111** rather than 110 — **provided the
+baseline you compare against predates the change**; a `pre/` snapshot refreshed after it already contains
+the vault and shows no delta. It carries no
 value in the comparison: measured 2026-08-12, the vault holds 1.0025 USDC total with the entire `1e18`
 supply at `0x…dEaD`, and every tracked chain-1 account holds zero. So a structural +1 with a flat NAV
 is the CORRECT result here — the absence of a value change is not a missing position.

@@ -1043,12 +1043,16 @@ def _self_test() -> int:
             NO_ASSIST: {"proxy": ADDR}, META_WITH_FEEDS: {"proxy": ADDR},
             NO_CONFIG: {"proxy": ADDR}}
     results: list[tuple[bool, str]] = []
-    # ARM DISTINCTNESS, ENFORCED RATHER THAN CHECKED BY HAND. Four times in this suite's history two
-    # arms have been byte-identical while advertising different cases — most recently HOLE 6 and
-    # HOLE 7, because `{...UNIVERSAL} | {"NAVCalculatorProxy": ADDR}` is a NO-OP merge and produced
-    # the same fixture twice. Each time the tally said 20/20 while one named case was modelled by
-    # nothing. A count of arms is not coverage, so the suite now proves distinctness instead of
-    # asserting it: every arm's full input signature is recorded and any collision is a failure.
+    # ARM DISTINCTNESS, ENFORCED RATHER THAN CHECKED BY HAND. TWICE in this suite's history two arms
+    # have been byte-identical while advertising different cases: an arm duplicating another AND
+    # mislabelled, and later HOLE 6 duplicating HOLE 7 because
+    # `{...UNIVERSAL} | {"NAVCalculatorProxy": ADDR}` is a NO-OP merge — UNIVERSAL already holds that
+    # key — so the same fixture was built twice. Both times the tally counted an arm that modelled
+    # nothing. (Two OTHER fixture defects are a related but different class and this check does not
+    # catch them: every arm once hardcoded chain 1, and the base fixture once set sections to `{}`.
+    # Those are wrong fixtures, not duplicate ones.) A count of arms is not coverage, so the suite
+    # proves distinctness rather than asserting it: every arm's full input signature is recorded and
+    # any collision fails.
     seen_sigs: dict[str, str] = {}
     dupes: list[tuple[str, str]] = []
 

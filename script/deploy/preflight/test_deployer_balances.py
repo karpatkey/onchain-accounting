@@ -1,8 +1,18 @@
 #!/usr/bin/env python3
-"""Verdict truth table for deployer_balances.py. Stdlib only: `python3 -m unittest`.
+"""Verdict truth table for deployer_balances.py. Run with `python3 -m unittest`.
 
-WHY THIS EXISTS. This file is a deploy gate with no automated coverage — CI runs forge, lint and the
-lockfile check, and nothing that executes any Python here. Every guard in it was verified once, by
+The TESTS use only the standard library, but the module under test does not: importing
+`deployer_balances` imports `chainlib`, which imports third-party `requests` (chainlib.py:21). So this
+suite needs `requests` installed even though it never makes a network call, and the CI job installs it
+explicitly. An earlier version of this docstring said "stdlib only", which was false and left the CI
+job passing only because the runner image happens to ship `requests` — green for a reason nobody had
+established.
+
+WHY THIS EXISTS. Until this file landed, this deploy gate had NO automated coverage: CI ran forge, lint
+and the lockfile check, and nothing that executed any Python here. (That is now historical — the
+`preflight` job in .github/workflows/foundry.yml runs this suite. What remains uncovered is every live
+value: RPC readings, oracle prices and the 16 measured baselines are all faked here, so this suite
+cannot detect a stale baseline or a chain that changed its fee mode.) Every guard was verified once, by
 hand, against live RPC, and three of them were then re-broken by later edits: the regime probe was
 gated on a collection it did not need, which let a chain skip the probe entirely; widening that
 predicate routed a config error into the transient-error handler; and both probes were briefly
@@ -339,8 +349,15 @@ class TestExitCode(unittest.TestCase):
         self.assertIn("RPC ERROR", out)
 
     def test_override_priced_row_discloses_the_pin(self):
-        row = dict(self.OK, chainId=OVERRIDDEN, priceSource="override",
-                   gasPriceWei=2_000_000_000, quotedGasPriceWei=31)
+        # Drives the real selection through one() first: the earlier version fed a pre-labelled canned row,
+        # so it checked only the print format and would still have passed if one() stopped consulting
+        # GAS_PRICE_OVERRIDE_WEI entirely — a vacuous test of the mechanism it was named for.
+        pinned = db.GAS_PRICE_OVERRIDE_WEI[OVERRIDDEN]
+        row, _ = run_one(OVERRIDDEN, balance=10**24, quoted=31)
+        self.assertEqual(row["priceSource"], "override")
+        self.assertEqual(row["gasPriceWei"], pinned, "priced from the node quote, not the pin")
+        self.assertEqual(row["quotedGasPriceWei"], 31)
+        self.assertEqual(row["needWei"], GAS * pinned * db.FEE_VOLATILITY_HEADROOM)
         out, _ = run_main([row])
         self.assertIn("PINNED", out)
 

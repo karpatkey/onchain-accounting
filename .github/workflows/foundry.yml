@@ -272,16 +272,25 @@ jobs:
           ALCHEMY_API_KEY: ${{ secrets.ALCHEMY_API_KEY }}
         run: forge test --match-path "test/integration/*" -vvv --threads 1
 
-  # Verdict truth table for the deploy-funding gate. Cheap and hermetic: stdlib unittest, no network, no
-  # secrets, no forge — every RPC read is faked, so this never touches a chain. It exists because
-  # `deployer_balances.py` decides whether a redeploy may proceed and previously had NO automated coverage
-  # at all: three of its fail-closed guards were re-broken by later edits and caught only by hand. No
-  # submodules and no build artifacts needed.
+  # Verdict truth table for the deploy-funding gate. No network, no secrets, no forge — every RPC read is
+  # faked, so this never touches a chain. It exists because `deployer_balances.py` decides whether a
+  # redeploy may proceed and previously had NO automated coverage at all: three of its fail-closed guards
+  # were re-broken by later edits and caught only by hand. No submodules and no build artifacts needed.
+  #
+  # `requests` IS INSTALLED EXPLICITLY AND THAT IS NOT INCIDENTAL. The tests are stdlib, but the module
+  # under test imports chainlib, which imports third-party `requests` (chainlib.py:21). Without this step
+  # the job still passed — because the runner image happens to ship `requests` — which made it green for a
+  # reason nobody had established and unreproducible on a clean Python. There is no requirements file in
+  # this repo, so the dependency is pinned by name here; if chainlib gains another third-party import, this
+  # job fails loudly rather than silently depending on the image again.
   preflight:
     name: Preflight gate tests
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: Install the one third-party dependency chainlib needs
+        run: python3 -m pip install --no-cache-dir requests
 
       - name: Verdict truth table (deployer_balances)
         # -O as well as plain: the import-time invariants use `raise`, not `assert`, precisely so that

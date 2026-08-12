@@ -244,12 +244,26 @@ L1_OMITTED_MIN_HEADROOM_WEI = 10**15  # 1e-3 native
 # `blobBaseFee()` 0xf8206140 while scroll exposes `l1BlobBaseFee()` 0x84189161 — reusing scroll's selector
 # on an OP chain reverts.)
 #
-# THRESHOLD. Headroom is ~38x the largest addition (mantle ~2.7e-5 native against a 1e-3 floor), so a 100x
-# rise would breach the floor and the limit is NOT slack-covered the way an earlier revision claimed
-# (it said ~2,000x headroom and ~20x slack after a 100x rise, both computed from the understated
-# compressible-payload figure). 100x is retained deliberately: it is the point past which the omitted term
-# can no longer be argued immaterial, it only ever TRIPS a fail-closed and never prices, and a rise that
-# large is a regime change an operator must look at whatever the arithmetic says. Sizing the term properly
+# THRESHOLD — THE ADEQUACY CLAIM FOR 100x IS RETRACTED. NO REPLACEMENT NUMBER IS OFFERED HERE.
+#
+# THE GAP, stated for whoever deploys this: headroom is ~38x the largest addition (mantle ~2.7e-5 native
+# against a 1e-3 floor), and this probe does not trip until a 100x rise. So there is a window — roughly 38x
+# to 100x — in which a row sitting near the floor can have its headroom consumed by the omitted L1 fee
+# while the probe stays quiet and the row still prints OK. On that row, OK does not mean funded. Every
+# chain sits far above the floor today, so the window is not currently occupied, but that is a fact about
+# today's balances and not a property of this guard.
+#
+# WHY NO NEW NUMBER. Two previous revisions of this comment asserted the threshold was comfortably covered:
+# one claimed ~2,000x headroom with ~20x slack after a 100x rise, the next claimed 100x was "conservative"
+# and "retained deliberately". Both were written confidently and both were wrong about the margin — the
+# first because it was computed from a compressible-payload measurement understated ~59x, the second
+# because it restated adequacy after that correction rather than re-deriving it. The defect is not in the
+# arithmetic but in a method that keeps producing confident numbers from an argument that cannot see its
+# own gap, so a third number derived under the same method would carry the same defect. 100x is left in
+# place as a documented tripwire of UNJUSTIFIED width, not as a bound anyone should rely on.
+#
+# WHAT IS STILL TRUE, and is the only thing this guard should be credited with: it only ever TRIPS a
+# fail-closed and never prices, so it cannot make a row pass that would otherwise fail. Sizing the term
 # — so this can be a computed bound rather than a judgement — is #287.
 #
 # FEE MODE IS NOT VALIDATED, and the reason is measured rather than assumed. The other half of the review

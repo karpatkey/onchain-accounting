@@ -738,11 +738,18 @@ oracle.
 > small tip and can sit unmined **while appearing to have applied the 2 gwei workaround**. Pass both:
 > `--with-gas-price 2000000000 --priority-gas-price 2000000000`. `--legacy` also works.
 
-> ⚠️ **`deployer_balances.py` HAS NO AUTOMATED TEST, and CI does not exercise it.** Because it is Python,
-> the checks that run on a change to it are `Analyze` and `CodeQL` — no `Build`, no `forge test`, no
-> library-pin job. `script/test/` contains no test for it; the only mention there is a *comment* in
-> `rehearsal-harness-guards.test.sh` reasoning about `scope()`. Every claim in this section rests on
-> **manual measurement**, and a regression here is caught by a human reading the output or not at all.
+> ⚠️ **`deployer_balances.py` HAS AUTOMATED COVERAGE OF ITS VERDICT LOGIC, AND NONE OF ITS NUMBERS.**
+> `preflight/test_deployer_balances.py` is a verdict truth table run by the `Preflight gate tests` CI job
+> under both `python3` and `python3 -O`; it derives its expectations from the invariants in this section
+> rather than from the module, and it is mutation-tested. It replaces the earlier warning that there was no
+> test at all.
+>
+> **What it does NOT cover, which is the part that has actually gone wrong:** every live value is faked.
+> RPC readings, oracle prices and the **16 measured baselines** are constants in the test, so the suite
+> cannot detect a stale baseline, a chain that changed its fee mode, or a payload that measures the wrong
+> thing — the last of which is exactly the defect that forced all 16 baselines to be re-measured. Those
+> claims still rest on **manual measurement**, and a regression in them is caught by a human reading the
+> output or not at all. `forge test` and the library-pin job still do not run on a change to this file.
 
 ### 0.7 Capture the pre-deploy production state — **irreplaceable, do it before anything else**
 

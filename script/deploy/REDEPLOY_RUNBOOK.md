@@ -234,7 +234,7 @@ uses — running the **old** bytecode.
 > | --- | --- |
 > | write migration logic that **does not exist today** — `erc20DefaultBalanceAdapter` is plain storage (`Balances.sol:56`), so an upgrade can assign it, but the set-once helper will not do it | `initialize()` does it, on a path already exercised on 24 chains |
 > | also repair three private registry structures by hand, since the helper that normally maintains them is bypassed: `_globalAdapters` (`:46` — remove old, push new), `_adapterTypes` (`:49`), `_isAdapterRegistered` (`:52`) | maintained by `_setErc20DefaultBalanceAdapter` as a unit |
-> | re-seed the inclusion list — via the constructor's un-registry-checked `initialAssets` seed, or `addSupportedAsset`, which is `OnlyNAVCalculator`-gated and demands `isAssetRegistered` | `RegisterAssets` populates it as a side effect of 1.5 |
+> | re-seed the inclusion list — via the constructor's un-registry-checked `initialAssets` seed, or `addSupportedAsset`, which is `OnlyNAVCalculator`-gated and demands `isAssetRegistered` | `RegisterAssets` populates it as a side effect of 1.6 |
 > | **deploy a new adapter anyway** — the adapter itself is immutable, so nothing here avoids that | same |
 > | be audited as one-off code, then either be removed by a *second* upgrade or leave a permanent setter widening the admin surface of a contract whose immutability is load-bearing | no new surface |
 > | all of it against a **live** proxy holding the production registry | against an empty proxy, with the old stack still answering as a fallback |

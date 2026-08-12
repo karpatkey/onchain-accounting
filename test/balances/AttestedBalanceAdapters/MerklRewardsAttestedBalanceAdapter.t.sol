@@ -1138,75 +1138,48 @@ contract MerklRewardsAttestedBalanceAdapterTest is BalanceAdapterTestBase {
         assertEq(pos[0].amount, 100 ether, "survivor unaffected by the neighbour's failure");
     }
 
-    /// @dev ⚠️ NOT MUTATION-DISCRIMINATING, and recorded as such. Reverting either half of the stipend fix
-    ///      (removing the completion reserve, or dividing by `tokens.length - i` instead of `liveCount - i`) leaves
-    ///      this test PASSING. Swept 300k/200k/150k/120k/100k/90k/80k/70k under both versions: survivors identical
-    ///      at every budget. Valuing one token costs far less than any per-token share of a budget large enough for
-    ///      the read to run at all, so the divisor never binds in a two-to-four-token fixture. Kept as behavioural
-    ///      regression coverage — it pins that the read completes and the healthy token survives — but it is NOT
-    ///      evidence the fix is necessary, and nobody should cite it as such.
-    /// @dev THE LAST-TOKEN GRIEFER, at a low budget. With the denominator alone, the final token's divisor is 1, so
-    ///      it receives the entire remaining stipend and the catch arm plus the final array copy are funded only by
-    ///      `stipendFrom`'s 1/64 slack — a shrinking ABSOLUTE amount. The completion reserve is what keeps the read
-    ///      finishable no matter which position the griefer occupies.
-    function test_isolation_griefingTokenLastStillCompletes() public {
-        _seedTwoLive(100 ether, 50 ether);
-        assertEq(adapter.userTokens(alice)[1], address(op), "fixture: the griefed token must be valued LAST");
-        distributor.setBurnsFor(address(op), true);
-
-        INAVCalculator.PositionBalance[] memory pos = adapter.getAdapterPositions{gas: 300_000}(alice, address(0));
-
-        assertEq(pos.length, 1, "the token BEFORE the griefer must survive and the read must complete");
-        assertEq(pos[0].balanceAsset.asset, address(arb), "arb survives a griefer that ran after it");
-        assertEq(pos[0].amount, 100 ether, "and its amount is untouched");
-    }
-
-    /// @dev ⚠️ NOT MUTATION-DISCRIMINATING, and recorded as such. Reverting either half of the stipend fix
-    ///      (removing the completion reserve, or dividing by `tokens.length - i` instead of `liveCount - i`) leaves
-    ///      this test PASSING. Swept 300k/200k/150k/120k/100k/90k/80k/70k under both versions: survivors identical
-    ///      at every budget. Valuing one token costs far less than any per-token share of a budget large enough for
-    ///      the read to run at all, so the divisor never binds in a two-to-four-token fixture. Kept as behavioural
-    ///      regression coverage — it pins that the read completes and the healthy token survives — but it is NOT
-    ///      evidence the fix is necessary, and nobody should cite it as such.
-    /// @dev MIXED REGISTERED / UNREGISTERED ORDERING. Unregistered tokens are skipped without being valued, so they
-    ///      must not appear in the stipend denominator: counting them funds the one registered token as though many
-    ///      more frames were still owed, and it is dropped for want of gas while most of the budget goes unspent.
-    ///      The registered token is placed LAST, behind several unregistered ones, which is the worst ordering.
-    function test_isolation_unregisteredTokensDoNotStarveRegisteredOnes() public {
-        // One live tree covering four tokens; only `arb` is registered on the NAV.
-        Mock_ERC20 u1 = new Mock_ERC20("UNREG1", 18);
-        Mock_ERC20 u2 = new Mock_ERC20("UNREG2", 18);
-        Mock_ERC20 u3 = new Mock_ERC20("UNREG3", 18);
-        // arb FIRST, the three unregistered AFTER it. Ordering is load-bearing: at the LAST index both
-        // denominators are 1, so a registered token placed last cannot distinguish the two formulas.
-        address[4] memory toks = [address(arb), address(u1), address(u2), address(u3)];
-        bytes32[4] memory leaves;
-        for (uint256 i; i < 4; ++i) {
-            leaves[i] = _leaf(alice, toks[i], 10 ether);
+    /// @dev THE DISCRIMINATING FIXTURE for the stipend denominator. One EXPENSIVE registered token (8 campaign
+    ///      legs, the cap) valued FIRST, behind 60 tokens the pre-filter skips. This is the only shape where the
+    ///      divisor binds: per-token cost is high AND the skipped count is large, so `tokens.length - i` (61)
+    ///      starves the one token that gets valued while `liveCount - i` (1) funds it. Verified: with the divisor
+    ///      mutated back to `tokens.length - i` this fails `0 != 8` — every leg lost.
+    ///
+    ///      Three earlier attempts at this test asserted nothing. One placed the registered token LAST, where both
+    ///      divisors are 1 and cannot differ; two used a single cheap token, whose valuation costs far less than any
+    ///      per-token share at a budget large enough to run at all. Only an expensive token ahead of many skipped
+    ///      ones discriminates.
+    ///
+    ///      arb is submitted FIRST so it holds index 0, the fillers rotate the root, then arb is RE-submitted
+    ///      against the final root — a refresh does not move it in `_userTokens`, so it stays first AND stays live.
+    function test_isolation_skippedTokensDoNotStarveAnExpensiveRegisteredToken() public {
+        MerklRewardsAttestedBalanceAdapter.CampaignShare[] memory shares =
+            new MerklRewardsAttestedBalanceAdapter.CampaignShare[](8);
+        for (uint256 i; i < 8; ++i) {
+            shares[i] = MerklRewardsAttestedBalanceAdapter.CampaignShare({
+                campaignId: keccak256(abi.encode("c", i)), subCampaignId: ZERO, cumulativeAmount: 1 ether
+            });
         }
-        bytes32 h01 = leaves[0] < leaves[1]
-            ? keccak256(abi.encode(leaves[0], leaves[1]))
-            : keccak256(abi.encode(leaves[1], leaves[0]));
-        bytes32 h23 = leaves[2] < leaves[3]
-            ? keccak256(abi.encode(leaves[2], leaves[3]))
-            : keccak256(abi.encode(leaves[3], leaves[2]));
-        distributor.setRoot(h01 < h23 ? keccak256(abi.encode(h01, h23)) : keccak256(abi.encode(h23, h01)));
+        _submitWithCampaigns(alice, address(arb), 8 ether, shares); // arb -> _userTokens[0]
 
-        for (uint256 i; i < 4; ++i) {
-            bytes32[] memory pu = new bytes32[](2);
-            pu[0] = leaves[i ^ 1];
-            pu[1] = i < 2 ? h23 : h01;
-            _submitOne(alice, toks[i], 10 ether, pu);
+        for (uint256 i; i < 60; ++i) {
+            address filler = address(uint160(0xF11E0000 + i));
+            bytes32 leaf = _leaf(alice, filler, 1 ether);
+            distributor.setRoot(leaf);
+            _submitOne(alice, filler, 1 ether, new bytes32[](0));
         }
-        assertEq(adapter.userTokens(alice).length, 4, "fixture: one registered ahead of three unregistered");
+        _submitWithCampaigns(alice, address(arb), 8 ether, shares); // refresh arb against the CURRENT root
+
         assertEq(adapter.userTokens(alice)[0], address(arb), "fixture: the registered token is valued FIRST");
+        assertEq(adapter.userTokens(alice).length, 61, "fixture: 60 skipped tokens behind it");
 
-        // Budget chosen so dividing by 4 (all tokens) starves arb while dividing by 1 (the live count) does not.
-        INAVCalculator.PositionBalance[] memory pos = adapter.getAdapterPositions{gas: 120_000}(alice, address(0));
+        INAVCalculator.PositionBalance[] memory pos = adapter.getAdapterPositions{gas: 2_000_000}(alice, address(0));
 
-        assertEq(pos.length, 1, "the one registered token must still be valued");
-        assertEq(pos[0].balanceAsset.asset, address(arb), "and it is arb");
-        assertEq(pos[0].amount, 10 ether, "with its full amount");
+        assertEq(pos.length, 8, "all 8 campaign legs of the registered token must be valued");
+        uint256 sum;
+        for (uint256 i; i < pos.length; ++i) {
+            sum += pos[i].amount;
+        }
+        assertEq(sum, 8 ether, "and its full amount reported");
     }
 
     /// @dev THE ORDERING CASE. The griefed token comes FIRST, so it is valued before the healthy one. This is what

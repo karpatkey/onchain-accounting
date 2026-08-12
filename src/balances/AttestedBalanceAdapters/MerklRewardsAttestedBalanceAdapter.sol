@@ -170,8 +170,21 @@ contract MerklRewardsAttestedBalanceAdapter is IAttestedBalanceAdapter, IPositio
     ///         reverts the refresh of the account's OTHER tokens too.
     uint256 public constant MAX_TOKENS_PER_USER = 64;
 
-    /// @dev Gas withheld from the per-token stipends, per leg of the scratch buffer, so the read can always
-    ///      complete after the last token consumes everything it was given. It pays for the catch arm plus the
+    /// @dev ⚠️ **UNPROVEN — no test discriminates this constant, and none is claimed to.** Setting it to 0 leaves
+    ///      every isolation test passing. Swept 300k/200k/150k/120k/100k/90k/80k/70k on a 2-token fixture and
+    ///      4M/2M/1.2M/900k/700k/600k/500k/400k on a 32-leg fixture with the griefer LAST: results byte-identical
+    ///      with and without the reserve at every budget. So it is retained as reasoning, not as a verified guard,
+    ///      and the honest reading is that the last-token starvation it targets is either unreachable at this level
+    ///      or masked by a larger limit — see the next note. Do not cite the isolation suite as evidence it works.
+    ///
+    ///      A REAL limit the same probe DID find, unfixed by this reserve: with 32 legs already accumulated and a
+    ///      griefer valued LAST, the whole read reverts at 2,000,000 gas and below — identically with and without
+    ///      the reserve. Per-token isolation does NOT make the read unconditionally survivable; it bounds one
+    ///      token's failure at leg counts well below the 512 cap, and above that the frame can still be left too
+    ///      poor to finish. Sizing a read budget off the cap remains necessary.
+    ///
+    ///      Gas withheld from the per-token stipends, per leg of the scratch buffer, so the read can complete
+    ///      after the last token consumes everything it was given. It pays for the catch arm plus the
     ///      final `PositionBalance[]` allocation and copy, which is O(legs) — hence per-leg rather than a flat
     ///      figure that would be too small at the 512-leg cap and wasteful at one leg.
     uint256 private constant _COMPLETION_RESERVE_PER_LEG = 256;

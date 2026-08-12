@@ -740,34 +740,64 @@ def one(chain_id: int, gas_units: dict) -> dict:
     # missed it, and the row fails closed naming itself rather than waiting for the next reviewer.
     #
     # SCOPED TO WHAT IT CAN ACTUALLY DETECT, and the limits are measured, not assumed:
-    #   * A missing predeploy returns empty `0x` -> ValueError -> treated as "no OP-stack fee", which is
-    #     correct for arbitrum (42161, verified codesize 0): Nitro charges its L1 component by INFLATING
-    #     GAS UNITS rather than adding a separate term, so `gas x price` already contains it.
+    #   * A missing predeploy makes the node answer with empty `0x`, read as "no OP-stack fee". Correct
+    #     for arbitrum (42161, verified codesize 0): Nitro charges its L1 component by INFLATING GAS
+    #     UNITS rather than adding a separate term, so `gas x price` already contains it.
     #   * A present-but-zero oracle is a genuine "no fee" — xlayer (196) has the predeploy (2,059 bytes)
     #     and returns 0 for the 64,887-byte payload, exactly like celo. Neither is failed closed.
-    #   * It CANNOT see a non-OP-stack DA surcharge on a chain with no such predeploy. linea (59144) was
-    #     unreachable from the environment this was written in and is therefore UNVERIFIED, not cleared.
-    # A read failure here is NOT fail-closed: this guard exists to catch a missing entry, and letting an
-    # RPC blip on an unrelated chain block a 24-chain deploy would be a worse failure than the one it
-    # prevents. The chains it protects are exactly those nobody has classified, so there is no baseline
-    # to check against and nothing is being certified — only a positive reading is actionable.
+    #   * It CANNOT see a non-OP-stack DA surcharge on a chain with no such predeploy.
+    #
+    # ABSENCE OF EVIDENCE IS NOT EVIDENCE OF ABSENCE. The first version wrapped the whole probe in
+    # `except Exception: pass`, so "the node answered and there is no predeploy" and "the node did not
+    # answer" both left the row priced. For a chain in L1_FEE_UNVERIFIED — which by definition has NO
+    # prior measurement — that is a fail-open on the deploy path: no reading, no prior evidence, and a
+    # green row anyway. It does not fail loudly in a rehearsal; it prints OK and an operator funds a
+    # deployer that is not sized.
+    #
+    # The three outcomes ARE distinguishable here, which is what makes this a fix rather than a
+    # recorded limitation:
+    #   * `c.rpc` RETURNS "0x"    -> the node answered; no predeploy; no OP-stack fee. EVIDENCE.
+    #   * `c.rpc` raises RpcError -> transport or JSON-RPC failure after retries (chainlib retries 4x
+    #                                and then raises). The node did not answer. NOT evidence.
+    #   * a parseable non-zero    -> the chain charges a fee this script does not model.
+    # Decided on the RETURNDATA rather than by narrowing the exception, because `int(x, 16)` also
+    # raises ValueError on a GARBAGE answer, and garbage is a node answering badly — ambiguous, not an
+    # absent predeploy. Only the literal empty word is read as absence.
     if priceable and chain_id not in L1_FEE_OMITTED_PRICED and chain_id not in L1_FEE_UNMODELLED:
+        n = L1_REGIME_PROBE_BYTES_BIG
+        raw, probe_failed = None, None
         try:
-            n = L1_REGIME_PROBE_BYTES_BIG
-            found = int(c.rpc(url, "eth_call", [{"to": OP_GAS_ORACLE,
-                                                 "data": OP_GET_L1_FEE + f"{32:064x}" + f"{n:064x}"
-                                                 + _probe_payload(n)}, "latest"]), 16)
-            if found > 0:
-                priceable = False
-                l1_note = (f"UNCLASSIFIED L1 FEE: this chain is in neither L1_FEE_OMITTED_PRICED nor "
-                           f"L1_FEE_UNMODELLED, but its OP GasPriceOracle charges {found} wei "
-                           f"({found / 1e18:.3e} native) for a {n}-byte payload — a term this script "
-                           f"does not model, so its estimate is a LOWER BOUND. Classify it: priced with "
-                           f"a measured baseline, or failed closed like scroll and hemi. See #287")
-        except Exception:  # noqa: BLE001, S110
-            # Absent predeploy (ValueError on `0x`) or an RPC problem. Deliberately not fail-closed —
-            # see the paragraph above.
-            pass
+            raw = c.rpc(url, "eth_call", [{"to": OP_GAS_ORACLE,
+                                           "data": OP_GET_L1_FEE + f"{32:064x}" + f"{n:064x}"
+                                           + _probe_payload(n)}, "latest"])
+        except Exception as e:  # noqa: BLE001
+            probe_failed = f"{type(e).__name__}: {str(e)[:120]}"
+        found = None
+        if raw is not None and raw not in ("0x", "0X", ""):
+            try:
+                found = int(raw, 16)
+            except ValueError:
+                probe_failed = f"oracle returned unparseable data ({raw[:32]!r})"
+        if found:
+            priceable = False
+            l1_note = (f"UNCLASSIFIED L1 FEE: this chain is in neither L1_FEE_OMITTED_PRICED nor "
+                       f"L1_FEE_UNMODELLED, but its OP GasPriceOracle charges {found} wei "
+                       f"({found / 1e18:.3e} native) for a {n}-byte payload — a term this script "
+                       f"does not model, so its estimate is a LOWER BOUND. Classify it: priced with "
+                       f"a measured baseline, or failed closed like scroll and hemi. See #287")
+        elif probe_failed and chain_id in L1_FEE_UNVERIFIED:
+            # No prior measurement (that is what UNVERIFIED means) and no reading now. Zero evidence.
+            # An unreachable chain is UNKNOWN, and unknown must not render as a pass.
+            priceable = False
+            l1_note = (f"L1 fee status UNKNOWN and unverifiable right now: chain {chain_id} is in "
+                       f"L1_FEE_UNVERIFIED (no prior measurement) and the discovery probe could not "
+                       f"complete ({probe_failed}). An unreachable chain is not a fee-free chain — "
+                       f"retry with a working endpoint, then record the reading in "
+                       f"L1_FEE_NONE_VERIFIED or classify it. See #287")
+        # A probe failure on an L1_FEE_NONE_VERIFIED chain is deliberately NOT fatal: those chains were
+        # already MEASURED fee-free, so this probe is drift-detection there rather than the only
+        # evidence, and a blip must not stall a 24-chain deploy. That asymmetry is the whole reason the
+        # two sets are separate.
     if priceable and chain_id in L1_FEE_OMITTED_PRICED and bal - need < L1_OMITTED_MIN_HEADROOM_WEI:
         priceable = False
         l1_note = (f"headroom (balance - need) has fallen below {L1_OMITTED_MIN_HEADROOM_WEI / 1e18:g} "

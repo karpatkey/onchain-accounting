@@ -117,8 +117,22 @@ is where they are derived and which is the authoritative one if the two ever dis
 > 24-chain derivation confirmed on-chain on that date and this amendment is not. What was measured today
 > is narrower and is stated as such: `getMetaInstances(MorphoVaultsMeta)` on the live NAV
 > (`0x80eD5cc6cEbAe4fEE1eD8687279aa492A50afa8d`) returns **10** entries for chain 1, and chain 1's config
-> list now matches it exactly — same members, same order. Every other adapter and chain is untouched, so
-> the only figures that move are the mainnet row and the total: **66 → 67** and **110 → 111**.
+> list now matches it exactly — same members, same order.
+>
+> Every other adapter and chain is untouched. **Four figures in the table below move, and they are the
+> COMPONENT columns as well as the totals** — an amendment naming only the totals would leave the columns
+> not summing to them:
+>
+> | figure | was | now |
+> | --- | --- | --- |
+> | mainnet `instances` | 52 | **53** |
+> | mainnet total | 66 | **67** |
+> | fleet `instances` | 90 | **91** |
+> | fleet total | 110 | **111** |
+>
+> `instancesRaw` is unchanged everywhere (14 on mainnet, 20 fleet-wide) — this vault is an address
+> coordinate, not a raw `bytes32` marketId. Re-derived from config at this branch's head rather than
+> assumed: mainnet's `instances` sum to 53 and `instancesRaw` to 14 across the 15 enabled meta adapters.
 >
 > Step 1.8 should therefore expect **111**. Where this document derives from 110 downstream (the
 > `110 + 3 = 113` disabled-adapter arithmetic, and the step-1.7 re-registration count), read 111 + 3 = 114

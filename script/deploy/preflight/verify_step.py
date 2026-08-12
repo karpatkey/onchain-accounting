@@ -156,6 +156,42 @@ def archived(tag: str, chain_id: int) -> dict | None:
     return json.loads(p.read_text()) if p.is_file() else None
 
 
+def expected_clear_top(chain_id: int) -> set[str]:
+    """Which `CLEAR_TOP` keys this chain is SUPPOSED to carry, derived from CONFIG.
+
+    Config is the right oracle here and the archive is not, for two reasons that cost this PR two
+    holes before landing on it:
+
+      * it is PER-CHAIN by construction, where the deployment record's `NAVCalculatorProxy` is the
+        same CREATE2 address on all 24 chains and so cannot distinguish one chain from another;
+      * it is INDEPENDENT of the deployment record, where the archive is a byte copy of it taken at
+        clear time — so a key deleted BEFORE the reset ran is missing from the archive too, and the
+        archive can never witness its own corruption.
+
+    The three `*Assistant` keys exist only where the matching assisted adapter is enabled (today:
+    chain 1 all three, chain 100 StakeWise only). Every other `CLEAR_TOP` key is part of the NAV
+    stack that every in-scope chain gets. The `…Assistant` record key maps to the `…Assisted*`
+    config key by stem; the mapping is derived here rather than hard-coded so a fourth assisted
+    protocol needs no edit.
+    """
+    keys = {k for k in rd.CLEAR_TOP if not k.endswith("Assistant")}
+    cfg_path = c.CONTRACTS_CONFIG_DIR / "balance-adapters" / f"{chain_id}.json"
+    if not cfg_path.is_file():
+        return keys
+    try:
+        cfg = json.loads(cfg_path.read_text())
+    except (OSError, ValueError):
+        return keys
+    enabled = {name for name, v in cfg.items() if isinstance(v, dict) and v.get("enabled") is True}
+    for key in rd.CLEAR_TOP:
+        if not key.endswith("Assistant"):
+            continue
+        stem = key[: -len("Assistant")]
+        if any(name.startswith(stem) and "Assisted" in name for name in enabled):
+            keys.add(key)
+    return keys
+
+
 def previous_generation_feeds(chain_id: int, tag: str) -> tuple[set[str], list[str]]:
     """Custom-feed addresses belonging to the OLD NAV generation, as (addresses, sources).
 
@@ -274,6 +310,20 @@ def step_record_cleared(k: Chk, rec: dict, exp: dict, url, base, tag) -> None:
         else:
             archive_is_preimage = True
 
+    # EVIDENCE IS MONOTONE HERE, AND THAT IS THE WHOLE DESIGN. A key's absence is a failure if
+    # ANY source says it belongs: CREATE_IF_ABSENT, this chain's CONFIG, or the archive. Adding a
+    # source can only add failures, never excuse one — so a wrong-chain or wrong-generation archive
+    # produces noise, never silence, and the provenance check above is diagnostic rather than
+    # load-bearing.
+    #
+    # That ordering was arrived at the hard way. An earlier revision made the ARCHIVE the sole
+    # oracle, which produced two holes that both let a real deletion pass: the proxy it was
+    # validated against is the same CREATE2 address on all 24 chains (so any chain's archive was
+    # accepted), and the archive is a byte copy of the record taken at clear time (so a key deleted
+    # BEFORE the reset was missing from both and looked like one that never existed). Config has
+    # neither property: it is per-chain, and it is independent of the record.
+    expected = expected_clear_top(k.chain_id)
+
     # ABSENCE IS ONLY A DEFECT WHERE THE KEY WAS SUPPOSED TO BE. This asserts the post-condition
     # `reset_deployment_records.plan_for` actually establishes:
     #
@@ -301,16 +351,22 @@ def step_record_cleared(k: Chk, rec: dict, exp: dict, url, base, tag) -> None:
                           f"creates it blank on every chain (CREATE_IF_ABSENT), so its absence means "
                           f"the clear did not run or the key was deleted afterwards; restore it "
                           f"as \"\" rather than deleting it")
-        elif archive_is_preimage and key in arch:
+        elif key in expected:
+            # Two different reasons a key is expected, and the message must not claim the wrong one:
+            # the core NAV keys are on every in-scope chain, while an `*Assistant` key is expected
+            # only because THIS chain's config enables the adapter that deploys it.
+            why = ("this chain's config enables the adapter that deploys it"
+                   if key.endswith("Assistant")
+                   else "every in-scope chain carries it as part of the NAV stack")
+            k.fail.append(f"{key} is ABSENT from the record, but {why}, so it is expected here — it "
+                          f"was deleted rather than blanked; restore it as \"\" rather than "
+                          f"deleting it")
+        elif arch is not None and key in arch:
             k.fail.append(f"{key} is ABSENT from the record but PRESENT in "
                           f"archive/{tag}/{k.chain_id}.json — it was DELETED, not blanked, so this "
                           f"record reads as cleared while having lost a key it had; restore it as "
                           f"\"\" rather than deleting it")
-        elif not archive_is_preimage:
-            k.fail.append(f"{key} is ABSENT and no confirmed pre-image is available, so it cannot be "
-                          f"told apart from a key this chain never had — resolve the archive finding "
-                          f"above, then re-run; do not wave this through")
-        # else: confirmed pre-image and the key was not in it — never existed here. Correct.
+        # else: config does not expect it here and no archive witnesses it — never existed. Correct.
 
     for sec in rd.CLEAR_SECTIONS:
         still = populated(rec.get(sec))
@@ -873,20 +929,27 @@ def _self_test() -> int:
     OTHER_GEN = "0xE745B83C1B0B24E4A2B0Cf0Ec5B2c2f7c4B5A6d1"
     UNIVERSAL = ["PriceFeedLib", "NavRegistryLib", "NAVCalculatorImplementation", "NAVCalculatorProxy"]
     # The committed pre-deploy baseline the archive must match to count as this record's pre-image.
-    BASE = {1: {"proxy": ADDR}}
+    # Real chain ids, chosen from config: chain 1 enables all three assisted adapters, chain 100
+    # enables StakeWise only, chain 10 enables none. The rule is per-chain now, so the arms must be.
+    ALL_ASSIST, ONE_ASSIST, NO_ASSIST = 1, 100, 10
+    BASE = {ALL_ASSIST: {"proxy": ADDR}, ONE_ASSIST: {"proxy": ADDR}, NO_ASSIST: {"proxy": ADDR}}
     results: list[tuple[bool, str]] = []
 
     def run(rec: dict, arch: dict | None, label: str, must_fail: bool, expect_in: str = "",
-            base: dict | None = None) -> None:
+            base: dict | None = None, chain: int = NO_ASSIST) -> None:
+        # The chain id is a REAL one and it matters: expectation is now derived per chain from
+        # config, so an arm modelling "a chain that never had assistants" must not be run against a
+        # chain whose config enables three of them. An earlier revision of this suite hardcoded
+        # chain 1 for every arm and silently tested the opposite of what its labels claimed.
         real_dir = rd.ARCHIVE_DIR
         with tempfile.TemporaryDirectory() as td:
             rd.ARCHIVE_DIR = Path(td)
             tag = "selftest"
             if arch is not None:
                 (Path(td) / tag).mkdir(parents=True)
-                (Path(td) / tag / "1.json").write_text(json.dumps(arch))
+                (Path(td) / tag / f"{chain}.json").write_text(json.dumps(arch))
             try:
-                k = Chk(1, "selftest")
+                k = Chk(chain, "selftest")
                 step_record_cleared(k, rec, {}, None,
                                     BASE if base is None else base, tag)
             finally:
@@ -909,11 +972,13 @@ def _self_test() -> int:
     # A chain that never deployed assistants: the archive has none either. THE #299 CASE.
     arch_plain = {key: ADDR for key in UNIVERSAL} | {"NAVCalculatorProxy": ADDR}
 
-    run(dict(cleared), dict(arch_plain), "a chain that never had assistants passes", must_fail=False)
+    run(dict(cleared), dict(arch_plain), "a chain that never had assistants passes",
+        must_fail=False, chain=NO_ASSIST)
 
     # …and the same fixture must still FAIL for every real defect.
     run({k_: v for k_, v in cleared.items() if k_ != "NAVCalculatorProxy"}, dict(arch_plain),
-        "a key deleted that the archive HAD fails", must_fail=True, expect_in="DELETED, not blanked")
+        "a core NAV key deleted fails", must_fail=True,
+        expect_in="every in-scope chain carries it")
     run({k_: v for k_, v in cleared.items() if k_ != "AssetKindRegistry"}, dict(arch_plain),
         "a deleted CREATE_IF_ABSENT key fails", must_fail=True, expect_in="CREATE_IF_ABSENT")
     run(dict(cleared) | {"NAVCalculatorProxy": ADDR}, dict(arch_plain),
@@ -927,10 +992,10 @@ def _self_test() -> int:
     # "exempt the assistants off chain 1" would have blinded this check to a real deletion there.
     sw = "StakeWiseV3ExitQueueAssistant"
     run(dict(cleared) | {sw: ""}, dict(arch_plain) | {sw: ADDR},
-        "a blanked assistant on a chain that HAS one passes", must_fail=False)
+        "a blanked assistant on a chain that HAS one passes", must_fail=False, chain=ONE_ASSIST)
     run(dict(cleared), dict(arch_plain) | {sw: ADDR},
         "a DELETED assistant on a chain that HAS one fails", must_fail=True,
-        expect_in="DELETED, not blanked")
+        expect_in="config enables the adapter", chain=ONE_ASSIST)
 
     # THE PROMOTION ARMS. Making the archive an oracle made its provenance load-bearing, so each way
     # it can be the WRONG archive must push the check back to strict rather than excuse an absence.
@@ -939,13 +1004,22 @@ def _self_test() -> int:
         "an archive from ANOTHER generation is rejected as a pre-image", must_fail=True,
         expect_in="not the pre-image")
     run(dict(cleared), wrong_gen,
-        "...and absence is then judged STRICTLY, not excused", must_fail=True,
-        expect_in="no confirmed pre-image is available")
+        "...and a wrong-generation archive cannot excuse an expected key", must_fail=True,
+        expect_in="config enables the adapter", chain=ONE_ASSIST)
     run(dict(cleared), dict(arch_plain),
-        "no baseline for the chain => strict, not excused", must_fail=True,
+        "no baseline for the chain => reported, absence judged on config", must_fail=True,
         expect_in="no baseline proxy", base={})
-    run(dict(cleared) | {sw: ""}, dict(arch_plain) | {sw: ADDR},
-        "a CONFIRMED pre-image still excuses a key the chain never had", must_fail=False)
+
+    # HOLES 6 AND 7 — both let a real deletion pass while the archive was the SOLE oracle. These
+    # arms are the regression guards for the config-derived rule that replaced it. Chain 1 is used
+    # because its config enables all three assisted adapters, so config expects the key regardless
+    # of what any archive says.
+    run(dict(cleared), {key: ADDR for key in UNIVERSAL},
+        "HOLE 6: a wrong-CHAIN archive can no longer excuse a deletion", must_fail=True,
+        expect_in="config enables the adapter that deploys it", chain=ALL_ASSIST)
+    run(dict(cleared), dict(arch_plain),
+        "HOLE 7: a deletion PREDATING the reset (absent from the archive too) is caught",
+        must_fail=True, expect_in="config enables the adapter that deploys it", chain=ALL_ASSIST)
 
     for ok, line in results:
         print(line)

@@ -118,8 +118,7 @@ contract PositionLabelsProbeCoverageTest is Test {
                 // with no create-if-absent path — so reserving the slot is REQUIRED, and this tripwire must not
                 // read the reservation as a registration. Asked through `ConfigReader._readAddrOrZero`, which is
                 // the same code the deploy path uses, so "placeholder" has exactly one definition in this repo.
-                if (ConfigReader._readAddrOrZero(vm, json, string.concat(".balanceAdapters.", keys[k])) == address(0))
-                {
+                if (ConfigReader._readAddrOrZero(vm, json, string.concat(".balanceAdapters.", keys[k])) == address(0)) {
                     continue;
                 }
                 if (_has3(acc, n, keys[k])) continue;

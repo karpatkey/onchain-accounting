@@ -239,6 +239,41 @@ def step_record_cleared(k: Chk, rec: dict, exp: dict, url, base, tag) -> None:
                   f"archive/{tag}/{k.chain_id}.json has no NAVCalculatorProxy — it is not a "
                   f"pre-clear record")
 
+    # THE ARCHIVE IS NOW EVIDENCE, NOT JUST A ROLLBACK COPY — so it must be shown to be THIS
+    # record's pre-image before it is allowed to excuse an absent key. Promoting an artefact to an
+    # oracle turns every casual property of it into a correctness property, and `--archive-tag` is
+    # casual: it defaults to `pre-redeploy` and is chosen independently of
+    # `reset_deployment_records.py --tag`. Worse, `do_clear` REFUSES to write into a non-empty
+    # archive dir, so a second redeploy is forced onto a new tag while `archive/pre-redeploy/` still
+    # holds the PREVIOUS generation — which this check would otherwise read as authoritative.
+    #
+    # The witness is the committed pre-deploy snapshot, which this function already receives as
+    # `base` and never used: the archive's `NAVCalculatorProxy` must be the proxy that
+    # `snapshots/pre/index.json` records for this chain. A wrong tag, an earlier generation's
+    # archive, a hand-edited file or another chain's file all fail that.
+    #
+    # WHEN IT CANNOT BE CONFIRMED THE CHECK GETS STRICTER, NOT LOOSER: absence is then judged by the
+    # old flat rule and reported. That is noisy, which is the correct direction for a gate — the bug
+    # this fixes was noise, and the cure must not be silence. (Note the coupling: re-capturing
+    # `snapshots/pre` after the cutover would move the baseline and force this strict path. Steps
+    # 1.3 and 1.4 already depend on the same baseline, so that is a pre-existing systemic
+    # dependency rather than one introduced here.)
+    old_proxy = (base.get(k.chain_id) or {}).get("proxy") if base else None
+    archive_is_preimage = False
+    if arch is not None:
+        if not old_proxy:
+            k.fail.append(f"snapshots/pre/index.json has no baseline proxy for chain {k.chain_id}, so "
+                          f"archive/{tag}/{k.chain_id}.json cannot be confirmed as this record's "
+                          f"pre-image — absence is judged strictly below rather than excused")
+        elif str(arch.get("NAVCalculatorProxy", "")).lower() != str(old_proxy).lower():
+            k.fail.append(f"archive/{tag}/{k.chain_id}.json records NAVCalculatorProxy "
+                          f"{arch.get('NAVCalculatorProxy')!r}, but the committed pre-deploy snapshot "
+                          f"records {old_proxy} — this is not the pre-image of the generation being "
+                          f"replaced (wrong --archive-tag, an earlier redeploy's archive, or an edited "
+                          f"file). Absence is judged strictly below rather than excused")
+        else:
+            archive_is_preimage = True
+
     # ABSENCE IS ONLY A DEFECT WHERE THE KEY WAS SUPPOSED TO BE. This asserts the post-condition
     # `reset_deployment_records.plan_for` actually establishes:
     #
@@ -266,12 +301,16 @@ def step_record_cleared(k: Chk, rec: dict, exp: dict, url, base, tag) -> None:
                           f"creates it blank on every chain (CREATE_IF_ABSENT), so its absence means "
                           f"the clear did not run or the key was deleted afterwards; restore it "
                           f"as \"\" rather than deleting it")
-        elif arch is not None and key in arch:
+        elif archive_is_preimage and key in arch:
             k.fail.append(f"{key} is ABSENT from the record but PRESENT in "
                           f"archive/{tag}/{k.chain_id}.json — it was DELETED, not blanked, so this "
                           f"record reads as cleared while having lost a key it had; restore it as "
                           f"\"\" rather than deleting it")
-        # else: never present on this chain before the clear and not created by it — correct.
+        elif not archive_is_preimage:
+            k.fail.append(f"{key} is ABSENT and no confirmed pre-image is available, so it cannot be "
+                          f"told apart from a key this chain never had — resolve the archive finding "
+                          f"above, then re-run; do not wave this through")
+        # else: confirmed pre-image and the key was not in it — never existed here. Correct.
 
     for sec in rd.CLEAR_SECTIONS:
         still = populated(rec.get(sec))
@@ -831,10 +870,14 @@ def _self_test() -> int:
     from pathlib import Path
 
     ADDR = "0x80eD5cc6cEbAe4fEE1eD8687279aa492A50afa8d"
+    OTHER_GEN = "0xE745B83C1B0B24E4A2B0Cf0Ec5B2c2f7c4B5A6d1"
     UNIVERSAL = ["PriceFeedLib", "NavRegistryLib", "NAVCalculatorImplementation", "NAVCalculatorProxy"]
+    # The committed pre-deploy baseline the archive must match to count as this record's pre-image.
+    BASE = {1: {"proxy": ADDR}}
     results: list[tuple[bool, str]] = []
 
-    def run(rec: dict, arch: dict | None, label: str, must_fail: bool, expect_in: str = "") -> None:
+    def run(rec: dict, arch: dict | None, label: str, must_fail: bool, expect_in: str = "",
+            base: dict | None = None) -> None:
         real_dir = rd.ARCHIVE_DIR
         with tempfile.TemporaryDirectory() as td:
             rd.ARCHIVE_DIR = Path(td)
@@ -844,7 +887,8 @@ def _self_test() -> int:
                 (Path(td) / tag / "1.json").write_text(json.dumps(arch))
             try:
                 k = Chk(1, "selftest")
-                step_record_cleared(k, rec, {}, None, None, tag)
+                step_record_cleared(k, rec, {}, None,
+                                    BASE if base is None else base, tag)
             finally:
                 rd.ARCHIVE_DIR = real_dir
         failed = bool(k.fail)
@@ -887,6 +931,21 @@ def _self_test() -> int:
     run(dict(cleared), dict(arch_plain) | {sw: ADDR},
         "a DELETED assistant on a chain that HAS one fails", must_fail=True,
         expect_in="DELETED, not blanked")
+
+    # THE PROMOTION ARMS. Making the archive an oracle made its provenance load-bearing, so each way
+    # it can be the WRONG archive must push the check back to strict rather than excuse an absence.
+    wrong_gen = {key: OTHER_GEN for key in UNIVERSAL}
+    run(dict(cleared), wrong_gen,
+        "an archive from ANOTHER generation is rejected as a pre-image", must_fail=True,
+        expect_in="not the pre-image")
+    run(dict(cleared), wrong_gen,
+        "...and absence is then judged STRICTLY, not excused", must_fail=True,
+        expect_in="no confirmed pre-image is available")
+    run(dict(cleared), dict(arch_plain),
+        "no baseline for the chain => strict, not excused", must_fail=True,
+        expect_in="no baseline proxy", base={})
+    run(dict(cleared) | {sw: ""}, dict(arch_plain) | {sw: ADDR},
+        "a CONFIRMED pre-image still excuses a key the chain never had", must_fail=False)
 
     for ok, line in results:
         print(line)

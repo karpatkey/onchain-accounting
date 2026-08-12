@@ -15,12 +15,21 @@ contracts on the NEW proxy. Nothing fails; the deploy is simply wrong.
 
 WHY WRITE "" RATHER THAN DELETE THE KEY
 ---------------------------------------
-`ConfigReader._readAddrOrZero` (ConfigReader.sol:216) treats a key as "not deployed" when the value
-is the empty string, a `YOUR_…` placeholder, or the zero address — but it first requires
-`vm.keyExists`. Writing `""` therefore reads as address(0) while keeping the key present, so
-`vm.writeJson(..., ".balanceAdapters.<name>")` in `ConfigReader.writeAdapterAddress` writes back into
-an existing JSON pointer. Deleting keys would rely on forge inserting missing pointers, which is not
-a guarantee worth betting a 24-chain deploy on. Key order is preserved, so the diff stays readable.
+The reason is the READ path, and only the read path. `ConfigReader._readAddrOrZero`
+(ConfigReader.sol:216) treats a key as "not deployed" when the value is the empty string, a `YOUR_…`
+placeholder, or the zero address — but it first requires `vm.keyExists`, so a DELETED key and a
+blanked one are the same to it while other readers differ. `verify_step.step_record_cleared` fails
+any CLEAR_TOP key missing from the record, and `08_DeployAssetKindRegistry` branches on
+`readDeployedAddress("AssetKindRegistry")`. Blanking keeps those readers working; deleting breaks
+them. Key order is preserved, so the diff stays readable.
+
+NOT the write path. An earlier version of this note added "…so `vm.writeJson` writes back into an
+existing JSON pointer", and called deletion a bet on "forge inserting missing pointers, which is not
+a guarantee". MEASURED 2026-08-12 on the pinned forge 1.7.1: `vm.writeJson` CREATES a missing key,
+a missing top-level key, and even a missing intermediate object, with key order preserved, sibling
+sections untouched and no truncation. `writeAdapterAddress` calls `vm.writeJson` directly and never
+consults `_readAddrOrZero`, which is a read helper — so the write-back never needed the key to
+exist. Do not seed blank keys for a NEW adapter on this reasoning; `04` records it unaided.
 
 WHAT IS CLEARED, AND WHAT IS NOT
 --------------------------------
@@ -96,10 +105,11 @@ def plan_for(chain_id: int) -> tuple[dict, list[str]]:
     changes: list[str] = []
     for k in CLEAR_TOP:
         if k not in out and k in CREATE_IF_ABSENT:
-            # ABSENT is not "already clear" for these. `verify_step.step_record_cleared` fails any
-            # CLEAR_TOP key missing from the record, and `ConfigReader._readAddrOrZero` requires
-            # `vm.keyExists` before the deploy can write the new address back — so a key that is
-            # merely absent breaks runbook gate 1.1 AND the write-back. Create it blank.
+            # ABSENT is not "already clear" for these, for a READ-path reason:
+            # `verify_step.step_record_cleared` fails any CLEAR_TOP key missing from the record, and
+            # `08_DeployAssetKindRegistry` branches on `readDeployedAddress("AssetKindRegistry")`.
+            # NOT for a write-back reason — `vm.writeJson` creates a missing key unaided (measured on
+            # the pinned forge 1.7.1), and `writeAdapterAddress` never calls `_readAddrOrZero`.
             changes.append(f"{k}: <absent> -> \"\" (created; ConfigReader needs the key to exist)")
             out[k] = ""
         elif k in out and out[k] not in ("", None):

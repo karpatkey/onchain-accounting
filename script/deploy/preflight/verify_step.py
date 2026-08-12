@@ -227,11 +227,16 @@ class Chk:
 
 def step_record_cleared(k: Chk, rec: dict, exp: dict, url, base, tag) -> None:
     """The record must be cleared, the bridge must NOT be, and a rollback must exist."""
-    # `reset_deployment_records.py` writes "" rather than deleting, because
-    # `ConfigReader._readAddrOrZero` (ConfigReader.sol:216) requires `vm.keyExists` first and
-    # `writeAdapterAddress` writes into an EXISTING JSON pointer. A record whose keys were deleted —
-    # by hand, by `jq del(...)`, or by regenerating from a template — therefore reads as cleared but
-    # breaks the write-back in 01_2/02_2. Absence must fail, not pass.
+    # `reset_deployment_records.py` writes "" rather than deleting, and the reason is THIS CHECK
+    # plus `08_DeployAssetKindRegistry`, which branches on `readDeployedAddress("AssetKindRegistry")`
+    # — both READ paths. A record whose keys were deleted by hand, by `jq del(...)`, or by
+    # regenerating from a template would read as cleared and slip past. Absence must fail, not pass.
+    #
+    # It is NOT about the write-back. An earlier version of this comment said `writeAdapterAddress`
+    # "writes into an EXISTING JSON pointer" and that deletion "breaks the write-back in 01_2/02_2".
+    # Measured 2026-08-12 on the pinned forge 1.7.1: `vm.writeJson` creates a missing key unaided,
+    # and `writeAdapterAddress` calls it directly without consulting `_readAddrOrZero`, which is a
+    # read helper. The write-back was never at risk.
     for key in rd.CLEAR_TOP:
         if key not in rec:
             k.fail.append(f"{key} is ABSENT from the record, not blanked. ConfigReader needs the key "

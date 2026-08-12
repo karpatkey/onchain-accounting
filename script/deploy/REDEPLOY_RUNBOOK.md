@@ -995,10 +995,13 @@ python3 script/deploy/preflight/reset_deployment_records.py
 python3 script/deploy/preflight/reset_deployment_records.py --apply --tag pre-redeploy
 ```
 
-Values are set to `""`, which `ConfigReader._readAddrOrZero` (`ConfigReader.sol:216-221`) reads as
-`address(0)` while keeping the JSON key present, so `vm.writeJson` writes back into an existing
-pointer. The pre-clear record is archived to `preflight/archive/pre-redeploy/<CID>.json` and is the
-"old addresses" input for the before/after audits.
+Values are set to `""`, which `ConfigReader._readAddrOrZero` reads as `address(0)` while keeping the
+JSON key present. Keeping the key matters on the **read** path — `verify_step.step_record_cleared`
+fails any `CLEAR_TOP` key missing from the record, and `08_DeployAssetKindRegistry` branches on
+`readDeployedAddress("AssetKindRegistry")`. It is **not** needed for the write-back: measured on the
+pinned forge 1.7.1, `vm.writeJson` creates a missing key unaided, so a brand-new adapter needs no
+seeded key. The pre-clear record is archived to `preflight/archive/pre-redeploy/<CID>.json` and is
+the "old addresses" input for the before/after audits.
 
 - **Precondition:** `git status` clean; snapshot 0.7 captured.
 - **Post-condition:** `python3 script/deploy/preflight/verify_step.py 1.1` — every key in the NAV

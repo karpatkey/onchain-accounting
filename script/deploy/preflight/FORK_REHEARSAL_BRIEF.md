@@ -510,7 +510,7 @@ Measured on `main` @ `f72dd48a`:
 | | count | source |
 |---|---|---|
 | meta adapters | **33** | `preflight_config.py` |
-| meta instances | **110** | `preflight_config.py`; per-chain table in the runbook |
+| meta instances | **111** | `preflight_config.py`; per-chain table in the runbook |
 | plain adapters | **12** (+1 `ERC20Default` per chain) | `preflight_config.py` |
 | custom price feeds | **41** | `preflight_config.py`, re-measured 2026-07-30 (39 before #199, 40 before #224) |
 | assets | **93** | `preflight_config.py` |
@@ -663,6 +663,9 @@ the re-run. Everything else is secondary.
   `ERC20Default` `0x4Bc39Dce61245F5A63189d1FA03E6D76646f1EE6`, matching on-chain.
 - **All three assistant `ADAPTER()` pointers paired correctly** — the fix for the four live orphans.
 - `preflight_config.py`: 0 errors across 24 chains, totals exactly as §6 (33 / 110 / 12 / 40 / 93).
+  *(Recorded result, left as run. §6's meta-instance expectation has since moved 110 → 111 — one
+  `MorphoVaultsMeta` instance added on chain 1, issue #296 — so a re-run should read 111 here. The
+  recorded 110 was correct when this rehearsal ran and is not restated.)*
 - The disposable-config rail restored `script/config` and `broadcast/` byte-exactly; `deployments/1.json`
   verified identical to `HEAD` by hash afterwards. **Always check this** — 18 phantom addresses in a
   deployments record is the worst thing that could leak out of a rehearsal.

@@ -80,7 +80,9 @@ wanted: `verify_step.py` requires it as the step 1.1 post-condition (`:252`).
 
 Configured totals, reconciled from config **and** confirmed against the live NAV on 2026-07-27;
 feed count re-measured 2026-07-30 against the merged tree:
-**33 meta adapters, 110 meta instances, 12 plain adapters, 41 custom price feeds, 93 assets.**
+**33 meta adapters, 111 meta instances, 12 plain adapters, 41 custom price feeds, 93 assets.**
+<!-- meta instances 110 -> 111 on 2026-08-12: one MorphoVaultsMeta instance added on chain 1 (issue #296). See the amendment under "Meta instances" below. -->
+
 The feed count is no longer pending anything — see the note under 1.4 for the two PRs that moved it.
 
 **Re-measured 2026-08-08 at `a3974686` with `preflight_config.py`: all five totals and every per-chain
@@ -91,7 +93,7 @@ are a separate axis and not a count.
 
 | chain | meta adapters | meta instances | plain | feeds | assets |
 | --- | --- | --- | --- | --- | --- |
-| 1 mainnet | 15 | 66 | 11 | 26 | 43 |
+| 1 mainnet | 15 | 67 | 11 | 26 | 43 |
 | 42161 arbitrum | 7 | 16 | 0 | 8 | 11 |
 | 8453 base | 6 | 16 | 0 | 4 | 11 |
 | 10 optimism | 2 | 4 | 0 | 0 | 6 |
@@ -113,8 +115,14 @@ is where they are derived and which is the authoritative one if the two ever dis
 > would reconcile the on-chain set back DOWN and drop the vault, re-introducing the under-reporting that
 > transaction fixed — see issue #296.
 >
-> **The 2026-07-29 figures below are left as recorded rather than rewritten**, because they were a
-> 24-chain derivation confirmed on-chain on that date and this amendment is not. What was measured today
+> **What was rewritten and what was not, deliberately.** The per-chain DERIVATION TABLE below, the
+> headline totals, and the summary row **have been updated to 111 / 67**, because `:104` designates that
+> table as "where they are derived and which is the authoritative one if the two ever disagree" — a table
+> derived from config must move when config moves, or the document's own source of truth becomes the one
+> wrong place. What is NOT rewritten is the **dated claim in this heading**: "confirmed on-chain
+> (2026-07-29)" was a 24-chain on-chain verification, and this change is one adapter on one chain, so
+> restating that date's scope as though it covered today would destroy the provenance of both. What was
+> measured today
 > is narrower and is stated as such: `getMetaInstances(MorphoVaultsMeta)` on the live NAV
 > (`0x80eD5cc6cEbAe4fEE1eD8687279aa492A50afa8d`) returns **10** entries for chain 1, and chain 1's config
 > list now matches it exactly — same members, same order.
@@ -143,14 +151,14 @@ settled here rather than at execution time. Three figures had been circulating �
 
 | chain | enabled meta adapters | `instances` | `instancesRaw` | total |
 | --- | --- | --- | --- | --- |
-| 1 mainnet | 15 | 52 | 14 | **66** |
+| 1 mainnet | 15 | 53 | 14 | **67** |
 | 42161 arbitrum | 7 | 14 | 2 | **16** |
 | 8453 base | 6 | 12 | 4 | **16** |
 | 10 optimism | 2 | 4 | 0 | **4** |
 | 100 gnosis | 2 | 4 | 0 | **4** |
 | 137 polygon | 1 | 4 | 0 | **4** |
 | 56 bsc | 0 | 0 | 0 | **0** |
-| **total** | **33** | **90** | **20** | **110** |
+| **total** | **33** | **91** | **20** | **111** |
 
 Counted from `script/config/nav-config/meta-balance-adapters/<chainId>.json`, taking only adapters
 with `enabled: true` and summing `instances` + `instancesRaw`. Two independent confirmations: the
@@ -1715,6 +1723,18 @@ refresh. Each depends on the one before it: 0.9 supplies the reference figures t
 against, and 2.6 cannot run until the new addresses are recorded.
 
 **Known-expected diffs — do NOT treat these as regressions:**
+
+- **`MorphoVaultsMeta` GAINS one meta instance on mainnet, and `metaInstanceTotal` goes 66 → 67.** The
+  committed pre-snapshot (`snapshots/pre/1.json`, block 25625439) was captured when chain 1 held 9
+  `MorphoVaultsMeta` instances. The KPK USDC Yield RWA vault
+  `0x7a72bcD2c3F7F7e4D6679170a0625bAB15D7DDa1` was added to the LIVE NAV on 2026-08-12 by
+  `addMetaInstances` (issue #296) and to config in the same PR, so `diff_snapshots.py pre post` will
+  print `GAINED meta instance 0x…7a72bcd2…` and `metaInstanceTotal 66 -> 67`. **This is a STRUCTURAL
+  diff and this section's rule is that a structural diff is never explained by drift — which is exactly
+  why it is enumerated here rather than left to be waved through.** Expect a matching position entry,
+  and a `nav.value` increase beyond the residual band, for whichever Safe holds the vault: the whole
+  point of the addition is that NAV was under-reporting that position. A diff that does NOT show this
+  means the vault is missing and the reconciliation dropped it.
 
 - **ETHx drops from 2 monitor feeds to 1 on mainnet.** Redstone is retiring both of its ETHx push
   feeds, which backed both monitors. The direct Redstone **ETHx/USD** monitor `0xFaBEb147…` is gone

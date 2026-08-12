@@ -28,7 +28,7 @@ The ordered procedure these support is [`../REDEPLOY_RUNBOOK.md`](../REDEPLOY_RU
 python3 preflight_config.py                       # config must be clean
 python3 snapshot_production.py --out pre          # irreplaceable — the old NAV is abandoned after this
 python3 deployer_balances.py --json topup.json
-./rehearse_fork.sh 1                              # dress rehearsal on a mainnet fork
+./rehearse_fork.sh 1 25708060                    # dress rehearsal; PIN THE BLOCK (2nd arg) — see below
 python3 reset_deployment_records.py --apply --tag pre-redeploy
 
 # … deploy per the runbook, gating each step on its post-condition …
@@ -43,6 +43,13 @@ python3 verify_step.py all                        # every post-condition, all 24
 python3 snapshot_production.py --out post
 python3 diff_snapshots.py pre post
 ```
+
+> **Pin the fork block.** The second argument is `FORK_BLOCK` (`rehearse_fork.sh:47` → anvil
+> `--fork-block-number`, `:368`). Omit it and you fork `latest`, which is the root cause of two separate
+> failures: forge and anvil resolve "latest" at different moments against a load-balanced endpoint, and an
+> unpinned fork re-fetches instead of reading `~/.foundry/cache/rpc/<chain>/<block>/` — **209 s pinned
+> versus a 2,915 s hang unpinned**. Use a recent finalized block, not the example above. Full reasoning in
+> `REDEPLOY_RUNBOOK.md` §0.2.
 
 ## `snapshots/pre/`
 

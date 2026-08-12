@@ -227,35 +227,57 @@ class Chk:
 
 def step_record_cleared(k: Chk, rec: dict, exp: dict, url, base, tag) -> None:
     """The record must be cleared, the bridge must NOT be, and a rollback must exist."""
-    # `reset_deployment_records.py` writes "" rather than deleting, because
-    # `ConfigReader._readAddrOrZero` (ConfigReader.sol:216) requires `vm.keyExists` first and
-    # `writeAdapterAddress` writes into an EXISTING JSON pointer. A record whose keys were deleted —
-    # by hand, by `jq del(...)`, or by regenerating from a template — therefore reads as cleared but
-    # breaks the write-back in 01_2/02_2. Absence must fail, not pass.
+    # The archive is read FIRST because the absence check below needs it as its oracle.
+    # reset_deployment_records.py --apply writes it before clearing, so its absence also means the
+    # clear was done some other way and there is no rollback.
+    arch = archived(tag, k.chain_id)
+    if k.require(arch is not None,
+                 f"no rollback archive at archive/{tag}/{k.chain_id}.json — the pre-clear record was "
+                 f"not captured, so there is nothing to restore, and a DELETED key cannot be told "
+                 f"apart from one that never existed on this chain"):
+        k.require(c.is_address(arch.get("NAVCalculatorProxy")),
+                  f"archive/{tag}/{k.chain_id}.json has no NAVCalculatorProxy — it is not a "
+                  f"pre-clear record")
+
+    # ABSENCE IS ONLY A DEFECT WHERE THE KEY WAS SUPPOSED TO BE. This asserts the post-condition
+    # `reset_deployment_records.plan_for` actually establishes:
+    #
+    #     key in record  <=>  key was in the pre-clear record  OR  key in CREATE_IF_ABSENT
+    #
+    # rather than the flat "every CLEAR_TOP key on every chain", which this check used to assert.
+    # CLEAR_TOP carries three `*Assistant` keys that exist only where the assisted adapters are
+    # deployed — today chain 1 (all three) and chain 100 (StakeWise only) — so the flat rule reported
+    # ABSENT on 23 of the 24 in-scope chains for keys that had legitimately never existed there.
+    # A gate that is red on almost every chain for a non-condition is a gate operators learn to
+    # override, and the next real absence it reports gets overridden with it. Issue #299.
+    #
+    # Deliberately NOT "exempt the assistants off chain 1": chain 100 carries
+    # StakeWiseV3ExitQueueAssistant, so that rule would blind this check to a real deletion on
+    # gnosis — a hole of exactly the kind it exists to catch. Deriving from the archive removes the
+    # class instead of the instance: any future chain-specific key is handled with no edit here.
     for key in rd.CLEAR_TOP:
-        if key not in rec:
-            k.fail.append(f"{key} is ABSENT from the record, not blanked. ConfigReader needs the key "
-                          f"to exist (vm.keyExists) for the deploy to write the new address back; "
-                          f"restore it as \"\" rather than deleting it")
+        if key in rec:
+            k.require(not c.is_address(rec[key]),
+                      f"{key} is still populated ({rec[key]}) — 03/04 will skip-if-deployed and 06 "
+                      f"will register the OLD contracts on the NEW proxy")
             continue
-        k.require(not c.is_address(rec[key]),
-                  f"{key} is still populated ({rec[key]}) — 03/04 will skip-if-deployed and 06 "
-                  f"will register the OLD contracts on the NEW proxy")
+        if key in rd.CREATE_IF_ABSENT:
+            k.fail.append(f"{key} is ABSENT from the record. `reset_deployment_records.py --apply` "
+                          f"creates it blank on every chain (CREATE_IF_ABSENT), so its absence means "
+                          f"the clear did not run or the key was deleted afterwards; restore it "
+                          f"as \"\" rather than deleting it")
+        elif arch is not None and key in arch:
+            k.fail.append(f"{key} is ABSENT from the record but PRESENT in "
+                          f"archive/{tag}/{k.chain_id}.json — it was DELETED, not blanked, so this "
+                          f"record reads as cleared while having lost a key it had; restore it as "
+                          f"\"\" rather than deleting it")
+        # else: never present on this chain before the clear and not created by it — correct.
+
     for sec in rd.CLEAR_SECTIONS:
         still = populated(rec.get(sec))
         k.require(not still,
                   f"{sec} still holds {len(still)} address(es): {sorted(still)[:6]}"
                   f"{' …' if len(still) > 6 else ''}")
-
-    # The archive is the only way back. reset_deployment_records.py --apply writes it before
-    # clearing, so its absence means the clear was done some other way and there is no rollback.
-    arch = archived(tag, k.chain_id)
-    if k.require(arch is not None,
-                 f"no rollback archive at archive/{tag}/{k.chain_id}.json — the pre-clear record was "
-                 f"not captured, so there is nothing to restore"):
-        k.require(c.is_address(arch.get("NAVCalculatorProxy")),
-                  f"archive/{tag}/{k.chain_id}.json has no NAVCalculatorProxy — it is not a "
-                  f"pre-clear record")
 
     # The bridge stack is explicitly out of scope for this redeploy.
     for key in ("BridgeEscrowImplementation", "BridgeEscrowProxy"):
@@ -794,12 +816,86 @@ def cross_chain_identity(results: list[Chk], steps: list[str], chains: list[int]
     return out
 
 
+def _self_test() -> int:
+    """Prove step 1.1's absence check discriminates, in BOTH directions.
+
+    A gate is only worth having if it still fails when it should. The bug this covers (#299) was a
+    check that fired on almost every chain for a non-condition; the obvious fix — stop firing — is
+    one edit away from a check that never fires at all. So every arm below is paired: for each case
+    that must PASS there is a mutation of the same fixture that must FAIL.
+
+    Driven against synthetic records and a tempdir archive rather than the committed ones, because an
+    arm reading real config would pass or fail for reasons that have nothing to do with the rule.
+    """
+    import tempfile
+    from pathlib import Path
+
+    ADDR = "0x80eD5cc6cEbAe4fEE1eD8687279aa492A50afa8d"
+    UNIVERSAL = ["PriceFeedLib", "NavRegistryLib", "NAVCalculatorImplementation", "NAVCalculatorProxy"]
+    results: list[tuple[bool, str]] = []
+
+    def run(rec: dict, arch: dict | None, label: str, must_fail: bool, expect_in: str = "") -> None:
+        real_dir = rd.ARCHIVE_DIR
+        with tempfile.TemporaryDirectory() as td:
+            rd.ARCHIVE_DIR = Path(td)
+            tag = "selftest"
+            if arch is not None:
+                (Path(td) / tag).mkdir(parents=True)
+                (Path(td) / tag / "1.json").write_text(json.dumps(arch))
+            try:
+                k = Chk(1, "selftest")
+                step_record_cleared(k, rec, {}, None, None, tag)
+            finally:
+                rd.ARCHIVE_DIR = real_dir
+        failed = bool(k.fail)
+        joined = " | ".join(k.fail)
+        ok = (failed == must_fail) and (not expect_in or expect_in in joined)
+        results.append((ok, f"{'ok  ' if ok else 'FAIL'} {label}"
+                             f"{'' if ok else f'  -> expected {"fail" if must_fail else "pass"}, got: {joined or "pass"}'}"))
+
+    cleared = {key: "" for key in UNIVERSAL}
+    cleared["AssetKindRegistry"] = ""
+    # A chain that never deployed assistants: the archive has none either. THE #299 CASE.
+    arch_plain = {key: ADDR for key in UNIVERSAL} | {"NAVCalculatorProxy": ADDR}
+
+    run(dict(cleared), dict(arch_plain), "a chain that never had assistants passes", must_fail=False)
+
+    # …and the same fixture must still FAIL for every real defect.
+    run({k_: v for k_, v in cleared.items() if k_ != "NAVCalculatorProxy"}, dict(arch_plain),
+        "a key deleted that the archive HAD fails", must_fail=True, expect_in="DELETED, not blanked")
+    run({k_: v for k_, v in cleared.items() if k_ != "AssetKindRegistry"}, dict(arch_plain),
+        "a deleted CREATE_IF_ABSENT key fails", must_fail=True, expect_in="CREATE_IF_ABSENT")
+    run(dict(cleared) | {"NAVCalculatorProxy": ADDR}, dict(arch_plain),
+        "a still-populated key fails", must_fail=True, expect_in="still populated")
+    run(dict(cleared), None,
+        "a missing archive fails", must_fail=True, expect_in="no rollback archive")
+    run(dict(cleared) | {"balanceAdapters": {"ERC20Default": ADDR}}, dict(arch_plain),
+        "a still-populated CLEAR_SECTIONS entry fails", must_fail=True, expect_in="balanceAdapters")
+
+    # THE ARM THAT KILLS THE NARROW FIX. Chain 100 carries StakeWiseV3ExitQueueAssistant, so
+    # "exempt the assistants off chain 1" would have blinded this check to a real deletion there.
+    sw = "StakeWiseV3ExitQueueAssistant"
+    run(dict(cleared) | {sw: ""}, dict(arch_plain) | {sw: ADDR},
+        "a blanked assistant on a chain that HAS one passes", must_fail=False)
+    run(dict(cleared), dict(arch_plain) | {sw: ADDR},
+        "a DELETED assistant on a chain that HAS one fails", must_fail=True,
+        expect_in="DELETED, not blanked")
+
+    for ok, line in results:
+        print(line)
+    bad = [line for ok, line in results if not ok]
+    print(f"\n{len(results) - len(bad)}/{len(results)} arms passed")
+    return 1 if bad else 0
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("step", help="one of " + ", ".join(STEPS) + ", or 'all'")
+    ap.add_argument("step", nargs="?", help="one of " + ", ".join(STEPS) + ", or 'all'")
     ap.add_argument("chains", nargs="*", type=int)
     ap.add_argument("--archive-tag", default="pre-redeploy",
                     help="reset_deployment_records.py --tag used for the pre-clear archive")
+    ap.add_argument("--self-test", action="store_true",
+                    help="prove step 1.1's absence check still fails when it should (no network)")
     ap.add_argument("--jobs", type=int, default=6)
     ap.add_argument("--json", help="write the full report here")
     ap.add_argument("--allow-partial", action="store_true",
@@ -810,6 +906,12 @@ def main() -> int:
                          "exactly one chain id with it, or you will read one chain's state and "
                          "compare it against another's config.")
     args = ap.parse_args()
+
+    if args.self_test:
+        return _self_test()
+    if not args.step:
+        ap.error("step is required (one of " + ", ".join(STEPS) + ", or 'all') unless --self-test")
+
     c.load_env()
 
     if args.rpc_url and len(args.chains) != 1:

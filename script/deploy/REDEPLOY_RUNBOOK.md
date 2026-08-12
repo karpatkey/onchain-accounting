@@ -995,10 +995,16 @@ python3 script/deploy/preflight/reset_deployment_records.py
 python3 script/deploy/preflight/reset_deployment_records.py --apply --tag pre-redeploy
 ```
 
-Values are set to `""`, which `ConfigReader._readAddrOrZero` (`ConfigReader.sol:216-221`) reads as
-`address(0)` while keeping the JSON key present, so `vm.writeJson` writes back into an existing
-pointer. The pre-clear record is archived to `preflight/archive/pre-redeploy/<CID>.json` and is the
-"old addresses" input for the before/after audits.
+Values are set to `""` and the keys kept, not deleted.
+
+> **Expect ABSENT noise from gate 1.1 here.** Its absence check does not cover every key it iterates —
+> tracked in **#299**, and deliberately not fixed in the docs PR that found it.
+>
+> `vm.writeJson` creates a missing key unaided, so a brand-new adapter needs **no** seeded key. Pinned
+> by `script/test/WriteJsonCreatesMissingKeys.t.sol`.
+
+The pre-clear record is archived to `preflight/archive/pre-redeploy/<CID>.json` and is
+the "old addresses" input for the before/after audits.
 
 - **Precondition:** `git status` clean; snapshot 0.7 captured.
 - **Post-condition:** `python3 script/deploy/preflight/verify_step.py 1.1` — every key in the NAV

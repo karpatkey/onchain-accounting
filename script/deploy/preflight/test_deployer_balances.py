@@ -156,18 +156,21 @@ class TestFailClosed(unittest.TestCase):
         self.assertIsNone(row["sufficient"], "an execution-only figure is a lower bound, not an estimate")
         self.assertIn("LOWER BOUND", row["l1Note"].upper())
 
-    def test_probe_trip_on_payload_size_axis_fails_closed(self):
+    def test_probe_trip_on_big_payload_fails_closed(self):
         base = db.L1_REGIME_BASELINE_WEI[PRICED]
         row, _ = run_one(PRICED, balance=10**24, big=base * (db.L1_REGIME_MAX_RISE + 1))
         self.assertIsNone(row["sufficient"])
-        self.assertIn("payload-size", row["l1Note"])
+        self.assertIn("big-payload", row["l1Note"])
 
-    def test_probe_trip_on_base_fee_axis_fails_closed(self):
-        # BIG passes, SMALL trips: the second axis must be reached, not short-circuited by the first.
+    def test_probe_trip_on_small_payload_fails_closed(self):
+        # BIG passes, SMALL trips: the second probe must be reached, not short-circuited by the first.
         base = db.L1_REGIME_BASELINE_SMALL_WEI[PRICED]
         row, _ = run_one(PRICED, balance=10**24, small=base * (db.L1_REGIME_MAX_RISE + 1))
         self.assertIsNone(row["sufficient"])
-        self.assertIn("base-fee", row["l1Note"])
+        self.assertIn("small-payload", row["l1Note"])
+        # The label must not assert a CAUSE. This scenario is big-passes/small-trips, i.e. the two
+        # readings moved apart — a curve move — so the old "base-fee" label named the opposite cause.
+        self.assertNotIn("base-fee", row["l1Note"])
 
     def test_zero_baseline_chain_trips_on_any_nonzero_reading(self):
         # celo charges nothing today; a baseline of 0 must mean "any charge at all is a regime change",

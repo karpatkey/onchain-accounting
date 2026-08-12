@@ -490,8 +490,17 @@ def one(chain_id: int, gas_units: dict) -> dict:
         # hand-maintained, so the divergence is a realistic edit rather than a hypothetical.
         try:
             # KeyError on either baseline is caught below and fails closed.
-            pairs = ((L1_REGIME_PROBE_BYTES_BIG, L1_REGIME_BASELINE_WEI[chain_id], "payload-size"),
-                     (L1_REGIME_PROBE_BYTES_SMALL, L1_REGIME_BASELINE_SMALL_WEI[chain_id], "base-fee"))
+            # THE LABELS NAME WHICH PROBE TRIPPED, NOT WHAT CAUSED IT, and the previous pair
+            # ("payload-size" / "base-fee") asserted causes this reading cannot establish — the small
+            # one close to backwards. BIG is checked first and the loop BREAKS on the first trip, so the
+            # small label is only ever reached when big did NOT trip and small did: the two readings
+            # moved apart, i.e. the RATIO changed, which is a curve move — the opposite of the base-fee
+            # move the old label named. (A pure base-fee move scales both readings together and trips
+            # big first.) Diagnosing the cause needs both readings and the 15.7787x ratio; the guard
+            # only establishes that the regime no longer matches, so the message now says that and
+            # leaves the diagnosis to #287.
+            pairs = ((L1_REGIME_PROBE_BYTES_BIG, L1_REGIME_BASELINE_WEI[chain_id], "big-payload"),
+                     (L1_REGIME_PROBE_BYTES_SMALL, L1_REGIME_BASELINE_SMALL_WEI[chain_id], "small-payload"))
             # BOTH PROBES PIN TO ONE BLOCK. Passing `latest` per call let the two readings land on
             # different blocks, so an upgrade or fee change between them could produce a hybrid snapshot
             # and hide the size-dependent move this guard exists to catch. That requirement was already
@@ -512,7 +521,7 @@ def one(chain_id: int, gas_units: dict) -> dict:
                 now, base, axis, n = tripped
                 priceable = False
                 l1_note = (f"L1 fee conditions have moved outside the regime the margin table was measured "
-                           f"under on the {axis} axis ({n}-byte probe {now} wei vs baseline {base} wei, "
+                           f"under, seen on the {axis} probe ({n}-byte probe {now} wei vs baseline {base} wei, "
                            f"limit {L1_REGIME_MAX_RISE}x at block {probe_block}), so the omitted L1 fee can no longer be assumed "
                            f"immaterial here — see #287")
         except KeyError:

@@ -41,11 +41,13 @@ chain. Four of its scripts write **git-tracked** files — and because that list
 - `rehearse_fork.sh` — mutates `script/config/` during a rehearsal, refuses to start if `script/config`
   or `broadcast/` is dirty (`:63` — those two paths only, not the whole tree), and restores them
   byte-exactly with `git checkout --` on exit. It also creates `safe-transactions/` in the repo root
-  (`:93`), which is neither tracked nor ignored, so it survives the restore as untracked debris — one
-  more reason the check of record is `git status --untracked-files=all` and not a tracked-file diff.
-  Its remaining outputs (`steps.tsv`, `config-before`/`config-after`, `anvil.log`) go to `$WORK`,
-  which defaults to `/tmp/nav-rehearsal-<chainId>` (`:51`) — outside the repo unless `REHEARSAL_DIR`
-  points back into it.
+  (`:93`). That directory is **gitignored** (`.gitignore:21`) and the exit cleanup is scoped to
+  `script/config` and `broadcast` only, so it survives every rehearsal AND is invisible to
+  `git status` — including `--untracked-files=all`, which does not list ignored paths. Inspect or
+  remove it deliberately (`git status --ignored`, or just look); no `git status` invocation above
+  will remind you it is there. Its remaining outputs (`steps.tsv`, `config-before`/`config-after`,
+  `anvil.log`) go to `$WORK`, which defaults to `/tmp/nav-rehearsal-<chainId>` (`:51`) — outside the
+  repo unless `REHEARSAL_DIR` points back into it.
 
 Other tools write report files under `--json`. **Every one of these destinations is
 caller-controlled** — `--json` and `--out` take arbitrary paths and are written verbatim
@@ -692,7 +694,9 @@ authoritative**, and if they disagree with this paragraph the code is right.
   (`L1_REGIME_PROBE_BYTES_BIG`, the region the real payload occupies) **and** on **4,096 bytes**
   (`L1_REGIME_PROBE_BYTES_SMALL`, the second point on the curve), each against a per-chain baseline
   (`L1_REGIME_BASELINE_WEI`, `L1_REGIME_BASELINE_SMALL_WEI`). Either exceeding `L1_REGIME_MAX_RISE`
-  (**100×**) sends the row to `UNPRICEABLE`, naming which axis moved. A read failure also fails closed.
+  (**100×**) sends the row to `UNPRICEABLE`, naming which **probe** tripped (`big-payload` /
+  `small-payload`) — not what caused it, which one reading cannot establish. A read failure also fails
+  closed.
   **Both probes pin to one block**, because `l1BaseFee` was observed moving `298,580,940 → 320,948,895`
   wei inside a 20-second window.
 

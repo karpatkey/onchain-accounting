@@ -298,8 +298,8 @@ PositionBalance({
 
 > **Consumers: SUM Merkl legs, do not dedupe them.** Because `positionInstanceId` is excluded from the stable
 > reconciliation key, every campaign leg of one reward token shares an *identical* key while carrying a different
-> amount — up to 32 rows per token. A consumer that treats a repeated key as duplicate data and keeps one row will
-> under-report that token's rewards by up to 32×. Worse, campaign coordinates are **not** proof-bound (the merkle
+> amount — up to 8 rows per token (`MAX_CAMPAIGNS_PER_TOKEN`). A consumer that treats a repeated key as duplicate data and keeps one row will
+> under-report that token's rewards by up to 8x. Worse, campaign coordinates are **not** proof-bound (the merkle
 > proof commits only to the per-token total, and the contract only checks that the shares sum to it), so a submitter
 > can supply duplicate or fabricated `campaignId`s: campaign attribution is display-grade, not audit-grade. The
 > per-token total — the sum of a token's legs — is the proof-backed figure.

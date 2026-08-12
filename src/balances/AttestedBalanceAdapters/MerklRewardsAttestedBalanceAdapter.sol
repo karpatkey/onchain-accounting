@@ -81,7 +81,8 @@ contract MerklRewardsAttestedBalanceAdapter is IAttestedBalanceAdapter, IPositio
     /// @param cumulativeAmount This campaign's cumulative contribution to the token total. NOT individually
     ///                         proof-backed (Merkl proves only the per-token total); the contract instead enforces
     ///                         that the campaign shares of a token SUM to the proof-verified per-token total, so a
-    ///                         faulty assistant can mis-split across campaigns but can never inflate the token total.
+    ///                         faulty or hostile SUBMITTER can mis-split across campaigns but can never inflate the token total.
+    ///                         (This family has no assistant contract — see the contract NatSpec. Any caller may submit.)
     struct CampaignShare {
         bytes32 campaignId;
         bytes32 subCampaignId;
@@ -179,7 +180,7 @@ contract MerklRewardsAttestedBalanceAdapter is IAttestedBalanceAdapter, IPositio
     ///         proof-verified per-token total.
     mapping(address user => mapping(address token => CachedAllocation)) public allocations;
 
-    /// @notice Per-(user, token) campaign breakdown (the assistant-submitted `breakdowns[]`). Each share becomes its
+    /// @notice Per-(user, token) campaign breakdown (the submitter-supplied `breakdowns[]`). Each share becomes its
     ///         own NAV position, valued as the token's on-chain unclaimed split pro-rata by the share's cumulative.
     ///         Empty ⇒ one untagged position for the token. Shares of a token sum to the token's verified cumulative.
     mapping(address user => mapping(address token => CampaignShare[])) private _campaigns;
@@ -228,7 +229,7 @@ contract MerklRewardsAttestedBalanceAdapter is IAttestedBalanceAdapter, IPositio
     error AmountRegression();
 
     /// @notice The submitted campaign breakdown does not sum to the proof-verified per-token cumulative. Bounding the
-    ///         campaign shares to the proven total is what keeps the (assistant-supplied) split from inflating NAV.
+    ///         campaign shares to the proven total is what keeps the (submitter-supplied) split from inflating NAV.
     error CampaignSumMismatch(address token, uint256 sumOfShares, uint256 tokenCumulative);
 
     /// @notice More than `MAX_CAMPAIGNS_PER_TOKEN` campaign shares submitted for one token (read-gas bound).

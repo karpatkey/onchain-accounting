@@ -51,8 +51,7 @@ contract WriteJsonCreatesMissingKeysTest is Test {
     ///      multi-line literals and produced malformed JSON, so all four tests failed on the fixture
     ///      rather than on the behaviour under test. A fixture that can be wrong is a test that can
     ///      lie about its subject.
-    string internal constant FIXTURE =
-        '{"NAVCalculatorProxy":"0x80eD5cc6cEbAe4fEE1eD8687279aa492A50afa8d",'
+    string internal constant FIXTURE = '{"NAVCalculatorProxy":"0x80eD5cc6cEbAe4fEE1eD8687279aa492A50afa8d",'
         '"balanceAdapters":{"ERC20Default":"0x41967559D0a20Ad102F6e27b7723b1963390aD75",'
         '"Cap":"0x5B50A5FF1C80A178bB8da9fdfF077FBc3DD4e543"},'
         '"customPriceFeeds":{"wstETH":"0xaAaAaAaaAaAaAaaAaAAAAAAAAaaaAaAaAaaAaaAa"}}';

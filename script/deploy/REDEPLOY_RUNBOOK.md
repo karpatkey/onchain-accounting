@@ -26,26 +26,45 @@ operator: **pin the fork block** (see the note at the rehearsal invocation — i
 **None of this means the system is deployed. It is not.** A fork rehearsal is evidence that the deploy
 path executes; it is not a deploy, and it is not an approval to deploy.
 
-Companion tooling lives in [`preflight/`](preflight/README.md). **Nothing there sends a transaction to a
-real chain** — `rehearse_fork.sh` broadcasts only to a loopback anvil. That is not the same as read-only,
-which this line used to claim, so the writers are named instead of implied:
+Companion tooling lives in [`preflight/`](preflight/README.md). The only script there that broadcasts
+at all is `rehearse_fork.sh`, whose RPC is built as loopback (`:49`) and refused otherwise (`:57`).
+Four of its scripts write **git-tracked** files — and because that list has been wrong before,
+**`git status` is the check of record, not this paragraph**:
 
-| script | writes | when |
-| --- | --- | --- |
-| `reset_deployment_records.py` | tracked `deployments/<cid>.json` — **two different write paths** | `--apply` CLEARS them (archiving the old copy first; the default is a dry run). **`--restore <tag>` OVERWRITES them with no `--apply` and no archive of what it replaced** (`:213` dispatches to `do_restore` before the apply path; `:177` copies unconditionally). Judge by the FLAG, not by `--apply`: a bare `--restore` is a write |
-| `declared_heartbeat_guard.py` | tracked `preflight/chainlink_declared_heartbeats.json` | its `refresh` mode; the checking modes do not write |
-| `snapshot_production.py` | tracked `preflight/snapshots/<out>/*.json` and the index | every run, default `--out pre` |
-| `rehearse_fork.sh` | **mutates tracked `script/config` and `broadcast/`**, then restores them byte-exact with `git checkout --` and deletes untracked leftovers under those two paths (`:35-39`, `:61-67`); separately creates `safe-transactions/` in the repo root (`:93`) and writes `steps.tsv`, `config-before`/`config-after` and `anvil.log` under `$WORK` (`:84-93`, `:380-381`) | every run — which is why it refuses to start from a dirty tree |
+- `reset_deployment_records.py --apply` — archives the in-scope records under
+  `script/deploy/preflight/archive/<tag>/`, then clears the NAV keys in `script/config/deployments/`
+  (and adds a blank `AssetKindRegistry` where a record lacks one); the bridge keys are deliberately
+  kept (see 1.1). Dry-run by default. `--restore <tag>` reads that archive back — pass the same chain
+  ids you cleared, or the run reports every other declared chain as `MISSING` and exits 1. **Note the
+  dry-run default guards `--apply` only:** `--restore` is dispatched before it and writes
+  unconditionally, keeping no archive of what it overwrote — judge by the flag you passed, not by
+  the absence of `--apply`.
+- `snapshot_production.py` — an `--out` value with no `/` names a directory under
+  `preflight/snapshots/`; one containing a `/` is taken as a path in its own right (`:346`). It
+  **defaults to `--out pre`**, the committed capture, and the documented pre-deploy step passes
+  `--out pre` deliberately. Judge safety by the destination it resolves to, not by the flag text.
+- `declared_heartbeat_guard.py --refresh` — rewrites the committed `chainlink_declared_heartbeats.json`.
+- `rehearse_fork.sh` — mutates `script/config/` and `broadcast/` during a rehearsal, refuses to start
+  if either is dirty (`:63` — those two paths only, not the whole tree), and on exit restores tracked
+  files with `git checkout --` (`:386`) **and deletes untracked, non-ignored ones with
+  `git clean -fdq`** (`:393`) under those same two paths. Two of its outputs land outside that
+  cleanup and outside `git status`: `safe-transactions/` in the repo root, which is **gitignored**, so
+  it survives every rehearsal and does not show up even under `--untracked-files=all` (use
+  `--ignored`, or just look); and `steps.tsv`, `config-before`/`config-after` and `anvil.log` under
+  `$WORK`, which defaults to `/tmp/nav-rehearsal-<chainId>`.
 
-Five more (`deployer_balances.py`, `verify_step.py`, `preflight_config.py`, `bytecode_audit.py`,
-`diff_snapshots.py`) write a report only where `--json` points, and nothing otherwise.
+These tools take destinations from you — each `--json` report path, `snapshot_production.py`'s
+`--out`, `reset_deployment_records.py`'s `--tag`, `rehearse_fork.sh`'s `$REHEARSAL_DIR`. Do not
+expect one to stop you pointing it somewhere harmful: from the repo root `--out
+script/config/deployments` would write snapshots over the deployment records, and `--tag /tmp/x` puts
+the archive outside the repo. The four bullets above describe the **documented invocations**, not a
+guarantee the tools enforce.
 
-Two of `rehearse_fork.sh`'s destinations deserve naming, because neither is where you would look.
-`safe-transactions/` is in the **repo root** and is **gitignored** (`.gitignore:21`); the exit cleanup
-is scoped to `script/config` and `broadcast` only, so it survives every rehearsal *and* is invisible to
-`git status` — including `--untracked-files=all`, which does not list ignored paths. Use
-`git status --ignored`, or just look. Everything else goes to `$WORK`, which defaults to
-`/tmp/nav-rehearsal-<chainId>` (`:51`) — outside the repo unless `REHEARSAL_DIR` points back into it.
+Reversibility is a property of *when you are*, not of the tool, so check what the target holds before
+assuming an undo exists: once a step has written new addresses into `script/config/deployments/`,
+`git checkout --` discards them and `--restore <tag>` writes the previous generation back over them.
+Keep `archive/<tag>/` until the deploy has been *verified*, not merely until rollback stops being
+wanted: `verify_step.py` requires it as the step 1.1 post-condition (`:252`).
 
 - **Scope:** exactly the **24 chains** that already have a `NAVCalculatorProxy`. Chain **1101**
   (Polygon zkEVM) is excluded — its deployment record is empty, so it was never deployed.
@@ -1049,9 +1068,9 @@ alternative out, before proposing a smaller deploy.
 
 > **There is no `initialAssets` argument.** `initialize(admin_, chainlinkL2SequencerUptimeFeed_,
 > nativeTokenSymbol_)` hardcodes the ERC20Default seed to `[NATIVE_ADDRESS]`
-> (`NAVCalculator.sol:70-86`). The asset set is *not* frozen at genesis — every `registerAsset` calls
-> `addSupportedAsset` on it (`NAVCalculator.sol:141`), and
-> `excludeAssetFromDefaultAdapter`/`includeAssetInDefaultAdapter` (`:248`/`:255`) mutate it later.
+> (`NAVCalculator.sol:99-118`). The asset set is *not* frozen at genesis — every `registerAsset` calls
+> `addSupportedAsset` on it (`NAVCalculator.sol:176`), and
+> `excludeAssetFromDefaultAdapter`/`includeAssetInDefaultAdapter` (`:356`/`:363`) mutate it later.
 > Nothing needs preparing here, and `script/manage/update-erc20-default-from-chain.sh` is dead code
 > (it reads `chains/<id>.json .deployed.NAVCalculatorProxy`, a path that no longer exists, and skips
 > every chain).
@@ -1606,7 +1625,10 @@ bug entirely and must not be attributed to this step.
 
 ```bash
 # per (chain, adapter): returns [] until the owner has submitted, then the coordinate blobs.
-# `coordsOf` is the only cache view getter (AssistedCoordCache.sol:81) — there is no count getter.
+# `coordsOf` is the shared raw-coordinate getter (AssistedCoordCache.sol:110); the concrete adapters
+# add decoded views — `tokenIdsOf` (Nexus `:80`, EtherFi `:75`), `positionsOf` (StakeWise `:84`).
+# None is a dedicated count getter — you count by fetching an array and reading its length, so
+# there is no cheap way to ask "how many?" without pulling the whole set back.
 cast call $ADAPTER 'coordsOf(address)(bytes[])' $OWNER_SAFE --rpc-url $RPC
 ```
 
@@ -1847,8 +1869,10 @@ to the new proxy. The old stack keeps answering until they do; nothing needs unr
 > `preflight_config.py` reported `0 error(s) across 0 chain(s)` and exited 0, and
 > `reset_deployment_records.py --restore <tag>` with no chain arguments restored **nothing** and
 > exited 0 — the rollback failing silently at the one moment it is needed. Scope now comes from
-> `chainlib.resolve_chains`, which prefers the committed `snapshots/pre/index.json` (a file the deploy
-> cannot invalidate) and **exits 2 rather than resolving to an empty list**. Every tool prints the
+> `chainlib.resolve_chains`, which takes an explicit chain list first and otherwise uses the declared
+> `redeploy_scope.json` (a file no tool writes), cross-checking `snapshots/pre/index.json` and
+> reporting any disagreement as a `SCOPE WARNING` rather than absorbing it — and **exits 2 rather
+> than resolving to an empty list**. Every tool prints the
 > scope it resolved and where from; read that line.
 
 | symptom | cause | fix |

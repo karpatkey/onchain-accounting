@@ -134,7 +134,8 @@ and scope below rather than being restated as covering the later change.)*
 > wrong place. What is NOT rewritten is the **dated 2026-07-29 claim**, which now sits in the italic
 > note directly under the heading rather than in the heading itself. Its scope was: derived from config
 > across all 24 chains, and confirmed ON-CHAIN on the 7 configured chains (see the 1.8 set comparison
-> below, and step 0.6). This change is one adapter on one chain, so restating that date's scope as
+> below, and the pre-deploy capture in step 0.7 — NOT step 0.6, which funds the deployer). This change
+> is one adapter on one chain, so restating that date's scope as
 > though it covered today would destroy the provenance of both. What was
 > measured today
 > is narrower and is stated as such: `getMetaInstances(MorphoVaultsMeta)` on the live NAV
@@ -156,7 +157,12 @@ and scope below rather than being restated as covering the later change.)*
 > coordinate, not a raw `bytes32` marketId. Re-derived from config at this branch's head rather than
 > assumed: mainnet's `instances` sum to 53 and `instancesRaw` to 14 across the 15 enabled meta adapters.
 >
-> **Every ACTIONABLE figure in this document has been updated in place to 111 / 67** — the headline
+> **Every ACTIONABLE figure in this document has been updated in place to 111 / 67.** The list below is
+> illustrative, NOT exhaustive — measured at 2026-08-12 there are **twelve** such sites, and two
+> hand-written lists of them (this one and the step-1.8 post-condition) were both short. **To find them
+> all, grep for the FIGURE and not for a remembered phrase:** `grep -nE '\b(111|67|53|91|114)\b'` over
+> this file, then discard gas figures and dated records. A maintained list of sites is the same
+> documentary-guard shape this repo rejects everywhere else. Illustrative sites: the headline
 > totals, the summary row, the derivation table, the two independent confirmations, the disabled-adapter
 > arithmetic (now 111 + 3 = 114) and the step-1.8 post-condition. An operator is never asked to
 > mentally substitute a value: where a number is compared against a tool's output, it is the current
@@ -327,8 +333,8 @@ NAV address is invalidated by construction:
 
 | consequence | scale | done at |
 | --- | --- | --- |
-| every custom price feed is redeployed — each holds `INAVCalculator public immutable NAV` (ADR 0019) | **41**: mainnet 26, arbitrum 8, base 4, gnosis 3 | 1.5 |
-| every asset with its primary + monitor feeds is re-registered | **93** assets | 1.6 |
+| every custom price feed is redeployed — each holds `INAVCalculator public immutable NAV` (ADR 0019) | **40**: mainnet 25, arbitrum 8, base 4, gnosis 3 | 1.5 |
+| every asset with its primary + monitor feeds is re-registered | **92** assets | 1.6 |
 | every plain and meta adapter is redeployed | 12 plain + 33 meta | 1.7 |
 | every meta instance is re-registered | **111** | 1.8 |
 | each assisted adapter drags its assistant, which holds `immutable ADAPTER` | **4 pairs on 2 chains** | 2.1 |
@@ -1437,9 +1443,11 @@ touched at all by this step, not merely touched idempotently.
   in the record, and each meta adapter's `getMetaInstances()` **set equals** its configured coordinate
   set, summing to the total in the meta-instance table at the top of this document (**111**; 110 as
   reconciled 2026-07-29, +1 on 2026-08-12 for issue #296). The per-chain breakdown lives in that table only and is not repeated here, so the table
-  is where a config change is corrected — but "one place" understates it: this PR had to move the
-  derivation table, the summary row above it, and this post-condition line together. Treat those three
-  as one unit.
+  is where a config change is corrected — but "one place" understates it badly. Measured at 2026-08-12 the
+  meta-instance figure appears at **twelve** sites in this file. Do NOT work from a list — including
+  this sentence: grep for the figure itself (`grep -nE '\b(111|67|53|91|114)\b'`), discard gas values
+  and dated records, and change what remains. Two hand-written site lists in this document were both
+  short, which is why the instruction is now a derivation rather than an enumeration.
 
 > **Watch for the silent skip.** `06` does `if (deployed == address(0)) continue;` (`06:113` for
 > meta, same shape for plain), so an adapter that failed to deploy is skipped **without an error**.

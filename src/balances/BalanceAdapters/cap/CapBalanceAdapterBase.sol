@@ -201,7 +201,7 @@ abstract contract CapBalanceAdapterBase is SingleAssetBalanceAdapterBase, IPosit
         }
         // Symmetric with {SingleAssetBalanceAdapterBase.getAdapterBalances}, which guards the same case: a token
         // whose `balanceOf(address(0))` is non-zero (a burn sink) must not be reported as somebody's position.
-        // MUTATED OUT
+        if (account == address(0)) return new INAVCalculator.PositionBalance[](0);
         // Cheap leg read first: the common case is a zero balance, so bail before touching the asset registry.
         uint256 amount = _owedAmount(account);
         if (amount == 0) return new INAVCalculator.PositionBalance[](0);

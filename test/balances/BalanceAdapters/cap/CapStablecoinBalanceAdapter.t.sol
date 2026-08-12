@@ -242,8 +242,22 @@ contract CapStablecoinBalanceAdapterTest is Test {
         assertEq(adapter.getAdapterPositions(alice, address(0)).length, 0);
     }
 
-    function test_getAdapterPositions_zeroAccount_returnsEmpty() public view {
-        assertEq(adapter.getAdapterPositions(address(0), address(0)).length, 0);
+    /// @dev ⚠️ **The non-zero burn-sink balance is the whole test.** Without it this asserts nothing: with
+    ///      `balanceOf(address(0)) == 0` the `amount == 0` bail below the guard produces the same empty array, so
+    ///      the test passes whether the guard exists or not. It was written that way, and a mutation that deleted
+    ///      the guard outright shipped green past it. Staging a balance makes the guard the ONLY thing that can
+    ///      produce the empty result. cUSD really does accumulate at the zero address on mainnet, so this is the
+    ///      live shape, not a contrived one.
+    function test_getAdapterPositions_zeroAccount_returnsEmpty() public {
+        mockCUsd.setBalance(address(0), 1000e18);
+        assertEq(
+            adapter.getAdapterPositions(address(0), address(0)).length,
+            0,
+            "a burn-sink balance at address(0) must not be reported as somebody's position"
+        );
+        // And the sibling surface must agree — the guards are documented as symmetric.
+        (address[] memory a,,) = adapter.getAdapterBalances(address(0));
+        assertEq(a.length, 0, "getAdapterBalances must agree with getAdapterPositions for account zero");
     }
 
     function test_getAdapterPositions_usdcUnregistered_returnsEmpty() public {

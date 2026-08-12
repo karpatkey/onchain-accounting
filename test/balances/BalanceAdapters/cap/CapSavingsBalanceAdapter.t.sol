@@ -220,6 +220,21 @@ contract CapSavingsBalanceAdapterTest is Test {
     // getAdapterPositions
     // ============================================
 
+    /// @dev The savings leg had NO zero-account case at all, which is how a deleted `account == address(0)` guard in
+    ///      the shared base shipped green. Staging a burn-sink balance is what gives this teeth: with a zero
+    ///      balance the `amount == 0` bail below the guard returns the same empty array, so the guard would be
+    ///      unpinned on both legs. stcUSD accumulates at the zero address on mainnet like cUSD does.
+    function test_getAdapterPositions_zeroAccount_returnsEmpty() public {
+        mockStcUsd.setBalance(address(0), 1000e18);
+        assertEq(
+            adapter.getAdapterPositions(address(0), address(0)).length,
+            0,
+            "a burn-sink balance at address(0) must not be reported as somebody's position"
+        );
+        (address[] memory a,,) = adapter.getAdapterBalances(address(0));
+        assertEq(a.length, 0, "getAdapterBalances must agree with getAdapterPositions for account zero");
+    }
+
     function test_getAdapterPositions_usdcUnregistered_returnsEmpty() public {
         nav.unregisterAssetHelper(address(mockUsdc));
         mockStcUsd.setBalance(alice, 50e18);

@@ -176,15 +176,17 @@ def expected_sections(chain_id: int) -> set[str]:
     # gets trusted instead of ignored.
     out: set[str] = {"balanceAdapters"}
 
-    # The remaining sections come from config, and a section has MORE THAN ONE producing directory.
-    # Enumerated by measurement, not assumed: every `balanceAdapters` entry in the 25 committed
-    # records is declared by `balance-adapters` (12) or `meta-balance-adapters` (33), or is
-    # `ERC20Default` (24, declared nowhere); every `customPriceFeeds` entry by `custom-price-feeds`
-    # (38), except `stETH` on chain 1 which is declared nowhere either. Deriving the directory from
-    # the section name — `balanceAdapters` -> `balance-adapters` — found only the first of these and
-    # is why the miss happened, so the mapping is explicit rather than clever.
+    # `balanceAdapters` is seeded above and never consulted here, so it gets NO `producers` entry —
+    # an earlier version listed one and it was unreachable dead code, justified by seven lines of
+    # comment for a lookup that never ran. The multi-producer fact is why the section is
+    # UNCONDITIONAL rather than why it needs a table: measured across the 25 committed records, its
+    # entries come from `balance-adapters` (12), `meta-balance-adapters` (33), and `ERC20Default`
+    # (24, declared by no config), so no config-derived rule could ever cover it.
+    #
+    # `customPriceFeeds` IS config-derived, and its own count is 38 declared by `custom-price-feeds`
+    # plus `stETH` on chain 1 declared nowhere — so this table is a lower bound on that section too,
+    # and the archive is what covers the remainder.
     producers = {
-        "balanceAdapters": ("balance-adapters", "meta-balance-adapters"),
         "customPriceFeeds": ("custom-price-feeds",),
     }
     for sec in rd.CLEAR_SECTIONS:
@@ -402,8 +404,11 @@ def step_record_cleared(k: Chk, rec: dict, exp: dict, url, base, tag) -> None:
     #
     # Deliberately NOT "exempt the assistants off chain 1": chain 100 carries
     # StakeWiseV3ExitQueueAssistant, so that rule would blind this check to a real deletion on
-    # gnosis — a hole of exactly the kind it exists to catch. Deriving from the archive removes the
-    # class instead of the instance: any future chain-specific key is handled with no edit here.
+    # gnosis — a hole of exactly the kind it exists to catch. Deriving from CONFIG removes the class
+    # instead of the instance. NOTE the limit, because an earlier version of this comment claimed
+    # the opposite: a future chain-specific `*Assistant` key needs an `ASSISTED_PAIRS` entry (:72)
+    # or it silently expects nothing, and a future chain-specific key NOT named `*Assistant` lands
+    # in the universal set and goes red fleet-wide. Neither is handled "with no edit here".
     for key in rd.CLEAR_TOP:
         if key in rec:
             k.require(not c.is_address(rec[key]),
@@ -1124,7 +1129,15 @@ def _self_test() -> int:
     # arms are the regression guards for the config-derived rule that replaced it. Chain 1 is used
     # because its config enables all three assisted adapters, so config expects the key regardless
     # of what any archive says.
-    run(dict(cleared), {key: ADDR for key in UNIVERSAL},
+    # A genuinely FOREIGN archive: chain 10's adapter set (no assistants, meta-only) standing in
+    # for chain 1's. An earlier version passed `{key: ADDR for key in UNIVERSAL}`, which is
+    # byte-identical to `arch_plain` — the `| {"NAVCalculatorProxy": ADDR}` merge is a NO-OP because
+    # UNIVERSAL already contains that key — so this arm duplicated HOLE 7 and modelled no foreign
+    # archive at all while reporting itself green.
+    foreign_arch = dict(arch_plain) | {"balanceAdapters": {
+        "ERC20Default": ADDR, "AaveV3InstancesMeta": ADDR, "CompoundV3CometsMeta": ADDR}}
+    assert foreign_arch != arch_plain, "foreign archive fixture must differ from arch_plain"
+    run(dict(cleared), foreign_arch,
         "HOLE 6: a wrong-CHAIN archive can no longer excuse a deletion", must_fail=True,
         expect_in="config enables the adapter that deploys it", chain=ALL_ASSIST)
     run(dict(cleared), dict(arch_plain),

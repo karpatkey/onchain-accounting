@@ -13,19 +13,14 @@ so re-running them against a populated `deployments/<chainId>.json` is a **silen
 "succeeds", logs "Already deployed", writes nothing, and `06_Configure` then registers the OLD
 contracts on the NEW proxy. Nothing fails; the deploy is simply wrong.
 
-WHY WRITE "" RATHER THAN DELETE THE KEY
----------------------------------------
-The keys are cleared to `""` and kept, not deleted. Readers differ on whether they can tell an absent
-key from a blanked one, so do not delete.
+CLEARING THE KEYS
+-----------------
+Clear the values to `""`. Do not delete the keys.
 
-Five successive versions of this paragraph tried to name WHICH reader needs the key, and all five
-were wrong — the base rate on that sentence is 0 for 5. It is not written a sixth time. What is
-checkable lives elsewhere:
+`vm.writeJson` creates a missing key unaided, so a brand-new adapter needs no seeded key — pinned by
+`script/test/WriteJsonCreatesMissingKeys.t.sol`.
 
-  * `vm.writeJson` creates a missing key unaided — pinned by
-    `script/test/WriteJsonCreatesMissingKeys.t.sol`, which also pins that key ORDER survives a write.
-    It is NOT a reason to keep keys, and it means a brand-new adapter needs no seeded key.
-  * Gate 1.1's absence check does not cover every key it iterates — measured, tracked in **#299**.
+Gate 1.1's absence check does not cover every key it iterates — tracked in #299.
 
 WHAT IS CLEARED, AND WHAT IS NOT
 --------------------------------
@@ -101,8 +96,7 @@ def plan_for(chain_id: int) -> tuple[dict, list[str]]:
     changes: list[str] = []
     for k in CLEAR_TOP:
         if k not in out and k in CREATE_IF_ABSENT:
-            # Created blank rather than left absent. See the module docstring; the reasons are not
-            # re-derived here.
+            # Created blank rather than left absent.
             changes.append(f"{k}: <absent> -> \"\" (created; verify_step fails on an absent key)")
             out[k] = ""
         elif k in out and out[k] not in ("", None):

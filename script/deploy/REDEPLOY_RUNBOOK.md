@@ -998,19 +998,12 @@ python3 script/deploy/preflight/reset_deployment_records.py --apply --tag pre-re
 Values are set to `""` and the keys kept, not deleted.
 
 > **Expect ABSENT noise from gate 1.1 here.** Its absence check does not cover every key it iterates —
-> measured, tracked in **#299**, and deliberately not fixed in the docs PR that found it.
+> tracked in **#299**, and deliberately not fixed in the docs PR that found it.
 >
-> Separately: `vm.writeJson` creates a missing key unaided, so a brand-new adapter needs **no** seeded
-> key. Pinned by `script/test/WriteJsonCreatesMissingKeys.t.sol`, which also pins that key order
-> survives a write.
+> `vm.writeJson` creates a missing key unaided, so a brand-new adapter needs **no** seeded key. Pinned
+> by `script/test/WriteJsonCreatesMissingKeys.t.sol`.
 
-Two things this is **not** about, both of which this runbook has previously claimed:
-`08_DeployAssetKindRegistry` needs the **value** cleared so it takes the deployment branch — it reads
-through `readDeployedAddress` and cannot see presence at all; and the **write-back** never needed the
-key, because `writeAdapterAddress` calls `vm.writeJson` directly and that creates a missing key
-unaided. A brand-new adapter needs no seeded key. **That behaviour is pinned by
-`script/test/WriteJsonCreatesMissingKeys.t.sol`** — if a forge upgrade ever restores the old
-behaviour, the test fails rather than this paragraph quietly becoming wrong again. The pre-clear record is archived to `preflight/archive/pre-redeploy/<CID>.json` and is
+The pre-clear record is archived to `preflight/archive/pre-redeploy/<CID>.json` and is
 the "old addresses" input for the before/after audits.
 
 - **Precondition:** `git status` clean; snapshot 0.7 captured.

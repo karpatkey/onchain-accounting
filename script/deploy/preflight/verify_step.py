@@ -227,20 +227,9 @@ class Chk:
 
 def step_record_cleared(k: Chk, rec: dict, exp: dict, url, base, tag) -> None:
     """The record must be cleared, the bridge must NOT be, and a rollback must exist."""
-    # The loop below does a literal `key not in rec`, so a record whose keys were deleted rather
-    # than blanked reads as cleared and slips past. Absence must fail, not pass.
+    # Absence must fail, not pass: the loop below does a literal `key not in rec`.
     #
-    # This check does NOT cover every key it iterates — measured, tracked in #299.
-    #
-    # NOT `08_DeployAssetKindRegistry`, and not the write-back — two claims this comment has carried
-    # and both are category errors:
-    #   * 08 branches on `readDeployedAddress`, which funnels through `_readAddrOrZero` and returns
-    #     address(0) for missing, empty AND placeholder alike. It cannot distinguish absent from
-    #     blank, so it needs the VALUE cleared, never the key present.
-    #   * `writeAdapterAddress` calls `vm.writeJson` directly and never consults `_readAddrOrZero`,
-    #     which is a read helper. `vm.writeJson` creates a missing key unaided — pinned by
-    #     script/test/WriteJsonCreatesMissingKeys.t.sol, so a forge upgrade that changed it fails
-    #     there instead of silently making this comment wrong. The write-back was never at risk.
+    # This check does not cover every key it iterates — tracked in #299.
     for key in rd.CLEAR_TOP:
         if key not in rec:
             k.fail.append(f"{key} is ABSENT from the record, not blanked. Absent and blank differ "

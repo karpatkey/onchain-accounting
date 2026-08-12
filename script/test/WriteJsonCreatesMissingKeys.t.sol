@@ -12,12 +12,10 @@ import {Test} from "forge-std/Test.sol";
 ///      Four places in this repo used to assert the opposite — that `ConfigReader.writeAdapterAddress`
 ///      needs the key to pre-exist, and therefore that a new adapter must have a blank key seeded into
 ///      `script/config/deployments/<chainId>.json` before `04` can record it. That claim was never
-///      tested. It was written up authoritatively, believed on provenance, and inherited into a PR
-///      (#295) that seeded two blank keys and, to stop the `PositionLabelsProbeCoverage` tripwire
-///      reading a reservation as a registration, permanently downgraded that tripwire from
-///      key-presence to address-presence — giving up the only guard that catches a new non-meta
-///      adapter shipping without a `positionLabels` decision, in exchange for a precondition that does
-///      not exist.
+///      tested. It was written up authoritatively, believed on provenance, and inherited into PR #295,
+///      which PROPOSED seeding two blank keys and relaxing the `PositionLabelsProbeCoverage` tripwire
+///      from key-presence to address-presence to accommodate them. #295 was CLOSED, not merged — that
+///      relaxation never shipped.
 ///
 ///      It was measured false on 2026-08-12 against the pinned forge (see FOUNDRY_VERSION in
 ///      .github/workflows/foundry.yml). The corrections that followed are prose, and prose about
@@ -28,8 +26,14 @@ import {Test} from "forge-std/Test.sol";
 ///      Referenced from: `script/deploy/preflight/reset_deployment_records.py`,
 ///      `script/deploy/preflight/verify_step.py`, `script/deploy/REDEPLOY_RUNBOOK.md` §1.1.
 ///
+///      SCOPE, deliberately: this pins the CHEATCODE, using the same call shape as
+///      `ConfigReader.writeAdapterAddress` rather than calling it. Routing through that function would
+///      compute its path from `chainId` and write the real deployment record — the one place deployed
+///      addresses live. The boundary is intentional: if `writeAdapterAddress` ever stops being a thin
+///      wrapper over `vm.writeJson`, this test keeps passing while the documents go wrong.
+///
 ///      If this test fails after a forge upgrade, do NOT delete it and do NOT re-seed keys
-///      defensively: the three documents above are now wrong and must be corrected together with it.
+///      defensively: the documents above are now wrong and must be corrected together with it.
 contract WriteJsonCreatesMissingKeysTest is Test {
     /// @dev Written under `out/` — a build directory, gitignored and already `read-write` in
     ///      foundry.toml — so the test never touches a tracked file and leaves no untracked debris.
@@ -103,18 +107,16 @@ contract WriteJsonCreatesMissingKeysTest is Test {
         assertEq(vm.parseJsonAddress(json, pointer), NESTED_ADDR, "created key holds the wrong value");
     }
 
-    /// @notice KEY ORDER IS LOAD-BEARING AND WAS NOT PINNED. The docstring in
-    ///         `reset_deployment_records.py` says "Key order is preserved, so the diff stays
-    ///         readable", and the deep copy at `:123` relies on it. Without this, a forge upgrade that
-    ///         began REORDERING keys on write would leave every assertion above passing while that
-    ///         prose became false and a 24-chain deployment-record diff became unreviewable.
-    /// @dev    That is the same silent-rot shape this whole file exists to prevent, reproduced inside
-    ///         the file. Recorded rather than quietly fixed: a guard written by whoever understands the
-    ///         hazard tends to encode their model of it, including the incomplete part.
+    /// @notice A creating write must not REORDER the keys already in the file. A deployment record is
+    ///         reviewed as a diff across 24 chains, so reordering makes that diff unreadable even when
+    ///         every value in it is correct.
+    /// @dev    Asserts the RELATIVE order of the pre-existing keys in the raw file. Not a full ordering
+    ///         model; enough to fail if forge starts reordering.
     ///
-    ///         Asserted cheaply — the RELATIVE ORDER of the pre-existing keys in the raw file, and that
-    ///         the first key is still first. Not a full ordering model; enough to fail if forge starts
-    ///         reordering.
+    ///         An earlier version of this comment justified the assertion by citing
+    ///         `reset_deployment_records.py`'s deep copy. That was wrong twice: the sentence it quoted
+    ///         no longer exists, and that copy is `json.loads(json.dumps(rec))`, whose ordering comes
+    ///         from Python dicts and has nothing to do with this cheatcode.
     function test_creatingAKeyPreservesTheOrderOfExistingKeys() public {
         string memory f = _scratch("order");
         vm.writeJson(vm.toString(NEW_ADDR), f, ".balanceAdapters.BrandNewAdapterThatDoesNotExist");

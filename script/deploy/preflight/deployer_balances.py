@@ -533,6 +533,10 @@ def one(chain_id: int, gas_units: dict) -> dict:
                            f"under, seen on the {axis} probe ({n}-byte probe {now} wei vs {rule}, "
                            f"at block {probe_block}), so the omitted L1 fee can no longer be assumed "
                            f"immaterial here — see #287")
+        # G1: THE TWO NARROW HANDLERS BELOW ARE SAFE ONLY BECAUSE THE TOTAL ONE CLOSES THIS SAME `try`.
+        # `except Exception` at the end catches anything that is neither KeyError nor ValueError, and it
+        # fails the row closed — so narrowing here cannot leak an unhandled shape past the guard. Remove
+        # or narrow that last handler and these two become a fail-open.
         except KeyError:
             # CONFIG error, not a network one, and it must not read as a retryable blip. Widening the
             # predicate above (so a missing baseline could no longer skip the probe) routed this case into
@@ -598,6 +602,9 @@ def one(chain_id: int, gas_units: dict) -> dict:
             else:
                 try:
                     found = int(raw, 16)
+                # G2: `ValueError` alone is COMPLETE here only because the `isinstance(raw, str)` check
+                # above has already rejected every non-string, so `int()` cannot raise TypeError at this
+                # point. Delete that check and this handler stops covering the reachable failures.
                 except ValueError:
                     probe_failed = f"oracle returned unparseable data ({raw[:32]!r})"
         if found:

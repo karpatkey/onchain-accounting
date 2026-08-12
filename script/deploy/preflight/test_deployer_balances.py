@@ -489,6 +489,67 @@ class TestImportTimeInvariants(unittest.TestCase):
         # for the wrong reason.
         self._exec_with("GAS_PRICE_OVERRIDE_WEI = {", "GAS_PRICE_OVERRIDE_WEI = {")
 
+    def test_no_input_combination_can_certify_a_collapsed_estimate(self):
+        # THE GOVERNING INVARIANT, STATED ONCE AND EXECUTABLY. Every previous guard here was written
+        # per-axis after a specific fail-open was found: a floor on the price (pass 0), then a floor on
+        # the gas units (pass 2, after a mis-keyed --gas-units file printed "all 24 chains priced and
+        # funded" on an empty deployer). Per-axis guards are why this kept recurring — each one closes
+        # the hole that was just found and says nothing about the next one.
+        #
+        # This asserts the property those guards exist to produce, over a grid spanning every
+        # degenerate combination: an OK verdict REQUIRES a `need` at least as large as the smallest
+        # estimate the floors are supposed to permit. It therefore fails for ANY future collapse route
+        # — a third multiplicand, a headroom of 0, a new pricing branch — not just the two known ones.
+        floor = db.GAS_UNITS_IMPLAUSIBLE * db.GAS_PRICE_IMPLAUSIBLE_WEI * db.FEE_VOLATILITY_HEADROOM
+        checked = 0
+        for gas in (0, 1, db.GAS_UNITS_IMPLAUSIBLE - 1, db.GAS_UNITS_IMPLAUSIBLE, GAS):
+            for quoted in (0, 1, db.GAS_PRICE_IMPLAUSIBLE_WEI - 1, db.GAS_PRICE_IMPLAUSIBLE_WEI,
+                           GOOD_PRICE):
+                for bal in (0, 1, 10**24):
+                    for cid in (PRICED, OVERRIDDEN, NEITHER, UNMODELLED, ZERO_FEE):
+                        row, _ = run_one(cid, balance=bal, quoted=quoted, gas=gas)
+                        checked += 1
+                        if row.get("sufficient") is True:
+                            self.assertGreaterEqual(
+                                row["needWei"], floor,
+                                f"chain {cid} certified OK on need={row['needWei']} from "
+                                f"gas={gas} quoted={quoted} bal={bal} — below the {floor} floor the "
+                                f"guards are supposed to enforce, i.e. a tautological pass")
+        self.assertGreater(checked, 200, "the grid collapsed; this test would pass vacuously")
+
+    def test_l1_classification_covers_the_whole_deploy_scope(self):
+        # SILENCE IS NOT AN ANSWER. Before this, a chain absent from both L1 sets was implicitly "no
+        # fee", and that implicit default is precisely what let hemi print a clean OK at ~1/3 of its
+        # real cost. The four sets must now COVER the deploy scope, so adding a chain to
+        # redeploy_scope.json without classifying it fails here instead of on deploy day.
+        #
+        # Deliberately asserted against the scope file rather than a hard-coded list: the scope is the
+        # thing that grows, and a check that does not read it would go stale the first time it does.
+        ids, _src, _ = c.redeploy_scope()
+        scope = set(ids)
+        classified = (db.L1_FEE_OMITTED_PRICED | db.L1_FEE_UNMODELLED
+                      | db.L1_FEE_NONE_VERIFIED | db.L1_FEE_UNVERIFIED)
+        self.assertEqual(
+            sorted(scope - classified), [],
+            "chains in the deploy scope with no L1-fee classification — decide: priced with a "
+            "measured baseline, failed closed, verified fee-free, or explicitly unverified")
+
+    def test_l1_classification_has_no_phantom_chains(self):
+        # The other direction: a classification for a chain that is not deployed is dead config, and
+        # dead config is how a stale entry outlives the reason it was added.
+        ids, _src, _ = c.redeploy_scope()
+        classified = (db.L1_FEE_OMITTED_PRICED | db.L1_FEE_UNMODELLED
+                      | db.L1_FEE_NONE_VERIFIED | db.L1_FEE_UNVERIFIED)
+        self.assertEqual(sorted(classified - set(ids)), [],
+                         "chains classified for the L1-fee axis but not in the deploy scope")
+
+    def test_unverified_chains_are_not_claimed_as_fee_free(self):
+        # The distinction the two new sets exist to preserve. An unverified chain must never be
+        # silently folded into the verified-fee-free set — that collapse is the hemi inference
+        # ("it doesn't look like a rollup") wearing a set name.
+        self.assertEqual(db.L1_FEE_NONE_VERIFIED & db.L1_FEE_UNVERIFIED, set())
+        self.assertTrue(db.L1_FEE_UNVERIFIED, "an empty unverified set means someone guessed")
+
     def test_hemi_is_failed_closed(self):
         # Regression pin. hemi (43111) was in NEITHER L1 collection, so it received no regime probe, no
         # headroom floor and shortfallExcludesL1=False, and printed a clean OK while ~3x under-funded:

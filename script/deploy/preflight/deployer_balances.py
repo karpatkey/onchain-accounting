@@ -256,6 +256,43 @@ L1_FEE_UNMODELLED = {534352, 43111}
 # So the row now carries `shortfallExcludesL1`, and the top-up line says LOWER BOUND / SEND MORE rather
 # than relying on a guard elsewhere to keep the wrong number off the screen.
 L1_FEE_OMITTED_PRICED = {10, 130, 204, 480, 5000, 8453, 42220, 57073}
+
+# THE PARTITION IS NOW TOTAL, AND THAT IS THE POINT. The two sets above answer "does this chain charge
+# an unmodelled L1 fee?" for the chains someone remembered to classify, and SILENCE meant "no" — which
+# is how hemi printed a clean OK at ~1/3 of its real cost while sitting in neither. Silence is not an
+# answer, so the remaining chains are classified explicitly into one of the two sets below and a test
+# asserts the four sets cover the deploy scope exactly, with no overlaps.
+#
+# The distinction between these two is the whole value: one records a MEASUREMENT, the other records
+# the ABSENCE of one. Collapsing them back into "not listed anywhere" is what this replaces.
+#
+# Measured to charge no such fee — each verified on-chain 2026-08-12, not inferred from the chain's
+# marketing or its rollup family:
+#   42161 arbitrum — no GasPriceOracle predeploy at all (codesize 0). Nitro charges its L1 component by
+#                    INFLATING GAS UNITS, so `gas x price` already contains it; there is no additive
+#                    term to omit. This is a different fee model, not an absent fee.
+#   196   xlayer   — HAS the predeploy (codesize 2,059) and returns 0 for the 64,887-byte payload,
+#                    exactly like celo. Present-but-zero is a real answer, and a different one from
+#                    absent-oracle; both belong here, for different reasons.
+#   1     mainnet  — no predeploy (codesize 0). It IS the L1; there is no DA fee to post.
+#   100   gnosis   — no predeploy (codesize 0). Standalone L1, not a rollup.
+#   143   monad    — no predeploy (codesize 0).
+#   16661 0g       — no predeploy (codesize 0).
+L1_FEE_NONE_VERIFIED = {42161, 196, 1, 100, 143, 16661}
+
+# NOT VERIFIED, AND NOT THE SAME AS VERIFIED-ZERO. These endpoints were unreachable from the
+# environment this classification was made in, so nothing was read from them. They are recorded as
+# UNVERIFIED rather than quietly defaulted into "no fee", because defaulting is precisely the failure
+# that produced hemi. They still PRICE today — this set is a documented gap, not a fail-closed — and
+# the runtime discovery probe in `one()` covers them the moment their RPC answers.
+#   9745  plasma     999   hyperevm    59144 linea
+#   56    bsc        137   polygon     146   sonic
+#   43114 avalanche  80094 berachain
+# Several of these are obviously not rollups (bsc, polygon, avalanche), and it would be easy to write
+# them into the verified set on that reasoning. That is exactly the inference that produced hemi — a
+# chain classified by what it looked like rather than by what it returned — so they stay here until
+# something reads them.
+L1_FEE_UNVERIFIED = {9745, 999, 59144, 56, 137, 146, 43114, 80094}
 L1_OMITTED_MIN_HEADROOM_WEI = 10**15  # 1e-3 native
 
 # FEE-SIDE CHECK. The headroom guard above covers a falling BALANCE. This covers a rising FEE — the other
@@ -384,13 +421,19 @@ def _probe_payload(n: int) -> str:
 _missing_baseline = (L1_FEE_OMITTED_PRICED - set(L1_REGIME_BASELINE_WEI)) | (
     L1_FEE_OMITTED_PRICED - set(L1_REGIME_BASELINE_SMALL_WEI))
 _dead_baseline = (set(L1_REGIME_BASELINE_WEI) | set(L1_REGIME_BASELINE_SMALL_WEI)) - L1_FEE_OMITTED_PRICED
-_both = L1_FEE_OMITTED_PRICED & L1_FEE_UNMODELLED
-if _missing_baseline or _dead_baseline or _both:
+# DISJOINTNESS ACROSS ALL FOUR SETS, not just the original two. A chain in two of them is a
+# contradiction wherever it appears, and pairwise-checking only the first pair is how a third set
+# silently becomes a place to hide a second classification.
+_L1_SETS = (("priced-with-omission", L1_FEE_OMITTED_PRICED), ("failed-closed", L1_FEE_UNMODELLED),
+            ("verified-no-fee", L1_FEE_NONE_VERIFIED), ("unverified", L1_FEE_UNVERIFIED))
+_overlaps = {f"{a} & {b}": sorted(sa & sb)
+             for i, (a, sa) in enumerate(_L1_SETS) for b, sb in _L1_SETS[i + 1:] if sa & sb}
+if _missing_baseline or _dead_baseline or _overlaps:
     raise ValueError(
         "L1 fee collections are inconsistent — fix before running a deploy gate. "
         f"priced-with-omission but no regime baseline (probe would fail closed): {sorted(_missing_baseline)}; "
         f"baseline with no chain to apply it to (dead entry): {sorted(_dead_baseline)}; "
-        f"both priced-with-omission AND failed-closed (contradictory): {sorted(_both)}")
+        f"a chain classified two ways at once (contradictory): {_overlaps}")
 
 # Multiplier applied to `gas x gasPrice`, which is the WHOLE of what this script estimates — a deploy
 # spans many blocks and the execution price moves under it.
@@ -404,6 +447,23 @@ if _missing_baseline or _dead_baseline or _both:
 # headroom floor (1e-3 native), and NEITHER of those two operands passes through this multiplier. It
 # would also mislead #287, which has to ADD the term rather than assume it is already padded.
 FEE_VOLATILITY_HEADROOM = 2
+
+# THE FILE'S OWN RULE, APPLIED TO THE FILE'S OWN CONSTANTS. Every guard here is structural rather than
+# documentary — except that the constants the guards are built from were themselves unguarded. Each of
+# the three below is a multiplicand or a floor in the verdict path, and setting any of them to 0 (a
+# plausible mis-edit, and exactly the kind of change that looks harmless in a diff) re-creates the
+# tautological pass this whole third state exists to prevent, with NOTHING firing:
+#   * FEE_VOLATILITY_HEADROOM = 0 -> `need` is 0 -> `bal >= need` for every balance including zero
+#   * GAS_UNITS_IMPLAUSIBLE  = 0 -> the gas floor stops rejecting a zero-gas estimate
+#   * GAS_PRICE_IMPLAUSIBLE_WEI = 0 -> the price floor stops rejecting a zero quote, AND the
+#     _bad_overrides check above silently becomes vacuous, since every pin is then >= 0
+# The third is the sharpest: it would disarm an existing invariant without touching it.
+#
+# Found by an extractor rather than by reading, which is the point — three review passes read past it.
+# `raise`, not `assert`, for the same reason as every other invariant here: `python -O` strips asserts
+# and CI runs this suite under -O precisely to keep that honest.
+# The check itself lives below GAS_UNITS_IMPLAUSIBLE (defined later, at the gas-estimate section)
+# so all three are asserted in ONE place rather than split across the file — search `_dead_floors`.
 
 WORKAROUNDS = {
     100: "near-zero base fee: the node quote is the BASE fee, not the inclusion price (median landed "
@@ -477,6 +537,17 @@ def scope(chain_id: int) -> dict:
 # reduced scope is not failed closed — this catches nonsense, not thrift.
 GAS_UNITS_IMPLAUSIBLE = 1_000_000
 
+# See the note at FEE_VOLATILITY_HEADROOM. All three verdict-path floors/multiplicands asserted here,
+# in one place, because a 0 in any of them re-creates the tautological pass with nothing else firing.
+_dead_floors = {n: v for n, v in (("FEE_VOLATILITY_HEADROOM", FEE_VOLATILITY_HEADROOM),
+                                  ("GAS_PRICE_IMPLAUSIBLE_WEI", GAS_PRICE_IMPLAUSIBLE_WEI),
+                                  ("GAS_UNITS_IMPLAUSIBLE", GAS_UNITS_IMPLAUSIBLE))
+                if v < 1}
+if _dead_floors:
+    raise ValueError(
+        "these constants are multiplicands or floors in the verdict path and must be >= 1; at 0 they "
+        f"collapse `need` and make `balance >= need` a tautology: {_dead_floors}")
+
 
 def gas_estimate(s: dict, override: dict | None) -> int:
     if override:
@@ -545,7 +616,7 @@ def one(chain_id: int, gas_units: dict) -> dict:
         #
         # NO PLAUSIBILITY TERM HERE, AND THAT IS A COUPLING WORTH NAMING. An earlier version read
         # `quoted >= GAS_PRICE_IMPLAUSIBLE_WEI and quoted > override`, whose first conjunct is DEAD:
-        # the import-time `_bad_overrides` check (:114-121) forces every pin >= that floor, so
+        # the import-time `_bad_overrides` check (:131-138) forces every pin >= that floor, so
         # `quoted > override` already implies `quoted >= GAS_PRICE_IMPLAUSIBLE_WEI`. Worse, the comment
         # justified it as mattering "for gnosis specifically" — false, since gnosis fails `quoted >
         # override` first and never reaches it — and the test covering it had to patch in a pin BELOW

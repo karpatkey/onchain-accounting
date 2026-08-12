@@ -216,7 +216,9 @@ L1_OMITTED_MIN_HEADROOM_WEI = 10**15  # 1e-3 native
 # axis, which an earlier revision claimed was enforced when it was not.
 #
 # It is a REGIME PROBE, NOT A FEE MODEL: `getL1Fee` calls on fixed reference payloads per chain, compared
-# against baselines measured 2026-08-11. It does not price the deploy and does not need the payload split —
+# against baselines measured 2026-08-12 — the date matters, because the 2026-08-11 baselines were taken with
+# the compressible payload described above and every one of the 16 was replaced when the payload changed.
+# It does not price the deploy and does not need the payload split —
 # it only answers "are fee conditions still the ones the margin table was measured under?" Modelling the
 # fee properly is still #287.
 #
@@ -494,7 +496,7 @@ def one(chain_id: int, gas_units: dict) -> dict:
         priceable = False
         l1_note = (f"headroom (balance - need) has fallen below {L1_OMITTED_MIN_HEADROOM_WEI / 1e18:g} "
                    f"native, so the L1 data-availability fee this script omits can no longer be assumed "
-                   f"immaterial here — the 2026-08-11 measurement no longer covers this row; see #287")
+                   f"immaterial here — the 2026-08-12 measurement no longer covers this row; see #287")
     if priceable and chain_id in L1_FEE_UNMODELLED:
         priceable = False
         l1_note = ("its cost is dominated by an L1 data-availability fee this script does not model, so "

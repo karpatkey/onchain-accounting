@@ -361,6 +361,43 @@ class TestExitCode(unittest.TestCase):
         out, _ = run_main([row])
         self.assertIn("PINNED", out)
 
+    def test_pin_below_a_plausible_quote_fails_closed(self):
+        # The pin replaces the quote unconditionally, so a pin that has gone stale in the UNSAFE
+        # direction (real price now above it) would size from the stale constant and print an
+        # authoritative OK off an under-estimate. It must go UNPRICEABLE instead.
+        pinned = db.GAS_PRICE_OVERRIDE_WEI[OVERRIDDEN]
+        row, _ = run_one(OVERRIDDEN, balance=10**24, quoted=pinned + 1)
+        self.assertIsNone(row["sufficient"], "a pin that no longer bounds the price is not a pass")
+        self.assertFalse(row["priceable"])
+        self.assertIn("remeasure", row["priceNote"])
+        out, code = run_main([row])
+        self.assertEqual(code, 1, "a stale pin must not exit 0")
+        self.assertIn("UNPRICEABLE", out)
+        # Must name the pin as the cause, not send the reader to the node like the generic message does.
+        self.assertIn("GAS_PRICE_OVERRIDE_WEI", out)
+
+    def test_pin_at_or_above_the_quote_still_prices(self):
+        # The boundary is `quoted > override`, not `>=`: a quote that merely reaches the pin is still
+        # bounded by it. Guards the guard against failing every override row closed.
+        pinned = db.GAS_PRICE_OVERRIDE_WEI[OVERRIDDEN]
+        for quoted in (pinned - 1, pinned):
+            with self.subTest(quoted=quoted):
+                row, _ = run_one(OVERRIDDEN, balance=10**24, quoted=quoted)
+                self.assertTrue(row["priceable"])
+                self.assertIsNone(row["priceNote"])
+                self.assertEqual(row["gasPriceWei"], pinned)
+
+    def test_implausible_quote_above_the_pin_does_not_trip_the_guard(self):
+        # gnosis's real case: its quote sits FAR below GAS_PRICE_IMPLAUSIBLE_WEI, and an unusable quote
+        # is not evidence about the pin in either direction. Only a plausible quote can condemn a pin.
+        # Constructed rather than assumed: patch the pin under the floor so `quoted > override` holds
+        # while `quoted` is still implausible — the one combination that separates the two conditions.
+        pinned = db.GAS_PRICE_IMPLAUSIBLE_WEI - 100
+        with mock.patch.object(db, "GAS_PRICE_OVERRIDE_WEI", {OVERRIDDEN: pinned}):
+            row, _ = run_one(OVERRIDDEN, balance=10**24, quoted=pinned + 1)
+        self.assertTrue(row["priceable"], "an implausible quote must not condemn the pin")
+        self.assertIsNone(row["priceNote"])
+
 
 class TestImportTimeInvariants(unittest.TestCase):
     """I4 — structural, and not stripped by `python -O`."""

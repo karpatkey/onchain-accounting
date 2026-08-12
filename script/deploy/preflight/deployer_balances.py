@@ -346,9 +346,17 @@ if _missing_baseline or _dead_baseline or _both:
         f"baseline with no chain to apply it to (dead entry): {sorted(_dead_baseline)}; "
         f"both priced-with-omission AND failed-closed (contradictory): {sorted(_both)}")
 
-# Multiplier applied to the FULL cost estimate (execution + any L1 data fee), not to one term. A
-# deploy spans many blocks and every fee input can move under it, including — especially — the L1 base
-# fee, which tracks Ethereum.
+# Multiplier applied to `gas x gasPrice`, which is the WHOLE of what this script estimates — a deploy
+# spans many blocks and the execution price moves under it.
+#
+# IT DOES NOT COVER THE L1 DATA-AVAILABILITY FEE, and an earlier version of this comment claimed it did
+# ("the FULL cost estimate (execution + any L1 data fee)"). That was false in a load-bearing way: `need`
+# is `gas * price * FEE_VOLATILITY_HEADROOM` and the L1 term is not one of its inputs, so there is no
+# such term here to multiply. Reading it as covered would corrupt two arguments that depend on the
+# opposite: the ~38x residual sizing at L1_OMITTED_MIN_HEADROOM_WEI and the 38x-to-100x window in the
+# retraction at L1_REGIME_MAX_RISE both weigh the omitted fee (~2.7e-5 native) against the absolute
+# headroom floor (1e-3 native), and NEITHER of those two operands passes through this multiplier. It
+# would also mislead #287, which has to ADD the term rather than assume it is already padded.
 FEE_VOLATILITY_HEADROOM = 2
 
 WORKAROUNDS = {
@@ -431,8 +439,38 @@ def one(chain_id: int, gas_units: dict) -> dict:
         row["error"] = str(e)
         return row
     override = GAS_PRICE_OVERRIDE_WEI.get(chain_id)
+    price_note = None
     if override is not None:
         price, price_source, priceable = override, "override", True
+        # A PIN CAN GO STALE, AND STALE IN THE UNSAFE DIRECTION IS SILENT. The override replaces the
+        # quote unconditionally, so if the real price rises past the pin this row keeps sizing at the pin
+        # and prints an authoritative OK from an under-estimate. That is the same fail-open shape as
+        # pricing from an implausibly low quote — which is the defect the UNPRICEABLE third state exists
+        # to prevent — except nothing in the output would show it.
+        #
+        # The trigger is A PLAUSIBLE QUOTE ABOVE THE PIN, and it fails the row closed rather than
+        # adopting either number. Taking the higher of the two (`max(pin, quoted)`) was REJECTED: plasma's
+        # quote is node-side PADDING, measured at 8_000_318 wei against a median landed price of 9 wei, so
+        # max() would size a deploy from a number this file has already measured as meaningless and would
+        # reintroduce precisely the node-dependence the pin was created to remove. A pin that no longer
+        # bounds the price has one correct response — remeasure it — so the row demands that.
+        #
+        # THE TWO MARGINS ARE ASYMMETRIC, and only one of them is comfortable:
+        #   gnosis (100)  — quote 95 wei against a 2 gwei pin (measured 2026-08-12), i.e. the pin is ~2e7x
+        #     the quote. This cannot trip without a genuine regime change, and if it trips the pin IS
+        #     stale, because gnosis's quote is an honest lower bound (baseFee + suggested tip).
+        #   plasma (9745) — quote 8_000_318 wei against a 10_000_000 wei pin: only 1.25x. A modest change
+        #     in the node's padding trips this. Such a trip is a FALSE alarm about plasma's real cost
+        #     (trivial, ~0.00028 XPL) but it is a fail-CLOSED one: it asks for a remeasurement instead of
+        #     quietly sizing from a constant that no longer covers the quote.
+        # The plausibility gate matters for gnosis specifically: its quote sits far BELOW
+        # GAS_PRICE_IMPLAUSIBLE_WEI, and an unusable quote is not evidence about the pin either way.
+        if quoted >= GAS_PRICE_IMPLAUSIBLE_WEI and quoted > override:
+            priceable = False
+            price_note = (f"the pinned gas price ({override} wei) is BELOW the node's plausible quote "
+                          f"({quoted} wei), so the pin no longer bounds the price and sizing from it "
+                          f"would UNDER-estimate — remeasure and re-pin GAS_PRICE_OVERRIDE_WEI[{chain_id}] "
+                          f"rather than adopting either number")
     else:
         price, price_source = quoted, "node"
         priceable = quoted >= GAS_PRICE_IMPLAUSIBLE_WEI
@@ -502,7 +540,7 @@ def one(chain_id: int, gas_units: dict) -> dict:
         l1_note = ("its cost is dominated by an L1 data-availability fee this script does not model, so "
                    "an execution-only figure is a LOWER BOUND, not an estimate — see issue #287")
 
-    row.update(quotedGasPriceWei=quoted, priceSource=price_source, l1Note=l1_note,
+    row.update(quotedGasPriceWei=quoted, priceSource=price_source, l1Note=l1_note, priceNote=price_note,
                balanceWei=bal, gasPriceWei=price, needWei=need,
                balanceEth=bal / 1e18, needEth=need / 1e18,
                shortfallEth=max(0.0, (need - bal) / 1e18),
@@ -548,6 +586,10 @@ def main() -> int:
         if r["sufficient"] is None:
             if r.get("l1Note"):
                 status = f"UNPRICEABLE — {r['l1Note']}, so this is NOT a pass"
+            elif r.get("priceNote"):
+                # A stale PIN, not an unusable quote — the generic message below would name the wrong
+                # cause and send the reader to the node instead of to GAS_PRICE_OVERRIDE_WEI.
+                status = f"UNPRICEABLE — {r['priceNote']}, so this is NOT a pass"
             else:
                 status = (f"UNPRICEABLE — node quotes {r['quotedGasPriceWei']} wei "
                           f"({r['quotedGasPriceWei'] / 1e9:.7f} gwei); the estimate is meaningless "

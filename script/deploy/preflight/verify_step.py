@@ -306,38 +306,48 @@ def step_record_cleared(k: Chk, rec: dict, exp: dict, url, base, tag) -> None:
     # archive dir, so a second redeploy is forced onto a new tag while `archive/pre-redeploy/` still
     # holds the PREVIOUS generation — which this check would otherwise read as authoritative.
     #
-    # The witness is the committed pre-deploy snapshot, which this function already receives as
-    # `base` and never used: the archive's `NAVCalculatorProxy` must be the proxy that
-    # `snapshots/pre/index.json` records for this chain. A wrong tag, an earlier generation's
-    # archive, a hand-edited file or another chain's file all fail that.
+    # WHAT THIS CHECK PROVES, STATED NARROWLY, BECAUSE AN EARLIER VERSION CLAIMED MORE THAN IT DID.
+    # It proves the archive is a deployment record OF THE GENERATION BEING REPLACED, sitting at the
+    # path for this chain. It does NOT prove the CONTENT belongs to this chain, and it cannot:
+    # `NAVCalculatorProxy` is the same CREATE2 address on all 24 chains, so a property that is
+    # identical everywhere cannot distinguish anywhere. Copying chain 10's archive to
+    # `archive/<tag>/100.json` passes this comparison — measured, not argued. The chain-keyed PATH
+    # makes that harder to do by accident; it does not make the content chain-attested.
     #
-    # WHEN IT CANNOT BE CONFIRMED THE CHECK GETS STRICTER, NOT LOOSER: absence is then judged by the
-    # old flat rule and reported. That is noisy, which is the correct direction for a gate — the bug
-    # this fixes was noise, and the cure must not be silence. (Note the coupling: re-capturing
-    # `snapshots/pre` after the cutover would move the baseline and force this strict path. Steps
-    # 1.3 and 1.4 already depend on the same baseline, so that is a pre-existing systemic
-    # dependency rather than one introduced here.)
+    # KNOWN GAP, DELIBERATELY NOT CLOSED HERE: attesting chain provenance needs integrity metadata
+    # written at ARCHIVE-CREATION time in `reset_deployment_records.do_clear` — there is nothing in
+    # a deployment record that differs per chain and survives the clear. That is a change to the
+    # writer, out of scope for a gate fix, and it is filed rather than silently skipped.
+    #
+    # WHY THE GAP IS TOLERABLE: nothing downstream depends on this verdict. Absence is decided by
+    # CONFIG (per-chain, independent of the record), with the archive only ever ADDING failures.
+    # A foreign archive therefore produces noise, never silence — verified by an arm below. This
+    # check earns its place as a diagnostic: a wrong `--archive-tag` or a previous generation's
+    # archive is worth reporting on its own, and that it CAN detect.
+    #
+    # (Coupling: re-capturing `snapshots/pre` after the cutover moves the baseline and makes this
+    # report a mismatch. Steps 1.3 and 1.4 already depend on that baseline, so it is a pre-existing
+    # systemic dependency rather than one introduced here.)
     old_proxy = (base.get(k.chain_id) or {}).get("proxy") if base else None
-    archive_is_preimage = False
     if arch is not None:
         if not old_proxy:
             k.fail.append(f"snapshots/pre/index.json has no baseline proxy for chain {k.chain_id}, so "
-                          f"archive/{tag}/{k.chain_id}.json cannot be confirmed as this record's "
-                          f"pre-image — absence is judged strictly below rather than excused")
+                          f"archive/{tag}/{k.chain_id}.json cannot be confirmed as the generation "
+                          f"being replaced (absence is judged from config, so the gate stays sound)")
         elif str(arch.get("NAVCalculatorProxy", "")).lower() != str(old_proxy).lower():
             k.fail.append(f"archive/{tag}/{k.chain_id}.json records NAVCalculatorProxy "
                           f"{arch.get('NAVCalculatorProxy')!r}, but the committed pre-deploy snapshot "
-                          f"records {old_proxy} — this is not the pre-image of the generation being "
-                          f"replaced (wrong --archive-tag, an earlier redeploy's archive, or an edited "
-                          f"file). Absence is judged strictly below rather than excused")
-        else:
-            archive_is_preimage = True
+                          f"records {old_proxy} — this archive is not the generation being replaced "
+                          f"(wrong --archive-tag, or an earlier redeploy's archive). NOTE: this "
+                          f"compares generation only; it cannot tell whether the file's CONTENT "
+                          f"belongs to this chain, because the proxy address is identical on all "
+                          f"chains by CREATE2 design")
 
     # EVIDENCE IS MONOTONE HERE, AND THAT IS THE WHOLE DESIGN. A key's absence is a failure if
     # ANY source says it belongs: CREATE_IF_ABSENT, this chain's CONFIG, or the archive. Adding a
     # source can only add failures, never excuse one — so a wrong-chain or wrong-generation archive
-    # produces noise, never silence, and the provenance check above is diagnostic rather than
-    # load-bearing.
+    # produces noise, never silence, and the generation check above is diagnostic rather than
+    # load-bearing. That is what makes its known chain-provenance gap tolerable rather than a hole.
     #
     # That ordering was arrived at the hard way. An earlier revision made the ARCHIVE the sole
     # oracle, which produced two holes that both let a real deletion pass: the proxy it was
@@ -1041,8 +1051,8 @@ def _self_test() -> int:
     # it can be the WRONG archive must push the check back to strict rather than excuse an absence.
     wrong_gen = {key: OTHER_GEN for key in UNIVERSAL}
     run(dict(cleared), wrong_gen,
-        "an archive from ANOTHER generation is rejected as a pre-image", must_fail=True,
-        expect_in="not the pre-image")
+        "an archive from ANOTHER generation is reported", must_fail=True,
+        expect_in="not the generation being replaced")
     run(dict(cleared), wrong_gen,
         "...and a wrong-generation archive cannot excuse an expected key", must_fail=True,
         expect_in="config enables the adapter", chain=ONE_ASSIST)
@@ -1066,6 +1076,14 @@ def _self_test() -> int:
     run(no_section, dict(arch_plain) | {"balanceAdapters": {"ERC20Default": ADDR}},
         "a WHOLLY ABSENT CLEAR_SECTIONS block is caught, not read as cleared",
         must_fail=True, expect_in="whole balanceAdapters section is ABSENT", chain=ALL_ASSIST)
+
+    # PINS THE STATED LIMITATION. The generation check cannot attest chain provenance, so a foreign
+    # archive passes it silently — that is documented, not fixed. What must hold is that the verdict
+    # is NOT load-bearing: a real deletion is still caught, by config. If a future edit makes
+    # absence depend on the archive again, this arm fails.
+    run(dict(cleared), dict(arch_plain),
+        "a FOREIGN archive passes the generation check yet cannot hide a deletion",
+        must_fail=True, expect_in="config enables the adapter that deploys it", chain=ONE_ASSIST)
 
     for ok, line in results:
         print(line)

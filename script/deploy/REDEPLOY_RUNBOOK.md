@@ -30,38 +30,33 @@ Companion tooling lives in [`preflight/`](preflight/README.md). Nothing there br
 chain. Four of its scripts write **git-tracked** files — and because that list has been wrong before,
 **`git status` is the check of record, not this paragraph**:
 
-- `reset_deployment_records.py --apply` — archives the record of every in-scope chain that has one
-  under `script/deploy/preflight/archive/<tag>/`, then clears the NAV keys in
-  `script/config/deployments/`; the bridge keys are deliberately kept (see 1.1). Dry-run by default.
-  `--restore <tag>` copies back every archived record in the resolved scope; that scope comes from
-  the declared chain list rather than from the archive, so undoing a subset clear still prints the
-  other chains as `MISSING` and exits 1 even though the restore itself succeeded.
-- `snapshot_production.py` — resolves `--out` to `snapshots/<out>/` under `preflight/`, or, when the
-  value contains a `/`, to that path exactly as given — absolute, or relative to the directory you
-  run it from (`:346`; nothing in `preflight/` changes directory). It **defaults to `--out pre`**,
-  the committed capture (one file per captured chain plus `index.json`), and the documented
-  pre-deploy step passes `--out pre` deliberately. Judge safety by the resolved destination, not the
-  flag text: any run whose `out_dir` lands on `preflight/snapshots/pre/` overwrites the capture.
+- `reset_deployment_records.py --apply` — archives the in-scope records under
+  `script/deploy/preflight/archive/<tag>/`, then clears the NAV keys in `script/config/deployments/`
+  (and adds a blank `AssetKindRegistry` where a record lacks one); the bridge keys are deliberately
+  kept (see 1.1). Dry-run by default. `--restore <tag>` reads that archive back — pass the same chain
+  ids you cleared, or the run reports every other declared chain as `MISSING` and exits 1.
+- `snapshot_production.py` — an `--out` value with no `/` names a directory under
+  `preflight/snapshots/`; one containing a `/` is taken as a path in its own right (`:346`). It
+  **defaults to `--out pre`**, the committed capture, and the documented pre-deploy step passes
+  `--out pre` deliberately. Judge safety by the destination it resolves to, not by the flag text.
 - `declared_heartbeat_guard.py --refresh` — rewrites the committed `chainlink_declared_heartbeats.json`.
 - `rehearse_fork.sh` — mutates `script/config/` and `broadcast/` during a rehearsal, refuses to start
   if either is dirty (`:63` — those two paths only, not the whole tree), and on exit restores tracked
   files with `git checkout --` (`:386`) **and deletes untracked, non-ignored ones with
   `git clean -fdq`** (`:393`) under those same two paths.
 
-The `--json` report paths these tools accept, and `snapshot_production.py`'s `--out`, are opened
-exactly as given, so they can be pointed anywhere: run from the repo root, `--out
-script/config/deployments` would write snapshots over the deployment records, and nothing in the
-tooling prevents it. `reset_deployment_records.py`'s `--tag` is joined to the archive directory
-without validation, so an absolute or `../` value puts the archive outside `preflight/` as well. The
-remaining destinations — the deployment records, the heartbeat snapshot, `script/config/` — are fixed
-in code. The four bullets above describe the **documented invocations**, not a guarantee the tools
-enforce.
+Every destination these tools take from you — each `--json` report path, `snapshot_production.py`'s
+`--out`, `reset_deployment_records.py`'s `--tag`, and `rehearse_fork.sh`'s `$REHEARSAL_DIR` — is
+unvalidated: nothing checks where it lands. From the repo root `--out script/config/deployments` would
+write snapshots over the deployment records, and `--tag /tmp/x` puts the archive outside the repo.
+The four bullets above describe the **documented invocations**, not a guarantee the tools enforce.
 
-Before treating any of this as reversible, check what the target currently holds.
-`script/config/deployments/` is the only place deployed addresses live, so once a step has written
-new ones, `git checkout --` discards them and `--restore <tag>` replaces them with the previous
-generation's — neither is an undo at that point. Reversibility here is a property of *when you are*,
-not of the tool.
+Reversibility is a property of *when you are*, not of the tool, so check what the target holds before
+assuming an undo exists: once a step has written new addresses into `script/config/deployments/` —
+the record every later step reads — `git checkout --` discards them and `--restore <tag>` writes the
+previous generation back over them. Keep `archive/<tag>/` until the deploy has been *verified*, not
+merely until rollback stops being wanted: `verify_step.py` requires it as the step 1.1 post-condition
+(`:252`).
 
 - **Scope:** exactly the **24 chains** that already have a `NAVCalculatorProxy`. Chain **1101**
   (Polygon zkEVM) is excluded — its deployment record is empty, so it was never deployed.
@@ -1737,8 +1732,10 @@ to the new proxy. The old stack keeps answering until they do; nothing needs unr
 > `preflight_config.py` reported `0 error(s) across 0 chain(s)` and exited 0, and
 > `reset_deployment_records.py --restore <tag>` with no chain arguments restored **nothing** and
 > exited 0 — the rollback failing silently at the one moment it is needed. Scope now comes from
-> `chainlib.resolve_chains`, which prefers the committed `snapshots/pre/index.json` (a file the deploy
-> cannot invalidate) and **exits 2 rather than resolving to an empty list**. Every tool prints the
+> `chainlib.resolve_chains`, which takes an explicit chain list first and otherwise uses the declared
+> `redeploy_scope.json` (a file no tool writes), cross-checking `snapshots/pre/index.json` and
+> reporting any disagreement as a `SCOPE WARNING` rather than absorbing it — and **exits 2 rather
+> than resolving to an empty list**. Every tool prints the
 > scope it resolved and where from; read that line.
 
 | symptom | cause | fix |

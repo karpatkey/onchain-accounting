@@ -6,43 +6,36 @@ loopback.
 
 Four scripts write **git-tracked** files. This list has been wrong before, so treat `git status` as
 the check of record rather than this paragraph. `reset_deployment_records.py --apply` also creates
-`archive/<tag>/` here, which is neither tracked nor ignored — that is the copy `--restore <tag>`
-reads, so leave it in place while a rollback is still wanted. (`rehearse_fork.sh` creates one too, as
-`archive/rehearsal-<pid>/`, and removes it again immediately (`:421-424`); one left behind is a
-killed rehearsal, not a rollback copy.)
+`archive/<tag>/` here, which is neither tracked nor ignored — that is the copy `--restore <tag>` reads
+and the one `verify_step.py` checks, so keep it until the deploy has been verified. (`rehearse_fork.sh`
+creates one too, as `archive/rehearsal-<pid>/`, and removes it again immediately (`:421-424`); one left
+behind is a killed rehearsal, not a rollback copy.)
 
-- `reset_deployment_records.py --apply` archives the record of every in-scope chain that has one under
-  `archive/<tag>/`, then clears the NAV keys in the deployment records; the bridge keys are
-  deliberately kept. Dry-run by default. `--restore <tag>` copies back every archived record in the
-  resolved scope; that scope comes from the declared chain list rather than from the archive, so
-  undoing a subset clear still prints the other chains as `MISSING` and exits 1 even though the
-  restore itself succeeded.
-- `snapshot_production.py` resolves `--out` to `snapshots/<out>/` here, or, when the value contains a
-  `/`, to that path exactly as given — absolute, or relative to the directory you run it from
-  (`:346`; nothing here changes directory, and the "Typical order" block below runs from this
-  directory). It **defaults to `--out pre`**, the committed capture described below, and that block
-  passes `--out pre` deliberately. Judge safety by the resolved destination, not the flag text: any
-  run whose `out_dir` lands on `snapshots/pre/` overwrites it.
+- `reset_deployment_records.py --apply` archives the in-scope records under `archive/<tag>/`, then
+  clears the NAV keys in the deployment records (and adds a blank `AssetKindRegistry` where a record
+  lacks one); the bridge keys are deliberately kept. Dry-run by default. `--restore <tag>` reads that
+  archive back — pass the same chain ids you cleared, or the run reports every other declared chain as
+  `MISSING` and exits 1.
+- `snapshot_production.py` — an `--out` value with no `/` names a directory under `snapshots/` here;
+  one containing a `/` is taken as a path in its own right (`:346`). It **defaults to `--out pre`**,
+  the committed capture described below, and the "Typical order" block passes `--out pre`
+  deliberately. Judge safety by the destination it resolves to, not by the flag text.
 - `declared_heartbeat_guard.py --refresh` rewrites the committed `chainlink_declared_heartbeats.json`.
 - `rehearse_fork.sh` mutates tracked config under `script/config/` and writes `broadcast/` during a
   rehearsal, refuses to start if either is dirty (`:63` — those two paths only, not the whole tree),
   and on exit restores tracked files with `git checkout --` (`:386`) **and deletes untracked,
   non-ignored ones with `git clean -fdq`** (`:393`) under those same two paths.
 
-The `--json` report paths these tools accept, and `snapshot_production.py`'s `--out`, are opened
-exactly as given, so they can be pointed anywhere: run from the repo root, `--out
-script/config/deployments` would write snapshots over the deployment records, and nothing in the
-tooling prevents it. `reset_deployment_records.py`'s `--tag` is joined to the archive directory
-without validation, so an absolute or `../` value puts the archive outside this directory as well.
-The remaining destinations — the deployment records, the heartbeat snapshot, `script/config/` — are
-fixed in code. The four bullets above describe the **documented invocations**, not a guarantee the
-tools enforce.
+Every destination these tools take from you — each `--json` report path, `snapshot_production.py`'s
+`--out`, `reset_deployment_records.py`'s `--tag`, and `rehearse_fork.sh`'s `$REHEARSAL_DIR` — is
+unvalidated: nothing checks where it lands. From the repo root `--out script/config/deployments` would
+write snapshots over the deployment records, and `--tag /tmp/x` puts the archive outside the repo.
+The four bullets above describe the **documented invocations**, not a guarantee the tools enforce.
 
-Before treating any of this as reversible, check what the target currently holds.
-`script/config/deployments/` is the only place deployed addresses live, so once a step has written
-new ones, `git checkout --` discards them and `--restore <tag>` replaces them with the previous
-generation's — neither is an undo at that point. Reversibility here is a property of *when you are*,
-not of the tool.
+Reversibility is a property of *when you are*, not of the tool, so check what the target holds before
+assuming an undo exists: once a step has written new addresses into `script/config/deployments/` —
+the record every later step reads — `git checkout --` discards them and `--restore <tag>` writes the
+previous generation back over them.
 
 The ordered procedure these support is [`../REDEPLOY_RUNBOOK.md`](../REDEPLOY_RUNBOOK.md).
 

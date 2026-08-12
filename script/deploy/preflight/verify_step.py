@@ -1037,6 +1037,14 @@ def _self_test() -> int:
     BASE = {ALL_ASSIST: {"proxy": ADDR}, ONE_ASSIST: {"proxy": ADDR},
             NO_ASSIST: {"proxy": ADDR}, META_WITH_FEEDS: {"proxy": ADDR}}
     results: list[tuple[bool, str]] = []
+    # ARM DISTINCTNESS, ENFORCED RATHER THAN CHECKED BY HAND. Four times in this suite's history two
+    # arms have been byte-identical while advertising different cases — most recently HOLE 6 and
+    # HOLE 7, because `{...UNIVERSAL} | {"NAVCalculatorProxy": ADDR}` is a NO-OP merge and produced
+    # the same fixture twice. Each time the tally said 20/20 while one named case was modelled by
+    # nothing. A count of arms is not coverage, so the suite now proves distinctness instead of
+    # asserting it: every arm's full input signature is recorded and any collision is a failure.
+    seen_sigs: dict[str, str] = {}
+    dupes: list[tuple[str, str]] = []
 
     def run(rec: dict, arch: dict | None, label: str, must_fail: bool, expect_in: str = "",
             base: dict | None = None, chain: int = NO_ASSIST, expect_warn: str = "") -> None:
@@ -1057,6 +1065,15 @@ def _self_test() -> int:
                                     BASE if base is None else base, tag)
             finally:
                 rd.ARCHIVE_DIR = real_dir
+        sig = json.dumps({"rec": rec, "arch": arch, "chain": chain, "must_fail": must_fail,
+                          "expect_in": expect_in, "expect_warn": expect_warn,
+                          "base": BASE if base is None else base},
+                         sort_keys=True, default=str)
+        if sig in seen_sigs:
+            dupes.append((seen_sigs[sig], label))
+        else:
+            seen_sigs[sig] = label
+
         failed = bool(k.fail)
         joined = " | ".join(k.fail)
         warned = " | ".join(k.warn)
@@ -1182,6 +1199,14 @@ def _self_test() -> int:
             # EMPTY is only reachable when no archive witnesses the lost keys.
             expect_in="has LOST" if bad == {} else "is missing or is not an object",
             chain=ALL_ASSIST)
+
+    # Reported as its own arm so a collision shows up in the tally and the exit code, not just in
+    # a comment nobody reads. Two arms sharing a fixture AND an expectation are the same test twice;
+    # arms that share a fixture but assert different things are legitimately distinct and pass.
+    results.append((not dupes,
+                    ("ok   " if not dupes else "FAIL ") + "no two arms build identical fixtures"
+                    + ("" if not dupes else " -> " + "; ".join(f"{a!r} duplicates {b!r}"
+                                                               for a, b in dupes))))
 
     for ok, line in results:
         print(line)

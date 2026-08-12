@@ -30,33 +30,38 @@ Companion tooling lives in [`preflight/`](preflight/README.md). Nothing there br
 chain. Four of its scripts write **git-tracked** files — and because that list has been wrong before,
 **`git status` is the check of record, not this paragraph**:
 
-- `reset_deployment_records.py --apply` — archives every record under
-  `script/deploy/preflight/archive/<tag>/`, then clears the NAV keys in `script/config/deployments/`;
-  the bridge keys are deliberately kept (see 1.1). Dry-run by default. `--restore <tag>` puts them
-  back, but it resolves its chain scope from the declared scope rather than from the archive, so a
-  subset clear has to be undone by naming those chains explicitly.
+- `reset_deployment_records.py --apply` — archives the record of every in-scope chain that has one
+  under `script/deploy/preflight/archive/<tag>/`, then clears the NAV keys in
+  `script/config/deployments/`; the bridge keys are deliberately kept (see 1.1). Dry-run by default.
+  `--restore <tag>` copies back every archived record in the resolved scope; that scope comes from
+  the declared chain list rather than from the archive, so undoing a subset clear still prints the
+  other chains as `MISSING` and exits 1 even though the restore itself succeeded.
 - `snapshot_production.py` — resolves `--out` to `snapshots/<out>/` under `preflight/`, or, when the
-  value contains a `/`, to that path **relative to your current directory** (`:346`). It **defaults
-  to `--out pre`**, the committed capture (one file per captured chain plus `index.json`), and the
-  documented pre-deploy step passes `--out pre` deliberately. Judge safety by the resolved
-  destination, not the flag text: any run whose `out_dir` lands on `preflight/snapshots/pre/`
-  overwrites the capture.
+  value contains a `/`, to that path exactly as given — absolute, or relative to the directory you
+  run it from (`:346`; nothing in `preflight/` changes directory). It **defaults to `--out pre`**,
+  the committed capture (one file per captured chain plus `index.json`), and the documented
+  pre-deploy step passes `--out pre` deliberately. Judge safety by the resolved destination, not the
+  flag text: any run whose `out_dir` lands on `preflight/snapshots/pre/` overwrites the capture.
 - `declared_heartbeat_guard.py --refresh` — rewrites the committed `chainlink_declared_heartbeats.json`.
-- `rehearse_fork.sh` — mutates `script/config/` during a rehearsal, refuses to start if `script/config`
-  or `broadcast/` is dirty (`:63` — those two paths only, not the whole tree), and on exit restores
-  tracked files with `git checkout --` (`:386`) **and deletes untracked ones with `git clean -fdq`**
-  (`:393`) under those same two paths.
+- `rehearse_fork.sh` — mutates `script/config/` and `broadcast/` during a rehearsal, refuses to start
+  if either is dirty (`:63` — those two paths only, not the whole tree), and on exit restores tracked
+  files with `git checkout --` (`:386`) **and deletes untracked, non-ignored ones with
+  `git clean -fdq`** (`:393`) under those same two paths.
 
 The `--json` report paths these tools accept, and `snapshot_production.py`'s `--out`, are opened
 exactly as given, so they can be pointed anywhere: run from the repo root, `--out
 script/config/deployments` would write snapshots over the deployment records, and nothing in the
-tooling prevents it. The other three writers have no equivalent destination flag — the deployment
-records, the heartbeat snapshot and `script/config/` are fixed in code, and
-`reset_deployment_records.py`'s `--tag` names only the archive subdirectory. Everything above
-describes the **documented invocations**, not a guarantee the tools enforce. All four targets are
-git-tracked and the records are archived before they are cleared, so an accidental write is undone
-with `git checkout --` or `--restore <tag>` rather than a redeploy; what no command regenerates is
-the pre-deploy capture itself, because the stack it describes is gone once the cutover has happened.
+tooling prevents it. `reset_deployment_records.py`'s `--tag` is joined to the archive directory
+without validation, so an absolute or `../` value puts the archive outside `preflight/` as well. The
+remaining destinations — the deployment records, the heartbeat snapshot, `script/config/` — are fixed
+in code. The four bullets above describe the **documented invocations**, not a guarantee the tools
+enforce.
+
+Before treating any of this as reversible, check what the target currently holds.
+`script/config/deployments/` is the only place deployed addresses live, so once a step has written
+new ones, `git checkout --` discards them and `--restore <tag>` replaces them with the previous
+generation's — neither is an undo at that point. Reversibility here is a property of *when you are*,
+not of the tool.
 
 - **Scope:** exactly the **24 chains** that already have a `NAVCalculatorProxy`. Chain **1101**
   (Polygon zkEVM) is excluded — its deployment record is empty, so it was never deployed.

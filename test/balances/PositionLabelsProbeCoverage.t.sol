@@ -9,9 +9,9 @@ import {VmSafe} from "forge-std/Vm.sol";
 /// @notice Tripwire for the configuration-view probe convention: a NEW non-meta balance adapter must not become
 ///         registered on NAVCalculator without someone deciding what `positionLabels("")` should answer for it.
 /// @dev The convention itself is asserted per adapter, in each adapter's own unit-test suite
-///      (`test_positionLabels_emptyProbe_*`). Twelve hand-written copies enforce nothing about a THIRTEENTH
-///      adapter: it would ship registered, answer the probe with whatever it happens to answer, and `forge test`
-///      would stay green — the same silent drop-off from a configuration view that those tests exist to prevent.
+///      (`test_positionLabels_emptyProbe_*`), of which there are twelve today. Hand-written copies enforce nothing
+///      about the NEXT adapter: it would ship registered, answer the probe with whatever it happens to answer, and
+///      `forge test` would stay green — the same silent drop-off from a configuration view they exist to prevent.
 ///
 ///      This test closes that by pinning the non-meta adapter set itself, against TWO sources:
 ///        - `script/config/deployments/` — what is actually DEPLOYED (the only place deployed addresses live);
@@ -45,7 +45,9 @@ import {VmSafe} from "forge-std/Vm.sol";
 ///      shapes are discovered per ACCOUNT (a per-account coordinate cache) has no account-independent answer and
 ///      must implement neither. That is decided per adapter, not per family.
 contract PositionLabelsProbeCoverageTest is Test {
-    /// @dev Every non-meta adapter key that currently appears in any `script/config/deployments/<chainId>.json`.
+    /// @dev Every non-meta adapter key that is DEPLOYED (present in a `script/config/deployments/<chainId>.json`)
+    ///      or ENABLED to deploy (in a `contracts-deployment-config/balance-adapters/<chainId>.json`). Both, not
+    ///      just the first — which is why `Cap` and its two successors all appear here at once during the split.
     ///      Keep sorted by family, then alphabetically, so a diff to this list is easy to read in review.
     function _expectedNonMetaAdapters() internal pure returns (string[] memory names) {
         names = new string[](14);
@@ -83,7 +85,8 @@ contract PositionLabelsProbeCoverageTest is Test {
     ///      no probe decision. It also retires the deploy-day chore — when `04` writes the two new addresses and
     ///      `Cap` leaves the record, this test needs no edit at all.
     function _configuredNonMetaAdapters() internal view returns (string[] memory) {
-        string memory dir = string.concat(vm.projectRoot(), "/script/config/contracts-deployment-config/balance-adapters");
+        string memory dir =
+            string.concat(vm.projectRoot(), "/script/config/contracts-deployment-config/balance-adapters");
         VmSafe.DirEntry[] memory entries = vm.readDir(dir);
 
         string[] memory acc = new string[](64);

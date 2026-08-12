@@ -1,8 +1,14 @@
 # Deploy preflight tooling
 
-Read-only tooling for preparing and verifying a from-scratch NAV redeploy. Nothing here broadcasts to
-a real chain; the one script that broadcasts at all — `rehearse_fork.sh` — refuses any RPC that is not
+Tooling for preparing and verifying a from-scratch NAV redeploy. Nothing here broadcasts to a real
+chain; the one script that broadcasts at all — `rehearse_fork.sh` — refuses any RPC that is not
 loopback.
+
+Exactly two scripts write locally, and only these two. `rehearse_fork.sh` mutates tracked config under
+`script/config/` during a rehearsal, refuses to start if that tree is dirty, and restores it
+byte-exactly with `git checkout --` on exit. `reset_deployment_records.py` archives and clears the
+deployment records, as its row below says — it is dry-run by default, writes only under `--apply`, and
+is undone with `--restore <tag>`. Every other script here only reads.
 
 The ordered procedure these support is [`../REDEPLOY_RUNBOOK.md`](../REDEPLOY_RUNBOOK.md).
 

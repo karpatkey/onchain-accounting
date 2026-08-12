@@ -23,6 +23,11 @@ contract MockMerklDistributor is IMerklDistributor {
     bytes32 private _root;
     mapping(address => mapping(address => Claim)) private _claimed;
 
+    /// @dev Per-token misbehaviour, for the per-token isolation tests. `claimed()` is the read every position goes
+    ///      through, so making it revert / burn for ONE token is what a single misbehaving token looks like.
+    mapping(address => bool) public revertsFor;
+    mapping(address => bool) public burnsFor;
+
     struct Claim {
         uint208 amount;
         uint48 timestamp;
@@ -31,6 +36,14 @@ contract MockMerklDistributor is IMerklDistributor {
 
     function setRoot(bytes32 r) external {
         _root = r;
+    }
+
+    function setRevertsFor(address token, bool on) external {
+        revertsFor[token] = on;
+    }
+
+    function setBurnsFor(address token, bool on) external {
+        burnsFor[token] = on;
     }
 
     function setClaimed(address user, address token, uint208 amount, uint48 timestamp, bytes32 merkleRoot) external {
@@ -47,6 +60,14 @@ contract MockMerklDistributor is IMerklDistributor {
         override
         returns (uint208 amount, uint48 timestamp, bytes32 merkleRoot)
     {
+        if (revertsFor[token]) revert("distributor unavailable for this token");
+        if (burnsFor[token]) {
+            // Unbounded: consumes whatever stipend the caller forwarded, so it exhausts rather than reverting.
+            bytes32 h = _root;
+            while (true) {
+                h = keccak256(abi.encode(h));
+            }
+        }
         Claim memory c = _claimed[user][token];
         return (c.amount, c.timestamp, c.merkleRoot);
     }
@@ -1096,6 +1117,60 @@ contract MerklRewardsAttestedBalanceAdapterTest is BalanceAdapterTestBase {
         }
         assertEq(sum, 99, "33+33+33: one wei of dust dropped by flooring");
         assertLe(sum, 100, "legs must never exceed the token's unclaimed total");
+    }
+
+    // ------------------------------------------------------------------
+    // PER-TOKEN ISOLATION — one bad token must not cost the account its other positions
+    // ------------------------------------------------------------------
+
+    /// @dev A token whose Distributor read REVERTS is dropped on its own; every other token still reports. Without
+    ///      the per-token try/catch the revert escapes `buildPositionsSelf`, and `PriceFeedLib._getAdapterPositions`
+    ///      fails open — costing the account its ENTIRE Merkl set rather than one token. Verified to fail with the
+    ///      isolation removed.
+    function test_isolation_revertingTokenDroppedOthersSurvive() public {
+        _seedTwoLive(100 ether, 50 ether);
+        distributor.setRevertsFor(address(op), true);
+
+        INAVCalculator.PositionBalance[] memory pos = adapter.getAdapterPositions(alice, address(0));
+
+        assertEq(pos.length, 1, "the healthy token still reports");
+        assertEq(pos[0].balanceAsset.asset, address(arb), "reverting token dropped, healthy one kept");
+        assertEq(pos[0].amount, 100 ether, "survivor unaffected by the neighbour's failure");
+    }
+
+    /// @dev Seeds arb AND op as SIMULTANEOUSLY LIVE via a two-leaf tree. `_seedAllocation`/`_fillTokenCache` rotate
+    ///      the root on every call, so with them only the last token stays fresh and every earlier one reads 0
+    ///      through the stale-root branch — which would make an isolation test pass without ever reaching the
+    ///      Distributor call it is supposed to be exercising.
+    function _seedTwoLive(uint256 arbAmount, uint256 opAmount) internal {
+        bytes32 lArb = _leaf(alice, address(arb), arbAmount);
+        bytes32 lOp = _leaf(alice, address(op), opAmount);
+        distributor.setRoot(lArb < lOp ? keccak256(abi.encode(lArb, lOp)) : keccak256(abi.encode(lOp, lArb)));
+        bytes32[] memory pArb = new bytes32[](1);
+        pArb[0] = lOp;
+        bytes32[] memory pOp = new bytes32[](1);
+        pOp[0] = lArb;
+        _submitOne(alice, address(arb), arbAmount, pArb);
+        _submitOne(alice, address(op), opAmount, pOp);
+        assertEq(adapter.getAdapterPositions(alice, address(0)).length, 2, "fixture: both tokens live before griefing");
+    }
+
+    /// @dev A token that EXHAUSTS its stipend is dropped too, and the read RETURNS rather than reverting. This is the
+    ///      case the caps alone cannot cover: without isolation the out-of-gas bubbles, `GasStipendLib.exhausted`
+    ///      classifies it, and `AdapterGasExhausted` takes down the account's WHOLE `getAccountNav`. Dropping is safe
+    ///      here only because this adapter emits credit legs exclusively — see the catch arm's note.
+    function test_isolation_gasHungryTokenDroppedReadStillReturns() public {
+        _seedTwoLive(100 ether, 50 ether);
+        distributor.setBurnsFor(address(op), true);
+
+        // Capped so the griefed token's stipend is a bounded slice rather than the whole test budget.
+        INAVCalculator.PositionBalance[] memory pos = adapter.getAdapterPositions{gas: 3_000_000}(alice, address(0));
+
+        // The read RETURNED rather than reverting — that is the property. Without isolation the out-of-gas bubbles
+        // and PriceFeedLib re-raises it as AdapterGasExhausted, killing the account's whole NAV read.
+        for (uint256 i; i < pos.length; ++i) {
+            assertTrue(pos[i].balanceAsset.asset != address(op), "the exhausting token is dropped, not reported");
+        }
     }
 
     function test_submit_revertsWhenCampaignSharesDontSumToTotal() public {

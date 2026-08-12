@@ -12,6 +12,7 @@ import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {RegisteredAssetLib} from "src/balances/RegisteredAssetLib.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/errors.sol";
+import {GasStipendLib} from "src/utils/GasStipendLib.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 import {ProtocolNames} from "src/utils/ProtocolNames.sol";
@@ -106,16 +107,27 @@ contract MerklRewardsAttestedBalanceAdapter is IAttestedBalanceAdapter, IPositio
     bytes32 private constant PROTOCOL_ID = ProtocolIds.MERKL;
     bytes32 private constant PROTOCOL_SUB_ID = ProtocolIds.MERKL;
 
-    /// @notice Hard cap on campaign shares cached per (user, token). Bounds the per-token read fan-out (each share is
-    ///         a leg) so a pathological breakdown can't OOG a NAV read (an OOG there is NOT caught by NAVCalculator's
-    ///         try/catch). This is the *tight* cap because it is the one attacker-controlled amplifier: the merkle
-    ///         proof binds only the per-token cumulative total, NOT the individual `campaignId`s, so anyone holding a
-    ///         user's (public) per-token proof can split that proven total into up to this many fabricated campaign
-    ///         legs — a griefer can inflate a *real* token's leg count by this factor (but never add tokens the user
-    ///         doesn't really hold — the token set stays proof-bounded). Kept low to cap that amplification while still
-    ///         leaving headroom for a diversified LP earning one token across many pools. A real token has a handful of
-    ///         campaigns; enforced fail-loud at submit.
-    uint256 public constant MAX_CAMPAIGNS_PER_TOKEN = 32;
+    /// @notice Hard cap on campaign shares cached per (user, token). This is the *tight* cap because it is the one
+    ///         ATTACKER-CONTROLLED amplifier: the merkle proof binds only the per-token cumulative total, NOT the
+    ///         individual `campaignId`s, so anyone holding a user's (public) per-token proof can split that proven
+    ///         total into up to this many fabricated campaign legs. It can never add tokens the user does not really
+    ///         hold — the token set stays proof-bounded — so this is the only multiplier a third party can move.
+    ///         A real token has a handful of campaigns; enforced fail-loud at submit (`TooManyCampaigns`).
+    /// @dev    **These caps bound the READ COST, not the arithmetic.** There is no overflow or wrong-figure path
+    ///         here: amounts are proof-bounded, the share sum is *checked* arithmetic, and `Math.mulDiv` floors, so
+    ///         the legs of a token always sum to at most its unclaimed total. What an over-large leg count produces
+    ///         is not a wrong number but an unaffordable one — and read cost is strongly SUPER-LINEAR in leg count,
+    ///         measured on this adapter at 104 registered assets:
+    ///             256 legs ->   4,183,404 gas
+    ///             512 legs ->  10,341,288
+    ///            1024 legs ->  30,005,724
+    ///            2048 legs ->  98,675,920
+    ///         Each doubling multiplies the cost by 2.47x, 2.90x, 3.29x — rising — because memory expansion and the
+    ///         ABI encoding of a nested-dynamic `PositionBalance[]` both grow faster than the count. So the figure to
+    ///         size a budget against is the PRODUCT of the two caps, never either one alone. Lowered 32 -> 8
+    ///         together with {MAX_TOKENS_PER_USER} 256 -> 64: the product falls 8192 -> 512 legs, i.e. a worst case
+    ///         of ~10.3M gas instead of order 1e9, which no read could ever pay.
+    uint256 public constant MAX_CAMPAIGNS_PER_TOKEN = 8;
 
     /// @notice Upper bound on distinct reward tokens cached per user. Bounds the read-side fan-out (the position/
     ///         balance loops iterate `_userTokens[user]`), mirroring the sibling assisted adapters' per-account caps.
@@ -123,10 +135,12 @@ contract MerklRewardsAttestedBalanceAdapter is IAttestedBalanceAdapter, IPositio
     ///         first cached (a refresh of an existing token is unaffected). Every cached token is proof-verified, so
     ///         the cache can never hold a token the user does not really hold.
     /// @dev    **This cap alone is NOT the read bound.** The position read emits one leg per cached *campaign share*,
-    ///         so the leg upper bound is `MAX_TOKENS_PER_USER * MAX_CAMPAIGNS_PER_TOKEN` = 8192 — and the campaign
-    ///         multiplier is the factor that is NOT proof-bound (only the shares' SUM is checked), so a third party
-    ///         holding a user's public per-token proof can inflate a real token's leg count 32x. Do not size a read
-    ///         budget off 256. See the note on {MAX_CAMPAIGNS_PER_TOKEN} and ADR 0022.
+    ///         so the leg upper bound is `MAX_TOKENS_PER_USER * MAX_CAMPAIGNS_PER_TOKEN` = **512**, and it is that
+    ///         PRODUCT a read budget must be sized against — never this number alone. The two caps bound different
+    ///         things: this one bounds the account's genuine, PROOF-BOUNDED token footprint (a third party cannot
+    ///         add a token the user does not hold), while {MAX_CAMPAIGNS_PER_TOKEN} bounds the amplification a third
+    ///         party CAN inflict on a token the user really holds. See {MAX_CAMPAIGNS_PER_TOKEN} for the measured
+    ///         gas curve behind the product, and ADR 0022.
     ///
     ///         Two consequences the cap does not by itself solve, both tracked rather than fixed here: (1) under
     ///         upsert semantics `_userTokens` accumulates every token ever proven — stale entries are only removed by
@@ -134,7 +148,7 @@ contract MerklRewardsAttestedBalanceAdapter is IAttestedBalanceAdapter, IPositio
     ///         drifts toward the cap unless the feeder also garbage-collects; (2) reaching the cap makes a submit
     ///         carrying a NEW token revert `TooManyTokens`, and because a submit is atomic over its whole list, that
     ///         reverts the refresh of the account's OTHER tokens too.
-    uint256 public constant MAX_TOKENS_PER_USER = 256;
+    uint256 public constant MAX_TOKENS_PER_USER = 64;
 
     /// @notice Merkl Distributor (Angle Labs). Same address on every supported EVM chain.
     address public immutable DISTRIBUTOR;
@@ -451,7 +465,6 @@ contract MerklRewardsAttestedBalanceAdapter is IAttestedBalanceAdapter, IPositio
     {
         if (msg.sender != address(this)) revert NotAuthorized();
         INAVCalculator.Asset[] memory registered = NAV_CALCULATOR.getRegisteredAssets();
-        bytes memory pid = abi.encode(DISTRIBUTOR); // identical for every leg — hoist out of the loop
 
         // Size the scratch buffer to the leg upper bound: one leg per cached campaign share per token (or one
         // untagged leg for a token with no breakdown). Zero-amount legs drop below it.
@@ -466,7 +479,43 @@ contract MerklRewardsAttestedBalanceAdapter is IAttestedBalanceAdapter, IPositio
         for (uint256 i; i < tokens.length; ++i) {
             (INAVCalculator.Asset memory meta, bool found) = RegisteredAssetLib.find(registered, tokens[i]);
             if (!found) continue;
-            count = _appendTokenLegs(account, tokens[i], meta, pid, tmp, count);
+
+            // PER-TOKEN ISOLATION. Each token is valued in its own stipended frame, so one token cannot corrupt
+            // every other token's reading. Without this, a single token's failure escapes the whole adapter in one
+            // of two ways: a plain revert bubbles out of this function and `PriceFeedLib._getAdapterPositions`
+            // fails open, dropping this account's ENTIRE Merkl leg set; an out-of-gas bubbles and is classified,
+            // reverting `AdapterGasExhausted` and taking down the account's WHOLE `getAccountNav`.
+            //
+            // This bounds per-item FAILURE. It does not bound aggregate SIZE — stipends partition the cost, they
+            // do not shrink it — which is what MAX_TOKENS_PER_USER x MAX_CAMPAIGNS_PER_TOKEN is for. The two are
+            // not substitutes: isolation alone still leaves a well-behaved 8192-leg read unaffordable, and the
+            // caps alone still lose the whole set to one reverting token.
+            uint256 available = gasleft();
+            uint256 stipend = GasStipendLib.stipendFrom(available);
+            try this.tokenLegsSelf{gas: stipend}(account, tokens[i], meta) returns (
+                INAVCalculator.PositionBalance[] memory legs
+            ) {
+                for (uint256 j; j < legs.length; ++j) {
+                    tmp[count++] = legs[j];
+                }
+            } catch {
+                // DROP the token entirely — never revert, and never emit a partial set for it.
+                //
+                // Dropping is the safe direction HERE, and that is a property of this adapter rather than a general
+                // licence. Every leg this adapter emits is a CREDIT: `positionKind` is always `Rewards` and `isDebt`
+                // is never set on any path. So a dropped leg can only ever make reported NAV SMALLER, which is the
+                // direction this family already guarantees. The sibling `AssistedCoordCache` raises
+                // `CoordinateGasExhausted` instead, and its own note says why: it is a BASE that a future member
+                // emitting a debt leg could inherit, and silently dropping a debt leg would make NAV LARGER — the
+                // one direction this codebase forbids. This is a concrete adapter that cannot emit debt, so the
+                // argument that forces a raise there does not apply. **Do not copy this drop into an adapter that
+                // can emit a debt leg.**
+                //
+                // All-or-nothing per token, mirroring `NAVCalculator._MAX_LABEL_ELEMENTS`: an over-limit label reply
+                // yields an EMPTY array rather than a truncated one, because a truncated answer reads as a complete
+                // one. A token that half-computed before exhausting its stipend is the same hazard, so its legs are
+                // discarded as a unit rather than reported in part.
+            }
         }
         positions = new INAVCalculator.PositionBalance[](count);
         for (uint256 i; i < count; ++i) {
@@ -474,39 +523,39 @@ contract MerklRewardsAttestedBalanceAdapter is IAttestedBalanceAdapter, IPositio
         }
     }
 
-    /// @dev Appends `account`'s reward leg(s) for one `token` into `temp` (from `n`), returning the new count. The
-    ///      token's on-chain unclaimed total (`_unclaimed` = proof-verified cumulative − claimed) is split across the
-    ///      token's cached campaign shares pro-rata by each share's cumulative (denominator = the verified per-token
-    ///      cumulative, which the shares sum to). With no campaign shares, one untagged leg carries the whole
-    ///      unclaimed amount. Each campaign leg's `positionInstanceId = keccak256(abi.encode(campaignId,
-    ///      subCampaignId))`. Zero-amount legs are omitted; `mulDiv` rounds down, so the campaign legs sum to ≤ the
-    ///      token's unclaimed total (dust under-report, never over). Extracted to keep `buildPositionsSelf` under the
-    ///      via_ir stack limit.
-    function _appendTokenLegs(
-        address account,
-        address token,
-        INAVCalculator.Asset memory meta,
-        bytes memory pid,
-        INAVCalculator.PositionBalance[] memory temp,
-        uint256 n
-    ) private view returns (uint256) {
+    /// @notice External self-call entrypoint for one token's legs, enabling the per-token try/catch isolation in
+    ///         {buildPositionsSelf}. `msg.sender`-guarded to `address(this)` so it is not a usable external surface.
+    ///         `view`, so the self-call is a staticcall. Mirrors `AssistedCoordCache.valueCoordSelf`.
+    function tokenLegsSelf(address account, address token, INAVCalculator.Asset memory meta)
+        external
+        view
+        returns (INAVCalculator.PositionBalance[] memory legs)
+    {
+        if (msg.sender != address(this)) revert NotAuthorized();
+        bytes memory pid = abi.encode(DISTRIBUTOR); // identical for every leg of every token
         uint256 unclaimed = _unclaimed(account, token);
-        if (unclaimed == 0) return n;
+        if (unclaimed == 0) return new INAVCalculator.PositionBalance[](0);
 
         CampaignShare[] memory shares = _campaigns[account][token];
         if (shares.length == 0) {
-            temp[n++] = _row(meta, unclaimed, pid, bytes32(0)); // untagged single position
-            return n;
+            legs = new INAVCalculator.PositionBalance[](1);
+            legs[0] = _row(meta, unclaimed, pid, bytes32(0)); // untagged single position
+            return legs;
         }
 
         uint256 tokenCumulative = allocations[account][token].cumulativeAmount; // == Σ shares[].cumulativeAmount
-        if (tokenCumulative == 0) return n; // defensive: nothing to split against (all shares would be 0)
+        if (tokenCumulative == 0) return new INAVCalculator.PositionBalance[](0); // defensive: nothing to split
+        INAVCalculator.PositionBalance[] memory tmp = new INAVCalculator.PositionBalance[](shares.length);
+        uint256 n;
         for (uint256 i; i < shares.length; ++i) {
             uint256 legAmount = Math.mulDiv(unclaimed, shares[i].cumulativeAmount, tokenCumulative);
             if (legAmount == 0) continue;
-            temp[n++] = _row(meta, legAmount, pid, keccak256(abi.encode(shares[i].campaignId, shares[i].subCampaignId)));
+            tmp[n++] = _row(meta, legAmount, pid, keccak256(abi.encode(shares[i].campaignId, shares[i].subCampaignId)));
         }
-        return n;
+        legs = new INAVCalculator.PositionBalance[](n);
+        for (uint256 i; i < n; ++i) {
+            legs[i] = tmp[i];
+        }
     }
 
     /// @notice Builds one `Rewards` PositionBalance row. Extracted from the row-building loop so the 11-field

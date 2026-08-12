@@ -1,8 +1,40 @@
 # Deploy preflight tooling
 
-Read-only tooling for preparing and verifying a from-scratch NAV redeploy. Nothing here broadcasts to
-a real chain; the one script that broadcasts at all — `rehearse_fork.sh` — refuses any RPC that is not
-loopback.
+Tooling for preparing and verifying a from-scratch NAV redeploy. The only script here that broadcasts
+at all is `rehearse_fork.sh`, whose RPC is built as loopback (`:49`) and refused otherwise (`:57`).
+
+Four scripts write **git-tracked** files. This list has been wrong before, so treat `git status` as
+the check of record rather than this paragraph. `reset_deployment_records.py --apply` also creates
+`archive/<tag>/` here, which is neither tracked nor ignored — that is the copy `--restore <tag>` reads
+and the one `verify_step.py` checks, so keep it until the deploy has been verified. (`rehearse_fork.sh`
+creates one too, as `archive/rehearsal-<pid>/`, and removes it again immediately (`:421-424`); one left
+behind is a killed rehearsal, not a rollback copy.)
+
+- `reset_deployment_records.py --apply` archives the in-scope records under `archive/<tag>/`, then
+  clears the NAV keys in the deployment records (and adds a blank `AssetKindRegistry` where a record
+  lacks one); the bridge keys are deliberately kept. Dry-run by default. `--restore <tag>` reads that
+  archive back — pass the same chain ids you cleared, or the run reports every other declared chain as
+  `MISSING` and exits 1.
+- `snapshot_production.py` — an `--out` value with no `/` names a directory under `snapshots/` here;
+  one containing a `/` is taken as a path in its own right (`:346`). It **defaults to `--out pre`**,
+  the committed capture described below, and the "Typical order" block passes `--out pre`
+  deliberately. Judge safety by the destination it resolves to, not by the flag text.
+- `declared_heartbeat_guard.py --refresh` rewrites the committed `chainlink_declared_heartbeats.json`.
+- `rehearse_fork.sh` mutates tracked config under `script/config/` and writes `broadcast/` during a
+  rehearsal, refuses to start if either is dirty (`:63` — those two paths only, not the whole tree),
+  and on exit restores tracked files with `git checkout --` (`:386`) **and deletes untracked,
+  non-ignored ones with `git clean -fdq`** (`:393`) under those same two paths.
+
+These tools take destinations from you — each `--json` report path, `snapshot_production.py`'s
+`--out`, `reset_deployment_records.py`'s `--tag`, `rehearse_fork.sh`'s `$REHEARSAL_DIR`. Do not
+expect one to stop you pointing it somewhere harmful: from the repo root `--out
+script/config/deployments` would write snapshots over the deployment records, and `--tag /tmp/x` puts
+the archive outside the repo. The four bullets above describe the **documented invocations**, not a
+guarantee the tools enforce.
+
+Reversibility is a property of *when you are*, not of the tool, so check what the target holds before
+assuming an undo exists: once a step has written new addresses into `script/config/deployments/`,
+`git checkout --` discards them and `--restore <tag>` writes the previous generation back over them.
 
 The ordered procedure these support is [`../REDEPLOY_RUNBOOK.md`](../REDEPLOY_RUNBOOK.md).
 
@@ -28,7 +60,7 @@ The ordered procedure these support is [`../REDEPLOY_RUNBOOK.md`](../REDEPLOY_RU
 python3 preflight_config.py                       # config must be clean
 python3 snapshot_production.py --out pre          # irreplaceable — the old NAV is abandoned after this
 python3 deployer_balances.py --json topup.json
-./rehearse_fork.sh 1                              # dress rehearsal on a mainnet fork
+./rehearse_fork.sh 1 25708060                    # dress rehearsal; PIN THE BLOCK (2nd arg) — see below
 python3 reset_deployment_records.py --apply --tag pre-redeploy
 
 # … deploy per the runbook, gating each step on its post-condition …
@@ -44,6 +76,13 @@ python3 snapshot_production.py --out post
 python3 diff_snapshots.py pre post
 ```
 
+> **Pin the fork block.** The second argument is `FORK_BLOCK` (`rehearse_fork.sh:47` → anvil
+> `--fork-block-number`, `:368`). Omit it and you fork `latest`, which is the root cause of two separate
+> failures: forge and anvil resolve "latest" at different moments against a load-balanced endpoint, and an
+> unpinned fork re-fetches instead of reading `~/.foundry/cache/rpc/<chain>/<block>/` — **209 s pinned
+> versus a 2,915 s hang unpinned**. Use a recent finalized block, not the example above. Full reasoning in
+> `REDEPLOY_RUNBOOK.md` §0.2.
+
 ## `snapshots/pre/`
 
 The committed capture from **2026-07-27**, taken from the live stack on proxy
@@ -57,7 +96,13 @@ chain's reads are pinned to a single block.
 `index.json` is the per-chain summary. Highlights recorded at capture time:
 
 - **110 meta instances** across the 7 configured chains (66 / 16 / 16 / 4 / 4 / 4 / 0 for
-  1 / 42161 / 8453 / 10 / 100 / 137 / 56), matching config exactly on every chain.
+  1 / 42161 / 8453 / 10 / 100 / 137 / 56). **This is the CAPTURED figure and is left as captured; it no
+  longer matches config.** On 2026-08-12 one `MorphoVaultsMeta` instance was added to chain 1 (issue
+  #296), so config is now 111 (chain 1: 67). A snapshot records what was on chain when it was taken —
+  restating it would destroy that — but the "matching config exactly" property it was captured with no
+  longer holds, and `diff_snapshots.py` will surface the difference as a structural DIFF — **provided you diff against the
+committed `pre/` snapshot**. §0.7 sanctions refreshing `pre/`; a snapshot refreshed after this change
+already contains the vault and shows no difference at all.
 - **`excludedFromDefaultAdapter` is empty on all 24 chains** — every registered asset is included in
   the default adapter, so there is no exclusion state to re-apply after the redeploy.
 - The deployer EOA holds `DEFAULT_ADMIN_ROLE` + `MANAGER` and the security-council Safe holds neither,

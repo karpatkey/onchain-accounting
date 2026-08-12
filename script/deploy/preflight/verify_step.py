@@ -227,16 +227,13 @@ class Chk:
 
 def step_record_cleared(k: Chk, rec: dict, exp: dict, url, base, tag) -> None:
     """The record must be cleared, the bridge must NOT be, and a rollback must exist."""
-    # `reset_deployment_records.py` writes "" rather than deleting, because
-    # `ConfigReader._readAddrOrZero` (ConfigReader.sol:216) requires `vm.keyExists` first and
-    # `writeAdapterAddress` writes into an EXISTING JSON pointer. A record whose keys were deleted —
-    # by hand, by `jq del(...)`, or by regenerating from a template — therefore reads as cleared but
-    # breaks the write-back in 01_2/02_2. Absence must fail, not pass.
+    # Absence must fail, not pass: the loop below does a literal `key not in rec`.
+    #
+    # This check does not cover every key it iterates — tracked in #299.
     for key in rd.CLEAR_TOP:
         if key not in rec:
-            k.fail.append(f"{key} is ABSENT from the record, not blanked. ConfigReader needs the key "
-                          f"to exist (vm.keyExists) for the deploy to write the new address back; "
-                          f"restore it as \"\" rather than deleting it")
+            k.fail.append(f"{key} is ABSENT from the record, not blanked; restore it as \"\" "
+                          f"rather than deleting it")
             continue
         k.require(not c.is_address(rec[key]),
                   f"{key} is still populated ({rec[key]}) — 03/04 will skip-if-deployed and 06 "

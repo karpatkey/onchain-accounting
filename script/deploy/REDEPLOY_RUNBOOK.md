@@ -26,8 +26,45 @@ operator: **pin the fork block** (see the note at the rehearsal invocation — i
 **None of this means the system is deployed. It is not.** A fork rehearsal is evidence that the deploy
 path executes; it is not a deploy, and it is not an approval to deploy.
 
-Companion tooling lives in [`preflight/`](preflight/README.md). Everything there is read-only except
-`rehearse_fork.sh`, which only ever broadcasts to a loopback anvil.
+Companion tooling lives in [`preflight/`](preflight/README.md). The only script there that broadcasts
+at all is `rehearse_fork.sh`, whose RPC is built as loopback (`:49`) and refused otherwise (`:57`).
+Four of its scripts write **git-tracked** files — and because that list has been wrong before,
+**`git status` is the check of record, not this paragraph**:
+
+- `reset_deployment_records.py --apply` — archives the in-scope records under
+  `script/deploy/preflight/archive/<tag>/`, then clears the NAV keys in `script/config/deployments/`
+  (and adds a blank `AssetKindRegistry` where a record lacks one); the bridge keys are deliberately
+  kept (see 1.1). Dry-run by default. `--restore <tag>` reads that archive back — pass the same chain
+  ids you cleared, or the run reports every other declared chain as `MISSING` and exits 1. **Note the
+  dry-run default guards `--apply` only:** `--restore` is dispatched before it and writes
+  unconditionally, keeping no archive of what it overwrote — judge by the flag you passed, not by
+  the absence of `--apply`.
+- `snapshot_production.py` — an `--out` value with no `/` names a directory under
+  `preflight/snapshots/`; one containing a `/` is taken as a path in its own right (`:346`). It
+  **defaults to `--out pre`**, the committed capture, and the documented pre-deploy step passes
+  `--out pre` deliberately. Judge safety by the destination it resolves to, not by the flag text.
+- `declared_heartbeat_guard.py --refresh` — rewrites the committed `chainlink_declared_heartbeats.json`.
+- `rehearse_fork.sh` — mutates `script/config/` and `broadcast/` during a rehearsal, refuses to start
+  if either is dirty (`:63` — those two paths only, not the whole tree), and on exit restores tracked
+  files with `git checkout --` (`:386`) **and deletes untracked, non-ignored ones with
+  `git clean -fdq`** (`:393`) under those same two paths. Two of its outputs land outside that
+  cleanup and outside `git status`: `safe-transactions/` in the repo root, which is **gitignored**, so
+  it survives every rehearsal and does not show up even under `--untracked-files=all` (use
+  `--ignored`, or just look); and `steps.tsv`, `config-before`/`config-after` and `anvil.log` under
+  `$WORK`, which defaults to `/tmp/nav-rehearsal-<chainId>`.
+
+These tools take destinations from you — each `--json` report path, `snapshot_production.py`'s
+`--out`, `reset_deployment_records.py`'s `--tag`, `rehearse_fork.sh`'s `$REHEARSAL_DIR`. Do not
+expect one to stop you pointing it somewhere harmful: from the repo root `--out
+script/config/deployments` would write snapshots over the deployment records, and `--tag /tmp/x` puts
+the archive outside the repo. The four bullets above describe the **documented invocations**, not a
+guarantee the tools enforce.
+
+Reversibility is a property of *when you are*, not of the tool, so check what the target holds before
+assuming an undo exists: once a step has written new addresses into `script/config/deployments/`,
+`git checkout --` discards them and `--restore <tag>` writes the previous generation back over them.
+Keep `archive/<tag>/` until the deploy has been *verified*, not merely until rollback stops being
+wanted: `verify_step.py` requires it as the step 1.1 post-condition (`:252`).
 
 - **Scope:** exactly the **24 chains** that already have a `NAVCalculatorProxy`. Chain **1101**
   (Polygon zkEVM) is excluded — its deployment record is empty, so it was never deployed.
@@ -42,15 +79,23 @@ Companion tooling lives in [`preflight/`](preflight/README.md). Everything there
 | the other 17 | ERC20Default only |
 
 Configured totals, reconciled from config **and** confirmed against the live NAV on 2026-07-27;
-feed count re-measured 2026-07-30 against the merged tree:
-**33 meta adapters, 110 meta instances, 13 plain adapters, 41 custom price feeds, 93 assets.**
-The feed count is no longer pending anything — see the note under 1.4 for the two PRs that moved it.
+feed count re-measured 2026-07-30 against the merged tree; meta instances amended 2026-08-12 (issue
+#296, see "Meta instances" below — that one figure post-dates the 2026-07-27 confirmation):
+**33 meta adapters, 111 meta instances, 13 plain adapters, 41 custom price feeds, 93 assets.**
+<!-- meta instances 110 -> 111 on 2026-08-12: one MorphoVaultsMeta instance added on chain 1 (issue #296). See the amendment under "Meta instances" below. -->
+<!-- plain adapters 12 -> 13 by #285: the combined Cap adapter split into CapStablecoin + CapSavings. -->
+
+The feed count is no longer pending anything — see the note under 1.5 for the two PRs that moved it.
 
 **Re-measured 2026-08-08 at `a3974686` with `preflight_config.py`: all five totals and every per-chain
-row below were unchanged at that commit.** `script/config/` did change in the interval (labels were
-retired in #275 and realigned to `ProtocolNames.sol`), so this was measured rather than assumed — but
-nothing moved a count. `0 error(s)` across all 24 chains; the warnings it prints are declared-heartbeat
-margin findings, which are a separate axis and not a count.
+row below were unchanged AS OF THAT COMMIT.** (Superseded for TWO figures now: meta instances moved
+110 -> 111 and mainnet 66 -> 67 on 2026-08-12 for issue #296, and plain adapters moved 12 -> 13 with
+mainnet 11 -> 12 for the Cap split below. The other three totals still hold. This attestation is left
+dated rather than restated — it was true of `a3974686` and is not a claim about today's tree.)
+`script/config/` did change in the interval (labels were retired in #275 and realigned to
+`ProtocolNames.sol`), so this was measured rather than assumed — but nothing moved a count then.
+`0 error(s)` across all 24 chains; the warnings it prints are declared-heartbeat margin findings, which
+are a separate axis and not a count.
 
 ⚠️ **One total has moved SINCE that measurement: plain adapters, 12 → 13.** The combined `Cap` adapter
 was split into `CapStablecoin` + `CapSavings` (one adapter per leg, so each label segment is a
@@ -61,20 +106,26 @@ per-adapter constant an `AssetKindRegistry` override can address). Chain 1's `pl
 | --- | --- | --- | --- |
 | plain adapters | 12 | **13** | one `Cap` key replaced by two |
 | meta adapters | 33 | 33 | Cap is a plain adapter |
-| meta instances | 110 | 110 | ditto — **step 1.8's per-adapter set assertion is untouched** |
+| meta instances | 111 | 111 | ditto — **step 1.8's per-adapter set assertion is untouched** |
 | custom price feeds | 41 | 41 | no feed involved |
 | assets | 93 | 93 | both legs are still valued in the already-registered USDC |
+
+⚠️ **The `meta instances` row reads 111, not the 110 this table carried before #298 merged.** The two
+changes are independent and BOTH apply: #296 added one `MorphoVaultsMeta` instance on chain 1 (110 ->
+111, mainnet 66 -> 67) and #285 split one plain adapter into two (12 -> 13, mainnet 11 -> 12). Neither
+supersedes the other, and the chain-1 row below carries both — 67 instances AND 12 plain. A resolution
+that took either side of the conflict wholesale would have silently reverted the other PR's count.
 
 **The tooling moves with it and needs no edit.** `preflight_config.py` derives `plainAdapters` from
 `len(enabled_keys(nav-config/balance-adapters/<id>.json))`, and `verify_step.py` **1.7** asserts
 `len(record.balanceAdapters) == plainAdapters + metaAdapters + 1` plus set equality on the KEY NAMES —
 both read config, so both expect 13 the moment the config lands. This table is the thing that goes
-stale, which is why it is stated here. (Note 110 is **1.8**'s number, not 1.7's; 1.7 does not look at
+stale, which is why it is stated here. (Note 111 is **1.8**'s number, not 1.7's; 1.7 does not look at
 meta instances at all.)
 
 | chain | meta adapters | meta instances | plain | feeds | assets |
 | --- | --- | --- | --- | --- | --- |
-| 1 mainnet | 15 | 66 | 12 | 26 | 43 |
+| 1 mainnet | 15 | 67 | 12 | 26 | 43 |
 | 42161 arbitrum | 7 | 16 | 0 | 8 | 11 |
 | 8453 base | 6 | 16 | 0 | 4 | 11 |
 | 10 optimism | 2 | 4 | 0 | 0 | 6 |
@@ -87,37 +138,96 @@ meta instances at all.)
 `meta adapters` and `meta instances` columns above are a summary of the table immediately below, which
 is where they are derived and which is the authoritative one if the two ever disagree.)
 
-#### Meta instances: **110**, reconciled from config and confirmed on-chain (2026-07-29)
+#### Meta instances: **111** — the figure to compare a tool's output against
+
+*(**110** was derived from config across all 24 chains, and confirmed ON-CHAIN on the 7 configured
+chains, on 2026-07-29 by the method below — the two scopes differ and are not interchangeable; **+1 on 2026-08-12** for issue #296, one `MorphoVaultsMeta` instance on chain 1. The heading
+carries the CURRENT number because step 1.8 compares against it; the dated derivation keeps its own date
+and scope below rather than being restated as covering the later change.)*
+
+> ⚠️ **AMENDED 2026-08-12 — the expected total is now 111, and `mainnet` is 67 rather than 66.** One
+> `MorphoVaultsMeta` instance was added to chain 1's config (the KPK USDC Yield RWA vault,
+> `0x7a72bcD2c3F7F7e4D6679170a0625bAB15D7DDa1`) to match a change already made on the LIVE NAV by
+> `addMetaInstances` on 2026-08-12 (tx `0x1b86d482…b7024`, block 25739090). Without it `06_Configure`
+> would reconcile the on-chain set back DOWN and drop the vault, re-introducing the under-reporting that
+> transaction fixed — see issue #296.
+>
+> **What was rewritten and what was not, deliberately.** The per-chain DERIVATION TABLE below, the
+> headline totals, and the summary row **have been updated to 111 / 67**, because the note under the summary table designates that
+> table as "where they are derived and which is the authoritative one if the two ever disagree" — a table
+> derived from config must move when config moves, or the document's own source of truth becomes the one
+> wrong place. What is NOT rewritten is the **dated 2026-07-29 claim**, which now sits in the italic
+> note directly under the heading rather than in the heading itself. Its scope was: derived from config
+> across all 24 chains, and confirmed ON-CHAIN on the 7 configured chains (see the 1.8 set comparison
+> below, and step 0.6). This change is one adapter on one chain, so restating that date's scope as
+> though it covered today would destroy the provenance of both. What was
+> measured today
+> is narrower and is stated as such: `getMetaInstances(MorphoVaultsMeta)` on the live NAV
+> (`0x80eD5cc6cEbAe4fEE1eD8687279aa492A50afa8d`) returns **10** entries for chain 1, and chain 1's config
+> list now matches it exactly — same members, same order.
+>
+> Every other adapter and chain is untouched. **Four figures in the table below move, and they are the
+> COMPONENT columns as well as the totals** — an amendment naming only the totals would leave the columns
+> not summing to them:
+>
+> | figure | was | now |
+> | --- | --- | --- |
+> | mainnet `instances` | 52 | **53** |
+> | mainnet total | 66 | **67** |
+> | fleet `instances` | 90 | **91** |
+> | fleet total | 110 | **111** |
+>
+> `instancesRaw` is unchanged everywhere (14 on mainnet, 20 fleet-wide) — this vault is an address
+> coordinate, not a raw `bytes32` marketId. Re-derived from config at this branch's head rather than
+> assumed: mainnet's `instances` sum to 53 and `instancesRaw` to 14 across the 15 enabled meta adapters.
+>
+> **Every ACTIONABLE figure in this document has been updated in place to 111 / 67** — the headline
+> totals, the summary row, the derivation table, the two independent confirmations, the disabled-adapter
+> arithmetic (now 111 + 3 = 114) and the step-1.8 post-condition. An operator is never asked to
+> mentally substitute a value: where a number is compared against a tool's output, it is the current
+> number. What is preserved as dated prose is the METHOD and DATE of the 2026-07-29 derivation, not its
+> totals — the same figure was doing two jobs with opposite requirements, and they are now separated.
 
 This number is what tells you at step 1.8 whether `06_Configure`'s reconciliation succeeded, so it is
-settled here rather than at execution time. Three figures had been circulating — 104, 110 and 113.
+settled here rather than at execution time. Three figures had been circulating — 104, 110 and 113
+(the latter two now 111 and 114 after the 2026-08-12 amendment; the historical figures are named here
+as they circulated, and the paragraphs below explain the CURRENT values).
 
 | chain | enabled meta adapters | `instances` | `instancesRaw` | total |
 | --- | --- | --- | --- | --- |
-| 1 mainnet | 15 | 52 | 14 | **66** |
+| 1 mainnet | 15 | 53 | 14 | **67** |
 | 42161 arbitrum | 7 | 14 | 2 | **16** |
 | 8453 base | 6 | 12 | 4 | **16** |
 | 10 optimism | 2 | 4 | 0 | **4** |
 | 100 gnosis | 2 | 4 | 0 | **4** |
 | 137 polygon | 1 | 4 | 0 | **4** |
 | 56 bsc | 0 | 0 | 0 | **0** |
-| **total** | **33** | **90** | **20** | **110** |
+| **total** | **33** | **91** | **20** | **111** |
 
 Counted from `script/config/nav-config/meta-balance-adapters/<chainId>.json`, taking only adapters
 with `enabled: true` and summing `instances` + `instancesRaw`. Two independent confirmations: the
-deduplicated count is also 110 (no coordinate repeats within an adapter, so `06` cannot revert
-`DuplicateMetaInstance`), and unique `(chain, coordinate)` pairs across *all* adapters is also 110
-(no coordinate is claimed by two adapters on one chain). **`verify_step.py 1.8` then compared each
-adapter's on-chain `getMetaInstances()` against config as a SET on all 7 configured chains and passed
-— so config and the live NAV agree exactly, not merely in total.**
+deduplicated count is also 111 (no coordinate repeats within an adapter, so `06` cannot revert
+`DuplicateMetaInstance`), and unique `(chain, coordinate)` pairs across *all* adapters is also 111
+(no coordinate is claimed by two adapters on one chain). Both dedup figures are re-derived from
+today's config and so carry the amended 111.
+
+**The all-chain set comparison below is NOT re-derived — it is a dated result and it covers the 110
+state.** On 2026-07-29 `verify_step.py 1.8` compared each adapter's on-chain `getMetaInstances()`
+against config as a SET on all 7 configured chains and passed, so config and the live NAV agreed
+exactly, not merely in total — **at that time, at 110**. The 2026-08-12 check behind the +1 was much
+narrower: `getMetaInstances(MorphoVaultsMeta)` on chain 1 only. Re-running 1.8 across all 7 chains
+against the amended config has NOT been done, and this paragraph does not claim it has.
 
 **Where the other two figures come from:**
 
-- **113** = every adapter in the files, ignoring `enabled`. The difference is exactly three disabled
-  adapters carrying one instance each: mainnet `BalancerV2PoolsMeta`, mainnet `BalancerV2GaugesMeta`,
-  bsc `PancakeSwapV2PoolsMeta`. `ConfigReader.isAdapterEnabled` gates registration and a missing key
-  reads as **false** (`ConfigReader.sol:367-368`), so `06` will not register any of them. 110 + 3 = 113.
-- **104** is not reproducible from the current tree by any derivation — not `instances` alone (90),
+- **114** = every adapter in the files, ignoring `enabled`. The difference is **four** disabled meta
+  adapters (37 in the files, 33 enabled), and they do NOT carry one instance each — the +3 is a
+  coincidence of which ones are non-empty. Measured from `nav-config/meta-balance-adapters/*.json`:
+  mainnet `BalancerV2PoolsMeta` (`instances` 0, `instancesRaw` 1), mainnet `BalancerV2GaugesMeta`
+  (1, 0), bsc `PancakeSwapV2PoolsMeta` (1, 0), and base `PancakeSwapV3PoolsMeta` (0, 0) — the last
+  contributes nothing **today**, so the day it gains an instance this reconciliation goes short. `ConfigReader.isAdapterEnabled` gates registration and a missing key
+  reads as **false** (`ConfigReader.sol:368-369`), so `06` will not register any of them. 111 + 3 = 114.
+- **104** is not reproducible from the current tree by any derivation — not `instances` alone (91),
   not the deploy-config tree (0, it holds no instance lists), not any enabled-filter variant. It
   predates the config split in `f4873617` and should be treated as retired, not reconciled.
 
@@ -157,7 +267,7 @@ uses — running the **old** bytecode.
 > | --- | --- |
 > | write migration logic that **does not exist today** — `erc20DefaultBalanceAdapter` is plain storage (`Balances.sol:56`), so an upgrade can assign it, but the set-once helper will not do it | `initialize()` does it, on a path already exercised on 24 chains |
 > | also repair three private registry structures by hand, since the helper that normally maintains them is bypassed: `_globalAdapters` (`:46` — remove old, push new), `_adapterTypes` (`:49`), `_isAdapterRegistered` (`:52`) | maintained by `_setErc20DefaultBalanceAdapter` as a unit |
-> | re-seed the inclusion list — via the constructor's un-registry-checked `initialAssets` seed, or `addSupportedAsset`, which is `OnlyNAVCalculator`-gated and demands `isAssetRegistered` | `RegisterAssets` populates it as a side effect of 1.5 |
+> | re-seed the inclusion list — via the constructor's un-registry-checked `initialAssets` seed, or `addSupportedAsset`, which is `OnlyNAVCalculator`-gated and demands `isAssetRegistered` | `RegisterAssets` populates it as a side effect of 1.6 |
 > | **deploy a new adapter anyway** — the adapter itself is immutable, so nothing here avoids that | same |
 > | be audited as one-off code, then either be removed by a *second* upgrade or leave a permanent setter widening the admin surface of a contract whose immutability is load-bearing | no new surface |
 > | all of it against a **live** proxy holding the production registry | against an empty proxy, with the old stack still answering as a fallback |
@@ -242,10 +352,10 @@ NAV address is invalidated by construction:
 
 | consequence | scale | done at |
 | --- | --- | --- |
-| every custom price feed is redeployed — each holds `INAVCalculator public immutable NAV` (ADR 0019) | **41**: mainnet 26, arbitrum 8, base 4, gnosis 3 | 1.4 |
-| every asset with its primary + monitor feeds is re-registered | **93** assets | 1.5 |
+| every custom price feed is redeployed — each holds `INAVCalculator public immutable NAV` (ADR 0019) | **41**: mainnet 26, arbitrum 8, base 4, gnosis 3 | 1.5 |
+| every asset with its primary + monitor feeds is re-registered | **93** assets | 1.6 |
 | every plain and meta adapter is redeployed | 13 plain + 33 meta | 1.7 |
-| every meta instance is re-registered | **110** | 1.8 |
+| every meta instance is re-registered | **111** | 1.8 |
 | each assisted adapter drags its assistant, which holds `immutable ADAPTER` | **4 pairs on 2 chains** | 2.1 |
 | downstream consumers repoint off the old proxy | kpkShares, portal, agents, subgraphs | 2.7 |
 
@@ -261,7 +371,7 @@ looking attractive — it is genuinely far smaller. It is also wrong.
 > **If another document says 39 or 40 feeds, it predates two merges — it is not a disagreement to
 > split.** 39 was correct until #199 (merged 2026-07-29), 40 until #224 (merged 2026-07-30). The merged
 > tree is **41**, re-measured with `preflight_config.py` on `e4307cb3`: mainnet 26, arbitrum 8, base 4,
-> gnosis 3. The full derivation is under 1.4. The **110** meta instances and the cutover off
+> gnosis 3. The full derivation is under 1.5. The **111** meta instances and the cutover off
 > `0x80eD5cc6cEbAe4fEE1eD8687279aa492A50afa8d` are unaffected and agree everywhere.
 
 The old stack is **abandoned in place**, not decommissioned. It keeps answering on
@@ -302,8 +412,9 @@ the ordering rule in its second row is still the rule, and because that rule was
 The "measured, not predicted" instruction in the first row still applies to every future pin question,
 and 0.3 is where it now lives.
 
-**Both pinned values will be regenerated, but for two independent reasons — do not attribute either to
-the other.**
+**Both pinned values WERE regenerated, for two independent reasons — do not attribute either to the
+other.** (Historical: this is the record of why each moved, not an outstanding instruction. The regen is
+done — see 0.3 — and the pin moved again afterwards in #278; nothing here asks for another.)
 
 - **`PriceFeedLib` moved because #187 edited `src/prices/PriceFeedLib.sol` directly.**
 - **`NAVRegistryLib` was already drifted on `main`** before #187 existed, independently of anything in
@@ -598,93 +709,208 @@ Re-measured **2026-07-29, after the linea top-up landed**: every priced chain is
 included (0.03066 ETH against an estimated 0.02800). Re-check on the day — linea had already been
 topped up once on 2026-07-27 without clearing, so measure rather than assume.
 
-**Re-measured 2026-08-10 against `main` @ `08cff61d`** (`python3 script/deploy/preflight/deployer_balances.py`):
-**24 chains scoped, 0 unreachable, 0 short, 2 unpriceable.** The top-up list came back
-`none — every priced chain is funded for the estimated gas`, and the run exited non-zero with
-`not clear to deploy`.
+That linea comparison is **stale on its second number only**: linea still holds 0.03066 ETH, but its
+estimate is now **0.00293**, not 0.02800 — the balance figure aged well, the estimate did not. Which is
+the general lesson for this section: re-measure both sides, not just the balance.
 
-What that output does and does not cover, stated without inferring a verdict:
+**Current state: `0 short, 2 unpriceable, 0 unreachable — not clear to deploy`.** **`0 short` means no
+PRICED chain is short — it is not a statement that nothing is under-funded.** Scroll **and hemi** are
+unpriced, so their funding is **UNKNOWN, not verified**, and this report is no evidence that they need
+none. Gnosis and plasma are priced from pinned constants and their rows are authoritative; **scroll and
+hemi are the two blockers** and both fail closed deliberately.
 
-- **Covers:** the 22 priced chains. None needs a top-up at the estimates in force that day.
-- **Does not cover:** gnosis and scroll. The script files them under
-  `NOT PRICED (these chains were not checked, and are not OK)` and sets `sufficient = None`, so it makes
-  **no finding either way** about their funding.
-- **Why, and under what condition:** `priceable = quoted >= GAS_PRICE_IMPLAUSIBLE_WEI`, where the
-  threshold is `1_000_000` wei / 0.001 gwei (`deployer_balances.py:51`, test at `:117`). Both chains
-  quoted far below it. **This is conditional, not permanent** — a later quote above the threshold clears
-  it, and plasma is the worked example: unpriceable in the 2026-07-29 reading, priced normally
-  (need 0.00022) on 2026-08-10.
-- **Therefore two distinct facts, which must not be collapsed.** (a) The **funding status** of gnosis and
-  scroll is **UNKNOWN, not failed** — the tool makes no finding either way. (b) The **gate** is
-  **UNRESOLVED**, and per this section's own rule ("Do not start until **all** of these hold", §0) an
-  unresolved blocking prerequisite **does block the deploy**. Unknown funding is not permission to
-  proceed. The tool cannot close it for them by construction. The paragraph below asserts their funding "has been confirmed sufficient
-  out of band" but records **no confirmer, no date and no sizing basis**, so it is not auditable and must
-  not be read as closing the gate. **To close 0.6: record who confirmed, when, and against what estimate
-  — or re-run once a quote clears the threshold and let the tool price them.**
+> **hemi (43111) joined scroll late, and it was a fail-open before that.** It charges an L1
+> data-availability fee measured at **5.485e-5 ETH against a whole `need` of 2.801e-5 ETH — 1.96x the
+> entire estimate** (2026-08-12, OP GasPriceOracle at `0x420…0F`), and it sat in **neither** L1
+> collection, so it received no regime probe, no headroom floor, and printed a clean `OK` at roughly a
+> third of its real cost. It had a `WORKAROUNDS` entry for its fee floor the whole time, which is exactly
+> what made it look handled. The gate now also **probes every unclassified chain's oracle at runtime** and
+> fails the row closed on a non-zero reading, so the next missed chain names itself instead of waiting for
+> a reviewer. The three chains that used to sit in
+`UNPRICEABLE` because their *quote* was unusable turned out to be three different mechanisms, each
+measured in `deployer_balances.py`:
 
-Note the
-2026-07-29 linea comparison above is now stale on its second number only: linea still holds 0.03066 ETH,
-but the estimate for it is now **0.00293**, not 0.02800 — the balance figure aged well, the estimate did not.
+| chain | what the quote actually is | handling | trust the row? |
+| --- | --- | --- | --- |
+| **100 gnosis** — a **CONFIGURED** chain (it carries `nav-config/` entries) | an honest but near-zero **base** fee (43–64 wei measured, blocks 6.7–98.1% full). Inclusion is **tip**-driven: the median landed tx paid `1,000,000,048` wei — base fee plus a 1 gwei client-default tip, 20-block tip p90 of 9.8 gwei | priced from a pinned **2 gwei** (`GAS_PRICE_OVERRIDE_WEI`) | **yes** |
+| **9745 plasma** | the **inverse** — the node pads the quote with a suggested tip nobody pays: `8,000,318` wei quoted against a **9 wei** median landed price, over an 8 wei constant base fee | priced from a pinned `0.01` gwei, above **both** observed values — so the verdict does not flip on *which* of the two the node happens to return | **yes** |
+| **534352 scroll** | **correct, and exactly what txs pay.** A hard floor: exactly `120,008` wei at −0/−5k/−50k/−200k/−1,000,000 blocks, tips a flat 100 wei | its quote is usable, but ~99.9% of its cost is an unmodelled L1 fee, so it **fails closed** | **no** |
+| **43111 hemi** | a fee-floor quote of `1,000,252` wei — usable, and it cleared the old `1_000_000` implausibility floor too | **the quote is not the problem: the omitted L1 fee is `5.485e-5` ETH against a whole `need` of `2.801e-5` ETH, i.e. 1.96x the entire estimate** (measured 2026-08-12 via the OP GasPriceOracle at `0x420…0F`). Scroll's category, not the eight OP chains'. **Fails closed** | **no** |
+
+**Treat the gnosis quote as a live, drifting value, not a constant.** Readings across days: `2266`,
+`2283`, then `53`–`60` wei, later `3209`. That drift is the evidence it tracks a real near-zero base fee
+rather than being a stuck bad value — and it is why plasma's old "intermittently unpriceable" behaviour
+was never a fix when it happened to price on a given day. Both are now pinned, so neither depends on the
+day.
 
 > ### ⚠️ SCOPE OF THIS GATE, AND WHY IT STAYS RED
 >
 > `deployer_balances.py` prices as `(gasUnits × gasPrice) × headroom` and models **no L1
 > data-availability fee** (open issue **#287**). That term is not a rounding error — on scroll it
-> measured **~99.9% of total cost**. Nine of 24 chains are affected, and the question is now **settled
-> by measurement rather than left as reasoning**:
+> measured **~99.9% of total cost**. **Ten** of 24 chains are affected (the eight below, plus scroll and
+> hemi), and the question is **settled by
+> measurement rather than left as reasoning**:
 >
 > | chains | n | status |
 > | --- | --- | --- |
 > | `10, 130, 204, 480, 5000, 8453, 42220, 57073` | 8 | **Pass, with a documented omission.** Measured margins (balance ÷ current need) are **10× to 996×**. A row flips once the added fee exceeds `balance − need`, so the **flip thresholds are ~9× to ~995× the current need** — the two are different quantities, do not quote the margin as the threshold. Either way the margins are nowhere near close, so the omission does not change these verdicts |
 > | `534352` scroll | 1 | **Stays failed closed.** ~99.9% of its cost is the unmodelled term, so no honest number exists for it |
-> | `100` gnosis | 1 | Unpriceable today (near-zero base fee); priced from a pinned 2 gwei once #284 lands |
-> | the remaining 14 | 14 | No known omission — but that is **absence of a measurement, not a clearance** |
+> | `43111` hemi | 1 | **Now failed closed.** The unmodelled term measured **1.96× its entire `need`** (5.485e-5 ETH vs 2.801e-5 ETH, 2026-08-12) — scroll's category, not the eight's. It was in neither collection and printed a clean `OK` |
+> | the remaining 14 | 14 | No known omission — but that is **absence of a measurement, not a clearance**, and hemi is what that distinction costs when it is ignored |
 >
 > **So the gate is authoritative for the 8 above and for the remaining 14 as far as anything has been
-> checked; it is NOT authoritative for scroll, and makes no finding on gnosis today.**
+> checked — gnosis and plasma are among those 14, both priced from pinned constants — and it is NOT
+> authoritative for scroll or hemi.** The four groups partition the 24: **8 + 1 scroll + 1 hemi + 14 = 24.**
 >
-> **Today the blocker is TWO chains, not one.** With #284 unmerged, `deployer_balances.py` leaves both
-> gnosis and scroll unpriceable, so landing #287 or waiving scroll **cannot by itself clear this gate** —
-> gnosis would still hold it red. **Once #284 has landed** (gnosis priced from a pinned 2 gwei, plasma
-> likewise), scroll is the sole remaining blocker, and only then does it **keep printing
-> `not clear to deploy` on every run until #287 lands or scroll is explicitly waived.** Do not expect
-> #287 alone to make this preflight green while #284 is open, and do not read the residual gnosis
-> failure as a regression. That is the gate working, not a regression. **Do not "fix" it by raising a floor
-> or silencing the row** — a 1 gwei floor was already measured reporting `TOP UP` on **11 of 24**
-> amply-funded chains. **Once #284 has landed**, the two legitimate exits are landing #287, or recording
-> a waiver for scroll with a named person, a date and the basis. **Neither is sufficient today** — while
-> #284 is open, gnosis holds the gate red regardless of what happens to scroll.
+> **"No known omission" is now partly enforced rather than merely asserted.** Every chain in neither L1
+> collection has its OP GasPriceOracle probed at runtime, and a non-zero reading fails the row closed
+> naming itself. That closes the hemi shape specifically. It does **not** cover a DA surcharge levied
+> without that predeploy, and **eight** of the 14 (`56` bsc, `137` polygon, `146` sonic, `999`
+> hyperevm, `9745` plasma, `43114` avalanche, `59144` linea, `80094` berachain) were unreachable from the
+> environment this was measured in, so they are **unverified, not cleared**. arbitrum (`42161`) was
+> checked and has no such predeploy: Nitro charges its L1 component by inflating gas units, which
+> `gas × price` already captures.
 >
-> One caveat on wording, because the mechanism is threshold-driven rather than intentional: on `main`
-> today scroll is unpriceable only because `priceable = quoted >= GAS_PRICE_IMPLAUSIBLE_WEI`
-> (`deployer_balances.py:117`), so a higher quote would price it **while still omitting L1 DA**. It is
-> #284 that makes the refusal deliberate rather than incidental.
+> **Scroll and hemi are the blockers.** They will keep printing `not clear to deploy` on every full-scope
+> run until **#287 lands**. That is the gate working, not a regression. **Do not "fix" it by raising a floor or
+> silencing the row** — a 1 gwei floor was already measured reporting `TOP UP` on **11 of 24** amply-funded
+> chains.
+>
+> **A waiver does not turn the gate green, and there is no flag, env var or input that does.** This
+> paragraph used to say the row persists "until #287 lands or scroll is explicitly waived", which reads as
+> though a waiver is a second way to clear the check. It is not: a waiver is a human decision to **proceed
+> despite a red exit**, recorded outside this script with a named person, a date and the sizing basis. The
+> run still exits non-zero and the row still reads `UNPRICEABLE`, which is the intended outcome — the
+> record of the override lives with the person who made it, not in the tool's exit code.
+>
+> **The one thing that does make it exit `0` is SCOPE.** The script takes positional chain ids, so
+> `deployer_balances.py 1 100` omits scroll and exits successfully. It prints a
+> `SUBSET: N declared chain(s) not covered` line, so the narrowing is visible — but **a green exit is only
+> ever authoritative for the scope shown on the first line.** A subset run is a debugging aid, not a gate.
 
-**The script still exits non-zero and prints `not clear to deploy`, and the reason is the two
-unpriceable chains, not a shortfall.** Measured the same day:
+#### The eight OP-stack chains: a decision that was taken, not a default
 
-| chain | holds | `eth_gasPrice` quote | state |
-|---|---|---|---|
-| **100 gnosis** — a **CONFIGURED** chain (it carries `nav-config/` entries, so it is in the deploy's asset/adapter scope, not a shell) | 7.90011 xDAI | ~2.3k wei (0.0000023 gwei) | `UNPRICEABLE` |
-| 534352 scroll | 0.00648 ETH | 120108 wei (0.0001201 gwei) | `UNPRICEABLE` |
+**Ruling: pass the eight as implemented.** `L1_FEE_UNMODELLED` holds **scroll and hemi** (it was
+scroll-only when this ruling was written; hemi was added after measurement put it in scroll's category,
+which does not disturb the ruling about the eight). The alternative —
+failing all ten closed — was proposed repeatedly in review and is defensible on principle: those chains
+do charge a fee this estimator omits, and a large balance does not make a verdict authoritative. It was
+rejected for two reasons: the omitted term is **~2.7e-5 native** against those margins and **no chain's
+verdict flips** when it is added; and an over-strict gate gets bypassed, for which the 11-of-24
+false-alarm measurement above is the precedent. That figure read `~1e-7` until 2026-08-12, when the probe
+payload was found to be compressible; **it is INFERENCE, not measurement** — the pre-correction number
+scaled by the measured 59.1957× ratio, not re-measured per transaction, so treat it as an order of
+magnitude. The ruling is unaffected: flipping any of the eight needs the term to exceed the whole
+`need` by between one and three ORDERS OF MAGNITUDE depending on the row — stated that way
+deliberately, because the table above forbids quoting the measured **10× to 996×** margin as the flip
+threshold, and the module declines to quote those figures for the same reason. The correction consumed
+1.8 of the 3 orders that argument tolerates. **Scroll is treated differently because there the
+omitted term is ~99.9% of the cost** — applying the same treatment to the eight would be theatre.
 
-Treat the gnosis quote as a **live, drifting value, not a constant**: two runs minutes apart on
-2026-08-10 read **2266 wei** and **2283 wei**. Quote it as an order of magnitude, and note it now sits
-*below* the "~5–10k wei" band recorded in the paragraph that follows. Plasma priced normally in this run
-(need 0.00022), which is what "intermittently" means — its absence from the unpriceable list on any one
-day is not a fix.
+Full pricing for all **ten** remains **issue #287**, which carries everything already measured. **#287's
+own scope still says nine and should be widened** — it predates hemi's reclassification.
 
-**Some chains report `UNPRICEABLE`, which is a third state and not a pass.** Gnosis, scroll and
-intermittently plasma quote an `eth_gasPrice` far below any usable price (gnosis ~5–10k wei, scroll
-~120k), so `need` computes to roughly zero and `balance >= need` is true for *any* balance. The test
-is a tautology and its `True` means nothing, so the script reports `sufficient = None`, lists those
-chains under `NOT PRICED`, and exits non-zero. The estimate is deliberately **not** inflated to
-compensate: a floor generous enough to cover gnosis over-states the cheap rollups by three to four
-orders of magnitude, and a 1 gwei floor was measured reporting `TOP UP` on 11 of 24 amply-funded
-chains. Funding on those chains has been confirmed sufficient out of band; the state exists so nobody
-later reads a green row as evidence the chain was checked. Hemi's fee floor (1.10) is the same species
-with a known workaround.
+#### Both expiry axes are enforced — but neither models the omitted fee
+
+The measured margins are a snapshot, so two structural guards keep them honest. Values below are marked
+*at time of writing*; **the constants in `script/deploy/preflight/deployer_balances.py` are
+authoritative**, and if they disagree with this paragraph the code is right.
+
+* **Balance side** — `L1_OMITTED_MIN_HEADROOM_WEI`, applied to `L1_FEE_OMITTED_PRICED`. If a chain's
+  headroom (`balance − need`) falls below that floor (**1e-3 native**), the row goes `UNPRICEABLE` and
+  drives the non-zero exit. **Verified on all eight** by forcing each balance under its `need`: every one
+  reported `UNPRICEABLE`, none reached a `TOP UP` verdict. **Why an absolute floor and not a ratio:**
+  celo sits at 9.95× margin with ~50 CELO of headroom against a measured addition of ~0, so a "10× need"
+  rule would have failed it spuriously. `1e-3` native is **~38×** the largest addition (mantle, ~2.7e-5).
+  That factor read ~2,200× until 2026-08-12, when the probe payload was found to be compressible and the
+  term was corrected upward ~59× (see **Why two probe sizes** below). The floor VALUE still covers the
+  term; only its margin shrank.
+* **Fee side** — a **two-point regime probe**: the oracle's own `getL1Fee` on **64,887 bytes**
+  (`L1_REGIME_PROBE_BYTES_BIG`, the region the real payload occupies) **and** on **4,096 bytes**
+  (`L1_REGIME_PROBE_BYTES_SMALL`, the second point on the curve), each against a per-chain baseline
+  (`L1_REGIME_BASELINE_WEI`, `L1_REGIME_BASELINE_SMALL_WEI`). Either exceeding `L1_REGIME_MAX_RISE`
+  (**100×**) sends the row to `UNPRICEABLE`, naming which **probe** tripped (`big-payload` /
+  `small-payload`) — not what caused it, which one reading cannot establish. A read failure also fails
+  closed.
+  **Both probes pin to one block**, because `l1BaseFee` was observed moving `298,580,940 → 320,948,895`
+  wei inside a 20-second window.
+
+**Why two probe sizes, and why the probe payload is incompressible.** A single 4,096-byte probe was
+measured to have **zero sensitivity to payload size**: on base, `getL1Fee(0)` and `getL1Fee(4096)`
+returned an identical `971,132,088` wei. **The original explanation for that was wrong** — this section
+used to say 4 KB "sits entirely below the size-dependent region". The real cause was the probe payload:
+it was `"ff" * n`, and post-Fjord `getL1Fee` prices the **FastLZ-compressed** size, so a single repeated
+byte compresses to almost nothing and both readings landed in the flat region. `isFjord()` is 1 on seven
+of the eight chains (mantle reverts every mode getter yet behaves identically).
+
+Measured 2026-08-12, one pinned block per chain, ratios **identical to four significant figures on every
+charging chain**:
+
+| payload at 64,887 bytes | ratio to `"ff"` |
+| --- | --- |
+| all-zero | 1.0000 |
+| incompressible (iterated sha256) | **86.9003** |
+| real creation bytecode | **59.1957** |
+
+So the old probe understated real deploy calldata ~59×, and the chain-independence says the fee is linear
+in compressed size with a per-chain scalar. The probe now sends a deterministic incompressible keystream
+(`_probe_payload`), and **all 16 baselines were re-measured with those exact bytes** — a baseline is only
+meaningful against the payload it was measured with. Real bytecode was rejected as the probe payload
+despite being more representative: it changes whenever a contract changes, which would silently invalidate
+every baseline. Representativeness is #287's (real per-transaction `input` bytes from the rehearsal).
+
+**A shortfall figure for an affected chain is a LOWER BOUND.** `need` omits the L1 fee, so a printed
+top-up amount for one of those chains would tell the operator to send too little. The row carries
+`shortfallExcludesL1` and the instruction says `LOWER BOUND … SEND MORE`. The headroom guard makes this
+unreachable for the eight today, but **unreachable is not correct** — it holds only while that guard
+exists and only for chains in one of the two sets.
+
+**Residuals this does not remove.** A fee-mode change that leaves both probe readings under the limit
+while altering the curve shape would not trip; the measured big/small ratio (**15.7787×** on every charging
+chain, 0 on celo which charges nothing) is the signal, deliberately not enforced with an invented
+tolerance. That ratio was recorded as 6.44× before 2026-08-12; 6.44× is what the compressible `"ff"`
+payload yields and is how the artefact was identified, so a reading near it is now itself suspicious. And `L1_FEE_OMITTED_PRICED` membership is by **rollup family, not per-chain measurement** —
+mantle reverts on all three OP fee-mode getters while `getL1Fee` works, so it is not a standard OP-stack
+oracle.
+
+> 🛑 **SCROLL IS DELIBERATELY UNPRICED, and its figure was wrong three times before it was refused.**
+>
+> | attempted model | error | verdict it produced |
+> | --- | --- | --- |
+> | the oracle's **retired** `overhead`/`scalar` pair (`isCurie()` is `1`) | understated ~27× | false `OK` |
+> | `getL1Fee` over the **aggregate** byte count | overstates 2.29× | false `TOP UP` |
+> | `getL1Fee` summed over a split proportional to deployed runtime sizes | fourth payload undercounted — `02_2` broadcasts `new AtomicNAVProxyDeployer(...)` (`02_2_DeployNAVProxy.s.sol:114`), so DA is charged on that outer creation input, not the 89-byte proxy | `OK` narrowly — withdrawn |
+>
+> The shell total is **64,887 bytes, artifact-derived**: that settles the *sum* but not the
+> *per-transaction split*, and the split matters because the fee is super-linear. **What unblocks it is a
+> real broadcast record** — run the fork rehearsal and read per-transaction `input` byte counts from
+> `broadcast/*/run-latest.json`. **Pin the fork block** (second positional argument to
+> `rehearse_fork.sh`); omitting it forks `latest` and reproduces a 2,915 s hang.
+>
+> **Funding scroll generously is the other route**, and the only one that does not wait on a measurement.
+
+> ⚠️ **`--with-gas-price` ALONE DOES NOT FIX GNOSIS, and the failure is silent.** Per `forge script
+> --help`, `--with-gas-price` is *"Gas price for legacy transactions, or **max fee per gas** for EIP1559
+> transactions"* — it does **not** set `maxPriorityFeePerGas`. Gnosis inclusion is **tip**-driven and the
+> node suggests only **~31 wei**, so a broadcast carrying only `--with-gas-price` keeps that unusably
+> small tip and can sit unmined **while appearing to have applied the 2 gwei workaround**. Pass both:
+> `--with-gas-price 2000000000 --priority-gas-price 2000000000`. `--legacy` also works.
+
+> ⚠️ **`deployer_balances.py` HAS AUTOMATED COVERAGE OF ITS VERDICT LOGIC, AND NONE OF ITS NUMBERS.**
+> `preflight/test_deployer_balances.py` is a verdict truth table run by the `Preflight gate tests` CI job
+> under both `python3` and `python3 -O`; it derives its expectations from the invariants in this section
+> rather than from the module, and it is mutation-tested. It replaces the earlier warning that there was no
+> test at all.
+>
+> **What it does NOT cover, which is the part that has actually gone wrong:** every live value is faked.
+> RPC readings, oracle prices and the **16 measured baselines** are constants in the test, so the suite
+> cannot detect a stale baseline, a chain that changed its fee mode, or a payload that measures the wrong
+> thing — the last of which is exactly the defect that forced all 16 baselines to be re-measured. Those
+> claims still rest on **manual measurement**, and a regression in them is caught by a human reading the
+> output or not at all. **`forge test` and the library-pin job DO run on a change to this file** —
+`.github/workflows/foundry.yml` puts no `paths:` filter on its `pull_request` trigger, so Build,
+unit tests, fork tests and Library pins all run on a preflight-only PR, as this PR's own runs show.
+An earlier version of this line claimed the opposite.
 
 ### 0.7 Capture the pre-deploy production state — **irreplaceable, do it before anything else**
 
@@ -820,7 +1046,7 @@ BROADCAST="--rpc-url $RPC --broadcast --account my-deployer --password-file <pwf
 > top-level address writes on it. Without it `01_2`/`02_2` only *log* the new library, impl and proxy
 > addresses; `script/config/deployments/<CID>.json` keeps the OLD ones, and steps 1.5–1.8 then build
 > feeds against the old NAV and register adapters on the old proxy. Nothing errors.
-> **`PERSIST_DEPLOYMENTS=1` is also mandatory on 1.6 — and the reason is a split inside one script.**
+> **`PERSIST_DEPLOYMENTS=1` is also mandatory on 1.7 — and the reason is a split inside one script.**
 > The per-**adapter** writes in `03`/`04` are NOT gated: they go through `ConfigReader.writeAdapterAddress`
 > (`04:241`) and always write. But the three **`*Assistant`** writes go through `saveDeployedAddress`
 > (`04:272,290,298`), which is the gated helper — `BaseDeployScript.sol:69-86` early-returns when the flag
@@ -867,10 +1093,16 @@ python3 script/deploy/preflight/reset_deployment_records.py
 python3 script/deploy/preflight/reset_deployment_records.py --apply --tag pre-redeploy
 ```
 
-Values are set to `""`, which `ConfigReader._readAddrOrZero` (`ConfigReader.sol:216-221`) reads as
-`address(0)` while keeping the JSON key present, so `vm.writeJson` writes back into an existing
-pointer. The pre-clear record is archived to `preflight/archive/pre-redeploy/<CID>.json` and is the
-"old addresses" input for the before/after audits.
+Values are set to `""` and the keys kept, not deleted.
+
+> **Expect ABSENT noise from gate 1.1 here.** Its absence check does not cover every key it iterates —
+> tracked in **#299**, and deliberately not fixed in the docs PR that found it.
+>
+> `vm.writeJson` creates a missing key unaided, so a brand-new adapter needs **no** seeded key. Pinned
+> by `script/test/WriteJsonCreatesMissingKeys.t.sol`.
+
+The pre-clear record is archived to `preflight/archive/pre-redeploy/<CID>.json` and is
+the "old addresses" input for the before/after audits.
 
 - **Precondition:** `git status` clean; snapshot 0.7 captured.
 - **Post-condition:** `python3 script/deploy/preflight/verify_step.py 1.1` — every key in the NAV
@@ -940,9 +1172,9 @@ alternative out, before proposing a smaller deploy.
 
 > **There is no `initialAssets` argument.** `initialize(admin_, chainlinkL2SequencerUptimeFeed_,
 > nativeTokenSymbol_)` hardcodes the ERC20Default seed to `[NATIVE_ADDRESS]`
-> (`NAVCalculator.sol:70-86`). The asset set is *not* frozen at genesis — every `registerAsset` calls
-> `addSupportedAsset` on it (`NAVCalculator.sol:141`), and
-> `excludeAssetFromDefaultAdapter`/`includeAssetInDefaultAdapter` (`:248`/`:255`) mutate it later.
+> (`NAVCalculator.sol:99-118`). The asset set is *not* frozen at genesis — every `registerAsset` calls
+> `addSupportedAsset` on it (`NAVCalculator.sol:176`), and
+> `excludeAssetFromDefaultAdapter`/`includeAssetInDefaultAdapter` (`:356`/`:363`) mutate it later.
 > Nothing needs preparing here, and `script/manage/update-erc20-default-from-chain.sh` is dead code
 > (it reads `chains/<id>.json .deployed.NAVCalculatorProxy`, a path that no longer exists, and skips
 > every chain).
@@ -1177,7 +1409,7 @@ on-chain registrations have already been broadcast. The chain state is fine and 
 idempotent, but the run reports failure. The directory is not in the repo, so create it once per
 checkout.
 
-- **Precondition:** **1.4 done** — Custom feeds resolve through
+- **Precondition:** **1.5 done** (`03_DeployPriceFeeds`; 1.4 is `08`, which writes no feed addresses) — Custom feeds resolve through
   `deployments/<id>.json .customPriceFeeds.<name>`, and without them 20 of mainnet's 43 assets are
   silently skipped (see the authoritative order at the top of section 1).
 - **Post-condition:** `python3 script/deploy/preflight/verify_step.py 1.6` — `getAssetCount()` equals
@@ -1228,13 +1460,18 @@ with `--slow`.
 configuration` (`06:37`) and skips the entire bridge block. The deferred bridge is therefore not
 touched at all by this step, not merely touched idempotently.
 
-- **Precondition:** 1.5 and 1.6 done.
+- **Precondition:** 1.5, 1.6 **and 1.7** done. 1.7 (`04`) is the step that DEPLOYS the adapters this
+  step registers — run `06` without it and every adapter is absent from the record, so `06` takes
+  `if (deployed == address(0)) continue;` for all of them, registers nothing, and exits 0.
 - **Post-condition:** `python3 script/deploy/preflight/verify_step.py 1.8` — `getAdapterCount()`
-  matches 1.6, every recorded adapter reports `isAdapterRegistered`, nothing is registered that is not
+  matches 1.7 (`04` is what deploys adapters; 1.6 is `RegisterAssets` and produces no adapter count),
+  every recorded adapter reports `isAdapterRegistered`, nothing is registered that is not
   in the record, and each meta adapter's `getMetaInstances()` **set equals** its configured coordinate
-  set, summing to the total in the meta-instance table at the top of this document (**110** as
-  reconciled 2026-07-29). The per-chain breakdown lives in that table only — it is not repeated here,
-  so there is one place to correct if config changes.
+  set, summing to the total in the meta-instance table at the top of this document (**111**; 110 as
+  reconciled 2026-07-29, +1 on 2026-08-12 for issue #296). The per-chain breakdown lives in that table only and is not repeated here, so the table
+  is where a config change is corrected — but "one place" understates it: this PR had to move the
+  derivation table, the summary row above it, and this post-condition line together. Treat those three
+  as one unit.
 
 > **Watch for the silent skip.** `06` does `if (deployed == address(0)) continue;` (`06:113` for
 > meta, same shape for plain), so an adapter that failed to deploy is skipped **without an error**.
@@ -1365,6 +1602,19 @@ cast call $PROXY 'hasRole(bytes32,address)(bool)' $MANAGER $COUNCIL --rpc-url $R
   The chain's reported block gas limit still shows 3M — that is expected.
 - **hemi (43111):** the chain enforces a fee floor; a tx priced off a naive `eth_gasPrice` is
   rejected. Raise `--with-gas-price`.
+- **gnosis (100) — PASS BOTH FLAGS, and the failure mode is a silent stall.** Its base fee is
+  near-zero (43–64 wei measured) but inclusion is **tip**-driven: the median landed tx pays base fee
+  plus a **1 gwei** tip, and the node suggests only **~31 wei**. Broadcast with **both**:
+
+  ```bash
+  forge script … --chain-id 100 --with-gas-price 2000000000 --priority-gas-price 2000000000
+  ```
+
+  **`--with-gas-price` on its own is not enough.** Per `forge script --help` it sets *"max fee per gas
+  for EIP1559 transactions"* — it does **not** set `maxPriorityFeePerGas`, so a broadcast carrying only
+  that flag keeps the ~31 wei tip and can sit unmined **while looking like the workaround was applied.**
+  `--legacy` also works, since a legacy transaction has a single gas price and no separate tip.
+  Full reasoning in 0.6.
 
 ---
 
@@ -1489,7 +1739,10 @@ bug entirely and must not be attributed to this step.
 
 ```bash
 # per (chain, adapter): returns [] until the owner has submitted, then the coordinate blobs.
-# `coordsOf` is the only cache view getter (AssistedCoordCache.sol:81) — there is no count getter.
+# `coordsOf` is the shared raw-coordinate getter (AssistedCoordCache.sol:110); the concrete adapters
+# add decoded views — `tokenIdsOf` (Nexus `:80`, EtherFi `:75`), `positionsOf` (StakeWise `:84`).
+# None is a dedicated count getter — you count by fetching an array and reading its length, so
+# there is no cheap way to ask "how many?" without pulling the whole set back.
 cast call $ADAPTER 'coordsOf(address)(bytes[])' $OWNER_SAFE --rpc-url $RPC
 ```
 
@@ -1545,6 +1798,26 @@ against, and 2.6 cannot run until the new addresses are recorded.
 
 **Known-expected diffs — do NOT treat these as regressions:**
 
+- **`MorphoVaultsMeta` GAINS one meta instance on mainnet, and `metaInstanceTotal` goes 66 → 67.** The
+  committed pre-snapshot (`snapshots/pre/1.json`, block 25625439) was captured when chain 1 held 9
+  `MorphoVaultsMeta` instances. The KPK USDC Yield RWA vault
+  `0x7a72bcD2c3F7F7e4D6679170a0625bAB15D7DDa1` was added to the LIVE NAV on 2026-08-12 by
+  `addMetaInstances` (issue #296) and to config in the same PR, so `diff_snapshots.py pre post` will
+  print `GAINED meta instance 0x…7a72bcd2…` and `metaInstanceTotal 66 -> 67`. **This is a STRUCTURAL
+  diff and this section's rule is that a structural diff is never explained by drift — which is exactly
+  why it is enumerated here rather than left to be waved through.** **Expect the STRUCTURAL lines and NOTHING ELSE — no new position entry and no `nav.value`
+  movement.** Measured on mainnet 2026-08-12: the vault holds `totalAssets() = 1002452` (1.0025 USDC)
+  against `totalSupply() = 1e18`, and that entire supply sits at `0x…dEaD` — seed shares. Every tracked
+  chain-1 account holds ZERO, so no snapshotted account has a position to report. **The check to make is
+  the GAINED-instance line and `metaInstanceTotal 66 -> 67`.** Their ABSENCE means the reconciliation
+  dropped the vault — **but ONLY when diffing against the COMMITTED `pre/` snapshot (block 25625439),
+  which holds 9 instances.** §0.7 sanctions refreshing `pre/`; if it is refreshed AFTER this change,
+  both lines legitimately disappear and their absence proves nothing. Check `pre/1.json`'s
+  `MorphoVaultsMeta` length first: 9 means the absence test is valid, 10 means it is not and the
+  structural check has already been absorbed into the baseline. Do NOT treat a flat `nav.value` as evidence of a drop — a $1 seed position could
+  not clear the residual band in any case, and an earlier revision of this entry said the opposite,
+  which would have halted a correct deploy at the last gate before cutover.
+
 - **ETHx drops from 2 monitor feeds to 1 on mainnet.** Redstone is retiring both of its ETHx push
   feeds, which backed both monitors. The direct Redstone **ETHx/USD** monitor `0xFaBEb147…` is gone
   with no replacement — Chainlink has no ETHx/USD feed at all (`FeedRegistry.getFeed` reverts
@@ -1553,7 +1826,7 @@ against, and 2.6 cannot run until the new addresses are recorded.
   So the diff shows ETHx's `monitorFeeds` 2 → 1, and the cross-rate feed at a new address (every feed
   is redeployed anyway). **This change is feed-count-neutral** — it swaps ETHx's rate leg rather than
   adding or dropping a feed contract; the totals moved to 26 mainnet / 41 for unrelated reasons (#199
-  and #224, see 1.4). ETHx keeps its divergence/`irregular` signal at 250 bps.
+  and #224, see 1.5). ETHx keeps its divergence/`irregular` signal at 250 bps.
   ETHx's **primary** price was never involved — `ETHx_CustomPriceFeed` reads Stader's on-chain rate
   via `stakePoolsManager` — so `nav.value` should not move.
   Verified on-chain before adopting: `description() == "ETHx / ETH"`, 18 decimals, answer
@@ -1730,8 +2003,10 @@ to the new proxy. The old stack keeps answering until they do; nothing needs unr
 > `preflight_config.py` reported `0 error(s) across 0 chain(s)` and exited 0, and
 > `reset_deployment_records.py --restore <tag>` with no chain arguments restored **nothing** and
 > exited 0 — the rollback failing silently at the one moment it is needed. Scope now comes from
-> `chainlib.resolve_chains`, which prefers the committed `snapshots/pre/index.json` (a file the deploy
-> cannot invalidate) and **exits 2 rather than resolving to an empty list**. Every tool prints the
+> `chainlib.resolve_chains`, which takes an explicit chain list first and otherwise uses the declared
+> `redeploy_scope.json` (a file no tool writes), cross-checking `snapshots/pre/index.json` and
+> reporting any disagreement as a `SCOPE WARNING` rather than absorbing it — and **exits 2 rather
+> than resolving to an empty list**. Every tool prints the
 > scope it resolved and where from; read that line.
 
 | symptom | cause | fix |
@@ -1744,7 +2019,7 @@ to the new proxy. The old stack keeps answering until they do; nothing needs unr
 | `01_2` reverts `NAVCalculator impl not linked against pinned …` | `foundry.toml [libraries]` drifted from `LibraryPins` | make them agree, rebuild |
 | `02_2` reverts inside `AtomicNAVProxyDeployer` | proxy address unchanged → code already there → `upgradeToAndCall` with no admin | bump `DeploySalts.NAV_PROXY` (0.2), then re-pin (0.3) |
 | `03`/`04` log "Already deployed at:" and deploy nothing | the record was not cleared | run 1.1, re-run |
-| `06` finishes but adapter/instance counts are short | an adapter never deployed; `06:113` skipped it silently | `preflight_config.py`, then re-run 1.6 and 1.7 |
+| `06` finishes but adapter/instance counts are short | an adapter never deployed; `06:113` skipped it silently | `preflight_config.py`, then re-run **1.7** (`04`, deploys the missing adapter) **and 1.8** (`06`, registers it and adds its meta instances). Re-running 1.7 alone leaves the adapter deployed but UNREGISTERED and the NAV still short |
 | `06` reverts `addMetaInstances failed … DuplicateMetaInstance` | duplicate coordinate in config | `preflight_config.py` flags it; fix nav-config |
 | `RegisterAssets` `MemoryOOG` on mainnet | default memory limit | `FOUNDRY_PROFILE=slow` |
 | `RegisterAssets` logs `[skip] primary feed unresolved (deploy it first)` | it ran before `03`, so Custom feeds are not in the record | run `03` first; re-run `RegisterAssets` (idempotent) and confirm `getAssetCount()` |

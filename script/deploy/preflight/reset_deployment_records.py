@@ -13,14 +13,14 @@ so re-running them against a populated `deployments/<chainId>.json` is a **silen
 "succeeds", logs "Already deployed", writes nothing, and `06_Configure` then registers the OLD
 contracts on the NEW proxy. Nothing fails; the deploy is simply wrong.
 
-WHY WRITE "" RATHER THAN DELETE THE KEY
----------------------------------------
-`ConfigReader._readAddrOrZero` (ConfigReader.sol:216) treats a key as "not deployed" when the value
-is the empty string, a `YOUR_…` placeholder, or the zero address — but it first requires
-`vm.keyExists`. Writing `""` therefore reads as address(0) while keeping the key present, so
-`vm.writeJson(..., ".balanceAdapters.<name>")` in `ConfigReader.writeAdapterAddress` writes back into
-an existing JSON pointer. Deleting keys would rely on forge inserting missing pointers, which is not
-a guarantee worth betting a 24-chain deploy on. Key order is preserved, so the diff stays readable.
+CLEARING THE KEYS
+-----------------
+Clear the values to `""`. Do not delete the keys.
+
+`vm.writeJson` creates a missing key unaided, so a brand-new adapter needs no seeded key — pinned by
+`script/test/WriteJsonCreatesMissingKeys.t.sol`.
+
+Gate 1.1's absence check does not cover every key it iterates — tracked in #299.
 
 WHAT IS CLEARED, AND WHAT IS NOT
 --------------------------------
@@ -96,11 +96,8 @@ def plan_for(chain_id: int) -> tuple[dict, list[str]]:
     changes: list[str] = []
     for k in CLEAR_TOP:
         if k not in out and k in CREATE_IF_ABSENT:
-            # ABSENT is not "already clear" for these. `verify_step.step_record_cleared` fails any
-            # CLEAR_TOP key missing from the record, and `ConfigReader._readAddrOrZero` requires
-            # `vm.keyExists` before the deploy can write the new address back — so a key that is
-            # merely absent breaks runbook gate 1.1 AND the write-back. Create it blank.
-            changes.append(f"{k}: <absent> -> \"\" (created; ConfigReader needs the key to exist)")
+            # Created blank rather than left absent.
+            changes.append(f"{k}: <absent> -> \"\" (created; verify_step fails on an absent key)")
             out[k] = ""
         elif k in out and out[k] not in ("", None):
             changes.append(f"{k}: {out[k]} -> \"\"")

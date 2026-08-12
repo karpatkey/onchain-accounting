@@ -1034,8 +1034,14 @@ def _self_test() -> int:
     # Real chain ids, chosen from config: chain 1 enables all three assisted adapters, chain 100
     # enables StakeWise only, chain 10 enables none. The rule is per-chain now, so the arms must be.
     ALL_ASSIST, ONE_ASSIST, NO_ASSIST, META_WITH_FEEDS = 1, 100, 10, 42161
+    # A chain with NO balance-adapters config at all, which takes `expected_clear_top`'s
+    # missing-config fallback. That is not a corner: 17 of the 24 in-scope chains have no such file,
+    # so the fallback decides expectations for MOST of the fleet — and until this arm existed it was
+    # pinned by nothing (mutating `return keys` to `return set()` left the suite at 21/21).
+    NO_CONFIG = 5000
     BASE = {ALL_ASSIST: {"proxy": ADDR}, ONE_ASSIST: {"proxy": ADDR},
-            NO_ASSIST: {"proxy": ADDR}, META_WITH_FEEDS: {"proxy": ADDR}}
+            NO_ASSIST: {"proxy": ADDR}, META_WITH_FEEDS: {"proxy": ADDR},
+            NO_CONFIG: {"proxy": ADDR}}
     results: list[tuple[bool, str]] = []
     # ARM DISTINCTNESS, ENFORCED RATHER THAN CHECKED BY HAND. Four times in this suite's history two
     # arms have been byte-identical while advertising different cases — most recently HOLE 6 and
@@ -1135,6 +1141,15 @@ def _self_test() -> int:
     run(dict(cleared), wrong_gen,
         "...and a wrong-generation archive cannot excuse an expected key", must_fail=True,
         expect_in="config enables the adapter", chain=ONE_ASSIST)
+    # PINS THE MISSING-CONFIG FALLBACK. On a chain with no balance-adapters config the universal
+    # NAV keys must still be expected, or absence goes unreported on 17 of 24 in-scope chains. The
+    # archive is deliberately ALSO missing the key, so config is the only thing that can catch it —
+    # which is what makes this arm discriminate rather than pass on the archive's evidence.
+    no_pricefeedlib = {key: val for key, val in cleared.items() if key != "PriceFeedLib"}
+    run(no_pricefeedlib, {key: ADDR for key in UNIVERSAL if key != "PriceFeedLib"},
+        "a universal key deleted on a chain with NO config is still caught", must_fail=True,
+        expect_in="every in-scope chain carries it", chain=NO_CONFIG)
+
     # PINS #6: a missing baseline must WARN, never FAIL. As a failure it turned 24 of 24
     # correctly-cleared chains red — the #299 mass-red, reintroduced by the diagnostic added to
     # detect it. If someone re-promotes this to k.fail, this arm goes red.

@@ -103,6 +103,54 @@ contract WriteJsonCreatesMissingKeysTest is Test {
         assertEq(vm.parseJsonAddress(json, pointer), NESTED_ADDR, "created key holds the wrong value");
     }
 
+    /// @notice KEY ORDER IS LOAD-BEARING AND WAS NOT PINNED. The docstring in
+    ///         `reset_deployment_records.py` says "Key order is preserved, so the diff stays
+    ///         readable", and the deep copy at `:123` relies on it. Without this, a forge upgrade that
+    ///         began REORDERING keys on write would leave every assertion above passing while that
+    ///         prose became false and a 24-chain deployment-record diff became unreviewable.
+    /// @dev    That is the same silent-rot shape this whole file exists to prevent, reproduced inside
+    ///         the file. Recorded rather than quietly fixed: a guard written by whoever understands the
+    ///         hazard tends to encode their model of it, including the incomplete part.
+    ///
+    ///         Asserted cheaply — the RELATIVE ORDER of the pre-existing keys in the raw file, and that
+    ///         the first key is still first. Not a full ordering model; enough to fail if forge starts
+    ///         reordering.
+    function test_creatingAKeyPreservesTheOrderOfExistingKeys() public {
+        string memory f = _scratch("order");
+        vm.writeJson(vm.toString(NEW_ADDR), f, ".balanceAdapters.BrandNewAdapterThatDoesNotExist");
+        string memory json = vm.readFile(f);
+
+        int256 proxy = _indexOf(json, "NAVCalculatorProxy");
+        int256 adapters = _indexOf(json, "balanceAdapters");
+        int256 erc20 = _indexOf(json, "ERC20Default");
+        int256 cap = _indexOf(json, "Cap\"");
+        int256 feeds = _indexOf(json, "customPriceFeeds");
+
+        assertGt(proxy, int256(-1), "NAVCalculatorProxy vanished");
+        assertLt(proxy, adapters, "top-level order changed: proxy no longer precedes balanceAdapters");
+        assertLt(adapters, feeds, "top-level order changed: balanceAdapters no longer precedes feeds");
+        assertLt(erc20, cap, "order WITHIN balanceAdapters changed: ERC20Default no longer precedes Cap");
+        assertLt(cap, feeds, "a balanceAdapters entry escaped its section");
+    }
+
+    /// @dev Byte index of `needle` in `haystack`, or -1. Solidity has no native indexOf.
+    function _indexOf(string memory haystack, string memory needle) internal pure returns (int256) {
+        bytes memory h = bytes(haystack);
+        bytes memory n = bytes(needle);
+        if (n.length == 0 || n.length > h.length) return -1;
+        for (uint256 i; i <= h.length - n.length; ++i) {
+            bool ok = true;
+            for (uint256 j; j < n.length; ++j) {
+                if (h[i + j] != n[j]) {
+                    ok = false;
+                    break;
+                }
+            }
+            if (ok) return int256(i);
+        }
+        return -1;
+    }
+
     /// @notice "It works" and "it works without collateral damage" are different answers, and the
     ///         second is half of what made this behaviour usable. Every pre-existing key must survive
     ///         a creating write with its value intact, including a sibling section.

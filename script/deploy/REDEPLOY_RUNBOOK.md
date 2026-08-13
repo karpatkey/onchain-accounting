@@ -1334,8 +1334,8 @@ address, held as `INAVCalculator public immutable NAV` (ADR 0019) — which is p
 proxy invalidates every existing feed.
 
 > **THE COUNT IS 40, AND IT IS NO LONGER PENDING ANYTHING.** Both PRs it was waiting on have merged,
-> so the earlier figures of 39 and 40 are both stale. Re-measured against the merged tree 2026-07-30
-> re-derived from config: **mainnet 25, arbitrum 8, base 4, gnosis 3 = 40.** (Chain 1 holds 26 feed
+> so the earlier figure of 39 is stale, and so is the 41 that #224 briefly made correct. Re-derived from
+> config on 2026-08-13: **mainnet 25, arbitrum 8, base 4, gnosis 3 = 40.** (Chain 1 holds 26 feed
 > ENTRIES; `ETHPlus` is `enabled: false`, and `03` is gated on `isAdapterEnabled`, so it deploys 25.
 > Counting entries rather than enabled entries is how 26 got here.)
 >

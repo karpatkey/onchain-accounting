@@ -344,9 +344,9 @@ None of it is optional, and none of it fails loudly: a step skipped here leaves 
 **under-reporting**, not erroring. That asymmetry is also why "just upgrade the implementation" keeps
 looking attractive — it is genuinely far smaller. It is also wrong.
 
-> **If another document says 39 or 40 feeds, it predates two merges — it is not a disagreement to
+> **If another document says 39 or 41 feeds, it predates a merge or a retirement — it is not a disagreement to
 > split.** 39 was correct until #199 (merged 2026-07-29), 40 until #224 (merged 2026-07-30). The merged
-> tree is **41**, re-measured with `preflight_config.py` on `e4307cb3`: mainnet 26, arbitrum 8, base 4,
+> tree is **40**, re-derived from config 2026-08-13: mainnet 25 ENABLED (26 entries, `ETHPlus` disabled), arbitrum 8, base 4,
 > gnosis 3. The full derivation is under 1.5. The **111** meta instances and the cutover off
 > `0x80eD5cc6cEbAe4fEE1eD8687279aa492A50afa8d` are unaffected and agree everywhere.
 
@@ -1329,13 +1329,15 @@ not an observation that happened to hold on one fixture.
 forge script script/deploy/03_DeployPriceFeeds.s.sol $BROADCAST
 ```
 
-Chains 1 (26), 42161 (8), 8453 (4), 100 (3) only. Each feed's constructor takes the NAV proxy
+Chains 1 (25 enabled, of 26 entries), 42161 (8), 8453 (4), 100 (3) only. Each feed's constructor takes the NAV proxy
 address, held as `INAVCalculator public immutable NAV` (ADR 0019) — which is precisely why a new
 proxy invalidates every existing feed.
 
-> **THE COUNT IS 41, AND IT IS NO LONGER PENDING ANYTHING.** Both PRs it was waiting on have merged,
+> **THE COUNT IS 40, AND IT IS NO LONGER PENDING ANYTHING.** Both PRs it was waiting on have merged,
 > so the earlier figures of 39 and 40 are both stale. Re-measured against the merged tree 2026-07-30
-> with `preflight_config.py`: **mainnet 26, arbitrum 8, base 4, gnosis 3 = 41.**
+> re-derived from config: **mainnet 25, arbitrum 8, base 4, gnosis 3 = 40.** (Chain 1 holds 26 feed
+> ENTRIES; `ETHPlus` is `enabled: false`, and `03` is gated on `isAdapterEnabled`, so it deploys 25.
+> Counting entries rather than enabled entries is how 26 got here.)
 >
 > | PR | merged | effect on the count |
 > | --- | --- | --- |
@@ -1345,7 +1347,7 @@ proxy invalidates every existing feed.
 > Both have their `03_DeployPriceFeeds.s.sol` call sites in place — `_deployEEth("stETHFundamental")`
 > (`03:147`), `_deployCrossRateMonitor("stETHCrossRate")` (`03:153`) and
 > `_deployCrossRateMonitor("ezETHCrossRateMarket")` (`03:230`) — verified against the merged tree, so
-> `03` deploys all 26 mainnet entries and nothing is skipped as `primary feed unresolved`.
+> `03` deploys all 25 ENABLED mainnet feeds and nothing is skipped as `primary feed unresolved`.
 >
 > Keep taking the number from the tooling rather than from here: `preflight_config.py` prints the
 > configured total and `verify_step.py 1.5` compares against it, so both follow config automatically.
@@ -1387,7 +1389,7 @@ checkout.
   `deployments/<id>.json .customPriceFeeds.<name>`, and without them 19 of mainnet's 42 assets are
   silently skipped (see the authoritative order at the top of section 1).
 - **Post-condition:** `python3 script/deploy/preflight/verify_step.py 1.6` — `getAssetCount()` equals
-  the configured count (43 / 11 / 11 / 6 / 11 / 5 / 6 for chains 1 / 42161 / 8453 / 10 / 100 / 137 /
+  the configured count (42 / 11 / 11 / 6 / 11 / 5 / 6 for chains 1 / 42161 / 8453 / 10 / 100 / 137 /
   56) **and** the registered address set equals the configured one, so one asset silently substituted
   for another cannot pass on the count alone.
 

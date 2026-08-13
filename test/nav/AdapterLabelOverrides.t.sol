@@ -12,6 +12,7 @@ import {RawReplier} from "test/mocks/RawReplier.sol";
 import {CapStablecoinBalanceAdapter} from "src/balances/BalanceAdapters/cap/CapStablecoinBalanceAdapter.sol";
 import {CapSavingsBalanceAdapter} from "src/balances/BalanceAdapters/cap/CapSavingsBalanceAdapter.sol";
 import {MockCUsd, MockStcUsd} from "test/balances/BalanceAdapters/cap/CapMocks.sol";
+import {IComputedLabelSegments} from "src/balances/IComputedLabelSegments.sol";
 
 /// @dev ERC-1967 implementation slot (`keccak256("eip1967.proxy.implementation") - 1`). Used to locate the UUPS
 ///      implementation behind the NAV proxy so `_coolAll` can cool it: it is a separate account, and the proxy's
@@ -44,6 +45,98 @@ contract LabelledAdapter is Mock_CustomBalanceAdapter {
         out = new string[](2);
         out[0] = _category;
         out[1] = _leaf;
+    }
+}
+
+/// @notice Meta-family shape that DECLARES its computed leaf: literal category at 0, derived leaf at 1.
+/// @dev The mask is a constructor argument rather than hardcoded so one mock covers every declaration shape the
+///      sweep table records — bit 0 only (the `ERC20Default` case), bit 1 only (most of the meta family), and 0
+///      itself, which is a real declaration meaning "I considered this and nothing of mine is derived".
+/// @dev Implements {IBalanceAdapter} DIRECTLY rather than extending `Mock_CustomBalanceAdapter`, for the same reason
+///      `PerPositionCategoryAdapter` below does: that mock's `supportsInterface` is non-virtual, and this mock's
+///      whole purpose is to advertise an extra ERC-165 bit.
+contract DeclaringAdapter is IBalanceAdapter, IComputedLabelSegments {
+    address private immutable ASSET;
+    string private _category;
+    string private _leaf;
+    uint256 private _mask;
+
+    constructor(address asset_, string memory category_, string memory leaf_, uint256 mask_) {
+        ASSET = asset_;
+        _category = category_;
+        _leaf = leaf_;
+        _mask = mask_;
+    }
+
+    function supportsInterface(bytes4 interfaceId) external pure virtual override returns (bool) {
+        return interfaceId == type(IComputedLabelSegments).interfaceId
+            || interfaceId == type(IBalanceAdapter).interfaceId || interfaceId == type(IERC165).interfaceId;
+    }
+
+    function computedLabelSegments() external view override returns (uint256) {
+        return _mask;
+    }
+
+    function underlyingAssetsSupported() public view override returns (address[] memory out) {
+        out = new address[](1);
+        out[0] = ASSET;
+    }
+
+    function getAdapterBalanceForAsset(address, address) external pure override returns (uint256, bool) {
+        return (1e6, false);
+    }
+
+    function getAdapterBalances(address)
+        external
+        view
+        override
+        returns (address[] memory assets, uint256[] memory amounts, bool[] memory debts)
+    {
+        assets = underlyingAssetsSupported();
+        amounts = new uint256[](1);
+        amounts[0] = 1e6;
+        debts = new bool[](1);
+    }
+
+    function getAdapterPositions(address, address)
+        external
+        view
+        override
+        returns (INAVCalculator.PositionBalance[] memory positions)
+    {
+        positions = new INAVCalculator.PositionBalance[](1);
+        positions[0].balanceAsset = INAVCalculator.Asset({
+            asset: ASSET, symbol: IERC20Metadata(ASSET).symbol(), decimals: IERC20Metadata(ASSET).decimals()
+        });
+        positions[0].balanceAdapter = address(this);
+        positions[0].amount = 1e6;
+        positions[0].positionId = abi.encode(ASSET);
+        positions[0].positionKind = PositionKind.Supplied;
+    }
+
+    function protocolName() external pure returns (string memory) {
+        return "Declaring Protocol";
+    }
+
+    function positionLabels(bytes calldata) external view returns (string[] memory out) {
+        out = new string[](2);
+        out[0] = _category;
+        out[1] = _leaf;
+    }
+}
+
+/// @notice Same label shape as {DeclaringAdapter} but advertising NO ERC-165 bit for the declaration.
+/// @dev The negative-path control. Every adapter deployed before the hook existed is this shape and is IMMUTABLE, so
+///      if the guard restricted these too it would have bricked overrides fleet-wide. A test that only proves the
+///      guard FIRES would not notice that.
+contract NonDeclaringAdapter is DeclaringAdapter {
+    constructor(address asset_) DeclaringAdapter(asset_, "Category", "computed-ish leaf", 1 << 1) {}
+
+    /// @dev Declares the mask but does NOT advertise the bit, so the registry's ERC-165 probe misses it — which is
+    ///      exactly the shape of every pre-hook adapter, and also of an adapter that implements the method by
+    ///      accident without opting in.
+    function supportsInterface(bytes4 interfaceId) external pure override returns (bool) {
+        return interfaceId == type(IBalanceAdapter).interfaceId || interfaceId == type(IERC165).interfaceId;
     }
 }
 
@@ -1687,6 +1780,104 @@ contract AdapterLabelOverridesTest is AdapterLabelOverridesBase {
         assertEq(sibling.length, 2);
         assertEq(sibling[0], "Savings", "the SIBLING leg is untouched - the property the split buys");
         assertEq(sibling[1], "stcUSD");
+    }
+
+    // ------------------------------------------------------------------
+    // (E) computed-segment guard
+    // ------------------------------------------------------------------
+
+    function _registerDeclaring(uint256 mask) internal returns (DeclaringAdapter d) {
+        d = new DeclaringAdapter(address(usdc), "Market", "wstETH/USDC", mask);
+        vm.prank(navCalculatorManager);
+        nav.addBalanceAdapters(aa(address(d)));
+    }
+
+    /// @notice A non-empty literal at a DECLARED-COMPUTED index is refused.
+    /// @dev The gap this closes: before it, `setAdapterLabels` guarded registration, segment count, string length and
+    ///      not-all-empty — and never WHICH INDEX. The protection for a computed leaf was a markdown table plus
+    ///      operator discipline, which is a fail-open with a human in the loop.
+    function test_RevertIf_setAdapterLabels_freezesADeclaredComputedSegment() public {
+        DeclaringAdapter d = _registerDeclaring(1 << 1); // leaf at index 1 is computed
+        vm.prank(navCalculatorManager);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IAssetKindRegistry.ComputedSegmentNotOverridable.selector, address(d), uint256(1), uint256(2)
+            )
+        );
+        registry.setAdapterLabels(address(d), two("Lending Market", "frozen leaf"));
+    }
+
+    /// @notice ⚠️ `""` MUST remain legal at a computed index, so a legitimate correction to a SIBLING segment is not
+    ///         collateral damage.
+    /// @dev This is the cost a naive guard would impose, and it is the whole reason the check is written against
+    ///      NON-EMPTINESS rather than against presence. `setAdapterLabels` takes the entire array, so refusing any
+    ///      entry at a computed index would make "correct segment 0 on an adapter whose segment 1 is derived"
+    ///      impossible — and the failure would read as the mechanism being broken rather than as caller error.
+    function test_setAdapterLabels_emptyAtAComputedIndexIsAlwaysLegal() public {
+        DeclaringAdapter d = _registerDeclaring(1 << 1);
+        vm.prank(navCalculatorManager);
+        registry.setAdapterLabels(address(d), two("Lending Market", ""));
+
+        string[] memory got = _verboseFor(address(d)).labels;
+        assertEq(got.length, 2);
+        assertEq(got[0], "Lending Market", "the sibling correction lands");
+        assertEq(got[1], "wstETH/USDC", "and the computed leaf stays derived");
+    }
+
+    /// @notice An adapter that advertises NO declaration is overridable at every index, exactly as before.
+    /// @dev ⚠️ **The negative path, and the one that matters most for not breaking the fleet.** Every adapter deployed
+    ///      before this hook existed is immutable and cannot adopt it. A guard that restricted them too would have
+    ///      bricked the override feature everywhere while looking like a safety improvement. Fail-open is a real
+    ///      limitation, stated at `_computedSegments`, and this test is what pins it as a DECISION rather than an
+    ///      accident.
+    function test_setAdapterLabels_nonDeclaringAdapterIsUnrestricted() public {
+        NonDeclaringAdapter n = new NonDeclaringAdapter(address(usdc));
+        vm.prank(navCalculatorManager);
+        nav.addBalanceAdapters(aa(address(n)));
+        vm.prank(navCalculatorManager);
+        registry.setAdapterLabels(address(n), two("Anything", "even the computed-looking leaf"));
+
+        string[] memory got = _verboseFor(address(n)).labels;
+        assertEq(got[1], "even the computed-looking leaf", "no declaration means no restriction");
+    }
+
+    /// @notice A mask of 0 is a real declaration — "nothing of mine is derived" — and permits any override.
+    function test_setAdapterLabels_declaredZeroMaskPermitsEverything() public {
+        DeclaringAdapter d = _registerDeclaring(0);
+        vm.prank(navCalculatorManager);
+        registry.setAdapterLabels(address(d), two("Cat", "Leaf"));
+        assertEq(_verboseFor(address(d)).labels[1], "Leaf");
+    }
+
+    /// @notice {forceAdapterLabels} performs the freeze the default setter refuses, and says so in a distinct event.
+    /// @dev The escape hatch exists because `BALANCE_ADAPTERS.md` explicitly allows a deliberate freeze ("pass `""`
+    ///      unless you intend to freeze it"). A hard revert would have removed an occasionally-legitimate operation;
+    ///      the split is between ACCIDENT and INTENT. The separate event is what makes "did anyone freeze a derived
+    ///      label" answerable from logs alone.
+    function test_forceAdapterLabels_freezesAComputedSegmentAndEmitsTheDistinctEvent() public {
+        DeclaringAdapter d = _registerDeclaring(1 << 1);
+        string[] memory labels = two("Lending Market", "deliberately frozen");
+
+        vm.expectEmit(true, false, false, true, address(registry));
+        emit IAssetKindRegistry.AdapterLabelsForced(address(d), labels, 2);
+        vm.prank(navCalculatorManager);
+        registry.forceAdapterLabels(address(d), labels);
+
+        assertEq(_verboseFor(address(d)).labels[1], "deliberately frozen", "the forced freeze takes effect");
+    }
+
+    /// @notice The forced path still enforces every SHAPE rule — it relaxes the index guard and nothing else.
+    function test_RevertIf_forceAdapterLabels_stillRejectsAnAllEmptyOverride() public {
+        DeclaringAdapter d = _registerDeclaring(1 << 1);
+        vm.prank(navCalculatorManager);
+        vm.expectRevert(abi.encodeWithSelector(IAssetKindRegistry.EmptyAdapterOverride.selector, address(d)));
+        registry.forceAdapterLabels(address(d), two("", ""));
+    }
+
+    function test_RevertIf_forceAdapterLabels_notManager() public {
+        DeclaringAdapter d = _registerDeclaring(1 << 1);
+        vm.expectRevert();
+        registry.forceAdapterLabels(address(d), two("x", "y"));
     }
 
     function test_labelsOverride_cannotLengthenAReplyPastTheElementCap() public {

@@ -148,6 +148,24 @@ interface IAssetKindRegistry {
     ///      because with eight candidate segments "one of them is too long" is not an actionable error.
     error AdapterLabelTooLong(address adapter, uint256 index, uint256 length, uint256 max);
 
+    /// @notice A non-empty literal was supplied at an index the adapter DECLARES it computes from on-chain state.
+    /// @dev Carries the offending index and the adapter's whole declared mask, so the revert tells an operator both
+    ///      what they did and what they are allowed to write, without a second call.
+    ///
+    ///      Freezing a computed segment is occasionally INTENDED — `BALANCE_ADAPTERS.md` says so ("pass `""` unless
+    ///      you intend to freeze it"), which is why this is not the end of the story: {forceAdapterLabels} does it
+    ///      deliberately and emits a distinct event. The default setter reverts so that a freeze cannot happen by
+    ///      accident, and so that a deliberate one is greppable in a transaction history rather than
+    ///      indistinguishable from a routine correction.
+    error ComputedSegmentNotOverridable(address adapter, uint256 index, uint256 computedMask);
+
+    /// @notice Emitted by {forceAdapterLabels} instead of {AdapterLabelsSet}, when a declared-computed segment is
+    ///         deliberately frozen behind a literal.
+    /// @dev A SEPARATE event on purpose. An indexer or reviewer auditing "did anyone freeze a derived label" must be
+    ///      able to answer it from logs alone; if the forced path reused {AdapterLabelsSet} the answer would require
+    ///      re-deriving every adapter's mask at every historical block.
+    event AdapterLabelsForced(address indexed adapter, string[] labels, uint256 computedMask);
+
     /// @notice A label override is longer than {AssetKindRegistry.MAX_ASSET_LABEL_BYTES}.
     /// @dev `length` is in BYTES, not characters. Shares the asset-label bound because it is the same kind of value
     ///      rendered in the same breadcrumb, and because the read path's copy window is sized for it.
@@ -463,6 +481,25 @@ interface IAssetKindRegistry {
     /// @param labels The per-segment replacements, index-aligned with the adapter's reply; `""` skips a segment.
     ///        Replaces the existing override wholesale.
     function setAdapterLabels(address adapter, string[] calldata labels) external;
+
+    /// @notice Same as {setAdapterLabels} but permitted to freeze a segment the adapter DECLARES it computes.
+    /// @dev **The escape hatch, and it exists because freezing a computed segment is occasionally intended.**
+    ///      `BALANCE_ADAPTERS.md` says as much — "pass `""` unless you intend to freeze it" — so a hard, unconditional
+    ///      revert would have removed a real capability rather than a footgun. The split is between ACCIDENT and
+    ///      INTENT, not between allowed and forbidden:
+    ///        - {setAdapterLabels} reverts {ComputedSegmentNotOverridable}, so a freeze cannot happen by mistyping an
+    ///          index or by not knowing the adapter derives that leaf;
+    ///        - this function does it, and emits {AdapterLabelsForced} rather than {AdapterLabelsSet}, so the act is
+    ///          answerable from logs alone.
+    ///
+    ///      Same MANAGER gate, same shape validation, same store. The ONLY difference is the index guard, which is
+    ///      why both entry points share one private validator — a second copy of the length and byte checks is
+    ///      exactly how the two display surfaces in this feature came to disagree.
+    ///
+    ///      ⚠️ **Freezing a computed segment on a META adapter freezes it for EVERY instance**, since the override is
+    ///      keyed by adapter address and the derivation is per instance. That is not a reason to forbid it, but it is
+    ///      the reason to reach for this deliberately rather than reflexively.
+    function forceAdapterLabels(address adapter, string[] calldata labels) external;
 
     /// @notice Removes `adapter`'s per-segment label override; every segment it reports becomes authoritative again.
     /// @dev Reverts {AdapterOverrideNotSet} when there is nothing to clear. Emits {AdapterLabelsCleared}. Not guarded

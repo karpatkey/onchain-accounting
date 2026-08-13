@@ -5,6 +5,8 @@ import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol"
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IPrices} from "src/prices/IPrices.sol";
 import {IAssetKindRegistry} from "src/nav/IAssetKindRegistry.sol";
+import {IComputedLabelSegments} from "src/balances/IComputedLabelSegments.sol";
+import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {PegKind, AccrualKind} from "src/utils/AssetKind.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/errors.sol";
@@ -419,6 +421,35 @@ contract AssetKindRegistry is IAssetKindRegistry {
     /// @dev The three checks below are the array analogue of {_requireValidOverride}, which cannot be reused per
     ///      element: it rejects `""`, and `""` is this setter's SKIP sentinel rather than an error.
     function setAdapterLabels(address adapter, string[] calldata labels) external onlyNavManager {
+        _validateAdapterLabels(adapter, labels);
+        // The index guard is what separates this from {forceAdapterLabels}; everything else is identical.
+        uint256 mask = _computedSegments(adapter);
+        if (mask != 0) {
+            uint256 length = labels.length;
+            for (uint256 i; i < length; ++i) {
+                if (bytes(labels[i]).length != 0 && (mask >> i) & 1 == 1) {
+                    revert ComputedSegmentNotOverridable(adapter, i, mask);
+                }
+            }
+        }
+        _adapterLabels[adapter] = labels;
+        emit AdapterLabelsSet(adapter, labels);
+    }
+
+    /// @inheritdoc IAssetKindRegistry
+    function forceAdapterLabels(address adapter, string[] calldata labels) external onlyNavManager {
+        _validateAdapterLabels(adapter, labels);
+        _adapterLabels[adapter] = labels;
+        // Distinct event, and the mask is included so a log reader can see WHAT was overridden without re-deriving
+        // the adapter's declaration at that historical block.
+        emit AdapterLabelsForced(adapter, labels, _computedSegments(adapter));
+    }
+
+    /// @notice Everything both label setters check EXCEPT the computed-index guard.
+    /// @dev Factored so the two entry points cannot drift on the shape rules while differing on the one rule they
+    ///      are meant to differ on. A second implementation of these four checks is exactly how the two display
+    ///      surfaces came to disagree earlier in this feature's history.
+    function _validateAdapterLabels(address adapter, string[] calldata labels) private view {
         _requireRegisteredAdapter(adapter);
         uint256 length = labels.length;
         if (length > MAX_ADAPTER_LABEL_SEGMENTS) {
@@ -437,11 +468,42 @@ contract AssetKindRegistry is IAssetKindRegistry {
         // use {clearAdapterLabels} instead of being told "done" by silence. The empty array falls out of the same
         // check (`anySet` is false), so both no-op shapes take one exit.
         if (!anySet) revert EmptyAdapterOverride(adapter);
-        // Validate, then write — same ordering rationale as {_setAssetLabels}: every exit above reverts, so hoisting
-        // the write would be behaviourally equivalent, but it would pay for `SSTORE`s that are about to be discarded.
-        _adapterLabels[adapter] = labels;
-        emit AdapterLabelsSet(adapter, labels);
     }
+
+    /// @notice The adapter's declared computed-segment mask, or 0 if it declares nothing.
+    /// @dev ⚠️ **Fail-open, deliberately, and this is the guard's one real limitation.** An adapter that does not
+    ///      advertise {IComputedLabelSegments} — which is every adapter deployed before it existed, all of them
+    ///      immutable — gets no index protection, exactly as before. Fail-CLOSED was considered and rejected:
+    ///      treating "declares nothing" as "everything is computed" would block every override on every existing
+    ///      adapter and brick the feature this PR exists to provide.
+    ///
+    ///      So coverage is a function of adoption, not of this code. It becomes complete when each adapter next
+    ///      ships. Stated here rather than left implicit, because a guard whose gaps are undocumented is worse than
+    ///      no guard: it invites the assumption that an override was checked when it was not.
+    ///
+    ///      Bounded in both directions like every other outward read in this repo — an ERC-165 probe and the mask
+    ///      read are each gas-capped, and a revert, a short reply or a non-contract all resolve to 0. A hostile or
+    ///      broken adapter therefore forfeits its own protection and cannot block a MANAGER's write, which is the
+    ///      right direction for a write path: the adapter is the thing being described, not an authority over the
+    ///      registry.
+    function _computedSegments(address adapter) private view returns (uint256) {
+        (bool okSupports, bytes memory supportsRet) = adapter.staticcall{gas: _DECLARATION_READ_GAS}(
+            abi.encodeCall(IERC165.supportsInterface, (type(IComputedLabelSegments).interfaceId))
+        );
+        if (!okSupports || supportsRet.length < 32 || abi.decode(supportsRet, (bool)) == false) return 0;
+
+        (bool okMask, bytes memory maskRet) = adapter.staticcall{gas: _DECLARATION_READ_GAS}(
+            abi.encodeCall(IComputedLabelSegments.computedLabelSegments, ())
+        );
+        if (!okMask || maskRet.length < 32) return 0;
+        return abi.decode(maskRet, (uint256));
+    }
+
+    /// @notice Gas stipend for each of the two declaration reads in {_computedSegments}.
+    /// @dev A legitimate implementation is a `pure` constant return, so this is orders of magnitude more than one
+    ///      needs; it exists to bound a broken or hostile adapter on a MANAGER-gated write path. No figure from this
+    ///      is quoted in prose anywhere — the bound is the constant.
+    uint256 private constant _DECLARATION_READ_GAS = 50_000;
 
     /// @inheritdoc IAssetKindRegistry
     function clearAdapterLabels(address adapter) external onlyNavManager {

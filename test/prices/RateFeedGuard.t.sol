@@ -156,7 +156,14 @@ contract RateFeedGuardTest is Test {
         for (uint256 i; i < chains.length; ++i) {
             total += _countGuarded(chains[i]);
         }
-        // 21 rate-feed-bearing instances: 9 mainnet, 7 Arbitrum, 4 Base, 1 Gnosis. Each verified on-chain.
+        // 20 rate-feed-bearing instances: 8 mainnet, 7 Arbitrum, 4 Base, 1 Gnosis. Each verified on-chain.
+        //
+        // 21 -> 20: OETH retired by #302 — Chainlink is sunsetting the OETH/ETH rate feed its CrossRate
+        // consumed. This is a REMOVAL, so no NEW pair identity needed confirming; the gate exists to stop an
+        // ADDED instance slipping in unverified. What was confirmed instead is that the set is now exactly the
+        // expected 20, re-derived from config 2026-08-13: mainnet fell 9 -> 8 and the other three chains are
+        // byte-for-byte unchanged. Had anything else moved, that would have been a finding larger than this
+        // test rather than a number to update.
         //
         // 20 -> 21: `ezETHCrossRateMarket` (added by #224 after this guard landed, given its block here).
         // This number is a HUMAN-IN-THE-LOOP GATE, not a fact about the world: it exists so a newly-added
@@ -179,7 +186,7 @@ contract RateFeedGuardTest is Test {
         // there would have been WRONG — nothing had been added; the filter was matching two interface files as
         // if they were adapters, and raising the number would have destroyed the census's ability to notice a
         // genuine thirteenth adapter. Fix the filter when the method is broken; bump only when the set really grew.
-        assertEq(total, 21, "rate-feed instance count changed - re-verify description() on the new set");
+        assertEq(total, 20, "rate-feed instance count changed - re-verify description() on the new set");
     }
 
     function _countGuarded(uint256 chainId) internal view returns (uint256 n) {

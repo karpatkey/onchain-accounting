@@ -265,6 +265,14 @@ def check_immutable_pointers(chain_id: int, url: str, res: dict) -> None:
                 e["pointerCheck"] = "N/A (BASE_ASSET() == 0, no NAV dependency)"
                 continue
             e["pointerCheck"] = f"UNREADABLE ({val})"
+            # ESCALATE HERE, not at the status rewrite below — this branch `continue`s past it. An
+            # unreadable pointer is precisely the evidence of an old-generation feed that `03`
+            # skip-if-deployed'd: its immutable-masked bytecode still matches the current build, so
+            # `status` stays CURRENT and `--require-current` (which tallies on status alone) exits 0 on a
+            # feed still bound to the abandoned proxy. `verify_step` FAILS on this same evidence, so
+            # leaving it here would make the two tools contradict each other on one address.
+            if e["status"].startswith("CURRENT"):
+                e["status"] = "CURRENT_CODE_STALE_POINTER"
             continue
         ptr = "0x" + val[-40:]
         e["pointer"] = ptr
@@ -300,12 +308,12 @@ def check_immutable_pointers(chain_id: int, url: str, res: dict) -> None:
             else:
                 e["pointerCheck"] = "OK"
         # A contract whose code is current but whose pointer is stale still has to be redeployed.
-        # "N/A (BASE_ASSET() == 0, ...)" is a CLASSIFICATION, not a failure: the contract itself declares
-        # it has no NAV pointer, so there is nothing that could be stale. Without this the exemption added
-        # above is inert — the status rewrite below would still mark the feed CURRENT_CODE_STALE_POINTER
-        # and `--require-current` would still exit 1 on a correct deploy.
-        if e["pointerCheck"] != "OK" and not e["pointerCheck"].startswith("N/A") \
-                and e["status"].startswith("CURRENT"):
+        # Reached only by entries that produced a READABLE pointer above; the N/A and UNREADABLE branches
+        # both `continue` before here and set their own status (N/A deliberately leaves it CURRENT — a
+        # contract that declares no NAV pointer has nothing that could be stale). An earlier revision added
+        # an `N/A` exemption to THIS condition, which was dead code: the comment claimed the exemption
+        # would otherwise be inert, but the `continue` already skipped this line entirely.
+        if e["pointerCheck"] != "OK" and e["status"].startswith("CURRENT"):
             e["status"] = "CURRENT_CODE_STALE_POINTER"
 
 

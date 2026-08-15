@@ -119,7 +119,7 @@ per-adapter constant an `AssetKindRegistry` override can address). Chain 1's `pl
 | --- | --- | --- | --- |
 | plain adapters | 12 | **13** | one `Cap` key replaced by two |
 | meta adapters | 33 | 33 | Cap is a plain adapter |
-| meta instances | 111 | 111 | ditto — **step 1.8's per-adapter set assertion is untouched** |
+| meta instances | 113 | 113 | ditto — **step 1.8's per-adapter set assertion is untouched** |
 | custom price feeds | 40 | 40 | no feed involved |
 | assets | 92 | 92 | both legs are still valued in the already-registered USDC |
 
@@ -133,7 +133,7 @@ that took either side of the conflict wholesale would have silently reverted the
 `len(enabled_keys(nav-config/balance-adapters/<id>.json))`, and `verify_step.py` **1.7** asserts
 `len(record.balanceAdapters) == plainAdapters + metaAdapters + 1` plus set equality on the KEY NAMES —
 both read config, so both expect 13 the moment the config lands. This table is the thing that goes
-stale, which is why it is stated here. (Note 111 is **1.8**'s number, not 1.7's; 1.7 does not look at
+stale, which is why it is stated here. (Note 113 is **1.8**'s number, not 1.7's; 1.7 does not look at
 meta instances at all.)
 
 | chain | meta adapters | meta instances | plain | feeds | assets |
@@ -151,7 +151,7 @@ meta instances at all.)
 `meta adapters` and `meta instances` columns above are a summary of the table immediately below, which
 is where they are derived and which is the authoritative one if the two ever disagree.)
 
-#### Meta instances: **111** — the figure to compare a tool's output against
+#### Meta instances: **113** — the figure to compare a tool's output against
 
 *(**110** was derived from config across all 24 chains, and confirmed ON-CHAIN on the 7 configured
 chains, on 2026-07-29 by the method below — the two scopes differ and are not interchangeable; **+1 on 2026-08-12** for issue #296, one `MorphoVaultsMeta` instance on chain 1. The heading
@@ -195,40 +195,40 @@ and scope below rather than being restated as covering the later change.)*
 > coordinate, not a raw `bytes32` marketId. Re-derived from config at this branch's head rather than
 > assumed: mainnet's `instances` sum to 53 and `instancesRaw` to 14 across the 15 enabled meta adapters.
 >
-> **Every ACTIONABLE figure in this document has been updated in place to 111 / 67.** The list below is
+> **Every ACTIONABLE figure in this document has been updated in place to 113 / 69** (was 111 / 67 before PR #308). The list below is
 > illustrative, NOT exhaustive — measured at 2026-08-12 there are **twelve** such sites, and two
 > hand-written lists of them (this one and the step-1.8 post-condition) were both short. **To find them
-> all, grep for the FIGURE and not for a remembered phrase:** `grep -nE '\b(111|67|53|91|114)\b'` over
+> all, grep for the FIGURE and not for a remembered phrase:** `grep -nE '\b(113|69|55|93|116)\b'` over
 > this file, then discard gas figures and dated records. A maintained list of sites is the same
 > documentary-guard shape this repo rejects everywhere else. Illustrative sites: the headline
 > totals, the summary row, the derivation table, the two independent confirmations, the disabled-adapter
-> arithmetic (now 111 + 3 = 114) and the step-1.8 post-condition. An operator is never asked to
+> arithmetic (now 113 + 3 = 116) and the step-1.8 post-condition. An operator is never asked to
 > mentally substitute a value: where a number is compared against a tool's output, it is the current
 > number. What is preserved as dated prose is the METHOD and DATE of the 2026-07-29 derivation, not its
 > totals — the same figure was doing two jobs with opposite requirements, and they are now separated.
 
 This number is what tells you at step 1.8 whether `06_Configure`'s reconciliation succeeded, so it is
 settled here rather than at execution time. Three figures had been circulating — 104, 110 and 113
-(the latter two now 111 and 114 after the 2026-08-12 amendment; the historical figures are named here
+(the latter two now 113 and 116 after the 2026-08-15 amendment; the historical figures are named here
 as they circulated, and the paragraphs below explain the CURRENT values).
 
 | chain | enabled meta adapters | `instances` | `instancesRaw` | total |
 | --- | --- | --- | --- | --- |
-| 1 mainnet | 15 | 53 | 14 | **67** |
+| 1 mainnet | 16 | 55 | 14 | **69** |
 | 42161 arbitrum | 7 | 14 | 2 | **16** |
 | 8453 base | 6 | 12 | 4 | **16** |
 | 10 optimism | 2 | 4 | 0 | **4** |
 | 100 gnosis | 2 | 4 | 0 | **4** |
 | 137 polygon | 1 | 4 | 0 | **4** |
 | 56 bsc | 0 | 0 | 0 | **0** |
-| **total** | **33** | **91** | **20** | **111** |
+| **total** | **34** | **93** | **20** | **113** |
 
 Counted from `script/config/nav-config/meta-balance-adapters/<chainId>.json`, taking only adapters
 with `enabled: true` and summing `instances` + `instancesRaw`. Two independent confirmations: the
-deduplicated count is also 111 (no coordinate repeats within an adapter, so `06` cannot revert
-`DuplicateMetaInstance`), and unique `(chain, coordinate)` pairs across *all* adapters is also 111
+deduplicated count is also 113 (no coordinate repeats within an adapter, so `06` cannot revert
+`DuplicateMetaInstance`), and unique `(chain, coordinate)` pairs across *all* adapters is also 113
 (no coordinate is claimed by two adapters on one chain). Both dedup figures are re-derived from
-today's config and so carry the amended 111.
+today's config and so carry the amended 113.
 
 **The all-chain set comparison below is NOT re-derived — it is a dated result and it covers the 110
 state.** On 2026-07-29 `verify_step.py 1.8` compared each adapter's on-chain `getMetaInstances()`
@@ -245,7 +245,7 @@ against the amended config has NOT been done, and this paragraph does not claim 
   mainnet `BalancerV2PoolsMeta` (`instances` 0, `instancesRaw` 1), mainnet `BalancerV2GaugesMeta`
   (1, 0), bsc `PancakeSwapV2PoolsMeta` (1, 0), and base `PancakeSwapV3PoolsMeta` (0, 0) — the last
   contributes nothing **today**, so the day it gains an instance this reconciliation goes short. `ConfigReader.isAdapterEnabled` gates registration and a missing key
-  reads as **false** (`ConfigReader.sol:368-369`), so `06` will not register any of them. 111 + 3 = 114.
+  reads as **false** (`ConfigReader.sol:368-369`), so `06` will not register any of them. 113 + 3 = 116.
 - **104** is not reproducible from the current tree by any derivation — not `instances` alone (91),
   not the deploy-config tree (0, it holds no instance lists), not any enabled-filter variant. It
   predates the config split in `f4873617` and should be treated as retired, not reconciled.
@@ -374,7 +374,7 @@ NAV address is invalidated by construction:
 | every custom price feed is redeployed — each holds `INAVCalculator public immutable NAV` (ADR 0019) | **40**: mainnet 25, arbitrum 8, base 4, gnosis 3 | 1.5 |
 | every asset with its primary + monitor feeds is re-registered | **92** assets | 1.6 |
 | every plain and meta adapter is redeployed | 13 plain + 33 meta | 1.7 |
-| every meta instance is re-registered | **111** | 1.8 |
+| every meta instance is re-registered | **113** | 1.8 |
 | each assisted adapter drags its assistant, which holds `immutable ADAPTER` | **4 pairs on 2 chains** | 2.1 |
 | downstream consumers repoint off the old proxy | kpkShares, portal, agents, subgraphs | 2.7 |
 
@@ -401,7 +401,7 @@ looking attractive — it is genuinely far smaller. It is also wrong.
 >
 > ⚠️ **A count returning to a value it previously held is the nastiest version of this**, because a stale
 > document quoting 40 now looks current and agrees with the tree for the wrong reason. Date-check rather
-> than value-check. The **111** meta instances and the cutover off
+> than value-check. The **113** meta instances and the cutover off
 > `0x80eD5cc6cEbAe4fEE1eD8687279aa492A50afa8d` are unaffected and agree everywhere.
 
 The old stack is **abandoned in place**, not decommissioned. It keeps answering on
@@ -1502,11 +1502,11 @@ touched at all by this step, not merely touched idempotently.
   matches 1.7 (`04` is what deploys adapters; 1.6 is `RegisterAssets` and produces no adapter count),
   every recorded adapter reports `isAdapterRegistered`, nothing is registered that is not
   in the record, and each meta adapter's `getMetaInstances()` **set equals** its configured coordinate
-  set, summing to the total in the meta-instance table at the top of this document (**111**; 110 as
+  set, summing to the total in the meta-instance table at the top of this document (**113**; 111 as
   reconciled 2026-07-29, +1 on 2026-08-12 for issue #296). The per-chain breakdown lives in that table only and is not repeated here, so the table
   is where a config change is corrected — but "one place" understates it badly. Measured at 2026-08-12 the
   meta-instance figure appears at **twelve** sites in this file. Do NOT work from a list — including
-  this sentence: grep for the figure itself (`grep -nE '\b(111|67|53|91|114)\b'`), discard gas values
+  this sentence: grep for the figure itself (`grep -nE '\b(113|69|55|93|116)\b'`), discard gas values
   and dated records, and change what remains. Two hand-written site lists in this document were both
   short, which is why the instruction is now a derivation rather than an enumeration.
 
@@ -2065,3 +2065,10 @@ to the new proxy. The old stack keeps answering until they do; nothing needs unr
 | an assistant's `ADAPTER()` is not its paired adapter | the `*Assistant` key was not cleared, so `04` skipped the redeploy | clear it (1.1), re-run 1.7, re-check with `verify_step.py 1.7` |
 | hyperevm impl deploy "exceeds block gas limit" | small blocks | enable big blocks (1.10) |
 | hemi tx rejected on price | fee floor | raise `--with-gas-price` (1.10) |
+
+<!-- 2026-08-15 (PR #308) DERIVATION RE-COUNTED FROM CONFIG, not edited by hand: per chain
+     1=69 (16 adapters, 55+14) · 42161=16 · 8453=16 · 10=4 · 100=4 · 137=4 · 56=0 => 34 adapters,
+     93 instances + 20 instancesRaw = 113. An earlier revision of this PR raised the HEADLINE to 113
+     while leaving this derivation table at 111/67 — and this document states the derivation table
+     WINS on disagreement, so the runbook contradicted itself on the exact figures steps 1.5-1.8 are
+     checked against. Re-derive, never hand-edit one table. -->

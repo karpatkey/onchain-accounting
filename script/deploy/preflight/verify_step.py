@@ -669,14 +669,11 @@ def step_new_proxy(k: Chk, rec: dict, exp: dict, url, base, tag) -> None:
 def _declared_base_asset(chain_id: int, feed_name: str):
     """The `baseAsset` this feed's deploy config declares, or None if the config records no opinion.
 
-    Read straight from `contracts-deployment-config/custom-price-feeds/<chain>.json` so the on-chain
-    `BASE_ASSET()` can be compared against what preflight actually validated against.
+    Read through `preflight_config.dcfg` — the same loader the rest of this step already uses — so the
+    on-chain `BASE_ASSET()` can be compared against exactly what preflight validated against.
     """
     try:
-        import json as _json
-        p = (c.REPO / "script" / "config" / "contracts-deployment-config"
-             / "custom-price-feeds" / f"{chain_id}.json")
-        entry = _json.loads(p.read_text()).get(feed_name) or {}
+        entry = (pc.dcfg("custom-price-feeds", chain_id) or {}).get(feed_name) or {}
         ctor = entry.get("constructor", entry)
         raw = ctor.get("baseAsset", entry.get("baseAsset"))
         return raw if isinstance(raw, str) and raw.startswith("0x") and len(raw) == 42 else None
@@ -754,7 +751,7 @@ def step_custom_price_feeds(k: Chk, rec: dict, exp: dict, url, base, tag) -> Non
         # declared address(0) as "not NAV-sourced" and skips its base/heartbeat checks entirely, so a feed
         # that is really NAV-sourced but records address(0) would pass preflight unexamined. This is the
         # only place the two can be compared, because it needs the deployed contract.
-        declared = _declared_base_asset(chain_id, n)
+        declared = _declared_base_asset(k.chain_id, n)
         if isinstance(base, str) and len(base) >= 66:
             onchain = "0x" + base[-40:]
             if declared is not None and lower(onchain) != lower(declared):

@@ -1507,13 +1507,17 @@ def _self_test() -> int:
                                          if k_ != _pair_adapter}
     _rec_predeploy.pop(_pair_assistant, None)
     _subj_predeploy = _subjects(_rec_predeploy, dict(arch_plain), ALL_ASSIST)
-    # GUARD THE ABSENCE ASSERTION. `x not in set()` is TRUE, so without this the arm passes whenever
-    # the fixture produces no failures at all — including if a future edit makes it model nothing.
+    # GUARD THE ABSENCE ASSERTION ON A NAMED SIGNAL. `x not in set()` is TRUE, so without this the
+    # arm passes whenever the expected failure is absent — whether the fixture produced nothing at
+    # all, or produced something UNRELATED. A bare `bool(subjects)` guard would catch only the first
+    # and then misreport the second as "no failures at all", which is false: it produced one, just
+    # not the one that makes this scenario the scenario. Requiring the balanceAdapters subject by
+    # NAME is what ties the guard to the case being modelled.
     # It is non-vacuous today only INCIDENTALLY: the fixture deletes the adapter entry, so the set
     # happens to hold `balanceAdapters`, which nothing asserted. An arm meaningful by accident goes
     # meaningless on the next edit, silently — and this is the arm written to close the previous
     # instance of exactly that defect, so it is the last place it should be allowed to recur.
-    _r1_reached = bool(_subj_predeploy)
+    _r1_reached = "balanceAdapters" in _subj_predeploy
     _r1_ok = _r1_reached and _pair_assistant not in _subj_predeploy
     # TWO FAILURE MODES, TWO MESSAGES. One diagnostic for both would name the wrong cause half the
     # time, and a guard that fires correctly while misdiagnosing sends the next reader after a
@@ -1521,8 +1525,8 @@ def _self_test() -> int:
     if _r1_ok:
         _r1_why = ""
     elif not _r1_reached:
-        _r1_why = ("  -> the fixture produced NO failures at all, so the absence assertion is "
-                   "vacuous: this arm is not passing, it is modelling nothing")
+        _r1_why = ("  -> did not produce the expected balanceAdapters failure, so the scenario was "
+                   "not modelled: this arm is not passing, it is vacuous")
     else:
         _r1_why = ("  -> " + _pair_assistant + " was demanded from config alone; the oracle has "
                    "reverted to config-driven")

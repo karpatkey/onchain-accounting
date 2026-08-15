@@ -99,9 +99,30 @@ def widen(a: str) -> str:
     return "0x" + "0" * 24 + a.lower()[2:]
 
 
-def populated(d: dict) -> dict:
-    """The subset of a record section that actually holds an address."""
-    return {k: v for k, v in (d or {}).items() if c.is_address(v)}
+def populated(d) -> dict:
+    """Every address-shaped value anywhere in a record section, whatever shape the section is.
+
+    SHAPE-AGNOSTIC ON PURPOSE. This took `dict` only, and the caller narrowed with
+    `populated(block if isinstance(block, dict) else None)`, so a section that was a LIST of live
+    pre-redeploy addresses scanned as empty and passed the gate clean. The second half of the rule
+    is *the record must contain nothing populated*, and that holds whatever container the section
+    turned out to be — a rule stated over one container type is not that rule. Lists and bare
+    scalars are walked; keys are synthesised positionally so the caller can still name what it hit.
+    """
+    out: dict = {}
+
+    def walk(node, path: str) -> None:
+        if isinstance(node, dict):
+            for k_, v_ in node.items():
+                walk(v_, k_ if not path else path + "." + str(k_))
+        elif isinstance(node, (list, tuple)):
+            for i_, v_ in enumerate(node):
+                walk(v_, (path or "") + "[" + str(i_) + "]")
+        elif c.is_address(node):
+            out[path or "<value>"] = node
+
+    walk(d, "")
+    return out
 
 
 def read_pins() -> tuple[dict[str, str], list[str]]:
@@ -199,6 +220,27 @@ def expected_sections(chain_id: int) -> set[str]:
     return out
 
 
+def expected_entries(sec: str, chain_id: int, arch_block) -> set[str]:
+    """The entries a section MUST carry, as a UNION over every oracle.
+
+    A UNION, never a disjunction of guards. The rule this file kept getting wrong was written as
+    `if <config says so> or <archive says so>:` — a condition, so making one oracle WORSE made the
+    whole check skip. Measured: substituting another chain's archive took the failure count from 1
+    to 0. Evidence subtracted. A union cannot do that: adding an oracle can only grow the set, and
+    the set is what gets iterated, so adding an oracle can only add failures.
+    """
+    out: set[str] = set()
+    if sec == "balanceAdapters":
+        out.add("ERC20Default")          # on every deployed NAV; declared by no config
+        for sub in ("balance-adapters", "meta-balance-adapters"):
+            out |= set(pc.enabled_keys(pc.dcfg(sub, chain_id)))
+    elif sec == "customPriceFeeds":
+        out |= set(pc.enabled_keys(pc.dcfg("custom-price-feeds", chain_id)))
+    if isinstance(arch_block, dict):
+        out |= set(arch_block)
+    return out
+
+
 def expected_clear_top(chain_id: int) -> set[str]:
     """Which `CLEAR_TOP` keys this chain is SUPPOSED to carry, derived from CONFIG.
 
@@ -233,11 +275,35 @@ def expected_clear_top(chain_id: int) -> set[str]:
         # ever emitted. The bound is real; the mitigation was not. It bites only when the archive ALSO
         # lacks the key: a deletion predating the reset, on a chain with no readable config.
         return keys
-    enabled = set(pc.enabled_keys(cfg))
-    for adapter_key, assistant_key in ASSISTED_PAIRS:
-        if adapter_key in enabled:
-            keys.add(assistant_key)
     return keys
+
+
+def expected_assistants(rec: dict, arch) -> set:
+    """Which `*Assistant` keys this record should carry — from the RECORD, not from config.
+
+    THE ORACLE HAD TO CHANGE, and this is what made the union honest. Config enabling an assisted
+    adapter does not mean an assistant was ever deployed: `04._deployAssistantsIfEnabled`
+    (`04_DeployBalanceAdapters.s.sol:251`) deploys one only once the paired ADAPTER'S ADDRESS is
+    already in the record — which is what `ASSISTED_PAIRS` (:69) has said all along while
+    `expected_clear_top` derived the opposite from config.
+
+    Measured cost of the wrong oracle: the ordinary enable-before-deploy rollout order (edit config,
+    run 04 later) made gate 1.1 demand a key that had never existed and instruct the operator to
+    hand-insert it. A gate that cries wolf on a healthy chain gets waved through, which is a
+    fail-open with extra steps.
+
+    Presence is read as KEY presence, not address presence, because step 1.1 runs AFTER the clear:
+    `reset_deployment_records.py` blanks values and keeps keys, so a deployed adapter reads as
+    `"AdapterName": ""`.
+    """
+    out = set()
+    for adapter_key, assistant_key in ASSISTED_PAIRS:
+        for src in (rec, arch):
+            block = src.get("balanceAdapters") if isinstance(src, dict) else None
+            if isinstance(block, dict) and adapter_key in block:
+                out.add(assistant_key)
+                break
+    return out
 
 
 def previous_generation_feeds(chain_id: int, tag: str) -> tuple[set[str], list[str]]:
@@ -387,7 +453,21 @@ def step_record_cleared(k: Chk, rec: dict, exp: dict, url, base, tag) -> None:
     # accepted), and the archive is a byte copy of the record taken at clear time (so a key deleted
     # BEFORE the reset was missing from both and looked like one that never existed). Config has
     # neither property: it is per-chain, and it is independent of the record.
-    expected = expected_clear_top(k.chain_id)
+    # EXPECTATION IS A UNION OVER ORACLES, and the union is the whole safety argument: adding an
+    # oracle can only GROW this set, the check iterates the set, so adding an oracle can only ADD
+    # failures and can never excuse one. Asserted, not merely stated — see the `monotonicity:` arms
+    # in `--self-test`, which run one record against no archive, a correct archive and a foreign
+    # archive and fail if any subject disappears.
+    #
+    # PRECONDITION ON EVERY ORACLE ADDED HERE: IT MUST BE SOUND. Monotonicity is only a virtue if
+    # each oracle is right. Against an UNSOUND oracle the very same property guarantees the error
+    # propagates into `expected` and NO other oracle can cancel it — a union has no way to outvote a
+    # member. That is not hypothetical: the config-derived assistant oracle over-expected, and
+    # because the union can only add, it turned three healthy chains red instead of being corrected
+    # by the record. Before adding an oracle, establish that everything it claims is genuinely
+    # REQUIRED, not merely correlated with being required. An oracle that is usually right is not
+    # sound.
+    expected = expected_clear_top(k.chain_id) | expected_assistants(rec, arch)
     section_expected = expected_sections(k.chain_id)
 
     # ABSENCE IS ONLY A DEFECT WHERE THE KEY WAS SUPPOSED TO BE. This asserts the post-condition
@@ -409,7 +489,11 @@ def step_record_cleared(k: Chk, rec: dict, exp: dict, url, base, tag) -> None:
     # the opposite: a future chain-specific `*Assistant` key needs an `ASSISTED_PAIRS` entry (:72)
     # or it silently expects nothing, and a future chain-specific key NOT named `*Assistant` lands
     # in the universal set and goes red fleet-wide. Neither is handled "with no edit here".
-    for key in rd.CLEAR_TOP:
+    # UNIFORMITY WITH THE SECTION RULE — see the commit body: this is NOT a hole being closed. A
+    # config-named key absent from both record and archive is already caught, measured. But a rule
+    # that iterates its expected set at one level and gates on the record at the other is a rule
+    # someone will later apply wrongly, so both levels now state the same shape.
+    for key in sorted(set(rd.CLEAR_TOP) | expected):
         if key in rec:
             k.require(not c.is_address(rec[key]),
                       f"{key} is still populated ({rec[key]}) — 03/04 will skip-if-deployed and 06 "
@@ -446,27 +530,35 @@ def step_record_cleared(k: Chk, rec: dict, exp: dict, url, base, tag) -> None:
         # so, and either source can only add a failure.
         block = rec.get(sec)
         arch_block = arch.get(sec) if isinstance(arch, dict) else None
-        if sec in section_expected or arch_block:
-            # DESTROYED IS NOT THE SAME AS DELETED, and an earlier revision only caught deletion.
-            # `sec not in rec` misses `null`, `{}` and `[]` — all three destroy the identical key
-            # set and all three passed. Test the CONTENT, not the presence of the name: the section
-            # must be an object, and `reset_deployment_records` preserves keys while blanking
-            # values, so it must still hold every entry the pre-clear archive recorded.
-            if not isinstance(block, dict):
+        want = expected_entries(sec, k.chain_id, arch_block)
+        # ITERATE THE EXPECTED SET. Never gate a check on a property of the record — that is the
+        # shape that produced four fail-opens here, most recently a foreign archive SILENCING the
+        # section check instead of adding noise to it.
+        if not isinstance(block, dict):
+            if want or sec in section_expected:
                 k.fail.append(f"{sec} is missing or is not an object ({block!r}) — this chain is "
-                              f"expected to carry it and `reset_deployment_records.py` blanks values "
-                              f"while keeping keys, so it never removes or empties a section")
-                continue
-            lost = sorted(set(arch_block or {}) - set(block))
-            if lost:
-                k.fail.append(f"{sec} has LOST {len(lost)} entr(y/ies) present in "
-                              f"archive/{tag}/{k.chain_id}.json: {lost[:6]}"
-                              f"{' …' if len(lost) > 6 else ''} — blanked values keep their keys, so "
-                              f"these were deleted")
-            elif not block:
-                k.fail.append(f"{sec} is EMPTY. Every in-scope chain carries at least `ERC20Default` "
-                              f"here, so an empty section is a destroyed one, not a cleared one")
-        still = populated(block if isinstance(block, dict) else None)
+                              f"expected to carry {len(want)} entr(y/ies) and "
+                              f"`reset_deployment_records.py` blanks values while keeping keys, so "
+                              f"it never removes or empties a section")
+        else:
+            missing = sorted(want - set(block))
+            if missing:
+                k.fail.append(f"{sec} is MISSING {len(missing)} expected entr(y/ies): "
+                              f"{missing[:6]}{' …' if len(missing) > 6 else ''} — expected from "
+                              f"config and/or archive/{tag}/{k.chain_id}.json; blanked values keep "
+                              f"their keys, so these were deleted")
+            elif not block and (want or sec in section_expected):
+                # The justification must name a member THIS section actually has. It said "every
+                # in-scope chain carries at least `ERC20Default` here" for BOTH sections;
+                # `ERC20Default` is a `balanceAdapters` entry and appears in zero committed
+                # `customPriceFeeds` blocks, so the message sent an operator hunting an entry that
+                # cannot exist there. Conclusion right, stated reason false.
+                k.fail.append(f"{sec} is EMPTY, but {len(want)} entr(y/ies) are expected here"
+                              + (" (at least `ERC20Default`)" if sec == "balanceAdapters" else "")
+                              + " — an empty section is a destroyed one, not a cleared one")
+        # NOT narrowed to `dict`: a LIST of live pre-redeploy addresses is exactly what the old
+        # narrowing read as empty and passed.
+        still = populated(block)
         k.require(not still,
                   f"{sec} still holds {len(still)} address(es): {sorted(still)[:6]}"
                   f"{' …' if len(still) > 6 else ''}")
@@ -1265,7 +1357,10 @@ def _self_test() -> int:
             f"a section set to {tag_} is caught, not read as cleared", must_fail=True,
             # With an archive holding entries, an emptied section trips LOST before EMPTY —
             # EMPTY is only reachable when no archive witnesses the lost keys.
-            expect_in="has LOST" if bad == {} else "is missing or is not an object",
+            # Under the re-derived rule an emptied section reports its MISSING expected entries
+            # rather than "LOST", because expectation now comes from the union rather than from the
+            # archive's contents alone.
+            expect_in="is MISSING" if bad == {} else "is missing or is not an object",
             chain=ALL_ASSIST)
 
     # ------------------------------------------------------------------------------------------

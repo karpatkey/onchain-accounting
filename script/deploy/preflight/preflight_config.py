@@ -135,7 +135,23 @@ def nav_sourced_base(feed_entry: dict) -> str | None:
     NAV-sourced and the heartbeat invariant below does not apply to it.
     """
     ctor = feed_entry.get("constructor", feed_entry)
-    return ctor.get("baseAsset") or feed_entry.get("baseAsset")
+    raw = ctor.get("baseAsset") or feed_entry.get("baseAsset")
+    # address(0) is the SENTINEL for "no NAV dependency" (see is_address_shaped), so it must return None
+    # here exactly as an absent key does — a feed that declares it is not NAV-sourced.
+    #
+    # Without this the zero address is a truthy STRING, so `if not base: continue` in the callers does not
+    # fire, the sentinel is treated as a real base asset, and `by_addr` lookup fails with the misleading
+    # "NOT a registered asset on this chain — ... valuing '<sym>' at $0". That put the two checks in direct
+    # contradiction: `base_allowlist_findings` INSTRUCTS you to set address(0) to assert no dependency
+    # (and handles it correctly via its own `int(raw, 16) == 0` guard), while this path then rejected the
+    # very value it told you to use, leaving no config that satisfies both.
+    #
+    # Latent until now only because `ETHPlus_CustomPriceFeed` — the one other baseAsset == 0 feed — is
+    # `enabled: false` and never reaches these checks. Mainnet `wARS` (InvertedChainlinkCustomPriceFeed)
+    # is the first ENABLED feed to declare it.
+    if is_address_shaped(raw) and int(raw, 16) == 0:
+        return None
+    return raw
 
 
 ZERO_ADDR = "0x" + "0" * 40

@@ -40,6 +40,7 @@ import {ezETH_CrossRateCustomPriceFeed} from "../../src/prices/protocols/ezETH_C
 import {ETHx_CrossRateCustomPriceFeed} from "../../src/prices/protocols/ETHx_CrossRateCustomPriceFeed.sol";
 import {osETH_CrossRateCustomPriceFeed} from "../../src/prices/protocols/osETH_CrossRateCustomPriceFeed.sol";
 import {CrossRateCustomPriceFeed} from "../../src/prices/protocols/CrossRateCustomPriceFeed.sol";
+import {InvertedChainlinkCustomPriceFeed} from "src/prices/protocols/InvertedChainlinkCustomPriceFeed.sol";
 import {ankrETH_CustomPriceFeed} from "../../src/prices/protocols/ankrETH_CustomPriceFeed.sol";
 import {NXM_CustomPriceFeed} from "../../src/prices/protocols/NXM_CustomPriceFeed.sol";
 import {RateFeedGuard} from "../utils/RateFeedGuard.sol";
@@ -248,6 +249,10 @@ contract DeployPriceFeeds is BaseDeployScript {
         // Deploy ankrETH Price Oracle (ankrETH/USD = ETH/USD * 1e18 / ratio)
         if (ConfigReader.isAdapterEnabled(vm, currentChainId, "priceFeeds", "ankrETH")) {
             _deployAnkrEth();
+
+            if (ConfigReader.isPriceFeedEnabled(vm, currentChainId, "wARS")) {
+                _deployInvertedFeed("wARS");
+            }
         }
 
         // Deploy NXM / wNXM Price Oracle (price = RAMM.getInternalPrice() [ETH/NXM] * ETH/USD)
@@ -620,6 +625,30 @@ contract DeployPriceFeeds is BaseDeployScript {
     ///         config entry `{underlyingAsset, yToXFeed, yToXHeartbeat, baseAsset}`. Used for LSTs whose fundamental
     ///         primary has no direct USD market feed to diverge from — the yToXFeed is an INDEPENDENT market Y/ETH
     ///         feed. Wired as a Custom monitorFeed; never prices the NAV.
+    /// @notice Deploys a generic {InvertedChainlinkCustomPriceFeed} from config, by feed key.
+    /// @dev For assets whose ONLY Chainlink coverage is quoted `USD / X` (X per USD) — the reciprocal of the
+    ///      asset/USD direction {Prices} registers. The constructor param is named `*ChainlinkAddress` so
+    ///      {RateFeedGuard} recognises it as a rate feed and REQUIRES a `rateFeedGuard` block, which pins both
+    ///      the pair and the direction; without that naming the guard would silently skip this feed.
+    function _deployInvertedFeed(string memory name) internal {
+        address deployed = _readAdapterDeployed("priceFeeds", name);
+        if (deployed != address(0)) {
+            console2.log("InvertedChainlink feed already deployed:", name, deployed);
+            return;
+        }
+        address underlying =
+            vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, name, "underlyingAsset"));
+        address usdToAssetFeed =
+            vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, name, "usdToAssetChainlinkAddress"));
+        uint256 heartbeat =
+            vm.parseUint(ConfigReader.readPriceFeedParam(vm, currentChainId, name, "usdToAssetChainlinkHeartbeat"));
+
+        InvertedChainlinkCustomPriceFeed adapter =
+            new InvertedChainlinkCustomPriceFeed(underlying, usdToAssetFeed, heartbeat);
+        ConfigReader.writeAdapterAddress(vm, currentChainId, "priceFeeds", name, address(adapter));
+        console2.log("InvertedChainlinkCustomPriceFeed deployed:", name, address(adapter));
+    }
+
     function _deployCrossRateMonitor(string memory name) internal {
         address deployed = _readAdapterDeployed("priceFeeds", name);
         if (deployed != address(0)) {

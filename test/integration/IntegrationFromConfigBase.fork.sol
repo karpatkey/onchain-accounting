@@ -23,6 +23,9 @@ import {
 } from "src/balances/MetaBalanceAdapters/CompoundV3CometsMetaBalanceAdapter.sol";
 import {SparkLendBalanceAdapter} from "src/balances/BalanceAdapters/SparkLendBalanceAdapter.sol";
 import {MorphoVaultsMetaBalanceAdapter} from "src/balances/MetaBalanceAdapters/MorphoVaultsMetaBalanceAdapter.sol";
+import {
+    SymbioticVaultsMetaBalanceAdapter
+} from "src/balances/MetaBalanceAdapters/SymbioticVaultsMetaBalanceAdapter.sol";
 import {MorphoMarketsMetaBalanceAdapter} from "src/balances/MetaBalanceAdapters/MorphoMarketsMetaBalanceAdapter.sol";
 import {
     AaveV3InstancesMetaBalanceAdapter
@@ -550,6 +553,9 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         if (_equals(name, "MorphoVaultsMeta")) {
             return _deployMorphoVaultsMeta(name, navAddr);
         }
+        if (_equals(name, "SymbioticVaultsMeta")) {
+            return _deploySymbioticVaultsMeta(name, navAddr);
+        }
         if (_equals(name, "GearboxV3MarketsMeta")) {
             return _deployGearboxV3MarketsMeta(name, navAddr);
         }
@@ -635,6 +641,17 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
 
     function _deployMorphoVaultsMeta(string memory, address navAddr) internal returns (address) {
         return address(new MorphoVaultsMetaBalanceAdapter(navAddr));
+    }
+
+    /// @dev Dispatched rather than declared in `undispatched-adapters.json`. No fixture holds a Symbiotic
+    ///      position today, so an exemption would be defensible on the same grounds as EulerVaultsMeta —
+    ///      but the constructor is a bare `(navAddr)`, so dispatching costs three lines and permanently
+    ///      removes the hazard that file describes (a skipped meta-adapter reports 0, is indistinguishable
+    ///      from "holds nothing", and a snapshot refresh in that state PINS the under-report). The KPK Safe
+    ///      holds a real, material LiquidLane position, so this would become live the moment such an
+    ///      account is added as a fixture.
+    function _deploySymbioticVaultsMeta(string memory, address navAddr) internal returns (address) {
+        return address(new SymbioticVaultsMetaBalanceAdapter(navAddr));
     }
 
     function _deployBalancerV3PoolsMeta(string memory, address navAddr) internal returns (address) {

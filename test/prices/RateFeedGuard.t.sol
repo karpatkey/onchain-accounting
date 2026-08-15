@@ -186,7 +186,18 @@ contract RateFeedGuardTest is Test {
         // there would have been WRONG — nothing had been added; the filter was matching two interface files as
         // if they were adapters, and raising the number would have destroyed the census's ability to notice a
         // genuine thirteenth adapter. Fix the filter when the method is broken; bump only when the set really grew.
-        assertEq(total, 20, "rate-feed instance count changed - re-verify description() on the new set");
+        // 2026-08-15: 20 -> 21. Mainnet `wARS` added, and its pair identity WAS confirmed on-chain first —
+        // `0xBb65fa58BDb7d33e4a3D1A40a7A9BD99E746367b` measured 2026-08-15:
+        //
+        //   description()     "USD / ARS"   <- note the DIRECTION: ARS per USD, the reciprocal of the
+        //                                      asset/USD direction every primary feed here uses.
+        //   decimals()        8
+        //   latestRoundData() 158309760000  ->  1583.0976e18, inside the configured 100-100000e18 band
+        //
+        // This is the population growing, not the counting method mis-measuring: one real instance was added
+        // and verified. Its guard is what makes the direction load-bearing — an ARS/USD feed swapped in would
+        // answer ~6.3e14 at 1e18 scale and fail the band by four orders of magnitude.
+        assertEq(total, 21, "rate-feed instance count changed - re-verify description() on the new set");
     }
 
     function _countGuarded(uint256 chainId) internal view returns (uint256 n) {

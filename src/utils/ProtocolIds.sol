@@ -79,6 +79,7 @@ library ProtocolIds {
     bytes32 internal constant BALANCER_V3 = keccak256("balancer-v3");
     bytes32 internal constant FLUID = keccak256("fluid");
     bytes32 internal constant EULER = keccak256("euler");
+    bytes32 internal constant SYMBIOTIC = keccak256("symbiotic");
     bytes32 internal constant LIDO = keccak256("lido");
     bytes32 internal constant KELP = keccak256("kelp");
     bytes32 internal constant STADER = keccak256("stader");
@@ -123,6 +124,9 @@ library ProtocolIds {
 
     // Euler
     bytes32 internal constant EULER_VAULTS = keccak256("euler-vaults");
+
+    // Symbiotic
+    bytes32 internal constant SYMBIOTIC_VAULTS = keccak256("symbiotic-vaults");
 
     // Compound
     bytes32 internal constant COMPOUND_V3 = keccak256("compound-v3");

@@ -274,5 +274,22 @@
       "minRate1e18": "900000000000000000",
       "maxRate1e18": "1500000000000000000"
     }
+  },
+  "wARS": {
+    "enabled": true,
+    "$comment": "wARS ('Peso Argentino'). Mainnet's ONLY ARS Chainlink feed is quoted USD / ARS (0xBb65fa58BDb7d33e4a3D1A40a7A9BD99E746367b, description() == 'USD / ARS', 8 decimals, ~158309760000 = 1583.09 ARS per USD, verified on-chain 2026-08-15). That is the RECIPROCAL of the asset/USD direction every primary feed here uses, so it CANNOT be registered as type 'Chainlink': doing so would price 1 wARS at ~$1,583 instead of ~$0.00063, an over-report of ~2.5 MILLION x. InvertedChainlinkCustomPriceFeed inverts it (1e8 * 10^feedDec / answer, division last). The param is named *ChainlinkAddress so RateFeedGuard._isRateFeedParam recognises it and the guard below is MANDATORY rather than silently skipped. baseAsset is 0x0 and that is an ASSERTION, not an omission: this feed reads no base/USD out of the NAV, and PriceFeedLib._validateFeedNotCircular probes BASE_ASSET() by raw staticcall and FAILS CLOSED (CustomFeedBaseUnreadable) on a feed that cannot answer - so the contract implements INavSourcedPriceFeed and returns address(0), as ETHPlus_CustomPriceFeed does. The deploy helper does not pass this key to the constructor; it exists so the feed stays inside preflight's circularity checks.",
+    "constructor": {
+      "underlyingAsset": "0x0DC4F92879B7670e5f4e4e6e3c801D229129D90D",
+      "usdToAssetChainlinkAddress": "0xBb65fa58BDb7d33e4a3D1A40a7A9BD99E746367b",
+      "usdToAssetChainlinkHeartbeat": "90000",
+      "baseAsset": "0x0000000000000000000000000000000000000000"
+    },
+    "rateFeedGuard": {
+      "$comment": "Pins BOTH the pair and the DIRECTION. description() == 'USD / ARS' catches a swap to any other pair; the band catches an inverted feed even if a description were forged - an ARS/USD feed would answer ~0.00063 (6.3e14 at 1e18 scale), four orders below the floor. Band is deliberately wide upward because ARS is a high-inflation currency and this rate only rises: 1583 today, ceiling 100000 allows ~63x further depreciation; floor 100 allows ~15x appreciation. Verified live on-chain 2026-08-15.",
+      "param": "usdToAssetChainlinkAddress",
+      "description": "USD / ARS",
+      "minRate1e18": "100000000000000000000",
+      "maxRate1e18": "100000000000000000000000"
+    }
   }
 }

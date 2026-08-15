@@ -108,5 +108,10 @@
     "constructor": {
       "positionManager": "0xC36442b4a4522E871399CD717aBDD847Ab11FE88"
     }
+  },
+  "SymbioticVaultsMeta": {
+    "enabled": true,
+    "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving Symbiotic ERC-4626 vaults. Active vault set lives on NAVCalculator via addMetaInstances (from nav-config). ERC-4626 vaults only - a Symbiotic CORE vault (epoch-based activeBalanceOf + withdrawal queue) is out of scope and would contribute nothing rather than a wrong number.",
+    "constructor": {}
   }
 }

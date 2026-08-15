@@ -667,18 +667,24 @@ def step_new_proxy(k: Chk, rec: dict, exp: dict, url, base, tag) -> None:
 
 
 def _declared_base_asset(chain_id: int, feed_name: str):
-    """The `baseAsset` this feed's deploy config declares, or None if the config records no opinion.
+    """`(value, readable)` for this feed's declared `baseAsset`.
 
-    Read through `preflight_config.dcfg` — the same loader the rest of this step already uses — so the
-    on-chain `BASE_ASSET()` can be compared against exactly what preflight validated against.
+    `readable` distinguishes "the config records no baseAsset" (a legitimate no-opinion) from "the config
+    could not be read or is malformed". Collapsing both to None — as the first version did — turned the
+    config-vs-contract cross-check into a SILENT no-op for exactly the feed whose config is wrong, while
+    still reporting PASS.
     """
     try:
         entry = (pc.dcfg("custom-price-feeds", chain_id) or {}).get(feed_name) or {}
-        ctor = entry.get("constructor", entry)
-        raw = ctor.get("baseAsset", entry.get("baseAsset"))
-        return raw if isinstance(raw, str) and raw.startswith("0x") and len(raw) == 42 else None
-    except Exception:
-        return None
+    except Exception as e:  # noqa: BLE001 - surfaced to the operator below, never swallowed
+        return None, f"custom-price-feeds/{chain_id}.json unreadable ({type(e).__name__})"
+    ctor = entry.get("constructor", entry)
+    raw = ctor.get("baseAsset", entry.get("baseAsset"))
+    if raw is None:
+        return None, None                      # no opinion recorded; nothing to cross-check
+    if not (isinstance(raw, str) and raw.startswith("0x") and len(raw) == 42):
+        return None, f"declared baseAsset {raw!r} is not a 20-byte address"
+    return raw, None
 
 
 def step_custom_price_feeds(k: Chk, rec: dict, exp: dict, url, base, tag) -> None:
@@ -754,8 +760,21 @@ def step_custom_price_feeds(k: Chk, rec: dict, exp: dict, url, base, tag) -> Non
         # declared address(0) as "not NAV-sourced" and skips its base/heartbeat checks entirely, so a feed
         # that is really NAV-sourced but records address(0) would pass preflight unexamined. This is the
         # only place the two can be compared, because it needs the deployed contract.
-        declared = _declared_base_asset(k.chain_id, n)
+        declared, declared_err = _declared_base_asset(k.chain_id, n)
+        if declared_err:
+            k.fail.append(f"customPriceFeeds.{n}: {declared_err} — the config-vs-contract BASE_ASSET "
+                          f"cross-check cannot run, so this feed is unverified rather than verified")
+            continue
         if isinstance(base_ret, str) and len(base_ret) >= 66:
+            # Mirror the on-chain validator rather than just truncating. PriceFeedLib._validateFeedNotCircular
+            # REJECTS a word whose upper 96 bits are dirty (`rawBase > type(uint160).max`), so taking the low
+            # 160 bits here would make preflight blind to a BASE_ASSET() answer the chain will refuse.
+            raw_word = int(base_ret[2:66], 16) if len(base_ret) >= 66 else 0
+            if raw_word > (1 << 160) - 1:
+                k.fail.append(f"customPriceFeeds.{n} {feeds[n]}: BASE_ASSET() returned {hex(raw_word)}, whose "
+                              f"upper bits are dirty — PriceFeedLib._validateFeedNotCircular rejects this, so "
+                              f"the feed cannot be registered")
+                continue
             onchain = "0x" + base_ret[-40:]
             if declared is not None and lower(onchain) != lower(declared):
                 k.fail.append(f"customPriceFeeds.{n} {feeds[n]}: config declares baseAsset {declared} but "
@@ -767,16 +786,16 @@ def step_custom_price_feeds(k: Chk, rec: dict, exp: dict, url, base, tag) -> Non
                               f"— NAV() pointer not applicable")
                 continue
 
-        # If the BASE_ASSET probe itself was unreadable we cannot tell "no NAV dependency" from "old
-        # feed", so fall through to the NAV() check below — EXCEPT where the config declares address(0),
-        # which is the same claim from the source preflight already validated. Without this, one transport
-        # hiccup on the third batch re-red-gates exactly the feeds this change exempts.
-        if declared is not None and int(declared, 16) == 0 and not (isinstance(base_ret, str) and len(base_ret) >= 66):
-            k.warn.append(f"customPriceFeeds.{n} {feeds[n]}: BASE_ASSET() unreadable, but config declares "
-                          f"no NAV dependency — NAV() pointer check not applicable, treat as unverified")
+        nav_unreadable = isinstance(nav, Exception) or not isinstance(nav, str) or len(nav) < 66
+        # A feed the CONFIG declares as having no NAV dependency, whose on-chain BASE_ASSET() could not be
+        # read either, cannot be verified — but neither is it evidence of an old-generation feed. Downgrade
+        # to WARN. This only ever softens a case that was ALREADY going to fail; it never SKIPS the pointer
+        # check on the strength of operator-editable config, which would be a fail-open.
+        if nav_unreadable and declared is not None and int(declared, 16) == 0:
+            k.warn.append(f"customPriceFeeds.{n} {feeds[n]}: neither BASE_ASSET() nor NAV() readable; config "
+                          f"declares no NAV dependency, so this is unverified rather than wrong")
             continue
-
-        if isinstance(nav, Exception) or not isinstance(nav, str) or len(nav) < 66:
+        if nav_unreadable:
             # MUST fail, not warn. `NAV` is a public immutable on every custom feed (ADR 0019), so
             # an unreadable NAV() is either a leftover feed from the old stack — exactly what this
             # step hunts — or an RPC failure, and `rpc_batch` returns its errors IN-BAND, filling a

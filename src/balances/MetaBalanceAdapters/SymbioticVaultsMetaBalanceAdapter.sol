@@ -14,6 +14,14 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 ///         Symbiotic ERC4626 vault. The set of vaults to query is configured on NAVCalculator (per-adapter,
 ///         MANAGER-gated) and passed in as `bytes32` instance coordinates (vault addresses widened to bytes32).
 /// @dev Per-instance identity is encoded as `abi.encode(address(vault))`.
+/// @dev **WHAT TIES THESE VAULTS TO SYMBIOTIC, positively.** Measured on mainnet 2026-08-15 for
+///      `KPK USDC LiquidLane` `0x8BcD7469…`: it is a registered entity of the Symbiotic **VaultFactory**
+///      `0xAEb6bdd95c502390db8f52c8909F703E9Af6a346` (`isEntity(vault) == true`, 357 entities), and its
+///      `delegator()` `0xdC94E7D2…` is a registered entity of the paired **DelegatorFactory**
+///      `0xB5eFf01403C0dD3aDa1010919791d6EB82F6a84C` (`isEntity == true`, 24 entities), both under the
+///      same owner, with the delegator's `vault()` pointing back at the vault. That registration — not the
+///      absence of core-vault methods — is what justifies stamping `symbiotic` identity here, and it is
+///      pinned by `test_premise_vaultIsRegisteredInSymbioticFactory` rather than asserted in prose.
 /// @dev **SCOPE — ERC-4626 Symbiotic vaults only, NOT Symbiotic CORE vaults.** Measured on mainnet
 ///      2026-08-15 against `KPK USDC LiquidLane` (`0x8BcD746976885b5832bAD07B4921E3f2dD1D3703`): the full
 ///      ERC-4626 surface answers (`asset()` = USDC, `previewRedeem`, `totalAssets`), while the Symbiotic

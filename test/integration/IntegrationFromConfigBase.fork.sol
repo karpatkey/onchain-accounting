@@ -312,6 +312,11 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
     ///      `UndispatchedAdapterGuard` equivalent on this side, so unlike a balance adapter the omission
     ///      does not fail closed: the asset is simply never registered, every holding of it values at $0,
     ///      and `refresh-integration-snapshot.sh` would pin that under-report as the expected NAV.
+    ///      **Scope of what this actually buys, stated honestly:** NO chain-1 fixture holds wARS today
+    ///      (checked on-chain across all 14 accounts), so this arm currently deploys and registers the feed
+    ///      but VALUES nothing through it. It removes the hazard for the day a fixture does hold wARS —
+    ///      which is exactly when a silent omission would otherwise be pinned — and it is not a substitute
+    ///      for the dedicated unit and fork suites, which are where this feed's real coverage lives.
     function _deployWars() internal returns (address) {
         address underlying = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "wARS", "underlyingAsset"));
         address usdToAssetFeed =

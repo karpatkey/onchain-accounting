@@ -14,6 +14,15 @@ import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {Mock_CustomPriceFeed} from "test/mocks/price_oracles.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
+
+interface ISymbioticRegistry {
+    function isEntity(address entity) external view returns (bool);
+    function totalEntities() external view returns (uint256);
+}
+
+interface IHasDelegator {
+    function delegator() external view returns (address);
+}
 import {PositionKind} from "src/utils/PositionKind.sol";
 
 // forge-lint: disable-next-line(unaliased-plain-import)
@@ -74,6 +83,29 @@ contract SymbioticVaultsMetaBalanceAdapterForkTest is BalanceAdapterTestBase {
         instances[0] = bytes32(uint256(uint160(address(LIQUID_LANE))));
         nav.addMetaBalanceAdapter(address(adapter), instances);
         vm.stopPrank();
+    }
+
+    /// @dev Symbiotic's canonical mainnet VaultFactory / DelegatorFactory.
+    address constant SYMBIOTIC_VAULT_FACTORY = 0xAEb6bdd95c502390db8f52c8909F703E9Af6a346;
+    address constant SYMBIOTIC_DELEGATOR_FACTORY = 0xB5eFf01403C0dD3aDa1010919791d6EB82F6a84C;
+
+    /// @dev **The POSITIVE evidence that this is a Symbiotic vault at all.** Review correctly objected
+    ///      that "core-vault methods revert" only establishes what the vault is NOT — it ties nothing to
+    ///      Symbiotic. This does: the vault is a registered entity of Symbiotic's VaultFactory, and its
+    ///      `delegator()` is a registered entity of the paired DelegatorFactory, which points back at the
+    ///      vault. If that ever ceases to hold, stamping `symbiotic` / `symbiotic-vaults` identity on this
+    ///      instance is no longer justified and this test says so.
+    function test_premise_vaultIsRegisteredInSymbioticFactory() public view {
+        assertTrue(
+            ISymbioticRegistry(SYMBIOTIC_VAULT_FACTORY).isEntity(address(LIQUID_LANE)),
+            "vault is a Symbiotic VaultFactory entity"
+        );
+        address delegator = IHasDelegator(address(LIQUID_LANE)).delegator();
+        assertTrue(
+            ISymbioticRegistry(SYMBIOTIC_DELEGATOR_FACTORY).isEntity(delegator),
+            "its delegator is a Symbiotic DelegatorFactory entity"
+        );
+        assertGt(ISymbioticRegistry(SYMBIOTIC_VAULT_FACTORY).totalEntities(), 1, "a real registry, not a stub");
     }
 
     /// @dev Premise check: the vault really is a synchronous ERC-4626, not a Symbiotic CORE vault.

@@ -313,6 +313,7 @@ The table below is the sweep of every `positionLabels` implementation in `src/ba
 | `CompoundV3CometsMetaBalanceAdapter` | `U` "Market" | `C` comet symbol | — | 0–2 | |
 | `ConvexCurveLPStakingMetaBalanceAdapter` | `U` "Staking" | `U` "Curve LP" | `C` coin symbols | 0, **2 or 3** | **The reply LENGTH varies by position** — seg 2 exists only when the `rewarderCoinSymbols` probe answers |
 | `EulerVaultsMetaBalanceAdapter` | `U` "Vault" | `C` vault name | — | 0–2 | |
+| `SymbioticVaultsMeta` | `SymbioticVaultsMetaBalanceAdapter` | ERC-4626 **Symbiotic** vaults (NOT Symbiotic core vaults — those are epoch-based `activeBalanceOf` + withdrawal queue and are out of scope). Single `Supplied` leg valued through `ERC4626RedeemLib.redeemValue`. Vault identity is bound on-chain: the instance must be a registered entity of Symbiotic's VaultFactory `0xAEb6bdd9…`. |
 | `FluidFTokensMetaBalanceAdapter` | `U` "Lending" | `C` fToken symbol | — | 0–2 | |
 | `FluidVaultsMetaBalanceAdapter` | `U` "Vault" | `C` pair symbols | — | 0–2 | |
 | `GearboxV3CreditAccountsMetaBalanceAdapter` | `U` "Credit Account" | `C` credit-manager name / underlying symbol | — | 0–2 | |

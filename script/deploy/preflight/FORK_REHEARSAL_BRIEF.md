@@ -676,9 +676,15 @@ the re-run. Everything else is secondary.
   `ERC20Default` `0x4Bc39Dce61245F5A63189d1FA03E6D76646f1EE6`, matching on-chain.
 - **All three assistant `ADAPTER()` pointers paired correctly** — the fix for the four live orphans.
 - `preflight_config.py`: 0 errors across 24 chains, totals exactly as §6 (33 / 110 / 12 / 40 / 93).
-  *(Recorded result, left as run. §6's meta-instance expectation has since moved 110 → 111 — one
-  `MorphoVaultsMeta` instance added on chain 1, issue #296 — so a re-run should read 111 here. The
-  recorded 110 was correct when this rehearsal ran and is not restated.)*
+  *(Recorded result, left as run. FOUR of these five totals have since moved, and ALL FOUR are named
+  here — an explanation covering only some of them reads as though the rest were errors, which is worse
+  than no explanation at all. Meta instances 110 → 111: one `MorphoVaultsMeta` instance added on chain 1
+  (#296). Custom feeds 40 → 41 → 40: 40 when this ran, 41 at #224, back to 40 when OETH was retired
+  (#302). Assets 93 → 92: OETH removed as a mainnet asset (#302). Plain adapters 12 → 13: #285 split the
+  combined `Cap` adapter into `CapStablecoin` + `CapSavings`, so chain 1 goes 11 → 12 (the §6 table
+  above records the same split). The remaining one — 33 meta adapters — still holds. So a re-run should
+  read 33 / 111 / 13 / 40 / 92. The recorded figures were correct when this rehearsal ran
+  and are not restated.)*
 - The disposable-config rail restored `script/config` and `broadcast/` byte-exactly; `deployments/1.json`
   verified identical to `HEAD` by hash afterwards. **Always check this** — 18 phantom addresses in a
   deployments record is the worst thing that could leak out of a rehearsal.

@@ -114,8 +114,8 @@ per-adapter constant an `AssetKindRegistry` override can address). Chain 1's `pl
 | plain adapters | 12 | **13** | one `Cap` key replaced by two |
 | meta adapters | 33 | 33 | Cap is a plain adapter |
 | meta instances | 111 | 111 | ditto — **step 1.8's per-adapter set assertion is untouched** |
-| custom price feeds | 41 | 41 | no feed involved |
-| assets | 93 | 93 | both legs are still valued in the already-registered USDC |
+| custom price feeds | 40 | 40 | no feed involved |
+| assets | 92 | 92 | both legs are still valued in the already-registered USDC |
 
 ⚠️ **The `meta instances` row reads 111, not the 110 this table carried before #298 merged.** The two
 changes are independent and BOTH apply: #296 added one `MorphoVaultsMeta` instance on chain 1 (110 ->
@@ -166,7 +166,8 @@ and scope below rather than being restated as covering the later change.)*
 > wrong place. What is NOT rewritten is the **dated 2026-07-29 claim**, which now sits in the italic
 > note directly under the heading rather than in the heading itself. Its scope was: derived from config
 > across all 24 chains, and confirmed ON-CHAIN on the 7 configured chains (see the 1.8 set comparison
-> below, and step 0.6). This change is one adapter on one chain, so restating that date's scope as
+> below, and the pre-deploy capture in step 0.7 — NOT step 0.6, which funds the deployer). This change
+> is one adapter on one chain, so restating that date's scope as
 > though it covered today would destroy the provenance of both. What was
 > measured today
 > is narrower and is stated as such: `getMetaInstances(MorphoVaultsMeta)` on the live NAV
@@ -188,7 +189,12 @@ and scope below rather than being restated as covering the later change.)*
 > coordinate, not a raw `bytes32` marketId. Re-derived from config at this branch's head rather than
 > assumed: mainnet's `instances` sum to 53 and `instancesRaw` to 14 across the 15 enabled meta adapters.
 >
-> **Every ACTIONABLE figure in this document has been updated in place to 111 / 67** — the headline
+> **Every ACTIONABLE figure in this document has been updated in place to 111 / 67.** The list below is
+> illustrative, NOT exhaustive — measured at 2026-08-12 there are **twelve** such sites, and two
+> hand-written lists of them (this one and the step-1.8 post-condition) were both short. **To find them
+> all, grep for the FIGURE and not for a remembered phrase:** `grep -nE '\b(111|67|53|91|114)\b'` over
+> this file, then discard gas figures and dated records. A maintained list of sites is the same
+> documentary-guard shape this repo rejects everywhere else. Illustrative sites: the headline
 > totals, the summary row, the derivation table, the two independent confirmations, the disabled-adapter
 > arithmetic (now 111 + 3 = 114) and the step-1.8 post-condition. An operator is never asked to
 > mentally substitute a value: where a number is compared against a tool's output, it is the current
@@ -375,11 +381,17 @@ None of it is optional, and none of it fails loudly: a step skipped here leaves 
 **under-reporting**, not erroring. That asymmetry is also why "just upgrade the implementation" keeps
 looking attractive — it is genuinely far smaller. It is also wrong.
 
-> **If another document disagrees on the feed count, check its date before splitting the difference.**
-> The count has moved four times: 39 until #199 (merged 2026-07-29), 40 until #224 (2026-07-30), 41
-> until OETH's retirement (2026-08-12), and **40 again now** — Chainlink is sunsetting the OETH/ETH rate
-> feed, so mainnet drops one and goes 26 -> 25. Re-measured with `preflight_config.py` on the merged
-> tree: **40** — mainnet 25, arbitrum 8, base 4, gnosis 3. The full derivation is under 1.5.
+> **If another document disagrees on the feed count, check its DATE before splitting the difference —
+> and check whether it counted ENABLED entries.** The count has moved four times: 39 until #199 (merged
+> 2026-07-29), 40 until #224 (merged 2026-07-30), 41 until OETH's retirement (2026-08-12), and **40
+> again now** — Chainlink sunset the OETH/ETH rate feed, so mainnet's enabled count drops 26 -> 25.
+> Re-derived from config on the merged tree: **40 enabled** — mainnet 25 ENABLED (26 entries,
+> `ETHPlus` disabled), arbitrum 8, base 4, gnosis 3. The full derivation is under 1.5.
+>
+> ⚠️ **COUNT ENABLED ENTRIES, NOT ENTRIES**, and note where the two traps meet: counting entries gives
+> 26 + 8 + 4 + 3 = **41**, which is exactly the value the ENABLED count legitimately held until
+> 2026-08-12. The miscount does not look like a miscount — it looks like a correct slightly-older
+> reading, which is why "it matches a figure I have seen" is not a check.
 >
 > ⚠️ **A count returning to a value it previously held is the nastiest version of this**, because a stale
 > document quoting 40 now looks current and agrees with the tree for the wrong reason. Date-check rather
@@ -1370,13 +1382,15 @@ not an observation that happened to hold on one fixture.
 forge script script/deploy/03_DeployPriceFeeds.s.sol $BROADCAST
 ```
 
-Chains 1 (26), 42161 (8), 8453 (4), 100 (3) only. Each feed's constructor takes the NAV proxy
+Chains 1 (25 enabled, of 26 entries), 42161 (8), 8453 (4), 100 (3) only. Each feed's constructor takes the NAV proxy
 address, held as `INAVCalculator public immutable NAV` (ADR 0019) — which is precisely why a new
 proxy invalidates every existing feed.
 
-> **THE COUNT IS 41, AND IT IS NO LONGER PENDING ANYTHING.** Both PRs it was waiting on have merged,
-> so the earlier figures of 39 and 40 are both stale. Re-measured against the merged tree 2026-07-30
-> with `preflight_config.py`: **mainnet 26, arbitrum 8, base 4, gnosis 3 = 41.**
+> **THE COUNT IS 40, AND IT IS NO LONGER PENDING ANYTHING.** Both PRs it was waiting on have merged,
+> so the earlier figure of 39 is stale, and so is the 41 that #224 briefly made correct. Re-derived from
+> config on 2026-08-13: **mainnet 25, arbitrum 8, base 4, gnosis 3 = 40.** (Chain 1 holds 26 feed
+> ENTRIES; `ETHPlus` is `enabled: false`, and `03` is gated on `isAdapterEnabled`, so it deploys 25.
+> Counting entries rather than enabled entries is how 26 got here.)
 >
 > | PR | merged | effect on the count |
 > | --- | --- | --- |
@@ -1386,7 +1400,7 @@ proxy invalidates every existing feed.
 > Both have their `03_DeployPriceFeeds.s.sol` call sites in place — `_deployEEth("stETHFundamental")`
 > (`03:147`), `_deployCrossRateMonitor("stETHCrossRate")` (`03:153`) and
 > `_deployCrossRateMonitor("ezETHCrossRateMarket")` (`03:230`) — verified against the merged tree, so
-> `03` deploys all 26 mainnet entries and nothing is skipped as `primary feed unresolved`.
+> `03` deploys all 25 ENABLED mainnet feeds and nothing is skipped as `primary feed unresolved`.
 >
 > Keep taking the number from the tooling rather than from here: `preflight_config.py` prints the
 > configured total and `verify_step.py 1.5` compares against it, so both follow config automatically.
@@ -1428,7 +1442,7 @@ checkout.
   `deployments/<id>.json .customPriceFeeds.<name>`, and without them 19 of mainnet's 42 assets are
   silently skipped (see the authoritative order at the top of section 1).
 - **Post-condition:** `python3 script/deploy/preflight/verify_step.py 1.6` — `getAssetCount()` equals
-  the configured count (43 / 11 / 11 / 6 / 11 / 5 / 6 for chains 1 / 42161 / 8453 / 10 / 100 / 137 /
+  the configured count (42 / 11 / 11 / 6 / 11 / 5 / 6 for chains 1 / 42161 / 8453 / 10 / 100 / 137 /
   56) **and** the registered address set equals the configured one, so one asset silently substituted
   for another cannot pass on the count alone.
 
@@ -1484,9 +1498,11 @@ touched at all by this step, not merely touched idempotently.
   in the record, and each meta adapter's `getMetaInstances()` **set equals** its configured coordinate
   set, summing to the total in the meta-instance table at the top of this document (**111**; 110 as
   reconciled 2026-07-29, +1 on 2026-08-12 for issue #296). The per-chain breakdown lives in that table only and is not repeated here, so the table
-  is where a config change is corrected — but "one place" understates it: this PR had to move the
-  derivation table, the summary row above it, and this post-condition line together. Treat those three
-  as one unit.
+  is where a config change is corrected — but "one place" understates it badly. Measured at 2026-08-12 the
+  meta-instance figure appears at **twelve** sites in this file. Do NOT work from a list — including
+  this sentence: grep for the figure itself (`grep -nE '\b(111|67|53|91|114)\b'`), discard gas values
+  and dated records, and change what remains. Two hand-written site lists in this document were both
+  short, which is why the instruction is now a derivation rather than an enumeration.
 
 > **Watch for the silent skip.** `06` does `if (deployed == address(0)) continue;` (`06:113` for
 > meta, same shape for plain), so an adapter that failed to deploy is skipped **without an error**.

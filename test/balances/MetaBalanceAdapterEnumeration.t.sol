@@ -580,7 +580,7 @@ contract MetaBalanceAdapterAdvertisedShapeTest is PositionIdJoinAsserts {
 ///         `_instancePositionId`, asserts the bytes they emit are byte-identical to the bytes they advertise.
 /// @dev **The partition, counted rather than asserted.** Of the 22 meta adapters, **19** pass
 ///      `_instancePositionId(instance)` straight into `_leg`, so their join holds by construction and asserting it
-///      would only re-test the base (already covered by {MetaBalanceAdapterEnumerationTest}). That 18 includes
+///      would only re-test the base (already covered by {MetaBalanceAdapterEnumerationTest}). That 19 includes
 ///      `PancakeSwapV2PoolsMetaBalanceAdapter`, which inherits `UniswapV2Pools`'s `_instancePositions` unchanged,
 ///      **and `AaveV3InstancesMetaBalanceAdapter`** — Aave derives a *different* id from the coordinate, but it
 ///      derives it through the hook, so it cannot drift either.

@@ -103,8 +103,10 @@ row below were unchanged AS OF THAT COMMIT.** (Superseded for FOUR of the five f
 independent PRs, all dated 2026-08-12: meta instances moved 110 -> 111 and mainnet 66 -> 67 for issue
 #296; OETH's retirement moved custom price feeds 41 -> 40 and assets 93 -> 92 fleet-wide, with mainnet
 26 -> 25 feeds and 43 -> 42 assets; and the Cap split moved plain adapters 12 -> 13 with mainnet
-11 -> 12, per the table below. **Only `meta adapters` (33) is still the figure this attestation
-confirmed.** It is left dated rather than restated — it was true of `a3974686` and is not a claim about
+11 -> 12, per the table below. **As of PR #308 (2026-08-15) NOT ONE of the five is still the figure this
+attestation confirmed** — `meta adapters` was the last survivor and it moved 33 -> 34 when
+SymbioticVaultsMeta was added; the same PR moved feeds 40 -> 41 and assets 92 -> 93 back up, and meta
+instances 111 -> 113. It is left dated rather than restated — it was true of `a3974686` and is not a claim about
 today's tree.) `script/config/` did change in the interval (labels were retired in #275 and realigned
 to `ProtocolNames.sol`), so this was measured rather than assumed — but nothing moved a count then.
 `0 error(s)` across all 24 chains; the warnings it prints are declared-heartbeat margin findings, which
@@ -1057,7 +1059,7 @@ This **differs from the original plan**, which had `RegisterAssets` before `03`.
 `RegisterAssets` resolves each `Custom` feed from `deployments/<id>.json .customPriceFeeds.<name>`
 (`RegisterAssets.s.sol:19` states the dependency outright), so run first it logs
 `[skip] primary feed unresolved (deploy it first)` and moves on. Measured on a mainnet fork in the
-plan's order: **19 of 42 assets skipped** — wstETH, eETH, weETH, rETH, ezETH, rsETH, ETHx, osETH,
+plan's order: **19 of 43 assets skipped** — wstETH, eETH, weETH, rETH, ezETH, rsETH, ETHx, osETH,
 stETH, lsETH, sUSDe, sUSDS, syrupUSDC, RWIV, sGHO, LDO, ankrETH, NXM, wNXM. (The dated fork
 measurement was **20 of 43**, the twentieth being OETH; both figures drop by one with its retirement,
 and the list below the headline is the authoritative one — it now enumerates exactly 19.)
@@ -1389,7 +1391,7 @@ not an observation that happened to hold on one fixture.
 forge script script/deploy/03_DeployPriceFeeds.s.sol $BROADCAST
 ```
 
-Chains 1 (25 enabled, of 26 entries), 42161 (8), 8453 (4), 100 (3) only. Each feed's constructor takes the NAV proxy
+Chains 1 (26 enabled, of 27 entries), 42161 (8), 8453 (4), 100 (3) only. Each feed's constructor takes the NAV proxy
 address, held as `INAVCalculator public immutable NAV` (ADR 0019) — which is precisely why a new
 proxy invalidates every existing feed.
 
@@ -1412,7 +1414,7 @@ proxy invalidates every existing feed.
 > Both have their `03_DeployPriceFeeds.s.sol` call sites in place — `_deployEEth("stETHFundamental")`
 > (`03:147`), `_deployCrossRateMonitor("stETHCrossRate")` (`03:153`) and
 > `_deployCrossRateMonitor("ezETHCrossRateMarket")` (`03:230`) — verified against the merged tree, so
-> `03` deploys all 25 ENABLED mainnet feeds and nothing is skipped as `primary feed unresolved`.
+> `03` deploys all 26 ENABLED mainnet feeds and nothing is skipped as `primary feed unresolved`.
 >
 > Keep taking the number from the tooling rather than from here: `preflight_config.py` prints the
 > configured total and `verify_step.py 1.5` compares against it, so both follow config automatically.
@@ -1434,6 +1436,16 @@ proxy invalidates every existing feed.
   That last one is the check that matters: a feed is otherwise indistinguishable from a correct one
   while still pricing against the abandoned NAV.
 
+  **EXCEPTION, and it is one feed today: `wARS`.** `InvertedChainlinkCustomPriceFeed` reads no base
+  price out of the NAV, so it has **no `NAV` immutable to point anywhere** — it answers
+  `BASE_ASSET() == 0` instead. `verify_step` 1.5 and `bytecode_audit` both read `BASE_ASSET()` first and
+  record `BASE_ASSET() == 0, no NAV dependency` as a CLASSIFICATION rather than a failure, so wARS is
+  legitimately outside the pointer check above. `ETHPlus_CustomPriceFeed` has the same shape but is
+  `enabled: false`. **What this costs:** wARS gains no generation binding from the pointer check, so its
+  redeployment is evidenced only by the address changing against the previous generation (the same step's
+  name/count comparison). Any OTHER feed reporting `no NAV dependency` is NOT expected and should be
+  treated as the stale-pointer signal this step hunts.
+
 ### 1.6 `RegisterAssets` — assets + feeds on the new NAV
 
 ```bash
@@ -1441,7 +1453,7 @@ mkdir -p safe-transactions        # REQUIRED — see below
 FOUNDRY_PROFILE=slow forge script script/manage/RegisterAssets.s.sol $BROADCAST
 ```
 
-`FOUNDRY_PROFILE=slow` (16 GiB) is required on mainnet — 42 assets otherwise `MemoryOOG`.
+`FOUNDRY_PROFILE=slow` (16 GiB) is required on mainnet — 43 assets otherwise `MemoryOOG`.
 
 `safe-transactions/` must exist: the script ends by writing a Safe-TX batch there, and if the
 directory is missing it aborts with
@@ -1451,10 +1463,10 @@ idempotent, but the run reports failure. The directory is not in the repo, so cr
 checkout.
 
 - **Precondition:** **1.5 done** (`03_DeployPriceFeeds`; 1.4 is `08`, which writes no feed addresses) — Custom feeds resolve through
-  `deployments/<id>.json .customPriceFeeds.<name>`, and without them 19 of mainnet's 42 assets are
+  `deployments/<id>.json .customPriceFeeds.<name>`, and without them 19 of mainnet's 43 assets are
   silently skipped (see the authoritative order at the top of section 1).
 - **Post-condition:** `python3 script/deploy/preflight/verify_step.py 1.6` — `getAssetCount()` equals
-  the configured count (42 / 11 / 11 / 6 / 11 / 5 / 6 for chains 1 / 42161 / 8453 / 10 / 100 / 137 /
+  the configured count (43 / 11 / 11 / 6 / 11 / 5 / 6 for chains 1 / 42161 / 8453 / 10 / 100 / 137 /
   56) **and** the registered address set equals the configured one, so one asset silently substituted
   for another cannot pass on the count alone.
 
@@ -1852,8 +1864,21 @@ against, and 2.6 cannot run until the new addresses are recorded.
   movement.** Measured on mainnet 2026-08-12: the vault holds `totalAssets() = 1002452` (1.0025 USDC)
   against `totalSupply() = 1e18`, and that entire supply sits at `0x…dEaD` — seed shares. Every tracked
   chain-1 account holds ZERO, so no snapshotted account has a position to report. **The check to make is
-  the GAINED-instance line and `metaInstanceTotal 66 -> 67`.** Their ABSENCE means the reconciliation
+  the GAINED-instance line and `metaInstanceTotal 66 -> 69` (see the PR #308 addendum below).** Their ABSENCE means the reconciliation
   dropped the vault — **but ONLY when diffing against the COMMITTED `pre/` snapshot (block 25625439),
+  **ADDENDUM — PR #308 (2026-08-15) adds TWO more chain-1 meta instances AND A NEW ADAPTER, so the
+  expected structural diff is now `metaInstanceTotal 66 -> 69`, not `-> 67`:**
+  - `GAINED meta instance 0x…b5ce3ca2…` — **KPK wARS Yield**, a `MorphoVaultsMeta` instance (Morpho
+    Vaults V2; `MORPHO()` reverts, but the adapter is pure ERC-4626 and never calls it).
+  - `GAINED meta instance 0x…8bcd7469…` — **KPK USDC LiquidLane**, on the **new** `SymbioticVaultsMeta`
+    adapter, which will itself appear as a GAINED ADAPTER. A new adapter in this diff is expected exactly
+    once, here; anywhere else it is the structural signal this section exists to catch.
+  - `wARS` appears as a GAINED registered asset and a GAINED custom price feed (mainnet assets 42 -> 43,
+    feeds 25 -> 26 enabled).
+  Unlike the #296 vault, **the LiquidLane instance is NOT dust** — the KPK Safe holds a real position
+  (~$1.0M in the vault at the time of writing), so tracked chain-1 accounts CAN report a position
+  through it. A position line for it is therefore expected and is not drift.
+
   which holds 9 instances.** §0.7 sanctions refreshing `pre/`; if it is refreshed AFTER this change,
   both lines legitimately disappear and their absence proves nothing. Check `pre/1.json`'s
   `MorphoVaultsMeta` length first: 9 means the absence test is valid, 10 means it is not and the

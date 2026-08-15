@@ -6,6 +6,7 @@ import {INavSourcedPriceFeed} from "src/prices/INavSourcedPriceFeed.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {AggregatorV3Interface} from "@chainlink/src/v0.8/shared/interfaces/AggregatorV3Interface.sol";
 import {OracleArgumentChecks} from "src/utils/OracleArgumentChecks.sol";
+import {StaticCallLib} from "src/utils/StaticCallLib.sol";
 import {NAV_DECIMALS} from "src/constants.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
@@ -51,7 +52,10 @@ import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 ///      `10**(oldDecimals - newDecimals)`: measured at 100x for an 8 -> 6 migration publishing the same
 ///      real rate, with `stale == false` and a fresh timestamp. This is the first cached-unit feed in the
 ///      repo whose error direction points upward, and the contract is immutable, so the mismatch is
-///      checked per read and reported STALE instead.
+///      checked per read and reported STALE instead. The check uses {StaticCallLib-probeWord} rather than
+///      `try/catch`, because `try/catch` catches a REVERT but not a DECODE failure — an aggregator
+///      answering `success` with a short or dirty word would otherwise revert this frame, which is the
+///      failure mode {ICustomPriceFeed} forbids. `probeWord` is total over any returndata.
 /// @dev **PRECISION — read before adopting this for a new asset.** The result is floored at
 ///      `NAV_DECIMALS` (8), so an asset worth far less than $1 keeps only the significant digits that
 ///      survive: at 1583 ARS/USD a wARS is `63167` units, i.e. ~1.6e-5 relative resolution (fine), but an
@@ -131,11 +135,13 @@ contract InvertedChainlinkCustomPriceFeed is ICustomPriceFeed, INavSourcedPriceF
         // unlike every sibling feed, where the cached unit divides a multiplied rate and the same change
         // under-reports. Re-assert it per read: a mismatch (or an unreadable decimals()) is reported STALE
         // rather than silently rescaled. See the contract docstring for the measured 100x case.
-        try USD_TO_ASSET_FEED.decimals() returns (uint8 liveDecimals) {
-            if (liveDecimals != _feedDecimals) {
-                return (0, true, roundId, startedAt, updatedAt, answeredInRound);
-            }
-        } catch {
+        // `try/catch` is NOT sufficient here: it catches a revert from the call, but NOT a failure to
+        // DECODE the reply, so an aggregator answering `success` with a dirty or short word would revert
+        // this frame instead of reporting stale. `probeWord` is total over any returndata — no decode
+        // step — so an unreadable, short, or out-of-range `decimals()` all land on the stale path.
+        (, bool hasWord, uint256 liveDecimals) =
+            StaticCallLib.probeWord(address(USD_TO_ASSET_FEED), abi.encodeCall(AggregatorV3Interface.decimals, ()));
+        if (!hasWord || liveDecimals != uint256(_feedDecimals)) {
             return (0, true, roundId, startedAt, updatedAt, answeredInRound);
         }
 

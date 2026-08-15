@@ -238,6 +238,25 @@ contract InvertedChainlinkCustomPriceFeedTest is Test {
         assertEq(price, 0);
     }
 
+    /// @dev **`try/catch` catches a REVERT but not a DECODE failure.** An aggregator answering `success`
+    ///      with a short or out-of-range word is exactly the shape the earlier `try/catch` form let through
+    ///      into a frame-level revert. `probeWord` is total over any returndata, so all of these land on
+    ///      the stale path instead.
+    function test_undecodableDecimals_isStaleNotRevert() public {
+        // success + EMPTY returndata: no revert to catch, and nothing to decode.
+        vm.mockCall(address(feed), abi.encodeWithSignature("decimals()"), "");
+        (uint256 price, bool stale) = oracle.getLatestPrice();
+        assertTrue(stale, "empty returndata => stale");
+        assertEq(price, 0);
+        vm.clearMockedCalls();
+
+        // success + a word far outside uint8: decodes as a dirty value, must not be trusted.
+        vm.mockCall(address(feed), abi.encodeWithSignature("decimals()"), abi.encode(uint256(300)));
+        (price, stale) = oracle.getLatestPrice();
+        assertTrue(stale, "out-of-range decimals word => stale");
+        assertEq(price, 0);
+    }
+
     // --- staleness and bad answers -------------------------------------------
 
     /// @dev A zero answer must report STALE, not revert — mulDiv by zero would revert in-frame.

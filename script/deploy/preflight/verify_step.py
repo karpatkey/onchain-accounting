@@ -742,7 +742,10 @@ def step_custom_price_feeds(k: Chk, rec: dict, exp: dict, url, base, tag) -> Non
     # hunting a leftover feed that does not exist.
     bases = c.rpc_batch(url, [("eth_call", [{"to": feeds[n], "data": sel("BASE_ASSET()")}, "latest"])
                               for n in names])
-    for n, code, nav, base in zip(names, codes, navs, bases):
+    # NB: the loop variable is `base_ret`, NOT `base` — `base` is this function's PARAMETER (the
+    # pre-deploy snapshot index). Shadowing it was harmless only because its sole use sits above this
+    # loop; any later read below would silently have got a hex string.
+    for n, code, nav, base_ret in zip(names, codes, navs, bases):
         if isinstance(code, Exception) or code in (None, "0x", ""):
             k.fail.append(f"customPriceFeeds.{n} {feeds[n]} has NO CODE")
             continue
@@ -752,8 +755,8 @@ def step_custom_price_feeds(k: Chk, rec: dict, exp: dict, url, base, tag) -> Non
         # that is really NAV-sourced but records address(0) would pass preflight unexamined. This is the
         # only place the two can be compared, because it needs the deployed contract.
         declared = _declared_base_asset(k.chain_id, n)
-        if isinstance(base, str) and len(base) >= 66:
-            onchain = "0x" + base[-40:]
+        if isinstance(base_ret, str) and len(base_ret) >= 66:
+            onchain = "0x" + base_ret[-40:]
             if declared is not None and lower(onchain) != lower(declared):
                 k.fail.append(f"customPriceFeeds.{n} {feeds[n]}: config declares baseAsset {declared} but "
                               f"the deployed contract reports BASE_ASSET() {onchain} — one of them is "
@@ -763,6 +766,15 @@ def step_custom_price_feeds(k: Chk, rec: dict, exp: dict, url, base, tag) -> Non
                 k.info.append(f"customPriceFeeds.{n} {feeds[n]}: BASE_ASSET() == 0, no NAV dependency "
                               f"— NAV() pointer not applicable")
                 continue
+
+        # If the BASE_ASSET probe itself was unreadable we cannot tell "no NAV dependency" from "old
+        # feed", so fall through to the NAV() check below — EXCEPT where the config declares address(0),
+        # which is the same claim from the source preflight already validated. Without this, one transport
+        # hiccup on the third batch re-red-gates exactly the feeds this change exempts.
+        if declared is not None and int(declared, 16) == 0 and not (isinstance(base_ret, str) and len(base_ret) >= 66):
+            k.warn.append(f"customPriceFeeds.{n} {feeds[n]}: BASE_ASSET() unreadable, but config declares "
+                          f"no NAV dependency — NAV() pointer check not applicable, treat as unverified")
+            continue
 
         if isinstance(nav, Exception) or not isinstance(nav, str) or len(nav) < 66:
             # MUST fail, not warn. `NAV` is a public immutable on every custom feed (ADR 0019), so

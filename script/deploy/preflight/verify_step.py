@@ -1476,11 +1476,43 @@ def _self_test() -> int:
     # for that — so it went green while modelling nothing.
     _arch_no_ct = {k_: v for k_, v in arch_plain.items() if k_ != "NAVCalculatorProxy"}
     assert "NAVCalculatorProxy" not in _arch_no_ct, "CLEAR_TOP arm needs the key absent from the archive"
+    # ASSERT THE MESSAGE, NOT THE NAME. Removing the key from the archive is required to get past
+    # `elif arch is not None and key in arch:`, but it also trips two archive-PROVENANCE failures
+    # ("has no NAVCalculatorProxy — it is not a pre-clear record", and the generation mismatch), and
+    # both contain the bare key name. So `expect_in="NAVCalculatorProxy"` stayed green even with the
+    # absence rule silenced — the arm could not detect the regression it exists to detect. Measured:
+    # silencing the rule turns 10 arms red and left this one green on the name, RED on the message.
+    # The earlier fix here MOVED the defect rather than removing it, swapping "key present in the
+    # archive with a null value" for "key absent from the archive" while keeping a bare-name
+    # assertion that cannot tell the two apart.
     run(_ct_missing, dict(_arch_no_ct),
         "a CLEAR_TOP key absent from BOTH record and archive is caught", must_fail=True,
-        expect_in="NAVCalculatorProxy", chain=ALL_ASSIST)
+        expect_in="is ABSENT from the record", chain=ALL_ASSIST)
     monotone(_ct_missing, ALL_ASSIST, dict(arch_plain), dict(foreign_arch),
              "monotonicity: CLEAR_TOP failures survive an archive swap")
+
+    # R1 — THE RECORD-DRIVEN ASSISTANT ORACLE, ASSERTED. The change was correct and unasserted: the
+    # negation sweep reported it "caught" because reverting it turns OTHER arms red, which is
+    # coverage of those arms, not of this property. A future revert to a config-derived oracle would
+    # go unnoticed by anything that names it. This pins it directly.
+    #
+    # ENABLE-BEFORE-DEPLOY: config enables an assisted adapter, `04` has not run, so the record
+    # carries NEITHER the adapter entry NOR its assistant. The entry is legitimately reported (config
+    # names it and the union expects it); the ASSISTANT must NOT be, because nothing deployed it.
+    # Asserted on the failure SUBJECTS rather than through `run`, because the property is the ABSENCE
+    # of a specific failure and `expect_in` can only assert presence.
+    _pair_adapter, _pair_assistant = ASSISTED_PAIRS[0]
+    _rec_predeploy = cleared_for(ALL_ASSIST)
+    _rec_predeploy["balanceAdapters"] = {k_: v for k_, v in _rec_predeploy["balanceAdapters"].items()
+                                         if k_ != _pair_adapter}
+    _rec_predeploy.pop(_pair_assistant, None)
+    _subj_predeploy = _subjects(_rec_predeploy, dict(arch_plain), ALL_ASSIST)
+    _r1_ok = _pair_assistant not in _subj_predeploy
+    results.append((_r1_ok,
+                    ("ok   " if _r1_ok else "FAIL ")
+                    + "an assistant config ENABLES but nothing DEPLOYED is not demanded"
+                    + ("" if _r1_ok else "  -> " + _pair_assistant + " was demanded from config alone;"
+                       + " the oracle has reverted to config-driven")))
 
     # Reported as its own arm so a collision shows up in the tally and the exit code, not just in
     # a comment nobody reads. Two arms sharing a fixture AND an expectation are the same test twice;

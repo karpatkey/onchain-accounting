@@ -1110,6 +1110,42 @@ def _self_test() -> int:
             line += "  -> expected " + wanted + ", got: " + (joined or "pass")
         results.append((ok, line))
 
+    def cleared_for(chain_: int) -> dict:
+        """A REALISTIC post-clear record for `chain_`: every key a live record carries, blanked.
+
+        THE FIXTURE THIS REPLACES COULD NOT EXPRESS THE FAILURE MODE THIS GATE EXISTS TO CATCH.
+        It was four universal keys plus `AssetKindRegistry` — no `balanceAdapters` section, no
+        `customPriceFeeds` section, no `*Assistant` keys at all. So an arm labelled "a DELETED
+        assistant is caught" was not modelling a deletion: the key it claimed had been deleted was
+        never in the fixture. Absence was baked in, and the arm went green without the gate ever
+        distinguishing DELETED from NEVER-EXISTED. That distinction is the gate's entire subject —
+        the file states it twice, "DESTROYED IS NOT THE SAME AS DELETED" and "a DELETED key cannot
+        be told apart from one that never existed on this chain" — and the suite asserting it could
+        not represent it.
+
+        Verified against reality before being trusted: on chains 1/10/100/8453/42161 every
+        config-named adapter is present in the committed record, and the record carries exactly one
+        key config never declares (`ERC20Default`). This reproduces that shape. Arms that model a
+        deletion must now DELETE something from it, explicitly, which is the point.
+        """
+        out = {key: "" for key in UNIVERSAL}
+        out["AssetKindRegistry"] = ""
+        ba = {"ERC20Default": ""}
+        for sub_ in ("balance-adapters", "meta-balance-adapters"):
+            for name_ in pc.enabled_keys(pc.dcfg(sub_, chain_)):
+                ba[name_] = ""
+        out["balanceAdapters"] = ba
+        if "customPriceFeeds" in expected_sections(chain_):
+            out["customPriceFeeds"] = {n_: "" for n_
+                                       in pc.enabled_keys(pc.dcfg("custom-price-feeds", chain_))}
+        # An assistant is deployed only where its paired adapter was, so a realistic record carries
+        # one exactly there. Derived from ASSISTED_PAIRS — the table gate 1.7 uses — rather than
+        # from config, so the fixture does not encode the oracle question the rule is about.
+        for adapter_key_, assistant_key_ in ASSISTED_PAIRS:
+            if adapter_key_ in ba:
+                out[assistant_key_] = ""
+        return out
+
     cleared = {key: "" for key in UNIVERSAL}
     cleared["AssetKindRegistry"] = ""
     # Sections PRESENT and EMPTY is what "cleared" means — `reset` blanks values and keeps keys.
@@ -1122,38 +1158,38 @@ def _self_test() -> int:
     # A chain that never deployed assistants: the archive has none either. THE #299 CASE.
     arch_plain = {key: ADDR for key in UNIVERSAL} | {"NAVCalculatorProxy": ADDR}
 
-    run(dict(cleared), dict(arch_plain), "a chain that never had assistants passes",
+    run(cleared_for(NO_ASSIST), dict(arch_plain), "a chain that never had assistants passes",
         must_fail=False, chain=NO_ASSIST)
 
     # …and the same fixture must still FAIL for every real defect.
-    run({k_: v for k_, v in cleared.items() if k_ != "NAVCalculatorProxy"}, dict(arch_plain),
+    run({k_: v for k_, v in cleared_for(NO_ASSIST).items() if k_ != "NAVCalculatorProxy"}, dict(arch_plain),
         "a core NAV key deleted fails", must_fail=True,
         expect_in="every in-scope chain carries it")
-    run({k_: v for k_, v in cleared.items() if k_ != "AssetKindRegistry"}, dict(arch_plain),
+    run({k_: v for k_, v in cleared_for(NO_ASSIST).items() if k_ != "AssetKindRegistry"}, dict(arch_plain),
         "a deleted CREATE_IF_ABSENT key fails", must_fail=True, expect_in="CREATE_IF_ABSENT")
-    run(dict(cleared) | {"NAVCalculatorProxy": ADDR}, dict(arch_plain),
+    run(cleared_for(NO_ASSIST) | {"NAVCalculatorProxy": ADDR}, dict(arch_plain),
         "a still-populated key fails", must_fail=True, expect_in="still populated")
-    run(dict(cleared), None,
+    run(cleared_for(NO_ASSIST), None,
         "a missing archive fails", must_fail=True, expect_in="no rollback archive")
-    run(dict(cleared) | {"balanceAdapters": {"ERC20Default": ADDR}}, dict(arch_plain),
+    run(cleared_for(NO_ASSIST) | {"balanceAdapters": {"ERC20Default": ADDR}}, dict(arch_plain),
         "a still-populated CLEAR_SECTIONS entry fails", must_fail=True, expect_in="balanceAdapters")
 
     # THE ARM THAT KILLS THE NARROW FIX. Chain 100 carries StakeWiseV3ExitQueueAssistant, so
     # "exempt the assistants off chain 1" would have blinded this check to a real deletion there.
     sw = "StakeWiseV3ExitQueueAssistant"
-    run(dict(cleared) | {sw: ""}, dict(arch_plain) | {sw: ADDR},
+    run(cleared_for(ONE_ASSIST) | {sw: ""}, dict(arch_plain) | {sw: ADDR},
         "a blanked assistant on a chain that HAS one passes", must_fail=False, chain=ONE_ASSIST)
-    run(dict(cleared), dict(arch_plain) | {sw: ADDR},
+    run({k_: v for k_, v in cleared_for(ONE_ASSIST).items() if k_ != sw}, dict(arch_plain) | {sw: ADDR},
         "a DELETED assistant on a chain that HAS one fails", must_fail=True,
         expect_in="config enables the adapter", chain=ONE_ASSIST)
 
     # THE PROMOTION ARMS. Making the archive an oracle made its provenance load-bearing, so each way
     # it can be the WRONG archive must push the check back to strict rather than excuse an absence.
     wrong_gen = {key: OTHER_GEN for key in UNIVERSAL}
-    run(dict(cleared), wrong_gen,
+    run(cleared_for(NO_ASSIST), wrong_gen,
         "an archive from ANOTHER generation is reported", must_fail=True,
         expect_in="not the generation being replaced")
-    run(dict(cleared), wrong_gen,
+    run({k_: v for k_, v in cleared_for(ONE_ASSIST).items() if k_ != sw}, wrong_gen,
         "...and a wrong-generation archive cannot excuse an expected key", must_fail=True,
         expect_in="config enables the adapter", chain=ONE_ASSIST)
     # PINS THE MISSING-CONFIG FALLBACK. On a chain with no balance-adapters config the universal
@@ -1168,7 +1204,7 @@ def _self_test() -> int:
     # PINS #6: a missing baseline must WARN, never FAIL. As a failure it turned 24 of 24
     # correctly-cleared chains red — the #299 mass-red, reintroduced by the diagnostic added to
     # detect it. If someone re-promotes this to k.fail, this arm goes red.
-    run(dict(cleared), dict(arch_plain),
+    run(cleared_for(NO_ASSIST), dict(arch_plain),
         "a missing baseline WARNS and does not fail the gate", must_fail=False,
         expect_warn="no baseline proxy", base={})
 
@@ -1184,15 +1220,17 @@ def _self_test() -> int:
     foreign_arch = dict(arch_plain) | {"balanceAdapters": {
         "ERC20Default": ADDR, "AaveV3InstancesMeta": ADDR, "CompoundV3CometsMeta": ADDR}}
     assert foreign_arch != arch_plain, "foreign archive fixture must differ from arch_plain"
-    run(dict(cleared), foreign_arch,
+    run({k_: v for k_, v in cleared_for(ALL_ASSIST).items() if not k_.endswith("Assistant")}, foreign_arch,
         "HOLE 6: a wrong-CHAIN archive can no longer excuse a deletion", must_fail=True,
         expect_in="config enables the adapter that deploys it", chain=ALL_ASSIST)
-    run(dict(cleared), dict(arch_plain),
+    run({k_: v for k_, v in cleared_for(ALL_ASSIST).items() if not k_.endswith("Assistant")}, dict(arch_plain),
         "HOLE 7: a deletion PREDATING the reset (absent from the archive too) is caught",
         must_fail=True, expect_in="config enables the adapter that deploys it", chain=ALL_ASSIST)
     # The same absent-vs-blank defect one level up: a WHOLLY deleted section read as "cleared"
     # because `populated(None)` is empty. Chain 1's config enables both sections.
-    no_section = {k_: v for k_, v in cleared.items() if k_ != "balanceAdapters"}
+    no_section = {k_: v for k_, v in cleared_for(ALL_ASSIST).items() if k_ != "balanceAdapters"}
+    no_section_10 = {k_: v for k_, v in cleared_for(NO_ASSIST).items() if k_ != "balanceAdapters"}
+    no_section_meta = {k_: v for k_, v in cleared_for(META_WITH_FEEDS).items() if k_ != "balanceAdapters"}
     run(no_section, dict(arch_plain) | {"balanceAdapters": {"ERC20Default": ADDR}},
         "a WHOLLY ABSENT CLEAR_SECTIONS block is caught, not read as cleared",
         must_fail=True, expect_in="is missing or is not an object", chain=ALL_ASSIST)
@@ -1201,7 +1239,7 @@ def _self_test() -> int:
     # archive passes it silently — that is documented, not fixed. What must hold is that the verdict
     # is NOT load-bearing: a real deletion is still caught, by config. If a future edit makes
     # absence depend on the archive again, this arm fails.
-    run(dict(cleared), dict(arch_plain),
+    run({k_: v for k_, v in cleared_for(ONE_ASSIST).items() if not k_.endswith("Assistant")}, dict(arch_plain),
         "a FOREIGN archive passes the generation check yet cannot hide a deletion",
         must_fail=True, expect_in="config enables the adapter that deploys it", chain=ONE_ASSIST)
 
@@ -1210,25 +1248,126 @@ def _self_test() -> int:
     # plain-adapter config alone was EMPTY there and a deleted section passed silently. This arm ran
     # only on chain 1 before, where config does declare, so the suite shared the blind spot it was
     # meant to catch. It now runs where the hole actually was.
-    run(no_section, dict(arch_plain), "a deleted section on a META-ONLY chain is caught",
+    run(no_section_10, dict(arch_plain), "a deleted section on a META-ONLY chain is caught",
         must_fail=True, expect_in="is missing or is not an object", chain=NO_ASSIST)
     # %24's formulation of this defect named FOUR chains — 10, 137, 8453, 42161 — all with zero
     # enabled PLAIN adapters. Chain 10 alone under-specifies it: 8453/42161 also expect
     # `customPriceFeeds`, so they exercise the config-DERIVED section on a meta-only chain, which
     # chain 10 cannot. A per-chain arm is not redundant while the two sections resolve differently.
-    run(no_section, dict(arch_plain), "a deleted section on a meta-only chain WITH feeds is caught",
+    run(no_section_meta, dict(arch_plain), "a deleted section on a meta-only chain WITH feeds is caught",
         must_fail=True, expect_in="is missing or is not an object", chain=META_WITH_FEEDS)
 
     # DESTROYED != DELETED. null / {} / [] each destroy the key set without removing the name, and
     # an earlier revision keyed on `sec not in rec` and passed all three.
     arch_full = dict(arch_plain) | {"balanceAdapters": {"ERC20Default": ADDR, "AaveV3InstancesMeta": ADDR}}
     for bad, tag_ in ((None, "null"), ({}, "an empty object"), ([], "a list")):
-        run(dict(cleared) | {"balanceAdapters": bad}, arch_full,
+        run(cleared_for(ALL_ASSIST) | {"balanceAdapters": bad}, arch_full,
             f"a section set to {tag_} is caught, not read as cleared", must_fail=True,
             # With an archive holding entries, an emptied section trips LOST before EMPTY —
             # EMPTY is only reachable when no archive witnesses the lost keys.
             expect_in="has LOST" if bad == {} else "is missing or is not an object",
             chain=ALL_ASSIST)
+
+    # ------------------------------------------------------------------------------------------
+    # MONOTONICITY. The re-derivation's whole safety argument is that expectation is a UNION over
+    # oracles, so adding an oracle can only GROW the expected set, hence only ADD failures, hence
+    # never excuse a defect. That argument is a claim about behaviour and it was false at the head
+    # these arms were written against: substituting a FOREIGN archive for the correct one took the
+    # failure count from 1 to 0 — evidence SUBTRACTED. Asserted here rather than commented, because
+    # the previous four fail-opens in this gate were all excused by a comment claiming the property
+    # the code did not have.
+    #
+    # WHAT THE COMPARISON IS OVER, AND WHY IT IS NOT THE MESSAGE TEXT. Failure strings embed counts
+    # ("MISSING 27 entr(y/ies)") that legitimately change when an oracle contributes more, so a
+    # naive string-set subset would fail on a correct implementation. The comparison is therefore
+    # over the SUBJECT of each failure — the leading token, which is the section or key the failure
+    # is about. That is weaker than comparing whole messages and stronger than comparing counts:
+    # it catches a subject DISAPPEARING, which is what "evidence subtracts" means, and tolerates a
+    # subject being reported in more detail.
+    def _subjects(rec_: dict, arch_: dict | None, chain_: int, base_: dict | None = None) -> set:
+        real_dir_ = rd.ARCHIVE_DIR
+        with tempfile.TemporaryDirectory() as td_:
+            rd.ARCHIVE_DIR = Path(td_)
+            if arch_ is not None:
+                (Path(td_) / "selftest").mkdir(parents=True)
+                (Path(td_) / "selftest" / (str(chain_) + ".json")).write_text(json.dumps(arch_))
+            try:
+                k_ = Chk(chain_, "selftest")
+                step_record_cleared(k_, rec_, {}, None,
+                                    BASE if base_ is None else base_, "selftest")
+            finally:
+                rd.ARCHIVE_DIR = real_dir_
+        # EXCLUDE the archive-availability failure. "no rollback archive at …" is a statement about
+        # the ORACLE, not about the record, and it disappears precisely BECAUSE the oracle became
+        # available — which is the opposite of evidence subtracting. Counting it would make every
+        # monotonicity arm falsely red. This exclusion is deliberately narrow: it drops exactly the
+        # missing-archive report and nothing else, so a real subject vanishing still fails the arm.
+        return {f.split(" ", 1)[0] for f in k_.fail if "rollback archive at" not in f}
+
+    def monotone(rec_: dict, chain_: int, correct_: dict, foreign_: dict, label: str,
+                 base_: dict | None = None) -> None:
+        none_ = _subjects(rec_, None, chain_, base_)
+        corr_ = _subjects(rec_, correct_, chain_, base_)
+        forg_ = _subjects(rec_, foreign_, chain_, base_)
+        lost_corr = sorted(none_ - corr_)
+        lost_forg = sorted(none_ - forg_)
+        # The third comparison is the one that caught the live defect: a foreign archive must not be
+        # QUIETER than a correct one. Adding a wrong oracle may add noise; it may never remove a
+        # subject the correct oracle reported.
+        lost_swap = sorted(corr_ - (forg_ | none_))
+        ok_ = not lost_corr and not lost_forg and not lost_swap
+        line_ = ("ok   " if ok_ else "FAIL ") + label
+        if not ok_:
+            line_ += "  -> subjects lost by adding an oracle: correct=" + str(lost_corr) \
+                     + " foreign=" + str(lost_forg) + "; lost by SWAPPING correct->foreign=" \
+                     + str(lost_swap)
+        results.append((ok_, line_))
+
+    # The fixture with teeth: an ENTRY deleted before the reset, so the record and the archive are
+    # both blind to it and only CONFIG still says it belongs. Under an archive-gated rule the
+    # deletion is invisible; under a union rule config alone carries it.
+    _plain_enabled = sorted(pc.enabled_keys(pc.dcfg("balance-adapters", ALL_ASSIST)))
+    _victim = _plain_enabled[0] if _plain_enabled else "ERC20Default"
+    _blk_full = {"ERC20Default": "", _victim: ""}
+    _blk_lost = {"ERC20Default": ""}                      # `_victim` deleted, not blanked
+    _rec_entry_lost = cleared_for(ALL_ASSIST) | {"balanceAdapters": dict(_blk_lost)}
+    _arch_blind = dict(arch_plain) | {"balanceAdapters": dict(_blk_lost)}
+    _arch_sees = dict(arch_plain) | {"balanceAdapters": dict(_blk_full)}
+
+    run(_rec_entry_lost, _arch_blind,
+        "an ENTRY deleted BEFORE the reset, named by config, is caught", must_fail=True,
+        expect_in=_victim, chain=ALL_ASSIST)
+    monotone(_rec_entry_lost, ALL_ASSIST, _arch_sees, dict(arch_plain),
+             "monotonicity: no archive can REMOVE a failure another oracle supplied")
+
+    # A section that is a LIST of live pre-redeploy addresses, on a chain whose config does not
+    # expect the section and with no archive witnessing it. `populated(block if isinstance(block,
+    # dict) else None)` reads that as `populated(None)` — empty — so a record still holding
+    # old-generation addresses passes clean.
+    # NOTE THE ARCHIVE IS SUPPLIED AND THE SUBJECT IS PINNED, both deliberately. Passing `arch=None`
+    # makes "no rollback archive at …" fire, which satisfies `must_fail=True` on its own — the arm
+    # then goes green without ever testing its own subject. That is the vacuous-arm shape this
+    # suite has already been bitten by twice, so every arm here supplies an archive that does NOT
+    # witness the section and asserts the SUBJECT by name.
+    run(cleared_for(NO_ASSIST) | {"customPriceFeeds": [ADDR]},
+        dict(arch_plain), "a section that is a LIST of live old addresses is caught",
+        must_fail=True, expect_in="customPriceFeeds", chain=NO_ASSIST)
+
+    # THE SAME HOLE ONE LEVEL UP, on CLEAR_TOP keys rather than sections. `if key in rec:` /
+    # `elif arch is not None and key in arch:` means a key absent from BOTH record and archive is
+    # never checked at all, even when config names it. A section-scoped re-derivation leaves this.
+    _ct_missing = {k_: v for k_, v in cleared_for(ALL_ASSIST).items() if k_ != "NAVCalculatorProxy"}
+    # The key must be absent from the ARCHIVE TOO, or `elif arch is not None and key in arch:`
+    # catches it and the arm tests the branch above the hole rather than the hole. An earlier
+    # revision of this arm left the key in the archive with a null value — `key in arch` is True
+    # for that — so it went green while modelling nothing.
+    _arch_no_ct = {k_: v for k_, v in arch_plain.items() if k_ != "NAVCalculatorProxy"}
+    assert "NAVCalculatorProxy" not in _arch_no_ct, "CLEAR_TOP arm needs the key absent from the archive"
+    run(_ct_missing, dict(_arch_no_ct),
+        "a CLEAR_TOP key absent from BOTH record and archive is caught", must_fail=True,
+        expect_in="NAVCalculatorProxy", chain=ALL_ASSIST)
+    monotone(_ct_missing, ALL_ASSIST, dict(arch_plain), dict(foreign_arch),
+             "monotonicity: CLEAR_TOP failures survive an archive swap")
 
     # Reported as its own arm so a collision shows up in the tally and the exit code, not just in
     # a comment nobody reads. Two arms sharing a fixture AND an expectation are the same test twice;

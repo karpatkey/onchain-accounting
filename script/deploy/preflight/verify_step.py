@@ -1507,12 +1507,28 @@ def _self_test() -> int:
                                          if k_ != _pair_adapter}
     _rec_predeploy.pop(_pair_assistant, None)
     _subj_predeploy = _subjects(_rec_predeploy, dict(arch_plain), ALL_ASSIST)
-    _r1_ok = _pair_assistant not in _subj_predeploy
+    # GUARD THE ABSENCE ASSERTION. `x not in set()` is TRUE, so without this the arm passes whenever
+    # the fixture produces no failures at all — including if a future edit makes it model nothing.
+    # It is non-vacuous today only INCIDENTALLY: the fixture deletes the adapter entry, so the set
+    # happens to hold `balanceAdapters`, which nothing asserted. An arm meaningful by accident goes
+    # meaningless on the next edit, silently — and this is the arm written to close the previous
+    # instance of exactly that defect, so it is the last place it should be allowed to recur.
+    _r1_reached = bool(_subj_predeploy)
+    _r1_ok = _r1_reached and _pair_assistant not in _subj_predeploy
+    # TWO FAILURE MODES, TWO MESSAGES. One diagnostic for both would name the wrong cause half the
+    # time, and a guard that fires correctly while misdiagnosing sends the next reader after a
+    # defect that is not there — which has cost this repo real hours already.
+    if _r1_ok:
+        _r1_why = ""
+    elif not _r1_reached:
+        _r1_why = ("  -> the fixture produced NO failures at all, so the absence assertion is "
+                   "vacuous: this arm is not passing, it is modelling nothing")
+    else:
+        _r1_why = ("  -> " + _pair_assistant + " was demanded from config alone; the oracle has "
+                   "reverted to config-driven")
     results.append((_r1_ok,
                     ("ok   " if _r1_ok else "FAIL ")
-                    + "an assistant config ENABLES but nothing DEPLOYED is not demanded"
-                    + ("" if _r1_ok else "  -> " + _pair_assistant + " was demanded from config alone;"
-                       + " the oracle has reverted to config-driven")))
+                    + "an assistant config ENABLES but nothing DEPLOYED is not demanded" + _r1_why))
 
     # Reported as its own arm so a collision shows up in the tally and the exit code, not just in
     # a comment nobody reads. Two arms sharing a fixture AND an expectation are the same test twice;

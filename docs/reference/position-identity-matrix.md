@@ -36,6 +36,7 @@ Identity is the tuple `(chainId, protocolSubId, positionId, balanceAsset.asset, 
 | FluidVaultsMeta | `fluid-vaults` | `abi.encode(address vault)` | T1 vault collateral | `Collateral` | false | supply token |
 | | | | T1 vault debt | `Borrowed` | true | borrow token |
 | EulerVaultsMeta | `euler-vaults` | `abi.encode(address vault)` | supply (not EVC collateral) | `Supplied` | false | `vault.asset()` |
+| SymbioticVaultsMeta | `symbiotic-vaults` | `abi.encode(address vault)` | ERC-4626 share balance (`previewRedeem`) | `Supplied` | false | `vault.asset()` |
 | | | | supply (EVC collateral on) | `Collateral` | false | `vault.asset()` |
 | | | | core-eVault debt (`debtOf`) | `Borrowed` | true | `vault.asset()` |
 | Cap | `cap` | `abi.encode(address cUSD)` | held cUSD (Stablecoin) | `Supplied` | false | USDC |

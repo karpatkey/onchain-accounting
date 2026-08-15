@@ -578,7 +578,7 @@ contract MetaBalanceAdapterAdvertisedShapeTest is PositionIdJoinAsserts {
 /// @author KPK
 /// @notice The emitted-side half: for adapters that build `PositionBalance.positionId` INDEPENDENTLY of
 ///         `_instancePositionId`, asserts the bytes they emit are byte-identical to the bytes they advertise.
-/// @dev **The partition, counted rather than asserted.** Of the 21 meta adapters, **18** pass
+/// @dev **The partition, counted rather than asserted.** Of the 22 meta adapters, **18** pass
 ///      `_instancePositionId(instance)` straight into `_leg`, so their join holds by construction and asserting it
 ///      would only re-test the base (already covered by {MetaBalanceAdapterEnumerationTest}). That 18 includes
 ///      `PancakeSwapV2PoolsMetaBalanceAdapter`, which inherits `UniswapV2Pools`'s `_instancePositions` unchanged,
@@ -595,7 +595,7 @@ contract MetaBalanceAdapterAdvertisedShapeTest is PositionIdJoinAsserts {
 ///
 ///      `AaveV3Instances` is exercised here as a **fourth** case for a different reason: it is the only adapter
 ///      whose id is legitimately not its coordinate, so running the join over it documents that the derived id
-///      still reconciles. It is NOT here because it can drift. Hence 18 + 3 = 21 adapters, 4 cases in this suite.
+///      still reconciles. It is NOT here because it can drift. Hence 19 + 3 = 22 adapters, 4 cases in this suite.
 ///
 ///      **This suite does NOT guard the Aave `_instancePositionId` override, and must not be assumed to.** Aave's
 ///      `_instancePositions` derives its id from the hook (`bytes memory pid = _instancePositionId(instance)`), so

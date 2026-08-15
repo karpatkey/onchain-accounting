@@ -81,12 +81,18 @@ wanted: `verify_step.py` requires it as the step 1.1 post-condition (`:252`).
 Configured totals, reconciled from config **and** confirmed against the live NAV on 2026-07-27;
 feed count re-measured 2026-07-30 against the merged tree; meta instances amended 2026-08-12 (issue
 #296, see "Meta instances" below — that one figure post-dates the 2026-07-27 confirmation):
-**33 meta adapters, 111 meta instances, 13 plain adapters, 40 custom price feeds, 92 assets.**
+**34 meta adapters, 113 meta instances, 13 plain adapters, 41 custom price feeds, 93 assets.**
+<!-- 2026-08-15 (PR #308): meta adapters 33 -> 34 (SymbioticVaultsMeta), meta instances 111 -> 113
+     (KPK USDC LiquidLane on the new adapter + KPK wARS Yield on MorphoVaultsMeta), custom price feeds
+     40 -> 41 and assets 92 -> 93 (wARS via InvertedChainlinkCustomPriceFeed). Mainnet alone: meta 15 ->
+     16, instances 67 -> 69, feeds 25 -> 26, assets 42 -> 43. Verified by `preflight_config.py`
+     (0 errors / 24 chains) and by a full fork rehearsal that reconciled 29 adapters / 69 instances /
+     43 assets on-chain. -->
 <!-- meta instances 110 -> 111 on 2026-08-12: one MorphoVaultsMeta instance added on chain 1 (issue #296). See the amendment under "Meta instances" below. -->
 <!-- feeds 41 -> 40 and assets 93 -> 92 on 2026-08-12: OETH removed from mainnet, Chainlink sunsetting its OETH/ETH rate feed 0x703118C4CbccCBF2AB31913e0f8075fbbb15f563. -->
 <!-- plain adapters 12 -> 13 by #285: the combined Cap adapter split into CapStablecoin + CapSavings. -->
 <!-- FOUR of the five totals have now moved since the 2026-07-27 confirmation, from three independent
-     PRs. Only `meta adapters` (33) is still the originally-confirmed figure. Each amendment carries its
+     PRs. As of PR #308 NONE of the five is still the originally-confirmed figure — `meta adapters` was the last, and it moved 33 -> 34. Each amendment carries its
      own comment above; do not consolidate them, the provenance is the point. -->
 
 

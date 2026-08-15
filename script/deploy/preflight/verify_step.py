@@ -678,12 +678,23 @@ def _declared_base_asset(chain_id: int, feed_name: str):
         entry = (pc.dcfg("custom-price-feeds", chain_id) or {}).get(feed_name) or {}
     except Exception as e:  # noqa: BLE001 - surfaced to the operator below, never swallowed
         return None, f"custom-price-feeds/{chain_id}.json unreadable ({type(e).__name__})"
+    if not isinstance(entry, dict):
+        return None, f"config entry for {feed_name!r} is {type(entry).__name__}, not an object"
     ctor = entry.get("constructor", entry)
+    if not isinstance(ctor, dict):
+        return None, f"`constructor` for {feed_name!r} is {type(ctor).__name__}, not an object"
     raw = ctor.get("baseAsset", entry.get("baseAsset"))
     if raw is None:
         return None, None                      # no opinion recorded; nothing to cross-check
+    # Shape AND hex, mirroring preflight_config.is_address_shaped — a 42-char non-hex placeholder such as
+    # "0xREPLACE_ME_WITH_THE_REAL_ADDR" passes a length check and then raises inside int(raw, 16) at the
+    # call site, aborting the whole feed loop instead of reporting this one feed.
     if not (isinstance(raw, str) and raw.startswith("0x") and len(raw) == 42):
         return None, f"declared baseAsset {raw!r} is not a 20-byte address"
+    try:
+        int(raw, 16)
+    except ValueError:
+        return None, f"declared baseAsset {raw!r} is not hex"
     return raw, None
 
 
@@ -766,10 +777,17 @@ def step_custom_price_feeds(k: Chk, rec: dict, exp: dict, url, base, tag) -> Non
                           f"cross-check cannot run, so this feed is unverified rather than verified")
             continue
         if isinstance(base_ret, str) and len(base_ret) >= 66:
-            # Mirror the on-chain validator rather than just truncating. PriceFeedLib._validateFeedNotCircular
-            # REJECTS a word whose upper 96 bits are dirty (`rawBase > type(uint160).max`), so taking the low
-            # 160 bits here would make preflight blind to a BASE_ASSET() answer the chain will refuse.
-            raw_word = int(base_ret[2:66], 16) if len(base_ret) >= 66 else 0
+            # Mirror BOTH clauses of the on-chain validator, not one. PriceFeedLib._validateFeedNotCircular
+            # is `if (!ok || ret.length != 32) revert` — EXACTLY one word — and then rejects a dirty upper
+            # 96 bits. Gating on ">= 32" while reading the dirty-bit check from word 0 and the address from
+            # the LAST word means a 64-byte reply would be judged on two different words AND accepted here
+            # while the chain refuses it.
+            if len(base_ret) != 66:
+                k.fail.append(f"customPriceFeeds.{n} {feeds[n]}: BASE_ASSET() returned "
+                              f"{(len(base_ret) - 2) // 2} bytes; PriceFeedLib._validateFeedNotCircular "
+                              f"requires exactly 32, so the feed cannot be registered")
+                continue
+            raw_word = int(base_ret[2:66], 16)
             if raw_word > (1 << 160) - 1:
                 k.fail.append(f"customPriceFeeds.{n} {feeds[n]}: BASE_ASSET() returned {hex(raw_word)}, whose "
                               f"upper bits are dirty — PriceFeedLib._validateFeedNotCircular rejects this, so "
@@ -786,16 +804,14 @@ def step_custom_price_feeds(k: Chk, rec: dict, exp: dict, url, base, tag) -> Non
                               f"— NAV() pointer not applicable")
                 continue
 
-        nav_unreadable = isinstance(nav, Exception) or not isinstance(nav, str) or len(nav) < 66
-        # A feed the CONFIG declares as having no NAV dependency, whose on-chain BASE_ASSET() could not be
-        # read either, cannot be verified — but neither is it evidence of an old-generation feed. Downgrade
-        # to WARN. This only ever softens a case that was ALREADY going to fail; it never SKIPS the pointer
-        # check on the strength of operator-editable config, which would be a fail-open.
-        if nav_unreadable and declared is not None and int(declared, 16) == 0:
-            k.warn.append(f"customPriceFeeds.{n} {feeds[n]}: neither BASE_ASSET() nor NAV() readable; config "
-                          f"declares no NAV dependency, so this is unverified rather than wrong")
-            continue
-        if nav_unreadable:
+        # NO config-keyed downgrade here. An earlier revision warned-and-continued when NEITHER BASE_ASSET()
+        # nor NAV() was readable, provided the CONFIG declared address(0) — which turned a red step GREEN for
+        # a contract that answers neither selector and is therefore not a valid custom feed at all
+        # (`PriceFeedLib._validateFeedNotCircular` rejects it with CustomFeedBaseUnreadable). The exemption
+        # above is keyed on the CONTRACT's own BASE_ASSET() answer and stands; this one was keyed on
+        # operator-editable config and is exactly the fail-open the block below forbids. A transport hiccup
+        # here is a re-run, not a reason to pass.
+        if isinstance(nav, Exception) or not isinstance(nav, str) or len(nav) < 66:
             # MUST fail, not warn. `NAV` is a public immutable on every custom feed (ADR 0019), so
             # an unreadable NAV() is either a leftover feed from the old stack — exactly what this
             # step hunts — or an RPC failure, and `rpc_batch` returns its errors IN-BAND, filling a

@@ -15,8 +15,11 @@ import {LibraryPins} from "script/utils/LibraryPins.sol";
 import "src/constants.sol";
 
 /// @title InvertedChainlinkCustomPriceFeed fork test — mainnet wARS via the `USD / ARS` feed
-/// @dev Exercises the real reason this contract exists: mainnet's ONLY ARS feed is quoted
-///      `USD / ARS` (ARS per USD), the reciprocal of what {Prices} registers. The assertions below are
+/// @dev Exercises the real reason this contract exists: the ARS feed KPK uses is quoted `USD / ARS`
+///      (ARS per USD), the reciprocal of what {Prices} registers. NOTE it is NOT mainnet's only ARS feed —
+///      a direct `ARS / USD` feed exists at `0xE41cD2DcC63EB63A9D9e62f2a3D9b49e6d0C0A1d`, ~6.4% away; see
+///      the contract docstring and the config `$directFeedComment` for why `USD / ARS` is the deliberate
+///      choice. An earlier version of this header asserted the "only feed" claim the PR retracts. The assertions below are
 ///      written against the LIVE feed at a pinned block, so they prove the inversion against real
 ///      oracle data rather than against a mock that could encode the same mistake twice.
 contract InvertedChainlinkCustomPriceFeedForkTest is TestEnvConfigurator {

@@ -982,6 +982,7 @@ schemas are in the next section and in the per-adapter table above.)
 | `morpho-vaults` | `MORPHO_VAULTS` | `MorphoVaultsMetaBalanceAdapter` — MetaMorpho (ERC4626) vault supply |
 | `morpho-markets` | `MORPHO_MARKETS` | `MorphoMarketsMetaBalanceAdapter` — Morpho isolated-market collateral/supply/borrow |
 | `euler-vaults` | `EULER_VAULTS` | `EulerVaultsMetaBalanceAdapter` — Euler V2 vault supply/collateral/borrow |
+| `symbiotic-vaults` | `SYMBIOTIC_VAULTS` | `SymbioticVaultsMetaBalanceAdapter` — Symbiotic **ERC-4626** vault supply. NOT Symbiotic core vaults (epoch-based `activeBalanceOf` + withdrawal queue), which this adapter does not value |
 | `gearbox-v3-markets` | `GEARBOX_V3_MARKETS` | `GearboxV3MarketsMetaBalanceAdapter` — Gearbox V3 passive-pool deposit |
 | `gearbox-v3-credit-accounts` | `GEARBOX_V3_CREDIT_ACCOUNTS` | `GearboxV3CreditAccountsMetaBalanceAdapter` — Gearbox V3 credit-account collateral/debt |
 | `compound-v3-comets` | `COMPOUND_V3_COMETS` | `CompoundV3CometsMetaBalanceAdapter` — Compound V3 Comet base/collateral/rewards |
@@ -1032,6 +1033,7 @@ rather than overloading an existing one.
 | `morpho-vaults` | `(address vault)` |
 | `morpho-markets` | `(bytes32 marketId)` |
 | `euler-vaults` | `(address vault)` |
+| `symbiotic-vaults` | `(address vault)` |
 | `gearbox-v3-markets` | `(address market)` |
 | `gearbox-v3-credit-accounts` | `(address creditAccount)` |
 | `compound-v3-comets` | `(address comet)` |
@@ -1169,6 +1171,7 @@ decodes use `AbiCoder.defaultAbiCoder()` from ethers.js. Protocol ID constants c
 | `MorphoVaultsMeta` | `morpho-vaults` | `Supplied` |
 | `MorphoMarketsMeta` | `morpho-markets` | `Collateral`, `Supplied`, `Borrowed` |
 | `EulerVaultsMeta` | `euler-vaults` | `Supplied`, `Collateral`, `Borrowed` |
+| `SymbioticVaultsMeta` | `symbiotic-vaults` | `Supplied` |
 | `GearboxV3MarketsMeta` | `gearbox-v3-markets` | `Supplied` |
 | `FluidFTokensMeta` | `fluid-ftokens` | `Supplied` |
 | `FluidVaultsMeta` | `fluid-vaults` | `Collateral`, `Borrowed` |

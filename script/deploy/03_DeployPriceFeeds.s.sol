@@ -249,10 +249,14 @@ contract DeployPriceFeeds is BaseDeployScript {
         // Deploy ankrETH Price Oracle (ankrETH/USD = ETH/USD * 1e18 / ratio)
         if (ConfigReader.isAdapterEnabled(vm, currentChainId, "priceFeeds", "ankrETH")) {
             _deployAnkrEth();
+        }
 
-            if (ConfigReader.isPriceFeedEnabled(vm, currentChainId, "wARS")) {
-                _deployInvertedFeed("wARS");
-            }
+        // Deploy wARS Price Oracle (wARS/USD = 1 / Chainlink "USD / ARS"). Gated ONLY on its own config
+        // entry: nesting this inside another feed's `if` would make an enabled wARS silently not deploy
+        // whenever that unrelated feed is disabled, and RegisterAssets would then skip wARS for want of a
+        // resolved custom-feed address — a silent under-report, not a loud failure.
+        if (ConfigReader.isPriceFeedEnabled(vm, currentChainId, "wARS")) {
+            _deployInvertedFeed("wARS");
         }
 
         // Deploy NXM / wNXM Price Oracle (price = RAMM.getInternalPrice() [ETH/NXM] * ETH/USD)

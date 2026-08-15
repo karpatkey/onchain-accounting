@@ -1178,8 +1178,21 @@ def _self_test() -> int:
                                     BASE if base is None else base, tag)
             finally:
                 rd.ARCHIVE_DIR = real_dir
-        sig = json.dumps({"rec": rec, "arch": arch, "chain": chain, "must_fail": must_fail,
-                          "expect_in": expect_in, "expect_warn": expect_warn,
+        # THE SIGNATURE IS THE INPUT THE ARM FEEDS THE RULE, AND NOTHING ELSE. It used to include
+        # `must_fail`/`expect_in`/`expect_warn` too, on the stated ground that "arms that share a
+        # fixture but assert different things are legitimately distinct". That ground is wrong, and
+        # it made this check blind to the exact defect it was written for: two arms feeding
+        # BYTE-IDENTICAL inputs exercise the SAME code path, so the second adds no coverage
+        # whatever it asserts — while the tally counts two. Demonstrated: collapse HOLE 6's archive
+        # into HOLE 7's and change only its `expect_in`, and the old signature reported "ok, no two
+        # arms build identical fixtures" at 27/27 with HOLE 6 modelling no foreign archive at all.
+        # That is finding C's shape reappearing THROUGH the instrument built to prevent it, and it
+        # is the likelier real-world path than a wholesale duplicate: a fixture gets changed, the
+        # arm goes red, and it is "fixed" by adjusting the assertion.
+        #
+        # Asserting two properties of one scenario is legitimate — as TWO ASSERTIONS IN ONE ARM, not
+        # as two arms inflating the count. A count of arms is not coverage.
+        sig = json.dumps({"rec": rec, "arch": arch, "chain": chain,
                           "base": BASE if base is None else base},
                          sort_keys=True, default=str)
         if sig in seen_sigs:
@@ -1248,7 +1261,12 @@ def _self_test() -> int:
     cleared["balanceAdapters"] = {"ERC20Default": "", "AaveV3InstancesMeta": ""}
     cleared["customPriceFeeds"] = {"wstETH": ""}
     # A chain that never deployed assistants: the archive has none either. THE #299 CASE.
-    arch_plain = {key: ADDR for key in UNIVERSAL} | {"NAVCalculatorProxy": ADDR}
+    # WRITTEN PLAINLY, because the merge that used to be here was the exact idiom this file blames
+    # for HOLE 6 above: `{... UNIVERSAL} | {"NAVCalculatorProxy": ADDR}` is a NO-OP, since UNIVERSAL
+    # already holds that key. It was harmless where it sat — `arch_plain` is the same dict either
+    # way — but it is a loaded trap in a file that has already been shot by it once, and it reads as
+    # though the merge distinguishes this fixture from a bare one. It does not.
+    arch_plain = {key: ADDR for key in UNIVERSAL}
 
     run(cleared_for(NO_ASSIST), dict(arch_plain), "a chain that never had assistants passes",
         must_fail=False, chain=NO_ASSIST)

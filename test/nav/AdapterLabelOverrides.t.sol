@@ -118,7 +118,7 @@ contract DeclaringAdapter is IBalanceAdapter, IComputedLabelSegments {
         return "Declaring Protocol";
     }
 
-    function positionLabels(bytes calldata) external view returns (string[] memory out) {
+    function positionLabels(bytes calldata) external view virtual returns (string[] memory out) {
         out = new string[](2);
         out[0] = _category;
         out[1] = _leaf;
@@ -136,6 +136,39 @@ contract NonDeclaringAdapter is DeclaringAdapter {
     ///      exactly the shape of every pre-hook adapter, and also of an adapter that implements the method by
     ///      accident without opting in.
     function supportsInterface(bytes4 interfaceId) external pure override returns (bool) {
+        return interfaceId == type(IBalanceAdapter).interfaceId || interfaceId == type(IERC165).interfaceId;
+    }
+}
+
+/// @notice Declares like {DeclaringAdapter}, but answers the {IComputedLabelSegments} ERC-165 probe with a DIRTY
+///         32-byte word — neither 0 nor 1.
+/// @dev The fail-CLOSED control, and the shape `_computedSegments`'s own docstring promises resolves to 0. The
+///      registry's `supportsRet.length < 32` short-circuit catches SHORT replies, so a full dirty word sails past it
+///      and reaches `abi.decode(supportsRet, (bool))`, which validates the word and REVERTS IN THE REGISTRY'S FRAME
+///      — bricking `setAdapterLabels` AND `forceAdapterLabels` for this adapter with empty returndata and no custom
+///      error. Answering only the declaration selector dirtily keeps the adapter registrable, so the probe is the
+///      only thing under test.
+/// @notice Declares bit 0 computed AND reports exactly ONE segment — the shape `ERC20DefaultBalanceAdapter` has.
+/// @dev The combination is what makes every guarded override a no-op; see the test that pins it.
+contract OneSegmentDeclaringAdapter is DeclaringAdapter {
+    constructor(address asset_) DeclaringAdapter(asset_, "Category", "leaf", 1) {}
+
+    function positionLabels(bytes calldata) external pure override returns (string[] memory out) {
+        out = new string[](1);
+        out[0] = "Wallet";
+    }
+}
+
+contract DirtyProbeAdapter is DeclaringAdapter {
+    constructor(address asset_) DeclaringAdapter(asset_, "Category", "leaf", 1 << 1) {}
+
+    function supportsInterface(bytes4 interfaceId) external pure override returns (bool) {
+        if (interfaceId == type(IComputedLabelSegments).interfaceId) {
+            assembly ("memory-safe") {
+                mstore(0x00, 2) // a word that is neither 0 nor 1
+                return(0x00, 32)
+            }
+        }
         return interfaceId == type(IBalanceAdapter).interfaceId || interfaceId == type(IERC165).interfaceId;
     }
 }
@@ -1790,6 +1823,73 @@ contract AdapterLabelOverridesTest is AdapterLabelOverridesBase {
         d = new DeclaringAdapter(address(usdc), "Market", "wstETH/USDC", mask);
         vm.prank(navCalculatorManager);
         nav.addBalanceAdapters(aa(address(d)));
+    }
+
+    /// @notice A DIRTY ERC-165 word must resolve the declaration to 0, not revert the write.
+    /// @dev ⚠️ **This is the negative path the docstring promises and the suite never exercised.** Section (E)
+    ///      asserted only the two POSITIVE shapes — guard fires, guard stays silent — while `RawReplier`, the mock
+    ///      built for malformed replies, sat imported and unused. A guard is only as good as its fail direction, and
+    ///      this one failed CLOSED: the write is bricked for BOTH entry points, with empty returndata and no custom
+    ///      error, so an operator sees an unexplained revert and reaches for the bypass.
+    ///
+    ///      Mutate the fix out — restore `abi.decode(supportsRet, (bool))` — and this test goes red with an empty
+    ///      revert. That is the demonstration, not the reasoning.
+    /// @notice On a bit-0-computed, ONE-segment adapter, every override `setAdapterLabels` will ACCEPT is a no-op.
+    /// @dev **Pinned as CORRECT behaviour, not filed as a defect.** The guard forces `""` at index 0, and
+    ///      `_applyLabelOverride` bounds at `min(reply.length, override.length)` — so with a one-segment reply there
+    ///      is no index the override can reach. `forceAdapterLabels` is the documented path for this shape, and it
+    ///      still works (asserted below), so the capability is not lost — only the guarded path declines it.
+    ///
+    ///      **Why this is pinned rather than "fixed":** rejecting the no-op AT WRITE TIME is not soundly
+    ///      implementable. Reply lengths are per-position and runtime-only; the registry would have to probe
+    ///      `positionLabels` (unbounded, positionId-dependent) to know whether an override can ever apply. This test
+    ///      exists so that a future change which silently makes the guarded path apply here goes RED and has to
+    ///      argue for itself, instead of the property staying emergent and unwritten.
+    function test_setAdapterLabels_onOneSegmentComputedAdapter_isAcceptedButNeverApplies() public {
+        OneSegmentDeclaringAdapter d = new OneSegmentDeclaringAdapter(address(usdc));
+        vm.prank(navCalculatorManager);
+        nav.addBalanceAdapters(aa(address(d)));
+
+        // Legal: "" at the computed index 0, a literal only at index 1, which the one-segment reply never exposes.
+        vm.prank(navCalculatorManager);
+        registry.setAdapterLabels(address(d), two("", "Ignored"));
+
+        string[] memory position = _verboseFor(address(d)).labels;
+        assertEq(position.length, 1, "the reply length is the adapter's, not the override's");
+        assertEq(position[0], "Wallet", "the computed segment survives the accepted override");
+        string[] memory config = _configLabels(address(d));
+        assertEq(config.length, 1, "the configuration surface agrees with the position surface");
+        assertEq(config[0], "Wallet", "and neither surface took the override");
+
+        // The deliberate-freeze path is unaffected - this is a declined override, not a lost capability.
+        vm.prank(navCalculatorManager);
+        registry.forceAdapterLabels(address(d), one("Forced"));
+        assertEq(_verboseFor(address(d)).labels[0], "Forced", "force still overrides a computed segment");
+    }
+
+    function test_setAdapterLabels_dirtyDeclarationWord_resolvesToUnguarded() public {
+        DirtyProbeAdapter d = new DirtyProbeAdapter(address(usdc));
+        vm.prank(navCalculatorManager);
+        nav.addBalanceAdapters(aa(address(d)));
+
+        vm.prank(navCalculatorManager);
+        registry.setAdapterLabels(address(d), two("Lending Market", "leaf"));
+
+        string[] memory got = registry.getAdapterLabels(address(d));
+        assertEq(got.length, 2, "a malformed declaration must forfeit protection, not brick the write");
+        assertEq(got[0], "Lending Market");
+        assertEq(got[1], "leaf");
+    }
+
+    /// @notice The same dirty word must not brick the deliberate-freeze escape either.
+    function test_forceAdapterLabels_dirtyDeclarationWord_stillWrites() public {
+        DirtyProbeAdapter d = new DirtyProbeAdapter(address(usdc));
+        vm.prank(navCalculatorManager);
+        nav.addBalanceAdapters(aa(address(d)));
+
+        vm.prank(navCalculatorManager);
+        registry.forceAdapterLabels(address(d), two("Frozen", "leaf"));
+        assertEq(registry.getAdapterLabels(address(d)).length, 2);
     }
 
     /// @notice A non-empty literal at a DECLARED-COMPUTED index is refused.

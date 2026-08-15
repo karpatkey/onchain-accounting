@@ -8,6 +8,7 @@ import {IAssetKindRegistry} from "src/nav/IAssetKindRegistry.sol";
 import {IComputedLabelSegments} from "src/balances/IComputedLabelSegments.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {PegKind, AccrualKind} from "src/utils/AssetKind.sol";
+import {StaticCallLib} from "src/utils/StaticCallLib.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/errors.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
@@ -487,10 +488,23 @@ contract AssetKindRegistry is IAssetKindRegistry {
     ///      right direction for a write path: the adapter is the thing being described, not an authority over the
     ///      registry.
     function _computedSegments(address adapter) private view returns (uint256) {
-        (bool okSupports, bytes memory supportsRet) = adapter.staticcall{gas: _DECLARATION_READ_GAS}(
-            abi.encodeCall(IERC165.supportsInterface, (type(IComputedLabelSegments).interfaceId))
+        // ⚠️ `abi.decode(ret, (bool))` VALIDATES the word and reverts in THIS frame on anything but 0/1, and the
+        // `length < 32` short-circuit only catches SHORT replies — a full dirty word sails past it. That bricked
+        // both entry points with empty returndata and no custom error, which is the opposite of the fail direction
+        // this function's docstring promises. `probeWord` reads the raw word without decoding, so a malformed reply
+        // resolves to 0 like every other broken answer. Pinned by
+        // `test_setAdapterLabels_dirtyDeclarationWord_resolvesToUnguarded`; restore the decode and it goes red.
+        //
+        // ⚠️ **This raises the PROBE's cap from `_DECLARATION_READ_GAS` (50k) to `StaticCallLib.PROBE_GAS` (100k)**,
+        // stated because a silent cap change is worse than a documented one. The mask read below KEEPS 50k, so the
+        // two are deliberately asymmetric. Both stay bounded, which is all the docstring above claims; a hostile
+        // adapter can burn 100k of a MANAGER's gas here rather than 50k, and forfeits its own protection either
+        // way. If the asymmetry is unwanted the answer is a metered probe or a wider `_DECLARATION_READ_GAS` —
+        // NOT a return to `abi.decode`.
+        (, bool hasSupports, uint256 supportsWord) = StaticCallLib.probeWord(
+            adapter, abi.encodeCall(IERC165.supportsInterface, (type(IComputedLabelSegments).interfaceId))
         );
-        if (!okSupports || supportsRet.length < 32 || abi.decode(supportsRet, (bool)) == false) return 0;
+        if (!hasSupports || supportsWord != 1) return 0;
 
         (bool okMask, bytes memory maskRet) = adapter.staticcall{gas: _DECLARATION_READ_GAS}(
             abi.encodeCall(IComputedLabelSegments.computedLabelSegments, ())

@@ -776,7 +776,18 @@ def step_custom_price_feeds(k: Chk, rec: dict, exp: dict, url, base, tag) -> Non
             k.fail.append(f"customPriceFeeds.{n}: {declared_err} — the config-vs-contract BASE_ASSET "
                           f"cross-check cannot run, so this feed is unverified rather than verified")
             continue
-        if isinstance(base_ret, str) and len(base_ret) >= 66:
+        # An UNREADABLE BASE_ASSET() is itself disqualifying, not a reason to skip ahead. Registration
+        # calls `_validateFeedNotCircular`, which fails CLOSED on `!ok || ret.length != 32` — so a feed
+        # that does not implement INavSourcedPriceFeed cannot be registered at all, however healthy its
+        # NAV() pointer looks. Falling through to the NAV() check (as an earlier revision did) let such a
+        # feed PASS step 1.5 and then be silently skipped by RegisterAssets, which exits 0 — the asset
+        # never registers and every holding of it values at $0 on a live NAV.
+        if not (isinstance(base_ret, str) and len(base_ret) >= 66):
+            k.fail.append(f"customPriceFeeds.{n} {feeds[n]}: BASE_ASSET() unreadable ({base_ret}) — "
+                          f"PriceFeedLib._validateFeedNotCircular fails closed on this, so the feed "
+                          f"cannot be registered regardless of its NAV() pointer")
+            continue
+        if True:
             # Mirror BOTH clauses of the on-chain validator, not one. PriceFeedLib._validateFeedNotCircular
             # is `if (!ok || ret.length != 32) revert` — EXACTLY one word — and then rejects a dirty upper
             # 96 bits. Gating on ">= 32" while reading the dirty-bit check from word 0 and the address from

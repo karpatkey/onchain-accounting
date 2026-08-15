@@ -300,7 +300,12 @@ def check_immutable_pointers(chain_id: int, url: str, res: dict) -> None:
             else:
                 e["pointerCheck"] = "OK"
         # A contract whose code is current but whose pointer is stale still has to be redeployed.
-        if e["pointerCheck"] != "OK" and e["status"].startswith("CURRENT"):
+        # "N/A (BASE_ASSET() == 0, ...)" is a CLASSIFICATION, not a failure: the contract itself declares
+        # it has no NAV pointer, so there is nothing that could be stale. Without this the exemption added
+        # above is inert — the status rewrite below would still mark the feed CURRENT_CODE_STALE_POINTER
+        # and `--require-current` would still exit 1 on a correct deploy.
+        if e["pointerCheck"] != "OK" and not e["pointerCheck"].startswith("N/A") \
+                and e["status"].startswith("CURRENT"):
             e["status"] = "CURRENT_CODE_STALE_POINTER"
 
 

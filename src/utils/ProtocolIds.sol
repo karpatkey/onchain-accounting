@@ -17,7 +17,7 @@ pragma solidity ^0.8;
 ///                                          (isLocked=true), only a cooldown elapsed-and-in-window is UNLOCKED;
 ///                                          the reward leg shares it too, told apart by positionKind=Rewards
 ///        MORPHO_VAULTS / GEARBOX_V3_MARKETS / GEARBOX_V3_CREDIT_ACCOUNTS / EULER_VAULTS / ERC4626 /
-///        STAKEWISE_V3_VAULTS / FLUID_VAULTS → (address vault / market / credit account)
+///        STAKEWISE_V3_VAULTS / FLUID_VAULTS / SYMBIOTIC_VAULTS → (address vault / market / credit account)
 ///        CAP                             → (address token: cUSD or stcUSD) — one leg per token
 ///        MORPHO_MARKETS                  → (bytes32 marketId)
 ///        BALANCER_V3_POOLS                → (address pool)

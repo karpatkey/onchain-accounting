@@ -313,7 +313,7 @@ The table below is the sweep of every `positionLabels` implementation in `src/ba
 | `CompoundV3CometsMetaBalanceAdapter` | `U` "Market" | `C` comet symbol | — | 0–2 | |
 | `ConvexCurveLPStakingMetaBalanceAdapter` | `U` "Staking" | `U` "Curve LP" | `C` coin symbols | 0, **2 or 3** | **The reply LENGTH varies by position** — seg 2 exists only when the `rewarderCoinSymbols` probe answers |
 | `EulerVaultsMetaBalanceAdapter` | `U` "Vault" | `C` vault name | — | 0–2 | |
-| `SymbioticVaultsMeta` | `SymbioticVaultsMetaBalanceAdapter` | ERC-4626 **Symbiotic** vaults (NOT Symbiotic core vaults — those are epoch-based `activeBalanceOf` + withdrawal queue and are out of scope). Single `Supplied` leg valued through `ERC4626RedeemLib.redeemValue`. Vault identity is bound on-chain: the instance must be a registered entity of Symbiotic's VaultFactory `0xAEb6bdd9…`. |
+| `SymbioticVaultsMetaBalanceAdapter` | `U` "Vault" | `C` vault name | — | 0–2 | Same shape as Euler/Morpho — `_addressLabels(pid, "Vault", false)`. |
 | `FluidFTokensMetaBalanceAdapter` | `U` "Lending" | `C` fToken symbol | — | 0–2 | |
 | `FluidVaultsMetaBalanceAdapter` | `U` "Vault" | `C` pair symbols | — | 0–2 | |
 | `GearboxV3CreditAccountsMetaBalanceAdapter` | `U` "Credit Account" | `C` credit-manager name / underlying symbol | — | 0–2 | |
@@ -460,7 +460,7 @@ stand-in whose array getter reverts, so any implementation that reaches for it f
 
 ## 7. Implemented adapters
 
-### 7.1 Meta-adapters (21)
+### 7.1 Meta-adapters (22)
 
 Meta-adapters extend `MetaBalanceAdapter` (PancakeSwap V2 extends `UniswapV2PoolsMetaBalanceAdapter`, which itself extends the base). The instance set is configured on NAVCalculator via `addMetaInstances`/`removeMetaInstances`.
 
@@ -476,6 +476,7 @@ Meta-adapters extend `MetaBalanceAdapter` (PancakeSwap V2 extends `UniswapV2Pool
 | **CurvePoolsMeta** | Wallet-held (unstaked) LP for all Curve pools. Instance coordinate = pool address. positionId = `abi.encode(pool)`. `Supplied` legs per underlying token. | `(navCalculator)` | `CurvePoolsMeta`; pools under `instances`. |
 | **CurveGaugesMeta** | Gauge-staked LP + rewards (CRV + extras) for all Curve gauges. Instance coordinate = gauge address. positionId = `abi.encode(gauge)`. `Staking` + `Rewards` legs. | `(minter, crvToken, navCalculator)` | `CurveGaugesMeta`; gauges under `instances`. |
 | **EulerVaultsMeta** | All Euler V2 ERC-4626 vaults — both EulerEarn aggregators (Earn) and core eVaults (Lend/Borrow). Instance coordinate = vault address. positionId = `abi.encode(vault)`. `Supplied` (or `Collateral` if EVC-enabled) leg via `convertToAssets(balanceOf)` + `Borrowed` leg (`debtOf`) for core eVaults. | `(navCalculator)` | `EulerVaultsMeta`; vaults under `instances`. |
+| **SymbioticVaultsMeta** | ERC-4626 **Symbiotic** vaults — NOT Symbiotic CORE vaults (epoch-based `activeBalanceOf` + withdrawal queue, out of scope). Instance coordinate = vault address. positionId = `abi.encode(vault)`. One `Supplied` leg, valued through `ERC4626RedeemLib.redeemValue` (fee-aware `previewRedeem`). Redemption is synchronous — `maxRedeem == balanceOf` — so there is no queued leg. Identity is bound on-chain: the vault's `FACTORY()` immutable must be Symbiotic's VaultFactory `0xAEb6bdd95c502390db8f52c8909F703E9Af6a346`. | `(navCalculator)` | `SymbioticVaultsMeta` / `instances` |
 | **FluidFTokensMeta** | All Fluid fTokens (ERC4626 lending vaults). Instance coordinate = fToken address. positionId = `abi.encode(fToken)`. One `Supplied` leg per fToken (`convertToAssets(balanceOf)`). | `(navCalculator)` | `FluidFTokensMeta`; fTokens under `instances`. |
 | **FluidVaultsMeta** | All Fluid T1 vaults. Instance coordinate = vault address. positionId = `abi.encode(vault)`. `Collateral` (supply) + `Borrowed` (debt) legs per vault. VaultResolver pinned in constructor. | `(vaultResolver, navCalculator)` | `FluidVaultsMeta`; vaults under `instances`. |
 | **GearboxV3MarketsMeta** | All Gearbox V3 ERC4626 farming pools (the passive supply side). Instance coordinate = pool/market address. positionId = `abi.encode(market)`. One `Supplied` leg per market (`convertToAssets(balanceOf)`). | `(navCalculator)` | `GearboxV3MarketsMeta`; markets under `instances`. |

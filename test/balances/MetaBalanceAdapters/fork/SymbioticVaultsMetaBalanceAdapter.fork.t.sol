@@ -20,6 +20,15 @@ interface ISymbioticRegistry {
     function totalEntities() external view returns (uint256);
 }
 
+/// @notice Symbiotic's `Entity` base: the factory that cloned it, set immutable at clone time.
+interface ISymbioticEntity {
+    function FACTORY() external view returns (address);
+}
+
+interface IHasVault {
+    function vault() external view returns (address);
+}
+
 interface IHasDelegator {
     function delegator() external view returns (address);
 }
@@ -85,8 +94,15 @@ contract SymbioticVaultsMetaBalanceAdapterForkTest is BalanceAdapterTestBase {
         vm.stopPrank();
     }
 
-    /// @dev Symbiotic's canonical mainnet VaultFactory / DelegatorFactory.
+    /// @dev Symbiotic's mainnet VaultFactory — canonical, and confirmed independently: the
+    ///      VaultConfigurator `0x29300b1d3150B4E2b12fE80BE72f365E200441EC` reports this as `VAULT_FACTORY()`.
     address constant SYMBIOTIC_VAULT_FACTORY = 0xAEb6bdd95c502390db8f52c8909F703E9Af6a346;
+    /// @dev **One of TWO** Symbiotic DelegatorFactories — the one that minted THIS vault's delegator (24
+    ///      delegators). The VaultConfigurator-paired factory is `0x985Ed57AF9D475f1d83c1c1c8826A0E5A34E8C7B`
+    ///      (333). 333 + 24 == 357 == VaultFactory.totalEntities(), and all share one owner. So this is NOT
+    ///      "the canonical" delegator factory, and a Symbiotic vault delegated through the other one is
+    ///      equally valid — which is why the assertions below bind through each entity's own `FACTORY()`
+    ///      immutable rather than assuming a single registry.
     address constant SYMBIOTIC_DELEGATOR_FACTORY = 0xB5eFf01403C0dD3aDa1010919791d6EB82F6a84C;
 
     /// @dev **The POSITIVE evidence that this is a Symbiotic vault at all.** Review correctly objected
@@ -96,15 +112,29 @@ contract SymbioticVaultsMetaBalanceAdapterForkTest is BalanceAdapterTestBase {
     ///      vault. If that ever ceases to hold, stamping `symbiotic` / `symbiotic-vaults` identity on this
     ///      instance is no longer justified and this test says so.
     function test_premise_vaultIsRegisteredInSymbioticFactory() public view {
+        // Bind through the FACTORY() IMMUTABLE, set by the factory at clone time. This is strictly
+        // stronger than `isEntity` — it binds from the entity outward, so it cannot be satisfied by a
+        // lookalike registry that merely lists the address.
+        assertEq(
+            ISymbioticEntity(address(LIQUID_LANE)).FACTORY(),
+            SYMBIOTIC_VAULT_FACTORY,
+            "vault was cloned by Symbiotic's VaultFactory"
+        );
         assertTrue(
             ISymbioticRegistry(SYMBIOTIC_VAULT_FACTORY).isEntity(address(LIQUID_LANE)),
-            "vault is a Symbiotic VaultFactory entity"
+            "and the factory lists it (both directions)"
         );
+
         address delegator = IHasDelegator(address(LIQUID_LANE)).delegator();
-        assertTrue(
-            ISymbioticRegistry(SYMBIOTIC_DELEGATOR_FACTORY).isEntity(delegator),
-            "its delegator is a Symbiotic DelegatorFactory entity"
+        assertEq(
+            ISymbioticEntity(delegator).FACTORY(),
+            SYMBIOTIC_DELEGATOR_FACTORY,
+            "delegator was cloned by a Symbiotic DelegatorFactory"
         );
+        // The adapter's docstring cites this back-pointer as part of the evidence; assert it rather than
+        // just claiming it.
+        assertEq(IHasVault(delegator).vault(), address(LIQUID_LANE), "delegator points back at the vault");
+
         assertGt(ISymbioticRegistry(SYMBIOTIC_VAULT_FACTORY).totalEntities(), 1, "a real registry, not a stub");
     }
 

@@ -1568,6 +1568,7 @@ the same on every chain. Default `positionId` = base `_instancePositionId` (inst
 | `CompoundV3CometsMetaBalanceAdapter` | `compound-v3-comets` | `"Compound V3"` | `["Market", <comet.symbol()>]` (derived) | `abi.encode(address comet)` | Supplied/Borrowed / Collateral / Rewards | `["Compound V3","Market","cUSDCv3"]` |
 | `ConvexCurveLPStakingMetaBalanceAdapter` | `convex-curve-lp-staking` | `"Convex"` | `["Staking", "Curve LP", "<coins>"]` (derived) | `abi.encode(address rewarder)` | Staking / Rewards | `["Convex","Staking","Curve LP","DAI/USDC/USDT"]` |
 | `EulerVaultsMetaBalanceAdapter` | `euler-vaults` | `"Euler"` | `["Vault", <vault.name()>]` (derived) | `abi.encode(address vault)` | Collateral/Supplied / Borrowed | `["Euler","Vault","eUSDC"]` |
+| `SymbioticVaultsMetaBalanceAdapter` | `symbiotic-vaults` | `"Symbiotic"` | `["Vault", <vault.name()>]` (derived) | `abi.encode(address vault)` | `Supplied` | `Symbiotic › Vault › KPK USDC LiquidLane` |
 | `FluidFTokensMetaBalanceAdapter` | `fluid-ftokens` | `"Fluid"` | `["Lending", <fToken.symbol()>]` (derived) | `abi.encode(address fToken)` | Supplied | `["Fluid","Lending","fUSDC"]` |
 | `FluidVaultsMetaBalanceAdapter` | `fluid-vaults` | `"Fluid"` | `["Vault", "<collateral>/<debt> #<vaultId>"]` (derived) | `abi.encode(address vault)` | Collateral / Borrowed | `["Fluid","Vault","wstETH/USDC #4"]` |
 | `GearboxV3MarketsMetaBalanceAdapter` | `gearbox-v3-markets` | `"Gearbox"` | `["Market", <market.name()>]` (derived) | `abi.encode(address market)` | Supplied | `["Gearbox","Market","dDAI"]` |

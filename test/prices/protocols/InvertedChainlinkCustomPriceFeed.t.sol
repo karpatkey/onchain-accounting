@@ -31,6 +31,11 @@ contract Mock_SignedChainlinkOracle is AggregatorV3Interface {
         _updatedAt = updatedAt_;
     }
 
+    /// @notice Simulates an aggregator migration that changes reported decimals.
+    function setDecimals(uint8 decimals_) external {
+        _decimals = decimals_;
+    }
+
     function decimals() external view override returns (uint8) {
         return _decimals;
     }
@@ -162,13 +167,19 @@ contract InvertedChainlinkCustomPriceFeedTest is Test {
         assertEq(price, 1e8, "feed decimals cancel out");
     }
 
-    /// @dev Inverting twice must return to the original, within one floored unit.
+    /// @dev Inverting twice must return to the original. The bound is DERIVED, not picked: flooring the
+    ///      forward inversion loses at most one unit of `price`, and re-inverting magnifies that by
+    ///      `answer / price` (here 1e16/63167^2), so the round-trip error is bounded by
+    ///      `backToAnswer / price + 1`. At the mainnet ARS answer that is ~2.51e6, and the measured error
+    ///      is 750,234 — inside it. An earlier version of this test used a flat 1e8, which is ~133x the
+    ///      real error and would have passed even if the inversion were substantially wrong.
     function test_price_roundTripsWithinOneUnit() public {
         feed.setAnswer(ARS_ANSWER);
         (uint256 price,) = oracle.getLatestPrice();
         // price = 1e16 / answer  =>  answer ~= 1e16 / price
         uint256 backToAnswer = 1e16 / price;
-        assertApproxEqAbs(backToAnswer, uint256(ARS_ANSWER) / 1, 1e8, "round trip stays in band");
+        uint256 bound = backToAnswer / price + 1; // exact floor-propagation bound, not a magic number
+        assertApproxEqAbs(backToAnswer, uint256(ARS_ANSWER), bound, "round trip within the floor bound");
     }
 
     /// @dev Rounding is Floor, so the result never exceeds the exact value.
@@ -178,6 +189,34 @@ contract InvertedChainlinkCustomPriceFeedTest is Test {
         (uint256 price, bool stale) = oracle.getLatestPrice();
         assertFalse(stale);
         assertLe(price, (1e8 * 1e8) / uint256(answer), "Floor: never above exact");
+    }
+
+    /// @dev **The over-report this contract's cached-unit guard exists to stop.** `_feedUnit` is a
+    ///      NUMERATOR here, so an aggregator migrating 8 -> 6 decimals while publishing the SAME real rate
+    ///      would inflate the price by exactly 100x with `stale == false` — the opposite of the safe
+    ///      direction every sibling feed fails in. Without the per-read decimals re-assertion this test
+    ///      reads 6316729 instead of 63167 and passes silently.
+    function test_feedDecimalsMigration_isStaleNotA100xOverReport() public {
+        (uint256 before, bool staleBefore) = oracle.getLatestPrice();
+        assertFalse(staleBefore);
+        assertEq(before, ARS_EXPECTED_PRICE);
+
+        // Same real rate, two fewer decimals: 1583.0976 ARS/USD at 6dp.
+        feed.setDecimals(6);
+        feed.setAnswer(1583097600);
+
+        (uint256 price, bool stale) = oracle.getLatestPrice();
+        assertTrue(stale, "decimals migration must report STALE");
+        assertEq(price, 0, "and must not report the 100x-inflated 6316729");
+    }
+
+    /// @dev An unreadable `decimals()` is equally unsafe to trust, since the cached unit can no longer be
+    ///      confirmed. Reported stale rather than assumed unchanged.
+    function test_unreadableDecimals_isStale() public {
+        vm.mockCallRevert(address(feed), abi.encodeWithSignature("decimals()"), "boom");
+        (uint256 price, bool stale) = oracle.getLatestPrice();
+        assertTrue(stale, "unreadable decimals => stale");
+        assertEq(price, 0);
     }
 
     // --- staleness and bad answers -------------------------------------------

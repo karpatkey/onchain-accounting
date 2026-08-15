@@ -22,7 +22,8 @@
       "0x1a1985F50352b58090eb36425AfdFacbaC7806F4",
       "0x7a72bcD2c3F7F7e4D6679170a0625bAB15D7DDa1",
       "0xb5ce3CA2C774b72955C25875022FdD91f7a7B938"
-    ]
+    ],
+    "$instanceComment_wARSYield": "0xb5ce3CA2C774b72955C25875022FdD91f7a7B938 = 'KPK wARS Yield' (Morpho Vaults V2; MORPHO() reverts, but the adapter is pure ERC-4626 and never calls it, and previewRedeem answers). asset() = wARS 0x0DC4F92879B7670e5f4e4e6e3c801D229129D90D, totalAssets ~5.0e27 (~5.0e9 wARS ~ $3.2M at $0.00063). Verified on-chain 2026-08-15. Unlike the Symbiotic LiquidLane vault this one IS genuinely a Morpho vault, so registering it here is the correct identity, not the mis-stamping this PR argues against."
   },
   "MorphoMarketsMeta": {
     "enabled": true,

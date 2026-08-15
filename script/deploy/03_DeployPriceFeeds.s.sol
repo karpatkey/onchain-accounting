@@ -625,10 +625,6 @@ contract DeployPriceFeeds is BaseDeployScript {
     // removed — and it sat five lines above the docstring below that already says the opposite. A comment
     // asserting the reverse of the behaviour, in the place someone goes to check the behaviour, is worse than none.
 
-    /// @notice Deploys a generic CrossRate divergence-MONITOR feed (Y/USD = (Y/ETH market) x (ETH/USD)) from its
-    ///         config entry `{underlyingAsset, yToXFeed, yToXHeartbeat, baseAsset}`. Used for LSTs whose fundamental
-    ///         primary has no direct USD market feed to diverge from — the yToXFeed is an INDEPENDENT market Y/ETH
-    ///         feed. Wired as a Custom monitorFeed; never prices the NAV.
     /// @notice Deploys a generic {InvertedChainlinkCustomPriceFeed} from config, by feed key.
     /// @dev For assets whose ONLY Chainlink coverage is quoted `USD / X` (X per USD) — the reciprocal of the
     ///      asset/USD direction {Prices} registers. The constructor param is named `*ChainlinkAddress` so
@@ -653,6 +649,10 @@ contract DeployPriceFeeds is BaseDeployScript {
         console2.log("InvertedChainlinkCustomPriceFeed deployed:", name, address(adapter));
     }
 
+    /// @notice Deploys a generic CrossRate divergence-MONITOR feed (Y/USD = (Y/ETH market) x (ETH/USD)) from its
+    ///         config entry `{underlyingAsset, yToXFeed, yToXHeartbeat, baseAsset}`. Used for LSTs whose fundamental
+    ///         primary has no direct USD market feed to diverge from — the yToXFeed is an INDEPENDENT market Y/ETH
+    ///         feed. Wired as a Custom monitorFeed; never prices the NAV.
     function _deployCrossRateMonitor(string memory name) internal {
         address deployed = _readAdapterDeployed("priceFeeds", name);
         if (deployed != address(0)) {

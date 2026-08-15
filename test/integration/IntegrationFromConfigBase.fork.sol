@@ -26,6 +26,7 @@ import {MorphoVaultsMetaBalanceAdapter} from "src/balances/MetaBalanceAdapters/M
 import {
     SymbioticVaultsMetaBalanceAdapter
 } from "src/balances/MetaBalanceAdapters/SymbioticVaultsMetaBalanceAdapter.sol";
+import {InvertedChainlinkCustomPriceFeed} from "src/prices/protocols/InvertedChainlinkCustomPriceFeed.sol";
 import {MorphoMarketsMetaBalanceAdapter} from "src/balances/MetaBalanceAdapters/MorphoMarketsMetaBalanceAdapter.sol";
 import {
     AaveV3InstancesMetaBalanceAdapter
@@ -232,6 +233,7 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
             _tryDeployPriceFeed("sUSDS", _deploySusds);
             _tryDeployPriceFeed("sUSDe", _deploySUsde);
             _tryDeployPriceFeed("sGHO", _deploySgho);
+            _tryDeployPriceFeed("wARS", _deployWars);
             _tryDeployPriceFeed("syrupUSDC", _deploySyrupUsdc);
             _tryDeployPriceFeed("wstETH", _deployWstEth);
             _tryDeployPriceFeed("stETHFundamental", _deployStEthFundamental);
@@ -302,6 +304,21 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         address sgho = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "sGHO", "sgho"));
         address baseAsset = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "sGHO", "baseAsset"));
         return address(new sGHO_CustomPriceFeed(sgho, address(nav), baseAsset));
+    }
+
+    /// @dev wARS via {InvertedChainlinkCustomPriceFeed}. A Custom price feed that is NOT dispatched here is
+    ///      skipped in TOTAL SILENCE — `_registerAssetIfPossible` reads `_ephemeralPriceFeeds[name]`, gets
+    ///      `address(0)` and `continue`s with no console line and no revert. There is no
+    ///      `UndispatchedAdapterGuard` equivalent on this side, so unlike a balance adapter the omission
+    ///      does not fail closed: the asset is simply never registered, every holding of it values at $0,
+    ///      and `refresh-integration-snapshot.sh` would pin that under-report as the expected NAV.
+    function _deployWars() internal returns (address) {
+        address underlying = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "wARS", "underlyingAsset"));
+        address usdToAssetFeed =
+            vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "wARS", "usdToAssetChainlinkAddress"));
+        uint256 heartbeat =
+            vm.parseUint(ConfigReader.readPriceFeedParam(vm, _chainId, "wARS", "usdToAssetChainlinkHeartbeat"));
+        return address(new InvertedChainlinkCustomPriceFeed(underlying, usdToAssetFeed, heartbeat));
     }
 
     function _deploySyrupUsdc() internal returns (address) {

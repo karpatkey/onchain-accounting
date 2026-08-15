@@ -349,10 +349,12 @@ contract DeployBalanceAdapters is BaseDeployScript {
             return _deployMorphoVaultsMeta(adapterName, navCalculator);
         }
 
-        // Euler Vaults meta-adapter (one adapter for all Euler V2 eVaults; instance set on NAV, ADR 0010)
+        // Symbiotic Vaults meta-adapter (ERC-4626 Symbiotic vaults only, NOT core vaults; instance set on NAV, ADR 0010)
         if (_equals(adapterName, "SymbioticVaultsMeta")) {
             return _deploySymbioticVaultsMeta(adapterName, navCalculator);
         }
+
+        // Euler Vaults meta-adapter (one adapter for all Euler V2 eVaults; instance set on NAV, ADR 0010)
         if (_equals(adapterName, "EulerVaultsMeta")) {
             return _deployEulerVaultsMeta(adapterName, navCalculator);
         }

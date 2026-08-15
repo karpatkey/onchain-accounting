@@ -26,7 +26,11 @@ contract InvertedChainlinkCustomPriceFeedForkTest is TestEnvConfigurator {
     address constant WARS = 0x0DC4F92879B7670e5f4e4e6e3c801D229129D90D;
     /// @dev Chainlink `USD / ARS` proxy — `description() == "USD / ARS"`, 8 decimals.
     address constant USD_ARS_FEED = 0xBb65fa58BDb7d33e4a3D1A40a7A9BD99E746367b;
-    /// @dev Declared heartbeat 86400 + 1h margin, matching the config entry.
+    /// @dev 90000s, matching the config entry. NOT a declared value — the pair is absent from
+    ///      `chainlink_declared_heartbeats.json`. MEASURED on-chain 2026-08-15 over 13.2 days of
+    ///      `AnswerUpdated` on aggregator 0xc30fB86c2559E4B757C037976e3244901c10FAf8: 30 updates,
+    ///      min gap 84s, median 23928s, MAX 86436s (24.01h) — **8 gaps exceed 86400 and 0 exceed
+    ///      90000**. A registered 86400 would therefore have gone stale 8 times in 13 days.
     uint256 constant HEARTBEAT = 90_000;
     uint256 constant FORK_BLOCK = 25_760_274;
 

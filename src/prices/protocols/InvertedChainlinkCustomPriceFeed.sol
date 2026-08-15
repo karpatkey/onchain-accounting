@@ -15,12 +15,21 @@ import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 ///         Use for any asset whose only Chainlink coverage is quoted the wrong way round — the feed answers
 ///         "how many X per one USD", while every primary feed this repo registers must answer "USD per one
 ///         asset".
-/// @dev **Why this shape exists.** A `USD / X` feed is the RECIPROCAL of what {Prices} expects. Mainnet's
-///      only ARS feed, `0xBb65fa58BDb7d33e4a3D1A40a7A9BD99E746367b`, has `description() == "USD / ARS"` and
+/// @dev **Why this shape exists.** A `USD / X` feed is the RECIPROCAL of what {Prices} expects. The ARS
+///      feed KPK uses, `0xBb65fa58BDb7d33e4a3D1A40a7A9BD99E746367b`, has `description() == "USD / ARS"` and
 ///      answers ~`158309760000` at 8 decimals — **1583.09 ARS per USD**. Registering it directly as a
 ///      `type: "Chainlink"` primary would value 1 wARS at ~$1,583 instead of ~$0.00063: an over-report of
 ///      ~2.5 MILLION x (1583^2). **Nothing in the config schema encodes feed direction and no preflight
 ///      guard checks it**, so the inversion has to live in a contract — this one.
+/// @dev **CORRECTION — it is NOT the only ARS feed on mainnet.** An earlier revision of this docstring, and
+///      of the commit message, asserted that. It is false, and was caught in review. A DIRECT
+///      `ARS / USD` feed exists at `0xE41cD2DcC63EB63A9D9e62f2a3D9b49e6d0C0A1d` (8 decimals, answer
+///      `67207` = $0.00067207, verified on-chain 2026-08-15) and could be registered as a plain
+///      `type: "Chainlink"` primary with no custom contract at all. The two references **disagree by
+///      ~6.4%** ($0.00063167 inverted vs $0.00067207 direct) — persistently, not as a staleness artifact.
+///      `USD / ARS` is used deliberately because it is the reference the vault itself accounts in, and it
+///      is the CONSERVATIVE of the two, so this is not an over-report. The direct feed is nevertheless
+///      available as an independent divergence MONITOR, which wARS does not currently have.
 /// @dev Price is `10**NAV_DECIMALS * 10**feedDecimals / answer` (Math.Rounding.Floor), returned in
 ///      `NAV_DECIMALS` (8). Worked example at the measured ARS answer:
 ///      `1e8 * 1e8 / 158309760000 = 63167` = $0.00063167 per wARS.
@@ -35,6 +44,14 @@ import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 ///      does: registration probes `BASE_ASSET()` by raw staticcall and **fails closed**
 ///      (`IPrices.CustomFeedBaseUnreadable`, `PriceFeedLib._validateFeedNotCircular`) on a feed that cannot
 ///      answer. Omitting the function does NOT mean "no dependency" — it means UNREGISTERABLE.
+/// @dev **THE CACHED `_feedUnit` IS RE-ASSERTED ON EVERY READ, and that is not belt-and-braces.** In
+///      {TwoFeedChainlinkPriceFeed} and {ERC4626VaultRatePriceFeed} the cached unit DIVIDES a multiplied
+///      rate, so an aggregator migrating to fewer decimals makes those feeds UNDER-report — the safe
+///      direction. Here the unit is a NUMERATOR over the answer, so the identical change OVER-reports by
+///      `10**(oldDecimals - newDecimals)`: measured at 100x for an 8 -> 6 migration publishing the same
+///      real rate, with `stale == false` and a fresh timestamp. This is the first cached-unit feed in the
+///      repo whose error direction points upward, and the contract is immutable, so the mismatch is
+///      checked per read and reported STALE instead.
 /// @dev **PRECISION — read before adopting this for a new asset.** The result is floored at
 ///      `NAV_DECIMALS` (8), so an asset worth far less than $1 keeps only the significant digits that
 ///      survive: at 1583 ARS/USD a wARS is `63167` units, i.e. ~1.6e-5 relative resolution (fine), but an
@@ -99,6 +116,18 @@ contract InvertedChainlinkCustomPriceFeed is ICustomPriceFeed, INavSourcedPriceF
     {
         int256 answer;
         (roundId, answer, startedAt, updatedAt, answeredInRound) = USD_TO_ASSET_FEED.latestRoundData();
+
+        // The cached `_feedUnit` is a NUMERATOR here, so a decimals() change flips the error UPWARD —
+        // unlike every sibling feed, where the cached unit divides a multiplied rate and the same change
+        // under-reports. Re-assert it per read: a mismatch (or an unreadable decimals()) is reported STALE
+        // rather than silently rescaled. See the contract docstring for the measured 100x case.
+        try USD_TO_ASSET_FEED.decimals() returns (uint8 liveDecimals) {
+            if (10 ** uint256(liveDecimals) != _feedUnit) {
+                return (0, true, roundId, startedAt, updatedAt, answeredInRound);
+            }
+        } catch {
+            return (0, true, roundId, startedAt, updatedAt, answeredInRound);
+        }
 
         // A non-positive answer makes the inversion undefined — and a zero denominator would REVERT inside
         // mulDiv, which on the read path is a worse failure than reporting staleness. Gate it here.

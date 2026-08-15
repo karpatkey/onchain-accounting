@@ -242,10 +242,28 @@ def check_immutable_pointers(chain_id: int, url: str, res: dict) -> None:
     if not targets:
         return
 
+    # A custom feed that reads no base price out of the NAV has NO `NAV` immutable to point anywhere —
+    # `InvertedChainlinkCustomPriceFeed` is the first such ENABLED feed, and `ETHPlus_CustomPriceFeed`
+    # has the same shape. Without this second probe such a feed records `UNREADABLE` forever, which is
+    # indistinguishable from the stale old-generation pointer this check exists to catch. `verify_step`
+    # makes the same distinction; the two tools must agree or the operator gets contradictory evidence.
+    feed_addrs = [a for a, _d, kind in targets if kind == "feed"]
+    bases: dict[str, object] = {}
+    if feed_addrs:
+        base_out = c.rpc_batch(url, [("eth_call", [{"to": a, "data": _sel("BASE_ASSET()")}, "latest"])
+                                     for a in feed_addrs])
+        bases = dict(zip((a.lower() for a in feed_addrs), base_out))
+
     out = c.rpc_batch(url, [("eth_call", [{"to": a, "data": d}, "latest"]) for a, d, _ in targets])
     for (addr, _d, kind), val in zip(targets, out):
         e = by_addr[addr.lower()]
         if isinstance(val, Exception) or not isinstance(val, str) or len(val) < 66:
+            base_val = bases.get(addr.lower())
+            if (kind == "feed" and isinstance(base_val, str) and len(base_val) == 66
+                    and int(base_val, 16) == 0):
+                # Declared, by the CONTRACT, to have no NAV dependency. Non-applicable, not unreadable.
+                e["pointerCheck"] = "N/A (BASE_ASSET() == 0, no NAV dependency)"
+                continue
             e["pointerCheck"] = f"UNREADABLE ({val})"
             continue
         ptr = "0x" + val[-40:]

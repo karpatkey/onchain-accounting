@@ -210,6 +210,25 @@ contract InvertedChainlinkCustomPriceFeedTest is Test {
         assertEq(price, 0, "and must not report the 100x-inflated 6316729");
     }
 
+    /// @dev **A revert inside a `try` BODY is not caught by that statement's own `catch`.** The first
+    ///      version of the decimals guard recomputed `10 ** uint256(liveDecimals)` to compare units, which
+    ///      REVERTS for any `liveDecimals >= 78` (10**78 exceeds uint256) — turning a hostile or broken
+    ///      aggregator into a whole-feed revert, the one failure mode {ICustomPriceFeed} forbids. Comparing
+    ///      the `uint8` directly cannot overflow. 255 is the worst case an aggregator can return.
+    function test_absurdDecimals_isStaleNotRevert() public {
+        feed.setDecimals(255);
+        (uint256 price, bool stale) = oracle.getLatestPrice();
+        assertTrue(stale, "absurd decimals => stale");
+        assertEq(price, 0);
+
+        // And the whole ICustomPriceFeed surface must stay callable, not revert.
+        (, int256 answer,,,) = oracle.latestRoundData();
+        assertEq(answer, 0, "latestRoundData still answers, zeroed");
+        (uint256 u, uint256 hb) = oracle.governingFeedFreshness();
+        assertEq(hb, HEARTBEAT);
+        assertGt(u, 0);
+    }
+
     /// @dev An unreadable `decimals()` is equally unsafe to trust, since the cached unit can no longer be
     ///      confirmed. Reported stale rather than assumed unchanged.
     function test_unreadableDecimals_isStale() public {

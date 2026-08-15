@@ -80,8 +80,17 @@ contract InvertedChainlinkCustomPriceFeed is ICustomPriceFeed, INavSourcedPriceF
     uint256 public immutable FEED_HEARTBEAT;
 
     /// @notice `10 ** USD_TO_ASSET_FEED.decimals()`, captured once — a feed's decimals are immutable, so this
-    ///         avoids an external STATICCALL to `decimals()` on every price read.
+    ///         avoids recomputing the power on every price read.
     uint256 private immutable _feedUnit;
+
+    /// @notice The decimals value itself, captured at construction. Compared against the live value per read.
+    /// @dev Stored SEPARATELY from `_feedUnit` on purpose: comparing `liveDecimals` to this is a `uint8`
+    ///      equality, whereas recomputing `10 ** liveDecimals` to compare units REVERTS for any
+    ///      `liveDecimals >= 78` (10**78 exceeds uint256). A revert inside a `try` BODY is not caught by that
+    ///      statement's own `catch`, so that form would turn a hostile or broken `decimals()` into a whole-feed
+    ///      revert — exactly the failure mode {ICustomPriceFeed} forbids, since a Custom feed must report
+    ///      `stale` rather than revert.
+    uint8 private immutable _feedDecimals;
 
     /// @notice `10 ** NAV_DECIMALS`, the numerator that puts the inverted price in NAV decimals.
     uint256 private immutable _navUnit;
@@ -96,7 +105,8 @@ contract InvertedChainlinkCustomPriceFeed is ICustomPriceFeed, INavSourcedPriceF
         UNDERLYING_ASSET = OracleArgumentChecks.assertERC20Address(underlyingAsset_);
         USD_TO_ASSET_FEED = OracleArgumentChecks.assertChainlinkOracle(usdToAssetFeed_);
         FEED_HEARTBEAT = OracleArgumentChecks.assertNotZeroNumber(feedHeartbeat_);
-        _feedUnit = 10 ** uint256(AggregatorV3Interface(usdToAssetFeed_).decimals());
+        _feedDecimals = AggregatorV3Interface(usdToAssetFeed_).decimals();
+        _feedUnit = 10 ** uint256(_feedDecimals);
         _navUnit = 10 ** uint256(NAV_DECIMALS);
         _decimals = NAV_DECIMALS;
     }
@@ -122,7 +132,7 @@ contract InvertedChainlinkCustomPriceFeed is ICustomPriceFeed, INavSourcedPriceF
         // under-reports. Re-assert it per read: a mismatch (or an unreadable decimals()) is reported STALE
         // rather than silently rescaled. See the contract docstring for the measured 100x case.
         try USD_TO_ASSET_FEED.decimals() returns (uint8 liveDecimals) {
-            if (10 ** uint256(liveDecimals) != _feedUnit) {
+            if (liveDecimals != _feedDecimals) {
                 return (0, true, roundId, startedAt, updatedAt, answeredInRound);
             }
         } catch {

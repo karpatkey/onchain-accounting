@@ -94,7 +94,7 @@ import {
 
 /// @dev Minimal address-keyed meta adapter: leaves `_instancePositionId` on the base default and routes its
 ///      emitted positionId through the same hook, which is the contract every meta adapter owes
-///      {IPositionEnumerable}. Stands in for the ~18 adapters that key positions on the coordinate itself.
+///      {IPositionEnumerable}. Stands in for the ~19 adapters that key positions on the coordinate itself.
 contract HookAbidingMeta is MetaBalanceAdapter {
     constructor(address nav) MetaBalanceAdapter(nav) {}
 
@@ -578,7 +578,7 @@ contract MetaBalanceAdapterAdvertisedShapeTest is PositionIdJoinAsserts {
 /// @author KPK
 /// @notice The emitted-side half: for adapters that build `PositionBalance.positionId` INDEPENDENTLY of
 ///         `_instancePositionId`, asserts the bytes they emit are byte-identical to the bytes they advertise.
-/// @dev **The partition, counted rather than asserted.** Of the 22 meta adapters, **18** pass
+/// @dev **The partition, counted rather than asserted.** Of the 22 meta adapters, **19** pass
 ///      `_instancePositionId(instance)` straight into `_leg`, so their join holds by construction and asserting it
 ///      would only re-test the base (already covered by {MetaBalanceAdapterEnumerationTest}). That 18 includes
 ///      `PancakeSwapV2PoolsMetaBalanceAdapter`, which inherits `UniswapV2Pools`'s `_instancePositions` unchanged,

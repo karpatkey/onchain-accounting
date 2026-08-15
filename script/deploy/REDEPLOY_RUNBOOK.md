@@ -371,9 +371,9 @@ NAV address is invalidated by construction:
 
 | consequence | scale | done at |
 | --- | --- | --- |
-| every custom price feed is redeployed — each holds `INAVCalculator public immutable NAV` (ADR 0019) | **40**: mainnet 25, arbitrum 8, base 4, gnosis 3 | 1.5 |
-| every asset with its primary + monitor feeds is re-registered | **92** assets | 1.6 |
-| every plain and meta adapter is redeployed | 13 plain + 33 meta | 1.7 |
+| every custom price feed is redeployed — each holds `INAVCalculator public immutable NAV` (ADR 0019) | **41**: mainnet 26, arbitrum 8, base 4, gnosis 3 | 1.5 |
+| every asset with its primary + monitor feeds is re-registered | **93** assets | 1.6 |
+| every plain and meta adapter is redeployed | 13 plain + 34 meta | 1.7 |
 | every meta instance is re-registered | **113** | 1.8 |
 | each assisted adapter drags its assistant, which holds `immutable ADAPTER` | **4 pairs on 2 chains** | 2.1 |
 | downstream consumers repoint off the old proxy | kpkShares, portal, agents, subgraphs | 2.7 |
@@ -390,8 +390,9 @@ looking attractive — it is genuinely far smaller. It is also wrong.
 > **If another document disagrees on the feed count, check its DATE before splitting the difference —
 > and check whether it counted ENABLED entries.** The count has moved four times: 39 until #199 (merged
 > 2026-07-29), 40 until #224 (merged 2026-07-30), 41 until OETH's retirement (2026-08-12), and **40
-> again now** — Chainlink sunset the OETH/ETH rate feed, so mainnet's enabled count drops 26 -> 25.
-> Re-derived from config on the merged tree: **40 enabled** — mainnet 25 ENABLED (26 entries,
+> again now** — Chainlink sunset the OETH/ETH rate feed, so mainnet's enabled count dropped 26 -> 25.
+> **PR #308 (2026-08-15) then added the wARS inverted feed, taking mainnet back to 26 and the fleet to 41.**
+> Re-derived from config on the merged tree: **41 enabled** — mainnet 26 ENABLED (27 entries,
 > `ETHPlus` disabled), arbitrum 8, base 4, gnosis 3. The full derivation is under 1.5.
 >
 > ⚠️ **COUNT ENABLED ENTRIES, NOT ENTRIES**, and note where the two traps meet: counting entries gives
@@ -1028,7 +1029,7 @@ threshold with no recorded baseline cannot detect drift.
 1.2  01_2_DeployNAVImplementation     libraries + NAV impl        PERSIST_DEPLOYMENTS=1
 1.3  02_2_DeployNAVProxy              new proxy + ERC20Default    PERSIST_DEPLOYMENTS=1
 1.4  08_DeployAssetKindRegistry       registry + MANAGER grant    <- MOVED, must precede 1.6
-1.5  03_DeployPriceFeeds              40 custom feeds             <- BEFORE RegisterAssets
+1.5  03_DeployPriceFeeds              41 custom feeds             <- BEFORE RegisterAssets
 1.6  RegisterAssets                   assets + feeds + kinds + LABELS, via the registry
 1.7  04_DeployBalanceAdapters         adapters + assistants       PERSIST_DEPLOYMENTS=1  <- assistants
 1.8  06_Configure                     register + reconcile
@@ -1382,7 +1383,7 @@ not an observation that happened to hold on one fixture.
 > stipend-burning registry. There is **no normal-operation measurement** of it. Do not infer one from the
 > hostile figure, and do not present that ceiling as a typical cost.
 
-### 1.5 `03_DeployPriceFeeds` — 40 custom feeds
+### 1.5 `03_DeployPriceFeeds` — 41 custom feeds
 
 ```bash
 forge script script/deploy/03_DeployPriceFeeds.s.sol $BROADCAST
@@ -1392,11 +1393,16 @@ Chains 1 (25 enabled, of 26 entries), 42161 (8), 8453 (4), 100 (3) only. Each fe
 address, held as `INAVCalculator public immutable NAV` (ADR 0019) — which is precisely why a new
 proxy invalidates every existing feed.
 
-> **THE COUNT IS 40, AND IT IS NO LONGER PENDING ANYTHING.** Both PRs it was waiting on have merged,
-> so the earlier figure of 39 is stale, and so is the 41 that #224 briefly made correct. Re-derived from
-> config on 2026-08-13: **mainnet 25, arbitrum 8, base 4, gnosis 3 = 40.** (Chain 1 holds 26 feed
-> ENTRIES; `ETHPlus` is `enabled: false`, and `03` is gated on `isAdapterEnabled`, so it deploys 25.
-> Counting entries rather than enabled entries is how 26 got here.)
+> **THE COUNT IS 41 AS OF PR #308 (2026-08-15).** Re-derived from config, not carried forward:
+> **mainnet 26, arbitrum 8, base 4, gnosis 3 = 41.**
+>
+> ⚠️ **COUNT ENABLED ENTRIES, NOT ENTRIES.** Chain 1 holds **27 feed ENTRIES** but `ETHPlus` is
+> `enabled: false`, and `03` is gated on `isAdapterEnabled`, so it deploys **26**. Counting entries
+> rather than enabled entries is the trap this box exists for — it would give 27 + 8 + 4 + 3 = 42.
+>
+> The history below is kept because the figure has moved five times and each move had a cause; it is
+> NOT a list of candidate values. **41 is the current one, and the derivation above is how to re-check
+> it — never reconcile a tool's output against a remembered number.**
 >
 > | PR | merged | effect on the count |
 > | --- | --- | --- |

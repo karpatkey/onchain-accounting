@@ -666,6 +666,24 @@ def step_new_proxy(k: Chk, rec: dict, exp: dict, url, base, tag) -> None:
                  f"deploy, so this was not supposed to happen yet")
 
 
+def _declared_base_asset(chain_id: int, feed_name: str):
+    """The `baseAsset` this feed's deploy config declares, or None if the config records no opinion.
+
+    Read straight from `contracts-deployment-config/custom-price-feeds/<chain>.json` so the on-chain
+    `BASE_ASSET()` can be compared against what preflight actually validated against.
+    """
+    try:
+        import json as _json
+        p = (c.REPO / "script" / "config" / "contracts-deployment-config"
+             / "custom-price-feeds" / f"{chain_id}.json")
+        entry = _json.loads(p.read_text()).get(feed_name) or {}
+        ctor = entry.get("constructor", entry)
+        raw = ctor.get("baseAsset", entry.get("baseAsset"))
+        return raw if isinstance(raw, str) and raw.startswith("0x") and len(raw) == 42 else None
+    except Exception:
+        return None
+
+
 def step_custom_price_feeds(k: Chk, rec: dict, exp: dict, url, base, tag) -> None:
     """Every configured custom feed deployed, with code, pointing at the NEW proxy."""
     feeds = populated(rec.get("customPriceFeeds"))
@@ -720,10 +738,35 @@ def step_custom_price_feeds(k: Chk, rec: dict, exp: dict, url, base, tag) -> Non
     codes = c.rpc_batch(url, [("eth_getCode", [feeds[n], "latest"]) for n in names])
     navs = c.rpc_batch(url, [("eth_call", [{"to": feeds[n], "data": sel("NAV()")}, "latest"])
                              for n in names])
-    for n, code, nav in zip(names, codes, navs):
+    # BASE_ASSET() is the feed's own declaration of whether it reads a base price OUT of the NAV
+    # (INavSourcedPriceFeed / ADR 0019). A feed answering address(0) has no NAV dependency and therefore
+    # legitimately exposes no NAV() pointer — InvertedChainlinkCustomPriceFeed is the first such ENABLED
+    # feed. Without this the NAV() check below red-gates a CORRECT deployment and sends the operator
+    # hunting a leftover feed that does not exist.
+    bases = c.rpc_batch(url, [("eth_call", [{"to": feeds[n], "data": sel("BASE_ASSET()")}, "latest"])
+                              for n in names])
+    for n, code, nav, base in zip(names, codes, navs, bases):
         if isinstance(code, Exception) or code in (None, "0x", ""):
             k.fail.append(f"customPriceFeeds.{n} {feeds[n]} has NO CODE")
             continue
+
+        # Cross-check the CONTRACT against what the CONFIG declared. Config-side, preflight treats a
+        # declared address(0) as "not NAV-sourced" and skips its base/heartbeat checks entirely, so a feed
+        # that is really NAV-sourced but records address(0) would pass preflight unexamined. This is the
+        # only place the two can be compared, because it needs the deployed contract.
+        declared = _declared_base_asset(chain_id, n)
+        if isinstance(base, str) and len(base) >= 66:
+            onchain = "0x" + base[-40:]
+            if declared is not None and lower(onchain) != lower(declared):
+                k.fail.append(f"customPriceFeeds.{n} {feeds[n]}: config declares baseAsset {declared} but "
+                              f"the deployed contract reports BASE_ASSET() {onchain} — one of them is "
+                              f"wrong, and preflight's base/heartbeat checks were run against the config")
+                continue
+            if int(onchain, 16) == 0:
+                k.info.append(f"customPriceFeeds.{n} {feeds[n]}: BASE_ASSET() == 0, no NAV dependency "
+                              f"— NAV() pointer not applicable")
+                continue
+
         if isinstance(nav, Exception) or not isinstance(nav, str) or len(nav) < 66:
             # MUST fail, not warn. `NAV` is a public immutable on every custom feed (ADR 0019), so
             # an unreadable NAV() is either a leftover feed from the old stack — exactly what this

@@ -81,26 +81,58 @@ wanted: `verify_step.py` requires it as the step 1.1 post-condition (`:252`).
 Configured totals, reconciled from config **and** confirmed against the live NAV on 2026-07-27;
 feed count re-measured 2026-07-30 against the merged tree; meta instances amended 2026-08-12 (issue
 #296, see "Meta instances" below — that one figure post-dates the 2026-07-27 confirmation):
-**33 meta adapters, 111 meta instances, 12 plain adapters, 40 custom price feeds, 92 assets.**
+**33 meta adapters, 111 meta instances, 13 plain adapters, 40 custom price feeds, 92 assets.**
 <!-- meta instances 110 -> 111 on 2026-08-12: one MorphoVaultsMeta instance added on chain 1 (issue #296). See the amendment under "Meta instances" below. -->
 <!-- feeds 41 -> 40 and assets 93 -> 92 on 2026-08-12: OETH removed from mainnet, Chainlink sunsetting its OETH/ETH rate feed 0x703118C4CbccCBF2AB31913e0f8075fbbb15f563. -->
+<!-- plain adapters 12 -> 13 by #285: the combined Cap adapter split into CapStablecoin + CapSavings. -->
+<!-- FOUR of the five totals have now moved since the 2026-07-27 confirmation, from three independent
+     PRs. Only `meta adapters` (33) is still the originally-confirmed figure. Each amendment carries its
+     own comment above; do not consolidate them, the provenance is the point. -->
+
 
 The feed count is no longer pending anything — see the note under 1.5 for the two PRs that moved it.
 
 **Re-measured 2026-08-08 at `a3974686` with `preflight_config.py`: all five totals and every per-chain
-row below were unchanged AS OF THAT COMMIT.** (Superseded for THREE figures only, both amendments
-dated 2026-08-12: meta instances moved 110 -> 111 and mainnet 66 -> 67 for issue #296; and OETH's
-retirement moved custom price feeds 41 -> 40 and assets 93 -> 92 fleet-wide, and mainnet 26 -> 25
-feeds and 43 -> 42 assets. The other two totals still hold. This attestation is left dated rather than
-restated — it was true of `a3974686` and is not a claim about today's tree.) `script/config/` did
-change in the interval (labels were retired in #275 and
-realigned to `ProtocolNames.sol`), so this was measured rather than assumed — but nothing moved a count.
+row below were unchanged AS OF THAT COMMIT.** (Superseded for FOUR of the five figures now, from three
+independent PRs, all dated 2026-08-12: meta instances moved 110 -> 111 and mainnet 66 -> 67 for issue
+#296; OETH's retirement moved custom price feeds 41 -> 40 and assets 93 -> 92 fleet-wide, with mainnet
+26 -> 25 feeds and 43 -> 42 assets; and the Cap split moved plain adapters 12 -> 13 with mainnet
+11 -> 12, per the table below. **Only `meta adapters` (33) is still the figure this attestation
+confirmed.** It is left dated rather than restated — it was true of `a3974686` and is not a claim about
+today's tree.) `script/config/` did change in the interval (labels were retired in #275 and realigned
+to `ProtocolNames.sol`), so this was measured rather than assumed — but nothing moved a count then.
 `0 error(s)` across all 24 chains; the warnings it prints are declared-heartbeat margin findings, which
 are a separate axis and not a count.
 
+⚠️ **One total has moved SINCE that measurement: plain adapters, 12 → 13.** The combined `Cap` adapter
+was split into `CapStablecoin` + `CapSavings` (one adapter per leg, so each label segment is a
+per-adapter constant an `AssetKindRegistry` override can address). Chain 1's `plain` column goes
+**11 → 12** and the fleet total **12 → 13**. Nothing else moves:
+
+| total | before | after | why |
+| --- | --- | --- | --- |
+| plain adapters | 12 | **13** | one `Cap` key replaced by two |
+| meta adapters | 33 | 33 | Cap is a plain adapter |
+| meta instances | 111 | 111 | ditto — **step 1.8's per-adapter set assertion is untouched** |
+| custom price feeds | 40 | 40 | no feed involved |
+| assets | 92 | 92 | both legs are still valued in the already-registered USDC |
+
+⚠️ **The `meta instances` row reads 111, not the 110 this table carried before #298 merged.** The two
+changes are independent and BOTH apply: #296 added one `MorphoVaultsMeta` instance on chain 1 (110 ->
+111, mainnet 66 -> 67) and #285 split one plain adapter into two (12 -> 13, mainnet 11 -> 12). Neither
+supersedes the other, and the chain-1 row below carries both — 67 instances AND 12 plain. A resolution
+that took either side of the conflict wholesale would have silently reverted the other PR's count.
+
+**The tooling moves with it and needs no edit.** `preflight_config.py` derives `plainAdapters` from
+`len(enabled_keys(nav-config/balance-adapters/<id>.json))`, and `verify_step.py` **1.7** asserts
+`len(record.balanceAdapters) == plainAdapters + metaAdapters + 1` plus set equality on the KEY NAMES —
+both read config, so both expect 13 the moment the config lands. This table is the thing that goes
+stale, which is why it is stated here. (Note 111 is **1.8**'s number, not 1.7's; 1.7 does not look at
+meta instances at all.)
+
 | chain | meta adapters | meta instances | plain | feeds | assets |
 | --- | --- | --- | --- | --- | --- |
-| 1 mainnet | 15 | 67 | 11 | 25 | 42 |
+| 1 mainnet | 15 | 67 | 12 | 25 | 42 |
 | 42161 arbitrum | 7 | 16 | 0 | 8 | 11 |
 | 8453 base | 6 | 16 | 0 | 4 | 11 |
 | 10 optimism | 2 | 4 | 0 | 0 | 6 |
@@ -335,19 +367,35 @@ NAV address is invalidated by construction:
 | --- | --- | --- |
 | every custom price feed is redeployed — each holds `INAVCalculator public immutable NAV` (ADR 0019) | **40**: mainnet 25, arbitrum 8, base 4, gnosis 3 | 1.5 |
 | every asset with its primary + monitor feeds is re-registered | **92** assets | 1.6 |
-| every plain and meta adapter is redeployed | 12 plain + 33 meta | 1.7 |
+| every plain and meta adapter is redeployed | 13 plain + 33 meta | 1.7 |
 | every meta instance is re-registered | **111** | 1.8 |
 | each assisted adapter drags its assistant, which holds `immutable ADAPTER` | **4 pairs on 2 chains** | 2.1 |
 | downstream consumers repoint off the old proxy | kpkShares, portal, agents, subgraphs | 2.7 |
+
+(⚠️ The `done at` column's last two adapter rows read **1.6 / 1.7** until 2026-08-11 and were both off
+by one against `verify_step.py`'s own map, where `1.6` is `RegisterAssets`, `1.7` is `04` and `1.8` is
+`06`. §"Meta instances" already said 1.8 for the instance reconcile, so the document contradicted
+itself; corrected here rather than left for deploy day.)
 
 None of it is optional, and none of it fails loudly: a step skipped here leaves the new proxy quietly
 **under-reporting**, not erroring. That asymmetry is also why "just upgrade the implementation" keeps
 looking attractive — it is genuinely far smaller. It is also wrong.
 
-> **If another document says 39 or 41 feeds, it predates a merge or a retirement — it is not a disagreement to
-> split.** 39 was correct until #199 (merged 2026-07-29), 40 until #224 (merged 2026-07-30). The merged
-> tree is **40**, re-derived from config 2026-08-13: mainnet 25 ENABLED (26 entries, `ETHPlus` disabled), arbitrum 8, base 4,
-> gnosis 3. The full derivation is under 1.5. The **111** meta instances and the cutover off
+> **If another document disagrees on the feed count, check its DATE before splitting the difference —
+> and check whether it counted ENABLED entries.** The count has moved four times: 39 until #199 (merged
+> 2026-07-29), 40 until #224 (merged 2026-07-30), 41 until OETH's retirement (2026-08-12), and **40
+> again now** — Chainlink sunset the OETH/ETH rate feed, so mainnet's enabled count drops 26 -> 25.
+> Re-derived from config on the merged tree: **40 enabled** — mainnet 25 ENABLED (26 entries,
+> `ETHPlus` disabled), arbitrum 8, base 4, gnosis 3. The full derivation is under 1.5.
+>
+> ⚠️ **COUNT ENABLED ENTRIES, NOT ENTRIES**, and note where the two traps meet: counting entries gives
+> 26 + 8 + 4 + 3 = **41**, which is exactly the value the ENABLED count legitimately held until
+> 2026-08-12. The miscount does not look like a miscount — it looks like a correct slightly-older
+> reading, which is why "it matches a figure I have seen" is not a check.
+>
+> ⚠️ **A count returning to a value it previously held is the nastiest version of this**, because a stale
+> document quoting 40 now looks current and agrees with the tree for the wrong reason. Date-check rather
+> than value-check. The **111** meta instances and the cutover off
 > `0x80eD5cc6cEbAe4fEE1eD8687279aa492A50afa8d` are unaffected and agree everywhere.
 
 The old stack is **abandoned in place**, not decommissioned. It keeps answering on
@@ -1276,7 +1324,7 @@ Recoverable (`setAssetKinds` + `setAssetLabels`), but only once somebody notices
 #### What the adapter-label override surface costs to read — measured on merged `main`
 
 The registry this step deploys also holds #278's adapter-keyed overrides
-(`setAdapterProtocolName` / `setAdapterLabelCategory` and their `clear…` pair). Reading them is not free,
+(`setAdapterProtocolName` / `setAdapterLabels` and their `clear…` pair). Reading them is not free,
 and **the day-one cost is the higher of the two figures.** Measured on merged `main` at `a3974686` — not on
 a branch, and not on the superseded head that earlier numbers came from:
 
@@ -1285,8 +1333,13 @@ a branch, and not on the superseded head that earlier numbers came from:
 | override **MISS** — **what an operator pays today** | **114,552** |
 | override **HIT** | 112,169 |
 
+> ⚠️ **Both figures predate #285**, which replaced the segment-0-only scalar `setAdapterLabelCategory` with
+> the per-segment `setAdapterLabels(address, string[])`. The label half of the read is now an ARRAY fetch
+> through an isolating decode shim rather than a flat `string`, so **treat these as a floor and re-measure
+> against the merged tree** before quoting them at deploy time. The MISS-dearer-than-HIT shape is unchanged.
+
 **MISS is dearer than HIT, and every adapter is a MISS today.** No overrides exist on `main`; one comes
-into being only when a `MANAGER` calls `setAdapterProtocolName` or `setAdapterLabelCategory`. A hit skips
+into being only when a `MANAGER` calls `setAdapterProtocolName` or `setAdapterLabels`. A hit skips
 the adapter's `protocolName()` staticcall entirely; a miss pays the registry lookup **and still makes the
 adapter call**, so a miss is strictly a superset of the work. **You pay the higher number from day one, for
 zero benefit until an override is actually set.**

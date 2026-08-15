@@ -276,13 +276,13 @@ ConfigReader.writeAdapterAddress(vm, chainId, "balanceAdapters", "AaveV3_USDC", 
 ### ✅ Selective Deployment
 Enable/disable adapters per chain in `contracts-deployment-config/balance-adapters/{chainId}.json`:
 ```jsonc
-// In contracts-deployment-config/balance-adapters/1.json (Mainnet) - enable Cap
-"Cap": {
+// In contracts-deployment-config/balance-adapters/1.json (Mainnet) - enable Cap's cUSD leg
+"CapStablecoin": {
   "enabled": true
 }
 
-// In contracts-deployment-config/balance-adapters/42161.json (Arbitrum) - disable Cap (doesn't exist there)
-"Cap": {
+// In contracts-deployment-config/balance-adapters/42161.json (Arbitrum) - disable it (Cap isn't there)
+"CapStablecoin": {
   "enabled": false
 }
 ```

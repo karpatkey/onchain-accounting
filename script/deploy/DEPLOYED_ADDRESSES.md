@@ -74,7 +74,7 @@ The 17 impl+proxy chains run the canonical layer only; custom price feeds and ba
 | SparkLend | `0xf22e3c516daf2463AcF3b1545aAD4565a18e2c9F` |
 | AaveV3SafetyModule | `0x103f3EdeF6AcdF58256C9b5026f01a4dCd16d52f` |
 | AaveUmbrella | `0x94910a2E35b8749529Dc9555Ed1599cd77E045bF` |
-| Cap | `0x5B50A5FF1C80A178bB8da9fdfF077FBc3DD4e543` |
+| Cap *(retired contract — see note below)* | `0x5B50A5FF1C80A178bB8da9fdfF077FBc3DD4e543` |
 | MorphoVaultsMeta | `0x9C1eDecf558361a7b8A6E4D8F30E7B5Bf21F1d28` |
 | MorphoMarketsMeta | `0xffe862626a408F8bBF3449A96D640f4bcC0c0053` |
 | EulerVaultsMeta | `0x647F9c2715C665a65da1BD911d41F644B8957714` |
@@ -95,6 +95,14 @@ The 17 impl+proxy chains run the canonical layer only; custom price feeds and ba
 | NexusMutualStakingPoolsAssisted | `0x9b3ee866e030f9cfDA181e7ffd9BB0A49606ef0E` |
 | StakeWiseV3ExitQueueAssisted | `0xcb97dA2c799cfc17463704EDb1caAd451c28A861` |
 | UniswapV3PoolsMeta | `0x45CB28C78e5178699517734863c988022b312071` |
+
+> **`Cap` is a retired CONTRACT at a live ADDRESS.** `CapBalanceAdapter` served both Cap legs from one contract and
+> no longer exists in `src/`; it was split into `CapStablecoinBalanceAdapter` / `CapSavingsBalanceAdapter` (config keys
+> `CapStablecoin` / `CapSavings`) because its label literals varied by position, which a per-adapter
+> `AssetKindRegistry` override cannot express. The address above is still deployed and still registered on the live
+> NAV, so it is kept here as the record of what is on chain — but `04_DeployBalanceAdapters` no longer has a `Cap`
+> key, and the next deploy replaces this one row with two. Reported amounts do not move: each new adapter values its
+> own leg with the same burn quote, and the sum is unchanged.
 
 ### Optimism (10)
 

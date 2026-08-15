@@ -520,12 +520,16 @@ Measured on `main` @ `f72dd48a`:
 |---|---|---|
 | meta adapters | **33** | `preflight_config.py` |
 | meta instances | **111** | `preflight_config.py`; per-chain table in the runbook. **NOT measured at `f72dd48a`** — that commit held 110; amended on this branch for issue #296 (+1 `MorphoVaultsMeta` instance on chain 1) |
-| plain adapters | **12** (+1 `ERC20Default` per chain) | `preflight_config.py` |
+| plain adapters | **13** (+1 `ERC20Default` per chain) | `preflight_config.py`, re-derived 2026-08-12 (12 before #285 split the combined `Cap` adapter into `CapStablecoin` + `CapSavings`; chain 1 goes 11 → 12) |
 | custom price feeds | **40** | `preflight_config.py`, re-derived from config 2026-08-12 (41 before OETH's retirement; 39 before #199, 40 before #224) |
 | assets | **92** | `preflight_config.py`, re-derived from config 2026-08-12 (93 before OETH's retirement) |
 
 Per-chain meta instances: 67 / 16 / 16 / 4 / 4 / 4 / 0 for 1 / 42161 / 8453 / 10 / 100 / 137 / 56.
-Adapter counts per chain: 27 / 8 / 7 / 4 / 3 / 2 / 1 for 1 / 42161 / 8453 / 100 / 10 / 137 / 56.
+Adapter counts per chain: **28** / 8 / 7 / 4 / 3 / 2 / 1 for 1 / 42161 / 8453 / 100 / 10 / 137 / 56.
+(Chain 1 was 27 and moves to 28 with #285: `meta 15 + plain 12 + 1 ERC20Default`. Derived from the same
+`preflight_config.py` row as the table above rather than counted by hand — and note the live pre-deploy
+NAV currently returns exactly 27 from `getAllAdapters()`, which is `15 + 11 + 1` and corroborates the
+arithmetic against chain state.)
 
 **Scope: 24 chains** (declared in `redeploy_scope.json`, which no tool writes — see README).
 **7 are configured**: 1, 10, 56, 100, 137, 8453, 42161. The other 17 get `ERC20Default` only.
@@ -672,12 +676,14 @@ the re-run. Everything else is secondary.
   `ERC20Default` `0x4Bc39Dce61245F5A63189d1FA03E6D76646f1EE6`, matching on-chain.
 - **All three assistant `ADAPTER()` pointers paired correctly** — the fix for the four live orphans.
 - `preflight_config.py`: 0 errors across 24 chains, totals exactly as §6 (33 / 110 / 12 / 40 / 93).
-  *(Recorded result, left as run. THREE of these five totals have since moved, and ALL THREE are named
+  *(Recorded result, left as run. FOUR of these five totals have since moved, and ALL FOUR are named
   here — an explanation covering only some of them reads as though the rest were errors, which is worse
   than no explanation at all. Meta instances 110 → 111: one `MorphoVaultsMeta` instance added on chain 1
   (#296). Custom feeds 40 → 41 → 40: 40 when this ran, 41 at #224, back to 40 when OETH was retired
-  (#302). Assets 93 → 92: OETH removed as a mainnet asset (#302). The remaining two — 33 meta adapters
-  and 12 plain adapters — still hold. So a re-run should read 33 / 111 / 12 / 40 / 92. The recorded figures were correct when this rehearsal ran
+  (#302). Assets 93 → 92: OETH removed as a mainnet asset (#302). Plain adapters 12 → 13: #285 split the
+  combined `Cap` adapter into `CapStablecoin` + `CapSavings`, so chain 1 goes 11 → 12 (the §6 table
+  above records the same split). The remaining one — 33 meta adapters — still holds. So a re-run should
+  read 33 / 111 / 13 / 40 / 92. The recorded figures were correct when this rehearsal ran
   and are not restated.)*
 - The disposable-config rail restored `script/config` and `broadcast/` byte-exactly; `deployments/1.json`
   verified identical to `HEAD` by hash afterwards. **Always check this** — 18 phantom addresses in a

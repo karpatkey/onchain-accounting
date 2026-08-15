@@ -532,6 +532,77 @@ def _check_chain(chain_id: int) -> list[tuple[str, str]]:
             f.append((WARN, f"'{name}' enabled in deploy-config but not in nav-config — it will be "
                             f"deployed and then never registered on the NAV"))
 
+    # --- explicit deregistration requests ------------------------------------
+    # `"deregister": true` in nav-config makes 06_Configure call removeBalanceAdapters. It is the ONLY way a plain
+    # adapter ever gets deregistered (meta instances reconcile bidirectionally; plain adapters are otherwise
+    # add-only), so a request that cannot execute is a silent no-op on the one path that matters — exactly how the
+    # retired `Cap` adapter would have stayed registered alongside its two replacements and double-counted.
+    for name, entry in nav_plain.items():
+        if not isinstance(entry, dict) or entry.get("deregister") is not True:
+            continue
+        if entry.get("enabled") is True:
+            f.append((ERROR, f"'{name}' is BOTH enabled and deregister=true — 06 would add and remove it in one "
+                             f"run; pick one"))
+        addr = (c.deployment(chain_id) or {}).get("balanceAdapters", {}).get(name)
+        if not isinstance(addr, str) or not c.is_address(addr):
+            f.append((WARN, f"'{name}' requests deregistration but the deployment record has no address for it "
+                            f"({addr!r}) — 06 will skip it. Harmless if the adapter was never deployed on this "
+                            f"chain; a silent no-op if it was and the record was already cleared."))
+
+    # --- constructor args SHARED across sibling adapters --------------------
+    # Splitting one adapter into per-leg siblings duplicates whatever constructor args the legs have in common,
+    # and a JSON file cannot express "these two must be equal". Before the Cap split one key supplied `cUsd` and
+    # `usdc` once, so divergence was structurally impossible; now a typo in either block deploys cleanly and
+    # AddressCheckLib.requireContract still passes, because a WRONG contract is still a contract. The failure is
+    # silent and expensive: a divergent `cUsd` points CapSavings at the wrong burn-quote oracle, so the stcUSD leg
+    # either reverts (dropped from NAV by the per-adapter try/catch) or returns a garbage USDC amount summed in as
+    # real value; a divergent `usdc` makes the two legs report different balanceAsset, so they stop summing to the
+    # pre-split total the fork test pins.
+    #
+    # Keyed by the shared arg name -> the sibling adapters that must agree on it. Add a row when you split an
+    # adapter, not after the divergence is found on-chain.
+    SIBLING_SHARED_ARGS: dict[str, tuple[str, ...]] = {
+        "cUsd": ("CapStablecoin", "CapSavings"),
+        "usdc": ("CapStablecoin", "CapSavings"),
+    }
+    for arg, siblings in SIBLING_SHARED_ARGS.items():
+        # ENABLED, not merely present. Every other adapter-coherence check in this function filters on `enabled`,
+        # and this one must too: a chain that carries a disabled stub sibling (no `constructor` block at all) is a
+        # correct config, and flagging it would halt the runbook on its "0 error(s) across 24 chains" gate for a
+        # deploy that would have succeeded.
+        present = [n for n in siblings
+                   if isinstance(dep_plain.get(n), dict) and dep_plain[n].get("enabled") is True]
+        if len(present) < 2:
+            continue  # fewer than two ENABLED siblings on this chain; nothing to compare
+        seen: dict[str, list[str]] = {}
+        for name in present:
+            # Guard the BLOCK as well as the value. `or {}` catches the falsy shapes ({}, null, []) but a
+            # `"constructor": "0x…"` or a list would reach `.get` and raise AttributeError. This is the only place
+            # in _check_chain that reads `constructor` out of the balance-adapter deploy config, so the exposure
+            # would be new rather than shared with the feed checks.
+            ctor = dep_plain.get(name, {}).get("constructor") or {}
+            if not isinstance(ctor, dict):
+                f.append((ERROR, f"'{name}'.constructor is {type(ctor).__name__}, expected an object"))
+                continue
+            val = ctor.get(arg)
+            if val is None:
+                f.append((ERROR, f"'{name}' is missing the shared constructor arg '{arg}' that its sibling(s) "
+                                 f"{', '.join(x for x in present if x != name)} also take"))
+                continue
+            # Type-guard before `.lower()`: a numeric constructor value would otherwise raise AttributeError out of
+            # _check_chain. That is contained — `chain_report` catches per chain and reports "could NOT be fully
+            # checked ... coverage is INCOMPLETE" with a non-zero exit — so the cost is losing that chain's OTHER
+            # findings, not the whole run. Worth guarding for the findings, not for the containment.
+            if not isinstance(val, str):
+                f.append((ERROR, f"'{name}'.constructor.{arg} is {type(val).__name__}, expected an address string"))
+                continue
+            seen.setdefault(val.lower(), []).append(name)
+        if len(seen) > 1:
+            detail = "; ".join(f"{v} <- {', '.join(ns)}" for v, ns in seen.items())
+            f.append((ERROR, f"sibling adapters disagree on the shared constructor arg '{arg}': {detail} — "
+                             f"they were split from ONE adapter and must pass the identical address; a wrong "
+                             f"one still deploys (it is a contract) and misprices or drops the leg silently"))
+
     # --- meta instance sets -------------------------------------------------
     for name, entry in nav_meta.items():
         if entry.get("enabled") is not True:

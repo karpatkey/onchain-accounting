@@ -266,10 +266,26 @@ library RateFeedGuard {
     ///      `readPriceFeedParam` rather than {_declaredParamKeys}, for the same resolver-agreement reason spelled
     ///      out in {_checkConstructorBandAgrees} — a top-level band must not be invisible to its own guard.
     function _assertNoUnreconciledBand(Vm vm, uint256 chainId, string memory feed) private view {
-        if (
-            bytes(ConfigReader.readPriceFeedParam(vm, chainId, feed, "minAnswer")).length != 0
-                || bytes(ConfigReader.readPriceFeedParam(vm, chainId, feed, "maxAnswer")).length != 0
-        ) revert RateFeedBandUnguarded(feed);
+        bool hasBand = bytes(ConfigReader.readPriceFeedParam(vm, chainId, feed, "minAnswer")).length != 0
+            || bytes(ConfigReader.readPriceFeedParam(vm, chainId, feed, "maxAnswer")).length != 0;
+        if (!hasBand) return;
+        // A BAND ALONE IS NOT A REASON TO DEMAND A GUARD. The escape this closes is a feed that HAS an
+        // external rate leg whose param this file's allowlist does not recognise, so the pair check is
+        // skipped and the band ships unreconciled. A feed with no oracle-shaped param at all — a basket
+        // feed, or a division-last feed reading one aggregator under a name nothing matches — has nothing
+        // for a `rateFeedGuard` block to pin, and requiring one would leave it with NO config that
+        // satisfies both checks. Only demand the guard when something oracle-shaped is declared.
+        string[] memory keys = _declaredParamKeys(vm, chainId, feed);
+        for (uint256 i; i < keys.length; ++i) {
+            if (_isOracleShapedParam(keys[i])) revert RateFeedBandUnguarded(feed);
+        }
+    }
+
+    /// @dev Broader than {_isRateFeedParam} ON PURPOSE: that allowlist is what a feed can slip past by
+    ///      naming its leg something else, so the band backstop must not key on the same narrow list.
+    function _isOracleShapedParam(string memory key) private pure returns (bool) {
+        return _isRateFeedParam(key) || _endsWith(key, "Feed") || _endsWith(key, "Oracle")
+            || _endsWith(key, "Aggregator") || _endsWith(key, "Address");
     }
 
     /// @dev Enumerates an instance's constructor parameter NAMES. Deliberately implemented HERE rather than as a

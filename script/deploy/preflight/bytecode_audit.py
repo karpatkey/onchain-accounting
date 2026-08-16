@@ -279,16 +279,23 @@ def check_immutable_pointers(chain_id: int, url: str, res: dict) -> None:
             # this branch is reached on every run, so the operator would otherwise be sent hunting a
             # leftover feed that does not exist when the answer is "re-run it". Still escalates below: a
             # transport failure is unknown, not clean.
-            if isinstance(base_val, Exception):
-                e["pointerCheck"] = f"UNREADABLE (TRANSPORT on BASE_ASSET(); re-run) ({val})"
-            else:
-                e["pointerCheck"] = f"UNREADABLE ({val})"
+            # TRANSPORT IS NOT EVIDENCE. `rpc_batch` returns its errors IN BAND and fills an entire
+            # 40-call window with them on one failed POST (chainlib.py:588-591), so `val` — and, for a
+            # feed, `base_val` — is an exception for every target in that window. Treating that as a
+            # contract-level answer is how a single rate-limit turned `--require-current` into exit 1
+            # with a fabricated "these contracts are stale, redeploy them" verdict across the whole
+            # window. Escalate ONLY on a real answer that is unreadable; on a transport failure say so
+            # and leave `status` alone, exactly as this branch did before the escalation was added.
+            transport = isinstance(val, Exception) or isinstance(base_val, Exception)
+            if transport:
+                e["pointerCheck"] = f"UNKNOWN (TRANSPORT — re-run before reading anything into this) ({val})"
+                continue
+            e["pointerCheck"] = f"UNREADABLE ({val})"
             # ESCALATE HERE, not at the status rewrite below — this branch `continue`s past it. An
             # unreadable pointer is precisely the evidence of an old-generation feed that `03`
             # skip-if-deployed'd: its immutable-masked bytecode still matches the current build, so
             # `status` stays CURRENT and `--require-current` (which tallies on status alone) exits 0 on a
-            # feed still bound to the abandoned proxy. `verify_step` FAILS on this same evidence, so
-            # leaving it here would make the two tools contradict each other on one address.
+            # feed still bound to the abandoned proxy.
             if e["status"].startswith("CURRENT"):
                 e["status"] = "CURRENT_CODE_STALE_POINTER"
             continue

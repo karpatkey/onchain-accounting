@@ -234,6 +234,7 @@ contract RateFeedGuardTest is Test {
     uint256 constant SYNTH_NOGUARD = 999_903;
     uint256 constant SYNTH_TOPPARAM = 999_904;
     uint256 constant SYNTH_INITPARAM = 999_905;
+    uint256 constant SYNTH_BANDONLY = 999_906;
     address constant SYNTH_FEED = 0x00000000000000000000000000000000DeaDBeef;
 
     function _synthPath(uint256 chainId) internal view returns (string memory) {
@@ -392,6 +393,25 @@ contract RateFeedGuardTest is Test {
             abi.encodeWithSelector(RateFeedGuard.RateFeedGuardMissing.selector, "InitParam", "yToXFeed"),
             "wrong revert"
         );
+    }
+
+    /// @notice **A band on a feed with NO oracle-shaped param must be ALLOWED, not demanded a guard.**
+    /// @dev The band backstop exists for a feed that HAS an external rate leg under a name the allowlist
+    ///      does not recognise. Applied to any band at all it also banned the legitimate shape — a basket
+    ///      or division-last feed with no aggregator param — leaving it with no config satisfying both
+    ///      checks, since a `rateFeedGuard` block has nothing to pin for such a feed. This is the arm that
+    ///      keeps the backstop from over-reaching; the `BandNoGuard` test above is the arm that keeps it
+    ///      from under-reaching, and they must both hold.
+    function test_bandOnlyFeedWithNoOracleParam_isAllowed() public {
+        _writeSynth(
+            SYNTH_BANDONLY,
+            '{"BandOnly":{"enabled":true,' '"constructor":{"basketToken":"0x00000000000000000000000000000000DeaDBeeF",'
+            '"minAnswer":"10000000000","maxAnswer":"10000000000000"}}}'
+        );
+        (bool ok, bytes memory ret) =
+            address(this).staticcall(abi.encodeWithSelector(this.exposedCheckAll.selector, SYNTH_BANDONLY));
+        _removeSynth(SYNTH_BANDONLY);
+        assertTrue(ok, string.concat("a band-only feed must not require a guard; reverted ", vm.toString(ret)));
     }
 }
 

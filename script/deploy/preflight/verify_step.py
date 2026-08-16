@@ -730,6 +730,14 @@ def _declared_address(chain_id: int, feed_name: str, key: str):
         # leftover malformed `constructor` deploys correctly (`readAdapterParam` checks the top level
         # first), and hard-failing on it red-gated a correct deployment — which is why the unconditional
         # shape gate that used to sit above was removed rather than kept.
+        # A key PRESENT with a null value is a broken config, not silence. `resolve_param` returns
+        # `entry[key]` whenever the key exists, so `"baseAsset": null` yields None and would otherwise
+        # collapse into the legitimate no-opinion path — the exact collapse the `(value, error)` split
+        # exists to prevent, printing PASS having compared nothing.
+        if pc.has_param(entry, key):
+            return None, (f"{key!r} for {feed_name!r} is declared with a null value — that states nothing, "
+                          f"so the config-vs-contract cross-check cannot run. Give it an address, or "
+                          f"remove the key")
         ctor = entry.get("constructor")
         if ctor is not None and not isinstance(ctor, dict):
             return None, (f"`constructor` for {feed_name!r} is {type(ctor).__name__}, not an object, and "
@@ -855,6 +863,17 @@ def step_custom_price_feeds(k: Chk, rec: dict, exp: dict, url, base, tag) -> Non
         # NAV() pointer looks. Falling through to the NAV() check (as an earlier revision did) let such a
         # feed PASS step 1.5 and then be silently skipped by RegisterAssets, which exits 0 — the asset
         # never registers and every holding of it values at $0 on a live NAV.
+        if isinstance(base_ret, Exception):
+            # TRANSPORT, NOT A CONTRACT ANSWER. `rpc_batch` returns its errors IN BAND and fills the whole
+            # 40-call window on one failed POST (chainlib.py:588-591), so this fires for EVERY feed in that
+            # window. Still a FAIL — an unverified feed is not a verified one — but it must not assert the
+            # contract fact. The old message told the operator these feeds "cannot be registered", which on
+            # a rate-limit was simply false, about a whole window at once, and pointed at a redeploy.
+            k.fail.append(f"customPriceFeeds.{n} {feeds[n]}: BASE_ASSET() could not be read — TRANSPORT "
+                          f"error ({type(base_ret).__name__}), not an answer from the contract. This says "
+                          f"nothing about the feed; re-run. If it persists for one address alone, then it "
+                          f"is the contract")
+            continue
         if not (isinstance(base_ret, str) and len(base_ret) >= 66):
             k.fail.append(f"customPriceFeeds.{n} {feeds[n]}: BASE_ASSET() unreadable ({base_ret}) — "
                           f"PriceFeedLib._validateFeedNotCircular fails closed on this, so the feed "

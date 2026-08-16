@@ -75,6 +75,13 @@ contract DeployPriceFeeds is BaseDeployScript {
         // re-registration on an immutable feed. See {RateFeedGuard} for why identity and band are both required.
         uint256 guarded = RateFeedGuard.checkAll(vm, currentChainId);
         console2.log("Rate-feed pair identity verified for instances:", guarded);
+
+        // BEFORE THE BROADCAST, for the same reason the guard above runs here. This assertion used to sit
+        // inside `_deployInvertedFeed`, i.e. inside `vm.startBroadcast()` — so a non-zero `baseAsset` on an
+        // inverted feed reverted the script only after every earlier feed in the run had already been
+        // broadcast, leaving a half-written `deployments/<id>.json` that the next run's skip-if-deployed
+        // logic then papers over. A pre-deploy stop costs a config edit; the other costs a redeploy.
+        _assertInvertedFeedsDeclareZeroBase();
         console2.log("");
 
         // Deploy price feeds based on chain and enabled configuration
@@ -639,6 +646,26 @@ contract DeployPriceFeeds is BaseDeployScript {
     ///      asset/USD direction {Prices} registers. The constructor param is named `*ChainlinkAddress` so
     ///      {RateFeedGuard} recognises it as a rate feed and REQUIRES a `rateFeedGuard` block, which pins both
     ///      the pair and the direction; without that naming the guard would silently skip this feed.
+    /// @notice Pre-broadcast: every enabled inverted feed must declare `baseAsset` absent or `address(0)`.
+    /// @dev Keyed on the `usdToAssetChainlinkAddress` param, which is what makes an entry an inverted feed —
+    ///      not on a hardcoded name, so a second `USD / X` feed is covered the day it is configured.
+    ///      See {InvertedFeedBaseAssetMustBeZero} for why a non-zero value cannot be honoured.
+    function _assertInvertedFeedsDeclareZeroBase() internal view {
+        string[] memory names = ConfigReader.getEnabledAdapters(vm, currentChainId, "deployPriceFeeds");
+        for (uint256 i; i < names.length; ++i) {
+            if (
+                bytes(ConfigReader.readPriceFeedParam(vm, currentChainId, names[i], "usdToAssetChainlinkAddress"))
+                    .length == 0
+            ) {
+                continue;
+            }
+            string memory declaredBase = ConfigReader.readPriceFeedParam(vm, currentChainId, names[i], "baseAsset");
+            if (bytes(declaredBase).length != 0 && vm.parseAddress(declaredBase) != address(0)) {
+                revert InvertedFeedBaseAssetMustBeZero(names[i], vm.parseAddress(declaredBase));
+            }
+        }
+    }
+
     function _deployInvertedFeed(string memory name) internal {
         address deployed = _readAdapterDeployed("priceFeeds", name);
         if (deployed != address(0)) {
@@ -651,12 +678,6 @@ contract DeployPriceFeeds is BaseDeployScript {
             vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, name, "usdToAssetChainlinkAddress"));
         uint256 heartbeat =
             vm.parseUint(ConfigReader.readPriceFeedParam(vm, currentChainId, name, "usdToAssetChainlinkHeartbeat"));
-
-        // See {InvertedFeedBaseAssetMustBeZero}: this key is read by preflight, never by the constructor.
-        string memory declaredBase = ConfigReader.readPriceFeedParam(vm, currentChainId, name, "baseAsset");
-        if (bytes(declaredBase).length != 0 && vm.parseAddress(declaredBase) != address(0)) {
-            revert InvertedFeedBaseAssetMustBeZero(name, vm.parseAddress(declaredBase));
-        }
 
         uint256 minAnswer = vm.parseUint(ConfigReader.readPriceFeedParam(vm, currentChainId, name, "minAnswer"));
         uint256 maxAnswer = vm.parseUint(ConfigReader.readPriceFeedParam(vm, currentChainId, name, "maxAnswer"));

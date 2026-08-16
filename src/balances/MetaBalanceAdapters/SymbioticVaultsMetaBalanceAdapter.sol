@@ -25,8 +25,10 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 ///      identity here, and it is pinned by `test_premise_vaultIsRegisteredInSymbioticFactory` rather than
 ///      asserted in prose. **Do not restate this as "the paired" or "the canonical" delegator factory: a
 ///      future Symbiotic vault whose delegator came from `0x985Ed57A…` is equally valid**, and a premise
-///      test copied from here with that assumption would fail on it. The test binds through each entity's
-///      `FACTORY()` immutable, which is set by the factory at clone time and needs no such guess.
+///      test copied from here with that assumption would fail on it. The VAULT assertion binds through the
+///      entity's own `FACTORY()` immutable, set at clone time, and needs no such guess — but note the
+///      DELEGATOR assertion compares against ONE hardcoded factory constant, so it is specific to this
+///      vault and would need widening for a vault whose delegator came from the other factory.
 /// @dev **SCOPE — ERC-4626 Symbiotic vaults only, NOT Symbiotic CORE vaults.** Measured on mainnet
 ///      2026-08-15 against `KPK USDC LiquidLane` (`0x8BcD746976885b5832bAD07B4921E3f2dD1D3703`): the full
 ///      ERC-4626 surface answers (`asset()` = USDC, `previewRedeem`, `totalAssets`), while the Symbiotic

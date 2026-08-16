@@ -67,7 +67,7 @@ DEFAULT_ADMIN_ROLE = bytes(32)
 MANAGER_ROLE = keccak(text="MANAGER")
 
 # The three assisted adapters and their paired assistants. `04._deployAssistantsIfEnabled`
-# (04_DeployBalanceAdapters.s.sol:251) deploys an assistant iff its adapter's address is already in
+# (grep `Assistant(` in 04_DeployBalanceAdapters.s.sol) deploys an assistant iff its adapter's address is in
 # the record, so the expectation is record-driven, not config-driven.
 ASSISTED_PAIRS = [
     ("EtherFiWithdrawalQueueAssisted", "EtherFiWithdrawalQueueAssistant"),

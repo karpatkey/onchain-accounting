@@ -280,7 +280,7 @@ contract InvertedChainlinkCustomPriceFeedTest is Test {
 
     /// @dev **The direction pin at READ time.** `RateFeedGuard` pins `description()` and this same band
     ///      but is deploy-only, so it cannot see a Chainlink proxy that later migrates its aggregator at
-    ///      the same address with the same decimals. An `X / USD` re-quote answers ~67207 here — four
+    ///      the same address with the same decimals. An `X / USD` re-quote answers ~67207 here — FIVE
     ///      orders BELOW the floor — so the band catches what `decimals()` cannot. Without it the feed
     ///      would report ~$1,583 instead of ~$0.00063 with `stale == false`, on an immutable contract.
     function test_answerBelowBand_isStale_theInvertedRequoteCase() public {

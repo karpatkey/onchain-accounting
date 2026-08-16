@@ -198,7 +198,7 @@ contract RateFeedGuardTest is Test {
         //
         // This is the population growing, not the counting method mis-measuring: one real instance was added
         // and verified. Its guard is what makes the direction load-bearing — an ARS/USD feed swapped in would
-        // answer ~6.3e14 at 1e18 scale and fail the band by four orders of magnitude.
+        // answer ~6.3e14 at 1e18 scale and fail the band by five orders of magnitude.
         assertEq(total, 21, "rate-feed instance count changed - re-verify description() on the new set");
     }
 

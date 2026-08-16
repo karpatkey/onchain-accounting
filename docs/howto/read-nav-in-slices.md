@@ -201,7 +201,7 @@ config had 42 assets and 27 adapters when this was measured), most diversified t
 > **These are MEASURED figures from a fork run, not derived counts — they are as of that run and are not
 > updated when the registry grows.** PR #308 adds a Symbiotic meta-adapter AND the wARS asset, so it moves
 > the ADAPTER axis and the ASSET axis both: the production config went from 42 assets / 27 adapters to 43 / 28
-> (measured on both sides), and the harness gains the same adapter. The gas numbers below were NOT
+> (measured on both sides), and the harness gains BOTH — the same adapter and the same asset. The gas numbers below were NOT
 > re-measured, so the counts are left at the values they were measured against rather than silently
 > re-stated against a registry the measurement never saw. Re-run the harness to refresh both together.
 

@@ -1459,12 +1459,15 @@ proxy invalidates every existing feed.
 > configured total and `verify_step.py 1.5` compares against it, so both follow config automatically.
 > This paragraph is the thing that goes stale — as it just did, twice.
 >
-> **The three dead feed contracts are a separate matter and change the count by ZERO.**
-> `cbETH_CustomPriceFeed`, `ETHPlus_CustomPriceFeed` and `sDAI_CustomPriceFeed` are deployed on no chain
-> and enabled in no config (`cbETH`/`sDAI` are not config keys at all; `ETHPlus` is present on mainnet
-> with `enabled: false`). The TWO that still have call sites are `isAdapterEnabled`-gated (grep `_deployCbEth` and `_deployEthPlus`); sDAI has no call site and no contract at all, because #199 deleted it — an earlier version of this line claimed three gated call sites and grep targets `_deployETHPlus`/`_deploySDai` that match nothing
-> and a missing key reads as false, so the branches are never taken — and they stay unreached after step
-> 1.1, since clearing the record removes only the skip-guard short-circuit, not the enablement gate.
+> **The dead feed contracts are a separate matter and change the count by ZERO.**
+> TWO survive — `cbETH_CustomPriceFeed` and `ETHPlus_CustomPriceFeed` — deployed on no chain and enabled
+> in no config (`cbETH` is not a config key at all; `ETHPlus` is present on mainnet with
+> `enabled: false`). Both call sites are `isAdapterEnabled`-gated: grep **`_deployCbEth()`** and
+> **`_deployEthPlus()`** — WITH the parentheses, because a bare `_deployCbEth` also matches the LIVE
+> `_deployCbEthL2` used on Base/Optimism/Arbitrum, which is not dead. A missing key reads as false, so
+> the branches are never taken — and they stay unreached after step 1.1, since clearing the record
+> removes only the skip-guard short-circuit, not the enablement gate. sDAI is NOT a third case: #199
+> deleted both its contract and its call site, so there is nothing left to gate.
 > #199 deletes the sDAI contract; that is dead-code removal, not a count change. An earlier audit note
 > suggested dropping all three would make the redeploy 36 instances; it would not, because they were
 > never among the 39. Verified against both the deployment records and the enabled config 2026-07-29.

@@ -232,6 +232,7 @@ contract RateFeedGuardTest is Test {
     uint256 constant SYNTH_TOP = 999_901;
     uint256 constant SYNTH_SPLIT = 999_902;
     uint256 constant SYNTH_NOGUARD = 999_903;
+    uint256 constant SYNTH_TOPPARAM = 999_904;
     address constant SYNTH_FEED = 0x00000000000000000000000000000000DeaDBeef;
 
     function _synthPath(uint256 chainId) internal view returns (string memory) {
@@ -341,6 +342,32 @@ contract RateFeedGuardTest is Test {
         assertFalse(ok, "a constructor band with no guard block to reconcile it must be rejected");
         assertEq(
             ret, abi.encodeWithSelector(RateFeedGuard.RateFeedBandUnguarded.selector, "BandNoGuard"), "wrong revert"
+        );
+    }
+
+    /// @notice **A rate-feed param written BESIDE `constructor` must not hide from the fail-closed scan.**
+    /// @dev The companion backstop to the band one above, and it had the same blind spot the band check was
+    ///      fixed for: it enumerated `.<feed>.constructor` keys only, while `ConfigReader.readAdapterParam`
+    ///      resolves the TOP LEVEL first — so `03` deploys from a key the guard could not see. An instance
+    ///      naming its rate feed there with no `rateFeedGuard` block passed {checkAll} silently, with no pair
+    ///      check and no band check at all. Note there is no band here: this pins the PARAM axis specifically,
+    ///      so it cannot pass by accident via {RateFeedBandUnguarded}.
+    function test_topLevelRateFeedParam_isNotInvisibleToTheFailClosedScan() public {
+        _writeSynth(
+            SYNTH_TOPPARAM,
+            '{"TopParam":{"enabled":true,' '"usdToAssetChainlinkAddress":"0x00000000000000000000000000000000DeaDBeeF",'
+            '"constructor":{"underlyingAsset":"0x00000000000000000000000000000000DeaDBeeF"}}}'
+        );
+        (bool ok, bytes memory ret) =
+            address(this).staticcall(abi.encodeWithSelector(this.exposedCheckAll.selector, SYNTH_TOPPARAM));
+        _removeSynth(SYNTH_TOPPARAM);
+        assertFalse(ok, "a top-level rate-feed param with no guard block must be rejected");
+        assertEq(
+            ret,
+            abi.encodeWithSelector(
+                RateFeedGuard.RateFeedGuardMissing.selector, "TopParam", "usdToAssetChainlinkAddress"
+            ),
+            "wrong revert"
         );
     }
 }

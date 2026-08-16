@@ -782,7 +782,10 @@ def step_custom_price_feeds(k: Chk, rec: dict, exp: dict, url, base, tag) -> Non
         k.warn.append(f"no previous-generation feed addresses available for chain {k.chain_id} "
                       f"(no archive/{tag} record and no Custom feeds in the pre-snapshot), so "
                       f"'these feeds were actually redeployed' cannot be shown here — the NAV() "
-                      f"pointer check below is the only remaining evidence")
+                      f"pointer check below is the only remaining evidence, AND it does not apply to "
+                      f"feeds answering BASE_ASSET() == 0 (they hold no NAV pointer). For those, see "
+                      f"the per-feed warning below: this combination leaves them with no generation "
+                      f"evidence at all")
     if not url or not feeds:
         return
     proxy = rec.get("NAVCalculatorProxy")
@@ -880,16 +883,35 @@ def step_custom_price_feeds(k: Chk, rec: dict, exp: dict, url, base, tag) -> Non
                                   f"deployed feed no asset references is never registered, so this is a "
                                   f"finding in its own right, not a reason to skip the check")
                     continue
-                got = "0x" + under_ret[-40:] if isinstance(under_ret, str) and len(under_ret) == 66 else None
+                # Same two clauses the BASE_ASSET() read above applies, and for the same reason: this word is
+                # now the ONLY thing establishing that this address is the intended contract, so a padded
+                # reply whose low 20 bytes happen to match must not be accepted as proof of identity.
+                got = None
+                if isinstance(under_ret, str) and len(under_ret) == 66 and int(under_ret[2:66], 16) <= (1 << 160) - 1:
+                    got = "0x" + under_ret[-40:]
                 if got is None or lower(got) != lower(want):
                     k.fail.append(f"customPriceFeeds.{n} {feeds[n]}: BASE_ASSET() == 0, so "
                                   f"underlyingAssetSupported() is the only evidence this address is the right "
                                   f"contract — it returned {got or under_ret!r}, but nav-config registers this "
                                   f"feed against {want}")
                     continue
+                # STATE THE LIMIT. `underlyingAssetSupported()` is generation-INVARIANT: a leftover
+                # previous-generation feed for the same asset answers it identically, so this establishes
+                # "right contract for the right asset" and NOT "right generation". For every other feed the
+                # immutable NAV() pointer supplies the generation half; these have none. The
+                # previous-generation ADDRESS comparison earlier in this step is what actually binds them —
+                # so when that could not run, say so per feed rather than letting a green line imply cover.
+                if not old:
+                    k.warn.append(f"customPriceFeeds.{n} {feeds[n]}: BASE_ASSET() == 0, so it holds no NAV "
+                                  f"pointer, and no previous-generation address was available to compare "
+                                  f"against — nothing in this step can tell a current deployment from a "
+                                  f"leftover one for this feed. bytecode_audit cannot either (it masks "
+                                  f"immutableReferences). Refresh the snapshot/--archive-tag to restore it")
                 k.info.append(f"customPriceFeeds.{n} {feeds[n]}: BASE_ASSET() == 0 and "
                               f"underlyingAssetSupported() == {want}, the asset nav-config registers it for — "
-                              f"no NAV dependency, so the NAV() pointer is not applicable to this feed")
+                              f"the right contract for the right asset. NOTE this is asset identity, not "
+                              f"generation: the NAV() pointer that proves generation elsewhere does not apply "
+                              f"to this feed")
                 continue
 
         # NO config-keyed downgrade here. An earlier revision warned-and-continued when NEITHER BASE_ASSET()

@@ -46,10 +46,19 @@ interface IRateFeedIdentity {
 ///      report, the ceiling is roughly seven years of accrual at current rates). `1e13 – 1e16` for a governance
 ///      token quoted in ETH (LDO/ETH at 0.000192 would have to 50x or fall 20x against ETH to breach).
 ///
-///      **This guard fails closed on absence.** {checkAll} does not merely skip an instance that has no
-///      `rateFeedGuard` block: it inspects the constructor keys and reverts if an instance takes a rate-feed-shaped
-///      parameter without declaring a guard for it. Without that, the guard would silently stop covering the next
-///      feed anyone adds, which is the failure mode of every check that is opt-in by omission.
+///      **This guard fails closed on absence, on TWO independent axes.** {checkAll} does not merely skip an
+///      instance that has no `rateFeedGuard` block. It runs both backstops, because either one alone leaves a
+///      shape that configures itself out of every check:
+///        1. {_assertNoUnguardedRateFeedParam} — reverts {RateFeedGuardMissing} if the instance takes a
+///           rate-feed-shaped PARAMETER (`yToXFeed`, `*Chainlink[Address]`) without declaring a guard for it.
+///        2. {_assertNoUnreconciledBand} — reverts {RateFeedBandUnguarded} if it declares a constructor
+///           `min/maxAnswer` BAND with no guard block to reconcile it against. Needed because (1) matches
+///           param SPELLINGS only, so a rate feed named anything else escaped it while still shipping an
+///           unchecked band into an immutable contract.
+///      Both read config through the same top-level-first resolution `03` deploys from, so a key written
+///      beside `constructor` rather than inside it cannot hide from either. Without all of that the guard
+///      would silently stop covering the next feed anyone adds, which is the failure mode of every check that
+///      is opt-in by omission.
 library RateFeedGuard {
     /// @notice The configured address is an aggregator, but for the wrong pair.
     error RateFeedPairMismatch(string feed, address rateFeed, string expected, string actual);
@@ -244,7 +253,7 @@ library RateFeedGuard {
     ///      `<x>To<y>Chainlink[Address]`; both are matched here so a newly-added feed cannot quietly escape the
     ///      guard by simply omitting the block.
     function _assertNoUnguardedRateFeedParam(Vm vm, uint256 chainId, string memory feed) private view {
-        string[] memory keys = _constructorKeys(vm, chainId, feed);
+        string[] memory keys = _declaredParamKeys(vm, chainId, feed);
         for (uint256 i; i < keys.length; ++i) {
             if (_isRateFeedParam(keys[i])) revert RateFeedGuardMissing(feed, keys[i]);
         }
@@ -253,7 +262,7 @@ library RateFeedGuard {
     /// @dev Fail-closed companion to {_assertNoUnguardedRateFeedParam}, covering the OTHER thing a guard block is
     ///      what makes checkable. See {RateFeedBandUnguarded}: the param-spelling scan above cannot see a band,
     ///      and the reconciliation that can is unreachable without a guard. Deliberately uses
-    ///      `readPriceFeedParam` rather than {_constructorKeys}, for the same resolver-agreement reason spelled
+    ///      `readPriceFeedParam` rather than {_declaredParamKeys}, for the same resolver-agreement reason spelled
     ///      out in {_checkConstructorBandAgrees} — a top-level band must not be invisible to its own guard.
     function _assertNoUnreconciledBand(Vm vm, uint256 chainId, string memory feed) private view {
         if (
@@ -269,7 +278,14 @@ library RateFeedGuard {
     ///      adding one view function there moved PriceFeedLib from 0x8b7e4fA9 to 0xeA694009 while touching no
     ///      `src/` at all. Keeping this local costs one duplicated path expression and keeps the change
     ///      pin-neutral, which is the difference between landing and blocking a verified pin regen.
-    function _constructorKeys(Vm vm, uint256 chainId, string memory feed) private view returns (string[] memory) {
+    /// @dev Returns the parameter keys declared for `feed` at BOTH scopes — `.<feed>` and `.<feed>.constructor`
+    ///      — because `ConfigReader.readAdapterParam` resolves the top level FIRST and that is what `03`
+    ///      deploys from. Enumerating only `.constructor` (as this did) left the fail-closed scan in
+    ///      {_assertNoUnguardedRateFeedParam} blind to a rate feed written as a sibling of `constructor`,
+    ///      which is where `rateFeedGuard` itself sits and therefore the natural place to put one: such an
+    ///      instance passed {checkAll} with no pair check and no band check at all. Structural keys are
+    ///      excluded at the outer scope — they are containers and flags, never constructor arguments.
+    function _declaredParamKeys(Vm vm, uint256 chainId, string memory feed) private view returns (string[] memory) {
         string memory path = string(
             abi.encodePacked(
                 vm.projectRoot(),
@@ -280,19 +296,36 @@ library RateFeedGuard {
         );
         if (!vm.exists(path)) return new string[](0);
         string memory json = vm.readFile(path);
-        string memory p = string(abi.encodePacked(".", feed, ".constructor"));
-        if (!vm.keyExistsJson(json, p)) return new string[](0);
-        string[] memory all = vm.parseJsonKeys(json, p);
+
+        string memory outer = string(abi.encodePacked(".", feed));
+        string memory inner = string(abi.encodePacked(".", feed, ".constructor"));
+        string[] memory a = vm.keyExistsJson(json, outer) ? vm.parseJsonKeys(json, outer) : new string[](0);
+        string[] memory b = vm.keyExistsJson(json, inner) ? vm.parseJsonKeys(json, inner) : new string[](0);
+
+        string[] memory buf = new string[](a.length + b.length);
         uint256 n;
-        for (uint256 i; i < all.length; ++i) {
-            if (bytes(all[i]).length > 0 && bytes(all[i])[0] != "$") ++n;
+        for (uint256 i; i < a.length; ++i) {
+            if (_isParamKey(a[i]) && !_isStructuralKey(a[i])) buf[n++] = a[i];
+        }
+        for (uint256 i; i < b.length; ++i) {
+            if (_isParamKey(b[i])) buf[n++] = b[i];
         }
         string[] memory out = new string[](n);
-        uint256 j;
-        for (uint256 i; i < all.length; ++i) {
-            if (bytes(all[i]).length > 0 && bytes(all[i])[0] != "$") out[j++] = all[i];
+        for (uint256 i; i < n; ++i) {
+            out[i] = buf[i];
         }
         return out;
+    }
+
+    function _isParamKey(string memory key) private pure returns (bool) {
+        return bytes(key).length > 0 && bytes(key)[0] != "$";
+    }
+
+    /// @dev Containers and flags that live beside the constructor args, never arguments themselves.
+    function _isStructuralKey(string memory key) private pure returns (bool) {
+        bytes32 h = keccak256(bytes(key));
+        return h == keccak256("constructor") || h == keccak256("rateFeedGuard") || h == keccak256("enabled")
+            || h == keccak256("initialize");
     }
 
     function _isRateFeedParam(string memory key) private pure returns (bool) {

@@ -135,7 +135,12 @@ def nav_sourced_base(feed_entry: dict) -> str | None:
     NAV-sourced and the heartbeat invariant below does not apply to it.
     """
     ctor = feed_entry.get("constructor", feed_entry)
-    raw = ctor.get("baseAsset") or feed_entry.get("baseAsset")
+    # TOP-LEVEL first, then `constructor` — `ConfigReader.readAdapterParam` (ConfigReader.sol:403-410) is the
+    # resolver `03` deploys from and it checks `.<feed>.<key>` FIRST. Reading them the other way round means a
+    # feed carrying the key at the top level plus a stale `constructor` copy is DEPLOYED from one value and
+    # CHECKED against the other, so the ADR-0019 circularity and derived-heartbeat checks below vouch for a
+    # base the contract does not have.
+    raw = feed_entry.get("baseAsset") or ctor.get("baseAsset")
     # address(0) is the SENTINEL for "no NAV dependency" (see is_address_shaped), so it must return None
     # here exactly as an absent key does — a feed that declares it is not NAV-sourced.
     #
@@ -156,9 +161,13 @@ def nav_sourced_base(feed_entry: dict) -> str | None:
 
 ZERO_ADDR = "0x" + "0" * 40
 
-#: Sibling key that must accompany `baseAsset: <ZERO_ADDR>`. `$`-prefixed so it is skipped by every key
-#: enumerator in the repo (`getEnabledAdapters`, `RateFeedGuard._constructorKeys`) and can never be mistaken
-#: for a constructor argument. See the zero-sentinel branch in `base_allowlist_findings`.
+#: Sibling key that must accompany `baseAsset: <ZERO_ADDR>`. Accepted at EITHER scope — beside `constructor`
+#: or inside it, next to the `baseAsset` it justifies — because those are the two placements a person
+#: actually writes, and rejecting one of them red-gates a correct, fully-justified config over placement
+#: alone. `$`-prefixed so that in the `constructor` scope it is skipped by the key enumerators that DO read
+#: there (`RateFeedGuard._constructorKeys`, and hence the fail-closed rate-feed-param scan) and can never be
+#: mistaken for a constructor argument; at the outer scope the prefix is convention, not load-bearing.
+#: See the zero-sentinel branch in `base_allowlist_findings`.
 NO_NAV_REASON_KEY = "$noNavDependencyReason"
 
 
@@ -257,7 +266,8 @@ def base_allowlist_findings(chain_id: int, assets: dict, dep_feeds: dict) -> lis
                 where = f"asset '{sym}' {kind}[{i}] Custom '{fname}'"
                 ctor = fentry.get("constructor", fentry)
                 has_key = "baseAsset" in ctor or "baseAsset" in fentry
-                raw = ctor.get("baseAsset", fentry.get("baseAsset"))
+                # TOP-LEVEL first — same reason as in `nav_sourced_base` above.
+                raw = fentry.get("baseAsset", ctor.get("baseAsset"))
 
                 if not has_key:
                     f.append((ERROR, f"{where} does not declare a baseAsset in "
@@ -288,13 +298,18 @@ def base_allowlist_findings(chain_id: int, assets: dict, dep_feeds: dict) -> lis
                     # earlier feeds already broadcast and a half-written deployments/<id>.json. Requiring a
                     # reason keeps the legitimate shape expressible and puts that case back in front of a
                     # human: nobody writes a justification for a dependency the feed plainly has.
-                    if not str(fentry.get(NO_NAV_REASON_KEY) or "").strip():
+                    # Read at BOTH scopes. `raw` above comes from `constructor` for most feeds, so demanding
+                    # the justification at the outer level only rejects the one placement that reads as a
+                    # pair with the value it justifies — a correct, fully-justified config red-gated over
+                    # placement, with an error message that names no location.
+                    if not str(fentry.get(NO_NAV_REASON_KEY) or ctor.get(NO_NAV_REASON_KEY) or "").strip():
                         f.append((ERROR, f"{where} declares baseAsset {ZERO_ADDR} (asserting NO NAV "
                                          f"dependency) but carries no `{NO_NAV_REASON_KEY}` saying why. This "
                                          f"sentinel switches off every other base and heartbeat check for the "
                                          f"feed, so state how it derives its price WITHOUT reading base/USD "
                                          f"back out of the NAV — as ETHPlus does from the Reserve basket, and "
-                                         f"wARS by inverting a USD/X Chainlink feed"))
+                                         f"wARS by inverting a USD/X Chainlink feed. Put it beside "
+                                         f"`constructor` or inside it next to the baseAsset; both are read"))
                     continue
                 if not c.is_address(raw):
                     f.append((ERROR, f"{where} has a MALFORMED baseAsset ({raw!r}) — not a 20-byte address, "
@@ -323,6 +338,34 @@ def base_allowlist_findings(chain_id: int, assets: dict, dep_feeds: dict) -> lis
                                      f"Custom-priced forms a multi-hop pricing cycle, which the on-chain "
                                      f"guard cannot detect (it never reads the registry) and which costs "
                                      f"~7.7M gas per read of '{sym}' while still returning a plausible price"))
+
+    # EVERY ENABLED FEED, not only the referenced ones. The loop above is driven off the asset->feed edge, so
+    # a feed that is `enabled: true` in deploy-config but not yet named by any asset is invisible to it — and
+    # that is exactly the population the zero-sentinel rule exists for. `03` gates on `isPriceFeedEnabled`
+    # alone, so it deploys such a feed regardless; if the sentinel was pasted onto something genuinely
+    # NAV-sourced, the run reverts MID-DEPLOY out of `assertERC20Address(address(0))` with earlier feeds
+    # already broadcast. The pre-existing "enabled for deploy but no asset references it" WARN does not stop
+    # a run, so without this sweep the rule was unreachable for the case it was written to catch. Only the
+    # zero+reason pair is re-checked here: the other arms above need an asset to say anything about.
+    referenced = {fd.get("feed") for e in assets.values() if isinstance(e, dict)
+                  for kind in ("priceFeeds", "monitorFeeds") for fd in (e.get(kind) or [])
+                  if isinstance(fd, dict) and fd.get("type") == "Custom"}
+    for fname, fentry in (dep_feeds or {}).items():
+        if fname.startswith("$") or not isinstance(fentry, dict):
+            continue
+        if fname in referenced or fentry.get("enabled") is not True:
+            continue
+        ctor = fentry.get("constructor", fentry)
+        raw = fentry.get("baseAsset", ctor.get("baseAsset"))
+        if not (isinstance(raw, str) and is_address_shaped(raw) and int(raw, 16) == 0):
+            continue
+        if not str(fentry.get(NO_NAV_REASON_KEY) or ctor.get(NO_NAV_REASON_KEY) or "").strip():
+            f.append((ERROR, f"custom feed '{fname}' is enabled for deploy and declares baseAsset "
+                             f"{ZERO_ADDR} (asserting NO NAV dependency) but carries no "
+                             f"`{NO_NAV_REASON_KEY}` saying why. No asset references it yet, so nothing "
+                             f"else here examines it — and `03` deploys on the enabled flag alone, so a "
+                             f"sentinel pasted onto a genuinely NAV-sourced feed reverts mid-run with "
+                             f"earlier feeds already broadcast"))
     return f
 
 
@@ -889,7 +932,7 @@ def self_test() -> int:
     B_WETH, B_DER, B_OTHER = "0x" + "a" * 40, "0x" + "b" * 40, "0x" + "c" * 40
 
     def _base_case(base_val, base_primary="Chainlink", omit=False, kind="priceFeeds",
-                   base_feed_base=B_OTHER):
+                   base_feed_base=B_OTHER, with_reason=True, reason_in_ctor=False):
         # THREE assets, not two: when WETH's own primary is made Custom, its feed needs a legitimate base of
         # its own (USDC here, Chainlink-priced), or WETH's entry would raise its own unrelated error and the
         # arm would pass for the wrong reason — counting two errors while asserting the presence of one.
@@ -902,8 +945,21 @@ def self_test() -> int:
             "DER": {"address": B_DER, kind: [{"type": "Custom", "feed": "der", "heartbeat": 86400}]},
         }
         ctor = {} if omit else {"baseAsset": base_val}
-        feeds = {"der": {"enabled": True, "constructor": ctor},
-                 "basefeed": {"enabled": True, "constructor": {"baseAsset": base_feed_base}}}
+
+        # A zero baseAsset now REQUIRES a `$noNavDependencyReason`, so any arm that asserts the zero shape is
+        # ACCEPTED has to supply one — otherwise it stops testing what its name says and just re-proves the
+        # new rule. `with_reason=False` is how the arms below assert the rule itself bites.
+        def _entry(base, want_reason, in_ctor=False):
+            e = {"enabled": True, "constructor": {"baseAsset": base}}
+            if want_reason and isinstance(base, str) and is_address_shaped(base) and int(base, 16) == 0:
+                (e["constructor"] if in_ctor else e)[NO_NAV_REASON_KEY] = "self-test: derives its price without reading base/USD from the NAV"
+            return e
+
+        der = {"enabled": True, "constructor": ctor}
+        if (not omit and with_reason and isinstance(base_val, str)
+                and is_address_shaped(base_val) and int(base_val, 16) == 0):
+            (der["constructor"] if reason_in_ctor else der)[NO_NAV_REASON_KEY] = "self-test: derives its price without reading base/USD from the NAV"
+        feeds = {"der": der, "basefeed": _entry(base_feed_base, with_reason)}
         return base_allowlist_findings(1, assets_, feeds)
 
     def _msgs(findings):
@@ -914,6 +970,22 @@ def self_test() -> int:
           _msgs(_base_case(B_WETH, base_primary="Custom", base_feed_base=ZERO_ADDR)) == [])
     check("an explicit zero-address baseAsset is ACCEPTED (declares no NAV dependency)",
           _msgs(_base_case(ZERO_ADDR)) == [])
+    check("a zero baseAsset with NO $noNavDependencyReason is an ERROR (the copy-paste case)",
+          len(_msgs(_base_case(ZERO_ADDR, with_reason=False))) == 1
+          and NO_NAV_REASON_KEY in _msgs(_base_case(ZERO_ADDR, with_reason=False))[0])
+    check("the reason is ACCEPTED inside `constructor` too, beside the baseAsset it justifies",
+          _msgs(_base_case(ZERO_ADDR, reason_in_ctor=True)) == [])
+    check("an ENABLED feed no asset references is still held to the reason rule",
+          len(_msgs(base_allowlist_findings(
+              1, {"USDC": {"address": B_OTHER,
+                           "priceFeeds": [{"type": "Chainlink", "address": B_OTHER, "heartbeat": 3600}]}},
+              {"orphan": {"enabled": True, "constructor": {"baseAsset": ZERO_ADDR}}}))) == 1)
+    check("...and is CLEAN once it carries one",
+          _msgs(base_allowlist_findings(
+              1, {"USDC": {"address": B_OTHER,
+                           "priceFeeds": [{"type": "Chainlink", "address": B_OTHER, "heartbeat": 3600}]}},
+              {"orphan": {"enabled": True, "constructor": {"baseAsset": ZERO_ADDR},
+                          NO_NAV_REASON_KEY: "self-test"}})) == [])
     check("an ABSENT baseAsset key is an ERROR, named as absent",
           len(_msgs(_base_case(None, omit=True))) == 1
           and "does not declare a baseAsset" in _msgs(_base_case(None, omit=True))[0])

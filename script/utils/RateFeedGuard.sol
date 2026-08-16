@@ -78,6 +78,22 @@ library RateFeedGuard {
     ///      surfacing as an opaque constructor revert.
     error RateFeedNotContractReadable(string feed, address rateFeed);
 
+    /// @notice The SAME band is declared twice at two scales and the two disagree.
+    /// @dev `rateFeedGuard.min/maxRate1e18` (checked here, deploy-time) and `constructor.min/maxAnswer` (baked
+    ///      into an IMMUTABLE feed, in the RATE FEED's own decimals) express one band. `min/maxAnswer` are read
+    ///      at exactly ONE site — `03_DeployPriceFeeds.s.sol:646-650` — and nowhere else in the repo, so nothing
+    ///      compared them: a drift silently ships the UNCHECKED copy into a contract that can never be amended.
+    ///      Config carried only a "keep these in step" comment, which is the documentary guard this repo
+    ///      rejects everywhere else. Reported in 1e18 for both sides so the two are comparable by eye.
+    error RateFeedBandMismatch(
+        string feed, uint256 constructorMin1e18, uint256 guardMin1e18, uint256 constructorMax1e18, uint256 guardMax1e18
+    );
+
+    /// @notice One half of the constructor band declared without the other.
+    /// @dev Rejected rather than half-checked: with one bound missing there is nothing to reconcile the other
+    ///      against, and silently skipping is how the unchecked copy got there in the first place.
+    error RateFeedBandIncomplete(string feed, string present, string missing);
+
     /// @notice Sentinel for `rateFeedGuard.description` meaning "this provider does not expose the pair".
     /// @dev **Not every feed can be identity-checked, and pretending otherwise would be worse than not trying.**
     ///      Measured on mainnet: RedStone's multi-feed contracts answer usefully — `0x701e83Bd` returns
@@ -149,6 +165,39 @@ library RateFeedGuard {
         uint256 lo = vm.parseUint(_guardField(vm, chainId, feed, "minRate1e18"));
         uint256 hi = vm.parseUint(_guardField(vm, chainId, feed, "maxRate1e18"));
         if (rate1e18 < lo || rate1e18 > hi) revert RateFeedOutOfBand(feed, rateFeed, rate1e18, lo, hi);
+
+        // 3. The constructor's copy of the SAME band must agree with the one just used. See
+        // {RateFeedBandMismatch} for why this is checked here rather than left to a comment.
+        _checkConstructorBandAgrees(vm, chainId, feed, IRateFeedIdentity(rateFeed).decimals(), lo, hi);
+    }
+
+    /// @dev Normalises `constructor.min/maxAnswer` (in the rate feed's decimals) to 1e18 and requires exact
+    ///      equality with the guard band. Feeds with no constructor band are unaffected — the vast majority of
+    ///      instances have none, so this must not become a reason they cannot be configured.
+    function _checkConstructorBandAgrees(
+        Vm vm,
+        uint256 chainId,
+        string memory feed,
+        uint8 rateDecimals,
+        uint256 lo,
+        uint256 hi
+    ) private view {
+        string[] memory keys = _constructorKeys(vm, chainId, feed);
+        bool hasMin;
+        bool hasMax;
+        for (uint256 i; i < keys.length; ++i) {
+            if (keccak256(bytes(keys[i])) == keccak256("minAnswer")) hasMin = true;
+            else if (keccak256(bytes(keys[i])) == keccak256("maxAnswer")) hasMax = true;
+        }
+        if (!hasMin && !hasMax) return;
+        if (!hasMin) revert RateFeedBandIncomplete(feed, "maxAnswer", "minAnswer");
+        if (!hasMax) revert RateFeedBandIncomplete(feed, "minAnswer", "maxAnswer");
+
+        uint256 min1e18 =
+            _to1e18(vm.parseUint(ConfigReader.readPriceFeedParam(vm, chainId, feed, "minAnswer")), rateDecimals);
+        uint256 max1e18 =
+            _to1e18(vm.parseUint(ConfigReader.readPriceFeedParam(vm, chainId, feed, "maxAnswer")), rateDecimals);
+        if (min1e18 != lo || max1e18 != hi) revert RateFeedBandMismatch(feed, min1e18, lo, max1e18, hi);
     }
 
     /// @notice The rate-feed address this instance is configured with, resolved from the SAME config the deploy

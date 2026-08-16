@@ -1531,7 +1531,13 @@ Deploys plain + meta adapters via plain `new` (CREATE), then the delegatecall as
 
 - **Precondition:** 1.1 cleared `balanceAdapters.*` **and** the three `*Assistant` keys.
 - **Post-condition:** `python3 script/deploy/preflight/verify_step.py 1.7` — adapter count per chain
-  = 27 / 8 / 7 / 4 / 3 / 2 / 1 for 1 / 42161 / 8453 / 100 / 10 / 137 / 56 (ERC20Default included),
+  = **29** / 8 / 7 / 4 / 3 / 2 / 1 for 1 / 42161 / 8453 / 100 / 10 / 137 / 56 (ERC20Default included),
+  re-derived from config across ALL SEVEN chains 2026-08-16 as `enabled plain + enabled meta + 1`, the
+  same expression `verify_step.py` 1.7 asserts. **Chain 1 moved 27 -> 29 and the other six did not**:
+  this wave adds two KEYS there — #285's Cap split turns one key into two (`CapStablecoin` +
+  `CapSavings`) and #308 adds `SymbioticVaultsMeta`. 1.7 derives from config and PASSES at 29, so an
+  operator comparing against the old 27 reads a CORRECT deploy as two phantom adapters and may halt or
+  re-run 1.1 — and this document's own rehearsal record above already says 29,
   every adapter has code, and **each assistant's `ADAPTER()` resolves to its paired assisted adapter**.
   Run it on chains 1 and 100: against the live stack it reproduces all four orphaned pairings from
   2.1, so a clean report here is the proof the swap was rebuilt rather than inherited.
@@ -2012,38 +2018,62 @@ against, and 2.6 cannot run until the new addresses are recorded.
     not touch it until `RegisterAssets` runs on the NEW proxy. **Attribute these to #236, not to
     #308** — nothing in this PR caused them and this PR cannot clear them.
 
-    **Derive today's exact set rather than trusting any list** — including this one. Order-of-magnitude
-    at the time of writing: ~24 heartbeat-only fields across chains 1 / 10 / 100 / 42161 / 8453, plus 3
-    monitor-SET changes on chain 1 (`stETH` and `ezETH` gain a monitor, `ETHx` drops one — that last is
-    the #302 change already described in the ETHx bullet below). Those figures are illustrative and go
-    stale on the next config change; the derivation does not:
+    **Derive today's exact set rather than trusting any list** — including this one. At the time of
+    writing the heartbeat class is ~24 fields across chains 1 / 10 / 100 / 42161 / 8453. Those figures
+    are illustrative and go stale on the next config change; the derivation does not.
+
+    **A SEPARATE, SMALLER FAMILY sits in the same output and is NOT #236's:** three monitor-SET changes
+    on chain 1, where the number of monitor feeds changes rather than a heartbeat. `stETH` gains one
+    from **#199** (stETH primary becomes fundamental, `stETHCrossRate` demoted to a monitor), `ezETH`
+    gains one from **#224** (`ezETHCrossRateMarket`), and `ETHx` drops one from **#302** — the last is
+    the change the ETHx bullet below already describes. Attributing these to #236 would point a reader
+    at the wrong diff.
 
     ```bash
     python3 - <<'EOF'
     import json, glob, os
+    # Mirrors diff_snapshots.py's asset pairing: key by ADDRESS, label with the SNAPSHOT's `symbol`
+    # (diff_chain uses am[addr]["symbol"], not the config key), and print its exact line format.
     for p in sorted(glob.glob("script/deploy/preflight/snapshots/pre/*.json")):
         ch = os.path.basename(p)[:-5]
         cfgp = f"script/config/nav-config/assets-and-price-feeds/{ch}.json"
         if not ch.isdigit() or not os.path.exists(cfgp): continue
         pre, cfg = json.load(open(p)), json.load(open(cfgp))
-        by = {v["address"].lower(): (k, v) for k, v in cfg.items()
+        by = {v["address"].lower(): v for v in cfg.values()
               if isinstance(v, dict) and v.get("address")}
         for a in pre.get("assets", []):
-            hit = by.get(a["address"].lower())
-            if not hit: continue
-            sym, c = hit
+            c = by.get(a["address"].lower())
+            if not c: continue
             for field in ("priceFeeds", "monitorFeeds"):
                 snap = [f["heartbeat"] for f in a.get(field, [])]
                 conf = [f.get("heartbeat") for f in (c.get(field) or [])]
                 if snap != conf:
-                    print(f"chain {ch}: DIFF  asset {sym} {field}: {snap} -> {conf}")
+                    print(f"chain {ch}: DIFF  asset {a['symbol']} {field}: {snap} -> {conf}")
     EOF
     ```
 
+    ⚠️ **This is a LOWER BOUND on the asset lines, and the reason is worth knowing before you treat its
+    output as the full set.** `diff_snapshots.py` compares `feed_shape` = `(priceType, decimals,
+    heartbeat)` (`:40-42`), between the PRE and POST snapshots. This derivation compares PRE against
+    CONFIG, and config supplies only one of those three axes reliably:
+
+    - `decimals` is **absent from config entirely** — the snapshot reads it on-chain, so it cannot be
+      derived here at all;
+    - `priceType` **does not correspond 1:1**: measured on chain 1, a config `Custom` entry appears in
+      the snapshot as `Chainlink` for some assets, so comparing the strings would manufacture false
+      positives;
+    - `heartbeat` compares cleanly, and is the axis #236 moved.
+
+    So the output above is every heartbeat divergence and nothing else; the tool may print further
+    `DIFF  asset …` lines on the other two axes, and `asset_shape` also covers `symbol`, `decimals`,
+    `divergenceToleranceBps`, `pegToleranceBps` and `includedInDefaultAdapter`, none of which this
+    snippet touches. Treat a line it does NOT predict as unexplained until you have run it down — do
+    not treat this list as closed.
+
     **Why a derivation and not a list.** A hand-written list of these has now gone stale on this
-    document five times, and a stale CLOSED list is worse than none — it turns a correct cutover into a
-    halt. When this was reported, the reported chain-1 set named nine assets; running the derivation
-    above finds ten (`sGHO 86400 -> 90000` was missing). Run it, keep the output next to the diff, and
+    document five times, and a stale CLOSED list is worse than none because it turns a correct cutover
+    into a halt. When this was reported, the reported chain-1 set named nine assets; the derivation
+    finds ten (`sGHO 86400 -> 90000` was missing). Run it, keep the output beside the diff, and
     adjudicate against that.
 
   **This is a list of MECHANISMS, not a closed set of lines.** Each mechanism explains why a class of

@@ -307,6 +307,16 @@ jobs:
           python3 -m unittest test_deployer_balances -v
           python3 -O -m unittest test_deployer_balances
 
+      - name: Heartbeat-guard self-test (declared_heartbeat_guard --self-test)
+        # Wired for the same reason as the step below, and after the same failure: a scope change to
+        # `configured_chain_ids` made this module's own self-test exit 1 on a clean tree (its arm redirects
+        # REPO at a synthetic tempdir with no `chains/` directory) and every CI check stayed green. Runs
+        # without a build and without network — the `snapshots/pre/*.json` it needs are committed.
+        #
+        # `bytecode_audit.py --self-test` is deliberately NOT here: it indexes `out/`, so it exits 2 in a
+        # job that does not compile. It belongs with a build, not with the config gates.
+        run: python3 script/deploy/preflight/declared_heartbeat_guard.py --self-test
+
       - name: Config-guard self-test (preflight_config --self-test)
         # WIRED HERE BECAUSE ITS ABSENCE COST US ONE. `preflight_config.py --self-test` is the command the
         # module docstring tells an operator to run before a mainnet deploy to "prove the guards themselves",

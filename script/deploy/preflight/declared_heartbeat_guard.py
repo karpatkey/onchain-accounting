@@ -217,10 +217,25 @@ def configured_chain_ids() -> list[str]:
     # A digit-stemmed file is not by itself a chain — `chains/<id>.json` (metadata + role addresses) is what
     # makes one. Globbing alone meant ANY stray digit-named file in those directories became an audited
     # chain: a test fixture left behind by an interrupted run printed a fabricated `=== chain 999901 ===`
-    # section in a pre-deploy report and inflated the "examined on all N chains" coverage claim. Requiring
-    # the metadata file kills that at the source, whatever put the file there. Verified: all 7 configured
-    # ids have one (25 chains/ files exist, so this narrows nothing real).
-    known = {p.stem for p in (REPO / "script/config/chains").glob("*.json") if p.stem.isdigit()}
+    # section in a pre-deploy report and inflated the "examined on all N chains" coverage claim.
+    #
+    # TWO GUARDS ON THE FILTER ITSELF, because a scope filter that misfires is worse than the phantom it
+    # removes — this function's own docstring says evidence must never get to choose its own scope:
+    #   1. If `chains/` is absent or empty we CANNOT filter, so we do not. Intersecting unconditionally
+    #      returned [] against any tree without that directory — including this module's own `--self-test`,
+    #      which redirects REPO at a synthetic tempdir and which this broke (exit 1) until it was guarded.
+    #   2. A config id with no metadata file is NAMED on stderr, never silently dropped. Writing the
+    #      feed/asset config before `chains/<id>.json` is a normal ordering when adding a chain, and a
+    #      silently shrunk audit that still prints `0 ERROR` is the exact failure this module exists to stop.
+    chains_dir = REPO / "script/config/chains"
+    known = {p.stem for p in chains_dir.glob("*.json") if p.stem.isdigit()} if chains_dir.is_dir() else set()
+    if not known:
+        return sorted(ids, key=int)
+    dropped = sorted(ids - known, key=int)
+    if dropped:
+        print(f"WARN  {len(dropped)} configured chain id(s) have no script/config/chains/<id>.json and are "
+              f"NOT audited: {', '.join(dropped)}. Add the metadata file, or remove the stray config file.",
+              file=sys.stderr)
     return sorted(ids & known, key=int)
 
 

@@ -273,7 +273,16 @@ def check_immutable_pointers(chain_id: int, url: str, res: dict) -> None:
                 # Declared, by the CONTRACT, to have no NAV dependency. Non-applicable, not unreadable.
                 e["pointerCheck"] = "N/A (BASE_ASSET() == 0, no NAV dependency)"
                 continue
-            e["pointerCheck"] = f"UNREADABLE ({val})"
+            # `rpc_batch` returns its errors IN BAND and fills a whole window with them on one failed POST,
+            # so a BASE_ASSET() window that errored makes `base_val` an exception rather than a zero word —
+            # and the exemption above cannot fire. Say TRANSPORT explicitly: for a feed with no NAV member
+            # this branch is reached on every run, so the operator would otherwise be sent hunting a
+            # leftover feed that does not exist when the answer is "re-run it". Still escalates below: a
+            # transport failure is unknown, not clean.
+            if isinstance(base_val, Exception):
+                e["pointerCheck"] = f"UNREADABLE (TRANSPORT on BASE_ASSET(); re-run) ({val})"
+            else:
+                e["pointerCheck"] = f"UNREADABLE ({val})"
             # ESCALATE HERE, not at the status rewrite below — this branch `continue`s past it. An
             # unreadable pointer is precisely the evidence of an old-generation feed that `03`
             # skip-if-deployed'd: its immutable-masked bytecode still matches the current build, so

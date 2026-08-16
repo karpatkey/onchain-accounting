@@ -713,9 +713,6 @@ def _declared_address(chain_id: int, feed_name: str, key: str):
         return None, f"custom-price-feeds/{chain_id}.json unreadable ({type(e).__name__})"
     if not isinstance(entry, dict):
         return None, f"config entry for {feed_name!r} is {type(entry).__name__}, not an object"
-    # NO separate `constructor`-shape gate. A malformed `constructor` (null, a list, a scalar left behind by
-    # an edit) does not stop `03` resolving a key declared at the TOP level, so hard-failing here red-gated a
-    # deployment that is correct — `resolve_param` simply skips a non-dict scope. The value is what matters.
     # Resolved by the SHARED accessor, which is the one place this repo encodes what
     # `ConfigReader.readAdapterParam` does — top level, then `constructor`, then `initialize`. Open-coding it
     # here (as this did, and it stopped at two of the three scopes) is what made a key written under
@@ -723,6 +720,20 @@ def _declared_address(chain_id: int, feed_name: str, key: str):
     # below reported PASS having compared nothing.
     raw = pc.resolve_param(entry, key)
     if raw is None:
+        # A malformed `constructor` scope is NOT "no opinion recorded". `resolve_param` skips a non-dict
+        # scope, so `""`/`null`/a list there resolves to None and would collapse into the legitimate
+        # no-opinion path — turning the config-vs-contract cross-check into a silent no-op for exactly the
+        # feed whose config is broken, while step 1.5 still printed PASS. That collapse is what this
+        # function's `(value, error)` split exists to prevent.
+        #
+        # Only when the key resolved NOWHERE, though. A feed declaring the key at the TOP level with a
+        # leftover malformed `constructor` deploys correctly (`readAdapterParam` checks the top level
+        # first), and hard-failing on it red-gated a correct deployment — which is why the unconditional
+        # shape gate that used to sit above was removed rather than kept.
+        ctor = entry.get("constructor")
+        if ctor is not None and not isinstance(ctor, dict):
+            return None, (f"`constructor` for {feed_name!r} is {type(ctor).__name__}, not an object, and "
+                          f"{key!r} is not declared at any other scope — so nothing can be cross-checked")
         return None, None                      # no opinion recorded; nothing to cross-check
     # Shape AND hex, mirroring preflight_config.is_address_shaped — a 42-char non-hex placeholder such as
     # "0xREPLACE_ME_WITH_THE_REAL_ADDR" passes a length check and then raises inside int(raw, 16) at the
@@ -775,12 +786,19 @@ def step_custom_price_feeds(k: Chk, rec: dict, exp: dict, url, base, tag) -> Non
         # tag, so a second redeploy must pass a new --tag, while this tool still defaults to `pre-redeploy`.
         snap_proxy = (base.get(k.chain_id) or {}).get("proxy")
         rec_proxy = rec.get("NAVCalculatorProxy")
+        # STRONG only when we POSITIVELY established the previous-generation set came from a DIFFERENT
+        # proxy. `base` (snapshots/pre/index.json) and the per-chain file `old` is built from are separate
+        # files, so `old` can be non-empty while `snap_proxy` is None — and the flag was set inside the
+        # `is_address` guard below, leaving it False in exactly that case. Default to weak and clear it only
+        # on proof, rather than defaulting to strong and hoping the proof is readable.
+        proven_different = (c.is_address(snap_proxy) and c.is_address(rec_proxy)
+                            and lower(snap_proxy) != lower(rec_proxy))
+        weak_generation_evidence = not proven_different
         if c.is_address(snap_proxy) and c.is_address(rec_proxy) and lower(snap_proxy) == lower(rec_proxy):
             # `old` is non-empty but derived from the CURRENT proxy, so it cannot show a
             # generation-2-vs-3 leftover. For BASE_ASSET() == 0 feeds that is the same dead end as `old`
             # being empty — no address comparison AND no NAV pointer — so the per-feed warning below must
             # fire here too, not only in the `else`.
-            weak_generation_evidence = True
             k.warn.append(
                 f"the previous-generation feed set was derived from sources whose proxy ({snap_proxy}) is "
                 f"still the one in the record, so this only shows the feeds are not stale by ONE generation. "

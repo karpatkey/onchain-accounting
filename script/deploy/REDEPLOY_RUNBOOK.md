@@ -1858,19 +1858,23 @@ against, and 2.6 cannot run until the new addresses are recorded.
 
 **Known-expected diffs — do NOT treat these as regressions:**
 
-- **`MorphoVaultsMeta` GAINS one meta instance on mainnet, and `metaInstanceTotal` goes 66 → 67.** The
+- **Chain 1 GAINS THREE meta instances and ONE new adapter; `metaInstanceTotal` goes 66 → 69.**
+  (Two on `MorphoVaultsMeta`, one on the new `SymbioticVaultsMeta` — enumerated in the addendum at the
+  end of this bullet. The #296 vault below is the first of the three.) The
   committed pre-snapshot (`snapshots/pre/1.json`, block 25625439) was captured when chain 1 held 9
   `MorphoVaultsMeta` instances. The KPK USDC Yield RWA vault
   `0x7a72bcD2c3F7F7e4D6679170a0625bAB15D7DDa1` was added to the LIVE NAV on 2026-08-12 by
   `addMetaInstances` (issue #296) and to config in the same PR, so `diff_snapshots.py pre post` will
-  print `GAINED meta instance 0x…7a72bcd2…` and `metaInstanceTotal 66 -> 67`. **This is a STRUCTURAL
+  print `GAINED meta instance 0x…7a72bcd2…` as one of the three. **This is a STRUCTURAL
   diff and this section's rule is that a structural diff is never explained by drift — which is exactly
   why it is enumerated here rather than left to be waved through.** **Expect the STRUCTURAL lines and NOTHING ELSE — no new position entry and no `nav.value`
   movement.** Measured on mainnet 2026-08-12: the vault holds `totalAssets() = 1002452` (1.0025 USDC)
   against `totalSupply() = 1e18`, and that entire supply sits at `0x…dEaD` — seed shares. Every tracked
   chain-1 account holds ZERO, so no snapshotted account has a position to report. **The check to make is
-  the GAINED-instance line and `metaInstanceTotal 66 -> 69` (see the PR #308 addendum below).** Their ABSENCE means the reconciliation
+  the THREE GAINED-instance lines and `metaInstanceTotal 66 -> 69`.** Their ABSENCE means the reconciliation
   dropped the vault — **but ONLY when diffing against the COMMITTED `pre/` snapshot (block 25625439),
+  which holds 9 instances.**
+
   **ADDENDUM — PR #308 (2026-08-15) adds TWO more chain-1 meta instances AND A NEW ADAPTER, so the
   expected structural diff is now `metaInstanceTotal 66 -> 69`, not `-> 67`:**
   - `GAINED meta instance 0x…b5ce3ca2…` — **KPK wARS Yield**, a `MorphoVaultsMeta` instance (Morpho
@@ -1878,13 +1882,17 @@ against, and 2.6 cannot run until the new addresses are recorded.
   - `GAINED meta instance 0x…8bcd7469…` — **KPK USDC LiquidLane**, on the **new** `SymbioticVaultsMeta`
     adapter, which will itself appear as a GAINED ADAPTER. A new adapter in this diff is expected exactly
     once, here; anywhere else it is the structural signal this section exists to catch.
-  - `wARS` appears as a GAINED registered asset and a GAINED custom price feed (mainnet assets 42 -> 43,
-    feeds 25 -> 26 enabled).
+  - `wARS` appears as a GAINED registered asset and a GAINED custom price feed. **NOTE the asset COUNT
+    does not move: the committed `pre/1.json` holds 43 assets INCLUDING OETH, which was retired on
+    2026-08-12, so the diff prints `assetCount 43 -> 43` together with BOTH `LOST asset OETH` AND
+    `GAINED asset wARS`. The LOST OETH line is expected here and is NOT a regression** — it is the
+    snapshot catching up with a retirement that predates this PR. (42 -> 43 is the CONFIG delta across
+    #308; §2.3 compares against the SNAPSHOT, which is a different baseline.)
   Unlike the #296 vault, **the LiquidLane instance is NOT dust** — the KPK Safe holds a real position
   (~$1.0M in the vault at the time of writing), so tracked chain-1 accounts CAN report a position
   through it. A position line for it is therefore expected and is not drift.
 
-  which holds 9 instances.** §0.7 sanctions refreshing `pre/`; if it is refreshed AFTER this change,
+  §0.7 sanctions refreshing `pre/`; if it is refreshed AFTER this change,
   both lines legitimately disappear and their absence proves nothing. Check `pre/1.json`'s
   `MorphoVaultsMeta` length first: 9 means the absence test is valid, 10 means it is not and the
   structural check has already been absorbed into the baseline. Do NOT treat a flat `nav.value` as evidence of a drop — a $1 seed position could

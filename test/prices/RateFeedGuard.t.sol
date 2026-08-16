@@ -331,7 +331,7 @@ contract RateFeedGuardTest is Test {
     ///      resolves the TOP LEVEL first — so `03` deploys from a key the guard could not see. An instance
     ///      naming its rate feed there with no `rateFeedGuard` block passed {checkAll} silently, with no pair
     ///      check and no band check at all. Note there is no band here: this pins the PARAM axis specifically,
-    ///      so it cannot pass by accident via {RateFeedBandUnguarded}.
+    ///      so it pins the PARAM axis on its own.
     function test_topLevelRateFeedParam_isNotInvisibleToTheFailClosedScan() public {
         _writeSynth(
             SYNTH_TOPPARAM,

@@ -68,6 +68,11 @@ contract DeployPriceFeeds is BaseDeployScript {
     ///      MID-BROADCAST with earlier feeds already deployed and a half-written deployments record.
     error InvertedFeedParamMissing(string feed, string key);
 
+    /// @notice An inverted feed's numeric param is present but not a decimal number.
+    /// @dev `vm.parseUint` reverts on it exactly as it does on an empty string, so without this the run
+    ///      aborted MID-BROADCAST with earlier feeds already deployed.
+    error InvertedFeedParamNotNumeric(string feed, string key, string raw);
+
     function run() public override {
         setUp();
 
@@ -675,9 +680,9 @@ contract DeployPriceFeeds is BaseDeployScript {
             // for the first time inside `_deployInvertedFeed` meant a missing value aborted the run
             // MID-BROADCAST with earlier feeds already deployed — the failure mode that moving the
             // baseAsset assertion out here was meant to eliminate, left half-solved.
-            _requireDeclared(names[i], "usdToAssetChainlinkHeartbeat");
-            _requireDeclared(names[i], "minAnswer");
-            _requireDeclared(names[i], "maxAnswer");
+            _requireDeclaredUint(names[i], "usdToAssetChainlinkHeartbeat");
+            _requireDeclaredUint(names[i], "minAnswer");
+            _requireDeclaredUint(names[i], "maxAnswer");
             _requireDeclared(names[i], "underlyingAsset");
 
             string memory declaredBase = ConfigReader.readPriceFeedParam(vm, currentChainId, names[i], "baseAsset");
@@ -688,6 +693,19 @@ contract DeployPriceFeeds is BaseDeployScript {
             if (vm.parseAddress(declaredBase) != address(0)) {
                 revert InvertedFeedBaseAssetMustBeZero(names[i], vm.parseAddress(declaredBase));
             }
+        }
+    }
+
+    /// @dev Pre-broadcast check for one required NUMERIC param of an inverted feed: present AND parseable.
+    ///      Presence alone was not enough — `vm.parseUint` reverts on a non-numeric value just as it does on
+    ///      an empty one, so a present-but-garbage `minAnswer` still aborted MID-BROADCAST, which is the
+    ///      whole failure this sweep was moved out here to prevent. Digits are checked directly because
+    ///      Solidity cannot try/catch a cheatcode.
+    function _requireDeclaredUint(string memory feed, string memory key) internal view {
+        bytes memory raw = bytes(ConfigReader.readPriceFeedParam(vm, currentChainId, feed, key));
+        if (raw.length == 0) revert InvertedFeedParamMissing(feed, key);
+        for (uint256 i; i < raw.length; ++i) {
+            if (raw[i] < 0x30 || raw[i] > 0x39) revert InvertedFeedParamNotNumeric(feed, key, string(raw));
         }
     }
 

@@ -34,8 +34,11 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 ///      `activeStake()`, `burner()` — **all revert**. A Symbiotic CORE vault has the opposite shape
 ///      (epoch-based `activeBalanceOf` plus a withdrawal queue) and is NOT valued correctly by this
 ///      adapter; it needs its own, per the roadmap's "vaults + delegations" entry. Registering a core
-///      vault as an instance here would report zero, not a wrong number, because `balanceOf` is not the
-///      core vault's accounting unit — but do not rely on that: check the shape before adding an instance.
+///      vault as an instance here yields NO position rather than a wrong number, but not for the reason
+///      an earlier version of this note gave: `_instancePositions` reverts on its FIRST line, at
+///      `vault.asset()`, which a core vault does not implement, and {MetaBalanceAdapter}'s per-instance
+///      catch drops that instance. The outcome is an under-report either way — never do rely on it:
+///      check the shape before adding an instance.
 /// @dev **Single `Supplied` leg is correct — verified, not assumed.** The vault redeems synchronously:
 ///      `maxRedeem(holder) == balanceOf(holder)` exactly, for all four real holders sampled from Transfer
 ///      logs at block 25760274, and the ERC-7540 async surface (`pendingRedeemRequest` /

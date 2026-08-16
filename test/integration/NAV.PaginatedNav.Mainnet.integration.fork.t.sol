@@ -19,8 +19,13 @@ import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 ///      three mock adapters proves very little; the interesting cases — a meta-adapter fanning out over 14 Morpho
 ///      markets, an adapter reporting a debt leg, two adapters reporting the same asset — only exist here.
 ///
-///      **Coverage, stated honestly: this harness registers 41 assets and 21 adapters, where the mainnet deploy
-///      config carries 43 and 27.** The six it skips are the ones whose deploy type the harness does not know
+///      **Coverage, stated honestly — AS MEASURED, NOT MAINTAINED: this harness registered 41 assets and 21
+///      adapters when these figures were taken, where the mainnet deploy config carried 43 and 27.** Both
+///      sides move as the registry grows (PR #308 adds a Symbiotic meta-adapter to each) and NOTHING
+///      asserts these counts — deliberately, since pinning them would redden the suite on every registry
+///      change. Treat them as descriptive of the run they were measured in.
+///
+///      The six it skips are the ones whose deploy type the harness does not know
 ///      (`EthenaCooldown`, `LidoWithdrawalQueue`, `EulerVaultsMeta`, and the three assisted adapters). So the
 ///      invariant is NOT exercised over those six, and an adapter whose behaviour differs under a one-adapter slice
 ///      would ship unverified. Do not read this file as proving the whole production registry.

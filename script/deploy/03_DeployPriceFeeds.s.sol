@@ -646,11 +646,6 @@ contract DeployPriceFeeds is BaseDeployScript {
     // removed — and it sat five lines above the docstring below that already says the opposite. A comment
     // asserting the reverse of the behaviour, in the place someone goes to check the behaviour, is worse than none.
 
-    /// @notice Deploys a generic {InvertedChainlinkCustomPriceFeed} from config, by feed key.
-    /// @dev For assets whose ONLY Chainlink coverage is quoted `USD / X` (X per USD) — the reciprocal of the
-    ///      asset/USD direction {Prices} registers. The constructor param is named `*ChainlinkAddress` so
-    ///      {RateFeedGuard} recognises it as a rate feed and REQUIRES a `rateFeedGuard` block, which pins both
-    ///      the pair and the direction; without that naming the guard would silently skip this feed.
     /// @notice Pre-broadcast: every enabled inverted feed must declare `baseAsset` absent or `address(0)`.
     /// @dev Keyed on the `usdToAssetChainlinkAddress` param, which is what makes an entry an inverted feed —
     ///      not on a hardcoded name, so a second `USD / X` feed is covered the day it is configured.
@@ -693,6 +688,11 @@ contract DeployPriceFeeds is BaseDeployScript {
         }
     }
 
+    /// @notice Deploys a generic {InvertedChainlinkCustomPriceFeed} from config, by feed key.
+    /// @dev For assets whose ONLY Chainlink coverage is quoted `USD / X` (X per USD) — the reciprocal of the
+    ///      asset/USD direction {Prices} registers. The constructor param is named `*ChainlinkAddress` so
+    ///      {RateFeedGuard} recognises it as a rate feed and REQUIRES a `rateFeedGuard` block, which pins both
+    ///      the pair and the direction; without that naming the guard would silently skip this feed.
     function _deployInvertedFeed(string memory name) internal {
         address deployed = _readAdapterDeployed("priceFeeds", name);
         if (deployed != address(0)) {

@@ -105,8 +105,8 @@ contract InvertedChainlinkCustomPriceFeed is ICustomPriceFeed, INavSourcedPriceF
 
     /// @notice Inclusive lower/upper bound on the RAW oracle answer, in the feed's own decimals.
     /// @dev **The direction pin, moved to READ time.** `RateFeedGuard` pins `description()` and a
-    ///      plausibility band, but it is explicitly deploy-only ("Call this BEFORE deploying",
-    ///      `RateFeedGuard.sol:102`) — it cannot see a Chainlink proxy that later migrates its aggregator
+    ///      plausibility band, but it is explicitly deploy-only (see {RateFeedGuard.checkAll}: "Call this
+    ///      BEFORE deploying") — it cannot see a Chainlink proxy that later migrates its aggregator
     ///      at the SAME address with the SAME decimals. If such a migration re-quoted this feed as
     ///      `X / USD` instead of `USD / X`, the decimals check above would pass and the inversion would
     ///      report ~$1,583 instead of ~$0.00063 with `stale == false` — the exact 2.5-million-x

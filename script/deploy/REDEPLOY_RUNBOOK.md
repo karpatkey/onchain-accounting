@@ -2004,6 +2004,51 @@ against, and 2.6 cannot run until the new addresses are recorded.
     the single `Cap` adapter, so a refresh reproduces `MISSING in new: Cap` together with both ADDED
     halves.
 
+  - **A LARGE CLASS OF `DIFF  asset <SYM> priceFeeds:` / `monitorFeeds:` LINES — pre-existing, from
+    #236, NOT from this PR.** `#236` (merged 2026-07-31) raised pegged-feed heartbeats in CONFIG
+    *after* the live NAV had been registered with the old values, and `snapshot_production.py` reads
+    heartbeats from the ON-CHAIN registry (`feed_obj`, `:255-256`), so `pre/` carries what the old NAV
+    holds. A refresh cannot absorb them: re-capturing re-reads the same live registry, and config does
+    not touch it until `RegisterAssets` runs on the NEW proxy. **Attribute these to #236, not to
+    #308** — nothing in this PR caused them and this PR cannot clear them.
+
+    **Derive today's exact set rather than trusting any list** — including this one. Order-of-magnitude
+    at the time of writing: ~24 heartbeat-only fields across chains 1 / 10 / 100 / 42161 / 8453, plus 3
+    monitor-SET changes on chain 1 (`stETH` and `ezETH` gain a monitor, `ETHx` drops one — that last is
+    the #302 change already described in the ETHx bullet below). Those figures are illustrative and go
+    stale on the next config change; the derivation does not:
+
+    ```bash
+    python3 - <<'EOF'
+    import json, glob, os
+    for p in sorted(glob.glob("script/deploy/preflight/snapshots/pre/*.json")):
+        ch = os.path.basename(p)[:-5]
+        cfgp = f"script/config/nav-config/assets-and-price-feeds/{ch}.json"
+        if not ch.isdigit() or not os.path.exists(cfgp): continue
+        pre, cfg = json.load(open(p)), json.load(open(cfgp))
+        by = {v["address"].lower(): (k, v) for k, v in cfg.items()
+              if isinstance(v, dict) and v.get("address")}
+        for a in pre.get("assets", []):
+            hit = by.get(a["address"].lower())
+            if not hit: continue
+            sym, c = hit
+            for field in ("priceFeeds", "monitorFeeds"):
+                snap = [f["heartbeat"] for f in a.get(field, [])]
+                conf = [f.get("heartbeat") for f in (c.get(field) or [])]
+                if snap != conf:
+                    print(f"chain {ch}: DIFF  asset {sym} {field}: {snap} -> {conf}")
+    EOF
+    ```
+
+    **Why a derivation and not a list.** A hand-written list of these has now gone stale on this
+    document five times, and a stale CLOSED list is worse than none — it turns a correct cutover into a
+    halt. When this was reported, the reported chain-1 set named nine assets; running the derivation
+    above finds ten (`sGHO 86400 -> 90000` was missing). Run it, keep the output next to the diff, and
+    adjudicate against that.
+
+  **This is a list of MECHANISMS, not a closed set of lines.** Each mechanism explains why a class of
+  difference survives a `pre/` refresh; the heartbeat class above is the one whose membership changes
+  without anyone touching this PR, which is why it ships with a derivation instead of an enumeration.
   There is no `assetCount` line and no per-feed line; do not wait for either. Checked against the
   committed baseline rather than assumed: it contains no `Symbiotic` key and no `wARS`, it DOES still
   carry `OETH`, and it DOES still carry `Cap`.

@@ -323,7 +323,10 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
             vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "wARS", "usdToAssetChainlinkAddress"));
         uint256 heartbeat =
             vm.parseUint(ConfigReader.readPriceFeedParam(vm, _chainId, "wARS", "usdToAssetChainlinkHeartbeat"));
-        return address(new InvertedChainlinkCustomPriceFeed(underlying, usdToAssetFeed, heartbeat));
+        uint256 minAnswer = vm.parseUint(ConfigReader.readPriceFeedParam(vm, _chainId, "wARS", "minAnswer"));
+        uint256 maxAnswer = vm.parseUint(ConfigReader.readPriceFeedParam(vm, _chainId, "wARS", "maxAnswer"));
+        return
+            address(new InvertedChainlinkCustomPriceFeed(underlying, usdToAssetFeed, heartbeat, minAnswer, maxAnswer));
     }
 
     function _deploySyrupUsdc() internal returns (address) {

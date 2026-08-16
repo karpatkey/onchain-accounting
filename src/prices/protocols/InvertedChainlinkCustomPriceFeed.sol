@@ -8,6 +8,7 @@ import {AggregatorV3Interface} from "@chainlink/src/v0.8/shared/interfaces/Aggre
 import {OracleArgumentChecks} from "src/utils/OracleArgumentChecks.sol";
 import {StaticCallLib} from "src/utils/StaticCallLib.sol";
 import {NAV_DECIMALS} from "src/constants.sol";
+import {InvalidArguments} from "src/errors.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
 /// @title Inverted Chainlink Price Adapter
@@ -102,10 +103,38 @@ contract InvertedChainlinkCustomPriceFeed is ICustomPriceFeed, INavSourcedPriceF
     /// @notice Decimals of the returned price — `NAV_DECIMALS` (8).
     uint8 private immutable _decimals;
 
+    /// @notice Inclusive lower/upper bound on the RAW oracle answer, in the feed's own decimals.
+    /// @dev **The direction pin, moved to READ time.** `RateFeedGuard` pins `description()` and a
+    ///      plausibility band, but it is explicitly deploy-only ("Call this BEFORE deploying",
+    ///      `RateFeedGuard.sol:102`) — it cannot see a Chainlink proxy that later migrates its aggregator
+    ///      at the SAME address with the SAME decimals. If such a migration re-quoted this feed as
+    ///      `X / USD` instead of `USD / X`, the decimals check above would pass and the inversion would
+    ///      report ~$1,583 instead of ~$0.00063 with `stale == false` — the exact 2.5-million-x
+    ///      over-report this contract exists to prevent, on an IMMUTABLE contract, with nothing else to
+    ///      catch it (wARS deliberately carries no `monitorFeeds` and no `pegToleranceBps`).
+    ///      An inverted answer lands orders of magnitude outside the band, so the band catches the
+    ///      re-quote that `decimals()` cannot — the same argument `RateFeedGuard` makes for having a band
+    ///      at all, applied where an immutable contract can still act on it.
+    uint256 public immutable MIN_ANSWER;
+    uint256 public immutable MAX_ANSWER;
+
     /// @param underlyingAsset_   The asset being priced (X); must be ERC20-like.
     /// @param usdToAssetFeed_    Chainlink `USD / X` oracle (X per USD).
     /// @param feedHeartbeat_     Staleness threshold (seconds) for that oracle.
-    constructor(address underlyingAsset_, address usdToAssetFeed_, uint256 feedHeartbeat_) {
+    /// @param minAnswer_         Inclusive lower bound on the raw answer, in the feed's decimals.
+    /// @param maxAnswer_         Inclusive upper bound on the raw answer, in the feed's decimals.
+    constructor(
+        address underlyingAsset_,
+        address usdToAssetFeed_,
+        uint256 feedHeartbeat_,
+        uint256 minAnswer_,
+        uint256 maxAnswer_
+    ) {
+        if (minAnswer_ == 0 || maxAnswer_ <= minAnswer_) {
+            revert InvalidArguments();
+        }
+        MIN_ANSWER = minAnswer_;
+        MAX_ANSWER = maxAnswer_;
         UNDERLYING_ASSET = OracleArgumentChecks.assertERC20Address(underlyingAsset_);
         USD_TO_ASSET_FEED = OracleArgumentChecks.assertChainlinkOracle(usdToAssetFeed_);
         FEED_HEARTBEAT = OracleArgumentChecks.assertNotZeroNumber(feedHeartbeat_);
@@ -148,6 +177,13 @@ contract InvertedChainlinkCustomPriceFeed is ICustomPriceFeed, INavSourcedPriceF
         // A non-positive answer makes the inversion undefined — and a zero denominator would REVERT inside
         // mulDiv, which on the read path is a worse failure than reporting staleness. Gate it here.
         if (answer <= 0) return (0, true, roundId, startedAt, updatedAt, answeredInRound);
+
+        // The band. See MIN_ANSWER/MAX_ANSWER: this is what survives an aggregator migration that
+        // `decimals()` cannot detect, and it is the only runtime defence this asset has.
+        uint256 raw = uint256(answer);
+        if (raw < MIN_ANSWER || raw > MAX_ANSWER) {
+            return (0, true, roundId, startedAt, updatedAt, answeredInRound);
+        }
 
         // Guard against an upstream clock ahead of ours before measuring age (as {TwoFeedChainlinkPriceFeed}).
         uint256 eff = updatedAt > block.timestamp ? block.timestamp : updatedAt;

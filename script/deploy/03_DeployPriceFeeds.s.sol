@@ -643,8 +643,11 @@ contract DeployPriceFeeds is BaseDeployScript {
         uint256 heartbeat =
             vm.parseUint(ConfigReader.readPriceFeedParam(vm, currentChainId, name, "usdToAssetChainlinkHeartbeat"));
 
+        uint256 minAnswer = vm.parseUint(ConfigReader.readPriceFeedParam(vm, currentChainId, name, "minAnswer"));
+        uint256 maxAnswer = vm.parseUint(ConfigReader.readPriceFeedParam(vm, currentChainId, name, "maxAnswer"));
+
         InvertedChainlinkCustomPriceFeed adapter =
-            new InvertedChainlinkCustomPriceFeed(underlying, usdToAssetFeed, heartbeat);
+            new InvertedChainlinkCustomPriceFeed(underlying, usdToAssetFeed, heartbeat, minAnswer, maxAnswer);
         ConfigReader.writeAdapterAddress(vm, currentChainId, "priceFeeds", name, address(adapter));
         console2.log("InvertedChainlinkCustomPriceFeed deployed:", name, address(adapter));
     }

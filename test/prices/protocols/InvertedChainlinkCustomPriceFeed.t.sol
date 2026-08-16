@@ -98,6 +98,8 @@ contract InvertedChainlinkCustomPriceFeedTest is Test {
     /// @dev floor(1e8 * 1e8 / 158309760000) — $0.00063167 per wARS.
     uint256 internal constant ARS_EXPECTED_PRICE = 63167;
     uint256 internal constant HEARTBEAT = 90000; // declared 86400 + 1h margin
+    uint256 internal constant MIN_A = 100e8; // the runtime direction band, feed decimals
+    uint256 internal constant MAX_A = 100000e8;
 
     Mock_ERC20 wars;
     Mock_SignedChainlinkOracle feed;
@@ -108,7 +110,7 @@ contract InvertedChainlinkCustomPriceFeedTest is Test {
         vm.warp(1_000_000);
         wars = new Mock_ERC20("wARS", 18);
         feed = new Mock_SignedChainlinkOracle(ARS_ANSWER, 8);
-        oracle = new InvertedChainlinkCustomPriceFeed(address(wars), address(feed), HEARTBEAT);
+        oracle = new InvertedChainlinkCustomPriceFeed(address(wars), address(feed), HEARTBEAT, MIN_A, MAX_A);
     }
 
     // --- construction --------------------------------------------------------
@@ -122,19 +124,19 @@ contract InvertedChainlinkCustomPriceFeedTest is Test {
 
     function test_invalidConstructorArgs() public {
         vm.expectRevert(); // zero underlying
-        new InvertedChainlinkCustomPriceFeed(address(0), address(feed), HEARTBEAT);
+        new InvertedChainlinkCustomPriceFeed(address(0), address(feed), HEARTBEAT, MIN_A, MAX_A);
 
         vm.expectRevert(); // underlying not ERC20-like (feed has no totalSupply)
-        new InvertedChainlinkCustomPriceFeed(address(feed), address(feed), HEARTBEAT);
+        new InvertedChainlinkCustomPriceFeed(address(feed), address(feed), HEARTBEAT, MIN_A, MAX_A);
 
         vm.expectRevert(); // zero oracle
-        new InvertedChainlinkCustomPriceFeed(address(wars), address(0), HEARTBEAT);
+        new InvertedChainlinkCustomPriceFeed(address(wars), address(0), HEARTBEAT, MIN_A, MAX_A);
 
         vm.expectRevert(); // oracle is not a Chainlink oracle
-        new InvertedChainlinkCustomPriceFeed(address(wars), address(wars), HEARTBEAT);
+        new InvertedChainlinkCustomPriceFeed(address(wars), address(wars), HEARTBEAT, MIN_A, MAX_A);
 
         vm.expectRevert(); // zero heartbeat
-        new InvertedChainlinkCustomPriceFeed(address(wars), address(feed), 0);
+        new InvertedChainlinkCustomPriceFeed(address(wars), address(feed), 0, MIN_A, MAX_A);
     }
 
     // --- the inversion itself ------------------------------------------------
@@ -150,9 +152,13 @@ contract InvertedChainlinkCustomPriceFeedTest is Test {
     }
 
     /// @dev Unity check: at 1 X per USD the price must be exactly $1 (1e8), for any feed decimals.
+    /// @dev Uses its own band: MIN/MAX_ANSWER are in the FEED's decimals, and the ARS band (100e8..100000e8)
+    ///      deliberately excludes unity — a 1-per-USD answer is not a plausible ARS rate.
     function test_price_unityAnswerGivesOneDollar() public {
-        feed.setAnswer(1e8);
-        (uint256 price, bool stale) = oracle.getLatestPrice();
+        Mock_SignedChainlinkOracle f = new Mock_SignedChainlinkOracle(1e8, 8);
+        InvertedChainlinkCustomPriceFeed o =
+            new InvertedChainlinkCustomPriceFeed(address(wars), address(f), HEARTBEAT, 1, 1e18);
+        (uint256 price, bool stale) = o.getLatestPrice();
         assertFalse(stale);
         assertEq(price, 1e8, "1 X per USD => $1.00");
     }
@@ -160,8 +166,9 @@ contract InvertedChainlinkCustomPriceFeedTest is Test {
     /// @dev The feed's own decimals must cancel — an 18-decimal USD/X feed at unity is still $1.
     function test_price_feedDecimalsCancel() public {
         Mock_SignedChainlinkOracle feed18 = new Mock_SignedChainlinkOracle(1e18, 18);
+        // Band in the 18-decimal feed's OWN units — that is what MIN/MAX_ANSWER are denominated in.
         InvertedChainlinkCustomPriceFeed o18 =
-            new InvertedChainlinkCustomPriceFeed(address(wars), address(feed18), HEARTBEAT);
+            new InvertedChainlinkCustomPriceFeed(address(wars), address(feed18), HEARTBEAT, 1, type(uint256).max - 1);
         (uint256 price, bool stale) = o18.getLatestPrice();
         assertFalse(stale);
         assertEq(price, 1e8, "feed decimals cancel out");
@@ -183,8 +190,10 @@ contract InvertedChainlinkCustomPriceFeedTest is Test {
     }
 
     /// @dev Rounding is Floor, so the result never exceeds the exact value.
+    /// @dev Bounded to the configured band: outside it the feed reports stale by design, so the Floor
+    ///      invariant is only meaningful inside.
     function testFuzz_price_neverExceedsExact(int256 answer) public {
-        answer = int256(bound(answer, 1, int256(1e18)));
+        answer = int256(bound(answer, int256(MIN_A), int256(MAX_A)));
         feed.setAnswer(answer);
         (uint256 price, bool stale) = oracle.getLatestPrice();
         assertFalse(stale);
@@ -257,6 +266,41 @@ contract InvertedChainlinkCustomPriceFeedTest is Test {
         assertEq(price, 0);
     }
 
+    /// @dev **The direction pin at READ time.** `RateFeedGuard` pins `description()` and this same band
+    ///      but is deploy-only, so it cannot see a Chainlink proxy that later migrates its aggregator at
+    ///      the same address with the same decimals. An `X / USD` re-quote answers ~67207 here — four
+    ///      orders BELOW the floor — so the band catches what `decimals()` cannot. Without it the feed
+    ///      would report ~$1,583 instead of ~$0.00063 with `stale == false`, on an immutable contract.
+    function test_answerBelowBand_isStale_theInvertedRequoteCase() public {
+        feed.setAnswer(67207); // exactly what the real ARS/USD feed answers
+        (uint256 price, bool stale) = oracle.getLatestPrice();
+        assertTrue(stale, "an ARS/USD re-quote must report stale, not a 2.5-million-x over-report");
+        assertEq(price, 0);
+    }
+
+    function test_answerAboveBand_isStale() public {
+        feed.setAnswer(int256(MAX_A) + 1);
+        (uint256 price, bool stale) = oracle.getLatestPrice();
+        assertTrue(stale);
+        assertEq(price, 0);
+    }
+
+    function test_bandBoundsAreInclusive() public {
+        feed.setAnswer(int256(MIN_A));
+        (, bool stale) = oracle.getLatestPrice();
+        assertFalse(stale, "MIN_ANSWER is inclusive");
+        feed.setAnswer(int256(MAX_A));
+        (, stale) = oracle.getLatestPrice();
+        assertFalse(stale, "MAX_ANSWER is inclusive");
+    }
+
+    function test_invalidBand_reverts() public {
+        vm.expectRevert(); // zero floor
+        new InvertedChainlinkCustomPriceFeed(address(wars), address(feed), HEARTBEAT, 0, MAX_A);
+        vm.expectRevert(); // max <= min
+        new InvertedChainlinkCustomPriceFeed(address(wars), address(feed), HEARTBEAT, MAX_A, MIN_A);
+    }
+
     // --- staleness and bad answers -------------------------------------------
 
     /// @dev A zero answer must report STALE, not revert — mulDiv by zero would revert in-frame.
@@ -326,7 +370,7 @@ contract InvertedChainlinkCustomPriceFeedTest is Test {
     function test_governingFeedFreshness_unreadableLegReportsZeroTimestamp() public {
         Mock_RevertingChainlinkOracle bad = new Mock_RevertingChainlinkOracle();
         InvertedChainlinkCustomPriceFeed o =
-            new InvertedChainlinkCustomPriceFeed(address(wars), address(bad), HEARTBEAT);
+            new InvertedChainlinkCustomPriceFeed(address(wars), address(bad), HEARTBEAT, MIN_A, MAX_A);
         bad.arm(); // only after construction — the constructor probes latestRoundData()
         (uint256 updatedAt, uint256 heartbeat) = o.governingFeedFreshness();
         assertEq(updatedAt, 0, "unreadable leg => 0 (documented no-timestamp value)");

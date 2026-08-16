@@ -36,13 +36,16 @@ contract InvertedChainlinkCustomPriceFeedForkTest is TestEnvConfigurator {
     ///      90000**. A registered 86400 would therefore have gone stale 8 times in 13 days.
     uint256 constant HEARTBEAT = 90_000;
     uint256 constant FORK_BLOCK = 25_760_274;
+    /// @dev Runtime direction band, feed decimals — mirrors the config and rateFeedGuard values.
+    uint256 constant MIN_A = 100e8;
+    uint256 constant MAX_A = 100000e8;
 
     function setUp() public {
         uint256 fork = createForkWithCadence(getAlchemyUrl("eth-mainnet"));
         vm.selectFork(fork);
         vm.rollFork(FORK_BLOCK);
 
-        feed = new InvertedChainlinkCustomPriceFeed(WARS, USD_ARS_FEED, HEARTBEAT);
+        feed = new InvertedChainlinkCustomPriceFeed(WARS, USD_ARS_FEED, HEARTBEAT, MIN_A, MAX_A);
     }
 
     /// @dev The feed really is quoted the wrong way round — this is the premise the contract rests on.

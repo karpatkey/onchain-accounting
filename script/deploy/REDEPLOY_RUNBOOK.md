@@ -117,11 +117,16 @@ was split into `CapStablecoin` + `CapSavings` (one adapter per leg, so each labe
 per-adapter constant an `AssetKindRegistry` override can address). Chain 1's `plain` column goes
 **11 → 12** and the fleet total **12 → 13**. Nothing else moves:
 
+**HISTORICAL — this is the #285 Cap-split delta, measured in ITS era. Every figure here is as of
+2026-08-12 and must NOT be bumped to today's totals; the live figures live in the headline and the
+derivation table above.** (PR #308 later moved plain 13, meta adapters 34, instances 113, feeds 41,
+assets 93 — none of which belongs in this table.)
+
 | total | before | after | why |
 | --- | --- | --- | --- |
 | plain adapters | 12 | **13** | one `Cap` key replaced by two |
 | meta adapters | 33 | 33 | Cap is a plain adapter |
-| meta instances | 113 | 113 | ditto — **step 1.8's per-adapter set assertion is untouched** |
+| meta instances | 111 | 111 | ditto — **step 1.8's per-adapter set assertion is untouched** |
 | custom price feeds | 40 | 40 | no feed involved |
 | assets | 92 | 92 | both legs are still valued in the already-registered USDC |
 

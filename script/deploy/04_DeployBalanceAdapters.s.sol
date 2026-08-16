@@ -23,6 +23,9 @@ import {
     GearboxV3MarketsMetaBalanceAdapter
 } from "../../src/balances/MetaBalanceAdapters/GearboxV3MarketsMetaBalanceAdapter.sol";
 import {EulerVaultsMetaBalanceAdapter} from "../../src/balances/MetaBalanceAdapters/EulerVaultsMetaBalanceAdapter.sol";
+import {
+    SymbioticVaultsMetaBalanceAdapter
+} from "../../src/balances/MetaBalanceAdapters/SymbioticVaultsMetaBalanceAdapter.sol";
 import {CapStablecoinBalanceAdapter} from "../../src/balances/BalanceAdapters/cap/CapStablecoinBalanceAdapter.sol";
 import {CapSavingsBalanceAdapter} from "../../src/balances/BalanceAdapters/cap/CapSavingsBalanceAdapter.sol";
 import {
@@ -141,6 +144,7 @@ contract DeployBalanceAdapters is BaseDeployScript {
         _deployIfEnabled("MorphoVaultsMeta"); // Meta-adapter: all Morpho vaults; instance set configured on NAV (ADR 0010)
         _deployIfEnabled("MorphoMarketsMeta"); // Meta-adapter: all Morpho markets; marketId set configured on NAV (ADR 0010)
         _deployIfEnabled("EulerVaultsMeta"); // Meta-adapter: all Euler V2 vaults (EulerEarn + core eVaults); supply/collateral + borrow legs; instance set on NAV (ADR 0010)
+        _deployIfEnabled("SymbioticVaultsMeta"); // Meta-adapter: Symbiotic ERC-4626 vaults (NOT core vaults); single Supplied leg; instance set on NAV (ADR 0010)
 
         // --- Gearbox Markets (Mainnet — ETH Alpha) ---
         _deployIfEnabled("GearboxV3MarketsMeta"); // Meta-adapter: all Gearbox markets; market set on NAV (ADR 0010)
@@ -345,6 +349,11 @@ contract DeployBalanceAdapters is BaseDeployScript {
             return _deployMorphoVaultsMeta(adapterName, navCalculator);
         }
 
+        // Symbiotic Vaults meta-adapter (ERC-4626 Symbiotic vaults only, NOT core vaults; instance set on NAV, ADR 0010)
+        if (_equals(adapterName, "SymbioticVaultsMeta")) {
+            return _deploySymbioticVaultsMeta(adapterName, navCalculator);
+        }
+
         // Euler Vaults meta-adapter (one adapter for all Euler V2 eVaults; instance set on NAV, ADR 0010)
         if (_equals(adapterName, "EulerVaultsMeta")) {
             return _deployEulerVaultsMeta(adapterName, navCalculator);
@@ -516,6 +525,11 @@ contract DeployBalanceAdapters is BaseDeployScript {
 
     function _deployEulerVaultsMeta(string memory, address navCalculator) internal returns (address) {
         EulerVaultsMetaBalanceAdapter adapter = new EulerVaultsMetaBalanceAdapter(navCalculator);
+        return address(adapter);
+    }
+
+    function _deploySymbioticVaultsMeta(string memory, address navCalculator) internal returns (address) {
+        SymbioticVaultsMetaBalanceAdapter adapter = new SymbioticVaultsMetaBalanceAdapter(navCalculator);
         return address(adapter);
     }
 

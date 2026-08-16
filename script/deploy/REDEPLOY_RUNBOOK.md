@@ -81,12 +81,18 @@ wanted: `verify_step.py` requires it as the step 1.1 post-condition (`:252`).
 Configured totals, reconciled from config **and** confirmed against the live NAV on 2026-07-27;
 feed count re-measured 2026-07-30 against the merged tree; meta instances amended 2026-08-12 (issue
 #296, see "Meta instances" below — that one figure post-dates the 2026-07-27 confirmation):
-**33 meta adapters, 111 meta instances, 13 plain adapters, 40 custom price feeds, 92 assets.**
+**34 meta adapters, 113 meta instances, 13 plain adapters, 41 custom price feeds, 93 assets.**
+<!-- 2026-08-15 (PR #308): meta adapters 33 -> 34 (SymbioticVaultsMeta), meta instances 111 -> 113
+     (KPK USDC LiquidLane on the new adapter + KPK wARS Yield on MorphoVaultsMeta), custom price feeds
+     40 -> 41 and assets 92 -> 93 (wARS via InvertedChainlinkCustomPriceFeed). Mainnet alone: meta 15 ->
+     16, instances 67 -> 69, feeds 25 -> 26, assets 42 -> 43. Verified by `preflight_config.py`
+     (0 errors / 24 chains) and by a full fork rehearsal that reconciled 29 adapters / 69 instances /
+     43 assets on-chain. -->
 <!-- meta instances 110 -> 111 on 2026-08-12: one MorphoVaultsMeta instance added on chain 1 (issue #296). See the amendment under "Meta instances" below. -->
 <!-- feeds 41 -> 40 and assets 93 -> 92 on 2026-08-12: OETH removed from mainnet, Chainlink sunsetting its OETH/ETH rate feed 0x703118C4CbccCBF2AB31913e0f8075fbbb15f563. -->
 <!-- plain adapters 12 -> 13 by #285: the combined Cap adapter split into CapStablecoin + CapSavings. -->
 <!-- FOUR of the five totals have now moved since the 2026-07-27 confirmation, from three independent
-     PRs. Only `meta adapters` (33) is still the originally-confirmed figure. Each amendment carries its
+     PRs. As of PR #308 NONE of the five is still the originally-confirmed figure — `meta adapters` was the last, and it moved 33 -> 34. Each amendment carries its
      own comment above; do not consolidate them, the provenance is the point. -->
 
 
@@ -97,8 +103,10 @@ row below were unchanged AS OF THAT COMMIT.** (Superseded for FOUR of the five f
 independent PRs, all dated 2026-08-12: meta instances moved 110 -> 111 and mainnet 66 -> 67 for issue
 #296; OETH's retirement moved custom price feeds 41 -> 40 and assets 93 -> 92 fleet-wide, with mainnet
 26 -> 25 feeds and 43 -> 42 assets; and the Cap split moved plain adapters 12 -> 13 with mainnet
-11 -> 12, per the table below. **Only `meta adapters` (33) is still the figure this attestation
-confirmed.** It is left dated rather than restated — it was true of `a3974686` and is not a claim about
+11 -> 12, per the table below. **As of PR #308 (2026-08-15) NOT ONE of the five is still the figure this
+attestation confirmed** — `meta adapters` was the last survivor and it moved 33 -> 34 when
+SymbioticVaultsMeta was added; the same PR moved feeds 40 -> 41 and assets 92 -> 93 back up, and meta
+instances 111 -> 113. It is left dated rather than restated — it was true of `a3974686` and is not a claim about
 today's tree.) `script/config/` did change in the interval (labels were retired in #275 and realigned
 to `ProtocolNames.sol`), so this was measured rather than assumed — but nothing moved a count then.
 `0 error(s)` across all 24 chains; the warnings it prints are declared-heartbeat margin findings, which
@@ -108,6 +116,12 @@ are a separate axis and not a count.
 was split into `CapStablecoin` + `CapSavings` (one adapter per leg, so each label segment is a
 per-adapter constant an `AssetKindRegistry` override can address). Chain 1's `plain` column goes
 **11 → 12** and the fleet total **12 → 13**. Nothing else moves:
+
+**HISTORICAL — this is the #285 Cap-split delta, measured in ITS era. Every figure here is as of
+2026-08-12 and must NOT be bumped to today's totals; the live figures live in the headline and the
+derivation table above.** (PR #308 later moved meta adapters to 34, instances to 113, feeds to 41 and
+assets to 93; plain adapters did NOT move and are still the 13 this table's own `after` column records.
+None of those live figures belongs in this table.)
 
 | total | before | after | why |
 | --- | --- | --- | --- |
@@ -127,12 +141,12 @@ that took either side of the conflict wholesale would have silently reverted the
 `len(enabled_keys(nav-config/balance-adapters/<id>.json))`, and `verify_step.py` **1.7** asserts
 `len(record.balanceAdapters) == plainAdapters + metaAdapters + 1` plus set equality on the KEY NAMES —
 both read config, so both expect 13 the moment the config lands. This table is the thing that goes
-stale, which is why it is stated here. (Note 111 is **1.8**'s number, not 1.7's; 1.7 does not look at
+stale, which is why it is stated here. (Note 113 is **1.8**'s number, not 1.7's; 1.7 does not look at
 meta instances at all.)
 
 | chain | meta adapters | meta instances | plain | feeds | assets |
 | --- | --- | --- | --- | --- | --- |
-| 1 mainnet | 15 | 67 | 12 | 25 | 42 |
+| 1 mainnet | 16 | 69 | 12 | 26 | 43 |
 | 42161 arbitrum | 7 | 16 | 0 | 8 | 11 |
 | 8453 base | 6 | 16 | 0 | 4 | 11 |
 | 10 optimism | 2 | 4 | 0 | 0 | 6 |
@@ -145,10 +159,10 @@ meta instances at all.)
 `meta adapters` and `meta instances` columns above are a summary of the table immediately below, which
 is where they are derived and which is the authoritative one if the two ever disagree.)
 
-#### Meta instances: **111** — the figure to compare a tool's output against
+#### Meta instances: **113** — the figure to compare a tool's output against
 
 *(**110** was derived from config across all 24 chains, and confirmed ON-CHAIN on the 7 configured
-chains, on 2026-07-29 by the method below — the two scopes differ and are not interchangeable; **+1 on 2026-08-12** for issue #296, one `MorphoVaultsMeta` instance on chain 1. The heading
+chains, on 2026-07-29 by the method below — the two scopes differ and are not interchangeable; **+1 on 2026-08-12** for issue #296, one `MorphoVaultsMeta` instance on chain 1; **+2 on 2026-08-15** for PR #308, one further `MorphoVaultsMeta` instance (KPK wARS Yield) and the new `SymbioticVaultsMeta` adapter's single instance. 110 + 1 + 2 = 113. The heading
 carries the CURRENT number because step 1.8 compares against it; the dated derivation keeps its own date
 and scope below rather than being restated as covering the later change.)*
 
@@ -186,43 +200,58 @@ and scope below rather than being restated as covering the later change.)*
 > | fleet total | 110 | **111** |
 >
 > `instancesRaw` is unchanged everywhere (14 on mainnet, 20 fleet-wide) — this vault is an address
-> coordinate, not a raw `bytes32` marketId. Re-derived from config at this branch's head rather than
-> assumed: mainnet's `instances` sum to 53 and `instancesRaw` to 14 across the 15 enabled meta adapters.
+> coordinate, not a raw `bytes32` marketId. Re-derived from config **at the #296 branch head, 2026-08-12**,
+> rather than assumed: mainnet's `instances` summed to 53 and `instancesRaw` to 14 across the 15 enabled
+> meta adapters THEN. Those are this amendment's evidence and are deliberately NOT bumped — #308 has since
+> taken mainnet to 55 + 14 across 16 enabled meta adapters; the live figures are in the derivation table,
+> which is the authority. Restating them here would make this box claim #296 found numbers that include
+> a later PR's vault and adapter.
 >
-> **Every ACTIONABLE figure in this document has been updated in place to 111 / 67.** The list below is
-> illustrative, NOT exhaustive — measured at 2026-08-12 there are **twelve** such sites, and two
-> hand-written lists of them (this one and the step-1.8 post-condition) were both short. **To find them
-> all, grep for the FIGURE and not for a remembered phrase:** `grep -nE '\b(111|67|53|91|114)\b'` over
+> **Every ACTIONABLE figure in this document has been updated in place to 113 / 69** (was 111 / 67 before PR #308). The list below is
+> illustrative, NOT exhaustive — **re-derived 2026-08-16 the figure appears on 32 LINES.** (27, then 31
+> after the §2.3 triage rewrite, then 32 after the §2.3 tool-vocabulary correction — all on one day. The count drifts whenever anyone explains
+> these numbers, which is the point of the grep and the reason not to trust the figure.) (The 2026-08-12 measurement said **twelve**, under a counting rule it never stated, so the
+> two are not like-for-like — and the document has gained sections since.) The rule used here, so the
+> number is checkable rather than remembered: run the grep below, then discard a line ONLY when every
+> match on it is a gas figure, a `file.ext:NN` code reference, the ASSET-count figure (same digits,
+> different subject), a dated record, or the grep instruction itself. **A line that also carries a live
+> figure still counts** — the disabled-adapter arithmetic line carries a `ConfigReader` code reference
+> AND a live sum, and dropping it for the reference is how this recount first came out one short.
+> (Deliberately described rather than quoted: quoting its digits here would add a line to the very
+> count this sentence states.)
+> "Lines" is the unambiguous unit; the passage figure moves with how you group them. Two hand-written
+> lists of these sites (this one and the step-1.8 post-condition) were both short. **To find them
+> all, grep for the FIGURE and not for a remembered phrase:** `grep -nE '\b(113|69|55|93|116)\b'` over
 > this file, then discard gas figures and dated records. A maintained list of sites is the same
 > documentary-guard shape this repo rejects everywhere else. Illustrative sites: the headline
 > totals, the summary row, the derivation table, the two independent confirmations, the disabled-adapter
-> arithmetic (now 111 + 3 = 114) and the step-1.8 post-condition. An operator is never asked to
+> arithmetic (now 113 + 3 = 116) and the step-1.8 post-condition. An operator is never asked to
 > mentally substitute a value: where a number is compared against a tool's output, it is the current
 > number. What is preserved as dated prose is the METHOD and DATE of the 2026-07-29 derivation, not its
 > totals — the same figure was doing two jobs with opposite requirements, and they are now separated.
 
 This number is what tells you at step 1.8 whether `06_Configure`'s reconciliation succeeded, so it is
 settled here rather than at execution time. Three figures had been circulating — 104, 110 and 113
-(the latter two now 111 and 114 after the 2026-08-12 amendment; the historical figures are named here
+(the latter two now 113 and 116 after the 2026-08-15 amendment; the historical figures are named here
 as they circulated, and the paragraphs below explain the CURRENT values).
 
 | chain | enabled meta adapters | `instances` | `instancesRaw` | total |
 | --- | --- | --- | --- | --- |
-| 1 mainnet | 15 | 53 | 14 | **67** |
+| 1 mainnet | 16 | 55 | 14 | **69** |
 | 42161 arbitrum | 7 | 14 | 2 | **16** |
 | 8453 base | 6 | 12 | 4 | **16** |
 | 10 optimism | 2 | 4 | 0 | **4** |
 | 100 gnosis | 2 | 4 | 0 | **4** |
 | 137 polygon | 1 | 4 | 0 | **4** |
 | 56 bsc | 0 | 0 | 0 | **0** |
-| **total** | **33** | **91** | **20** | **111** |
+| **total** | **34** | **93** | **20** | **113** |
 
 Counted from `script/config/nav-config/meta-balance-adapters/<chainId>.json`, taking only adapters
 with `enabled: true` and summing `instances` + `instancesRaw`. Two independent confirmations: the
-deduplicated count is also 111 (no coordinate repeats within an adapter, so `06` cannot revert
-`DuplicateMetaInstance`), and unique `(chain, coordinate)` pairs across *all* adapters is also 111
+deduplicated count is also 113 (no coordinate repeats within an adapter, so `06` cannot revert
+`DuplicateMetaInstance`), and unique `(chain, coordinate)` pairs across *all* adapters is also 113
 (no coordinate is claimed by two adapters on one chain). Both dedup figures are re-derived from
-today's config and so carry the amended 111.
+today's config and so carry the amended 113.
 
 **The all-chain set comparison below is NOT re-derived — it is a dated result and it covers the 110
 state.** On 2026-07-29 `verify_step.py 1.8` compared each adapter's on-chain `getMetaInstances()`
@@ -233,14 +262,14 @@ against the amended config has NOT been done, and this paragraph does not claim 
 
 **Where the other two figures come from:**
 
-- **114** = every adapter in the files, ignoring `enabled`. The difference is **four** disabled meta
-  adapters (37 in the files, 33 enabled), and they do NOT carry one instance each — the +3 is a
+- **116** = every adapter in the files, ignoring `enabled`. The difference is **four** disabled meta
+  adapters (38 in the files, 34 enabled), and they do NOT carry one instance each — the +3 is a
   coincidence of which ones are non-empty. Measured from `nav-config/meta-balance-adapters/*.json`:
   mainnet `BalancerV2PoolsMeta` (`instances` 0, `instancesRaw` 1), mainnet `BalancerV2GaugesMeta`
   (1, 0), bsc `PancakeSwapV2PoolsMeta` (1, 0), and base `PancakeSwapV3PoolsMeta` (0, 0) — the last
   contributes nothing **today**, so the day it gains an instance this reconciliation goes short. `ConfigReader.isAdapterEnabled` gates registration and a missing key
-  reads as **false** (`ConfigReader.sol:368-369`), so `06` will not register any of them. 111 + 3 = 114.
-- **104** is not reproducible from the current tree by any derivation — not `instances` alone (91),
+  reads as **false** (`ConfigReader.sol:368-369`), so `06` will not register any of them. 113 + 3 = 116.
+- **104** is not reproducible from the current tree by any derivation — not `instances` alone (93),
   not the deploy-config tree (0, it holds no instance lists), not any enabled-filter variant. It
   predates the config split in `f4873617` and should be treated as retired, not reconciled.
 
@@ -365,10 +394,10 @@ NAV address is invalidated by construction:
 
 | consequence | scale | done at |
 | --- | --- | --- |
-| every custom price feed is redeployed — each holds `INAVCalculator public immutable NAV` (ADR 0019) | **40**: mainnet 25, arbitrum 8, base 4, gnosis 3 | 1.5 |
-| every asset with its primary + monitor feeds is re-registered | **92** assets | 1.6 |
-| every plain and meta adapter is redeployed | 13 plain + 33 meta | 1.7 |
-| every meta instance is re-registered | **111** | 1.8 |
+| every custom price feed is redeployed — each holds `INAVCalculator public immutable NAV` (ADR 0019), **except `wARS`**, which reads no base price out of the NAV and has no such pointer | **41**: mainnet 26, arbitrum 8, base 4, gnosis 3 | 1.5 |
+| every asset with its primary + monitor feeds is re-registered | **93** assets | 1.6 |
+| every plain and meta adapter is redeployed | 13 plain + 34 meta | 1.7 |
+| every meta instance is re-registered | **113** | 1.8 |
 | each assisted adapter drags its assistant, which holds `immutable ADAPTER` | **4 pairs on 2 chains** | 2.1 |
 | downstream consumers repoint off the old proxy | kpkShares, portal, agents, subgraphs | 2.7 |
 
@@ -382,20 +411,26 @@ None of it is optional, and none of it fails loudly: a step skipped here leaves 
 looking attractive — it is genuinely far smaller. It is also wrong.
 
 > **If another document disagrees on the feed count, check its DATE before splitting the difference —
-> and check whether it counted ENABLED entries.** The count has moved four times: 39 until #199 (merged
-> 2026-07-29), 40 until #224 (merged 2026-07-30), 41 until OETH's retirement (2026-08-12), and **40
-> again now** — Chainlink sunset the OETH/ETH rate feed, so mainnet's enabled count drops 26 -> 25.
-> Re-derived from config on the merged tree: **40 enabled** — mainnet 25 ENABLED (26 entries,
+> and check whether it counted ENABLED entries.** The count has moved five times: 39 until #199 (merged
+> 2026-07-29), 40 until #224 (merged 2026-07-30), 41 until OETH's retirement (2026-08-12), 40 until
+> PR #308 (2026-08-15), and **41 again now** — Chainlink sunset the OETH/ETH rate feed, dropping
+> mainnet's enabled count 26 -> 25, and #308's wARS inverted feed took mainnet back to 26 and the
+> fleet to 41.
+> Re-derived from config on the merged tree: **41 enabled** — mainnet 26 ENABLED (27 entries,
 > `ETHPlus` disabled), arbitrum 8, base 4, gnosis 3. The full derivation is under 1.5.
 >
-> ⚠️ **COUNT ENABLED ENTRIES, NOT ENTRIES**, and note where the two traps meet: counting entries gives
-> 26 + 8 + 4 + 3 = **41**, which is exactly the value the ENABLED count legitimately held until
-> 2026-08-12. The miscount does not look like a miscount — it looks like a correct slightly-older
-> reading, which is why "it matches a figure I have seen" is not a check.
+> ⚠️ **COUNT ENABLED ENTRIES, NOT ENTRIES.** Counting entries today gives 27 + 8 + 4 + 3 = **42**, a
+> value this count has never legitimately held, so today the miscount at least looks wrong. **Do not
+> generalise that into a safeguard.** It is a property of this tree on this date, not a rule: while
+> OETH was live the entry count was 41, which WAS a legitimate historical total, and the miscount was
+> then indistinguishable from a correct slightly-older reading. "It matches a figure I have seen" is
+> not a check in either case.
 >
-> ⚠️ **A count returning to a value it previously held is the nastiest version of this**, because a stale
-> document quoting 40 now looks current and agrees with the tree for the wrong reason. Date-check rather
-> than value-check. The **111** meta instances and the cutover off
+> ⚠️ **A count returning to a value it previously held is the nastiest version of this, and 41 is now
+> exactly such a value** — correct before 2026-08-12, wrong between then and #308, and correct again
+> now. A document quoting 41 agrees with the tree today whether or not it knows that either change
+> happened, so agreement proves nothing about whether it is current. Date-check rather than
+> value-check. The **113** meta instances and the cutover off
 > `0x80eD5cc6cEbAe4fEE1eD8687279aa492A50afa8d` are unaffected and agree everywhere.
 
 The old stack is **abandoned in place**, not decommissioned. It keeps answering on
@@ -1022,7 +1057,7 @@ threshold with no recorded baseline cannot detect drift.
 1.2  01_2_DeployNAVImplementation     libraries + NAV impl        PERSIST_DEPLOYMENTS=1
 1.3  02_2_DeployNAVProxy              new proxy + ERC20Default    PERSIST_DEPLOYMENTS=1
 1.4  08_DeployAssetKindRegistry       registry + MANAGER grant    <- MOVED, must precede 1.6
-1.5  03_DeployPriceFeeds              40 custom feeds             <- BEFORE RegisterAssets
+1.5  03_DeployPriceFeeds              41 custom feeds             <- BEFORE RegisterAssets
 1.6  RegisterAssets                   assets + feeds + kinds + LABELS, via the registry
 1.7  04_DeployBalanceAdapters         adapters + assistants       PERSIST_DEPLOYMENTS=1  <- assistants
 1.8  06_Configure                     register + reconcile
@@ -1050,10 +1085,13 @@ This **differs from the original plan**, which had `RegisterAssets` before `03`.
 `RegisterAssets` resolves each `Custom` feed from `deployments/<id>.json .customPriceFeeds.<name>`
 (`RegisterAssets.s.sol:19` states the dependency outright), so run first it logs
 `[skip] primary feed unresolved (deploy it first)` and moves on. Measured on a mainnet fork in the
-plan's order: **19 of 42 assets skipped** — wstETH, eETH, weETH, rETH, ezETH, rsETH, ETHx, osETH,
-stETH, lsETH, sUSDe, sUSDS, syrupUSDC, RWIV, sGHO, LDO, ankrETH, NXM, wNXM. (The dated fork
-measurement was **20 of 43**, the twentieth being OETH; both figures drop by one with its retirement,
-and the list below the headline is the authoritative one — it now enumerates exactly 19.)
+plan's order: **20 of 43 assets skipped** — wstETH, eETH, weETH, rETH, ezETH, rsETH, ETHx, osETH,
+stETH, lsETH, sUSDe, sUSDS, syrupUSDC, RWIV, sGHO, LDO, ankrETH, NXM, wNXM, wARS. (The dated fork
+measurement was **20 of 43** and its twentieth was OETH; OETH's retirement took it to 19, and PR
+#308's `wARS` — Custom-primary like the rest — brought it back to 20 with a DIFFERENT twentieth, so
+the figure agreeing with the dated one does not mean the list does. The list is authoritative and
+enumerates exactly 20, re-derived from config as the mainnet assets whose PRIMARY feed is
+`"type": "Custom"`.)
 `RegisterAssets` is
 idempotent so a later re-run tops them up, but the first pass leaves nearly half of mainnet
 unregistered while reporting nothing worse than a skip line.
@@ -1075,8 +1113,9 @@ BROADCAST="--rpc-url $RPC --broadcast --account my-deployer --password-file <pwf
 > feeds against the old NAV and register adapters on the old proxy. Nothing errors.
 > **`PERSIST_DEPLOYMENTS=1` is also mandatory on 1.7 — and the reason is a split inside one script.**
 > The per-**adapter** writes in `03`/`04` are NOT gated: they go through `ConfigReader.writeAdapterAddress`
-> (`04:241`) and always write. But the three **`*Assistant`** writes go through `saveDeployedAddress`
-> (`04:272,290,298`), which is the gated helper — `BaseDeployScript.sol:69-86` early-returns when the flag
+> (grep `ConfigReader.writeAdapterAddress` in `04`) and always write. But the three **`*Assistant`** writes
+> go through `saveDeployedAddress` (grep `saveDeployedAddress("` in `04` — three hits, one per assistant),
+> which is the gated helper — `BaseDeployScript.sol:69-86` early-returns when the flag
 > is unset. So without it `04` **deploys every assistant and records none of them**: the `new …Assistant(…)`
 > is evaluated *before* the save, so the contract is created and the gas is spent, the address is only
 > printed, and the run exits **0**. Read the old wording carefully if you meet it elsewhere — "the writes in
@@ -1233,7 +1272,7 @@ git ls-tree -r --name-only "$TREE" -- script/deploy/08_DeployAssetKindRegistry.s
 **It is also gated now, and the earlier warning here was wrong on both counts.** This note used to say
 `verify_step.py`'s `STEPS` list *"ends at `1.7` and has no gate for it either"*. Both halves are false at
 `a3974686`: `STEPS` is `["1.1" … "1.8"]`, and **`08` is gated as step `1.4`** —
-`"08 — asset-kind registry: MANAGER grant AND classification"` (`verify_step.py:57`), implemented by
+`"08 — asset-kind registry: MANAGER grant AND classification"` (grep `08 — asset-kind registry` in `verify_step.py`), implemented by
 `step_asset_kind_registry` (`:579`), which checks the MANAGER grant and samples asset classifications.
 Do not infer the coverage from the step *numbers*: the gate for `08` is filed under a `1.x` label, so
 grepping `STEPS` for `"08"` finds nothing and reads as absent.
@@ -1376,42 +1415,59 @@ not an observation that happened to hold on one fixture.
 > stipend-burning registry. There is **no normal-operation measurement** of it. Do not infer one from the
 > hostile figure, and do not present that ceiling as a typical cost.
 
-### 1.5 `03_DeployPriceFeeds` — 40 custom feeds
+### 1.5 `03_DeployPriceFeeds` — 41 custom feeds
 
 ```bash
 forge script script/deploy/03_DeployPriceFeeds.s.sol $BROADCAST
 ```
 
-Chains 1 (25 enabled, of 26 entries), 42161 (8), 8453 (4), 100 (3) only. Each feed's constructor takes the NAV proxy
+Chains 1 (26 enabled, of 27 entries), 42161 (8), 8453 (4), 100 (3) only. Each feed's constructor takes the NAV proxy
 address, held as `INAVCalculator public immutable NAV` (ADR 0019) — which is precisely why a new
 proxy invalidates every existing feed.
 
-> **THE COUNT IS 40, AND IT IS NO LONGER PENDING ANYTHING.** Both PRs it was waiting on have merged,
-> so the earlier figure of 39 is stale, and so is the 41 that #224 briefly made correct. Re-derived from
-> config on 2026-08-13: **mainnet 25, arbitrum 8, base 4, gnosis 3 = 40.** (Chain 1 holds 26 feed
-> ENTRIES; `ETHPlus` is `enabled: false`, and `03` is gated on `isAdapterEnabled`, so it deploys 25.
-> Counting entries rather than enabled entries is how 26 got here.)
+> **ONE EXCEPTION, and step 1.5 will show it to you.** `wARS` (`InvertedChainlinkCustomPriceFeed`, a `USD / X`
+> inverter) reads no base price out of the NAV, so it takes no proxy address and exposes **no `NAV()` at all**.
+> An unreadable `NAV()` on that one feed is CORRECT, not the leftover-feed failure this step hunts — which is why
+> `verify_step` exempts it on its own `BASE_ASSET() == 0` answer and substitutes `underlyingAssetSupported()` as
+> the per-address evidence. Do not redeploy it chasing a pointer that does not exist.
+
+> **THE COUNT IS 41 AS OF PR #308 (2026-08-15).** Re-derived from config, not carried forward:
+> **mainnet 26, arbitrum 8, base 4, gnosis 3 = 41.**
+>
+> ⚠️ **COUNT ENABLED ENTRIES, NOT ENTRIES.** Chain 1 holds **27 feed ENTRIES** but `ETHPlus` is
+> `enabled: false`, and `03` is gated on `isAdapterEnabled`, so it deploys **26**. Counting entries
+> rather than enabled entries is the trap this box exists for — it would give 27 + 8 + 4 + 3 = 42.
+>
+> The history below is kept because the figure has moved five times and each move had a cause; it is
+> NOT a list of candidate values. **41 is the current one, and the derivation above is how to re-check
+> it — never reconcile a tool's output against a remembered number.**
 >
 > | PR | merged | effect on the count |
 > | --- | --- | --- |
 > | **#199** (stETH primary becomes fundamental) | 2026-07-29 | deploys a **stETH primary** (`stETHFundamental`) and demotes `stETHCrossRate` to a monitor: mainnet 24 → **25** |
 > | **#224** (ezETH market monitor) | 2026-07-30 | adds `ezETHCrossRateMarket` so ezETH's depeg check can fire: mainnet 25 → **26** |
 >
-> Both have their `03_DeployPriceFeeds.s.sol` call sites in place — `_deployEEth("stETHFundamental")`
-> (`03:147`), `_deployCrossRateMonitor("stETHCrossRate")` (`03:153`) and
-> `_deployCrossRateMonitor("ezETHCrossRateMarket")` (`03:230`) — verified against the merged tree, so
-> `03` deploys all 25 ENABLED mainnet feeds and nothing is skipped as `primary feed unresolved`.
+> Both have their `03_DeployPriceFeeds.s.sol` call sites in place — `_deployEEth("stETHFundamental")`,
+> `_deployCrossRateMonitor("stETHCrossRate")` and `_deployCrossRateMonitor("ezETHCrossRateMarket")` —
+> verified against the merged tree, so `03` deploys all 26 ENABLED mainnet feeds and nothing is skipped
+> as `primary feed unresolved`. **Grep for those three calls; do not look for line numbers.** This
+> paragraph used to cite `03:147` / `03:153` / `03:230`, which were exact when written and were silently
+> moved to 169 / 175 / 252 by a later PR adding code above them — a citation that rots without anything
+> going red is worse than no citation.
 >
 > Keep taking the number from the tooling rather than from here: `preflight_config.py` prints the
 > configured total and `verify_step.py 1.5` compares against it, so both follow config automatically.
 > This paragraph is the thing that goes stale — as it just did, twice.
 >
-> **The three dead feed contracts are a separate matter and change the count by ZERO.**
-> `cbETH_CustomPriceFeed`, `ETHPlus_CustomPriceFeed` and `sDAI_CustomPriceFeed` are deployed on no chain
-> and enabled in no config (`cbETH`/`sDAI` are not config keys at all; `ETHPlus` is present on mainnet
-> with `enabled: false`). All three call sites are `isAdapterEnabled`-gated (`03:98`, `03:153`, `03:183`)
-> and a missing key reads as false, so the branches are never taken — and they stay unreached after step
-> 1.1, since clearing the record removes only the skip-guard short-circuit, not the enablement gate.
+> **The dead feed contracts are a separate matter and change the count by ZERO.**
+> TWO survive — `cbETH_CustomPriceFeed` and `ETHPlus_CustomPriceFeed` — deployed on no chain and enabled
+> in no config (`cbETH` is not a config key at all; `ETHPlus` is present on mainnet with
+> `enabled: false`). Both call sites are `isAdapterEnabled`-gated: grep **`_deployCbEth()`** and
+> **`_deployEthPlus()`** — WITH the parentheses, because a bare `_deployCbEth` also matches the LIVE
+> `_deployCbEthL2` used on Base/Optimism/Arbitrum, which is not dead. A missing key reads as false, so
+> the branches are never taken — and they stay unreached after step 1.1, since clearing the record
+> removes only the skip-guard short-circuit, not the enablement gate. sDAI is NOT a third case: #199
+> deleted both its contract and its call site, so there is nothing left to gate.
 > #199 deletes the sDAI contract; that is dead-code removal, not a count change. An earlier audit note
 > suggested dropping all three would make the redeploy 36 instances; it would not, because they were
 > never among the 39. Verified against both the deployment records and the enabled config 2026-07-29.
@@ -1422,6 +1478,24 @@ proxy invalidates every existing feed.
   That last one is the check that matters: a feed is otherwise indistinguishable from a correct one
   while still pricing against the abandoned NAV.
 
+  **EXCEPTION, and it is one feed today: `wARS`.** `InvertedChainlinkCustomPriceFeed` reads no base
+  price out of the NAV, so it has **no `NAV` immutable to point anywhere** — it answers
+  `BASE_ASSET() == 0` instead. `verify_step` 1.5 and `bytecode_audit` both read `BASE_ASSET()` first and
+  record `BASE_ASSET() == 0, no NAV dependency` as a CLASSIFICATION rather than a failure, so wARS is
+  legitimately outside the pointer check above. `ETHPlus_CustomPriceFeed` has the same shape but is
+  `enabled: false`. **What this costs, stated exactly:** step 1.5 gives wARS **no generation binding at
+  all**. It cannot come from the `NAV()` pointer, because there is no such immutable to read; and it
+  cannot come from comparing the address against the previous generation either, because wARS is NEW in
+  PR #308 and is absent from `deployments/1.json` (23 recorded custom feeds, wARS not among them), so
+  there is no prior address for it to differ from. An earlier version of this box offered that
+  comparison as compensating evidence — it is structurally unavailable here, and naming a check that
+  cannot run is worse than naming none. What 1.5 does still assert for wARS: it has code, it is in the
+  expected name/count set, and it declares `BASE_ASSET() == 0`. The residual exposure is a wrong-address
+  or accidentally-carried-over wARS, which nothing in this step would catch. That exposure is narrow for
+  a reason worth stating rather than assuming — the failure this step hunts is a feed pricing against
+  the ABANDONED NAV, and a feed that reads no price out of any NAV cannot have it. Any OTHER feed reporting `no NAV dependency` is NOT expected and should be
+  treated as the stale-pointer signal this step hunts.
+
 ### 1.6 `RegisterAssets` — assets + feeds on the new NAV
 
 ```bash
@@ -1429,7 +1503,7 @@ mkdir -p safe-transactions        # REQUIRED — see below
 FOUNDRY_PROFILE=slow forge script script/manage/RegisterAssets.s.sol $BROADCAST
 ```
 
-`FOUNDRY_PROFILE=slow` (16 GiB) is required on mainnet — 42 assets otherwise `MemoryOOG`.
+`FOUNDRY_PROFILE=slow` (16 GiB) is required on mainnet — 43 assets otherwise `MemoryOOG`.
 
 `safe-transactions/` must exist: the script ends by writing a Safe-TX batch there, and if the
 directory is missing it aborts with
@@ -1439,10 +1513,10 @@ idempotent, but the run reports failure. The directory is not in the repo, so cr
 checkout.
 
 - **Precondition:** **1.5 done** (`03_DeployPriceFeeds`; 1.4 is `08`, which writes no feed addresses) — Custom feeds resolve through
-  `deployments/<id>.json .customPriceFeeds.<name>`, and without them 19 of mainnet's 42 assets are
+  `deployments/<id>.json .customPriceFeeds.<name>`, and without them 20 of mainnet's 43 assets are
   silently skipped (see the authoritative order at the top of section 1).
 - **Post-condition:** `python3 script/deploy/preflight/verify_step.py 1.6` — `getAssetCount()` equals
-  the configured count (42 / 11 / 11 / 6 / 11 / 5 / 6 for chains 1 / 42161 / 8453 / 10 / 100 / 137 /
+  the configured count (43 / 11 / 11 / 6 / 11 / 5 / 6 for chains 1 / 42161 / 8453 / 10 / 100 / 137 /
   56) **and** the registered address set equals the configured one, so one asset silently substituted
   for another cannot pass on the count alone.
 
@@ -1470,7 +1544,13 @@ Deploys plain + meta adapters via plain `new` (CREATE), then the delegatecall as
 
 - **Precondition:** 1.1 cleared `balanceAdapters.*` **and** the three `*Assistant` keys.
 - **Post-condition:** `python3 script/deploy/preflight/verify_step.py 1.7` — adapter count per chain
-  = 27 / 8 / 7 / 4 / 3 / 2 / 1 for 1 / 42161 / 8453 / 100 / 10 / 137 / 56 (ERC20Default included),
+  = **29** / 8 / 7 / 4 / 3 / 2 / 1 for 1 / 42161 / 8453 / 100 / 10 / 137 / 56 (ERC20Default included),
+  re-derived from config across ALL SEVEN chains 2026-08-16 as `enabled plain + enabled meta + 1`, the
+  same expression `verify_step.py` 1.7 asserts. **Chain 1 moved 27 -> 29 and the other six did not**:
+  this wave adds two KEYS there — #285's Cap split turns one key into two (`CapStablecoin` +
+  `CapSavings`) and #308 adds `SymbioticVaultsMeta`. 1.7 derives from config and PASSES at 29, so an
+  operator comparing against the old 27 reads a CORRECT deploy as two phantom adapters and may halt or
+  re-run 1.1 — and this document's own rehearsal record above already says 29,
   every adapter has code, and **each assistant's `ADAPTER()` resolves to its paired assisted adapter**.
   Run it on chains 1 and 100: against the live stack it reproduces all four orphaned pairings from
   2.1, so a clean report here is the proof the swap was rebuilt rather than inherited.
@@ -1496,11 +1576,15 @@ touched at all by this step, not merely touched idempotently.
   matches 1.7 (`04` is what deploys adapters; 1.6 is `RegisterAssets` and produces no adapter count),
   every recorded adapter reports `isAdapterRegistered`, nothing is registered that is not
   in the record, and each meta adapter's `getMetaInstances()` **set equals** its configured coordinate
-  set, summing to the total in the meta-instance table at the top of this document (**111**; 110 as
-  reconciled 2026-07-29, +1 on 2026-08-12 for issue #296). The per-chain breakdown lives in that table only and is not repeated here, so the table
-  is where a config change is corrected — but "one place" understates it badly. Measured at 2026-08-12 the
-  meta-instance figure appears at **twelve** sites in this file. Do NOT work from a list — including
-  this sentence: grep for the figure itself (`grep -nE '\b(111|67|53|91|114)\b'`), discard gas values
+  set, summing to the total in the meta-instance table at the top of this document (**113**; 110 as
+  reconciled 2026-07-29, +1 on 2026-08-12 for issue #296, +2 on 2026-08-15 for PR #308 — 110 + 1 + 2 =
+  113). The per-chain breakdown lives in that table only and is not repeated here, so the table
+  is where a config change is corrected — but "one place" understates it badly. Re-derived 2026-08-16, the
+  meta-instance figure appears on **32 lines** of this file (the 2026-08-12 measurement said twelve, under
+  an unstated rule; the derivation and its exclusions are given at the "Meta instances" heading). **This
+  count is itself a maintained figure and will drift** — which is the argument for the grep, not for
+  trusting the number. Do NOT work from a list — including
+  this sentence: grep for the figure itself (`grep -nE '\b(113|69|55|93|116)\b'`), discard gas values
   and dated records, and change what remains. Two hand-written site lists in this document were both
   short, which is why the instruction is now a derivation rather than an enumeration.
 
@@ -1829,25 +1913,213 @@ against, and 2.6 cannot run until the new addresses are recorded.
 
 **Known-expected diffs — do NOT treat these as regressions:**
 
-- **`MorphoVaultsMeta` GAINS one meta instance on mainnet, and `metaInstanceTotal` goes 66 → 67.** The
+- **Chain 1 gains THREE meta instances and ONE new adapter in CONFIG, but the diff prints only TWO
+  `GAINED meta instance` lines; `metaInstanceTotal` goes 66 → 69 against the COMMITTED baseline** (a
+  refreshed `pre/` gives a smaller delta — see the triage table below). Two of the three instances land
+  on `MorphoVaultsMeta` and print per-instance; the third is on the NEW `SymbioticVaultsMeta`, and
+  `diff_snapshots.py` computes per-instance deltas only over adapters present in BOTH snapshots
+  (`diff_snapshots.py:110`), so a brand-new adapter falls into the `adapter ADDED in new` branch and its
+  instance NEVER prints a line of its own. **Do not hunt for a third — it cannot exist**, and this
+  section's own "absence means something was dropped" rule would otherwise halt a correct cutover.
+  (Enumerated in the addendum at the end of this bullet. The #296 vault below is the first of the three.) The
   committed pre-snapshot (`snapshots/pre/1.json`, block 25625439) was captured when chain 1 held 9
   `MorphoVaultsMeta` instances. The KPK USDC Yield RWA vault
   `0x7a72bcD2c3F7F7e4D6679170a0625bAB15D7DDa1` was added to the LIVE NAV on 2026-08-12 by
   `addMetaInstances` (issue #296) and to config in the same PR, so `diff_snapshots.py pre post` will
-  print `GAINED meta instance 0x…7a72bcd2…` and `metaInstanceTotal 66 -> 67`. **This is a STRUCTURAL
-  diff and this section's rule is that a structural diff is never explained by drift — which is exactly
-  why it is enumerated here rather than left to be waved through.** **Expect the STRUCTURAL lines and NOTHING ELSE — no new position entry and no `nav.value`
-  movement.** Measured on mainnet 2026-08-12: the vault holds `totalAssets() = 1002452` (1.0025 USDC)
+  print `DIFF  adapter MorphoVaultsMeta GAINED meta instance 0x…7a72bcd2…` as one of the two. **This is a
+  STRUCTURAL diff and this section's rule is that a structural diff is never explained by drift — which is
+  exactly why it is enumerated here rather than left to be waved through.** **Expect the STRUCTURAL lines
+  and nothing else — no position entry and no `nav.value` movement, for EITHER vault.** The reasons
+  differ and both are stated because a future holder change breaks them separately: the #296 vault is
+  dust, and LiquidLane is real but is held by no snapshotted account. Measured on mainnet 2026-08-12: the vault holds `totalAssets() = 1002452` (1.0025 USDC)
   against `totalSupply() = 1e18`, and that entire supply sits at `0x…dEaD` — seed shares. Every tracked
-  chain-1 account holds ZERO, so no snapshotted account has a position to report. **The check to make is
-  the GAINED-instance line and `metaInstanceTotal 66 -> 67`.** Their ABSENCE means the reconciliation
-  dropped the vault — **but ONLY when diffing against the COMMITTED `pre/` snapshot (block 25625439),
-  which holds 9 instances.** §0.7 sanctions refreshing `pre/`; if it is refreshed AFTER this change,
-  both lines legitimately disappear and their absence proves nothing. Check `pre/1.json`'s
-  `MorphoVaultsMeta` length first: 9 means the absence test is valid, 10 means it is not and the
-  structural check has already been absorbed into the baseline. Do NOT treat a flat `nav.value` as evidence of a drop — a $1 seed position could
-  not clear the residual band in any case, and an earlier revision of this entry said the opposite,
-  which would have halted a correct deploy at the last gate before cutover.
+  chain-1 account holds ZERO, so no snapshotted account has a position to report. **Against the COMMITTED
+  baseline the check is the TWO `GAINED meta instance` lines, the `adapter ADDED in new:
+  SymbioticVaultsMeta` line, and `metaInstanceTotal 66 -> 69`; the absence of any of those means the
+  reconciliation dropped something.** Against a REFRESHED baseline the expected set is smaller but is
+  never empty — take it from the triage table below rather than concluding the check no longer applies.
+
+  **ADDENDUM — PR #308 (2026-08-15) adds TWO more chain-1 meta instances AND A NEW ADAPTER, so the
+  expected structural diff is `metaInstanceTotal 66 -> 69`, not `-> 67`. These are the tool's ACTUAL
+  strings, taken from `diff_snapshots.py:88-120`. This lists what IS expected and why; it is deliberately
+  NOT a claim that nothing else prints, because an earlier revision made that claim and was wrong — it
+  omitted the three Cap lines below, and its "any other adapter line is the signal this gate exists to
+  catch" rule would have turned them into a halt:**
+  - `DIFF  adapter MorphoVaultsMeta GAINED meta instance 0x…b5ce3ca2…` — **KPK wARS Yield**, a
+    `MorphoVaultsMeta` instance (Morpho Vaults V2; `MORPHO()` reverts, but the adapter is pure ERC-4626
+    and never calls it). It prints because `MorphoVaultsMeta` exists in BOTH snapshots.
+  - `DIFF  adapter ADDED in new:   SymbioticVaultsMeta (<addr>)` — and **that line is the ONLY evidence
+    of the KPK USDC LiquidLane instance `0x…8bcd7469`.** Per-instance deltas are computed only over
+    adapters in both snapshots (`:110`), so a new adapter's instances never print individually. **There
+    is no `GAINED meta instance 0x…8bcd7469` line and waiting for one will halt a correct cutover.** To
+    confirm the instance itself, read `post/1.json`'s `SymbioticVaultsMeta.metaInstances`, or lean on
+    `metaInstanceTotal 66 -> 69`, which counts it.
+  - **THREE MORE ADAPTER LINES, from #285's Cap split — expected, and easy to misread as a drop:**
+
+    ```
+    DIFF  adapter MISSING in new: Cap (0x5b50a5ff1c80a178bb8da9fdff077fbc3dd4e543)
+    DIFF  adapter ADDED in new:   CapSavings (<addr>)
+    DIFF  adapter ADDED in new:   CapStablecoin (<addr>)
+    ```
+
+    The committed `pre/1.json` carries the pre-split combined adapter under configKey `Cap`; the deploy
+    config no longer enables it (the `enabled` key is absent, which `ConfigReader` reads as false, and
+    `nav-config` sets it to `false` outright) and enables `CapStablecoin` + `CapSavings` instead. **The
+    `MISSING in new` line reads exactly like a dropped adapter and is not one** — it is the split, and
+    the two ADDED lines are its other half. Read the three together or the first one looks like the
+    failure this gate hunts.
+
+    **These can NEVER be absorbed by refreshing `pre/`, and for a different reason than the additions
+    above:** the split is config-only until this redeploy lands, so the LIVE OLD NAV still holds the
+    single `Cap` adapter and any fresh capture of it will too.
+
+    **Derived across every chain, not assumed:** comparing each `snapshots/pre/<id>.json` adapter set
+    against that chain's enabled deploy config, **chain 1 is the ONLY chain with any adapter-key
+    divergence**, and its full set is these three plus `SymbioticVaultsMeta` — four adapter lines, no
+    more. On every other chain the adapter keys match. A new adapter key ANYWHERE ELSE is the
+    structural signal this section exists to catch.
+  - `DIFF  asset ADDED in new:   wARS <addr>` and `DIFF  asset MISSING in new: OETH <addr>`.
+    **The OETH line is expected and is NOT a regression** — the committed `pre/1.json` holds 43 assets
+    INCLUDING OETH, retired 2026-08-12, so it is the snapshot catching up with a retirement that predates
+    this PR. **There is no `assetCount` line and no per-FEED line** — the tool emits neither (grep it),
+    so a feed is visible only as a field change on an asset that exists in both, e.g.
+    `DIFF  asset ETHx monitorFeeds: … -> …`. (42 -> 43 is the CONFIG delta across #308; §2.3 compares
+    against the SNAPSHOT, which is a different baseline.)
+
+  **The LiquidLane instance is NOT dust, but NO SNAPSHOTTED ACCOUNT HOLDS IT** — the real holder is the
+  KPK Safe `0x17bC2E77…`, and `snapshot_production.py` builds its account set from
+  `test/integration/accounts.json` (`:131-132`), which does not contain that address. This PR's own
+  `$untracked_by_design` note records it: *"No current fixture holds it (checked on-chain 2026-08-15
+  across all 14 accounts)"*. **So a CORRECT deploy shows no position line and no `nav.value` movement
+  for it.** An earlier revision of this addendum said a position line was expected — that would have
+  flagged the correct outcome as a regression, which is the same failure the `nav.value` note below
+  records having already caused once.
+
+  §0.7 sanctions refreshing `pre/`, so the baseline is NOT fixed — and a binary valid/absorbed verdict is
+  wrong, because a refresh absorbs SOME expected lines and none of the others. **Read off what your
+  baseline still owes; do not stop looking because one line is absorbed.**
+
+  | `pre/1.json` `MorphoVaultsMeta` length | ABSORBED into the baseline | STILL EXPECTED | `metaInstanceTotal` |
+  | --- | --- | --- | --- |
+  | **9** — the committed baseline (block 25625439) | nothing | both Morpho gains (`0x…7a72bcd2` #296 and `0x…b5ce3ca2` wARS Yield) **+** the never-absorbed set below | 66 → 69 |
+  | **10** — refreshed after the 2026-08-12 live `addMetaInstances` | the #296 line, and only that | **`0x…b5ce3ca2` wARS Yield** **+** the never-absorbed set below | 67 → 69 |
+  | **11** — only if the wARS Yield vault was ALSO added to the LIVE OLD NAV; no such tx is recorded in this runbook, unlike #296's | both Morpho gains | the never-absorbed set below | 68 → 69 |
+
+  **NEVER absorbed at any baseline length — but by THREE different mechanisms, and the reasons are not
+  interchangeable.** An earlier revision gave them all one rationale ("the old NAV cannot carry them"),
+  which is true of the ADDED lines and the exact opposite of why the OETH line prints; that paragraph
+  contradicted its own closing evidence.
+
+  - **ADDED lines — the old NAV cannot carry them; they exist only on the new proxy.**
+    `DIFF  adapter ADDED in new:   SymbioticVaultsMeta (<addr>)` (also the ONLY evidence of its instance
+    `0x…8bcd7469` — no per-instance line prints for a new adapter) and
+    `DIFF  asset ADDED in new:   wARS <addr>`. A `pre/` refresh re-reads the OLD NAV, which has neither.
+  - **`DIFF  asset MISSING in new: OETH <addr>` — the OPPOSITE reason.** OETH prints precisely BECAUSE
+    the old NAV still carries it while the new one will not. It is absorbed only if someone
+    DE-REGISTERS OETH from the live old NAV, and no recorded tx does — the 2026-08-12 retirement was a
+    config change, not an on-chain `unregisterAsset`. So a refresh does not clear it either, by the
+    inverse mechanism to the two above.
+  - **The three Cap lines — config-only split.** Covered in the addendum: the live old NAV still holds
+    the single `Cap` adapter, so a refresh reproduces `MISSING in new: Cap` together with both ADDED
+    halves.
+
+  - **A LARGE CLASS OF `DIFF  asset <SYM> priceFeeds:` / `monitorFeeds:` LINES — pre-existing, from
+    #236, NOT from this PR.** `#236` (merged 2026-07-31) raised pegged-feed heartbeats in CONFIG
+    *after* the live NAV had been registered with the old values, and `snapshot_production.py` reads
+    heartbeats from the ON-CHAIN registry (`feed_obj`, `:255-256`), so `pre/` carries what the old NAV
+    holds. A refresh cannot absorb them: re-capturing re-reads the same live registry, and config does
+    not touch it until `RegisterAssets` runs on the NEW proxy. **Attribute these to #236, not to
+    #308** — nothing in this PR caused them and this PR cannot clear them.
+
+    **Derive today's exact set rather than trusting any list** — including this one. At the time of
+    writing the heartbeat class is ~24 fields across chains 1 / 10 / 100 / 42161 / 8453. Those figures
+    are illustrative and go stale on the next config change; the derivation does not.
+
+    **A SEPARATE, SMALLER FAMILY sits in the same output and is NOT #236's:** three monitor-SET changes
+    on chain 1, where the number of monitor feeds changes rather than a heartbeat. `stETH` gains one
+    from **#199** (stETH primary becomes fundamental, `stETHCrossRate` demoted to a monitor), `ezETH`
+    gains one from **#224** (`ezETHCrossRateMarket`), and `ETHx` drops one from **#302** — the last is
+    the change the ETHx bullet below already describes. Attributing these to #236 would point a reader
+    at the wrong diff.
+
+    ```bash
+    python3 - <<'EOF'
+    import json, glob, os
+    # Mirrors diff_snapshots.py's asset PAIRING: key by ADDRESS, label with the SNAPSHOT's `symbol`
+    # (diff_chain uses am[addr]["symbol"], not the config key). It predicts which (asset, field) pairs the
+    # tool will report — NOT its lines verbatim. diff_chain prints the whole feed_shape TUPLE,
+    # `[('Chainlink', 8, 82800)] -> [...]`; only the heartbeat axis is derivable from config (see below),
+    # so this prints heartbeats and deliberately omits the `DIFF ` prefix rather than emit a near-miss of
+    # the tool's format that invites line-by-line matching.
+    for p in sorted(glob.glob("script/deploy/preflight/snapshots/pre/*.json")):
+        ch = os.path.basename(p)[:-5]
+        cfgp = f"script/config/nav-config/assets-and-price-feeds/{ch}.json"
+        if not ch.isdigit() or not os.path.exists(cfgp): continue
+        pre, cfg = json.load(open(p)), json.load(open(cfgp))
+        by = {v["address"].lower(): v for v in cfg.values()
+              if isinstance(v, dict) and v.get("address")}
+        for a in pre.get("assets", []):
+            c = by.get(a["address"].lower())
+            if not c: continue
+            for field in ("priceFeeds", "monitorFeeds"):
+                snap = [f["heartbeat"] for f in a.get(field, [])]
+                conf = [f.get("heartbeat") for f in (c.get(field) or [])]
+                if snap != conf:
+                    print(f"chain {ch}: asset {a['symbol']} {field} heartbeats: {snap} -> {conf}")
+    EOF
+    ```
+
+    ⚠️ **This is a LOWER BOUND on the asset lines, and the reason is worth knowing before you treat its
+    output as the full set.** `diff_snapshots.py` compares `feed_shape` = `(priceType, decimals,
+    heartbeat)` (`:40-42`), between the PRE and POST snapshots. This derivation compares PRE against
+    CONFIG, and config supplies only one of those three axes reliably:
+
+    - `decimals` is **absent from config entirely** — the snapshot reads it on-chain, so it cannot be
+      derived here at all;
+    - `priceType` **does not correspond 1:1**: measured on chain 1, a config `Custom` entry appears in
+      the snapshot as `Chainlink` for some assets, so comparing the strings would manufacture false
+      positives;
+    - `heartbeat` compares cleanly, and is the axis #236 moved.
+
+    So the output above is every heartbeat divergence and nothing else; the tool may print further
+    `DIFF  asset …` lines on the other two axes, and `asset_shape` also covers `symbol`, `decimals`,
+    `divergenceToleranceBps`, `pegToleranceBps` and `includedInDefaultAdapter`, none of which this
+    snippet touches. Match on the **(asset, field) pair**, never on the line text — the tool prints the
+    full `feed_shape` tuple and this derivation prints heartbeats, so no line matches verbatim and a
+    reader expecting one would halt on every entry. Treat a pair it does NOT predict as unexplained
+    until you have run it down — do not treat this list as closed.
+
+    **Why a derivation and not a list.** A hand-written list of these has now gone stale on this
+    document five times, and a stale CLOSED list is worse than none because it turns a correct cutover
+    into a halt. When this was reported, the reported chain-1 set named nine assets; the derivation
+    finds ten (`sGHO 86400 -> 90000` was missing). Run it, keep the output beside the diff, and
+    adjudicate against that.
+
+  **This is a list of MECHANISMS, not a closed set of lines.** Each mechanism explains why a class of
+  difference survives a `pre/` refresh; the heartbeat class above is the one whose membership changes
+  without anyone touching this PR, which is why it ships with a derivation instead of an enumeration.
+  There is no `assetCount` line and no per-feed line; do not wait for either. Checked against the
+  committed baseline rather than assumed: it contains no `Symbiotic` key and no `wARS`, it DOES still
+  carry `OETH`, and it DOES still carry `Cap`.
+
+  **Why the enumeration rather than a verdict.** `06_Configure` can skip an instance SILENTLY (`if
+  (deployed == address(0)) continue;` — see the silent-skip warning under 1.8). If the wARS Yield
+  registration is skipped and the operator holds a length-10 baseline, a binary "already absorbed, stop
+  looking" verdict waves the missing line through, and the vault is absent from NAV after cutover with
+  no error and no failed step. That is the failure this gate exists to prevent, arriving through the
+  gate's own triage rule.
+
+  **`nav.value` — flat is CORRECT for both vaults, and this has now been got wrong in both directions.**
+  For the #296 vault a flat `nav.value` is not evidence of a drop: a $1 seed position could not clear the
+  residual band in any case, and an early revision said the opposite, which would have halted a correct
+  deploy at the last gate before cutover. **For LiquidLane flat is ALSO correct** — it holds a real
+  ~$1.0M position, but the holder is the KPK Safe `0x17bC2E77…`, which is not in
+  `test/integration/accounts.json` and so is not in the snapshot's account set at all. A later revision
+  of this entry claimed the inverse — that flatness there was incriminating — which would have caused
+  the SAME halt from the opposite premise. **A position only reaches `nav.value` here if a SNAPSHOTTED
+  account holds it; vault size is irrelevant.** If a fixture holding a Symbiotic vault is ever added,
+  this rule flips for real — the `$untracked_by_design` note in `accounts.json` says to re-evaluate at
+  exactly that point.
 
 - **ETHx drops from 2 monitor feeds to 1 on mainnet.** Redstone is retiring both of its ETHx push
   feeds, which backed both monitors. The direct Redstone **ETHx/USD** monitor `0xFaBEb147…` is gone
@@ -1856,8 +2128,12 @@ against, and 2.6 cannot run until the new addresses are recorded.
   migrated from Redstone `0xc799194c…` to **Chainlink `0xC499ec76e2F5ac15e127A352Bc40cF24FC472401`**.
   So the diff shows ETHx's `monitorFeeds` 2 → 1, and the cross-rate feed at a new address (every feed
   is redeployed anyway). **This change is feed-count-neutral** — it swaps ETHx's rate leg rather than
-  adding or dropping a feed contract; the totals moved to 26 mainnet / 41 for unrelated reasons (#199
-  and #224, see 1.5). ETHx keeps its divergence/`irregular` signal at 250 bps.
+  adding or dropping a feed contract. **The totals named here are AS OF 2026-07-30**: they had moved to
+  26 mainnet / 41 fleet for unrelated reasons (#199 and #224, see 1.5). They have moved twice since — to
+  25 / 40 at OETH's retirement (2026-08-12) and back to 26 / 41 at PR #308 — so these figures matching
+  the live ones today is the result of that round trip, NOT evidence this paragraph is current. 1.5
+  carries the live count; this sentence is dated on purpose so the next move does not leave it agreeing
+  by accident. ETHx keeps its divergence/`irregular` signal at 250 bps.
   ETHx's **primary** price was never involved — `ETHx_CustomPriceFeed` reads Stader's on-chain rate
   via `stakePoolsManager` — so `nav.value` should not move.
   Verified on-chain before adopting: `description() == "ETHx / ETH"`, 18 decimals, answer
@@ -2059,3 +2335,10 @@ to the new proxy. The old stack keeps answering until they do; nothing needs unr
 | an assistant's `ADAPTER()` is not its paired adapter | the `*Assistant` key was not cleared, so `04` skipped the redeploy | clear it (1.1), re-run 1.7, re-check with `verify_step.py 1.7` |
 | hyperevm impl deploy "exceeds block gas limit" | small blocks | enable big blocks (1.10) |
 | hemi tx rejected on price | fee floor | raise `--with-gas-price` (1.10) |
+
+<!-- 2026-08-15 (PR #308) DERIVATION RE-COUNTED FROM CONFIG, not edited by hand: per chain
+     1=69 (16 adapters, 55+14) · 42161=16 · 8453=16 · 10=4 · 100=4 · 137=4 · 56=0 => 34 adapters,
+     93 instances + 20 instancesRaw = 113. An earlier revision of this PR raised the HEADLINE to 113
+     while leaving this derivation table at 111/67 — and this document states the derivation table
+     WINS on disagreement, so the runbook contradicted itself on the exact figures steps 1.5-1.8 are
+     checked against. Re-derive, never hand-edit one table. -->

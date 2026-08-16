@@ -503,6 +503,26 @@ class RpcError(RuntimeError):
     pass
 
 
+def is_transport_error(x: object) -> bool:
+    """True only for a failed POST — NOT for a per-call JSON-RPC error.
+
+    `rpc_batch` reports both as `RpcError`, and that conflation is a trap: a contract that REVERTS an
+    `eth_call` (because it does not implement the selector — a leftover pre-ADR-0019 feed, a wrong
+    address, an ERC20 recorded where a feed belongs) produces a per-call error that is a CONTRACT
+    ANSWER and the strongest evidence a gate has. Callers that treated `isinstance(x, RpcError)` as
+    "transport" therefore stopped escalating on exactly the case they exist to catch, while callers
+    that treated it as "the contract said so" red-gated correct deploys on one rate-limit. Both were
+    shipped. The distinction lives here so there is one answer rather than one per caller.
+
+    A failed POST fills its whole 40-call window with `batch failed: …`; a response missing an id is
+    also not an answer from any contract. Everything else came back from the node about that call.
+    """
+    if not isinstance(x, RpcError):
+        return False
+    msg = str(x)
+    return msg.startswith("batch failed:") or msg.endswith("missing from batch response")
+
+
 def rpc_candidates(chain_id: int) -> list[tuple[str, str]]:
     """Every endpoint worth trying for a chain, best first, as [(url, note)]."""
     out: list[tuple[str, str]] = []

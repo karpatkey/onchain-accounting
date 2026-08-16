@@ -40,6 +40,9 @@ import {
     ConvexCurveLPStakingMetaBalanceAdapter
 } from "src/balances/MetaBalanceAdapters/ConvexCurveLPStakingMetaBalanceAdapter.sol";
 import {EulerVaultsMetaBalanceAdapter} from "src/balances/MetaBalanceAdapters/EulerVaultsMetaBalanceAdapter.sol";
+import {
+    SymbioticVaultsMetaBalanceAdapter
+} from "src/balances/MetaBalanceAdapters/SymbioticVaultsMetaBalanceAdapter.sol";
 import {FluidFTokensMetaBalanceAdapter} from "src/balances/MetaBalanceAdapters/FluidFTokensMetaBalanceAdapter.sol";
 import {FluidVaultsMetaBalanceAdapter} from "src/balances/MetaBalanceAdapters/FluidVaultsMetaBalanceAdapter.sol";
 import {
@@ -174,7 +177,7 @@ contract ProtocolNameConsistencyTest is Test {
 
     /// @dev Number of concrete meta adapters. Pinned so adding one fails `test_metaAdapterCensus` until the
     ///      author also adds it to `test_everyMetaAdapterReportsItsProtocolName`.
-    uint256 internal constant META_ADAPTER_COUNT = 21;
+    uint256 internal constant META_ADAPTER_COUNT = 22;
 
     /// @dev Number of concrete plain + assisted adapters, i.e. the family whose name is a bytecode LITERAL rather
     ///      than derived. Pinned so adding one fails `test_hardcodedAdapterCensus` until the author also adds it to
@@ -339,6 +342,9 @@ contract ProtocolNameConsistencyTest is Test {
             "ConvexCurveLPStaking"
         );
         i += _expectName(new EulerVaultsMetaBalanceAdapter(n).protocolName(), ProtocolNames.EULER, "EulerVaults");
+        i += _expectName(
+            new SymbioticVaultsMetaBalanceAdapter(n).protocolName(), ProtocolNames.SYMBIOTIC, "SymbioticVaults"
+        );
         i += _expectName(new FluidFTokensMetaBalanceAdapter(n).protocolName(), ProtocolNames.FLUID, "FluidFTokens");
         i += _expectName(
             new FluidVaultsMetaBalanceAdapter(address(new FluidVaultResolverStub()), n).protocolName(),
@@ -557,7 +563,7 @@ contract ProtocolNameConsistencyTest is Test {
 
     /// @notice Distinct protocols must not collide on one display name — otherwise a consumer grouping by name
     ///         would merge two genuinely different protocols, the mirror image of the Umbrella bug.
-    /// @dev **Known limitation — this list is hand-maintained.** It covers all 24 `ProtocolNames` constants today,
+    /// @dev **Known limitation — this list is hand-maintained.** It covers all 25 `ProtocolNames` constants today,
     ///      but nothing forces it to stay complete: adding a constant without adding it here passes silently, so a
     ///      duplicate introduced by copy-pasting a neighbour (say `AAVE_V4 = "Aave V3"`) would never be compared
     ///      against anything and this test would report green on exactly the collision it exists to find. There is
@@ -567,12 +573,13 @@ contract ProtocolNameConsistencyTest is Test {
     ///      `PROTOCOL_NAME_COUNT` pinned to the array's own length would be a tautology, not a guard. So: when you
     ///      add a `ProtocolNames` constant, add it to this array by hand. Revisit once `foundry.toml` is free.
     function test_distinctProtocolsHaveDistinctNames() public pure {
-        string[24] memory names = [
+        string[25] memory names = [
             ProtocolNames.WALLET,
             ProtocolNames.AAVE_V3,
             ProtocolNames.SPARK,
             ProtocolNames.MORPHO,
             ProtocolNames.EULER,
+            ProtocolNames.SYMBIOTIC,
             ProtocolNames.COMPOUND_V3,
             ProtocolNames.FLUID,
             ProtocolNames.GEARBOX_V3,

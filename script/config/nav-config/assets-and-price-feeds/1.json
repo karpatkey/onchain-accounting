@@ -802,5 +802,21 @@
       }
     ],
     "$comment": "Coinbase Wrapped BTC. Registered so its Morpho collateral leg (MorphoMarket_cbBTC_USDC) is valued \u2014 was previously unregistered, dropping the collateral leg from NAV. Chainlink cbBTC/USD, 8 decimals."
+  },
+  "wARS": {
+    "address": "0x0DC4F92879B7670e5f4e4e6e3c801D229129D90D",
+    "$kindComment": "FLAG: ARS fiat-backed, so like EURC it is hard-pegged but NOT to the NAV's quote asset - its USD price moves with ARS/USD. That is why it carries NO pegToleranceBps: a $1 guard would fire constantly. Do not add one. Priced by the Custom 'wARS' feed, which INVERTS Chainlink's USD / ARS feed; see that entry for why a direct type:'Chainlink' registration would over-report ~2.5 million x. NOTE: the feed quotes the CURRENCY ARS, not the wARS token, so a wARS depeg from ARS is invisible here (same treatment USDC gets from a USD feed; unlike EURC, whose EURC/USD feed prices the token).",
+    "accrualKind": "None",
+    "labels": [
+      "Num Finance",
+      "Stablecoin"
+    ],
+    "priceFeeds": [
+      {
+        "type": "Custom",
+        "feed": "wARS",
+        "heartbeat": 90000
+      }
+    ]
   }
 }

@@ -23,6 +23,10 @@ import {
 } from "src/balances/MetaBalanceAdapters/CompoundV3CometsMetaBalanceAdapter.sol";
 import {SparkLendBalanceAdapter} from "src/balances/BalanceAdapters/SparkLendBalanceAdapter.sol";
 import {MorphoVaultsMetaBalanceAdapter} from "src/balances/MetaBalanceAdapters/MorphoVaultsMetaBalanceAdapter.sol";
+import {
+    SymbioticVaultsMetaBalanceAdapter
+} from "src/balances/MetaBalanceAdapters/SymbioticVaultsMetaBalanceAdapter.sol";
+import {InvertedChainlinkCustomPriceFeed} from "src/prices/protocols/InvertedChainlinkCustomPriceFeed.sol";
 import {MorphoMarketsMetaBalanceAdapter} from "src/balances/MetaBalanceAdapters/MorphoMarketsMetaBalanceAdapter.sol";
 import {
     AaveV3InstancesMetaBalanceAdapter
@@ -229,6 +233,7 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
             _tryDeployPriceFeed("sUSDS", _deploySusds);
             _tryDeployPriceFeed("sUSDe", _deploySUsde);
             _tryDeployPriceFeed("sGHO", _deploySgho);
+            _tryDeployPriceFeed("wARS", _deployWars);
             _tryDeployPriceFeed("syrupUSDC", _deploySyrupUsdc);
             _tryDeployPriceFeed("wstETH", _deployWstEth);
             _tryDeployPriceFeed("stETHFundamental", _deployStEthFundamental);
@@ -299,6 +304,29 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         address sgho = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "sGHO", "sgho"));
         address baseAsset = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "sGHO", "baseAsset"));
         return address(new sGHO_CustomPriceFeed(sgho, address(nav), baseAsset));
+    }
+
+    /// @dev wARS via {InvertedChainlinkCustomPriceFeed}. A Custom price feed that is NOT dispatched here is
+    ///      skipped in TOTAL SILENCE — `_registerAssetIfPossible` reads `_ephemeralPriceFeeds[name]`, gets
+    ///      `address(0)` and `continue`s with no console line and no revert. There is no
+    ///      `UndispatchedAdapterGuard` equivalent on this side, so unlike a balance adapter the omission
+    ///      does not fail closed: the asset is simply never registered, every holding of it values at $0,
+    ///      and `refresh-integration-snapshot.sh` would pin that under-report as the expected NAV.
+    ///      **Scope of what this actually buys, stated honestly:** NO chain-1 fixture holds wARS today
+    ///      (checked on-chain across all 14 accounts), so this arm currently deploys and registers the feed
+    ///      but VALUES nothing through it. It removes the hazard for the day a fixture does hold wARS —
+    ///      which is exactly when a silent omission would otherwise be pinned — and it is not a substitute
+    ///      for the dedicated unit and fork suites, which are where this feed's real coverage lives.
+    function _deployWars() internal returns (address) {
+        address underlying = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "wARS", "underlyingAsset"));
+        address usdToAssetFeed =
+            vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "wARS", "usdToAssetChainlinkAddress"));
+        uint256 heartbeat =
+            vm.parseUint(ConfigReader.readPriceFeedParam(vm, _chainId, "wARS", "usdToAssetChainlinkHeartbeat"));
+        uint256 minAnswer = vm.parseUint(ConfigReader.readPriceFeedParam(vm, _chainId, "wARS", "minAnswer"));
+        uint256 maxAnswer = vm.parseUint(ConfigReader.readPriceFeedParam(vm, _chainId, "wARS", "maxAnswer"));
+        return
+            address(new InvertedChainlinkCustomPriceFeed(underlying, usdToAssetFeed, heartbeat, minAnswer, maxAnswer));
     }
 
     function _deploySyrupUsdc() internal returns (address) {
@@ -550,6 +578,9 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         if (_equals(name, "MorphoVaultsMeta")) {
             return _deployMorphoVaultsMeta(name, navAddr);
         }
+        if (_equals(name, "SymbioticVaultsMeta")) {
+            return _deploySymbioticVaultsMeta(name, navAddr);
+        }
         if (_equals(name, "GearboxV3MarketsMeta")) {
             return _deployGearboxV3MarketsMeta(name, navAddr);
         }
@@ -635,6 +666,17 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
 
     function _deployMorphoVaultsMeta(string memory, address navAddr) internal returns (address) {
         return address(new MorphoVaultsMetaBalanceAdapter(navAddr));
+    }
+
+    /// @dev Dispatched rather than declared in `undispatched-adapters.json`. No fixture holds a Symbiotic
+    ///      position today, so an exemption would be defensible on the same grounds as EulerVaultsMeta —
+    ///      but the constructor is a bare `(navAddr)`, so dispatching costs three lines and permanently
+    ///      removes the hazard that file describes (a skipped meta-adapter reports 0, is indistinguishable
+    ///      from "holds nothing", and a snapshot refresh in that state PINS the under-report). The KPK Safe
+    ///      holds a real, material LiquidLane position, so this would become live the moment such an
+    ///      account is added as a fixture.
+    function _deploySymbioticVaultsMeta(string memory, address navAddr) internal returns (address) {
+        return address(new SymbioticVaultsMetaBalanceAdapter(navAddr));
     }
 
     function _deployBalancerV3PoolsMeta(string memory, address navAddr) internal returns (address) {

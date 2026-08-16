@@ -31,6 +31,9 @@ import {
     ConvexCurveLPStakingMetaBalanceAdapter
 } from "src/balances/MetaBalanceAdapters/ConvexCurveLPStakingMetaBalanceAdapter.sol";
 import {EulerVaultsMetaBalanceAdapter} from "src/balances/MetaBalanceAdapters/EulerVaultsMetaBalanceAdapter.sol";
+import {
+    SymbioticVaultsMetaBalanceAdapter
+} from "src/balances/MetaBalanceAdapters/SymbioticVaultsMetaBalanceAdapter.sol";
 import {FluidFTokensMetaBalanceAdapter} from "src/balances/MetaBalanceAdapters/FluidFTokensMetaBalanceAdapter.sol";
 import {FluidVaultsMetaBalanceAdapter} from "src/balances/MetaBalanceAdapters/FluidVaultsMetaBalanceAdapter.sol";
 import {
@@ -91,7 +94,7 @@ import {
 
 /// @dev Minimal address-keyed meta adapter: leaves `_instancePositionId` on the base default and routes its
 ///      emitted positionId through the same hook, which is the contract every meta adapter owes
-///      {IPositionEnumerable}. Stands in for the ~18 adapters that key positions on the coordinate itself.
+///      {IPositionEnumerable}. Stands in for the ~19 adapters that key positions on the coordinate itself.
 contract HookAbidingMeta is MetaBalanceAdapter {
     constructor(address nav) MetaBalanceAdapter(nav) {}
 
@@ -437,7 +440,7 @@ contract MetaBalanceAdapterAdvertisedShapeTest is PositionIdJoinAsserts {
 
     /// @dev Pinned so adding an adapter fails `test_metaAdapterEnumerationCensus` until the author also adds it to
     ///      `test_everyMetaAdapter_advertisesItsCoordinateUnlessItDeclaresOtherwise`.
-    uint256 internal constant META_ADAPTER_COUNT = 21;
+    uint256 internal constant META_ADAPTER_COUNT = 22;
 
     /// @dev A coordinate with dirty high bits, for the two adapters whose instance is a raw `bytes32` rather than
     ///      an address. Deliberately un-address-like: it proves those adapters really do override
@@ -504,6 +507,7 @@ contract MetaBalanceAdapterAdvertisedShapeTest is PositionIdJoinAsserts {
             new ConvexCurveLPStakingMetaBalanceAdapter(stub, stub, n), "ConvexCurveLPStaking"
         );
         i += _assertAdvertisesCoordinate(new EulerVaultsMetaBalanceAdapter(n), "EulerVaults");
+        i += _assertAdvertisesCoordinate(new SymbioticVaultsMetaBalanceAdapter(n), "SymbioticVaults");
         i += _assertAdvertisesCoordinate(new FluidFTokensMetaBalanceAdapter(n), "FluidFTokens");
         i += _assertAdvertisesCoordinate(
             new FluidVaultsMetaBalanceAdapter(address(new FluidVaultResolverStub()), n), "FluidVaults"
@@ -574,9 +578,9 @@ contract MetaBalanceAdapterAdvertisedShapeTest is PositionIdJoinAsserts {
 /// @author KPK
 /// @notice The emitted-side half: for adapters that build `PositionBalance.positionId` INDEPENDENTLY of
 ///         `_instancePositionId`, asserts the bytes they emit are byte-identical to the bytes they advertise.
-/// @dev **The partition, counted rather than asserted.** Of the 21 meta adapters, **18** pass
+/// @dev **The partition, counted rather than asserted.** Of the 22 meta adapters, **19** pass
 ///      `_instancePositionId(instance)` straight into `_leg`, so their join holds by construction and asserting it
-///      would only re-test the base (already covered by {MetaBalanceAdapterEnumerationTest}). That 18 includes
+///      would only re-test the base (already covered by {MetaBalanceAdapterEnumerationTest}). That 19 includes
 ///      `PancakeSwapV2PoolsMetaBalanceAdapter`, which inherits `UniswapV2Pools`'s `_instancePositions` unchanged,
 ///      **and `AaveV3InstancesMetaBalanceAdapter`** — Aave derives a *different* id from the coordinate, but it
 ///      derives it through the hook, so it cannot drift either.
@@ -591,7 +595,7 @@ contract MetaBalanceAdapterAdvertisedShapeTest is PositionIdJoinAsserts {
 ///
 ///      `AaveV3Instances` is exercised here as a **fourth** case for a different reason: it is the only adapter
 ///      whose id is legitimately not its coordinate, so running the join over it documents that the derived id
-///      still reconciles. It is NOT here because it can drift. Hence 18 + 3 = 21 adapters, 4 cases in this suite.
+///      still reconciles. It is NOT here because it can drift. Hence 19 + 3 = 22 adapters, 4 cases in this suite.
 ///
 ///      **This suite does NOT guard the Aave `_instancePositionId` override, and must not be assumed to.** Aave's
 ///      `_instancePositions` derives its id from the hook (`bytes memory pid = _instancePositionId(instance)`), so

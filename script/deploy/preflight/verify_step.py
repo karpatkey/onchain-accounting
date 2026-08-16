@@ -67,7 +67,7 @@ DEFAULT_ADMIN_ROLE = bytes(32)
 MANAGER_ROLE = keccak(text="MANAGER")
 
 # The three assisted adapters and their paired assistants. `04._deployAssistantsIfEnabled`
-# (04_DeployBalanceAdapters.s.sol:251) deploys an assistant iff its adapter's address is already in
+# (grep `Assistant(` in 04_DeployBalanceAdapters.s.sol) deploys an assistant iff its adapter's address is in
 # the record, so the expectation is record-driven, not config-driven.
 ASSISTED_PAIRS = [
     ("EtherFiWithdrawalQueueAssisted", "EtherFiWithdrawalQueueAssistant"),
@@ -283,7 +283,7 @@ def expected_assistants(rec: dict, arch) -> set:
 
     THE ORACLE HAD TO CHANGE, and this is what made the union honest. Config enabling an assisted
     adapter does not mean an assistant was ever deployed: `04._deployAssistantsIfEnabled`
-    (`04_DeployBalanceAdapters.s.sol:251`) deploys one only once the paired ADAPTER'S ADDRESS is
+    (grep `Assistant(` in `04_DeployBalanceAdapters.s.sol`) deploys one only once the paired ADAPTER'S ADDRESS is
     already in the record — which is what `ASSISTED_PAIRS` (:69) has said all along while
     `expected_clear_top` derived the opposite from config.
 
@@ -666,6 +666,95 @@ def step_new_proxy(k: Chk, rec: dict, exp: dict, url, base, tag) -> None:
                  f"deploy, so this was not supposed to happen yet")
 
 
+def _declared_base_asset(chain_id: int, feed_name: str):
+    """`(value, error)` for this feed's declared `baseAsset`. See `_declared_address`."""
+    return _declared_address(chain_id, feed_name, "baseAsset")
+
+
+def _asset_priced_by_feed(chain_id: int, feed_name: str):
+    """`(address, error)` of the asset that nav-config says this Custom feed prices.
+
+    Deliberately NOT read from the feed's own `constructor.underlyingAsset`: that key exists on only 8 of the
+    26 enabled mainnet feeds, and each family names its underlying differently (`ethPlus`, `vault`, …), so a
+    check keyed on it red-gates every feed of the majority shape — including `ETHPlus_CustomPriceFeed`, which
+    declares neither `baseAsset` nor `underlyingAsset` and is exactly the feed class this evidence exists to
+    vouch for. The asset->feed edge in `assets-and-price-feeds` is universal (a feed no asset references is
+    never registered at all) and is the semantically right question anyway: does this contract price the asset
+    the NAV is about to register it for?
+    """
+    try:
+        assets = pc.cfg("assets-and-price-feeds", chain_id) or {}
+    except Exception as e:  # noqa: BLE001 - surfaced to the operator by the caller
+        return None, f"assets-and-price-feeds/{chain_id}.json unreadable ({type(e).__name__})"
+    for sym, entry in assets.items():
+        if sym.startswith("$") or not isinstance(entry, dict):
+            continue
+        for kind in ("priceFeeds", "monitorFeeds"):
+            for fd in entry.get(kind) or []:
+                if isinstance(fd, dict) and fd.get("type") == "Custom" and fd.get("feed") == feed_name:
+                    addr = entry.get("address")
+                    if not (isinstance(addr, str) and addr.startswith("0x") and len(addr) == 42):
+                        return None, f"asset {sym!r} referencing this feed has no usable address ({addr!r})"
+                    return addr, None
+    return None, None
+
+
+def _declared_address(chain_id: int, feed_name: str, key: str):
+    """`(value, error)` for one declared address-valued config key on a custom price feed.
+
+    `error` distinguishes "the config records no such key" (a legitimate no-opinion, `(None, None)`) from
+    "the config could not be read or is malformed". Collapsing both to None — as the first version did —
+    turned the config-vs-contract cross-check into a SILENT no-op for exactly the feed whose config is
+    wrong, while still reporting PASS.
+    """
+    try:
+        entry = (pc.dcfg("custom-price-feeds", chain_id) or {}).get(feed_name) or {}
+    except Exception as e:  # noqa: BLE001 - surfaced to the operator below, never swallowed
+        return None, f"custom-price-feeds/{chain_id}.json unreadable ({type(e).__name__})"
+    if not isinstance(entry, dict):
+        return None, f"config entry for {feed_name!r} is {type(entry).__name__}, not an object"
+    # Resolved by the SHARED accessor, which is the one place this repo encodes what
+    # `ConfigReader.readAdapterParam` does — top level, then `constructor`, then `initialize`. Open-coding it
+    # here (as this did, and it stopped at two of the three scopes) is what made a key written under
+    # `initialize` read as "no opinion recorded" while `03` happily deployed from it, so the cross-check
+    # below reported PASS having compared nothing.
+    raw = pc.resolve_param(entry, key)
+    if raw is None:
+        # A malformed `constructor` scope is NOT "no opinion recorded". `resolve_param` skips a non-dict
+        # scope, so `""`/`null`/a list there resolves to None and would collapse into the legitimate
+        # no-opinion path — turning the config-vs-contract cross-check into a silent no-op for exactly the
+        # feed whose config is broken, while step 1.5 still printed PASS. That collapse is what this
+        # function's `(value, error)` split exists to prevent.
+        #
+        # Only when the key resolved NOWHERE, though. A feed declaring the key at the TOP level with a
+        # leftover malformed `constructor` deploys correctly (`readAdapterParam` checks the top level
+        # first), and hard-failing on it red-gated a correct deployment — which is why the unconditional
+        # shape gate that used to sit above was removed rather than kept.
+        # A key PRESENT with a null value is a broken config, not silence. `resolve_param` returns
+        # `entry[key]` whenever the key exists, so `"baseAsset": null` yields None and would otherwise
+        # collapse into the legitimate no-opinion path — the exact collapse the `(value, error)` split
+        # exists to prevent, printing PASS having compared nothing.
+        if pc.has_param(entry, key):
+            return None, (f"{key!r} for {feed_name!r} is declared with a null value — that states nothing, "
+                          f"so the config-vs-contract cross-check cannot run. Give it an address, or "
+                          f"remove the key")
+        ctor = entry.get("constructor")
+        if ctor is not None and not isinstance(ctor, dict):
+            return None, (f"`constructor` for {feed_name!r} is {type(ctor).__name__}, not an object, and "
+                          f"{key!r} is not declared at any other scope — so nothing can be cross-checked")
+        return None, None                      # no opinion recorded; nothing to cross-check
+    # Shape AND hex, mirroring preflight_config.is_address_shaped — a 42-char non-hex placeholder such as
+    # "0xREPLACE_ME_WITH_THE_REAL_ADDR" passes a length check and then raises inside int(raw, 16) at the
+    # call site, aborting the whole feed loop instead of reporting this one feed.
+    if not (isinstance(raw, str) and raw.startswith("0x") and len(raw) == 42):
+        return None, f"declared {key} {raw!r} is not a 20-byte address"
+    try:
+        int(raw, 16)
+    except ValueError:
+        return None, f"declared {key} {raw!r} is not hex"
+    return raw, None
+
+
 def step_custom_price_feeds(k: Chk, rec: dict, exp: dict, url, base, tag) -> None:
     """Every configured custom feed deployed, with code, pointing at the NEW proxy."""
     feeds = populated(rec.get("customPriceFeeds"))
@@ -686,6 +775,10 @@ def step_custom_price_feeds(k: Chk, rec: dict, exp: dict, url, base, tag) -> Non
     # bound to the old proxy. Name and count checks cannot see that — the names and count are
     # IDENTICAL to the previous generation, which is exactly what makes the failure quiet.
     old, sources = previous_generation_feeds(k.chain_id, tag)
+    # Initialised BEFORE the branches that set it: it is read far below, in the per-feed loop, and a name
+    # bound only inside an `if` is an UnboundLocalError on the path where neither branch fires — the same
+    # unbound-variable failure this file has already been bitten by once.
+    weak_generation_evidence = False
     if old:
         stale = sorted(n for n, a in feeds.items() if lower(a) in old)
         k.require(not stale,
@@ -701,17 +794,33 @@ def step_custom_price_feeds(k: Chk, rec: dict, exp: dict, url, base, tag) -> Non
         # tag, so a second redeploy must pass a new --tag, while this tool still defaults to `pre-redeploy`.
         snap_proxy = (base.get(k.chain_id) or {}).get("proxy")
         rec_proxy = rec.get("NAVCalculatorProxy")
+        # STRONG only when we POSITIVELY established the previous-generation set came from a DIFFERENT
+        # proxy. `base` (snapshots/pre/index.json) and the per-chain file `old` is built from are separate
+        # files, so `old` can be non-empty while `snap_proxy` is None — and the flag was set inside the
+        # `is_address` guard below, leaving it False in exactly that case. Default to weak and clear it only
+        # on proof, rather than defaulting to strong and hoping the proof is readable.
+        proven_different = (c.is_address(snap_proxy) and c.is_address(rec_proxy)
+                            and lower(snap_proxy) != lower(rec_proxy))
+        weak_generation_evidence = not proven_different
         if c.is_address(snap_proxy) and c.is_address(rec_proxy) and lower(snap_proxy) == lower(rec_proxy):
+            # `old` is non-empty but derived from the CURRENT proxy, so it cannot show a
+            # generation-2-vs-3 leftover. For BASE_ASSET() == 0 feeds that is the same dead end as `old`
+            # being empty — no address comparison AND no NAV pointer — so the per-feed warning below must
+            # fire here too, not only in the `else`.
             k.warn.append(
                 f"the previous-generation feed set was derived from sources whose proxy ({snap_proxy}) is "
                 f"still the one in the record, so this only shows the feeds are not stale by ONE generation. "
                 f"If this is a second redeploy, refresh the snapshot/--archive-tag; the NAV() pointer check "
                 f"below is the evidence that actually binds")
     else:
+        weak_generation_evidence = True
         k.warn.append(f"no previous-generation feed addresses available for chain {k.chain_id} "
                       f"(no archive/{tag} record and no Custom feeds in the pre-snapshot), so "
                       f"'these feeds were actually redeployed' cannot be shown here — the NAV() "
-                      f"pointer check below is the only remaining evidence")
+                      f"pointer check below is the only remaining evidence, AND it does not apply to "
+                      f"feeds answering BASE_ASSET() == 0 (they hold no NAV pointer). For those, see "
+                      f"the per-feed warning below: this combination leaves them with no generation "
+                      f"evidence at all")
     if not url or not feeds:
         return
     proxy = rec.get("NAVCalculatorProxy")
@@ -720,10 +829,145 @@ def step_custom_price_feeds(k: Chk, rec: dict, exp: dict, url, base, tag) -> Non
     codes = c.rpc_batch(url, [("eth_getCode", [feeds[n], "latest"]) for n in names])
     navs = c.rpc_batch(url, [("eth_call", [{"to": feeds[n], "data": sel("NAV()")}, "latest"])
                              for n in names])
-    for n, code, nav in zip(names, codes, navs):
+    # BASE_ASSET() is the feed's own declaration of whether it reads a base price OUT of the NAV
+    # (INavSourcedPriceFeed / ADR 0019). A feed answering address(0) has no NAV dependency and therefore
+    # legitimately exposes no NAV() pointer — InvertedChainlinkCustomPriceFeed is the first such ENABLED
+    # feed. Without this the NAV() check below red-gates a CORRECT deployment and sends the operator
+    # hunting a leftover feed that does not exist.
+    bases = c.rpc_batch(url, [("eth_call", [{"to": feeds[n], "data": sel("BASE_ASSET()")}, "latest"])
+                              for n in names])
+    # Substitute evidence for the feeds the BASE_ASSET() == 0 branch exempts from the NAV() pointer check —
+    # see that branch for why removing evidence without replacing it is not an option.
+    unders = c.rpc_batch(url, [("eth_call", [{"to": feeds[n], "data": sel("underlyingAssetSupported()")}, "latest"])
+                               for n in names])
+    # NB: the loop variable is `base_ret`, NOT `base` — `base` is this function's PARAMETER (the
+    # pre-deploy snapshot index). Shadowing it was harmless only because its sole use sits above this
+    # loop; any later read below would silently have got a hex string.
+    for n, code, nav, base_ret, under_ret in zip(names, codes, navs, bases, unders):
         if isinstance(code, Exception) or code in (None, "0x", ""):
             k.fail.append(f"customPriceFeeds.{n} {feeds[n]} has NO CODE")
             continue
+
+        # Cross-check the CONTRACT against what the CONFIG declared. Config-side, preflight treats a
+        # declared address(0) as "not NAV-sourced" and skips its base/heartbeat checks entirely, so a feed
+        # that is really NAV-sourced but records address(0) would pass preflight unexamined. This is the
+        # only place the two can be compared, because it needs the deployed contract.
+        declared, declared_err = _declared_base_asset(k.chain_id, n)
+        if declared_err:
+            k.fail.append(f"customPriceFeeds.{n}: {declared_err} — the config-vs-contract BASE_ASSET "
+                          f"cross-check cannot run, so this feed is unverified rather than verified")
+            continue
+        # An UNREADABLE BASE_ASSET() is itself disqualifying, not a reason to skip ahead. Registration
+        # calls `_validateFeedNotCircular`, which fails CLOSED on `!ok || ret.length != 32` — so a feed
+        # that does not implement INavSourcedPriceFeed cannot be registered at all, however healthy its
+        # NAV() pointer looks. Falling through to the NAV() check (as an earlier revision did) let such a
+        # feed PASS step 1.5 and then be silently skipped by RegisterAssets, which exits 0 — the asset
+        # never registers and every holding of it values at $0 on a live NAV.
+        if c.is_transport_error(base_ret):
+            # TRANSPORT, NOT A CONTRACT ANSWER — and note this tests `is_transport_error`, NOT
+            # `isinstance(..., Exception)`. A contract that REVERTS `BASE_ASSET()` also arrives as an
+            # `RpcError`, and that IS the contract answering: it is the permanent disqualification the
+            # branch below names. Testing the type alone made that accurate branch unreachable and told
+            # the operator to re-run an `eth_call` that can never succeed. Still a FAIL either way — an
+            # unverified feed is not a verified one — but the two need different words.
+            k.fail.append(f"customPriceFeeds.{n} {feeds[n]}: BASE_ASSET() could not be read — TRANSPORT "
+                          f"error ({type(base_ret).__name__}), not an answer from the contract. This says "
+                          f"nothing about the feed; re-run. If it persists for one address alone, then it "
+                          f"is the contract")
+            continue
+        if not (isinstance(base_ret, str) and len(base_ret) >= 66):
+            k.fail.append(f"customPriceFeeds.{n} {feeds[n]}: BASE_ASSET() unreadable ({base_ret}) — "
+                          f"PriceFeedLib._validateFeedNotCircular fails closed on this, so the feed "
+                          f"cannot be registered regardless of its NAV() pointer")
+            continue
+        if True:
+            # Mirror BOTH clauses of the on-chain validator, not one. PriceFeedLib._validateFeedNotCircular
+            # is `if (!ok || ret.length != 32) revert` — EXACTLY one word — and then rejects a dirty upper
+            # 96 bits. Gating on ">= 32" while reading the dirty-bit check from word 0 and the address from
+            # the LAST word means a 64-byte reply would be judged on two different words AND accepted here
+            # while the chain refuses it.
+            if len(base_ret) != 66:
+                k.fail.append(f"customPriceFeeds.{n} {feeds[n]}: BASE_ASSET() returned "
+                              f"{(len(base_ret) - 2) // 2} bytes; PriceFeedLib._validateFeedNotCircular "
+                              f"requires exactly 32, so the feed cannot be registered")
+                continue
+            raw_word = int(base_ret[2:66], 16)
+            if raw_word > (1 << 160) - 1:
+                k.fail.append(f"customPriceFeeds.{n} {feeds[n]}: BASE_ASSET() returned {hex(raw_word)}, whose "
+                              f"upper bits are dirty — PriceFeedLib._validateFeedNotCircular rejects this, so "
+                              f"the feed cannot be registered")
+                continue
+            onchain = "0x" + base_ret[-40:]
+            if declared is not None and lower(onchain) != lower(declared):
+                k.fail.append(f"customPriceFeeds.{n} {feeds[n]}: config declares baseAsset {declared} but "
+                              f"the deployed contract reports BASE_ASSET() {onchain} — one of them is "
+                              f"wrong, and preflight's base/heartbeat checks were run against the config")
+                continue
+            if int(onchain, 16) == 0:
+                # The NAV() pointer below is this step's ONLY per-address evidence that a recorded feed belongs
+                # to the new stack, so exempting a class of feed from it has to SUBSTITUTE evidence rather than
+                # simply remove it. An earlier revision exempted on the contract's zero word alone: a wrong
+                # address recorded under a `customPriceFeeds.*` key — anything with a catch-all fallback
+                # returning a zero word — then answered 0 here, reverted NAV(), and PASSED a step that used to
+                # FAIL it, with `--require-current` also exiting 0. Two conditions now, both required:
+                #
+                # `underlyingAssetSupported()` must return the asset nav-config says this feed prices. A
+                # contract answering for the right asset is the right contract, whatever it does or does not do
+                # with NAV(). Note the config side is the asset->feed edge, NOT the feed's own
+                # `constructor.underlyingAsset` — see `_asset_priced_by_feed` for why keying on that would
+                # red-gate every feed of the majority shape, ETHPlus included.
+                #
+                # The config's own `baseAsset` declaration is deliberately NOT required here: the
+                # declared-vs-onchain cross-check a few lines above already fails when config declares a
+                # non-zero base against a contract reporting zero, so demanding the key again would only punish
+                # the feeds (ETHPlus and any future USD/X inverter) that legitimately do not carry it.
+                want, want_err = _asset_priced_by_feed(k.chain_id, n)
+                if want_err or want is None:
+                    k.fail.append(f"customPriceFeeds.{n} {feeds[n]}: BASE_ASSET() == 0, so the NAV() pointer "
+                                  f"cannot vouch for this address and the asset it prices is the substitute "
+                                  f"evidence — but nav-config names no asset for it "
+                                  f"({want_err or 'no assets-and-price-feeds entry references this feed'}). A "
+                                  f"deployed feed no asset references is never registered, so this is a "
+                                  f"finding in its own right, not a reason to skip the check")
+                    continue
+                # Same two clauses the BASE_ASSET() read above applies, and for the same reason: this word is
+                # now the ONLY thing establishing that this address is the intended contract, so a padded
+                # reply whose low 20 bytes happen to match must not be accepted as proof of identity.
+                got = None
+                if isinstance(under_ret, str) and len(under_ret) == 66 and int(under_ret[2:66], 16) <= (1 << 160) - 1:
+                    got = "0x" + under_ret[-40:]
+                if got is None or lower(got) != lower(want):
+                    k.fail.append(f"customPriceFeeds.{n} {feeds[n]}: BASE_ASSET() == 0, so "
+                                  f"underlyingAssetSupported() is the only evidence this address is the right "
+                                  f"contract — it returned {got or under_ret!r}, but nav-config registers this "
+                                  f"feed against {want}")
+                    continue
+                # STATE THE LIMIT. `underlyingAssetSupported()` is generation-INVARIANT: a leftover
+                # previous-generation feed for the same asset answers it identically, so this establishes
+                # "right contract for the right asset" and NOT "right generation". For every other feed the
+                # immutable NAV() pointer supplies the generation half; these have none. The
+                # previous-generation ADDRESS comparison earlier in this step is what actually binds them —
+                # so when that could not run, say so per feed rather than letting a green line imply cover.
+                if weak_generation_evidence:
+                    k.warn.append(f"customPriceFeeds.{n} {feeds[n]}: BASE_ASSET() == 0, so it holds no NAV "
+                                  f"pointer, and no USABLE previous-generation address was available to "
+                                  f"compare against — nothing in this step can tell a current deployment from a "
+                                  f"leftover one for this feed. bytecode_audit cannot either (it masks "
+                                  f"immutableReferences). Refresh the snapshot/--archive-tag to restore it")
+                k.info.append(f"customPriceFeeds.{n} {feeds[n]}: BASE_ASSET() == 0 and "
+                              f"underlyingAssetSupported() == {want}, the asset nav-config registers it for — "
+                              f"the right contract for the right asset. NOTE this is asset identity, not "
+                              f"generation: the NAV() pointer that proves generation elsewhere does not apply "
+                              f"to this feed")
+                continue
+
+        # NO config-keyed downgrade here. An earlier revision warned-and-continued when NEITHER BASE_ASSET()
+        # nor NAV() was readable, provided the CONFIG declared address(0) — which turned a red step GREEN for
+        # a contract that answers neither selector and is therefore not a valid custom feed at all
+        # (`PriceFeedLib._validateFeedNotCircular` rejects it with CustomFeedBaseUnreadable). The exemption
+        # above is keyed on the CONTRACT's own BASE_ASSET() answer and stands; this one was keyed on
+        # operator-editable config and is exactly the fail-open the block below forbids. A transport hiccup
+        # here is a re-run, not a reason to pass.
         if isinstance(nav, Exception) or not isinstance(nav, str) or len(nav) < 66:
             # MUST fail, not warn. `NAV` is a public immutable on every custom feed (ADR 0019), so
             # an unreadable NAV() is either a leftover feed from the old stack — exactly what this

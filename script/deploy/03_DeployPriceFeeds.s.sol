@@ -58,6 +58,16 @@ contract DeployPriceFeeds is BaseDeployScript {
     ///      already-broadcast address that can never be amended. Rejected at deploy time instead.
     error InvertedFeedBaseAssetMustBeZero(string feed, address declared);
 
+    /// @notice An inverted feed's `baseAsset` is present but is not a 20-byte address.
+    /// @dev Raised instead of letting `vm.parseAddress` revert with an opaque cheatcode message, which
+    ///      would hide which feed and which key were at fault.
+    error InvertedFeedBaseAssetMalformed(string feed, string declared);
+
+    /// @notice An inverted feed is missing a constructor param its deploy helper will need.
+    /// @dev Checked pre-broadcast. `vm.parseUint("")` reverts, so without this the run aborted
+    ///      MID-BROADCAST with earlier feeds already deployed and a half-written deployments record.
+    error InvertedFeedParamMissing(string feed, string key);
+
     function run() public override {
         setUp();
 
@@ -651,18 +661,40 @@ contract DeployPriceFeeds is BaseDeployScript {
     ///      not on a hardcoded name, so a second `USD / X` feed is covered the day it is configured.
     ///      See {InvertedFeedBaseAssetMustBeZero} for why a non-zero value cannot be honoured.
     function _assertInvertedFeedsDeclareZeroBase() internal view {
+        // `getEnabledAdapters` returns every NAMED entry — it does NOT filter on `enabled` (the name is a
+        // misnomer this file cannot fix). Gating a DISABLED entry would halt the whole deploy over config
+        // that will never be constructed, so the enabled test is explicit.
         string[] memory names = ConfigReader.getEnabledAdapters(vm, currentChainId, "deployPriceFeeds");
         for (uint256 i; i < names.length; ++i) {
-            if (
-                bytes(ConfigReader.readPriceFeedParam(vm, currentChainId, names[i], "usdToAssetChainlinkAddress"))
-                    .length == 0
-            ) {
-                continue;
-            }
+            if (!ConfigReader.isPriceFeedEnabled(vm, currentChainId, names[i])) continue;
+            string memory rate =
+                ConfigReader.readPriceFeedParam(vm, currentChainId, names[i], "usdToAssetChainlinkAddress");
+            if (bytes(rate).length == 0) continue;
+
+            // Every constructor arg this family needs, checked BEFORE the broadcast opens. Parsing them
+            // for the first time inside `_deployInvertedFeed` meant a missing value aborted the run
+            // MID-BROADCAST with earlier feeds already deployed — the failure mode that moving the
+            // baseAsset assertion out here was meant to eliminate, left half-solved.
+            _requireDeclared(names[i], "usdToAssetChainlinkHeartbeat");
+            _requireDeclared(names[i], "minAnswer");
+            _requireDeclared(names[i], "maxAnswer");
+            _requireDeclared(names[i], "underlyingAsset");
+
             string memory declaredBase = ConfigReader.readPriceFeedParam(vm, currentChainId, names[i], "baseAsset");
-            if (bytes(declaredBase).length != 0 && vm.parseAddress(declaredBase) != address(0)) {
+            if (bytes(declaredBase).length == 0) continue;
+            // Shape-check BEFORE `vm.parseAddress`, which reverts with an opaque cheatcode error on a
+            // malformed value and buries the named error this function exists to raise.
+            if (bytes(declaredBase).length != 42) revert InvertedFeedBaseAssetMalformed(names[i], declaredBase);
+            if (vm.parseAddress(declaredBase) != address(0)) {
                 revert InvertedFeedBaseAssetMustBeZero(names[i], vm.parseAddress(declaredBase));
             }
+        }
+    }
+
+    /// @dev Pre-broadcast presence check for one required param of an inverted feed.
+    function _requireDeclared(string memory feed, string memory key) internal view {
+        if (bytes(ConfigReader.readPriceFeedParam(vm, currentChainId, feed, key)).length == 0) {
+            revert InvertedFeedParamMissing(feed, key);
         }
     }
 

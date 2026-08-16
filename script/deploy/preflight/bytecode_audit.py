@@ -276,21 +276,19 @@ def check_immutable_pointers(chain_id: int, url: str, res: dict) -> None:
             # `rpc_batch` returns its errors IN BAND and fills a whole window with them on one failed POST,
             # so a BASE_ASSET() window that errored makes `base_val` an exception rather than a zero word —
             # and the exemption above cannot fire. Say TRANSPORT explicitly: for a feed with no NAV member
-            # this branch is reached on every run, so the operator would otherwise be sent hunting a
-            # leftover feed that does not exist when the answer is "re-run it". Still escalates below: a
-            # transport failure is unknown, not clean.
-            # TRANSPORT IS NOT EVIDENCE. `rpc_batch` returns its errors IN BAND and fills an entire
-            # 40-call window with them on one failed POST (chainlib.py:588-591), so `val` — and, for a
-            # feed, `base_val` — is an exception for every target in that window. Treating that as a
-            # contract-level answer is how a single rate-limit turned `--require-current` into exit 1
-            # with a fabricated "these contracts are stale, redeploy them" verdict across the whole
-            # window. Escalate ONLY on a real answer that is unreadable; on a transport failure say so
-            # and leave `status` alone, exactly as this branch did before the escalation was added.
-            transport = isinstance(val, Exception) or isinstance(base_val, Exception)
+            # TRANSPORT IS NOT EVIDENCE — BUT A REVERT IS. `rpc_batch` fills an entire 40-call window
+            # with errors on one failed POST, so treating any `RpcError` as a contract answer turned a
+            # single rate-limit into a fabricated "these contracts are stale, redeploy them" verdict.
+            # Treating any `RpcError` as TRANSPORT is the opposite and worse error: a contract that
+            # REVERTS `NAV()` — the commonest shape of a leftover or wrong address, and the whole point
+            # of this check — also arrives as an `RpcError`, so the escalation stopped firing on the
+            # case it exists for and `--require-current` exited 0 on it. `c.is_transport_error`
+            # separates the two; see its docstring.
+            transport = c.is_transport_error(val) or c.is_transport_error(base_val)
             if transport:
                 e["pointerCheck"] = f"UNKNOWN (TRANSPORT — re-run before reading anything into this) ({val})"
                 continue
-            e["pointerCheck"] = f"UNREADABLE ({val})"
+            e["pointerCheck"] = f"UNREADABLE ({val})"  # a real answer from the node about this call
             # ESCALATE HERE, not at the status rewrite below — this branch `continue`s past it. An
             # unreadable pointer is precisely the evidence of an old-generation feed that `03`
             # skip-if-deployed'd: its immutable-masked bytecode still matches the current build, so
@@ -317,9 +315,11 @@ def check_immutable_pointers(chain_id: int, url: str, res: dict) -> None:
                         url, proxy,
                         _sel("isAdapterRegistered(address)") + "0" * 24 + ptr[2:].lower())
                     registered = int(reg, 16) == 1
-                except Exception:  # noqa: BLE001
+                except Exception as ex:  # noqa: BLE001
                     registered = None
+                    reg_transport = c.is_transport_error(ex)
             e["adapterRegisteredOnNav"] = registered
+            reg_transport = locals().get("reg_transport", False)
             if not recorded:
                 e["pointerCheck"] = f"STALE_ADAPTER (-> {ptr}, not in deployment record)"
             elif registered is False:
@@ -328,8 +328,13 @@ def check_immutable_pointers(chain_id: int, url: str, res: dict) -> None:
                 # The registration call failed. Do NOT fall through to OK: the orphan case is
                 # precisely what this check exists to catch, and an unanswered question is not a
                 # clean answer. `--require-current` reads this status for its exit code.
-                e["pointerCheck"] = (f"UNKNOWN (-> {ptr} recorded, but isAdapterRegistered could not "
-                                     f"be read; re-run before trusting this)")
+                #
+                # But apply the SAME transport policy as the pointer branch above, or this file states
+                # one rule and follows another: a failed POST says nothing about this adapter, and
+                # escalating on it red-gates a correct deploy. `TRANSPORT` is excluded from the
+                # escalation below; a real revert or a bad answer still escalates.
+                e["pointerCheck"] = (f"UNKNOWN ({'TRANSPORT — re-run' if reg_transport else 'not readable'}"
+                                     f") (-> {ptr} recorded, isAdapterRegistered could not be read)")
             else:
                 e["pointerCheck"] = "OK"
         # A contract whose code is current but whose pointer is stale still has to be redeployed.
@@ -338,7 +343,8 @@ def check_immutable_pointers(chain_id: int, url: str, res: dict) -> None:
         # contract that declares no NAV pointer has nothing that could be stale). An earlier revision added
         # an `N/A` exemption to THIS condition, which was dead code: the comment claimed the exemption
         # would otherwise be inert, but the `continue` already skipped this line entirely.
-        if e["pointerCheck"] != "OK" and e["status"].startswith("CURRENT"):
+        if (e["pointerCheck"] != "OK" and "TRANSPORT" not in e["pointerCheck"]
+                and e["status"].startswith("CURRENT")):
             e["status"] = "CURRENT_CODE_STALE_POINTER"
 
 

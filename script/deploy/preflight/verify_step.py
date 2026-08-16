@@ -863,12 +863,13 @@ def step_custom_price_feeds(k: Chk, rec: dict, exp: dict, url, base, tag) -> Non
         # NAV() pointer looks. Falling through to the NAV() check (as an earlier revision did) let such a
         # feed PASS step 1.5 and then be silently skipped by RegisterAssets, which exits 0 — the asset
         # never registers and every holding of it values at $0 on a live NAV.
-        if isinstance(base_ret, Exception):
-            # TRANSPORT, NOT A CONTRACT ANSWER. `rpc_batch` returns its errors IN BAND and fills the whole
-            # 40-call window on one failed POST (chainlib.py:588-591), so this fires for EVERY feed in that
-            # window. Still a FAIL — an unverified feed is not a verified one — but it must not assert the
-            # contract fact. The old message told the operator these feeds "cannot be registered", which on
-            # a rate-limit was simply false, about a whole window at once, and pointed at a redeploy.
+        if c.is_transport_error(base_ret):
+            # TRANSPORT, NOT A CONTRACT ANSWER — and note this tests `is_transport_error`, NOT
+            # `isinstance(..., Exception)`. A contract that REVERTS `BASE_ASSET()` also arrives as an
+            # `RpcError`, and that IS the contract answering: it is the permanent disqualification the
+            # branch below names. Testing the type alone made that accurate branch unreachable and told
+            # the operator to re-run an `eth_call` that can never succeed. Still a FAIL either way — an
+            # unverified feed is not a verified one — but the two need different words.
             k.fail.append(f"customPriceFeeds.{n} {feeds[n]}: BASE_ASSET() could not be read — TRANSPORT "
                           f"error ({type(base_ret).__name__}), not an answer from the contract. This says "
                           f"nothing about the feed; re-run. If it persists for one address alone, then it "

@@ -46,19 +46,22 @@ interface IRateFeedIdentity {
 ///      report, the ceiling is roughly seven years of accrual at current rates). `1e13 – 1e16` for a governance
 ///      token quoted in ETH (LDO/ETH at 0.000192 would have to 50x or fall 20x against ETH to breach).
 ///
-///      **This guard fails closed on absence, on TWO independent axes.** {checkAll} does not merely skip an
-///      instance that has no `rateFeedGuard` block. It runs both backstops, because either one alone leaves a
-///      shape that configures itself out of every check:
-///        1. {_assertNoUnguardedRateFeedParam} — reverts {RateFeedGuardMissing} if the instance takes a
-///           rate-feed-shaped PARAMETER (`yToXFeed`, `*Chainlink[Address]`) without declaring a guard for it.
-///        2. {_assertNoUnreconciledBand} — reverts {RateFeedBandUnguarded} if it declares a constructor
-///           `min/maxAnswer` BAND with no guard block to reconcile it against. Needed because (1) matches
-///           param SPELLINGS only, so a rate feed named anything else escaped it while still shipping an
-///           unchecked band into an immutable contract.
-///      Both read config through the same top-level-first resolution `03` deploys from, so a key written
-///      beside `constructor` rather than inside it cannot hide from either. Without all of that the guard
-///      would silently stop covering the next feed anyone adds, which is the failure mode of every check that
-///      is opt-in by omission.
+///      **This guard fails closed on absence.** {checkAll} does not merely skip an instance that has no
+///      `rateFeedGuard` block: {_assertNoUnguardedRateFeedParam} reverts {RateFeedGuardMissing} if the
+///      instance takes a rate-feed-shaped PARAMETER (`yToXFeed`, `*Chainlink[Address]`) without declaring a
+///      guard for it, reading config through the same three scopes `03` deploys from — so a key written
+///      beside `constructor` cannot hide from it. Without that the guard would silently stop covering the
+///      next feed anyone adds, which is the failure mode of every check that is opt-in by omission.
+///
+///      **DECLARED GAP.** A companion check requiring a `rateFeedGuard` block for any declared
+///      `min/maxAnswer` BAND was tried and withdrawn. Demanding it for every band banned the legitimate
+///      band-only shape — a basket or division-last feed with no aggregator param, which a guard block has
+///      nothing to pin. Narrowing it to "only when an oracle-shaped param is also declared" re-opened the
+///      very param-name-guessing escape it existed to close, because the narrowed test is just another
+///      guessable name list. So: a feed that declares a band AND names its rate leg outside the allowlist
+///      above receives neither a pair check nor a band reconciliation. No committed config has that shape
+///      (mainnet `wARS` is the only banded feed, and it declares a recognised param and a guard). Closing
+///      it needs an explicit config assertion, not a third heuristic.
 library RateFeedGuard {
     /// @notice The configured address is an aggregator, but for the wrong pair.
     error RateFeedPairMismatch(string feed, address rateFeed, string expected, string actual);
@@ -107,16 +110,6 @@ library RateFeedGuard {
     ///      against, and silently skipping is how the unchecked copy got there in the first place.
     error RateFeedBandIncomplete(string feed, string present, string missing);
 
-    /// @notice A constructor band is declared on a feed that has no `rateFeedGuard` block, so nothing reconciles it.
-    /// @dev The band reconciliation lives in {check}, which {checkAll} reaches ONLY when a guard block is declared.
-    ///      The fail-closed backstop it runs instead — {_assertNoUnguardedRateFeedParam} — recognises rate-feed
-    ///      PARAM SPELLINGS only (`yToXFeed`, `*Chainlink`, `*ChainlinkAddress`). A feed that names its rate feed
-    ///      anything else while carrying `min/maxAnswer` therefore skipped BOTH the pair-identity check and the
-    ///      band reconciliation, shipping an unreconciled band into an immutable contract with the deploy exiting
-    ///      0 and every preflight gate reporting PASS. Declaring a band is now itself what makes a guard
-    ///      mandatory, so the guard no longer depends on having guessed the param name.
-    error RateFeedBandUnguarded(string feed);
-
     /// @notice Sentinel for `rateFeedGuard.description` meaning "this provider does not expose the pair".
     /// @dev **Not every feed can be identity-checked, and pretending otherwise would be worse than not trying.**
     ///      Measured on mainnet: RedStone's multi-feed contracts answer usefully — `0x701e83Bd` returns
@@ -147,7 +140,6 @@ library RateFeedGuard {
                 // No guard declared. Only legitimate if this instance takes no rate feed at all AND declares no
                 // constructor band — the two independent things a guard block is what makes checkable.
                 _assertNoUnguardedRateFeedParam(vm, chainId, names[i]);
-                _assertNoUnreconciledBand(vm, chainId, names[i]);
                 continue;
             }
             check(vm, chainId, names[i]);
@@ -258,34 +250,6 @@ library RateFeedGuard {
         for (uint256 i; i < keys.length; ++i) {
             if (_isRateFeedParam(keys[i])) revert RateFeedGuardMissing(feed, keys[i]);
         }
-    }
-
-    /// @dev Fail-closed companion to {_assertNoUnguardedRateFeedParam}, covering the OTHER thing a guard block is
-    ///      what makes checkable. See {RateFeedBandUnguarded}: the param-spelling scan above cannot see a band,
-    ///      and the reconciliation that can is unreachable without a guard. Deliberately uses
-    ///      `readPriceFeedParam` rather than {_declaredParamKeys}, for the same resolver-agreement reason spelled
-    ///      out in {_checkConstructorBandAgrees} — a top-level band must not be invisible to its own guard.
-    function _assertNoUnreconciledBand(Vm vm, uint256 chainId, string memory feed) private view {
-        bool hasBand = bytes(ConfigReader.readPriceFeedParam(vm, chainId, feed, "minAnswer")).length != 0
-            || bytes(ConfigReader.readPriceFeedParam(vm, chainId, feed, "maxAnswer")).length != 0;
-        if (!hasBand) return;
-        // A BAND ALONE IS NOT A REASON TO DEMAND A GUARD. The escape this closes is a feed that HAS an
-        // external rate leg whose param this file's allowlist does not recognise, so the pair check is
-        // skipped and the band ships unreconciled. A feed with no oracle-shaped param at all — a basket
-        // feed, or a division-last feed reading one aggregator under a name nothing matches — has nothing
-        // for a `rateFeedGuard` block to pin, and requiring one would leave it with NO config that
-        // satisfies both checks. Only demand the guard when something oracle-shaped is declared.
-        string[] memory keys = _declaredParamKeys(vm, chainId, feed);
-        for (uint256 i; i < keys.length; ++i) {
-            if (_isOracleShapedParam(keys[i])) revert RateFeedBandUnguarded(feed);
-        }
-    }
-
-    /// @dev Broader than {_isRateFeedParam} ON PURPOSE: that allowlist is what a feed can slip past by
-    ///      naming its leg something else, so the band backstop must not key on the same narrow list.
-    function _isOracleShapedParam(string memory key) private pure returns (bool) {
-        return _isRateFeedParam(key) || _endsWith(key, "Feed") || _endsWith(key, "Oracle")
-            || _endsWith(key, "Aggregator") || _endsWith(key, "Address");
     }
 
     /// @dev Enumerates an instance's constructor parameter NAMES. Deliberately implemented HERE rather than as a

@@ -325,28 +325,6 @@ contract RateFeedGuardTest is Test {
         assertTrue(ok, string.concat("a complete band split across scopes must reconcile; reverted ", vm.toString(ret)));
     }
 
-    /// @notice **Declaring a band is itself what makes a guard block mandatory.**
-    /// @dev The reconciliation lives in `check()`, which `checkAll` reaches only when a guard IS declared, and
-    ///      the fail-closed backstop it runs instead matches rate-feed PARAM SPELLINGS only (`yToXFeed`,
-    ///      `*Chainlink[Address]`). `usdToAssetOracle` matches none of them, so this feed used to skip BOTH the
-    ///      pair-identity check and the band reconciliation — shipping an unreconciled band into an immutable
-    ///      contract with the deploy exiting 0 and every preflight gate reporting PASS.
-    function test_bandWithNoGuardBlock_revertsRatherThanSkipping() public {
-        _writeSynth(
-            SYNTH_NOGUARD,
-            '{"BandNoGuard":{"enabled":true,'
-            '"constructor":{"usdToAssetOracle":"0x00000000000000000000000000000000DeaDBeeF",'
-            '"minAnswer":"10000000000","maxAnswer":"10000000000000"}}}'
-        );
-        (bool ok, bytes memory ret) =
-            address(this).staticcall(abi.encodeWithSelector(this.exposedCheckAll.selector, SYNTH_NOGUARD));
-        _removeSynth(SYNTH_NOGUARD);
-        assertFalse(ok, "a constructor band with no guard block to reconcile it must be rejected");
-        assertEq(
-            ret, abi.encodeWithSelector(RateFeedGuard.RateFeedBandUnguarded.selector, "BandNoGuard"), "wrong revert"
-        );
-    }
-
     /// @notice **A rate-feed param written BESIDE `constructor` must not hide from the fail-closed scan.**
     /// @dev The companion backstop to the band one above, and it had the same blind spot the band check was
     ///      fixed for: it enumerated `.<feed>.constructor` keys only, while `ConfigReader.readAdapterParam`
@@ -393,25 +371,6 @@ contract RateFeedGuardTest is Test {
             abi.encodeWithSelector(RateFeedGuard.RateFeedGuardMissing.selector, "InitParam", "yToXFeed"),
             "wrong revert"
         );
-    }
-
-    /// @notice **A band on a feed with NO oracle-shaped param must be ALLOWED, not demanded a guard.**
-    /// @dev The band backstop exists for a feed that HAS an external rate leg under a name the allowlist
-    ///      does not recognise. Applied to any band at all it also banned the legitimate shape — a basket
-    ///      or division-last feed with no aggregator param — leaving it with no config satisfying both
-    ///      checks, since a `rateFeedGuard` block has nothing to pin for such a feed. This is the arm that
-    ///      keeps the backstop from over-reaching; the `BandNoGuard` test above is the arm that keeps it
-    ///      from under-reaching, and they must both hold.
-    function test_bandOnlyFeedWithNoOracleParam_isAllowed() public {
-        _writeSynth(
-            SYNTH_BANDONLY,
-            '{"BandOnly":{"enabled":true,' '"constructor":{"basketToken":"0x00000000000000000000000000000000DeaDBeeF",'
-            '"minAnswer":"10000000000","maxAnswer":"10000000000000"}}}'
-        );
-        (bool ok, bytes memory ret) =
-            address(this).staticcall(abi.encodeWithSelector(this.exposedCheckAll.selector, SYNTH_BANDONLY));
-        _removeSynth(SYNTH_BANDONLY);
-        assertTrue(ok, string.concat("a band-only feed must not require a guard; reverted ", vm.toString(ret)));
     }
 }
 

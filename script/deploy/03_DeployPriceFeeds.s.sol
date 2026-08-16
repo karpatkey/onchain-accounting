@@ -639,6 +639,8 @@ contract DeployPriceFeeds is BaseDeployScript {
         console2.log("ezETH_CustomPriceFeed deployed at:", address(ezEthAdapter));
     }
 
+    // NOTE: this section header describes `_deployCrossRateMonitor`, further below — the two
+    // inverted-feed helpers between here and it are a different family.
     // CrossRate redundancy feeds: Y/USD = (X/USD) * (Y/X), X = ETH. The Y/ETH leg is a Redstone market feed,
     // independent of the asset's primary on-chain-rate feed. Registered as a `monitorFeed`, NOT as a pricing feed:
     // it never prices the NAV, it only provides something for the primary to be checked against. An earlier

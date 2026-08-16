@@ -21,9 +21,9 @@ import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 ///
 ///      **Coverage, stated honestly — AS MEASURED, NOT MAINTAINED: this harness registered 41 assets and 21
 ///      adapters when these figures were taken, where the mainnet deploy config carried 43 and 27.** Both
-///      sides move as the registry grows (PR #308 adds a Symbiotic meta-adapter to each) and NOTHING
-///      asserts these counts — deliberately, since pinning them would redden the suite on every registry
-///      change. Treat them as descriptive of the run they were measured in.
+///      sides move as the registry grows — PR #308 adds a Symbiotic meta-adapter AND the wARS asset, so
+///      it moves the adapter axis and the asset axis both. Treat these as descriptive of the run they
+///      were measured in; the policy on why they are not asserted is stated once, below.
 ///
 ///      The six it skips are the ones whose deploy type the harness does not know
 ///      (`EthenaCooldown`, `LidoWithdrawalQueue`, `EulerVaultsMeta`, and the three assisted adapters). So the

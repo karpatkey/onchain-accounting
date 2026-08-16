@@ -1446,10 +1446,13 @@ proxy invalidates every existing feed.
 > | **#199** (stETH primary becomes fundamental) | 2026-07-29 | deploys a **stETH primary** (`stETHFundamental`) and demotes `stETHCrossRate` to a monitor: mainnet 24 → **25** |
 > | **#224** (ezETH market monitor) | 2026-07-30 | adds `ezETHCrossRateMarket` so ezETH's depeg check can fire: mainnet 25 → **26** |
 >
-> Both have their `03_DeployPriceFeeds.s.sol` call sites in place — `_deployEEth("stETHFundamental")`
-> (`03:147`), `_deployCrossRateMonitor("stETHCrossRate")` (`03:153`) and
-> `_deployCrossRateMonitor("ezETHCrossRateMarket")` (`03:230`) — verified against the merged tree, so
-> `03` deploys all 26 ENABLED mainnet feeds and nothing is skipped as `primary feed unresolved`.
+> Both have their `03_DeployPriceFeeds.s.sol` call sites in place — `_deployEEth("stETHFundamental")`,
+> `_deployCrossRateMonitor("stETHCrossRate")` and `_deployCrossRateMonitor("ezETHCrossRateMarket")` —
+> verified against the merged tree, so `03` deploys all 26 ENABLED mainnet feeds and nothing is skipped
+> as `primary feed unresolved`. **Grep for those three calls; do not look for line numbers.** This
+> paragraph used to cite `03:147` / `03:153` / `03:230`, which were exact when written and were silently
+> moved to 169 / 175 / 252 by a later PR adding code above them — a citation that rots without anything
+> going red is worse than no citation.
 >
 > Keep taking the number from the tooling rather than from here: `preflight_config.py` prints the
 > configured total and `verify_step.py 1.5` compares against it, so both follow config automatically.
@@ -1458,7 +1461,7 @@ proxy invalidates every existing feed.
 > **The three dead feed contracts are a separate matter and change the count by ZERO.**
 > `cbETH_CustomPriceFeed`, `ETHPlus_CustomPriceFeed` and `sDAI_CustomPriceFeed` are deployed on no chain
 > and enabled in no config (`cbETH`/`sDAI` are not config keys at all; `ETHPlus` is present on mainnet
-> with `enabled: false`). All three call sites are `isAdapterEnabled`-gated (`03:98`, `03:153`, `03:183`)
+> with `enabled: false`). All three call sites are `isAdapterEnabled`-gated (grep `_deployCbEth`, `_deployETHPlus`, `_deploySDai`)
 > and a missing key reads as false, so the branches are never taken — and they stay unreached after step
 > 1.1, since clearing the record removes only the skip-guard short-circuit, not the enablement gate.
 > #199 deletes the sDAI contract; that is dead-code removal, not a count change. An earlier audit note

@@ -250,6 +250,16 @@ contract RateFeedGuardTest is Test {
         _mockFeed(SYNTH_FEED, "USD / ARS", 158_309_760_000, 8);
     }
 
+    /// @dev **Cleanup must precede every assertion, which is why these tests use `staticcall` rather than
+    ///      `vm.expectRevert`.** These fixtures land in the git-TRACKED
+    ///      `script/config/contracts-deployment-config/custom-price-feeds/` directory, and
+    ///      `declared_heartbeat_guard.py` derives its audited chain set from `d.glob("*.json")` over exactly
+    ///      that directory — so a leftover `999901.json` makes a preflight report an operator reads before a
+    ///      mainnet deploy print a `chain 999901` section for a chain that does not exist, and inflates the
+    ///      "on all N chains" coverage claim. With `vm.expectRevert`, a mismatched revert aborts the body at
+    ///      the call and the cleanup below never runs. Routing through `staticcall` returns the revert as DATA,
+    ///      so the file is always removed before anything can fail. `setUp()`-based cleanup is NOT an
+    ///      alternative: forge runs a suite's tests concurrently, so it would delete a sibling's live fixture.
     function _removeSynth(uint256 chainId) internal {
         if (vm.exists(_synthPath(chainId))) vm.removeFile(_synthPath(chainId));
     }
@@ -275,7 +285,12 @@ contract RateFeedGuardTest is Test {
             '"rateFeedGuard":{"param":"usdToAssetChainlinkAddress","description":"USD / ARS",'
             '"minRate1e18":"100000000000000000000","maxRate1e18":"999000000000000000000000"}}}'
         );
-        vm.expectRevert(
+        (bool ok, bytes memory ret) =
+            address(this).staticcall(abi.encodeWithSelector(this.exposedCheck.selector, SYNTH_TOP, "TopLevelBand"));
+        _removeSynth(SYNTH_TOP);
+        assertFalse(ok, "a band declared outside `constructor` must be reconciled, not silently skipped");
+        assertEq(
+            ret,
             abi.encodeWithSelector(
                 RateFeedGuard.RateFeedBandMismatch.selector,
                 "TopLevelBand",
@@ -283,10 +298,9 @@ contract RateFeedGuardTest is Test {
                 uint256(100e18),
                 uint256(100_000e18),
                 uint256(999_000e18)
-            )
+            ),
+            "wrong revert"
         );
-        this.exposedCheck(SYNTH_TOP, "TopLevelBand");
-        _removeSynth(SYNTH_TOP);
     }
 
     /// @notice **A band split across both scopes is COMPLETE, and must not be reported as half-declared.**
@@ -302,8 +316,10 @@ contract RateFeedGuardTest is Test {
             '"rateFeedGuard":{"param":"usdToAssetChainlinkAddress","description":"USD / ARS",'
             '"minRate1e18":"100000000000000000000","maxRate1e18":"100000000000000000000000"}}}'
         );
-        RateFeedGuard.check(vm, SYNTH_SPLIT, "SplitBand");
+        (bool ok, bytes memory ret) =
+            address(this).staticcall(abi.encodeWithSelector(this.exposedCheck.selector, SYNTH_SPLIT, "SplitBand"));
         _removeSynth(SYNTH_SPLIT);
+        assertTrue(ok, string.concat("a complete band split across scopes must reconcile; reverted ", vm.toString(ret)));
     }
 
     /// @notice **Declaring a band is itself what makes a guard block mandatory.**
@@ -319,9 +335,13 @@ contract RateFeedGuardTest is Test {
             '"constructor":{"usdToAssetOracle":"0x00000000000000000000000000000000DeaDBeeF",'
             '"minAnswer":"10000000000","maxAnswer":"10000000000000"}}}'
         );
-        vm.expectRevert(abi.encodeWithSelector(RateFeedGuard.RateFeedBandUnguarded.selector, "BandNoGuard"));
-        this.exposedCheckAll(SYNTH_NOGUARD);
+        (bool ok, bytes memory ret) =
+            address(this).staticcall(abi.encodeWithSelector(this.exposedCheckAll.selector, SYNTH_NOGUARD));
         _removeSynth(SYNTH_NOGUARD);
+        assertFalse(ok, "a constructor band with no guard block to reconcile it must be rejected");
+        assertEq(
+            ret, abi.encodeWithSelector(RateFeedGuard.RateFeedBandUnguarded.selector, "BandNoGuard"), "wrong revert"
+        );
     }
 }
 

@@ -245,8 +245,17 @@ def check_immutable_pointers(chain_id: int, url: str, res: dict) -> None:
     # A custom feed that reads no base price out of the NAV has NO `NAV` immutable to point anywhere —
     # `InvertedChainlinkCustomPriceFeed` is the first such ENABLED feed, and `ETHPlus_CustomPriceFeed`
     # has the same shape. Without this second probe such a feed records `UNREADABLE` forever, which is
-    # indistinguishable from the stale old-generation pointer this check exists to catch. `verify_step`
-    # makes the same distinction; the two tools must agree or the operator gets contradictory evidence.
+    # indistinguishable from the stale old-generation pointer this check exists to catch.
+    #
+    # **A DECLARED GAP, stated because the alternative is an operator inferring cover that is not there.**
+    # This exemption is keyed on the CONTRACT's zero word alone. `verify_step` 1.5 exempts the same feed
+    # class on strictly stronger evidence — it additionally requires `underlyingAssetSupported()` to equal
+    # the asset nav-config registers the feed against. So the two tools do NOT cross-confirm each other
+    # here, and an earlier version of this comment claiming they "must agree" was simply wrong. For this
+    # feed class `--require-current` cannot detect a leftover old-generation feed on its own: the tool
+    # masks `immutableReferences` before comparing, so a previous deployment carrying a different band or
+    # underlying reproduces the current build's masked code exactly and tallies as CURRENT. **verify_step
+    # 1.5 is the binding gate for these feeds; a clean run here is not evidence about them.**
     feed_addrs = [a for a, _d, kind in targets if kind == "feed"]
     bases: dict[str, object] = {}
     if feed_addrs:

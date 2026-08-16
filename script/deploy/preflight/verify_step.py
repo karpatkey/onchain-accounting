@@ -671,9 +671,32 @@ def _declared_base_asset(chain_id: int, feed_name: str):
     return _declared_address(chain_id, feed_name, "baseAsset")
 
 
-def _declared_underlying(chain_id: int, feed_name: str):
-    """`(value, error)` for this feed's declared `underlyingAsset`. See `_declared_address`."""
-    return _declared_address(chain_id, feed_name, "underlyingAsset")
+def _asset_priced_by_feed(chain_id: int, feed_name: str):
+    """`(address, error)` of the asset that nav-config says this Custom feed prices.
+
+    Deliberately NOT read from the feed's own `constructor.underlyingAsset`: that key exists on only 8 of the
+    26 enabled mainnet feeds, and each family names its underlying differently (`ethPlus`, `vault`, …), so a
+    check keyed on it red-gates every feed of the majority shape — including `ETHPlus_CustomPriceFeed`, which
+    declares neither `baseAsset` nor `underlyingAsset` and is exactly the feed class this evidence exists to
+    vouch for. The asset->feed edge in `assets-and-price-feeds` is universal (a feed no asset references is
+    never registered at all) and is the semantically right question anyway: does this contract price the asset
+    the NAV is about to register it for?
+    """
+    try:
+        assets = pc.cfg("assets-and-price-feeds", chain_id) or {}
+    except Exception as e:  # noqa: BLE001 - surfaced to the operator by the caller
+        return None, f"assets-and-price-feeds/{chain_id}.json unreadable ({type(e).__name__})"
+    for sym, entry in assets.items():
+        if sym.startswith("$") or not isinstance(entry, dict):
+            continue
+        for kind in ("priceFeeds", "monitorFeeds"):
+            for fd in entry.get(kind) or []:
+                if isinstance(fd, dict) and fd.get("type") == "Custom" and fd.get("feed") == feed_name:
+                    addr = entry.get("address")
+                    if not (isinstance(addr, str) and addr.startswith("0x") and len(addr) == 42):
+                        return None, f"asset {sym!r} referencing this feed has no usable address ({addr!r})"
+                    return addr, None
+    return None, None
 
 
 def _declared_address(chain_id: int, feed_name: str, key: str):
@@ -693,7 +716,13 @@ def _declared_address(chain_id: int, feed_name: str, key: str):
     ctor = entry.get("constructor", entry)
     if not isinstance(ctor, dict):
         return None, f"`constructor` for {feed_name!r} is {type(ctor).__name__}, not an object"
-    raw = ctor.get(key, entry.get(key))
+    # TOP-LEVEL FIRST, then `constructor` — matching `ConfigReader.readAdapterParam` (ConfigReader.sol:403-410),
+    # which is the resolver `03` actually deploys from. The reverse order (constructor-first, as this read was
+    # originally written) is the same presence-vs-value disagreement `RateFeedGuard._checkConstructorBandAgrees`
+    # had to be fixed for: a feed carrying the key at the top level plus a stale `constructor` copy would be
+    # DEPLOYED from the top-level value and CHECKED against the constructor one, red-gating a correct deploy —
+    # or, with the two swapped, passing a wrong one.
+    raw = entry.get(key, ctor.get(key))
     if raw is None:
         return None, None                      # no opinion recorded; nothing to cross-check
     # Shape AND hex, mirroring preflight_config.is_address_shaped — a 42-char non-hex placeholder such as
@@ -832,35 +861,35 @@ def step_custom_price_feeds(k: Chk, rec: dict, exp: dict, url, base, tag) -> Non
                 # returning a zero word — then answered 0 here, reverted NAV(), and PASSED a step that used to
                 # FAIL it, with `--require-current` also exiting 0. Two conditions now, both required:
                 #
-                #   1. The CONFIG must itself declare address(0). This is NOT the config-keyed downgrade
-                #      rejected below — that one accepted config INSTEAD of a contract answer; this requires the
-                #      contract and the config to agree, which is strictly stronger than either alone.
-                #   2. underlyingAssetSupported() must return the asset the config says this feed prices. That
-                #      is the positive evidence standing in for the NAV() pointer: a contract answering for the
-                #      right asset is the right contract, whatever it does or does not do with NAV().
-                if declared is None or int(declared, 16) != 0:
-                    k.fail.append(f"customPriceFeeds.{n} {feeds[n]}: BASE_ASSET() == 0 but config declares "
-                                  f"{'no baseAsset' if declared is None else declared} — a feed with no NAV "
-                                  f"dependency must DECLARE address(0), because that declaration is what "
-                                  f"separates it from a wrong address whose fallback returns a zero word")
-                    continue
-                declared_under, under_err = _declared_underlying(k.chain_id, n)
-                if under_err or declared_under is None:
-                    k.fail.append(f"customPriceFeeds.{n} {feeds[n]}: exempted from the NAV() check by "
-                                  f"BASE_ASSET() == 0, but its declared underlyingAsset is unusable "
-                                  f"({under_err or 'not recorded'}) — the substitute evidence cannot be "
-                                  f"checked, so this feed is unverified rather than verified")
+                # `underlyingAssetSupported()` must return the asset nav-config says this feed prices. A
+                # contract answering for the right asset is the right contract, whatever it does or does not do
+                # with NAV(). Note the config side is the asset->feed edge, NOT the feed's own
+                # `constructor.underlyingAsset` — see `_asset_priced_by_feed` for why keying on that would
+                # red-gate every feed of the majority shape, ETHPlus included.
+                #
+                # The config's own `baseAsset` declaration is deliberately NOT required here: the
+                # declared-vs-onchain cross-check a few lines above already fails when config declares a
+                # non-zero base against a contract reporting zero, so demanding the key again would only punish
+                # the feeds (ETHPlus and any future USD/X inverter) that legitimately do not carry it.
+                want, want_err = _asset_priced_by_feed(k.chain_id, n)
+                if want_err or want is None:
+                    k.fail.append(f"customPriceFeeds.{n} {feeds[n]}: BASE_ASSET() == 0, so the NAV() pointer "
+                                  f"cannot vouch for this address and the asset it prices is the substitute "
+                                  f"evidence — but nav-config names no asset for it "
+                                  f"({want_err or 'no assets-and-price-feeds entry references this feed'}). A "
+                                  f"deployed feed no asset references is never registered, so this is a "
+                                  f"finding in its own right, not a reason to skip the check")
                     continue
                 got = "0x" + under_ret[-40:] if isinstance(under_ret, str) and len(under_ret) == 66 else None
-                if got is None or lower(got) != lower(declared_under):
-                    k.fail.append(f"customPriceFeeds.{n} {feeds[n]}: exempted from the NAV() check by "
-                                  f"BASE_ASSET() == 0, so underlyingAssetSupported() is the only evidence this "
-                                  f"address is the right contract — it returned {got or under_ret!r}, not the "
-                                  f"configured underlyingAsset {declared_under}")
+                if got is None or lower(got) != lower(want):
+                    k.fail.append(f"customPriceFeeds.{n} {feeds[n]}: BASE_ASSET() == 0, so "
+                                  f"underlyingAssetSupported() is the only evidence this address is the right "
+                                  f"contract — it returned {got or under_ret!r}, but nav-config registers this "
+                                  f"feed against {want}")
                     continue
-                k.info.append(f"customPriceFeeds.{n} {feeds[n]}: BASE_ASSET() == 0 (declared in config) and "
-                              f"underlyingAssetSupported() == {declared_under} — no NAV dependency, so the "
-                              f"NAV() pointer is not applicable to this feed")
+                k.info.append(f"customPriceFeeds.{n} {feeds[n]}: BASE_ASSET() == 0 and "
+                              f"underlyingAssetSupported() == {want}, the asset nav-config registers it for — "
+                              f"no NAV dependency, so the NAV() pointer is not applicable to this feed")
                 continue
 
         # NO config-keyed downgrade here. An earlier revision warned-and-continued when NEITHER BASE_ASSET()

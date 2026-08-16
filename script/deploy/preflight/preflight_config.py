@@ -156,6 +156,11 @@ def nav_sourced_base(feed_entry: dict) -> str | None:
 
 ZERO_ADDR = "0x" + "0" * 40
 
+#: Sibling key that must accompany `baseAsset: <ZERO_ADDR>`. `$`-prefixed so it is skipped by every key
+#: enumerator in the repo (`getEnabledAdapters`, `RateFeedGuard._constructorKeys`) and can never be mistaken
+#: for a constructor argument. See the zero-sentinel branch in `base_allowlist_findings`.
+NO_NAV_REASON_KEY = "$noNavDependencyReason"
+
 
 def is_address_shaped(v) -> bool:
     """A 20-byte hex address by SHAPE, address(0) included.
@@ -271,7 +276,26 @@ def base_allowlist_findings(chain_id: int, assets: dict, dep_feeds: dict) -> lis
                 # "no NAV dependency", so ordering these the other way round reports the one legitimate
                 # opt-out as malformed and bans the ETHPlus shape outright.
                 if is_address_shaped(raw) and int(raw, 16) == 0:
-                    continue  # explicitly not NAV-sourced — the only clean way to opt out
+                    # Explicitly not NAV-sourced — the only clean way to opt out. But it must be JUSTIFIED,
+                    # not merely typed, because this sentinel now silences every other base check:
+                    # `nav_sourced_base` returns None for it, so `heartbeat_findings` skips the feed too.
+                    # Until that change a zero base was rejected outright over there ("... is NOT a registered
+                    # asset on this chain ... valuing '<sym>' at $0"), which also rejected the legitimate
+                    # ETHPlus/wARS shape this very function instructs you to use — no config satisfied both.
+                    # Fixing that contradiction removed the last PRE-DEPLOY flag on the copy-paste case: paste
+                    # `"baseAsset": "0x0…0"` onto a genuinely NAV-sourced feed and nothing objects until `03`
+                    # reverts out of `OracleArgumentChecks.assertERC20Address(address(0))` MID-RUN, with
+                    # earlier feeds already broadcast and a half-written deployments/<id>.json. Requiring a
+                    # reason keeps the legitimate shape expressible and puts that case back in front of a
+                    # human: nobody writes a justification for a dependency the feed plainly has.
+                    if not str(fentry.get(NO_NAV_REASON_KEY) or "").strip():
+                        f.append((ERROR, f"{where} declares baseAsset {ZERO_ADDR} (asserting NO NAV "
+                                         f"dependency) but carries no `{NO_NAV_REASON_KEY}` saying why. This "
+                                         f"sentinel switches off every other base and heartbeat check for the "
+                                         f"feed, so state how it derives its price WITHOUT reading base/USD "
+                                         f"back out of the NAV — as ETHPlus does from the Reserve basket, and "
+                                         f"wARS by inverting a USD/X Chainlink feed"))
+                    continue
                 if not c.is_address(raw):
                     f.append((ERROR, f"{where} has a MALFORMED baseAsset ({raw!r}) — not a 20-byte address, "
                                      f"so its NAV dependency cannot be established"))

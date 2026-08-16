@@ -713,9 +713,9 @@ def _declared_address(chain_id: int, feed_name: str, key: str):
         return None, f"custom-price-feeds/{chain_id}.json unreadable ({type(e).__name__})"
     if not isinstance(entry, dict):
         return None, f"config entry for {feed_name!r} is {type(entry).__name__}, not an object"
-    ctor = entry.get("constructor", entry)
-    if not isinstance(ctor, dict):
-        return None, f"`constructor` for {feed_name!r} is {type(ctor).__name__}, not an object"
+    # NO separate `constructor`-shape gate. A malformed `constructor` (null, a list, a scalar left behind by
+    # an edit) does not stop `03` resolving a key declared at the TOP level, so hard-failing here red-gated a
+    # deployment that is correct — `resolve_param` simply skips a non-dict scope. The value is what matters.
     # Resolved by the SHARED accessor, which is the one place this repo encodes what
     # `ConfigReader.readAdapterParam` does — top level, then `constructor`, then `initialize`. Open-coding it
     # here (as this did, and it stopped at two of the three scopes) is what made a key written under
@@ -756,6 +756,10 @@ def step_custom_price_feeds(k: Chk, rec: dict, exp: dict, url, base, tag) -> Non
     # bound to the old proxy. Name and count checks cannot see that — the names and count are
     # IDENTICAL to the previous generation, which is exactly what makes the failure quiet.
     old, sources = previous_generation_feeds(k.chain_id, tag)
+    # Initialised BEFORE the branches that set it: it is read far below, in the per-feed loop, and a name
+    # bound only inside an `if` is an UnboundLocalError on the path where neither branch fires — the same
+    # unbound-variable failure this file has already been bitten by once.
+    weak_generation_evidence = False
     if old:
         stale = sorted(n for n, a in feeds.items() if lower(a) in old)
         k.require(not stale,
@@ -772,12 +776,18 @@ def step_custom_price_feeds(k: Chk, rec: dict, exp: dict, url, base, tag) -> Non
         snap_proxy = (base.get(k.chain_id) or {}).get("proxy")
         rec_proxy = rec.get("NAVCalculatorProxy")
         if c.is_address(snap_proxy) and c.is_address(rec_proxy) and lower(snap_proxy) == lower(rec_proxy):
+            # `old` is non-empty but derived from the CURRENT proxy, so it cannot show a
+            # generation-2-vs-3 leftover. For BASE_ASSET() == 0 feeds that is the same dead end as `old`
+            # being empty — no address comparison AND no NAV pointer — so the per-feed warning below must
+            # fire here too, not only in the `else`.
+            weak_generation_evidence = True
             k.warn.append(
                 f"the previous-generation feed set was derived from sources whose proxy ({snap_proxy}) is "
                 f"still the one in the record, so this only shows the feeds are not stale by ONE generation. "
                 f"If this is a second redeploy, refresh the snapshot/--archive-tag; the NAV() pointer check "
                 f"below is the evidence that actually binds")
     else:
+        weak_generation_evidence = True
         k.warn.append(f"no previous-generation feed addresses available for chain {k.chain_id} "
                       f"(no archive/{tag} record and no Custom feeds in the pre-snapshot), so "
                       f"'these feeds were actually redeployed' cannot be shown here — the NAV() "
@@ -900,10 +910,10 @@ def step_custom_price_feeds(k: Chk, rec: dict, exp: dict, url, base, tag) -> Non
                 # immutable NAV() pointer supplies the generation half; these have none. The
                 # previous-generation ADDRESS comparison earlier in this step is what actually binds them —
                 # so when that could not run, say so per feed rather than letting a green line imply cover.
-                if not old:
+                if weak_generation_evidence:
                     k.warn.append(f"customPriceFeeds.{n} {feeds[n]}: BASE_ASSET() == 0, so it holds no NAV "
-                                  f"pointer, and no previous-generation address was available to compare "
-                                  f"against — nothing in this step can tell a current deployment from a "
+                                  f"pointer, and no USABLE previous-generation address was available to "
+                                  f"compare against — nothing in this step can tell a current deployment from a "
                                   f"leftover one for this feed. bytecode_audit cannot either (it masks "
                                   f"immutableReferences). Refresh the snapshot/--archive-tag to restore it")
                 k.info.append(f"customPriceFeeds.{n} {feeds[n]}: BASE_ASSET() == 0 and "

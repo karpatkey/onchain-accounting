@@ -214,7 +214,14 @@ def configured_chain_ids() -> list[str]:
         d = REPO / "script/config" / sub
         if d.is_dir():
             ids.update(p.stem for p in d.glob("*.json") if p.stem.isdigit())
-    return sorted(ids, key=int)
+    # A digit-stemmed file is not by itself a chain — `chains/<id>.json` (metadata + role addresses) is what
+    # makes one. Globbing alone meant ANY stray digit-named file in those directories became an audited
+    # chain: a test fixture left behind by an interrupted run printed a fabricated `=== chain 999901 ===`
+    # section in a pre-deploy report and inflated the "examined on all N chains" coverage claim. Requiring
+    # the metadata file kills that at the source, whatever put the file there. Verified: all 7 configured
+    # ids have one (25 chains/ files exist, so this narrows nothing real).
+    known = {p.stem for p in (REPO / "script/config/chains").glob("*.json") if p.stem.isdigit()}
+    return sorted(ids & known, key=int)
 
 
 def load_snapshot() -> dict:

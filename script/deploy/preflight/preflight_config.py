@@ -154,12 +154,21 @@ def nav_sourced_base(feed_entry: dict) -> str | None:
 
 
 #: The scopes `ConfigReader.readAdapterParam` searches, IN ITS ORDER: the entry itself, then `constructor`,
-#: then `initialize` (ConfigReader.sol:403-411). Kept as data so a new scope is added in one place.
+#: then `initialize` (ConfigReader.sol:403-411).
+#:
+#: **THIS MODELS ONE OF THREE ORDERS, and the other two really do differ** — pinned by
+#: `script/test/ConfigReaderTest.t.sol`. `readAdapterParam` is root -> constructor -> initialize;
+#: `readAdapterUintArray` is root -> **initialize** -> constructor (ConfigReader.sol:457-466); and
+#: `readAdapterAddressArray`/`readAdapterBytes32Array` never search `initialize` at all. So `resolve_param`
+#: is the right accessor for SCALAR params only. A gate reading an ARRAY key (`instances`, `instancesRaw`,
+#: any uint array) must not assume this order — see the follow-up note in the module docstring.
 PARAM_SCOPES = ("constructor", "initialize")
 
 
 def resolve_param(entry: dict, key: str):
     """The value `03` would deploy for `key` — resolved exactly as `ConfigReader.readAdapterParam` does.
+
+    Scalar params only — see `PARAM_SCOPES` for the two array readers that use different orders.
 
     **USE THIS RATHER THAN OPEN-CODING THE LOOKUP.** Every gate in this repo is comparing config against
     something (a deployed contract, another config file, an allowlist), and every such comparison is only
@@ -195,9 +204,9 @@ ZERO_ADDR = "0x" + "0" * 40
 #: Sibling key that must accompany `baseAsset: <ZERO_ADDR>`. Accepted at EITHER scope — beside `constructor`
 #: or inside it, next to the `baseAsset` it justifies — because those are the two placements a person
 #: actually writes, and rejecting one of them red-gates a correct, fully-justified config over placement
-#: alone. `$`-prefixed so that in the `constructor` scope it is skipped by the key enumerators that DO read
-#: there (`RateFeedGuard._constructorKeys`, and hence the fail-closed rate-feed-param scan) and can never be
-#: mistaken for a constructor argument; at the outer scope the prefix is convention, not load-bearing.
+#: alone. `$`-prefixed so that it is skipped by the key enumerator that reads these scopes
+#: (`RateFeedGuard._declaredParamKeys`, and hence the fail-closed rate-feed-param scan) and can never be
+#: mistaken for a constructor argument at any scope.
 #: See the zero-sentinel branch in `base_allowlist_findings`.
 NO_NAV_REASON_KEY = "$noNavDependencyReason"
 
@@ -692,11 +701,16 @@ def _check_chain(chain_id: int) -> list[tuple[str, str]]:
             # `"constructor": "0x…"` or a list would reach `.get` and raise AttributeError. This is the only place
             # in _check_chain that reads `constructor` out of the balance-adapter deploy config, so the exposure
             # would be new rather than shared with the feed checks.
-            ctor = dep_plain.get(name, {}).get("constructor") or {}
-            if not isinstance(ctor, dict):
+            # Resolved through the shared accessor, like every other config read here. Reading
+            # `.constructor` alone disagreed with `ConfigReader.readAdapterParam` — which `04` deploys from
+            # and which checks the TOP LEVEL first — so a shared arg written there was both false-flagged as
+            # missing AND invisible to the sibling-divergence comparison this block exists to make.
+            entry = dep_plain.get(name, {})
+            ctor = entry.get("constructor") if isinstance(entry, dict) else None
+            if ctor is not None and not isinstance(ctor, dict):
                 f.append((ERROR, f"'{name}'.constructor is {type(ctor).__name__}, expected an object"))
                 continue
-            val = ctor.get(arg)
+            val = resolve_param(entry, arg)
             if val is None:
                 f.append((ERROR, f"'{name}' is missing the shared constructor arg '{arg}' that its sibling(s) "
                                  f"{', '.join(x for x in present if x != name)} also take"))

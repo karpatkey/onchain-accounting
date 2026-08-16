@@ -208,9 +208,10 @@ library RateFeedGuard {
         uint256 hi
     ) private view {
         // Detect PRESENCE with the SAME resolver that reads the VALUE — and that `03` actually deploys.
-        // `_constructorKeys` enumerates `.<feed>.constructor` ONLY, whereas `ConfigReader.readAdapterParam`
-        // resolves the TOP-LEVEL `.<feed>.<key>` FIRST and only then falls back to `.constructor.<key>`. Keying
-        // presence off the narrower path let a band written as a sibling of `constructor` — which is where
+        // This once keyed presence off a `.<feed>.constructor`-only key scan, whereas
+        // `ConfigReader.readAdapterParam` resolves the TOP-LEVEL `.<feed>.<key>` FIRST and only then falls back
+        // to `.constructor.<key>` and `.initialize.<key>`. Keying presence off the narrower path let a band
+        // written as a sibling of `constructor` — which is where
         // `rateFeedGuard` itself sits, so it is the natural place to put it — deploy into an IMMUTABLE feed while
         // this function returned early having reconciled nothing, the exact drift {RateFeedBandMismatch} exists
         // to stop. It also made the mixed case misreport: `minAnswer` top-level with `maxAnswer` under
@@ -278,9 +279,10 @@ library RateFeedGuard {
     ///      adding one view function there moved PriceFeedLib from 0x8b7e4fA9 to 0xeA694009 while touching no
     ///      `src/` at all. Keeping this local costs one duplicated path expression and keeps the change
     ///      pin-neutral, which is the difference between landing and blocking a verified pin regen.
-    /// @dev Returns the parameter keys declared for `feed` at BOTH scopes — `.<feed>` and `.<feed>.constructor`
-    ///      — because `ConfigReader.readAdapterParam` resolves the top level FIRST and that is what `03`
-    ///      deploys from. Enumerating only `.constructor` (as this did) left the fail-closed scan in
+    /// @dev Returns the parameter keys declared for `feed` at ALL THREE scopes — `.<feed>`,
+    ///      `.<feed>.constructor` and `.<feed>.initialize` — because `ConfigReader.readAdapterParam` searches
+    ///      them in that order and that is what `03` deploys from. Enumerating only `.constructor` (as an
+    ///      earlier version did) left the fail-closed scan in
     ///      {_assertNoUnguardedRateFeedParam} blind to a rate feed written as a sibling of `constructor`,
     ///      which is where `rateFeedGuard` itself sits and therefore the natural place to put one: such an
     ///      instance passed {checkAll} with no pair check and no band check at all. Structural keys are

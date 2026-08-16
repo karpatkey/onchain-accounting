@@ -667,12 +667,22 @@ def step_new_proxy(k: Chk, rec: dict, exp: dict, url, base, tag) -> None:
 
 
 def _declared_base_asset(chain_id: int, feed_name: str):
-    """`(value, readable)` for this feed's declared `baseAsset`.
+    """`(value, error)` for this feed's declared `baseAsset`. See `_declared_address`."""
+    return _declared_address(chain_id, feed_name, "baseAsset")
 
-    `readable` distinguishes "the config records no baseAsset" (a legitimate no-opinion) from "the config
-    could not be read or is malformed". Collapsing both to None — as the first version did — turned the
-    config-vs-contract cross-check into a SILENT no-op for exactly the feed whose config is wrong, while
-    still reporting PASS.
+
+def _declared_underlying(chain_id: int, feed_name: str):
+    """`(value, error)` for this feed's declared `underlyingAsset`. See `_declared_address`."""
+    return _declared_address(chain_id, feed_name, "underlyingAsset")
+
+
+def _declared_address(chain_id: int, feed_name: str, key: str):
+    """`(value, error)` for one declared address-valued config key on a custom price feed.
+
+    `error` distinguishes "the config records no such key" (a legitimate no-opinion, `(None, None)`) from
+    "the config could not be read or is malformed". Collapsing both to None — as the first version did —
+    turned the config-vs-contract cross-check into a SILENT no-op for exactly the feed whose config is
+    wrong, while still reporting PASS.
     """
     try:
         entry = (pc.dcfg("custom-price-feeds", chain_id) or {}).get(feed_name) or {}
@@ -683,18 +693,18 @@ def _declared_base_asset(chain_id: int, feed_name: str):
     ctor = entry.get("constructor", entry)
     if not isinstance(ctor, dict):
         return None, f"`constructor` for {feed_name!r} is {type(ctor).__name__}, not an object"
-    raw = ctor.get("baseAsset", entry.get("baseAsset"))
+    raw = ctor.get(key, entry.get(key))
     if raw is None:
         return None, None                      # no opinion recorded; nothing to cross-check
     # Shape AND hex, mirroring preflight_config.is_address_shaped — a 42-char non-hex placeholder such as
     # "0xREPLACE_ME_WITH_THE_REAL_ADDR" passes a length check and then raises inside int(raw, 16) at the
     # call site, aborting the whole feed loop instead of reporting this one feed.
     if not (isinstance(raw, str) and raw.startswith("0x") and len(raw) == 42):
-        return None, f"declared baseAsset {raw!r} is not a 20-byte address"
+        return None, f"declared {key} {raw!r} is not a 20-byte address"
     try:
         int(raw, 16)
     except ValueError:
-        return None, f"declared baseAsset {raw!r} is not hex"
+        return None, f"declared {key} {raw!r} is not hex"
     return raw, None
 
 
@@ -759,10 +769,14 @@ def step_custom_price_feeds(k: Chk, rec: dict, exp: dict, url, base, tag) -> Non
     # hunting a leftover feed that does not exist.
     bases = c.rpc_batch(url, [("eth_call", [{"to": feeds[n], "data": sel("BASE_ASSET()")}, "latest"])
                               for n in names])
+    # Substitute evidence for the feeds the BASE_ASSET() == 0 branch exempts from the NAV() pointer check —
+    # see that branch for why removing evidence without replacing it is not an option.
+    unders = c.rpc_batch(url, [("eth_call", [{"to": feeds[n], "data": sel("underlyingAssetSupported()")}, "latest"])
+                               for n in names])
     # NB: the loop variable is `base_ret`, NOT `base` — `base` is this function's PARAMETER (the
     # pre-deploy snapshot index). Shadowing it was harmless only because its sole use sits above this
     # loop; any later read below would silently have got a hex string.
-    for n, code, nav, base_ret in zip(names, codes, navs, bases):
+    for n, code, nav, base_ret, under_ret in zip(names, codes, navs, bases, unders):
         if isinstance(code, Exception) or code in (None, "0x", ""):
             k.fail.append(f"customPriceFeeds.{n} {feeds[n]} has NO CODE")
             continue
@@ -811,8 +825,42 @@ def step_custom_price_feeds(k: Chk, rec: dict, exp: dict, url, base, tag) -> Non
                               f"wrong, and preflight's base/heartbeat checks were run against the config")
                 continue
             if int(onchain, 16) == 0:
-                k.info.append(f"customPriceFeeds.{n} {feeds[n]}: BASE_ASSET() == 0, no NAV dependency "
-                              f"— NAV() pointer not applicable")
+                # The NAV() pointer below is this step's ONLY per-address evidence that a recorded feed belongs
+                # to the new stack, so exempting a class of feed from it has to SUBSTITUTE evidence rather than
+                # simply remove it. An earlier revision exempted on the contract's zero word alone: a wrong
+                # address recorded under a `customPriceFeeds.*` key — anything with a catch-all fallback
+                # returning a zero word — then answered 0 here, reverted NAV(), and PASSED a step that used to
+                # FAIL it, with `--require-current` also exiting 0. Two conditions now, both required:
+                #
+                #   1. The CONFIG must itself declare address(0). This is NOT the config-keyed downgrade
+                #      rejected below — that one accepted config INSTEAD of a contract answer; this requires the
+                #      contract and the config to agree, which is strictly stronger than either alone.
+                #   2. underlyingAssetSupported() must return the asset the config says this feed prices. That
+                #      is the positive evidence standing in for the NAV() pointer: a contract answering for the
+                #      right asset is the right contract, whatever it does or does not do with NAV().
+                if declared is None or int(declared, 16) != 0:
+                    k.fail.append(f"customPriceFeeds.{n} {feeds[n]}: BASE_ASSET() == 0 but config declares "
+                                  f"{'no baseAsset' if declared is None else declared} — a feed with no NAV "
+                                  f"dependency must DECLARE address(0), because that declaration is what "
+                                  f"separates it from a wrong address whose fallback returns a zero word")
+                    continue
+                declared_under, under_err = _declared_underlying(k.chain_id, n)
+                if under_err or declared_under is None:
+                    k.fail.append(f"customPriceFeeds.{n} {feeds[n]}: exempted from the NAV() check by "
+                                  f"BASE_ASSET() == 0, but its declared underlyingAsset is unusable "
+                                  f"({under_err or 'not recorded'}) — the substitute evidence cannot be "
+                                  f"checked, so this feed is unverified rather than verified")
+                    continue
+                got = "0x" + under_ret[-40:] if isinstance(under_ret, str) and len(under_ret) == 66 else None
+                if got is None or lower(got) != lower(declared_under):
+                    k.fail.append(f"customPriceFeeds.{n} {feeds[n]}: exempted from the NAV() check by "
+                                  f"BASE_ASSET() == 0, so underlyingAssetSupported() is the only evidence this "
+                                  f"address is the right contract — it returned {got or under_ret!r}, not the "
+                                  f"configured underlyingAsset {declared_under}")
+                    continue
+                k.info.append(f"customPriceFeeds.{n} {feeds[n]}: BASE_ASSET() == 0 (declared in config) and "
+                              f"underlyingAssetSupported() == {declared_under} — no NAV dependency, so the "
+                              f"NAV() pointer is not applicable to this feed")
                 continue
 
         # NO config-keyed downgrade here. An earlier revision warned-and-continued when NEITHER BASE_ASSET()

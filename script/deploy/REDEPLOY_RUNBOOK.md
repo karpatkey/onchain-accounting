@@ -394,7 +394,7 @@ NAV address is invalidated by construction:
 
 | consequence | scale | done at |
 | --- | --- | --- |
-| every custom price feed is redeployed — each holds `INAVCalculator public immutable NAV` (ADR 0019) | **41**: mainnet 26, arbitrum 8, base 4, gnosis 3 | 1.5 |
+| every custom price feed is redeployed — each holds `INAVCalculator public immutable NAV` (ADR 0019), **except `wARS`**, which reads no base price out of the NAV and has no such pointer | **41**: mainnet 26, arbitrum 8, base 4, gnosis 3 | 1.5 |
 | every asset with its primary + monitor feeds is re-registered | **93** assets | 1.6 |
 | every plain and meta adapter is redeployed | 13 plain + 34 meta | 1.7 |
 | every meta instance is re-registered | **113** | 1.8 |
@@ -1424,6 +1424,12 @@ Chains 1 (26 enabled, of 27 entries), 42161 (8), 8453 (4), 100 (3) only. Each fe
 address, held as `INAVCalculator public immutable NAV` (ADR 0019) — which is precisely why a new
 proxy invalidates every existing feed.
 
+> **ONE EXCEPTION, and step 1.5 will show it to you.** `wARS` (`InvertedChainlinkCustomPriceFeed`, a `USD / X`
+> inverter) reads no base price out of the NAV, so it takes no proxy address and exposes **no `NAV()` at all**.
+> An unreadable `NAV()` on that one feed is CORRECT, not the leftover-feed failure this step hunts — which is why
+> `verify_step` exempts it on its own `BASE_ASSET() == 0` answer and substitutes `underlyingAssetSupported()` as
+> the per-address evidence. Do not redeploy it chasing a pointer that does not exist.
+
 > **THE COUNT IS 41 AS OF PR #308 (2026-08-15).** Re-derived from config, not carried forward:
 > **mainnet 26, arbitrum 8, base 4, gnosis 3 = 41.**
 >
@@ -2032,8 +2038,12 @@ against, and 2.6 cannot run until the new addresses are recorded.
     ```bash
     python3 - <<'EOF'
     import json, glob, os
-    # Mirrors diff_snapshots.py's asset pairing: key by ADDRESS, label with the SNAPSHOT's `symbol`
-    # (diff_chain uses am[addr]["symbol"], not the config key), and print its exact line format.
+    # Mirrors diff_snapshots.py's asset PAIRING: key by ADDRESS, label with the SNAPSHOT's `symbol`
+    # (diff_chain uses am[addr]["symbol"], not the config key). It predicts which (asset, field) pairs the
+    # tool will report — NOT its lines verbatim. diff_chain prints the whole feed_shape TUPLE,
+    # `[('Chainlink', 8, 82800)] -> [...]`; only the heartbeat axis is derivable from config (see below),
+    # so this prints heartbeats and deliberately omits the `DIFF ` prefix rather than emit a near-miss of
+    # the tool's format that invites line-by-line matching.
     for p in sorted(glob.glob("script/deploy/preflight/snapshots/pre/*.json")):
         ch = os.path.basename(p)[:-5]
         cfgp = f"script/config/nav-config/assets-and-price-feeds/{ch}.json"
@@ -2048,7 +2058,7 @@ against, and 2.6 cannot run until the new addresses are recorded.
                 snap = [f["heartbeat"] for f in a.get(field, [])]
                 conf = [f.get("heartbeat") for f in (c.get(field) or [])]
                 if snap != conf:
-                    print(f"chain {ch}: DIFF  asset {a['symbol']} {field}: {snap} -> {conf}")
+                    print(f"chain {ch}: asset {a['symbol']} {field} heartbeats: {snap} -> {conf}")
     EOF
     ```
 
@@ -2067,8 +2077,10 @@ against, and 2.6 cannot run until the new addresses are recorded.
     So the output above is every heartbeat divergence and nothing else; the tool may print further
     `DIFF  asset …` lines on the other two axes, and `asset_shape` also covers `symbol`, `decimals`,
     `divergenceToleranceBps`, `pegToleranceBps` and `includedInDefaultAdapter`, none of which this
-    snippet touches. Treat a line it does NOT predict as unexplained until you have run it down — do
-    not treat this list as closed.
+    snippet touches. Match on the **(asset, field) pair**, never on the line text — the tool prints the
+    full `feed_shape` tuple and this derivation prints heartbeats, so no line matches verbatim and a
+    reader expecting one would halt on every entry. Treat a pair it does NOT predict as unexplained
+    until you have run it down — do not treat this list as closed.
 
     **Why a derivation and not a list.** A hand-written list of these has now gone stale on this
     document five times, and a stale CLOSED list is worse than none because it turns a correct cutover

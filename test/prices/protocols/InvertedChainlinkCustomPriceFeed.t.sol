@@ -201,22 +201,34 @@ contract InvertedChainlinkCustomPriceFeedTest is Test {
     }
 
     /// @dev **The over-report this contract's cached-unit guard exists to stop.** `_feedUnit` is a
-    ///      NUMERATOR here, so an aggregator migrating 8 -> 6 decimals while publishing the SAME real rate
-    ///      would inflate the price by exactly 100x with `stale == false` — the opposite of the safe
-    ///      direction every sibling feed fails in. Without the per-read decimals re-assertion this test
-    ///      reads 6316729 instead of 63167 and passes silently.
-    function test_feedDecimalsMigration_isStaleNotA100xOverReport() public {
+    ///      NUMERATOR here, so an aggregator migrating to FEWER decimals while publishing the SAME real rate
+    ///      inflates the price with `stale == false` — the opposite of the safe direction every sibling feed
+    ///      fails in.
+    ///
+    ///      **The migration is ONE decimal, deliberately, and that choice is the whole test.** This case was
+    ///      written as 8 -> 6 and claimed to pin the decimals guard; after the runtime band landed it no
+    ///      longer did. Republishing the same rate at 6dp gives 1583097600 = 1.58e9, BELOW `MIN_ANSWER`
+    ///      (100e8 = 1e10), so `_compute` returns stale on the band alone and this test passed with the
+    ///      decimals re-assertion DELETED — a test asserting nothing while reading as the guard's coverage.
+    ///      8 -> 7 answers 15830976000 = 1.58e10, comfortably INSIDE the band, so the band cannot fire and
+    ///      the decimals re-assertion is the only thing between here and a 10x over-report of the whole wARS
+    ///      book on an IMMUTABLE contract. Confirmed by deleting the guard: this test then reads 631670
+    ///      ($0.0063167 instead of $0.00063167) and fails, which is what the 8 -> 6 version stopped doing.
+    function test_feedDecimalsMigration_isStaleNotA10xOverReport() public {
         (uint256 before, bool staleBefore) = oracle.getLatestPrice();
         assertFalse(staleBefore);
         assertEq(before, ARS_EXPECTED_PRICE);
 
-        // Same real rate, two fewer decimals: 1583.0976 ARS/USD at 6dp.
-        feed.setDecimals(6);
-        feed.setAnswer(1583097600);
+        // Same real rate, ONE fewer decimal: 1583.0976 ARS/USD at 7dp.
+        int256 migrated = 15830976000;
+        assertGe(uint256(migrated), MIN_A, "premise: migrated answer is INSIDE the band, not below it");
+        assertLe(uint256(migrated), MAX_A, "premise: so only the decimals guard can catch it, not the band");
+        feed.setDecimals(7);
+        feed.setAnswer(migrated);
 
         (uint256 price, bool stale) = oracle.getLatestPrice();
         assertTrue(stale, "decimals migration must report STALE");
-        assertEq(price, 0, "and must not report the 100x-inflated 6316729");
+        assertEq(price, 0, "and must not report the 10x-inflated 631670");
     }
 
     /// @dev **A revert inside a `try` BODY is not caught by that statement's own `catch`.** The first

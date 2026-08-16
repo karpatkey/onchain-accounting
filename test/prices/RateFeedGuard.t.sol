@@ -217,6 +217,112 @@ contract RateFeedGuardTest is Test {
     function _hasGuard(uint256 chainId, string memory name) internal view returns (bool) {
         return ConfigReaderShim.hasGuard(vm, chainId, name);
     }
+
+    // ─────────────────────────────────────────────────────────────────────────────────────────────────────────
+    // Constructor-band reconciliation. These three use a SYNTHETIC per-chain config file rather than a real
+    // chain, because the shapes under test are ones no committed config has — and the point of each is that the
+    // guard must bite on a shape someone could plausibly write tomorrow.
+    // ─────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+    /// @dev An unused chain id, so the fixture can never collide with a real config file.
+    /// @dev **One id PER TEST, deliberately.** forge executes the test functions of a suite concurrently while
+    ///      the filesystem is shared, so a single fixture path let two tests' `writeFile` calls interleave and
+    ///      produced a malformed file that failed all three with a JSON parse error — a race that reads as a
+    ///      logic bug. Distinct ids make the fixtures independent.
+    uint256 constant SYNTH_TOP = 999_901;
+    uint256 constant SYNTH_SPLIT = 999_902;
+    uint256 constant SYNTH_NOGUARD = 999_903;
+    address constant SYNTH_FEED = 0x00000000000000000000000000000000DeaDBeef;
+
+    function _synthPath(uint256 chainId) internal view returns (string memory) {
+        return string.concat(
+            vm.projectRoot(),
+            "/script/config/contracts-deployment-config/custom-price-feeds/",
+            vm.toString(chainId),
+            ".json"
+        );
+    }
+
+    function _writeSynth(uint256 chainId, string memory json) internal {
+        vm.writeFile(_synthPath(chainId), json);
+        // 158309760000 = 1583.0976 at 8dp — inside every guard band below, so the band check passes and the
+        // reconciliation is what these tests actually observe.
+        _mockFeed(SYNTH_FEED, "USD / ARS", 158_309_760_000, 8);
+    }
+
+    function _removeSynth(uint256 chainId) internal {
+        if (vm.exists(_synthPath(chainId))) vm.removeFile(_synthPath(chainId));
+    }
+
+    /// @notice External wrapper so `vm.expectRevert` can observe a revert out of the internal library.
+    function exposedCheckAll(uint256 chainId) external view {
+        RateFeedGuard.checkAll(vm, chainId);
+    }
+
+    /// @notice **A band declared OUTSIDE `constructor` must still be reconciled.**
+    /// @dev The presence scan used to enumerate `.<feed>.constructor` keys only, while
+    ///      `ConfigReader.readAdapterParam` resolves the TOP-LEVEL `.<feed>.<key>` FIRST — and the top level is
+    ///      where `rateFeedGuard` itself sits, so it is the natural place to put the band. The result was that
+    ///      `_checkConstructorBandAgrees` returned early having reconciled nothing while `03` read those very
+    ///      keys and baked them into an IMMUTABLE feed. Here the constructor max (1e13 at 8dp = 100000e18)
+    ///      disagrees with the guard's 999000e18; before the fix this passed silently.
+    function test_topLevelBand_isReconciledNotInvisible() public {
+        _writeSynth(
+            SYNTH_TOP,
+            '{"TopLevelBand":{"enabled":true,'
+            '"constructor":{"usdToAssetChainlinkAddress":"0x00000000000000000000000000000000DeaDBeeF"},'
+            '"minAnswer":"10000000000","maxAnswer":"10000000000000",'
+            '"rateFeedGuard":{"param":"usdToAssetChainlinkAddress","description":"USD / ARS",'
+            '"minRate1e18":"100000000000000000000","maxRate1e18":"999000000000000000000000"}}}'
+        );
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                RateFeedGuard.RateFeedBandMismatch.selector,
+                "TopLevelBand",
+                uint256(100e18),
+                uint256(100e18),
+                uint256(100_000e18),
+                uint256(999_000e18)
+            )
+        );
+        this.exposedCheck(SYNTH_TOP, "TopLevelBand");
+        _removeSynth(SYNTH_TOP);
+    }
+
+    /// @notice **A band split across both scopes is COMPLETE, and must not be reported as half-declared.**
+    /// @dev The old scan saw only `constructor.maxAnswer` and reverted `RateFeedBandIncomplete` naming
+    ///      `minAnswer` as the MISSING one — sending the operator to add a key that was already there, one
+    ///      level up. Both bounds agree with the guard here, so the correct outcome is simply: passes.
+    function test_bandSplitAcrossScopes_reconcilesRatherThanMisreporting() public {
+        _writeSynth(
+            SYNTH_SPLIT,
+            '{"SplitBand":{"enabled":true,'
+            '"constructor":{"usdToAssetChainlinkAddress":"0x00000000000000000000000000000000DeaDBeeF",'
+            '"maxAnswer":"10000000000000"},' '"minAnswer":"10000000000",'
+            '"rateFeedGuard":{"param":"usdToAssetChainlinkAddress","description":"USD / ARS",'
+            '"minRate1e18":"100000000000000000000","maxRate1e18":"100000000000000000000000"}}}'
+        );
+        RateFeedGuard.check(vm, SYNTH_SPLIT, "SplitBand");
+        _removeSynth(SYNTH_SPLIT);
+    }
+
+    /// @notice **Declaring a band is itself what makes a guard block mandatory.**
+    /// @dev The reconciliation lives in `check()`, which `checkAll` reaches only when a guard IS declared, and
+    ///      the fail-closed backstop it runs instead matches rate-feed PARAM SPELLINGS only (`yToXFeed`,
+    ///      `*Chainlink[Address]`). `usdToAssetOracle` matches none of them, so this feed used to skip BOTH the
+    ///      pair-identity check and the band reconciliation — shipping an unreconciled band into an immutable
+    ///      contract with the deploy exiting 0 and every preflight gate reporting PASS.
+    function test_bandWithNoGuardBlock_revertsRatherThanSkipping() public {
+        _writeSynth(
+            SYNTH_NOGUARD,
+            '{"BandNoGuard":{"enabled":true,'
+            '"constructor":{"usdToAssetOracle":"0x00000000000000000000000000000000DeaDBeeF",'
+            '"minAnswer":"10000000000","maxAnswer":"10000000000000"}}}'
+        );
+        vm.expectRevert(abi.encodeWithSelector(RateFeedGuard.RateFeedBandUnguarded.selector, "BandNoGuard"));
+        this.exposedCheckAll(SYNTH_NOGUARD);
+        _removeSynth(SYNTH_NOGUARD);
+    }
 }
 
 /// @dev Thin shim so the test above reads config through exactly the same reader the deploy script uses.

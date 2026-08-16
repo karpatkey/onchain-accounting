@@ -49,6 +49,15 @@ import {RateFeedGuard} from "../utils/RateFeedGuard.sol";
 /// @notice Deploys custom price feed adapters for NAVCalculator
 /// @dev Price feeds are NOT upgradeable — add new ones via addPriceFeed, remove old via removePriceFeed
 contract DeployPriceFeeds is BaseDeployScript {
+    /// @notice An inverted feed's config declares a non-zero `baseAsset`, which the constructor cannot honour.
+    /// @dev {InvertedChainlinkCustomPriceFeed.BASE_ASSET} is a compile-time `constant address(0)` — a `USD / X`
+    ///      pair reads no base price out of the NAV. The config key exists only so the feed stays inside
+    ///      preflight's circularity and base-allowlist checks, which read it from config; nothing passes it to
+    ///      the constructor. So a non-zero value would be SILENTLY IGNORED and the config would disagree with an
+    ///      IMMUTABLE contract, with the first sign of it being `verify_step` 1.5 failing against an
+    ///      already-broadcast address that can never be amended. Rejected at deploy time instead.
+    error InvertedFeedBaseAssetMustBeZero(string feed, address declared);
+
     function run() public override {
         setUp();
 
@@ -642,6 +651,12 @@ contract DeployPriceFeeds is BaseDeployScript {
             vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, name, "usdToAssetChainlinkAddress"));
         uint256 heartbeat =
             vm.parseUint(ConfigReader.readPriceFeedParam(vm, currentChainId, name, "usdToAssetChainlinkHeartbeat"));
+
+        // See {InvertedFeedBaseAssetMustBeZero}: this key is read by preflight, never by the constructor.
+        string memory declaredBase = ConfigReader.readPriceFeedParam(vm, currentChainId, name, "baseAsset");
+        if (bytes(declaredBase).length != 0 && vm.parseAddress(declaredBase) != address(0)) {
+            revert InvertedFeedBaseAssetMustBeZero(name, vm.parseAddress(declaredBase));
+        }
 
         uint256 minAnswer = vm.parseUint(ConfigReader.readPriceFeedParam(vm, currentChainId, name, "minAnswer"));
         uint256 maxAnswer = vm.parseUint(ConfigReader.readPriceFeedParam(vm, currentChainId, name, "maxAnswer"));

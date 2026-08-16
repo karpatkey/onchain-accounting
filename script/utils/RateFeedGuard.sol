@@ -80,9 +80,13 @@ library RateFeedGuard {
 
     /// @notice The SAME band is declared twice at two scales and the two disagree.
     /// @dev `rateFeedGuard.min/maxRate1e18` (checked here, deploy-time) and `constructor.min/maxAnswer` (baked
-    ///      into an IMMUTABLE feed, in the RATE FEED's own decimals) express one band. `min/maxAnswer` are read
-    ///      at exactly ONE site — `03_DeployPriceFeeds.s.sol:646-650` — and nowhere else in the repo, so nothing
-    ///      compared them: a drift silently ships the UNCHECKED copy into a contract that can never be amended.
+    ///      into an IMMUTABLE feed, in the RATE FEED's own decimals) express one band. Nothing compared the two
+    ///      before this check existed, so a drift silently shipped the UNCHECKED copy into a contract that can
+    ///      never be amended. The keys are read by `03_DeployPriceFeeds._deployInvertedFeed` (the deploy path)
+    ///      AND by `test/integration/IntegrationFromConfigBase.fork.sol` (`_deployWars`, which rebuilds the feed
+    ///      from the same config) — grep before renaming them rather than trusting this list to be closed. An
+    ///      earlier revision of this line claimed the keys were read "at exactly ONE site and nowhere else in
+    ///      the repo"; the same PR that wrote it added the second reader.
     ///      Config carried only a "keep these in step" comment, which is the documentary guard this repo
     ///      rejects everywhere else. Reported in 1e18 for both sides so the two are comparable by eye.
     error RateFeedBandMismatch(
@@ -93,6 +97,16 @@ library RateFeedGuard {
     /// @dev Rejected rather than half-checked: with one bound missing there is nothing to reconcile the other
     ///      against, and silently skipping is how the unchecked copy got there in the first place.
     error RateFeedBandIncomplete(string feed, string present, string missing);
+
+    /// @notice A constructor band is declared on a feed that has no `rateFeedGuard` block, so nothing reconciles it.
+    /// @dev The band reconciliation lives in {check}, which {checkAll} reaches ONLY when a guard block is declared.
+    ///      The fail-closed backstop it runs instead — {_assertNoUnguardedRateFeedParam} — recognises rate-feed
+    ///      PARAM SPELLINGS only (`yToXFeed`, `*Chainlink`, `*ChainlinkAddress`). A feed that names its rate feed
+    ///      anything else while carrying `min/maxAnswer` therefore skipped BOTH the pair-identity check and the
+    ///      band reconciliation, shipping an unreconciled band into an immutable contract with the deploy exiting
+    ///      0 and every preflight gate reporting PASS. Declaring a band is now itself what makes a guard
+    ///      mandatory, so the guard no longer depends on having guessed the param name.
+    error RateFeedBandUnguarded(string feed);
 
     /// @notice Sentinel for `rateFeedGuard.description` meaning "this provider does not expose the pair".
     /// @dev **Not every feed can be identity-checked, and pretending otherwise would be worse than not trying.**
@@ -121,8 +135,10 @@ library RateFeedGuard {
         for (uint256 i; i < names.length; ++i) {
             string memory param = _guardField(vm, chainId, names[i], "param");
             if (bytes(param).length == 0) {
-                // No guard declared. Only legitimate if this instance takes no rate feed at all.
+                // No guard declared. Only legitimate if this instance takes no rate feed at all AND declares no
+                // constructor band — the two independent things a guard block is what makes checkable.
                 _assertNoUnguardedRateFeedParam(vm, chainId, names[i]);
+                _assertNoUnreconciledBand(vm, chainId, names[i]);
                 continue;
             }
             check(vm, chainId, names[i]);
@@ -182,21 +198,25 @@ library RateFeedGuard {
         uint256 lo,
         uint256 hi
     ) private view {
-        string[] memory keys = _constructorKeys(vm, chainId, feed);
-        bool hasMin;
-        bool hasMax;
-        for (uint256 i; i < keys.length; ++i) {
-            if (keccak256(bytes(keys[i])) == keccak256("minAnswer")) hasMin = true;
-            else if (keccak256(bytes(keys[i])) == keccak256("maxAnswer")) hasMax = true;
-        }
+        // Detect PRESENCE with the SAME resolver that reads the VALUE — and that `03` actually deploys.
+        // `_constructorKeys` enumerates `.<feed>.constructor` ONLY, whereas `ConfigReader.readAdapterParam`
+        // resolves the TOP-LEVEL `.<feed>.<key>` FIRST and only then falls back to `.constructor.<key>`. Keying
+        // presence off the narrower path let a band written as a sibling of `constructor` — which is where
+        // `rateFeedGuard` itself sits, so it is the natural place to put it — deploy into an IMMUTABLE feed while
+        // this function returned early having reconciled nothing, the exact drift {RateFeedBandMismatch} exists
+        // to stop. It also made the mixed case misreport: `minAnswer` top-level with `maxAnswer` under
+        // `constructor` reverted {RateFeedBandIncomplete} naming `minAnswer` as MISSING when it was present.
+        // One resolver for both makes the two agree by construction rather than by keeping two key lists in step.
+        string memory minStr = ConfigReader.readPriceFeedParam(vm, chainId, feed, "minAnswer");
+        string memory maxStr = ConfigReader.readPriceFeedParam(vm, chainId, feed, "maxAnswer");
+        bool hasMin = bytes(minStr).length != 0;
+        bool hasMax = bytes(maxStr).length != 0;
         if (!hasMin && !hasMax) return;
         if (!hasMin) revert RateFeedBandIncomplete(feed, "maxAnswer", "minAnswer");
         if (!hasMax) revert RateFeedBandIncomplete(feed, "minAnswer", "maxAnswer");
 
-        uint256 min1e18 =
-            _to1e18(vm.parseUint(ConfigReader.readPriceFeedParam(vm, chainId, feed, "minAnswer")), rateDecimals);
-        uint256 max1e18 =
-            _to1e18(vm.parseUint(ConfigReader.readPriceFeedParam(vm, chainId, feed, "maxAnswer")), rateDecimals);
+        uint256 min1e18 = _to1e18(vm.parseUint(minStr), rateDecimals);
+        uint256 max1e18 = _to1e18(vm.parseUint(maxStr), rateDecimals);
         if (min1e18 != lo || max1e18 != hi) revert RateFeedBandMismatch(feed, min1e18, lo, max1e18, hi);
     }
 
@@ -228,6 +248,18 @@ library RateFeedGuard {
         for (uint256 i; i < keys.length; ++i) {
             if (_isRateFeedParam(keys[i])) revert RateFeedGuardMissing(feed, keys[i]);
         }
+    }
+
+    /// @dev Fail-closed companion to {_assertNoUnguardedRateFeedParam}, covering the OTHER thing a guard block is
+    ///      what makes checkable. See {RateFeedBandUnguarded}: the param-spelling scan above cannot see a band,
+    ///      and the reconciliation that can is unreachable without a guard. Deliberately uses
+    ///      `readPriceFeedParam` rather than {_constructorKeys}, for the same resolver-agreement reason spelled
+    ///      out in {_checkConstructorBandAgrees} — a top-level band must not be invisible to its own guard.
+    function _assertNoUnreconciledBand(Vm vm, uint256 chainId, string memory feed) private view {
+        if (
+            bytes(ConfigReader.readPriceFeedParam(vm, chainId, feed, "minAnswer")).length != 0
+                || bytes(ConfigReader.readPriceFeedParam(vm, chainId, feed, "maxAnswer")).length != 0
+        ) revert RateFeedBandUnguarded(feed);
     }
 
     /// @dev Enumerates an instance's constructor parameter NAMES. Deliberately implemented HERE rather than as a

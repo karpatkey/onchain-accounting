@@ -208,8 +208,8 @@ and scope below rather than being restated as covering the later change.)*
 > a later PR's vault and adapter.
 >
 > **Every ACTIONABLE figure in this document has been updated in place to 113 / 69** (was 111 / 67 before PR #308). The list below is
-> illustrative, NOT exhaustive — **re-derived 2026-08-16 the figure appears on 31 LINES.** (It was 27
-> earlier the same day; the §2.3 triage rewrite is a NET four more — six new lines, two removed. The count drifts whenever anyone explains
+> illustrative, NOT exhaustive — **re-derived 2026-08-16 the figure appears on 32 LINES.** (27, then 31
+> after the §2.3 triage rewrite, then 32 after the §2.3 tool-vocabulary correction — all on one day. The count drifts whenever anyone explains
 > these numbers, which is the point of the grep and the reason not to trust the figure.) (The 2026-08-12 measurement said **twelve**, under a counting rule it never stated, so the
 > two are not like-for-like — and the document has gained sections since.) The rule used here, so the
 > number is checkable rather than remembered: run the grep below, then discard a line ONLY when every
@@ -1561,7 +1561,7 @@ touched at all by this step, not merely touched idempotently.
   reconciled 2026-07-29, +1 on 2026-08-12 for issue #296, +2 on 2026-08-15 for PR #308 — 110 + 1 + 2 =
   113). The per-chain breakdown lives in that table only and is not repeated here, so the table
   is where a config change is corrected — but "one place" understates it badly. Re-derived 2026-08-16, the
-  meta-instance figure appears on **31 lines** of this file (the 2026-08-12 measurement said twelve, under
+  meta-instance figure appears on **32 lines** of this file (the 2026-08-12 measurement said twelve, under
   an unstated rule; the derivation and its exclusions are given at the "Meta instances" heading). **This
   count is itself a maintained figure and will drift** — which is the argument for the grep, not for
   trusting the number. Do NOT work from a list — including
@@ -1894,42 +1894,61 @@ against, and 2.6 cannot run until the new addresses are recorded.
 
 **Known-expected diffs — do NOT treat these as regressions:**
 
-- **Chain 1 GAINS THREE meta instances and ONE new adapter; `metaInstanceTotal` goes 66 → 69 against the
-  COMMITTED baseline** (a refreshed `pre/` gives a smaller delta — see the triage table below).
-  (Two on `MorphoVaultsMeta`, one on the new `SymbioticVaultsMeta` — enumerated in the addendum at the
-  end of this bullet. The #296 vault below is the first of the three.) The
+- **Chain 1 gains THREE meta instances and ONE new adapter in CONFIG, but the diff prints only TWO
+  `GAINED meta instance` lines; `metaInstanceTotal` goes 66 → 69 against the COMMITTED baseline** (a
+  refreshed `pre/` gives a smaller delta — see the triage table below). Two of the three instances land
+  on `MorphoVaultsMeta` and print per-instance; the third is on the NEW `SymbioticVaultsMeta`, and
+  `diff_snapshots.py` computes per-instance deltas only over adapters present in BOTH snapshots
+  (`diff_snapshots.py:110`), so a brand-new adapter falls into the `adapter ADDED in new` branch and its
+  instance NEVER prints a line of its own. **Do not hunt for a third — it cannot exist**, and this
+  section's own "absence means something was dropped" rule would otherwise halt a correct cutover.
+  (Enumerated in the addendum at the end of this bullet. The #296 vault below is the first of the three.) The
   committed pre-snapshot (`snapshots/pre/1.json`, block 25625439) was captured when chain 1 held 9
   `MorphoVaultsMeta` instances. The KPK USDC Yield RWA vault
   `0x7a72bcD2c3F7F7e4D6679170a0625bAB15D7DDa1` was added to the LIVE NAV on 2026-08-12 by
   `addMetaInstances` (issue #296) and to config in the same PR, so `diff_snapshots.py pre post` will
-  print `GAINED meta instance 0x…7a72bcd2…` as one of the three. **This is a STRUCTURAL
-  diff and this section's rule is that a structural diff is never explained by drift — which is exactly
-  why it is enumerated here rather than left to be waved through.** **For the #296 vault SPECIFICALLY,
-  expect its structural line and nothing else — no position entry and no `nav.value` movement. That does
-  NOT generalise to the other two gains:** the LiquidLane instance carries a real position, so a position
-  line AND a `nav.value` delta are expected for it (see the addendum). Measured on mainnet 2026-08-12: the vault holds `totalAssets() = 1002452` (1.0025 USDC)
+  print `DIFF  adapter MorphoVaultsMeta GAINED meta instance 0x…7a72bcd2…` as one of the two. **This is a
+  STRUCTURAL diff and this section's rule is that a structural diff is never explained by drift — which is
+  exactly why it is enumerated here rather than left to be waved through.** **Expect the STRUCTURAL lines
+  and nothing else — no position entry and no `nav.value` movement, for EITHER vault.** The reasons
+  differ and both are stated because a future holder change breaks them separately: the #296 vault is
+  dust, and LiquidLane is real but is held by no snapshotted account. Measured on mainnet 2026-08-12: the vault holds `totalAssets() = 1002452` (1.0025 USDC)
   against `totalSupply() = 1e18`, and that entire supply sits at `0x…dEaD` — seed shares. Every tracked
-  chain-1 account holds ZERO, so no snapshotted account has a position to report. **Against the COMMITTED baseline the check is
-  the THREE GAINED-instance lines and `metaInstanceTotal 66 -> 69`, and their ABSENCE means the
+  chain-1 account holds ZERO, so no snapshotted account has a position to report. **Against the COMMITTED
+  baseline the check is the TWO `GAINED meta instance` lines, the `adapter ADDED in new:
+  SymbioticVaultsMeta` line, and `metaInstanceTotal 66 -> 69`; the absence of any of those means the
   reconciliation dropped something.** Against a REFRESHED baseline the expected set is smaller but is
   never empty — take it from the triage table below rather than concluding the check no longer applies.
 
   **ADDENDUM — PR #308 (2026-08-15) adds TWO more chain-1 meta instances AND A NEW ADAPTER, so the
-  expected structural diff is now `metaInstanceTotal 66 -> 69`, not `-> 67`:**
-  - `GAINED meta instance 0x…b5ce3ca2…` — **KPK wARS Yield**, a `MorphoVaultsMeta` instance (Morpho
-    Vaults V2; `MORPHO()` reverts, but the adapter is pure ERC-4626 and never calls it).
-  - `GAINED meta instance 0x…8bcd7469…` — **KPK USDC LiquidLane**, on the **new** `SymbioticVaultsMeta`
-    adapter, which will itself appear as a GAINED ADAPTER. A new adapter in this diff is expected exactly
-    once, here; anywhere else it is the structural signal this section exists to catch.
-  - `wARS` appears as a GAINED registered asset and a GAINED custom price feed. **NOTE the asset COUNT
-    does not move: the committed `pre/1.json` holds 43 assets INCLUDING OETH, which was retired on
-    2026-08-12, so the diff prints `assetCount 43 -> 43` together with BOTH `LOST asset OETH` AND
-    `GAINED asset wARS`. The LOST OETH line is expected here and is NOT a regression** — it is the
-    snapshot catching up with a retirement that predates this PR. (42 -> 43 is the CONFIG delta across
-    #308; §2.3 compares against the SNAPSHOT, which is a different baseline.)
-  Unlike the #296 vault, **the LiquidLane instance is NOT dust** — the KPK Safe holds a real position
-  (~$1.0M in the vault at the time of writing), so tracked chain-1 accounts CAN report a position
-  through it. A position line for it is therefore expected and is not drift.
+  expected structural diff is `metaInstanceTotal 66 -> 69`, not `-> 67`. These are the tool's ACTUAL
+  strings, taken from `diff_snapshots.py:88-120` — nothing else prints for this change:**
+  - `DIFF  adapter MorphoVaultsMeta GAINED meta instance 0x…b5ce3ca2…` — **KPK wARS Yield**, a
+    `MorphoVaultsMeta` instance (Morpho Vaults V2; `MORPHO()` reverts, but the adapter is pure ERC-4626
+    and never calls it). It prints because `MorphoVaultsMeta` exists in BOTH snapshots.
+  - `DIFF  adapter ADDED in new:   SymbioticVaultsMeta (<addr>)` — and **that line is the ONLY evidence
+    of the KPK USDC LiquidLane instance `0x…8bcd7469`.** Per-instance deltas are computed only over
+    adapters in both snapshots (`:110`), so a new adapter's instances never print individually. **There
+    is no `GAINED meta instance 0x…8bcd7469` line and waiting for one will halt a correct cutover.** To
+    confirm the instance itself, read `post/1.json`'s `SymbioticVaultsMeta.metaInstances`, or lean on
+    `metaInstanceTotal 66 -> 69`, which counts it. A new adapter is expected exactly once, here;
+    anywhere else it is the structural signal this section exists to catch.
+  - `DIFF  asset ADDED in new:   wARS <addr>` and `DIFF  asset MISSING in new: OETH <addr>`.
+    **The OETH line is expected and is NOT a regression** — the committed `pre/1.json` holds 43 assets
+    INCLUDING OETH, retired 2026-08-12, so it is the snapshot catching up with a retirement that predates
+    this PR. **There is no `assetCount` line and no per-FEED line** — the tool emits neither (grep it),
+    so a feed is visible only as a field change on an asset that exists in both, e.g.
+    `DIFF  asset ETHx monitorFeeds: … -> …`. (42 -> 43 is the CONFIG delta across #308; §2.3 compares
+    against the SNAPSHOT, which is a different baseline.)
+
+  **The LiquidLane instance is NOT dust, but NO SNAPSHOTTED ACCOUNT HOLDS IT** — the real holder is the
+  KPK Safe `0x17bC2E77…`, and `snapshot_production.py` builds its account set from
+  `test/integration/accounts.json` (`:131-132`), which does not contain that address. This PR's own
+  `$untracked_by_design` note records it: *"No current fixture holds it (checked on-chain 2026-08-15
+  across all 14 accounts)"*. **So a CORRECT deploy shows no position line and no `nav.value` movement
+  for it.** An earlier revision of this addendum said a position line was expected — that would have
+  flagged the correct outcome as a regression, which is the same failure the `nav.value` note below
+  records having already caused once.
 
   §0.7 sanctions refreshing `pre/`, so the baseline is NOT fixed — and a binary valid/absorbed verdict is
   wrong, because a refresh absorbs SOME expected lines and none of the others. **Read off what your
@@ -1942,10 +1961,12 @@ against, and 2.6 cannot run until the new addresses are recorded.
   | **11** — only if the wARS Yield vault was ALSO added to the LIVE OLD NAV; no such tx is recorded in this runbook, unlike #296's | both Morpho gains | the never-absorbed set below | 68 → 69 |
 
   **NEVER absorbed, at any baseline length**, because the OLD NAV cannot carry them — it is abandoned in
-  place and these exist only on the new proxy: the GAINED `SymbioticVaultsMeta` **adapter**, its instance
-  `0x…8bcd7469`, GAINED asset `wARS`, GAINED custom price feed `wARS`, and `LOST asset OETH` alongside
-  `assetCount 43 -> 43`. Checked against the committed baseline rather than assumed: it contains no
-  `Symbiotic` key and no `wARS`, and it does still carry `OETH`.
+  place and these exist only on the new proxy. In the tool's actual strings:
+  `DIFF  adapter ADDED in new:   SymbioticVaultsMeta (<addr>)` (which is ALSO the only evidence of its
+  instance `0x…8bcd7469` — no per-instance line prints for a new adapter),
+  `DIFF  asset ADDED in new:   wARS <addr>`, and `DIFF  asset MISSING in new: OETH <addr>`. There is no
+  `assetCount` line and no per-feed line; do not wait for either. Checked against the committed baseline
+  rather than assumed: it contains no `Symbiotic` key and no `wARS`, and it does still carry `OETH`.
 
   **Why the enumeration rather than a verdict.** `06_Configure` can skip an instance SILENTLY (`if
   (deployed == address(0)) continue;` — see the silent-skip warning under 1.8). If the wARS Yield
@@ -1954,13 +1975,17 @@ against, and 2.6 cannot run until the new addresses are recorded.
   no error and no failed step. That is the failure this gate exists to prevent, arriving through the
   gate's own triage rule.
 
-  **`nav.value`, and note that the two vaults invert each other.** For the #296 vault do NOT treat a flat
-  `nav.value` as evidence of a drop — a $1 seed position could not clear the residual band in any case,
-  and an earlier revision of this entry said the opposite, which would have halted a correct deploy at the
-  last gate before cutover. **For LiquidLane the test runs the other way:** it carries a real position
-  (~$1.0M per the addendum's measurement), so its GAINED line WITHOUT a corresponding `nav.value`
-  movement is a signal, not dust. Flatness is exculpatory for the seed vault and incriminating for this
-  one; do not carry the #296 rule across.
+  **`nav.value` — flat is CORRECT for both vaults, and this has now been got wrong in both directions.**
+  For the #296 vault a flat `nav.value` is not evidence of a drop: a $1 seed position could not clear the
+  residual band in any case, and an early revision said the opposite, which would have halted a correct
+  deploy at the last gate before cutover. **For LiquidLane flat is ALSO correct** — it holds a real
+  ~$1.0M position, but the holder is the KPK Safe `0x17bC2E77…`, which is not in
+  `test/integration/accounts.json` and so is not in the snapshot's account set at all. A later revision
+  of this entry claimed the inverse — that flatness there was incriminating — which would have caused
+  the SAME halt from the opposite premise. **A position only reaches `nav.value` here if a SNAPSHOTTED
+  account holds it; vault size is irrelevant.** If a fixture holding a Symbiotic vault is ever added,
+  this rule flips for real — the `$untracked_by_design` note in `accounts.json` says to re-evaluate at
+  exactly that point.
 
 - **ETHx drops from 2 monitor feeds to 1 on mainnet.** Redstone is retiring both of its ETHx push
   feeds, which backed both monitors. The direct Redstone **ETHx/USD** monitor `0xFaBEb147…` is gone

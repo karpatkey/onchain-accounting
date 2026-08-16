@@ -156,7 +156,9 @@ contract RateFeedGuardTest is Test {
         for (uint256 i; i < chains.length; ++i) {
             total += _countGuarded(chains[i]);
         }
-        // 20 rate-feed-bearing instances: 8 mainnet, 7 Arbitrum, 4 Base, 1 Gnosis. Each verified on-chain.
+        // 21 rate-feed-bearing instances: 9 mainnet, 7 Arbitrum, 4 Base, 1 Gnosis. Each verified on-chain.
+        // (Census header kept in step with the assertion below: it read 20 / 8 mainnet after #302's OETH
+        // removal and was not updated when wARS took mainnet back to 9 — see the 2026-08-15 note.)
         //
         // 21 -> 20: OETH retired by #302 — Chainlink is sunsetting the OETH/ETH rate feed its CrossRate
         // consumed. This is a REMOVAL, so no NEW pair identity needed confirming; the gate exists to stop an

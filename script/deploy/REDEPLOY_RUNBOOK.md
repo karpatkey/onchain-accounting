@@ -1922,7 +1922,10 @@ against, and 2.6 cannot run until the new addresses are recorded.
 
   **ADDENDUM — PR #308 (2026-08-15) adds TWO more chain-1 meta instances AND A NEW ADAPTER, so the
   expected structural diff is `metaInstanceTotal 66 -> 69`, not `-> 67`. These are the tool's ACTUAL
-  strings, taken from `diff_snapshots.py:88-120` — nothing else prints for this change:**
+  strings, taken from `diff_snapshots.py:88-120`. This lists what IS expected and why; it is deliberately
+  NOT a claim that nothing else prints, because an earlier revision made that claim and was wrong — it
+  omitted the three Cap lines below, and its "any other adapter line is the signal this gate exists to
+  catch" rule would have turned them into a halt:**
   - `DIFF  adapter MorphoVaultsMeta GAINED meta instance 0x…b5ce3ca2…` — **KPK wARS Yield**, a
     `MorphoVaultsMeta` instance (Morpho Vaults V2; `MORPHO()` reverts, but the adapter is pure ERC-4626
     and never calls it). It prints because `MorphoVaultsMeta` exists in BOTH snapshots.
@@ -1931,8 +1934,31 @@ against, and 2.6 cannot run until the new addresses are recorded.
     adapters in both snapshots (`:110`), so a new adapter's instances never print individually. **There
     is no `GAINED meta instance 0x…8bcd7469` line and waiting for one will halt a correct cutover.** To
     confirm the instance itself, read `post/1.json`'s `SymbioticVaultsMeta.metaInstances`, or lean on
-    `metaInstanceTotal 66 -> 69`, which counts it. A new adapter is expected exactly once, here;
-    anywhere else it is the structural signal this section exists to catch.
+    `metaInstanceTotal 66 -> 69`, which counts it.
+  - **THREE MORE ADAPTER LINES, from #285's Cap split — expected, and easy to misread as a drop:**
+
+    ```
+    DIFF  adapter MISSING in new: Cap (0x5b50a5ff1c80a178bb8da9fdff077fbc3dd4e543)
+    DIFF  adapter ADDED in new:   CapSavings (<addr>)
+    DIFF  adapter ADDED in new:   CapStablecoin (<addr>)
+    ```
+
+    The committed `pre/1.json` carries the pre-split combined adapter under configKey `Cap`; the deploy
+    config no longer enables it (the `enabled` key is absent, which `ConfigReader` reads as false, and
+    `nav-config` sets it to `false` outright) and enables `CapStablecoin` + `CapSavings` instead. **The
+    `MISSING in new` line reads exactly like a dropped adapter and is not one** — it is the split, and
+    the two ADDED lines are its other half. Read the three together or the first one looks like the
+    failure this gate hunts.
+
+    **These can NEVER be absorbed by refreshing `pre/`, and for a different reason than the additions
+    above:** the split is config-only until this redeploy lands, so the LIVE OLD NAV still holds the
+    single `Cap` adapter and any fresh capture of it will too.
+
+    **Derived across every chain, not assumed:** comparing each `snapshots/pre/<id>.json` adapter set
+    against that chain's enabled deploy config, **chain 1 is the ONLY chain with any adapter-key
+    divergence**, and its full set is these three plus `SymbioticVaultsMeta` — four adapter lines, no
+    more. On every other chain the adapter keys match. A new adapter key ANYWHERE ELSE is the
+    structural signal this section exists to catch.
   - `DIFF  asset ADDED in new:   wARS <addr>` and `DIFF  asset MISSING in new: OETH <addr>`.
     **The OETH line is expected and is NOT a regression** — the committed `pre/1.json` holds 43 assets
     INCLUDING OETH, retired 2026-08-12, so it is the snapshot catching up with a retirement that predates
@@ -1960,13 +1986,27 @@ against, and 2.6 cannot run until the new addresses are recorded.
   | **10** — refreshed after the 2026-08-12 live `addMetaInstances` | the #296 line, and only that | **`0x…b5ce3ca2` wARS Yield** **+** the never-absorbed set below | 67 → 69 |
   | **11** — only if the wARS Yield vault was ALSO added to the LIVE OLD NAV; no such tx is recorded in this runbook, unlike #296's | both Morpho gains | the never-absorbed set below | 68 → 69 |
 
-  **NEVER absorbed, at any baseline length**, because the OLD NAV cannot carry them — it is abandoned in
-  place and these exist only on the new proxy. In the tool's actual strings:
-  `DIFF  adapter ADDED in new:   SymbioticVaultsMeta (<addr>)` (which is ALSO the only evidence of its
-  instance `0x…8bcd7469` — no per-instance line prints for a new adapter),
-  `DIFF  asset ADDED in new:   wARS <addr>`, and `DIFF  asset MISSING in new: OETH <addr>`. There is no
-  `assetCount` line and no per-feed line; do not wait for either. Checked against the committed baseline
-  rather than assumed: it contains no `Symbiotic` key and no `wARS`, and it does still carry `OETH`.
+  **NEVER absorbed at any baseline length — but by THREE different mechanisms, and the reasons are not
+  interchangeable.** An earlier revision gave them all one rationale ("the old NAV cannot carry them"),
+  which is true of the ADDED lines and the exact opposite of why the OETH line prints; that paragraph
+  contradicted its own closing evidence.
+
+  - **ADDED lines — the old NAV cannot carry them; they exist only on the new proxy.**
+    `DIFF  adapter ADDED in new:   SymbioticVaultsMeta (<addr>)` (also the ONLY evidence of its instance
+    `0x…8bcd7469` — no per-instance line prints for a new adapter) and
+    `DIFF  asset ADDED in new:   wARS <addr>`. A `pre/` refresh re-reads the OLD NAV, which has neither.
+  - **`DIFF  asset MISSING in new: OETH <addr>` — the OPPOSITE reason.** OETH prints precisely BECAUSE
+    the old NAV still carries it while the new one will not. It is absorbed only if someone
+    DE-REGISTERS OETH from the live old NAV, and no recorded tx does — the 2026-08-12 retirement was a
+    config change, not an on-chain `unregisterAsset`. So a refresh does not clear it either, by the
+    inverse mechanism to the two above.
+  - **The three Cap lines — config-only split.** Covered in the addendum: the live old NAV still holds
+    the single `Cap` adapter, so a refresh reproduces `MISSING in new: Cap` together with both ADDED
+    halves.
+
+  There is no `assetCount` line and no per-feed line; do not wait for either. Checked against the
+  committed baseline rather than assumed: it contains no `Symbiotic` key and no `wARS`, it DOES still
+  carry `OETH`, and it DOES still carry `Cap`.
 
   **Why the enumeration rather than a verdict.** `06_Configure` can skip an instance SILENTLY (`if
   (deployed == address(0)) continue;` — see the silent-skip warning under 1.8). If the wARS Yield

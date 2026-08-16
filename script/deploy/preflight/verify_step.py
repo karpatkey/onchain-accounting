@@ -283,7 +283,7 @@ def expected_assistants(rec: dict, arch) -> set:
 
     THE ORACLE HAD TO CHANGE, and this is what made the union honest. Config enabling an assisted
     adapter does not mean an assistant was ever deployed: `04._deployAssistantsIfEnabled`
-    (`04_DeployBalanceAdapters.s.sol:251`) deploys one only once the paired ADAPTER'S ADDRESS is
+    (grep `Assistant(` in `04_DeployBalanceAdapters.s.sol`) deploys one only once the paired ADAPTER'S ADDRESS is
     already in the record — which is what `ASSISTED_PAIRS` (:69) has said all along while
     `expected_clear_top` derived the opposite from config.
 

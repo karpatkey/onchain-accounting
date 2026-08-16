@@ -196,11 +196,12 @@ So a slice can get an answer out of a portfolio whose complete read has started 
 ## Measured cost
 
 Mainnet fork, the integration harness's registry (**41 registered assets, 21 registered adapters**; the production
-config has 43 assets and 27 adapters, so production is somewhat higher), most diversified test account.
+config had 42 assets and 27 adapters when this was measured), most diversified test account.
 
 > **These are MEASURED figures from a fork run, not derived counts — they are as of that run and are not
-> updated when the registry grows.** PR #308 adds a Symbiotic meta-adapter to both the harness dispatch and
-> the production config, so both sides are now one higher than quoted here. The gas numbers below were not
+> updated when the registry grows.** PR #308 adds a Symbiotic meta-adapter AND the wARS asset, so it moves
+> the ADAPTER axis and the ASSET axis both: the production config went from 42 assets / 27 adapters to 43 / 28
+> (measured on both sides), and the harness gains the same adapter. The gas numbers below were NOT
 > re-measured, so the counts are left at the values they were measured against rather than silently
 > re-stated against a registry the measurement never saw. Re-run the harness to refresh both together.
 
@@ -378,7 +379,7 @@ loud `AdapterGasExhausted` into a **silent** fail-open drop, and `adaptersCovere
 
 `test/integration/NAV.PaginatedNav.Mainnet.integration.fork.t.sol` — under a singleton partition, a batched
 partition, and a second portfolio shape, with a non-vacuity guard so the assertions cannot pass against an account
-that holds nothing. **That harness covered 41 assets / 21 adapters at the time of measurement, not the production 43 / 27** — the six skipped are
+that holds nothing. **That harness covered 41 assets / 21 adapters at the time of measurement, against a production 42 / 27** — the six skipped are
 `EthenaCooldown`, `LidoWithdrawalQueue`, `EulerVaultsMeta` and the three assisted adapters, and that six-adapter
 *gap* is asserted by name in `test_harnessCoverageGapIsWhatTheDocblockClaims` so this claim cannot silently rot. The
 counts themselves are deliberately **not** pinned — asserting them would redden the suite whenever the mainnet asset

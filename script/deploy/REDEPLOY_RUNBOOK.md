@@ -1113,8 +1113,9 @@ BROADCAST="--rpc-url $RPC --broadcast --account my-deployer --password-file <pwf
 > feeds against the old NAV and register adapters on the old proxy. Nothing errors.
 > **`PERSIST_DEPLOYMENTS=1` is also mandatory on 1.7 — and the reason is a split inside one script.**
 > The per-**adapter** writes in `03`/`04` are NOT gated: they go through `ConfigReader.writeAdapterAddress`
-> (`04:241`) and always write. But the three **`*Assistant`** writes go through `saveDeployedAddress`
-> (`04:272,290,298`), which is the gated helper — `BaseDeployScript.sol:69-86` early-returns when the flag
+> (grep `ConfigReader.writeAdapterAddress` in `04`) and always write. But the three **`*Assistant`** writes
+> go through `saveDeployedAddress` (grep `saveDeployedAddress("` in `04` — three hits, one per assistant),
+> which is the gated helper — `BaseDeployScript.sol:69-86` early-returns when the flag
 > is unset. So without it `04` **deploys every assistant and records none of them**: the `new …Assistant(…)`
 > is evaluated *before* the save, so the contract is created and the gas is spent, the address is only
 > printed, and the run exits **0**. Read the old wording carefully if you meet it elsewhere — "the writes in
@@ -1271,7 +1272,7 @@ git ls-tree -r --name-only "$TREE" -- script/deploy/08_DeployAssetKindRegistry.s
 **It is also gated now, and the earlier warning here was wrong on both counts.** This note used to say
 `verify_step.py`'s `STEPS` list *"ends at `1.7` and has no gate for it either"*. Both halves are false at
 `a3974686`: `STEPS` is `["1.1" … "1.8"]`, and **`08` is gated as step `1.4`** —
-`"08 — asset-kind registry: MANAGER grant AND classification"` (`verify_step.py:57`), implemented by
+`"08 — asset-kind registry: MANAGER grant AND classification"` (grep `08 — asset-kind registry` in `verify_step.py`), implemented by
 `step_asset_kind_registry` (`:579`), which checks the MANAGER grant and samples asset classifications.
 Do not infer the coverage from the step *numbers*: the gate for `08` is filed under a `1.x` label, so
 grepping `STEPS` for `"08"` finds nothing and reads as absent.
@@ -1461,7 +1462,7 @@ proxy invalidates every existing feed.
 > **The three dead feed contracts are a separate matter and change the count by ZERO.**
 > `cbETH_CustomPriceFeed`, `ETHPlus_CustomPriceFeed` and `sDAI_CustomPriceFeed` are deployed on no chain
 > and enabled in no config (`cbETH`/`sDAI` are not config keys at all; `ETHPlus` is present on mainnet
-> with `enabled: false`). All three call sites are `isAdapterEnabled`-gated (grep `_deployCbEth`, `_deployETHPlus`, `_deploySDai`)
+> with `enabled: false`). The TWO that still have call sites are `isAdapterEnabled`-gated (grep `_deployCbEth` and `_deployEthPlus`); sDAI has no call site and no contract at all, because #199 deleted it — an earlier version of this line claimed three gated call sites and grep targets `_deployETHPlus`/`_deploySDai` that match nothing
 > and a missing key reads as false, so the branches are never taken — and they stay unreached after step
 > 1.1, since clearing the record removes only the skip-guard short-circuit, not the enablement gate.
 > #199 deletes the sDAI contract; that is dead-code removal, not a count change. An earlier audit note

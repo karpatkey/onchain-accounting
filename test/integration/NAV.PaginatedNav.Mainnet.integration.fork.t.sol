@@ -20,7 +20,9 @@ import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 ///      markets, an adapter reporting a debt leg, two adapters reporting the same asset — only exist here.
 ///
 ///      **Coverage, stated honestly — AS MEASURED, NOT MAINTAINED: this harness registered 41 assets and 21
-///      adapters when these figures were taken, where the mainnet deploy config carried 43 and 27.** Both
+///      adapters when these figures were taken. The mainnet deploy config carried 42 assets / 27 adapters
+///      then and carries 43 / 28 after PR #308 — MEASURED both sides; an earlier revision paired 43 with
+///      27, which is true of no tree.** Both
 ///      sides move as the registry grows — PR #308 adds a Symbiotic meta-adapter AND the wARS asset, so
 ///      it moves the adapter axis and the asset axis both. Treat these as descriptive of the run they
 ///      were measured in; the policy on why they are not asserted is stated once, below.

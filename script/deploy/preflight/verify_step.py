@@ -716,13 +716,12 @@ def _declared_address(chain_id: int, feed_name: str, key: str):
     ctor = entry.get("constructor", entry)
     if not isinstance(ctor, dict):
         return None, f"`constructor` for {feed_name!r} is {type(ctor).__name__}, not an object"
-    # TOP-LEVEL FIRST, then `constructor` — matching `ConfigReader.readAdapterParam` (ConfigReader.sol:403-410),
-    # which is the resolver `03` actually deploys from. The reverse order (constructor-first, as this read was
-    # originally written) is the same presence-vs-value disagreement `RateFeedGuard._checkConstructorBandAgrees`
-    # had to be fixed for: a feed carrying the key at the top level plus a stale `constructor` copy would be
-    # DEPLOYED from the top-level value and CHECKED against the constructor one, red-gating a correct deploy —
-    # or, with the two swapped, passing a wrong one.
-    raw = entry.get(key, ctor.get(key))
+    # Resolved by the SHARED accessor, which is the one place this repo encodes what
+    # `ConfigReader.readAdapterParam` does — top level, then `constructor`, then `initialize`. Open-coding it
+    # here (as this did, and it stopped at two of the three scopes) is what made a key written under
+    # `initialize` read as "no opinion recorded" while `03` happily deployed from it, so the cross-check
+    # below reported PASS having compared nothing.
+    raw = pc.resolve_param(entry, key)
     if raw is None:
         return None, None                      # no opinion recorded; nothing to cross-check
     # Shape AND hex, mirroring preflight_config.is_address_shaped — a 42-char non-hex placeholder such as

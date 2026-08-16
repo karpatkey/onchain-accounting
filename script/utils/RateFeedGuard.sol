@@ -284,7 +284,9 @@ library RateFeedGuard {
     ///      {_assertNoUnguardedRateFeedParam} blind to a rate feed written as a sibling of `constructor`,
     ///      which is where `rateFeedGuard` itself sits and therefore the natural place to put one: such an
     ///      instance passed {checkAll} with no pair check and no band check at all. Structural keys are
-    ///      excluded at the outer scope — they are containers and flags, never constructor arguments.
+    ///      excluded at the outer scope — they are containers and flags, never constructor arguments. All
+    ///      THREE scopes that resolver searches are enumerated; stopping at two is how the `initialize` case
+    ///      stayed invisible.
     function _declaredParamKeys(Vm vm, uint256 chainId, string memory feed) private view returns (string[] memory) {
         string memory path = string(
             abi.encodePacked(
@@ -298,17 +300,25 @@ library RateFeedGuard {
         string memory json = vm.readFile(path);
 
         string memory outer = string(abi.encodePacked(".", feed));
-        string memory inner = string(abi.encodePacked(".", feed, ".constructor"));
+        string memory ctor = string(abi.encodePacked(".", feed, ".constructor"));
+        string memory init = string(abi.encodePacked(".", feed, ".initialize"));
         string[] memory a = vm.keyExistsJson(json, outer) ? vm.parseJsonKeys(json, outer) : new string[](0);
-        string[] memory b = vm.keyExistsJson(json, inner) ? vm.parseJsonKeys(json, inner) : new string[](0);
+        string[] memory b = vm.keyExistsJson(json, ctor) ? vm.parseJsonKeys(json, ctor) : new string[](0);
+        string[] memory c = vm.keyExistsJson(json, init) ? vm.parseJsonKeys(json, init) : new string[](0);
 
-        string[] memory buf = new string[](a.length + b.length);
+        string[] memory buf = new string[](a.length + b.length + c.length);
         uint256 n;
         for (uint256 i; i < a.length; ++i) {
             if (_isParamKey(a[i]) && !_isStructuralKey(a[i])) buf[n++] = a[i];
         }
         for (uint256 i; i < b.length; ++i) {
             if (_isParamKey(b[i])) buf[n++] = b[i];
+        }
+        // `.initialize` is the THIRD scope `readAdapterParam` falls back to (ConfigReader.sol:409). Excluding
+        // the `initialize` CONTAINER above without ever descending into it meant a rate feed declared there
+        // was resolved by `03` and invisible here — an instance with no pair check and no band check at all.
+        for (uint256 i; i < c.length; ++i) {
+            if (_isParamKey(c[i])) buf[n++] = c[i];
         }
         string[] memory out = new string[](n);
         for (uint256 i; i < n; ++i) {

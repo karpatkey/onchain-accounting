@@ -341,7 +341,14 @@ def registered_feeds(chain_id: str) -> list[dict]:
         for name, v in feeds.items():
             if not isinstance(v, dict):
                 continue
-            ctor = v.get("constructor") or {}
+            # EVERY SCOPE `readAdapterParam` SEARCHES, not just `constructor`. A leg written beside
+            # `constructor` — which that resolver checks FIRST, so `03` deploys from it — produced no row
+            # here at all, and `coverage_census` read the same narrow path, so the containment check
+            # compared a short list against a short expectation and reported FULL coverage over a leg it
+            # had never examined. Merged with the outer scope losing to the inner only on exact key
+            # collision, matching the resolver's precedence.
+            ctor = {**(v.get("initialize") or {}), **(v.get("constructor") or {}),
+                    **{k: x for k, x in v.items() if not isinstance(x, dict) and not k.startswith("$")}}
             # RATE LEGS ARE FOUND BY SHAPE, NOT BY ONE HARD-CODED KEY NAME. Matching only
             # `yToXFeed`/`yToXHeartbeat` silently missed nine ENABLED custom feeds whose leg is named for
             # the pair it prices — `wstEthToEthChainlink`/`wstEthToEthHeartbeat`,
@@ -600,7 +607,10 @@ def coverage_census(chain_id: str) -> dict:
         for _name, v in raw.items():
             if not isinstance(v, dict):
                 continue
-            ctor = v.get("constructor") or {}
+            # Same merge as `registered_feeds` above — the census must count what that function can see,
+            # or the containment check it feeds is comparing a number against itself.
+            ctor = {**(v.get("initialize") or {}), **(v.get("constructor") or {}),
+                    **{k: x for k, x in v.items() if not isinstance(x, dict) and not k.startswith("$")}}
             hb = [k for k in ctor if k.endswith("Heartbeat")]
             leg_keys += len(hb) or (1 if isinstance(ctor.get("yToXFeed"), str) else 0)
     return {"navEntries": nav_entries, "exemptNamedCustom": exempt_named_custom, "legKeys": leg_keys,

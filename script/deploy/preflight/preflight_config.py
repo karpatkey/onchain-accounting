@@ -134,13 +134,7 @@ def nav_sourced_base(feed_entry: dict) -> str | None:
     base feed's timestamp instead of having a clock of its own. A custom feed with no `baseAsset` is not
     NAV-sourced and the heartbeat invariant below does not apply to it.
     """
-    ctor = feed_entry.get("constructor", feed_entry)
-    # TOP-LEVEL first, then `constructor` — `ConfigReader.readAdapterParam` (ConfigReader.sol:403-410) is the
-    # resolver `03` deploys from and it checks `.<feed>.<key>` FIRST. Reading them the other way round means a
-    # feed carrying the key at the top level plus a stale `constructor` copy is DEPLOYED from one value and
-    # CHECKED against the other, so the ADR-0019 circularity and derived-heartbeat checks below vouch for a
-    # base the contract does not have.
-    raw = feed_entry.get("baseAsset") or ctor.get("baseAsset")
+    raw = resolve_param(feed_entry, "baseAsset")
     # address(0) is the SENTINEL for "no NAV dependency" (see is_address_shaped), so it must return None
     # here exactly as an absent key does — a feed that declares it is not NAV-sourced.
     #
@@ -157,6 +151,43 @@ def nav_sourced_base(feed_entry: dict) -> str | None:
     if is_address_shaped(raw) and int(raw, 16) == 0:
         return None
     return raw
+
+
+#: The scopes `ConfigReader.readAdapterParam` searches, IN ITS ORDER: the entry itself, then `constructor`,
+#: then `initialize` (ConfigReader.sol:403-411). Kept as data so a new scope is added in one place.
+PARAM_SCOPES = ("constructor", "initialize")
+
+
+def resolve_param(entry: dict, key: str):
+    """The value `03` would deploy for `key` — resolved exactly as `ConfigReader.readAdapterParam` does.
+
+    **USE THIS RATHER THAN OPEN-CODING THE LOOKUP.** Every gate in this repo is comparing config against
+    something (a deployed contract, another config file, an allowlist), and every such comparison is only
+    as good as its agreement with the resolver the deploy script uses. Hand-rolled copies of this order
+    drifted three separate times — `nav_sourced_base`, `base_allowlist_findings`' main loop and its nested
+    `nav_dependency` helper each had a different one — and each divergence has the same shape: the feed is
+    DEPLOYED from one value and CHECKED against another, so the gate vouches for a contract it never
+    examined. Two of those copies also stopped at `constructor` and never searched `initialize`, which
+    `readAdapterParam` does search, so a key written there read as "not declared at all".
+    """
+    if not isinstance(entry, dict):
+        return None
+    if key in entry:
+        return entry[key]
+    for scope in PARAM_SCOPES:
+        sub = entry.get(scope)
+        if isinstance(sub, dict) and key in sub:
+            return sub[key]
+    return None
+
+
+def has_param(entry: dict, key: str) -> bool:
+    """Whether `key` is declared at ANY scope `readAdapterParam` searches. Absent != present-but-empty."""
+    if not isinstance(entry, dict):
+        return False
+    if key in entry:
+        return True
+    return any(isinstance(entry.get(s), dict) and key in entry[s] for s in PARAM_SCOPES)
 
 
 ZERO_ADDR = "0x" + "0" * 40
@@ -228,8 +259,7 @@ def base_allowlist_findings(chain_id: int, assets: dict, dep_feeds: dict) -> lis
         fe = dep_feeds.get(feed_name)
         if fe is None:
             return False  # cannot be established -> cannot be vouched for
-        ctor = fe.get("constructor", fe)
-        raw = ctor.get("baseAsset", fe.get("baseAsset"))
+        raw = resolve_param(fe, "baseAsset")
         if not is_address_shaped(raw):
             return False
         return None if int(raw, 16) == 0 else raw.lower()
@@ -265,9 +295,8 @@ def base_allowlist_findings(chain_id: int, assets: dict, dep_feeds: dict) -> lis
                     continue  # already reported as a missing/disabled Custom feed by check_chain
                 where = f"asset '{sym}' {kind}[{i}] Custom '{fname}'"
                 ctor = fentry.get("constructor", fentry)
-                has_key = "baseAsset" in ctor or "baseAsset" in fentry
-                # TOP-LEVEL first — same reason as in `nav_sourced_base` above.
-                raw = fentry.get("baseAsset", ctor.get("baseAsset"))
+                has_key = has_param(fentry, "baseAsset")
+                raw = resolve_param(fentry, "baseAsset")
 
                 if not has_key:
                     f.append((ERROR, f"{where} does not declare a baseAsset in "
@@ -302,7 +331,7 @@ def base_allowlist_findings(chain_id: int, assets: dict, dep_feeds: dict) -> lis
                     # the justification at the outer level only rejects the one placement that reads as a
                     # pair with the value it justifies — a correct, fully-justified config red-gated over
                     # placement, with an error message that names no location.
-                    if not str(fentry.get(NO_NAV_REASON_KEY) or ctor.get(NO_NAV_REASON_KEY) or "").strip():
+                    if not str(resolve_param(fentry, NO_NAV_REASON_KEY) or "").strip():
                         f.append((ERROR, f"{where} declares baseAsset {ZERO_ADDR} (asserting NO NAV "
                                          f"dependency) but carries no `{NO_NAV_REASON_KEY}` saying why. This "
                                          f"sentinel switches off every other base and heartbeat check for the "
@@ -347,7 +376,8 @@ def base_allowlist_findings(chain_id: int, assets: dict, dep_feeds: dict) -> lis
     # already broadcast. The pre-existing "enabled for deploy but no asset references it" WARN does not stop
     # a run, so without this sweep the rule was unreachable for the case it was written to catch. Only the
     # zero+reason pair is re-checked here: the other arms above need an asset to say anything about.
-    referenced = {fd.get("feed") for e in assets.values() if isinstance(e, dict)
+    referenced = {fd.get("feed") for sym, e in assets.items()
+                  if isinstance(e, dict) and not sym.startswith("$")
                   for kind in ("priceFeeds", "monitorFeeds") for fd in (e.get(kind) or [])
                   if isinstance(fd, dict) and fd.get("type") == "Custom"}
     for fname, fentry in (dep_feeds or {}).items():
@@ -355,11 +385,10 @@ def base_allowlist_findings(chain_id: int, assets: dict, dep_feeds: dict) -> lis
             continue
         if fname in referenced or fentry.get("enabled") is not True:
             continue
-        ctor = fentry.get("constructor", fentry)
-        raw = fentry.get("baseAsset", ctor.get("baseAsset"))
+        raw = resolve_param(fentry, "baseAsset")
         if not (isinstance(raw, str) and is_address_shaped(raw) and int(raw, 16) == 0):
             continue
-        if not str(fentry.get(NO_NAV_REASON_KEY) or ctor.get(NO_NAV_REASON_KEY) or "").strip():
+        if not str(resolve_param(fentry, NO_NAV_REASON_KEY) or "").strip():
             f.append((ERROR, f"custom feed '{fname}' is enabled for deploy and declares baseAsset "
                              f"{ZERO_ADDR} (asserting NO NAV dependency) but carries no "
                              f"`{NO_NAV_REASON_KEY}` saying why. No asset references it yet, so nothing "
@@ -965,6 +994,23 @@ def self_test() -> int:
     def _msgs(findings):
         return [m for s, m in findings if s == ERROR]
 
+    # `resolve_param` is now the single encoding of what `ConfigReader.readAdapterParam` does, and every gate
+    # in this file resolves through it — so its PRECEDENCE is load-bearing, not an implementation detail. Three
+    # separate hand-rolled copies drifted before it existed; these arms are what make a fourth drift visible.
+    check("resolve_param: top level WINS over constructor (the order 03 deploys with)",
+          resolve_param({"k": "outer", "constructor": {"k": "inner"}}, "k") == "outer")
+    check("resolve_param: constructor WINS over initialize",
+          resolve_param({"constructor": {"k": "ctor"}, "initialize": {"k": "init"}}, "k") == "ctor")
+    check("resolve_param: initialize is searched — the scope two readers used to miss entirely",
+          resolve_param({"initialize": {"k": "init"}}, "k") == "init")
+    check("resolve_param: absent everywhere is None, and a non-dict entry does not raise",
+          resolve_param({"constructor": {}}, "k") is None and resolve_param("not-a-dict", "k") is None)
+    check("has_param: sees a key at every scope, and only a real key",
+          has_param({"k": 1}, "k") and has_param({"constructor": {"k": 1}}, "k")
+          and has_param({"initialize": {"k": 1}}, "k") and not has_param({"constructor": {}}, "k"))
+    check("has_param distinguishes ABSENT from present-but-empty (the two get different errors)",
+          has_param({"constructor": {"k": ""}}, "k") and resolve_param({"constructor": {"k": ""}}, "k") == "")
+
     check("a direct-priced base is ACCEPTED (arm is not vacuous)", _msgs(_base_case(B_WETH)) == [])
     check("a base priced by a Custom feed that declares NO NAV dependency is ACCEPTED (the ETHPlus shape)",
           _msgs(_base_case(B_WETH, base_primary="Custom", base_feed_base=ZERO_ADDR)) == [])
@@ -1143,7 +1189,7 @@ def base_report(chains) -> int:
                         continue
                     total += 1
                     pinned += fname in erc4626
-                    raw = fe.get("constructor", fe).get("baseAsset")
+                    raw = resolve_param(fe, "baseAsset")
                     if not is_address_shaped(raw) or int(raw, 16) == 0:
                         print(f"{cid:>7}  {sym:<12} {fname:<24} {'(none)':<12} not NAV-sourced")
                         continue

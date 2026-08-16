@@ -233,6 +233,7 @@ contract RateFeedGuardTest is Test {
     uint256 constant SYNTH_SPLIT = 999_902;
     uint256 constant SYNTH_NOGUARD = 999_903;
     uint256 constant SYNTH_TOPPARAM = 999_904;
+    uint256 constant SYNTH_INITPARAM = 999_905;
     address constant SYNTH_FEED = 0x00000000000000000000000000000000DeaDBeef;
 
     function _synthPath(uint256 chainId) internal view returns (string memory) {
@@ -367,6 +368,28 @@ contract RateFeedGuardTest is Test {
             abi.encodeWithSelector(
                 RateFeedGuard.RateFeedGuardMissing.selector, "TopParam", "usdToAssetChainlinkAddress"
             ),
+            "wrong revert"
+        );
+    }
+
+    /// @notice **`.initialize` is the THIRD scope the deploy resolver searches, and it must not hide a rate feed.**
+    /// @dev `ConfigReader.readAdapterParam` falls back `.<feed>` -> `.<feed>.constructor` -> `.<feed>.initialize`
+    ///      (ConfigReader.sol:403-411). The scan was widened to two of those three, and `initialize` was named
+    ///      in the structural-key exclusion list without ever being descended into — so a rate feed declared
+    ///      there was resolved by `03` and invisible to the fail-closed check, shipping an immutable feed bound
+    ///      to an unverified aggregator with every gate reporting PASS.
+    function test_initializeScopeRateFeedParam_isNotInvisibleToTheFailClosedScan() public {
+        _writeSynth(
+            SYNTH_INITPARAM,
+            '{"InitParam":{"enabled":true,' '"initialize":{"yToXFeed":"0x00000000000000000000000000000000DeaDBeeF"}}}'
+        );
+        (bool ok, bytes memory ret) =
+            address(this).staticcall(abi.encodeWithSelector(this.exposedCheckAll.selector, SYNTH_INITPARAM));
+        _removeSynth(SYNTH_INITPARAM);
+        assertFalse(ok, "a rate-feed param under `initialize` with no guard block must be rejected");
+        assertEq(
+            ret,
+            abi.encodeWithSelector(RateFeedGuard.RateFeedGuardMissing.selector, "InitParam", "yToXFeed"),
             "wrong revert"
         );
     }

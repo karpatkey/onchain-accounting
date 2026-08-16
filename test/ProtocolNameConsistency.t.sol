@@ -563,7 +563,7 @@ contract ProtocolNameConsistencyTest is Test {
 
     /// @notice Distinct protocols must not collide on one display name — otherwise a consumer grouping by name
     ///         would merge two genuinely different protocols, the mirror image of the Umbrella bug.
-    /// @dev **Known limitation — this list is hand-maintained.** It covers all 24 `ProtocolNames` constants today,
+    /// @dev **Known limitation — this list is hand-maintained.** It covers all 25 `ProtocolNames` constants today,
     ///      but nothing forces it to stay complete: adding a constant without adding it here passes silently, so a
     ///      duplicate introduced by copy-pasting a neighbour (say `AAVE_V4 = "Aave V3"`) would never be compared
     ///      against anything and this test would report green on exactly the collision it exists to find. There is

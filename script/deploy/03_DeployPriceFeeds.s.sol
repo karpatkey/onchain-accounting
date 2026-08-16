@@ -63,16 +63,6 @@ contract DeployPriceFeeds is BaseDeployScript {
     ///      would hide which feed and which key were at fault.
     error InvertedFeedBaseAssetMalformed(string feed, string declared);
 
-    /// @notice An inverted feed is missing a constructor param its deploy helper will need.
-    /// @dev Checked pre-broadcast. `vm.parseUint("")` reverts, so without this the run aborted
-    ///      MID-BROADCAST with earlier feeds already deployed and a half-written deployments record.
-    error InvertedFeedParamMissing(string feed, string key);
-
-    /// @notice An inverted feed's numeric param is present but not a decimal number.
-    /// @dev `vm.parseUint` reverts on it exactly as it does on an empty string, so without this the run
-    ///      aborted MID-BROADCAST with earlier feeds already deployed.
-    error InvertedFeedParamNotNumeric(string feed, string key, string raw);
-
     function run() public override {
         setUp();
 
@@ -666,9 +656,21 @@ contract DeployPriceFeeds is BaseDeployScript {
     ///      not on a hardcoded name, so a second `USD / X` feed is covered the day it is configured.
     ///      See {InvertedFeedBaseAssetMustBeZero} for why a non-zero value cannot be honoured.
     function _assertInvertedFeedsDeclareZeroBase() internal view {
-        // `getEnabledAdapters` returns every NAMED entry — it does NOT filter on `enabled` (the name is a
-        // misnomer this file cannot fix). Gating a DISABLED entry would halt the whole deploy over config
-        // that will never be constructed, so the enabled test is explicit.
+        // ONE assertion, and deliberately only one. `baseAsset` is the single key an inverted feed can
+        // declare that the CONSTRUCTOR CANNOT HONOUR — {InvertedChainlinkCustomPriceFeed.BASE_ASSET} is a
+        // compile-time `constant address(0)` — so a non-zero value is silently ignored and leaves config
+        // disagreeing with an immutable contract. That is specific to this family and worth a pre-broadcast
+        // stop.
+        //
+        // PRESENCE AND PARSEABILITY OF THE OTHER PARAMS ARE DELIBERATELY *NOT* CHECKED HERE. Two commits
+        // running added such checks in response to review, and both were incomplete in a new way: a digit
+        // loop that red-gated hex values `vm.parseUint` accepts, address params still unvalidated, then the
+        // constructor's own band invariant. The reason it kept growing is that the underlying property is
+        // NOT specific to this feed: EVERY `_deploy*` helper in this script reads and parses its config
+        // inside `vm.startBroadcast()`, so a malformed value anywhere aborts mid-run with earlier feeds
+        // already deployed. Pre-validating one family creates the impression the rest are covered while
+        // chasing an unbounded list of per-key shape rules. **DECLARED, script-wide:** config is parsed
+        // in-broadcast; `preflight_config` is where config shape is gated before a run starts.
         string[] memory names = ConfigReader.getEnabledAdapters(vm, currentChainId, "deployPriceFeeds");
         for (uint256 i; i < names.length; ++i) {
             if (!ConfigReader.isPriceFeedEnabled(vm, currentChainId, names[i])) continue;
@@ -676,43 +678,18 @@ contract DeployPriceFeeds is BaseDeployScript {
                 ConfigReader.readPriceFeedParam(vm, currentChainId, names[i], "usdToAssetChainlinkAddress");
             if (bytes(rate).length == 0) continue;
 
-            // Every constructor arg this family needs, checked BEFORE the broadcast opens. Parsing them
-            // for the first time inside `_deployInvertedFeed` meant a missing value aborted the run
-            // MID-BROADCAST with earlier feeds already deployed — the failure mode that moving the
-            // baseAsset assertion out here was meant to eliminate, left half-solved.
-            _requireDeclaredUint(names[i], "usdToAssetChainlinkHeartbeat");
-            _requireDeclaredUint(names[i], "minAnswer");
-            _requireDeclaredUint(names[i], "maxAnswer");
-            _requireDeclared(names[i], "underlyingAsset");
-
+            // An ABSENT key is not this gate's business: `preflight_config.base_allowlist_findings` already
+            // ERRORs on a custom feed that declares no `baseAsset` at all, and stating the opposite here
+            // would leave the two gates asserting contradictory contracts for the same key. This one only
+            // rules on a value that IS present.
             string memory declaredBase = ConfigReader.readPriceFeedParam(vm, currentChainId, names[i], "baseAsset");
             if (bytes(declaredBase).length == 0) continue;
-            // Shape-check BEFORE `vm.parseAddress`, which reverts with an opaque cheatcode error on a
-            // malformed value and buries the named error this function exists to raise.
+            // Shape-check BEFORE `vm.parseAddress`, which reverts with an opaque cheatcode error and would
+            // bury the named error this function exists to raise.
             if (bytes(declaredBase).length != 42) revert InvertedFeedBaseAssetMalformed(names[i], declaredBase);
             if (vm.parseAddress(declaredBase) != address(0)) {
                 revert InvertedFeedBaseAssetMustBeZero(names[i], vm.parseAddress(declaredBase));
             }
-        }
-    }
-
-    /// @dev Pre-broadcast check for one required NUMERIC param of an inverted feed: present AND parseable.
-    ///      Presence alone was not enough — `vm.parseUint` reverts on a non-numeric value just as it does on
-    ///      an empty one, so a present-but-garbage `minAnswer` still aborted MID-BROADCAST, which is the
-    ///      whole failure this sweep was moved out here to prevent. Digits are checked directly because
-    ///      Solidity cannot try/catch a cheatcode.
-    function _requireDeclaredUint(string memory feed, string memory key) internal view {
-        bytes memory raw = bytes(ConfigReader.readPriceFeedParam(vm, currentChainId, feed, key));
-        if (raw.length == 0) revert InvertedFeedParamMissing(feed, key);
-        for (uint256 i; i < raw.length; ++i) {
-            if (raw[i] < 0x30 || raw[i] > 0x39) revert InvertedFeedParamNotNumeric(feed, key, string(raw));
-        }
-    }
-
-    /// @dev Pre-broadcast presence check for one required param of an inverted feed.
-    function _requireDeclared(string memory feed, string memory key) internal view {
-        if (bytes(ConfigReader.readPriceFeedParam(vm, currentChainId, feed, key)).length == 0) {
-            revert InvertedFeedParamMissing(feed, key);
         }
     }
 

@@ -108,7 +108,8 @@ contract SymbioticVaultsMetaBalanceAdapterForkTest is BalanceAdapterTestBase {
     /// @dev **The POSITIVE evidence that this is a Symbiotic vault at all.** Review correctly objected
     ///      that "core-vault methods revert" only establishes what the vault is NOT — it ties nothing to
     ///      Symbiotic. This does: the vault is a registered entity of Symbiotic's VaultFactory, and its
-    ///      `delegator()` is a registered entity of the paired DelegatorFactory, which points back at the
+    ///      `delegator()` is a registered entity of ONE OF Symbiotic's two DelegatorFactories (resolved through
+    ///      the entity's own `FACTORY()` immutable — never assumed), which points back at the
     ///      vault. If that ever ceases to hold, stamping `symbiotic` / `symbiotic-vaults` identity on this
     ///      instance is no longer justified and this test says so.
     function test_premise_vaultIsRegisteredInSymbioticFactory() public view {

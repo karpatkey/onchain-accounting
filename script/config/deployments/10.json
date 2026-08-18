@@ -1,13 +1,14 @@
 {
-  "PriceFeedLib": "0x450421a334DE63F75e1d47399d9713f755aaEfF2",
-  "NavRegistryLib": "0x549f6fB0EC34E18A82A320b79C968a9Ca6e7b96b",
-  "NAVCalculatorImplementation": "0x07bd077cFB40bBDa8A67d0D33ce41b974aB0F8a8",
+  "PriceFeedLib": "0x713e69954e11c2eD19dBB84950674D6a68DBfebc",
+  "NavRegistryLib": "0x55b6AA29D296Eb2Ee0e7b76686eaA2e479CA3511",
+  "NAVCalculatorImplementation": "0x40e4134849308d53F85A8B685324E2189b13ff7D",
   "BridgeEscrowImplementation": "0xe2237d9776041514b1AC66856407Ed344b480De0",
   "balanceAdapters": {
-    "ERC20Default": "0x41967559D0a20Ad102F6e27b7723b1963390aD75",
-    "AaveV3InstancesMeta": "0xDf311222BFbb8f2bb1572Ff08e96936C3D22418B",
-    "CompoundV3CometsMeta": "0x5ed372f3AC1f3039608180792cafFCACf000E11c"
+    "ERC20Default": "0x4Bc39Dce61245F5A63189d1FA03E6D76646f1EE6",
+    "AaveV3InstancesMeta": "0x537E83dc59b2Ee2C7bD46B2f4801c5DF3B3f8aD1",
+    "CompoundV3CometsMeta": "0xEDDbc540eD724aB3cC95B1C419c6f9D6348a373b"
   },
-  "NAVCalculatorProxy": "0x80eD5cc6cEbAe4fEE1eD8687279aa492A50afa8d",
-  "customPriceFeeds": {}
+  "NAVCalculatorProxy": "0x54EaD2A1dB7456cA917675Ea8908ec8A997c6214",
+  "customPriceFeeds": {},
+  "AssetKindRegistry": "0x305bdB829066C9cE15d5A2aF0c4267B326C8a1cF"
 }

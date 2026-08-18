@@ -14,15 +14,35 @@ Deployed across **24 chains**: 7 fully configured (custom price feeds + balance 
 
 Deployed via the canonical CREATE2 deployer (`0x4e59b44847b379578588920cA78FbF26c0B4956C`), so each address is the same on all 24 chains.
 
+**Redeployed 2026-08-18 — every address below changed.** The previous generation is listed under
+*Superseded* at the end of this section; it is **abandoned in place**, still answering but no longer
+maintained, so it will drift from the funds' true NAV as new assets and feeds land only on the new
+stack. Consumers must move to `0x54EaD2A1…`.
+
 | Contract | Address |
 | --- | --- |
-| **NAVCalculator proxy** | `0x80eD5cc6cEbAe4fEE1eD8687279aa492A50afa8d` — the address every consumer should call |
-| NAVCalculator implementation | `0x07bd077cFB40bBDa8A67d0D33ce41b974aB0F8a8` (ADR 0020; supersedes `0x1D3F6905FfAf2A776bD4D7Cfb821c4AAC75F06F6`) |
-| PriceFeedLib | `0x450421a334DE63F75e1d47399d9713f755aaEfF2` (ADR 0020; supersedes `0x4041cC1C7Ffd69531B660acB7Bb9Fd1faa8d2e2B`) |
-| NAVRegistryLib | `0x549f6fB0EC34E18A82A320b79C968a9Ca6e7b96b` |
-| ERC20Default balance adapter | `0x41967559D0a20Ad102F6e27b7723b1963390aD75` (created inside `NAVCalculator.initialize`; identical everywhere) |
+| **NAVCalculator proxy** | `0x54EaD2A1dB7456cA917675Ea8908ec8A997c6214` — the address every consumer should call |
+| NAVCalculator implementation | `0x40e4134849308d53F85A8B685324E2189b13ff7D` |
+| PriceFeedLib | `0x713e69954e11c2eD19dBB84950674D6a68DBfebc` |
+| NAVRegistryLib | `0x55b6AA29D296Eb2Ee0e7b76686eaA2e479CA3511` |
+| ERC20Default balance adapter | `0x4Bc39Dce61245F5A63189d1FA03E6D76646f1EE6` (created inside `NAVCalculator.initialize`; identical everywhere) |
 | UUPSPlaceholder | `0x85Ee38b0385D042918a59C01dB319b6eDdF7A8Cf` (temporary impl during atomic proxy deploy) |
 | BridgeEscrow implementation | `0xe2237d9776041514b1AC66856407Ed344b480De0` (dormant; recorded on 23 chains — no record on HyperEVM (999)) |
+
+**Superseded 2026-08-18** (do not call): proxy `0x80eD5cc6cEbAe4fEE1eD8687279aa492A50afa8d`,
+implementation `0x07bd077cFB40bBDa8A67d0D33ce41b974aB0F8a8`, PriceFeedLib
+`0x450421a334DE63F75e1d47399d9713f755aaEfF2`, NAVRegistryLib
+`0x549f6fB0EC34E18A82A320b79C968a9Ca6e7b96b`, ERC20Default
+`0x41967559D0a20Ad102F6e27b7723b1963390aD75`.
+
+### `AssetKindRegistry` — the one contract that is NOT the same on every chain
+
+New in this deploy, and deployed with plain `CREATE` rather than CREATE2, so its address depends on the
+deployer's nonce: **14 distinct addresses across the 24 chains**, with some chains coincidentally
+sharing one because their nonces matched. Read it per-chain from
+`script/config/deployments/<chainId>.json` (`.AssetKindRegistry`) — never carry it across from another
+chain. It holds `MANAGER` on the NAV and is the path through which assets are registered, classified
+and labelled in one transaction.
 
 > **Deployments-JSON keys** (for `jq` lookups in `script/config/deployments/<chainId>.json`): `NAVCalculatorProxy`, `NAVCalculatorImplementation`, `PriceFeedLib`, `NavRegistryLib` (mixed case — deliberate, to keep the library's CREATE2 salt stable), `BridgeEscrowImplementation`; the default adapter is at `.balanceAdapters.ERC20Default`.
 
@@ -231,10 +251,17 @@ The 17 impl+proxy chains run the canonical layer only; custom price feeds and ba
 > (`0xe59c72c9…`, one of 24), so it is still recognised as old-generation. The union is monotone — losing
 > the archive source cannot hide it.
 >
-> **It is still REGISTERED on the live NAV.** Measured 2026-08-12: `getRegisteredAssets()` on
-> `0x80eD5cc6cEbAe4fEE1eD8687279aa492A50afa8d` returns 43 assets including OETH
-> `0x856c4Efb76C1D1AE02e20CEB03A2A6a08b0b8dC3`. This change is config intent; it does not deregister
-> anything on-chain.
+> **It was still REGISTERED on the previous-generation NAV, and is NOT on the current one.**
+> Measured 2026-08-12: `getRegisteredAssets()` on the superseded proxy
+> `0x80eD5cc6cEbAe4fEE1eD8687279aa492A50afa8d` returned 43 assets **including** OETH
+> `0x856c4Efb76C1D1AE02e20CEB03A2A6a08b0b8dC3` — at that point the config change was intent only and
+> had deregistered nothing on-chain.
+>
+> **The 2026-08-18 redeploy resolved it.** `03` is config-gated, so the feed was not redeployed, and
+> `RegisterAssets` never registered the asset. Re-measured 2026-08-19 on the current proxy
+> `0x54EaD2A1dB7456cA917675Ea8908ec8A997c6214`: 43 assets, **OETH absent** (the count is unchanged
+> because `wARS` was added in the same wave). The superseded proxy still returns 43 *including* OETH —
+> that is the abandoned stack, not the live one.
 
 | NXM | `0xF0D44e332395762f5A93271DcA0De587B10703CC` |
 | wNXM | `0x11382AbB9FF238a4f4E7fAc9CCe084F038aab78f` |

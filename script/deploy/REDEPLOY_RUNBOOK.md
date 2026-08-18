@@ -2153,12 +2153,35 @@ against, and 2.6 cannot run until the new addresses are recorded.
 
 ### 2.5 Source verification
 
-Use the `verify-contracts` skill. `PriceFeedLib` needs its special recipe: a **287-file**
-standard-json (the import closure of all non-test roots, which pulls in exactly 3 `test/` files that
-`script/test/*` imports), whitespace-only reduction to fit Etherscan's hard **3,000,000-character**
-limit, and `settings.libraries` linking **both** `NAVRegistryLib` and `PriceFeedLib` (self-link).
-Comment-stripping corrupts the bytecode; whitespace-only reduction does not. Always local-compile the
-reduced JSON and assert the `PriceFeedLib` creation size before submitting.
+Use the `verify-contracts` skill.
+
+> **`PriceFeedLib` no longer needs the special recipe — EXECUTED AND MEASURED 2026-08-19.** This step
+> used to prescribe a **287-file** standard-json, whitespace-only reduction to fit Etherscan's
+> 3,000,000-character limit, and a hand-written `settings.libraries` self-link. None of that was
+> needed: `forge verify-contract --show-standard-json-input` emits a **23-source** std-json that
+> already carries **both** library links **including `PriceFeedLib`'s own self-link**, because the
+> addresses are pinned in `foundry.toml [libraries]` — and it reproduces the deployed bytecode
+> exactly. `PriceFeedLib` verified on **all six backends** (Sourcify, Etherscan V2, Blockscout,
+> OKLink, Routescan, Tenderly). The self-link was the *only* thing the 287-file assembly ever bought;
+> the "via_ir scope sensitivity" was a symptom of its absence, not an independent property.
+>
+> **The check that replaces the recipe:** generate each type's std-json, local-recompile it
+> (`~/.svm/0.8.34/solc-0.8.34 --standard-json`), and diff against `out/<file>/<name>.json`
+> `.bytecode.object` — **normalise the `0x` prefix**, which forge's artifact has and solc's output
+> does not. On 2026-08-19 **52 of 52 contract types matched**. Only fall back to the old recipe for a
+> type that genuinely fails that diff.
+
+**Result of the 2026-08-19 run** (236 instances / 111 addresses / 52 types / 24 chains):
+**zero instances with no verified backend.** Sourcify 236/236 · Etherscan V2 206/206 ·
+Blockscout 156/162 · OKLink 162/164 · Routescan 84/93 · Tenderly 212/236. Residuals are platform
+limits: Tenderly does not support opbnb/hyperevm/0g/hemi; `explorer.linea.build` is listed in the
+Blockscout registry but 404s on `/api/v2` and is not a Blockscout instance.
+
+**Two traps worth carrying forward.** (1) Build the address→contract map keyed on **(chain, address)**
+— `AssetKindRegistry` is plain CREATE, so the same address is `AtomicNAVProxyDeployer` on another
+chain; an address-keyed map mislabelled 5 instances, and only the exact-match backends rejected them.
+(2) Read before submitting: Sourcify's propagation had already verified 139 of 206 Etherscan pairs and
+84 of 93 Routescan pairs, cutting Etherscan submissions from 206 to 67.
 
 ### 2.6 Integration snapshots — AFTER the deploy, not before
 

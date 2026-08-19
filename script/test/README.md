@@ -21,13 +21,13 @@ Tests for core deployment functionality:
 
 > **⚠️ Known coverage hole — `Test02a_DeployProxies` does not run locally.**
 > Its `setUp()` reverts `RpcUrlNotSet()` without an RPC URL in the environment, and forge reports the whole
-> contract as a single failing "test". **All 19 test functions in it are therefore skipped**, not run and passed.
+> contract as a single failing "test". **All 15 test functions in it are therefore skipped**, not run and passed.
 > CI supplies the URL (see `getAlchemyUrl`, which prefers the `*_URL` env vars) so they do execute there — but on
 > a developer machine a local `forge test --no-match-path "*fork*"` reports **three** failures, not the two
 > by-design `LibraryPinConsistency` ones, and the third is this.
 >
 > Consequences, stated so nobody re-derives them:
-> - A local green run is not evidence these 19 tests pass. Check CI.
+> - A local green run is not evidence these 15 tests pass. Check CI.
 > - The mutation sweep that produced `AUDIT-mutation-sweep.md` could not reach any guard these tests cover; that
 >   is recorded there as an explicit hole in the sweep rather than a clean result.
 > - If you are counting expected local failures while working through the hardening wave, the count is 3.
@@ -209,13 +209,18 @@ contract MyDeploymentTest is Test {
 
 ## Continuous Integration
 
-These tests should be run in CI/CD pipelines:
+There is **no dedicated CI step for this directory.** These tests run as part of the repo-wide unit-test
+job in `.github/workflows/foundry.yml`, which invokes:
 
-```yaml
-# .github/workflows/foundry.yml
-- name: Run deployment tests
-  run: forge test --match-path "script/test/*.t.sol"
+```bash
+forge test --no-match-path "*fork*" --no-match-contract LibraryPinConsistencyTest -vvv
 ```
+
+That sweeps up `script/test/*.t.sol` along with everything under `test/`. `LibraryPinConsistency` is
+excluded there because it runs in its own earlier step against a full clean build; `*fork*` excludes
+`DeploymentTest.fork.t.sol`, which is picked up by the separate fork job. If you want a step scoped to
+just this directory you would have to add one — the illustrative invocation is
+`forge test --match-path "script/test/*.t.sol"`.
 
 ## Coverage Goals
 

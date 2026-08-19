@@ -4,7 +4,12 @@ Written 2026-07-30 against `main` @ `f72dd48a` (twelve PRs merged in the wave). 
 no memory of the wave. It is deliberately self-contained: everything you need to decide **pass or
 fail** is here, because a rehearsal run with a wrong pass/fail rule is worse than no rehearsal.
 
-> **The rehearsal has been RUN. §9 records the first attempt, which FAILED at step 1.4 and found two
+> ⚠️ **Step numbers in this document were REMAPPED when `08_DeployAssetKindRegistry` moved from 1.8 to 1.4**
+> (labels became registration-only, so the registry must exist before `RegisterAssets`). The rehearsal itself
+> ran under the OLD numbering: what it calls step 1.5 below was numbered 1.4 on the day. The numbers have been
+> updated so they point at the right steps today; the events they describe are unchanged.
+
+> **The rehearsal has been RUN. §9 records the first attempt, which FAILED at step 1.5 and found two
 > blockers. §10 records the run that PASSED — every step, every post-condition, and the §4 NAV
 > comparison, which answers the redeploy's central question: it is the same portfolio.
 > Read §9 and §10 (last two sections) before running anything; they supersede anything above that
@@ -33,7 +38,7 @@ before the redeploy, as a DeBank-compared final validation.
 | **#185** two-library pin regen | **MERGED** 2026-07-30; `main` is `7efcc8af`. Pins are `PriceFeedLib 0x8b7e4fA9…7dc1` / `NavRegistryLib 0x5f5D054E…fd90` |
 | **#203** Curve `getPool`/`getLpToken` | **MERGED**, in `7efcc8af` |
 | **#220** ETHx rate-leg proxy | fixes the §9 BLOCKER 1; the rehearsal that PASSED included it |
-| this rehearsal | **PASSED** on `7efcc8af` + #220 — see §10. (First attempt failed at 1.4; §9.) |
+| this rehearsal | **PASSED** on `7efcc8af` + #220 — see §10. (First attempt failed at 1.5; §9.) |
 
 If #185 has not landed, `01_2` will revert on its pin assertions and the rehearsal cannot pass. That
 revert is correct behaviour, not a bug — see §5. It has landed, and the assertions passed: §9 records
@@ -198,6 +203,15 @@ The snapshot and the rehearsal are at different blocks, so **every priced positi
 
 Each of these is a hardening fix doing its job. None is a regression.
 
+**Expect ONE MORE meta instance on mainnet, and NO value change from it.** Chain 1's
+`MorphoVaultsMeta` gains `0x7a72bcD2c3F7F7e4D6679170a0625bAB15D7DDa1` (KPK USDC Yield RWA, issue #296),
+so mainnet reads **67** instances rather than 66 and the fleet **111** rather than 110 — **provided the
+baseline you compare against predates the change**; a `pre/` snapshot refreshed after it already contains
+the vault and shows no delta. It carries no
+value in the comparison: measured 2026-08-12, the vault holds 1.0025 USDC total with the entire `1e18`
+supply at `0x…dEaD`, and every tracked chain-1 account holds zero. So a structural +1 with a flat NAV
+is the CORRECT result here — the absence of a value change is not a missing position.
+
 **Expect FEWER legs or positions, from a deliberately suppressed unreportable leg:**
 
 - **Assisted-adapter caches start EMPTY — but expect NO reduction, because the live ones are empty
@@ -290,8 +304,14 @@ forge clean && forge build        # local clean build only (see §3)
 
 mkdir -p safe-transactions        # else RegisterAssets aborts AFTER broadcasting
 
-ANVIL_PORT=8600 script/deploy/preflight/rehearse_fork.sh 1   # mainnet fork; asserts the proxy moved
+ANVIL_PORT=8600 script/deploy/preflight/rehearse_fork.sh 1 25708060   # PIN THE BLOCK (2nd arg); asserts the proxy moved
 ```
+
+> **The second argument is the fork block, and omitting it is not neutral.** Unpinned, you fork `latest`:
+> forge and anvil resolve it at different moments against a load-balanced endpoint (the source of the
+> ~1.2 M-block gap), and the run re-fetches rather than reading the RPC cache — **209 s pinned versus a
+> 2,915 s hang**. Pick a recent finalized block; the value above is only the one the 2026-08-08 rehearsal
+> used.
 
 **Pick a port outside 8546–8550.** A five-chain local dev stack occupies that whole range on this box,
 including a **mainnet** fork on 8546 — the script's own default — so the collision is guaranteed, not
@@ -382,18 +402,19 @@ Two rules out of that, in order of importance:
 1.1  clear the deployment record                             reset_deployment_records.py --apply
 1.2  01_2_DeployNAVImplementation    libs + impl             PERSIST_DEPLOYMENTS=1
 1.3  02_2_DeployNAVProxy             new proxy + ERC20Default PERSIST_DEPLOYMENTS=1
-1.4  03_DeployPriceFeeds             41 custom feeds          <- BEFORE RegisterAssets
-1.5  RegisterAssets                  assets + feeds          FOUNDRY_PROFILE=slow  <- REQUIRED, see below
-1.6  04_DeployBalanceAdapters        adapters + assistants
-1.7  06_Configure                    register + reconcile
+1.4  08_DeployAssetKindRegistry      asset-kind registry      <- BEFORE RegisterAssets
+1.5  03_DeployPriceFeeds             40 custom feeds          <- BEFORE RegisterAssets
+1.6  RegisterAssets                  assets + feeds          FOUNDRY_PROFILE=slow  <- REQUIRED, see below
+1.7  04_DeployBalanceAdapters        adapters + assistants
+1.8  06_Configure                    register + reconcile
 ```
 
-### `FOUNDRY_PROFILE=slow` on step 1.5 is a REQUIREMENT, not a throughput preference
+### `FOUNDRY_PROFILE=slow` on step 1.6 is a REQUIREMENT, not a throughput preference
 
 **`slow` does not mean "go slower to be safe". It raises `gas_limit` AND `memory_limit` from the default
-1 GiB to 16 GiB** (`foundry.toml:108-117`). `RegisterAssets` needs that because it registers the whole
-asset set inside **one call frame**, and EVM memory-expansion cost is **quadratic** — mainnet's 43 assets
-plan 86 actions and the frame simply outgrows a 1 GiB budget.
+1 GiB to 16 GiB** (`foundry.toml:157-166`). `RegisterAssets` needs that because it registers the whole
+asset set inside **one call frame**, and EVM memory-expansion cost is **quadratic** — mainnet's 42 assets
+plan 84 actions and the frame simply outgrows a 1 GiB budget.
 
 Without it, measured on mainnet 2026-07-30: **`EvmError: MemoryOOG` after wiring 19 of 43 assets**, with
 1 asset registered. With it: 79s, 43/43.
@@ -406,8 +427,8 @@ Without it, measured on mainnet 2026-07-30: **`EvmError: MemoryOOG` after wiring
 **This was NOT knowledge lost to session notes — and that is the uncomfortable part.** It was documented
 in **three** places before it cost a run:
 
-1. `REDEPLOY_RUNBOOK.md` §1.5's command line — `FOUNDRY_PROFILE=slow forge script … RegisterAssets`;
-2. the sentence right below it: "`FOUNDRY_PROFILE=slow` (16 GiB) is required on mainnet — 43 assets
+1. `REDEPLOY_RUNBOOK.md` §1.6's command line — `FOUNDRY_PROFILE=slow forge script … RegisterAssets`;
+2. the sentence right below it: "`FOUNDRY_PROFILE=slow` (16 GiB) is required on mainnet — 42 assets
    otherwise `MemoryOOG`", plus a row in the runbook's troubleshooting table. Both present since the
    runbook was created (`7199e661`, 2026-07-27);
 3. this brief's own step table above.
@@ -428,7 +449,7 @@ deploy-valid. It is **not in `main`** (`_assertDeployProfile` appears nowhere th
 shape: an **allowlist** (`default`, `slow`) rather than a denylist, with no bypass env var, on the
 reasoning that forgetting to extend a denylist fails silently and on-chain. Its own comment already states
 this requirement in the strongest terms available — "`slow` … **REQUIRED, not merely tolerated**: the
-redeploy runbook runs `RegisterAssets` under it, because mainnet's 43 assets otherwise `MemoryOOG`" —
+redeploy runbook runs `RegisterAssets` under it, because mainnet's 42 assets otherwise `MemoryOOG`" —
 which makes four places, and still did not stop the rehearsal running without it. Reviving #188 is the
 durable fix; the design question is settled, not open.
 
@@ -448,13 +469,13 @@ not read a newly-surfaced failure as a regression.
 Four traps that have each already cost a run:
 
 - **`PERSIST_DEPLOYMENTS=1` is mandatory on 1.2 and 1.3.** Without it those steps only *log* the new
-  addresses; the record keeps the old ones and 1.4–1.7 build against the old NAV. Nothing errors.
+  addresses; the record keeps the old ones and 1.4–1.8 build against the old NAV. Nothing errors.
 - **Use `01_2`, never `01`.** `01` also deploys a `BridgeEscrow` impl — wasted gas and it rewrites
   bridge state for a deferred stack.
-- **1.1 must precede 1.4 — and must be RE-RUN after any failed `03`.** Each of `03`'s 32 `_deploy*`
+- **1.1 must precede 1.5 — and must be RE-RUN after any failed `03`.** Each of `03`'s 31 `_deploy*`
   helpers is skip-if-deployed and returns early without reverting, so a surviving `customPriceFeeds`
   record makes `03` a silent no-op leaving all 40 feeds bound to the **old** proxy. `verify_step.py
-  1.4` enforces it by requiring every recorded feed address to be *new*, not merely non-zero.
+  1.5` enforces it by requiring every recorded feed address to be *new*, not merely non-zero.
 
   This is **not only a first-run ordering rule.** It is also the recovery procedure, because a `03`
   that reverts still writes addresses it never deployed:
@@ -473,16 +494,16 @@ Four traps that have each already cost a run:
   > wrong feed addresses.
   >
   > **So: after ANY failed `03`, re-run step 1.1 (`reset_deployment_records.py --apply`) before
-  > retrying. Unconditionally.** `verify_step.py 1.4` does catch the polluted state (`NAV()
+  > retrying. Unconditionally.** `verify_step.py 1.5` does catch the polluted state (`NAV()
   > unreadable` on every phantom address) — that is the gate working, and it is the reason to gate
   > every step rather than trusting exit codes.
-- **1.4 must precede 1.5.** `RegisterAssets` resolves Custom feeds from the record; run first it skips
-  **20 of mainnet's 43 assets** with `[skip] primary feed unresolved`.
+- **1.5 must precede 1.6.** `RegisterAssets` resolves Custom feeds from the record; run first it skips
+  **19 of mainnet's 42 assets** with `[skip] primary feed unresolved`.
 
 ### Gate every step on its post-condition, not its exit code
 
 ```bash
-python3 script/deploy/preflight/verify_step.py 1.2      # then 1.3, 1.4, 1.5, 1.6, 1.7
+python3 script/deploy/preflight/verify_step.py 1.2      # then 1.3, 1.4, 1.5, 1.6, 1.7, 1.8
 ```
 
 It exits non-zero on the first real problem and treats an **unreachable** chain as a failure. Do not
@@ -498,13 +519,17 @@ Measured on `main` @ `f72dd48a`:
 | | count | source |
 |---|---|---|
 | meta adapters | **33** | `preflight_config.py` |
-| meta instances | **110** | `preflight_config.py`; per-chain table in the runbook |
-| plain adapters | **12** (+1 `ERC20Default` per chain) | `preflight_config.py` |
-| custom price feeds | **41** | `preflight_config.py`, re-measured 2026-07-30 (39 before #199, 40 before #224) |
-| assets | **93** | `preflight_config.py` |
+| meta instances | **111** | `preflight_config.py`; per-chain table in the runbook. **NOT measured at `f72dd48a`** — that commit held 110; amended on this branch for issue #296 (+1 `MorphoVaultsMeta` instance on chain 1) |
+| plain adapters | **13** (+1 `ERC20Default` per chain) | `preflight_config.py`, re-derived 2026-08-12 (12 before #285 split the combined `Cap` adapter into `CapStablecoin` + `CapSavings`; chain 1 goes 11 → 12) |
+| custom price feeds | **40** | `preflight_config.py`, re-derived from config 2026-08-12 (41 before OETH's retirement; 39 before #199, 40 before #224) |
+| assets | **92** | `preflight_config.py`, re-derived from config 2026-08-12 (93 before OETH's retirement) |
 
-Per-chain meta instances: 66 / 16 / 16 / 4 / 4 / 4 / 0 for 1 / 42161 / 8453 / 10 / 100 / 137 / 56.
-Adapter counts per chain: 27 / 8 / 7 / 4 / 3 / 2 / 1 for 1 / 42161 / 8453 / 100 / 10 / 137 / 56.
+Per-chain meta instances: 67 / 16 / 16 / 4 / 4 / 4 / 0 for 1 / 42161 / 8453 / 10 / 100 / 137 / 56.
+Adapter counts per chain: **28** / 8 / 7 / 4 / 3 / 2 / 1 for 1 / 42161 / 8453 / 100 / 10 / 137 / 56.
+(Chain 1 was 27 and moves to 28 with #285: `meta 15 + plain 12 + 1 ERC20Default`. Derived from the same
+`preflight_config.py` row as the table above rather than counted by hand — and note the live pre-deploy
+NAV currently returns exactly 27 from `getAllAdapters()`, which is `15 + 11 + 1` and corroborates the
+arithmetic against chain state.)
 
 **Scope: 24 chains** (declared in `redeploy_scope.json`, which no tool writes — see README).
 **7 are configured**: 1, 10, 56, 100, 137, 8453, 42161. The other 17 get `ERC20Default` only.
@@ -556,7 +581,7 @@ Run against `main` @ `7efcc8af` (post-#185) on a mainnet fork at block 25642902,
 | `04_DeployBalanceAdapters` | 16s | 64,430,119 | OK |
 | `06_Configure` | 9s | 7,240,775 | OK |
 
-`verify_step.py` 1.2, 1.3, 1.6, 1.7 clean; 1.4 (21 failures) and 1.5 (3) fail entirely downstream of
+`verify_step.py` 1.2, 1.3, 1.7, 1.8 clean; 1.5 (21 failures) and 1.6 (3) fail entirely downstream of
 `03`. Note `03` at 30s against the expected 239s — the §6 smell test worked.
 
 ### BLOCKER 1 — a gated Chainlink feed stops the redeploy
@@ -651,6 +676,15 @@ the re-run. Everything else is secondary.
   `ERC20Default` `0x4Bc39Dce61245F5A63189d1FA03E6D76646f1EE6`, matching on-chain.
 - **All three assistant `ADAPTER()` pointers paired correctly** — the fix for the four live orphans.
 - `preflight_config.py`: 0 errors across 24 chains, totals exactly as §6 (33 / 110 / 12 / 40 / 93).
+  *(Recorded result, left as run. FOUR of these five totals have since moved, and ALL FOUR are named
+  here — an explanation covering only some of them reads as though the rest were errors, which is worse
+  than no explanation at all. Meta instances 110 → 111: one `MorphoVaultsMeta` instance added on chain 1
+  (#296). Custom feeds 40 → 41 → 40: 40 when this ran, 41 at #224, back to 40 when OETH was retired
+  (#302). Assets 93 → 92: OETH removed as a mainnet asset (#302). Plain adapters 12 → 13: #285 split the
+  combined `Cap` adapter into `CapStablecoin` + `CapSavings`, so chain 1 goes 11 → 12 (the §6 table
+  above records the same split). The remaining one — 33 meta adapters — still holds. So a re-run should
+  read 33 / 111 / 13 / 40 / 92. The recorded figures were correct when this rehearsal ran
+  and are not restated.)*
 - The disposable-config rail restored `script/config` and `broadcast/` byte-exactly; `deployments/1.json`
   verified identical to `HEAD` by hash afterwards. **Always check this** — 18 phantom addresses in a
   deployments record is the worst thing that could leak out of a rehearsal.
@@ -672,7 +706,9 @@ live proxy; every broadcast went to loopback anvil.
 | `04_DeployBalanceAdapters` | 20s | 64,430,104 | OK |
 | `06_Configure` | 11s | 7,310,219 | OK |
 
-Every post-condition PASS. **`verify_step.py` 1.2 – 1.7 all exit 0.** 27 adapters, **43/43 assets**,
+Every post-condition PASS. **`verify_step.py` 1.2 – 1.7 all exit 0.** (Those are the day's numbers —
+the six steps in the table above; `08_DeployAssetKindRegistry`, today's 1.4, was not yet in the
+sequence.) 27 adapters, **43/43 assets**,
 **66/66 meta instances**, all three assistant `ADAPTER()` pointers paired. New proxy
 `0x54EaD2A1…6214`, fresh `ERC20Default` `0x4Bc39Dce…1eE6`. Both library pins CREATE2-landed on
 `0x8b7e4fA9…7dc1` / `0x5f5D054E…fd90` for the third independent time.
@@ -739,7 +775,7 @@ whether that mechanism is even in play, is the easy error here.** Compare prices
   raw access-controlled aggregator — ETHx.
 - **BLOCKER 2 (record pollution) — unchanged and still true.** §5's step-1.1 rule stands.
 - **`RegisterAssets` MemoryOOG was NOT a product defect** — this script ran every step on the default
-  profile while the runbook requires `FOUNDRY_PROFILE=slow` for step 1.5 (16 GiB vs 1 GiB limits). It
+  profile while the runbook requires `FOUNDRY_PROFILE=slow` for step 1.6 (16 GiB vs 1 GiB limits). It
   only surfaced once the ETHx fix let all 86 actions actually be planned. Fixed in #214.
 - **The 27-vs-24 discrepancy was an instrument defect, now root-caused.** `snapshot_production.py` read
   `latest - 3`; on a fork with `--slow` the last three blocks *are* the tail of the deploy, so it silently

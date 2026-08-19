@@ -64,6 +64,7 @@ mapping(address => mapping(bytes32 => uint256)) _idxPlus1;  // keccak256(coord) 
 `getAdapterPositions` / the balance getters call `_collect`, which values **each** coordinate behind a per-item `this.valueCoordSelf(...)` **staticcall wrapped in try/catch**:
 
 - A revert in one coordinate's live reads (e.g. Nexus's `StakingViewer.getTokens`) discards **only that coordinate** — it never propagates out of `getAdapterPositions`, where NAVCalculator's per-adapter try/catch would otherwise drop the account's *entire* set.
+- **One exception, deliberately loud: gas exhaustion.** Each coordinate is forwarded `GasStipendLib.stipendFrom(gasleft())`, and when the catch arm measures `GasStipendLib.exhausted(stipend, consumed)` the loop reverts `CoordinateGasExhausted(adapter, coordId, stipend, consumed)` rather than recording zero legs — a starved coordinate never answered, and the ~1/64 residue it leaves cannot fund the coordinates after it either. That error is declared **file-local in `AssistedCoordCache.sol`**, not in `src/errors.sol` (both pinned libraries plain-import that file).
 - `valueCoordSelf` is `external` (so the self-call is a staticcall giving each coordinate its own revert frame) and guarded `msg.sender == address(this)`.
 
 ### 4.3 Single-underlying-asset surface

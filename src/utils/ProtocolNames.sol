@@ -44,6 +44,8 @@ library ProtocolNames {
     string internal constant MORPHO = "Morpho";
     /// @dev `ProtocolIds.EULER`.
     string internal constant EULER = "Euler";
+    /// @dev `ProtocolIds.SYMBIOTIC`.
+    string internal constant SYMBIOTIC = "Symbiotic";
     /// @dev `ProtocolIds.COMPOUND_V3`.
     string internal constant COMPOUND_V3 = "Compound V3";
     /// @dev `ProtocolIds.FLUID` — shared by fTokens and T1 vaults.
@@ -125,6 +127,7 @@ library ProtocolNames {
         if (protocolId == ProtocolIds.MORPHO) return MORPHO;
         if (protocolId == ProtocolIds.SPARK) return SPARK;
         if (protocolId == ProtocolIds.EULER) return EULER;
+        if (protocolId == ProtocolIds.SYMBIOTIC) return SYMBIOTIC;
         if (protocolId == ProtocolIds.COMPOUND_V3) return COMPOUND_V3;
         if (protocolId == ProtocolIds.FLUID) return FLUID;
         if (protocolId == ProtocolIds.GEARBOX_V3) return GEARBOX_V3;

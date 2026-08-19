@@ -8,9 +8,12 @@ import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
 import {IPrices} from "./IPrices.sol";
 import {ICustomPriceFeed} from "./ICustomPriceFeed.sol";
+import {INavSourcedPriceFeed} from "./INavSourcedPriceFeed.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
+import {IAssetKindRegistry} from "src/nav/IAssetKindRegistry.sol";
 import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
 import {IMetaBalanceAdapter} from "src/balances/IMetaBalanceAdapter.sol";
+import {IPositionDescribable} from "src/balances/IPositionDescribable.sol";
 import {AddressCheckLib} from "src/utils/AddressCheckLib.sol";
 import {ArrayLib} from "src/utils/ArrayLib.sol";
 import {GasStipendLib} from "src/utils/GasStipendLib.sol";
@@ -19,6 +22,18 @@ import {GasStipendLib} from "src/utils/GasStipendLib.sol";
 import "src/errors.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/constants.sol";
+
+/// @notice Minimal view of `NAVCalculator`'s `decodeStringArray` shim, which stays on the CONTRACT rather than moving
+///         here with the rest of the verbose read path.
+/// @dev It must stay there because `try`/`catch` requires an EXTERNAL call, and it is guarded by
+///      `msg.sender != address(this)` so it is not usable as public API. That guard keeps working across this move
+///      unchanged: {PriceFeedLib} runs under DELEGATECALL, so `address(this)` is still the NAVCalculator proxy and the
+///      call it makes to itself arrives with `msg.sender == address(this)`. **Do not weaken or remove that guard**, and
+///      do not "simplify" this into a direct `abi.decode` here — the whole point is that the decode can revert and only
+///      an external call can be wrapped in `try`/`catch`.
+interface INavLabelDecoder {
+    function decodeStringArray(bytes calldata data) external view returns (string[] memory);
+}
 
 /// @title PriceFeedLib
 /// @notice External library hosting NAVCalculator's price-feed management AND its read/compute engine (NAV,
@@ -1810,6 +1825,7 @@ library PriceFeedLib {
             // lets a malformed feed revert rather than swallowing it.
             address feedAsset = ICustomPriceFeed(priceFeed).underlyingAssetSupported();
             if (feedAsset != token) revert IPrices.CustomFeedAssetMismatch(token, priceFeed, feedAsset);
+            _validateFeedNotCircular(token, priceFeed);
         } else if (
             priceType == IPrices.PriceType.Chainlink || priceType == IPrices.PriceType.Redstone
                 || priceType == IPrices.PriceType.API3
@@ -1823,6 +1839,641 @@ library PriceFeedLib {
             if (updatedAt > block.timestamp || startedAt > block.timestamp) revert IPrices.InvalidPriceOracle();
         } else {
             revert IPrices.InvalidPriceOracleType();
+        }
+    }
+
+    /// @notice Rejects a `Custom` feed whose NAV-sourced base asset is the very asset it is being registered for.
+    /// @dev **The failure.** A NAV-sourced custom feed prices its asset as `rate × base/USD` and reads the `base/USD`
+    ///      term back out of THIS NAV — `NavBaseUsdLib.baseUsd(NAV, BASE_ASSET)` → `getPriceData(BASE_ASSET)`
+    ///      (ADR 0019). The circularity invariant that makes this safe (`BASE_ASSET` must be priced by DIRECT feeds,
+    ///      never by a feed that calls back into the NAV) is stated in {NavBaseUsdLib} and held by CONVENTION only:
+    ///      `BASE_ASSET` is a constructor argument checked for nothing but ERC20-ness, and until this gate nothing
+    ///      on the registration path could even see it. Register such a feed for its own base and
+    ///      `getPriceData(token)` → feed → `getPriceData(token)` recurses until the ~1024 call-depth limit. The read
+    ///      still SUCCEEDS — `_selectFeedCore`'s per-feed `try`/`catch` swallows the depth failure and continues to
+    ///      the healthy feed — so there is no revert, no event and no wrong number to notice; the only symptom is
+    ///      that every read of that asset, and of every position priced from it, burns gas proportional to ~1024
+    ///      nested `STATICCALL` frames, forever.
+    /// @dev **Why here.** Registration is the chokepoint the NAV actually controls. A constructor assertion in the
+    ///      feed bases would bind only feeds deployed from this repo after that change — not an already-deployed
+    ///      feed, not a third-party one, and not anything a MANAGER registers later. Those are precisely the cases
+    ///      the invariant has to survive.
+    /// @dev **Why unreadable is a rejection.** `BASE_ASSET()` is probed with a raw `staticcall` because a feed that
+    ///      does not implement it must be distinguishable from one that does — but "we could not read it" is then
+    ///      deliberately NOT allowed to collapse into "it is fine", because the failure being closed is unbounded
+    ///      recursion. A feed with no NAV dependency at all declares that by answering `address(0)`, which passes
+    ///      (`address(0)` is never a registrable asset, so it can never equal `token`). Every in-repo custom feed
+    ///      answers: the three NAV-sourced bases and `ankrETH_CustomPriceFeed` expose `BASE_ASSET` as an immutable,
+    ///      and `ETHPlus_CustomPriceFeed` — which prices from the Reserve Protocol basket and never calls back into
+    ///      the NAV — declares it `address(0)`. A third-party feed must do likewise to be registrable; that
+    ///      requirement is the price of the guard being able to answer NO.
+    /// @dev **Scope — an admission check, not a runtime invariant**, exactly like the `underlyingAssetSupported()`
+    ///      binding above. It is read once, at registration, never on a read path. A feed with a MUTABLE base can
+    ///      pass here and recurse afterwards, and a hostile feed can re-enter the NAV without exposing a base at
+    ///      all — neither is what this closes. What it closes is the MISCONFIGURATION: a legitimate, honest feed
+    ///      pointed at its own base by a config typo, on a registration path driven from an EOA.
+    /// @dev **A MULTI-HOP CYCLE IS NOT CAUGHT, AND THAT IS DELIBERATE.** Feed for A based on B, feed for B based on
+    ///      A: each passes every check here — `underlyingAssetSupported()` matches its own asset, and neither base
+    ///      equals the asset it is registered for. Both legs register cleanly through the normal MANAGER path, **in
+    ///      either order**, because this function receives only `(token, priceFeed)` and never reads the registry;
+    ///      there is no "second leg trips it" ordering to rely on.
+    ///
+    ///      **CYCLE LENGTH DOES NOT MATTER, AND NEITHER DOES DEPTH.** Swept on a real proxy at a fixed 8,000,000-gas
+    ///      budget, ring sizes 2/3/4/5/6 all cost an IDENTICAL 7,732,849 gas. What the cost actually tracks is the
+    ///      CALLER'S BUDGET: sweeping the budget at a fixed ring size gives 0.49M/0.92M/1.94M/3.87M/7.73M/15.45M
+    ///      for 0.5M/1M/2M/4M/8M/16M supplied — a flat ~96.6% of whatever is offered, against a no-cycle control
+    ///      that stays at ~14k regardless. That is the 63/64 call-gas forwarding rule: every level forwards all but
+    ///      1/64 of what it holds and the recursion runs until the gas is gone, so the loop body and the number of
+    ///      distinct assets in the ring are both irrelevant. "How deep can it go" is therefore the wrong question —
+    ///      the answer is "as deep as the gas you supplied allows", and the bill is a fraction of the budget rather
+    ///      than any fixed figure.
+    ///
+    ///      Below roughly 1M gas the read does not merely get expensive, it FAILS (`ok == false` at a 0.5M budget):
+    ///      the 1/64 the outermost frame retains is no longer enough to finish the healthy feed after the `catch`.
+    ///      So "returns the correct price while burning the gas" is itself budget-dependent — it holds for a
+    ///      generous `eth_call`, not for a gas-constrained on-chain caller, which simply reverts.
+    ///
+    ///      Not enforced on chain because the only on-chain fix is an ordering-dependent scan of the registry, and
+    ///      that scan cannot answer NO reliably: a base with no custom feed today can acquire one tomorrow, so it
+    ///      would have to run on every registration in both directions and would STILL miss a cycle completed by a
+    ///      later registration. A check that cannot answer NO is the failure mode this whole guard exists to avoid.
+    ///
+    ///      It is instead unconstructible in configuration, and that is where it is enforced: a cycle of any length
+    ///      needs at least one base asset to itself be priced by a Custom primary, and **0 of the 41** configured
+    ///      Custom (asset, feed) pairs across all 7 chains have one — every base resolves to a Chainlink-only asset
+    ///      (WETH, USDC, GHO, USDS, USDe, GNO, WXDAI). `script/deploy/preflight/preflight_config.py` now makes that
+    ///      an ERROR rather than a property, so the config cannot drift into a cycle unnoticed. Re-derive both
+    ///      numbers with `python3 script/deploy/preflight/preflight_config.py --base-report` (see that file's
+    ///      `base_allowlist_findings` docstring). The related and STRICTLY WORSE gap is a base that is merely the
+    ///      WRONG asset rather than a cyclic one: it has no gas signature, no `stale` and no `irregular` — only a
+    ///      wrong number, at an ordinary 43,738-gas read. **35 of the 41** pairs rely on config correctness for it;
+    ///      the other 6 are the ERC-4626 family (`sUSDe`, `sUSDS`, `syrupUSDC`, `RWIV`, `sGHO`, `sXDAI`), whose
+    ///      constructor pins the base to `IERC4626(vault).asset()` and reverts `BaseAssetMismatch` otherwise. The
+    ///      preflight narrows the remaining 35 from "any of the 93 registered assets" to "a direct-priced base",
+    ///      but cannot tell WETH from USDC for an LST — there is no on-chain ground truth for what an LST's base
+    ///      ought to be, which is exactly why the ERC-4626 family can be pinned and the rest cannot.
+    /// @dev No gas cap on the probe: this runs only on a MANAGER-authorized registration transaction, so a feed that
+    ///      burns the caller's gas here grieves only the caller, and it fails closed (the registration reverts).
+    function _validateFeedNotCircular(address token, address priceFeed) private view {
+        (bool ok, bytes memory ret) =
+            priceFeed.staticcall(abi.encodeWithSelector(INavSourcedPriceFeed.BASE_ASSET.selector));
+        // A missing function, a revert, or anything that is not a single ABI word is unreadable. Note a code-less
+        // target would return `ok == true` with empty returndata, which this also catches — though
+        // `AddressCheckLib.requireContract` above has already excluded that case.
+        if (!ok || ret.length != 32) revert IPrices.CustomFeedBaseUnreadable(token, priceFeed);
+        // Decode as uint256 and range-check by hand rather than `abi.decode(ret, (address))`: the ABI decoder
+        // reverts on a dirty upper 96 bits with empty returndata, which would surface to the MANAGER as an
+        // anonymous revert instead of a named error.
+        uint256 rawBase = abi.decode(ret, (uint256));
+        if (rawBase > type(uint160).max) revert IPrices.CustomFeedBaseUnreadable(token, priceFeed);
+        if (address(uint160(rawBase)) == token) revert IPrices.CustomFeedBaseCircular(token, priceFeed);
+    }
+
+    /// @notice Enriches a Position[] with human-readable labels from IPositionDescribable on each adapter, with the
+    ///         `AssetKindRegistry`'s per-adapter operator overrides taking precedence over the adapter's own reply.
+    /// @dev **The overrides ride the EXISTING per-adapter cache, which is what makes them affordable.** Both are
+    ///      per-adapter constants, so they are fetched in the same `adapter != prevAdapter` branch that already
+    ///      guarded the `protocolName()` staticcall — one extra flat-string read plus one extra ARRAY read per
+    ///      DISTINCT adapter, not per position. On the real mainnet fixture that is a handful of adapters against
+    ///      117 positions.
+    ///
+    ///      **On a protocol-name hit the adapter staticcall is skipped**, so an overridden adapter trades one cold
+    ///      `staticcall` to the adapter for reads of the registry, which is warm after the first adapter since it is
+    ///      the same address every time.
+    ///
+    ///      ⚠️ **That does NOT make the change gas-negative, and an earlier revision of this note claimed it did.**
+    ///      Measured against a real no-registry baseline, not reasoned. ⚠️ **These are ILLUSTRATIVE readings, not
+    ///      CI-pinned constants** — the tests assert the ORDERING and an upper BOUND, never these exact values, and
+    ///      the figures drift with solc and EVM settings. They already drifted across runs of this very tree
+    ///      (~109.1k vs ~109.0k baseline, ~5.1k vs ~5.3k surcharge under the retired scalar read), which is precisely
+    ///      why nothing asserts them exactly. Re-measured on the array-override tree — the whole block moved, so do
+    ///      not carry the old numbers forward:
+    ///
+    ///        no registry 109,418  <  hit 114,597  <  miss 116,981   (single-adapter fixture)
+    ///
+    ///      So the ordering is `no registry < hit < miss`, and THAT is what is pinned. The override never pays for
+    ///      itself outright; it only claws back the one adapter staticcall it skips. **The MISS path is the common
+    ///      case — no adapter has an override today — so this is strictly more expensive than before this change.**
+    ///
+    ///      ⚠️ **RE-MEASURED when the segment-0-only category override became the per-segment {setAdapterLabels}
+    ///      array override, and the figures MOVED. This note quoted ~5.3k for one adapter and ~10.7k for two, from
+    ///      the scalar `_safeString` read; both are retired.** The registry read is now a `string[]` behind the
+    ///      isolating decode shim ({_labelOverride}), which costs more:
+    ///
+    ///        per-DISTINCT-ADAPTER surcharge, 2-adapter / 3-position fixture:  9,790 (scalar)  ->  15,343 (array)
+    ///
+    ///      i.e. roughly **+5.5k per distinct adapter**, and that increase is the PRICE of correctable deep
+    ///      segments rather than a regression to be optimised away. Still per DISTINCT ADAPTER, not per position —
+    ///      that is the property `test_gas_labelOverride_isPerAdapter_notPerPosition` and
+    ///      `test_gas_surchargeIsPerAdapter_notPerPosition` exist to hold, and both bounds are set from a MUTATION
+    ///      (the read moved into the loop body), never from taste. The mutant figures are deliberately not quoted
+    ///      here: an earlier revision named a pair that those tests' own docstrings had already retired as
+    ///      instrument-contaminated, so this comment contradicted the tests it cited.
+    ///
+    ///      ⚠️ Two earlier revisions of this note quoted a "~9.6k cold, from an independent 20-adapter sweep"
+    ///      figure; that measurement was made outside this repo and NOTHING here reproduces it, so it was removed
+    ///      rather than left as an unverifiable number in a comment. Every figure quoted above comes from a test in
+    ///      this tree. **All of it is a synthetic warm fixture — no real portfolio has been measured.** Real
+    ///      portfolios touch each adapter's mapping slot cold, so treat these as a FLOOR, not a forecast.
+    ///      `AdapterLabelOverrides.t.sol::test_gas_registryLegIsBounded` measures the ordering above and bounds the
+    ///      single-adapter surcharge.
+    ///
+    ///      **Fail-open, exactly like the adapter reads.** The protocol-name override is reached through the
+    ///      {_safeString} shim and the label override through {_safeStringArray} — both gas-capped and
+    ///      output-windowed — so a broken, hostile or absent registry degrades to "no override" instead of
+    ///      reverting the verbose read. `registry == address(0)` (a NAV deployed before `08` wires one)
+    ///      short-circuits before any call rather than relying on that degradation.
+    ///
+    ///      **The override is applied SEGMENT BY SEGMENT through {_applyLabelOverride}, the one helper both display
+    ///      surfaces share.** Only indices `i < min(reply.length, override.length)` are touched, and an override
+    ///      element of `""` leaves that segment exactly as the adapter derived it, live, on this call. So a reply the
+    ///      adapter shortened (or declined to make at all) can never be written past — see
+    ///      {IAssetKindRegistry.setAdapterLabels} for why that bound is load-bearing rather than defensive, and for
+    ///      which segments an operator should be leaving alone.
+    ///
+    ///      **An empty reply is left empty here and GROWN on the configuration path**, and that divergence is
+    ///      deliberate; the reasoning lives at {adapterDisplayInfo}'s else-branch. Note it now falls out of the shared
+    ///      bound rather than needing its own guard: `min(0, n) == 0`, so there is no index to write.
+    /// @param pos The positions to enrich.
+    /// @param registry The chain's `AssetKindRegistry`, or `address(0)` when none is wired. Passed in rather than
+    ///        read from storage because this library is reached by DELEGATECALL and has no view of `NAVCalculator`'s
+    ///        layout; passing it also avoids a second registry pointer on a contract that is effectively full.
+    ///        (For the current margin see {NAVCalculator}'s header, which is the single authority — this line used
+    ///        to restate it and drifted. The history worth keeping: this PR spent 47 B threading the argument
+    ///        through three call sites, then 354 B on {NAVCalculator.getAdapterDisplayInfo} — the latter against a
+    ///        "+182 B floor" estimate that was wrong in BOTH directions, understating the cost of a nested
+    ///        `string[][]` return AND wrongly calling it unaffordable.)
+    function toVerbose(INAVCalculator.Position[] memory pos, address registry)
+        external
+        view
+        returns (INAVCalculator.VerbosePosition[] memory verbose)
+    {
+        uint256 len = pos.length;
+        verbose = new INAVCalculator.VerbosePosition[](len);
+        // protocolName() takes no args, so its calldata is identical for every position — encode it once.
+        bytes memory protocolNameCall = abi.encodeCall(IPositionDescribable.protocolName, ());
+        // protocolName() returns a per-adapter constant, and positions are grouped by adapter (PriceFeedLib
+        // concatenates each adapter's positions contiguously), so cache the last adapter's name and only
+        // re-staticcall when the adapter changes — one protocolName() call per distinct adapter, not per position.
+        // positionLabels() varies by positionId, so it stays per-position; the OVERRIDE that rewrites it does not —
+        // it is keyed by adapter — so it is read here alongside the name, once per distinct adapter. Reading it inside
+        // the loop body instead would turn a per-adapter cost into a per-position one;
+        // `test_gas_labelOverride_isPerAdapter_notPerPosition` is what holds that.
+        address prevAdapter;
+        string memory prevName;
+        string[] memory prevOverride;
+        for (uint256 i = 0; i < len; i++) {
+            address adapter = pos[i].balanceAdapter;
+            if (i == 0 || adapter != prevAdapter) {
+                prevName = _effectiveProtocolName(registry, adapter, protocolNameCall);
+                prevOverride = _labelOverride(registry, adapter);
+                prevAdapter = adapter;
+            }
+            // Labels are derived lazily from positionId (display only, off the NAV hot path) via a fail-open,
+            // gas-capped staticcall — an adapter that doesn't implement positionLabels yields an empty array.
+            // Field-by-field assignment (not a VerbosePosition literal, which would deep-copy the 17-field Position
+            // as one expression) keeps this loop under the via_ir stack limit — which is also why the override is
+            // applied in place on `verbose[i].labels` rather than through a local.
+            verbose[i].position = pos[i];
+            verbose[i].protocolName = prevName;
+            verbose[i].labels = _safeStringArray(
+                adapter,
+                abi.encodeCall(IPositionDescribable.positionLabels, (pos[i].positionId)),
+                _LABEL_READ_GAS,
+                _LABELS_RETURN_BYTES,
+                _LABEL_DECODE_GAS
+            );
+            // Overlay in place; the helper is shared with the configuration path so the two cannot drift. It writes
+            // nothing when either array is empty, which is how "an empty reply stays empty" holds here.
+            _applyLabelOverride(verbose[i].labels, prevOverride);
+        }
+    }
+
+    /// @notice **The ONE place protocol-name precedence is decided**: the registry override wins, the adapter's own
+    ///         `protocolName()` answers on a miss.
+    /// @dev Called by BOTH the position path ({toVerbose}) and the configuration path ({adapterDisplayInfo}). That
+    ///      sharing is the point and is load-bearing: it is what makes the two surfaces agree **by construction**
+    ///      rather than by two implementations happening to match today and drifting apart later. Before this
+    ///      existed, an override changed `getAccountPositionsVerbose` while a consumer enumerating
+    ///      `getAllAdapters()` still saw the adapter's constant — two surfaces silently disagreeing about the same
+    ///      adapter, which is the phantom-sibling split {IPositionDescribable.protocolName} exists to prevent.
+    ///      **If a third display surface is ever added, it must call this too.**
+    ///
+    ///      Fail-open throughout: an absent, broken or hostile registry yields "" and falls through to the adapter.
+    ///      On a hit the adapter staticcall is skipped entirely.
+    function _effectiveProtocolName(address registry, address adapter, bytes memory protocolNameCall)
+        private
+        view
+        returns (string memory name)
+    {
+        if (registry != address(0)) {
+            name = _safeString(registry, abi.encodeCall(IAssetKindRegistry.getAdapterProtocolName, (adapter)));
+            if (bytes(name).length != 0) return name;
+        }
+        return _safeString(adapter, protocolNameCall);
+    }
+
+    /// @notice The ONE place the per-segment label override is READ, shared by both display surfaces for the same
+    ///         by-construction reason as {_effectiveProtocolName}. An empty array means no override.
+    /// @dev Reached through {_safeStringArray} — the same fail-open shim the adapter's own `positionLabels` uses — so a
+    ///      broken, hostile or absent registry degrades to "no override" rather than reverting a display read.
+    ///
+    ///      **The three bounds are TIGHTER here than for the adapter read, deliberately.** Reusing
+    ///      {_LABEL_READ_GAS}/{_LABELS_RETURN_BYTES}/{_LABEL_DECODE_GAS} (1M / 4 KB / 1M) would have raised the
+    ///      hostile-registry ceiling from 3x{_NAME_READ_GAS} (name-override read + label-override read + decode
+    ///      shim, 300k) to ~2.1M **per distinct adapter**, which on a
+    ///      fifteen-adapter account is over 31M gas — an availability regression on the verbose path introduced by a
+    ///      display feature. A legitimate override is at most {_OVERRIDE_RETURN_BYTES} bytes of returndata and
+    ///      one `SLOAD` chain, so the tight triple is orders of magnitude more than it needs.
+    function _labelOverride(address registry, address adapter) private view returns (string[] memory) {
+        if (registry == address(0)) return new string[](0);
+        return _safeStringArray(
+            registry,
+            abi.encodeCall(IAssetKindRegistry.getAdapterLabels, (adapter)),
+            _NAME_READ_GAS,
+            _OVERRIDE_RETURN_BYTES,
+            _OVERRIDE_DECODE_GAS
+        );
+    }
+
+    /// @notice **The ONE place an override is overlaid onto an adapter's reply**, shared by the position path
+    ///         ({toVerbose}) and the configuration path ({adapterDisplayInfo}).
+    /// @dev That sharing is load-bearing for exactly the reason given on {_effectiveProtocolName}: two copies of this
+    ///      rule would agree today and drift later, and "the two display surfaces disagree about one adapter" is a
+    ///      failure this feature has already shipped twice. If a third display surface is ever added, it must call
+    ///      this too.
+    ///
+    ///      Two rules, both of which have already bitten this codebase:
+    ///
+    ///      1. **`min(labels.length, over.length)`.** Writing index `i` of a shorter array is `Panic(0x32)` and the
+    ///         never-revert property of the whole label path is gone. Adapter replies are NOT fixed-length:
+    ///         `ConvexCurveLPStakingMetaBalanceAdapter` returns 2 or 3 elements depending on whether its
+    ///         `rewarderCoinSymbols` probe answers, and most of the meta family returns 0, 1 or 2 depending on whether
+    ///         its leaf read succeeded. The same bound is what stops an override LENGTHENING a reply past
+    ///         `NAVCalculator`'s `_MAX_LABEL_ELEMENTS` ceiling.
+    ///      2. **`""` skips.** An empty element means "leave this segment alone", which is how a computed leaf stays
+    ///         derived live under a category-only correction. Dropping the check would blank every segment the
+    ///         operator declined to specify.
+    ///
+    ///      Mutates `labels` in place (it is a memory reference), so the caller's array is updated without a copy —
+    ///      which is also what keeps {toVerbose}'s loop inside the `via_ir` stack budget.
+    function _applyLabelOverride(string[] memory labels, string[] memory over) private pure {
+        uint256 n = labels.length < over.length ? labels.length : over.length;
+        for (uint256 i = 0; i < n; i++) {
+            if (bytes(over[i]).length != 0) labels[i] = over[i];
+        }
+    }
+
+    /// @notice The override's LEADING NON-EMPTY PREFIX — what the configuration path grows an EMPTY reply to.
+    /// @dev The prefix, not the whole array, and not just element 0. Copying the whole array would surface `""`
+    ///      elements as blank breadcrumb segments for values the operator explicitly declined to supply and the
+    ///      adapter did not supply either. Stopping at the first empty element is what preserves index alignment with
+    ///      the position path: an override of `["", "Curve Pool"]` grows to NOTHING rather than promoting
+    ///      `"Curve Pool"` to index 0, where it would contradict the category the position path shows.
+    function _overridePrefix(string[] memory over) private pure returns (string[] memory out) {
+        uint256 n;
+        while (n < over.length && bytes(over[n]).length != 0) {
+            ++n;
+        }
+        out = new string[](n);
+        for (uint256 i = 0; i < n; i++) {
+            out[i] = over[i];
+        }
+    }
+
+    /// @notice The CONFIGURATION read path: each adapter's effective display name and its positionId-independent
+    ///         breadcrumb, with the same overrides the position path applies.
+    /// @dev Closes the surface split described on {_effectiveProtocolName}. A consumer pairs this with
+    ///      `IBalances.getAllAdapters()` instead of staticcalling `protocolName()` on each adapter itself, and then
+    ///      groups configured adapters by exactly the string the position path reports.
+    ///
+    ///      `positionLabels("")` is the interface's own convention for "no account, no positionId": an adapter whose
+    ///      breadcrumb is positionId-independent answers with its full constant breadcrumb, and one that derives it
+    ///      per position returns `[]`. So a computed adapter legitimately yields an empty array here, exactly as it
+    ///      does today — this does not invent a breadcrumb for it.
+    /// @param adapters The adapters to describe, typically `getAllAdapters()`.
+    /// @param registry The chain's `AssetKindRegistry`, or `address(0)` when none is wired.
+    function adapterDisplayInfo(address[] memory adapters, address registry)
+        external
+        view
+        returns (string[] memory names, string[][] memory labels)
+    {
+        uint256 len = adapters.length;
+        names = new string[](len);
+        labels = new string[][](len);
+        bytes memory protocolNameCall = abi.encodeCall(IPositionDescribable.protocolName, ());
+        bytes memory labelsCall = abi.encodeCall(IPositionDescribable.positionLabels, (bytes("")));
+        for (uint256 i = 0; i < len; i++) {
+            address adapter = adapters[i];
+            names[i] = _effectiveProtocolName(registry, adapter, protocolNameCall);
+            labels[i] = _safeStringArray(adapter, labelsCall, _LABEL_READ_GAS, _LABELS_RETURN_BYTES, _LABEL_DECODE_GAS);
+            string[] memory over = _labelOverride(registry, adapter);
+            if (over.length == 0) continue;
+            if (labels[i].length != 0) {
+                // Overlay through the SHARED helper — the same call {toVerbose} makes, which is what makes the two
+                // surfaces agree by construction rather than by two implementations matching. It bounds itself at
+                // `min(...)`, so it can neither write past a shorter reply (Panic(0x32), and the never-revert property
+                // gone) nor lengthen one.
+                //
+                // A reply SHORTER than the override is truncated rather than grown, unlike the empty case below. The
+                // asymmetry is on purpose: growing a non-empty reply would emit a segment at an index the position
+                // path leaves absent, so the two surfaces would disagree about the array's shape. Only the
+                // has-nothing-to-say case is grown, and only because the operator's answer is then the whole answer.
+                _applyLabelOverride(labels[i], over);
+            } else {
+                // **The empty case diverges from the position path ON PURPOSE, and getting this wrong left the two
+                // surfaces disagreeing across most of the fleet.** Every meta-adapter answers `positionLabels("")` with
+                // `[]` — `MetaBalanceAdapter._pidAddress` rejects a non-32-byte pid, so `_addressLabels` returns an
+                // empty array — which is the interface's documented "no positionId, breadcrumb is per-position"
+                // reply. Skipping the override there (as the position path does) meant an operator who set a
+                // category on a Morpho or Uniswap meta-adapter saw it on `getAccountPositionsVerbose` and NOT on
+                // this surface: exactly the split this function exists to close.
+                //
+                // The two paths ask different questions, which is why the answers differ. The POSITION path asks
+                // "what is this position's breadcrumb" — a position the adapter declined to describe must not gain
+                // one. This path asks "what breadcrumb is this ADAPTER configured with", and the operator has
+                // answered that explicitly. So the override is surfaced directly, and it agrees with the position
+                // path's segments rather than contradicting them.
+                //
+                // The grown array is the override's LEADING NON-EMPTY PREFIX, not the whole thing: a `""` element is
+                // "leave the adapter's value alone", and there is no adapter value here, so surfacing it would render
+                // a blank segment nobody supplied — and promoting a LATER segment into the gap would put it at an
+                // index the position path never shows it at. See {_overridePrefix}.
+                labels[i] = _overridePrefix(over);
+            }
+        }
+    }
+
+    /// @notice Gas stipend for the `decodeStringArray` shim (see `_safeStringArray`). Generous for any legitimate
+    ///         label array (a handful of short strings decode in well under this) yet small enough that a
+    ///         pathological declared length OOGs within a bounded budget instead of starving the verbose read.
+    uint256 private constant _LABEL_DECODE_GAS = 1_000_000;
+
+    /// @notice Gas stipend for EVERY registry-or-name read on the verbose path: the outer `protocolName()` staticcall,
+    ///         the protocol-name override read ({_effectiveProtocolName}) — both through {_safeString} — AND the
+    ///         per-segment label-override read ({_labelOverride}), which is an ARRAY read through
+    ///         {_safeStringArray} but is deliberately given THIS stipend rather than the far larger
+    ///         {_LABEL_READ_GAS}.
+    /// @dev Every `protocolName()` in this repo is a `pure` constant string and an override read is a bounded `SLOAD`
+    ///      chain over at most {MAX_OVERRIDE_SEGMENTS} 32-byte strings, so this is orders of magnitude more than any
+    ///      legitimate read needs; it exists to bound a broken or hostile callee. Note the consequence of the shared
+    ///      stipend: a hostile registry can burn 2x this per DISTINCT ADAPTER on the ACCOUNT path, which caches per
+    ///      adapter — plus {_OVERRIDE_DECODE_GAS} for the array read's decode shim, so 3x this in total.
+    ///      ⚠️ The CONFIGURATION path ({adapterDisplayInfo}) has no such cache — it is a flat loop over the caller's
+    ///      array — so there the ceiling is the SAME 3x, but per ARRAY ENTRY rather than per distinct adapter, and a
+    ///      caller passing the same adapter N times pays N times. **The composition is identical on both paths; only
+    ///      the denominator differs.** (An earlier revision of this sentence said 2x here, silently dropping the
+    ///      {_OVERRIDE_DECODE_GAS} term the account-path sentence two lines above already counts.) That is bounded
+    ///      by the caller's own gas and its own array, not by the fleet size.
+    ///
+    ///      The decode shim's stipend IS spendable: a registry returning a well-formed `string[]` head clears
+    ///      {_safeStringArray}'s `>= 64` guard, the decode runs and costs gas, and only then is the reply rejected
+    ///      on `_MAX_LABEL_ELEMENTS` — after paying. It stays comfortably inside {_OVERRIDE_DECODE_GAS} because
+    ///      {_OVERRIDE_RETURN_BYTES} bounds the work by the size of the copy window, not by anything the decoder
+    ///      does. ⚠️ Do NOT restate that as a property of `abi.decode`: generalised to the ADAPTER read, whose
+    ///      window is {_LABELS_RETURN_BYTES} = 4 KB, it is false — `NAVCalculator.decodeStringArray` records a
+    ///      measured ~30x aliasing expansion there, which is precisely what {_LABEL_DECODE_GAS} guards.
+    ///
+    ///      ⚠️ **NO GAS FIGURES ARE QUOTED HERE, DELIBERATELY. Do not add any.** Four successive revisions of this
+    ///      note stated the ceiling's composition and its measured cost in prose, and every one was wrong in a
+    ///      different way — a multiple below its own arithmetic floor, a total reported as a marginal, a 4 KB
+    ///      measurement attached to the 896-byte window, an ordering inverted, and twice a test named as evidence
+    ///      for a bound it never reaches. The figures are unverifiable by CI, so nothing catches them when they rot.
+    ///      What is true and checkable lives in the constants above and in the two assertions that bound this path:
+    ///      `AdapterLabelOverrides.t.sol::test_gas_hostileRegistryIsBoundedByTheStipend` (ACCOUNT) and
+    ///      `test_gas_configurationSurface_hostileRegistryIsBounded` (CONFIGURATION). If you need a number, measure
+    ///      it and put it in an assertion — not in this comment.
+    uint256 private constant _NAME_READ_GAS = 100_000;
+
+    /// @notice Gas stipend for the outer `positionLabels()` staticcall. An order of magnitude above
+    ///         {_NAME_READ_GAS} because a legitimate label leaf does real work: the joined multi-token leaves
+    ///         (`_joinTokenSymbols` over a Balancer pool, `CurvePoolLib.coinSymbols` over an 8-coin pool) make
+    ///         several `LabelLib` reads plus the pool reads that enumerate them. It is charged **per position**,
+    ///         not per read path, so it is deliberately not larger: a portfolio of N positions makes N of these
+    ///         calls in one frame, and the stipend times N is what a broken adapter can cost the verbose read.
+    uint256 private constant _LABEL_READ_GAS = 1_000_000;
+
+    /// @notice Bytes of `protocolName()` returndata copied into this frame: two ABI head words plus 256 bytes of
+    ///         payload, matching `LabelLib`'s own metadata window. A longer name yields "".
+    uint256 private constant _NAME_RETURN_BYTES = 320;
+
+    /// @notice Bytes of `positionLabels()` returndata copied into this frame. A typical reply — a category plus a
+    ///         leaf — is a few hundred bytes. The worst legitimate one is a joined multi-token leaf, whose
+    ///         symbols are each capped at `LabelLib.MAX_METADATA_BYTES`; at eight tokens that is ~2.4 KB encoded,
+    ///         inside this window.
+    ///
+    ///         **The token count is protocol-supplied, not capped, on the Balancer side.**
+    ///         `CurvePoolLib.coinSymbols` stops at 8 coins, but `MetaBalanceAdapter._joinTokenSymbols` iterates
+    ///         whatever the pool reports, and Balancer V2 permits up to 50 tokens. Live symbols are short, so
+    ///         nothing deployed approaches this — but the honest bound is the sum of the symbol lengths, not a
+    ///         token count, and a pool with many long symbols would cross it. A reply that does exceed the window
+    ///         is truncated, fails to decode and yields no labels: display degrades, NAV does not move.
+    uint256 private constant _LABELS_RETURN_BYTES = 4096;
+
+    /// @notice Most segments a legitimate label override can carry — `AssetKindRegistry.MAX_ADAPTER_LABEL_SEGMENTS`.
+    /// @dev Restated as a local literal rather than read off the registry, on purpose: the registry is untrusted on
+    ///      this path (it may be an EOA, a self-destructed contract or hostile), so a bound taken FROM it would be a
+    ///      bound it chooses. This is only ever used to size the copy window below; the registry enforces the real
+    ///      bound on the write side, and a reply exceeding this window simply fails to decode and yields no override.
+    ///
+    ///      ⚠️ **This value is COUPLED to `NAVCalculator._MAX_LABEL_ELEMENTS`, and raising the registry's write-side
+    ///      cap alone would silently break overrides.** {_labelOverride} reaches the registry through the same
+    ///      {_safeStringArray} shim as an adapter, so the reply passes through `decodeStringArray`, which REVERTS on
+    ///      `arr.length > _MAX_LABEL_ELEMENTS` — and the caller's `catch` turns that into "no override", with no
+    ///      event and no error. So an operator who set a 9-segment override after someone raised
+    ///      `MAX_ADAPTER_LABEL_SEGMENTS` past 8 would see the write succeed and the whole override vanish on read.
+    ///      All three numbers (`_MAX_LABEL_ELEMENTS`, `MAX_ADAPTER_LABEL_SEGMENTS`, this one) are 8 and must move
+    ///      together.
+    ///
+    ///      ⚠️ **`AssetKindRegistry.MAX_ASSET_LABEL_BYTES = 32` is a FOURTH member of that set, on the byte axis
+    ///      rather than the count axis, and it is the one most easily missed.** {_OVERRIDE_RETURN_BYTES} below
+    ///      hardcodes `96` bytes per element as `32 offset + 32 length + 32 padded payload`; that last 32 IS
+    ///      `MAX_ASSET_LABEL_BYTES`, rounded up to a word. Because payloads are `ceil32`-padded, raising the byte cap
+    ///      to just 33 makes each element cost 128 instead of 96, so a maximal 8-segment override encodes to 1,088
+    ///      bytes against an unchanged 896-byte window: it overflows, fails to decode, and the override vanishes IN
+    ///      FULL with no event and no error — the identical silent-loss failure this note already describes for the
+    ///      count axis. The coupling is NOT compiler-checked (the constant lives in `AssetKindRegistry`, and pulling
+    ///      it in would put a `src/nav` dependency on the pricing library for a compile-time literal), so it is held
+    ///      by `test_labelsOverride_maximalOverrideSurvivesTheReturnWindow` instead, which drives the true worst case
+    ///      (8 x 32 bytes = 832 bytes, 64 bytes of slack) through the read path and asserts CONTENT, not lengths.
+    uint256 private constant MAX_OVERRIDE_SEGMENTS = 8;
+
+    /// @notice Bytes of `getAdapterLabels()` returndata copied into this frame.
+    /// @dev Derived, not guessed. The registry caps each segment at `MAX_ASSET_LABEL_BYTES = 32`, so a `string[]` of
+    ///      `n` such elements encodes as
+    ///      `32 (array offset) + 32 (length) + n*32 (element offsets) + n*(32 length + 32 padded payload)`
+    ///      = `64 + 96n`, plus two words of slack. **Written as the expression rather than the number** so the
+    ///      SEGMENT-COUNT half of the derivation is checked by the compiler and {MAX_OVERRIDE_SEGMENTS} is
+    ///      load-bearing instead of decorative — note the BYTE half is not, since the `96` embeds
+    ///      `MAX_ASSET_LABEL_BYTES = 32` as a literal (see the warning on {MAX_OVERRIDE_SEGMENTS});
+    ///      it folds to 896 at compile time and costs nothing. A reply exceeding the window is truncated, fails to
+    ///      decode, and yields no override — display degrades, nothing reverts. Far tighter than
+    ///      {_LABELS_RETURN_BYTES}, and that is the point: see {_labelOverride}. (An earlier revision said "two
+    ///      orders of magnitude"; the two constants are visible three lines apart, so quantifying the ratio in prose
+    ///      bought nothing and was wrong by roughly twentyfold.)
+    uint256 private constant _OVERRIDE_RETURN_BYTES = 64 + 96 * MAX_OVERRIDE_SEGMENTS + 64;
+
+    /// @notice Gas stipend for the `decodeStringArray` shim when decoding a label OVERRIDE (see {_labelOverride}).
+    /// @dev A tenth of {_LABEL_DECODE_GAS}. The reason for the difference is not the payload — it is that this decode
+    ///      runs once per DISTINCT ADAPTER on the account path in the same frame as everything else, on returndata
+    ///      already truncated to {_OVERRIDE_RETURN_BYTES}. It still has to be capped rather than removed — but be
+    ///      precise about WHICH shape it defends against, because an earlier revision named the wrong one.
+    ///
+    ///      NOT the over-declared length: a declared array length is independent of the returndata size, but a
+    ///      memory-source `abi.decode` bounds-checks it against the blob and rejects it cheaply, without allocating.
+    ///      The expensive shapes are the ones that DECODE — many elements, and offsets aliasing one payload, so a
+    ///      reply that fits the window expands to a multiple of it (`NAVCalculator.decodeStringArray` records ~30x
+    ///      for a 4 KB blob). Inside this 896-byte window that expansion stays well under this stipend; on the
+    ///      ADAPTER path, with a 4 KB window, it is what {_LABEL_DECODE_GAS} exists for. No figure is quoted here on
+    ///      purpose — see the note on {_NAME_READ_GAS}.
+    uint256 private constant _OVERRIDE_DECODE_GAS = 100_000;
+
+    /// @notice Staticcall bounded in BOTH directions — a gas stipend on the callee and a fixed output window on
+    ///         the reply — returning the success flag and the bytes actually copied.
+    /// @dev Both bounds are load-bearing and neither substitutes for the other. Same shape as `LabelLib`'s
+    ///      metadata reader, for the same two reasons:
+    ///
+    ///      - **The stipend** bounds what the callee spends. Uncapped, a callee that loops takes 63/64 of
+    ///        everything this frame holds, and in `_toVerbose` that frame is the whole verbose read — so one
+    ///        broken adapter costs every position's labels and, past a point, the read itself. Note also that a
+    ///        raw staticcall assigning `(bool, bytes memory)` `returndatacopy`s a revert payload, which a
+    ///        parameterless `catch {}` does not: on the failure path the uncapped raw form is the expensive one,
+    ///        reaching ~1e9 gas against a callee that returns megabytes.
+    ///      - **The output window** bounds what this frame copies, which a stipend alone does not. A ~200 KB
+    ///        reply costs the callee only ~95k of memory expansion — well inside any stipend here — while the
+    ///        caller pays `returndatacopy` plus its own monotonically growing memory, charged outside the stipend
+    ///        and quadratic in the frame's total. `_toVerbose` reads `positionLabels` once per position in a
+    ///        single frame, so that total is exactly the cost that matters: eight such replies in one verbose
+    ///        read cost ~8.9M gas without the window and under 3M with it, and the gap widens with position
+    ///        count. An explicit output size makes the per-read cost flat instead.
+    ///
+    ///      `returndatasize()` is reported untruncated, so callers bound their head validation on what was
+    ///      actually copied (`ret.length`), never on what the callee claimed to send.
+    /// @param target The contract to probe.
+    /// @param callData The encoded call.
+    /// @param gasStipend Maximum gas forwarded to `target`.
+    /// @param maxReturnBytes Maximum bytes copied into this frame's memory, whatever the callee returns.
+    /// @return ok The raw staticcall success flag.
+    /// @return ret The copied returndata, truncated to `maxReturnBytes`.
+    function _boundedRead(address target, bytes memory callData, uint256 gasStipend, uint256 maxReturnBytes)
+        private
+        view
+        returns (bool ok, bytes memory ret)
+    {
+        // Discard the reply at the call (`outsize = 0`), then copy back only what is both present and wanted.
+        // Allocating `maxReturnBytes` up front instead would charge this frame for the worst case on every read,
+        // however small the real reply: `_toVerbose` reads once per position in a SINGLE frame, memory cost is
+        // quadratic in that frame's total, and the honest path would pay it. Copying after the fact keeps the
+        // ceiling while charging only the actual size.
+        uint256 size;
+        assembly ("memory-safe") {
+            ok := staticcall(gasStipend, target, add(callData, 0x20), mload(callData), 0x00, 0x00)
+            // `returndatasize()` is the untruncated size — the bound below is on what we choose to take.
+            size := returndatasize()
+            if gt(size, maxReturnBytes) { size := maxReturnBytes }
+        }
+        // A failed call's payload is discarded by both callers, so do not pay to carry it. `_toVerbose` runs this
+        // once per position in a single frame and Solidity never reclaims memory, so copying revert data would
+        // accumulate across the whole position list for something no one reads.
+        if (!ok) return (false, ret);
+        ret = new bytes(size);
+        assembly ("memory-safe") {
+            returndatacopy(add(ret, 0x20), 0x00, size)
+        }
+    }
+
+    /// @notice Fully fail-open string read: staticcalls `target` and returns the decoded string only when the
+    ///         returndata is a well-formed ABI string, otherwise "".
+    /// @dev A plain `try/catch` only catches a reverting call — it does NOT catch a *successful* call whose
+    ///      returndata cannot be decoded into `string` (e.g. a non-contract returning empty data, or a contract
+    ///      returning a malformed/short blob), which would revert the whole verbose read. This validates the
+    ///      ABI envelope (canonical 0x20 offset + length within bounds) before decoding so the decode itself can
+    ///      never revert on bounds. (Bounds, not cost — see the inline note at the guard.)
+    ///
+    ///      **The bound is the RAW declared length, not `ceil32` of it.** A memory-source `abi.decode` bounds on
+    ///      the declared length itself: it needs `64 + strLen <= ret.length`, and reads exactly `strLen` bytes
+    ///      (under cancun, an `mcopy` of precisely that many). Verified on solc 0.8.34 / via_ir / cancun —
+    ///      `offset = 0x20`, `strLen = 5`, `ret.length = 69` decodes to a 5-character name rather than reverting.
+    ///      A `ceil32` bound would be *stricter* than `abi.decode`, rejecting the band
+    ///      `64 + strLen <= ret.length < 64 + ceil32(strLen)` — a reply declaring a length whose payload is
+    ///      delivered unpadded — and a guard stricter than the thing it protects is a silent drop, not safety.
+    ///      solc and vyper always pad an encoded `string` to a word, so that band is reachable only from a
+    ///      hand-rolled assembly return or a non-solc toolchain; matching `abi.decode` exactly is still the
+    ///      guard worth having.
+    ///
+    ///      Cost is a separate concern from bounds, and is handled separately: {_boundedRead} caps both what the
+    ///      target may spend ({_NAME_READ_GAS}) and what this frame copies ({_NAME_RETURN_BYTES}). The head
+    ///      validation is what makes the decode total; the stipend and the output window are what make its cost
+    ///      total.
+    function _safeString(address target, bytes memory callData) private view returns (string memory) {
+        (bool ok, bytes memory ret) = _boundedRead(target, callData, _NAME_READ_GAS, _NAME_RETURN_BYTES);
+        if (!ok || ret.length < 64) return ""; // need at least offset(32) + length(32)
+        uint256 offset;
+        uint256 strLen;
+        assembly {
+            offset := mload(add(ret, 0x20))
+            strLen := mload(add(ret, 0x40))
+        }
+        // Canonical ABI string: offset == 0x20 and the declared body fits inside the returndata. `ret.length >= 64`
+        // is guaranteed by the early return above, so the subtraction cannot underflow. This is exactly the bound
+        // `abi.decode` itself applies, so the decode below cannot revert on bounds.
+        //
+        // That is a bounds claim, not a cost one: it buys that the decode can never allocate beyond what the
+        // target actually delivered, and nothing about what the target may spend or send. Cost is bounded
+        // separately and unconditionally by `_boundedRead` — `ret.length` is at most {_NAME_RETURN_BYTES}
+        // however large the reply was, so `strLen` is bounded by that too, and an over-long name (or a reply
+        // whose payload lands outside the copied window) simply yields "".
+        if (offset != 0x20 || strLen > ret.length - 64) return "";
+        return abi.decode(ret, (string));
+    }
+
+    /// @notice Fail-open `string[]` read: staticcalls `target` and decodes a `string[]`, returning an empty array on
+    ///         a failed/short call or any decode failure rather than reverting the whole verbose read. A `string[]`
+    ///         has nested offsets/lengths that are impractical to validate inline (as `_safeString` does for a flat
+    ///         string), so the possibly-reverting `abi.decode` is isolated behind a try/catch — which needs an
+    ///         external call boundary (`decodeStringArray`).
+    /// @dev Three bounds, one per thing the callee can spend on this frame's behalf; none of them covers what
+    ///      the other two do:
+    ///      1. `decodeGas` on the shim — a reply whose `string[]` element offsets ALL point at the same payload
+    ///         decodes to a multiple of the window (measured ~30x for a 4 KB blob; see
+    ///         `NAVCalculator.decodeStringArray`), and that expansion is allocated inside this frame. The declared
+    ///         array length is independent of the returndata size, which is why `_safeString`'s head validation has
+    ///         no analogue here and the decode must be isolated instead. (An earlier revision attributed the cost to
+    ///         a huge DECLARED length "burning ~63/64 of the remaining gas". That shape is the cheap one: a
+    ///         memory-source `abi.decode` bounds-checks the length against the blob and rejects it without
+    ///         allocating. The expensive shapes are the ones that DECODE — many elements, or offsets aliasing one
+    ///         payload — which succeed and are only then rejected on the element cap.)
+    ///      2. `gasStipend` on the call — the shim's cap says nothing about the callee itself, which can loop and
+    ///         never return.
+    ///      3. `maxReturnBytes` on the reply — a gas stipend alone leaves the `returndatacopy` this frame
+    ///         pays unbounded; see {_boundedRead}.
+    ///      Together they contain a broken callee to the labels of whatever it was asked about, which then come back
+    ///      `[]`. Legitimate label arrays are far inside all three.
+    ///
+    ///      **All three are PARAMETERS rather than the constants they used to be**, because this shim now serves two
+    ///      callees with very different legitimate worst cases: an adapter's `positionLabels` (which does real
+    ///      on-chain work and can return a joined multi-token leaf) and the registry's `getAdapterLabels` (a bounded
+    ///      `SLOAD` chain). Reusing the adapter's generous triple for the registry read raised the hostile-registry
+    ///      ceiling by an order of magnitude per distinct adapter; see {_labelOverride}. Passing them explicitly also
+    ///      puts each bound where a reader can see which callee it is defending against.
+    /// @param target The contract to read from.
+    /// @param callData The encoded call.
+    /// @param gasStipend Maximum gas forwarded to `target`.
+    /// @param maxReturnBytes Maximum bytes of reply copied into this frame.
+    /// @param decodeGas Maximum gas the isolated `abi.decode` may spend.
+    function _safeStringArray(
+        address target,
+        bytes memory callData,
+        uint256 gasStipend,
+        uint256 maxReturnBytes,
+        uint256 decodeGas
+    ) private view returns (string[] memory) {
+        (bool ok, bytes memory ret) = _boundedRead(target, callData, gasStipend, maxReturnBytes);
+        if (!ok || ret.length < 64) return new string[](0); // need at least offset(32) + length(32)
+        try INavLabelDecoder(address(this)).decodeStringArray{gas: decodeGas}(ret) returns (string[] memory arr) {
+            return arr;
+        } catch {
+            return new string[](0);
         }
     }
 }

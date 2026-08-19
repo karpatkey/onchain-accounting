@@ -157,6 +157,15 @@ contract RateFeedGuardTest is Test {
             total += _countGuarded(chains[i]);
         }
         // 21 rate-feed-bearing instances: 9 mainnet, 7 Arbitrum, 4 Base, 1 Gnosis. Each verified on-chain.
+        // (Census header kept in step with the assertion below: it read 20 / 8 mainnet after #302's OETH
+        // removal and was not updated when wARS took mainnet back to 9 — see the 2026-08-15 note.)
+        //
+        // 21 -> 20: OETH retired by #302 — Chainlink is sunsetting the OETH/ETH rate feed its CrossRate
+        // consumed. This is a REMOVAL, so no NEW pair identity needed confirming; the gate exists to stop an
+        // ADDED instance slipping in unverified. What was confirmed instead is that the set is now exactly the
+        // expected 20, re-derived from config 2026-08-13: mainnet fell 9 -> 8 and the other three chains are
+        // byte-for-byte unchanged. Had anything else moved, that would have been a finding larger than this
+        // test rather than a number to update.
         //
         // 20 -> 21: `ezETHCrossRateMarket` (added by #224 after this guard landed, given its block here).
         // This number is a HUMAN-IN-THE-LOOP GATE, not a fact about the world: it exists so a newly-added
@@ -179,6 +188,17 @@ contract RateFeedGuardTest is Test {
         // there would have been WRONG — nothing had been added; the filter was matching two interface files as
         // if they were adapters, and raising the number would have destroyed the census's ability to notice a
         // genuine thirteenth adapter. Fix the filter when the method is broken; bump only when the set really grew.
+        // 2026-08-15: 20 -> 21. Mainnet `wARS` added, and its pair identity WAS confirmed on-chain first —
+        // `0xBb65fa58BDb7d33e4a3D1A40a7A9BD99E746367b` measured 2026-08-15:
+        //
+        //   description()     "USD / ARS"   <- note the DIRECTION: ARS per USD, the reciprocal of the
+        //                                      asset/USD direction every primary feed here uses.
+        //   decimals()        8
+        //   latestRoundData() 158309760000  ->  1583.0976e18, inside the configured 100-100000e18 band
+        //
+        // This is the population growing, not the counting method mis-measuring: one real instance was added
+        // and verified. Its guard is what makes the direction load-bearing — an ARS/USD feed swapped in would
+        // answer ~6.3e14 at 1e18 scale and fail the band by five orders of magnitude.
         assertEq(total, 21, "rate-feed instance count changed - re-verify description() on the new set");
     }
 
@@ -196,6 +216,161 @@ contract RateFeedGuardTest is Test {
 
     function _hasGuard(uint256 chainId, string memory name) internal view returns (bool) {
         return ConfigReaderShim.hasGuard(vm, chainId, name);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────────────────────────────────────
+    // Constructor-band reconciliation. These three use a SYNTHETIC per-chain config file rather than a real
+    // chain, because the shapes under test are ones no committed config has — and the point of each is that the
+    // guard must bite on a shape someone could plausibly write tomorrow.
+    // ─────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+    /// @dev An unused chain id, so the fixture can never collide with a real config file.
+    /// @dev **One id PER TEST, deliberately.** forge executes the test functions of a suite concurrently while
+    ///      the filesystem is shared, so a single fixture path let two tests' `writeFile` calls interleave and
+    ///      produced a malformed file that failed all three with a JSON parse error — a race that reads as a
+    ///      logic bug. Distinct ids make the fixtures independent.
+    uint256 constant SYNTH_TOP = 999_901;
+    uint256 constant SYNTH_SPLIT = 999_902;
+    uint256 constant SYNTH_NOGUARD = 999_903;
+    uint256 constant SYNTH_TOPPARAM = 999_904;
+    uint256 constant SYNTH_INITPARAM = 999_905;
+    uint256 constant SYNTH_BANDONLY = 999_906;
+    address constant SYNTH_FEED = 0x00000000000000000000000000000000DeaDBeef;
+
+    function _synthPath(uint256 chainId) internal view returns (string memory) {
+        return string.concat(
+            vm.projectRoot(),
+            "/script/config/contracts-deployment-config/custom-price-feeds/",
+            vm.toString(chainId),
+            ".json"
+        );
+    }
+
+    function _writeSynth(uint256 chainId, string memory json) internal {
+        vm.writeFile(_synthPath(chainId), json);
+        // 158309760000 = 1583.0976 at 8dp — inside every guard band below, so the band check passes and the
+        // reconciliation is what these tests actually observe.
+        _mockFeed(SYNTH_FEED, "USD / ARS", 158_309_760_000, 8);
+    }
+
+    /// @dev **Cleanup must precede every assertion, which is why these tests use `staticcall` rather than
+    ///      `vm.expectRevert`.** These fixtures land in the git-TRACKED
+    ///      `script/config/contracts-deployment-config/custom-price-feeds/` directory, and
+    ///      `declared_heartbeat_guard.py` derives its audited chain set from `d.glob("*.json")` over exactly
+    ///      that directory — so a leftover `999901.json` makes a preflight report an operator reads before a
+    ///      mainnet deploy print a `chain 999901` section for a chain that does not exist, and inflates the
+    ///      "on all N chains" coverage claim. With `vm.expectRevert`, a mismatched revert aborts the body at
+    ///      the call and the cleanup below never runs. Routing through `staticcall` returns the revert as DATA,
+    ///      so the file is always removed before anything can fail. `setUp()`-based cleanup is NOT an
+    ///      alternative: forge runs a suite's tests concurrently, so it would delete a sibling's live fixture.
+    function _removeSynth(uint256 chainId) internal {
+        if (vm.exists(_synthPath(chainId))) vm.removeFile(_synthPath(chainId));
+    }
+
+    /// @notice External wrapper so `vm.expectRevert` can observe a revert out of the internal library.
+    function exposedCheckAll(uint256 chainId) external view {
+        RateFeedGuard.checkAll(vm, chainId);
+    }
+
+    /// @notice **A band declared OUTSIDE `constructor` must still be reconciled.**
+    /// @dev The presence scan used to enumerate `.<feed>.constructor` keys only, while
+    ///      `ConfigReader.readAdapterParam` resolves the TOP-LEVEL `.<feed>.<key>` FIRST — and the top level is
+    ///      where `rateFeedGuard` itself sits, so it is the natural place to put the band. The result was that
+    ///      `_checkConstructorBandAgrees` returned early having reconciled nothing while `03` read those very
+    ///      keys and baked them into an IMMUTABLE feed. Here the constructor max (1e13 at 8dp = 100000e18)
+    ///      disagrees with the guard's 999000e18; before the fix this passed silently.
+    function test_topLevelBand_isReconciledNotInvisible() public {
+        _writeSynth(
+            SYNTH_TOP,
+            '{"TopLevelBand":{"enabled":true,'
+            '"constructor":{"usdToAssetChainlinkAddress":"0x00000000000000000000000000000000DeaDBeeF"},'
+            '"minAnswer":"10000000000","maxAnswer":"10000000000000",'
+            '"rateFeedGuard":{"param":"usdToAssetChainlinkAddress","description":"USD / ARS",'
+            '"minRate1e18":"100000000000000000000","maxRate1e18":"999000000000000000000000"}}}'
+        );
+        (bool ok, bytes memory ret) =
+            address(this).staticcall(abi.encodeWithSelector(this.exposedCheck.selector, SYNTH_TOP, "TopLevelBand"));
+        _removeSynth(SYNTH_TOP);
+        assertFalse(ok, "a band declared outside `constructor` must be reconciled, not silently skipped");
+        assertEq(
+            ret,
+            abi.encodeWithSelector(
+                RateFeedGuard.RateFeedBandMismatch.selector,
+                "TopLevelBand",
+                uint256(100e18),
+                uint256(100e18),
+                uint256(100_000e18),
+                uint256(999_000e18)
+            ),
+            "wrong revert"
+        );
+    }
+
+    /// @notice **A band split across both scopes is COMPLETE, and must not be reported as half-declared.**
+    /// @dev The old scan saw only `constructor.maxAnswer` and reverted `RateFeedBandIncomplete` naming
+    ///      `minAnswer` as the MISSING one — sending the operator to add a key that was already there, one
+    ///      level up. Both bounds agree with the guard here, so the correct outcome is simply: passes.
+    function test_bandSplitAcrossScopes_reconcilesRatherThanMisreporting() public {
+        _writeSynth(
+            SYNTH_SPLIT,
+            '{"SplitBand":{"enabled":true,'
+            '"constructor":{"usdToAssetChainlinkAddress":"0x00000000000000000000000000000000DeaDBeeF",'
+            '"maxAnswer":"10000000000000"},' '"minAnswer":"10000000000",'
+            '"rateFeedGuard":{"param":"usdToAssetChainlinkAddress","description":"USD / ARS",'
+            '"minRate1e18":"100000000000000000000","maxRate1e18":"100000000000000000000000"}}}'
+        );
+        (bool ok, bytes memory ret) =
+            address(this).staticcall(abi.encodeWithSelector(this.exposedCheck.selector, SYNTH_SPLIT, "SplitBand"));
+        _removeSynth(SYNTH_SPLIT);
+        assertTrue(ok, string.concat("a complete band split across scopes must reconcile; reverted ", vm.toString(ret)));
+    }
+
+    /// @notice **A rate-feed param written BESIDE `constructor` must not hide from the fail-closed scan.**
+    /// @dev The companion backstop to the band one above, and it had the same blind spot the band check was
+    ///      fixed for: it enumerated `.<feed>.constructor` keys only, while `ConfigReader.readAdapterParam`
+    ///      resolves the TOP LEVEL first — so `03` deploys from a key the guard could not see. An instance
+    ///      naming its rate feed there with no `rateFeedGuard` block passed {checkAll} silently, with no pair
+    ///      check and no band check at all. Note there is no band here: this pins the PARAM axis specifically,
+    ///      so it pins the PARAM axis on its own.
+    function test_topLevelRateFeedParam_isNotInvisibleToTheFailClosedScan() public {
+        _writeSynth(
+            SYNTH_TOPPARAM,
+            '{"TopParam":{"enabled":true,' '"usdToAssetChainlinkAddress":"0x00000000000000000000000000000000DeaDBeeF",'
+            '"constructor":{"underlyingAsset":"0x00000000000000000000000000000000DeaDBeeF"}}}'
+        );
+        (bool ok, bytes memory ret) =
+            address(this).staticcall(abi.encodeWithSelector(this.exposedCheckAll.selector, SYNTH_TOPPARAM));
+        _removeSynth(SYNTH_TOPPARAM);
+        assertFalse(ok, "a top-level rate-feed param with no guard block must be rejected");
+        assertEq(
+            ret,
+            abi.encodeWithSelector(
+                RateFeedGuard.RateFeedGuardMissing.selector, "TopParam", "usdToAssetChainlinkAddress"
+            ),
+            "wrong revert"
+        );
+    }
+
+    /// @notice **`.initialize` is the THIRD scope the deploy resolver searches, and it must not hide a rate feed.**
+    /// @dev `ConfigReader.readAdapterParam` falls back `.<feed>` -> `.<feed>.constructor` -> `.<feed>.initialize`
+    ///      (ConfigReader.sol:403-411). The scan was widened to two of those three, and `initialize` was named
+    ///      in the structural-key exclusion list without ever being descended into — so a rate feed declared
+    ///      there was resolved by `03` and invisible to the fail-closed check, shipping an immutable feed bound
+    ///      to an unverified aggregator with every gate reporting PASS.
+    function test_initializeScopeRateFeedParam_isNotInvisibleToTheFailClosedScan() public {
+        _writeSynth(
+            SYNTH_INITPARAM,
+            '{"InitParam":{"enabled":true,' '"initialize":{"yToXFeed":"0x00000000000000000000000000000000DeaDBeeF"}}}'
+        );
+        (bool ok, bytes memory ret) =
+            address(this).staticcall(abi.encodeWithSelector(this.exposedCheckAll.selector, SYNTH_INITPARAM));
+        _removeSynth(SYNTH_INITPARAM);
+        assertFalse(ok, "a rate-feed param under `initialize` with no guard block must be rejected");
+        assertEq(
+            ret,
+            abi.encodeWithSelector(RateFeedGuard.RateFeedGuardMissing.selector, "InitParam", "yToXFeed"),
+            "wrong revert"
+        );
     }
 }
 

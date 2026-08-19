@@ -9,6 +9,7 @@ import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IPrices} from "src/prices/IPrices.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
+import {IComputedLabelSegments} from "src/balances/IComputedLabelSegments.sol";
 import {Mock_ERC20} from "test/mocks/tokens.sol";
 import {Mock_CustomPriceFeed} from "test/mocks/price_oracles.sol";
 import {UnsafeUpgrades} from "openzeppelin-foundry-upgrades/Upgrades.sol";
@@ -264,6 +265,29 @@ contract ERC20DefaultBalanceAdapterTest is Test {
     ///      positionId-derived and `positionLabels("")` returns [] — there is no single shape to name. That is
     ///      not a gap: a wallet position's shape set is the registered-asset list, which a configuration view
     ///      already renders, and the adapter is identified as the wallet singleton by `AdapterType.Default`.
+    /// @notice This adapter DECLARES that its only segment is computed, and advertises the ERC-165 bit for it.
+    /// @dev **The declaration must agree with `BALANCE_ADAPTERS.md` §6.2, which marks this adapter `C` at index 0 and
+    ///      says "Never override".** That instruction used to live only in markdown; the mask is the same fact placed
+    ///      where `AssetKindRegistry.setAdapterLabels` can enforce it.
+    ///
+    ///      Both halves are asserted because either alone is useless: without the mask there is nothing to enforce,
+    ///      and without the ERC-165 bit the registry's probe never reads the mask — an advertised-but-unreachable
+    ///      declaration, which is worse than none because it reads as protection.
+    ///
+    ///      ⚠️ This adapter is the highest-blast-radius case in the fleet: it is registered on EVERY chain by
+    ///      `initialize()`, so one accepted override would freeze a single symbol onto every ERC20 wallet position on
+    ///      that chain, rendering as a plausible label rather than an error.
+    function test_computedLabelSegments_declaresIndexZeroAndAdvertisesIt() public view {
+        assertEq(adapter.computedLabelSegments(), 1, "bit 0 set: the single segment IS the computed token symbol");
+        assertTrue(
+            adapter.supportsInterface(type(IComputedLabelSegments).interfaceId),
+            "without the ERC-165 bit the registry never reads the mask and the guard silently does not apply"
+        );
+        // The base bits must survive the override.
+        assertTrue(adapter.supportsInterface(type(IBalanceAdapter).interfaceId));
+        assertTrue(adapter.supportsInterface(type(IERC165).interfaceId));
+    }
+
     function test_positionLabels_emptyProbe_returnsEmptyForThePerTokenLeaf() public view {
         assertEq(adapter.positionLabels("").length, 0);
 
@@ -280,8 +304,9 @@ contract ERC20DefaultBalanceAdapterTest is Test {
     /// @dev A malformed positionId degrades to `[]`; it must never revert. `positionLabels` is display-only and
     ///      this is the one adapter registered on all 24 chains, so a configuration view that generalises
     ///      "per-position adapters answer the probe with []" and probes with anything other than exactly `""`
-    ///      must still get an answer. Matches the `[]` its `CapBalanceAdapter` /
-    ///      `NexusMutualStakingPoolsAssistedBalanceAdapter` siblings return for the same inputs.
+    ///      must still get an answer. Matches the `[]` its `CapStablecoinBalanceAdapter` /
+    ///      `CapSavingsBalanceAdapter` / `NexusMutualStakingPoolsAssistedBalanceAdapter` siblings return for the
+    ///      same inputs. (Named `CapBalanceAdapter` until that contract was split one-per-leg.)
     ///
     ///      Both halves are load-bearing against the guard, not just against a revert:
     ///        - truncated (1..31 bytes) would revert in `abi.decode` without the `length >= 32` check;

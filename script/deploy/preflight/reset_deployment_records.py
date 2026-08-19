@@ -13,21 +13,23 @@ so re-running them against a populated `deployments/<chainId>.json` is a **silen
 "succeeds", logs "Already deployed", writes nothing, and `06_Configure` then registers the OLD
 contracts on the NEW proxy. Nothing fails; the deploy is simply wrong.
 
-WHY WRITE "" RATHER THAN DELETE THE KEY
----------------------------------------
-`ConfigReader._readAddrOrZero` (ConfigReader.sol:216) treats a key as "not deployed" when the value
-is the empty string, a `YOUR_…` placeholder, or the zero address — but it first requires
-`vm.keyExists`. Writing `""` therefore reads as address(0) while keeping the key present, so
-`vm.writeJson(..., ".balanceAdapters.<name>")` in `ConfigReader.writeAdapterAddress` writes back into
-an existing JSON pointer. Deleting keys would rely on forge inserting missing pointers, which is not
-a guarantee worth betting a 24-chain deploy on. Key order is preserved, so the diff stays readable.
+CLEARING THE KEYS
+-----------------
+Clear the values to `""`. Do not delete the keys.
+
+`vm.writeJson` creates a missing key unaided, so a brand-new adapter needs no seeded key — pinned by
+`script/test/WriteJsonCreatesMissingKeys.t.sol`.
+
+Gate 1.1's absence check does not cover every key it iterates — tracked in #299.
 
 WHAT IS CLEARED, AND WHAT IS NOT
 --------------------------------
 Cleared (the NAV stack — everything the redeploy replaces):
   PriceFeedLib, NavRegistryLib, NAVCalculatorImplementation, NAVCalculatorProxy,
-  every balanceAdapters.* entry (ERC20Default included — `02_2` rewrites it from the new
-  `initialize()`), every customPriceFeeds.* entry, and the three `*Assistant` entries.
+  AssetKindRegistry (see the note on CLEAR_TOP — `08` REUSES a recorded registry, and a reused one
+  stays bound to the old NAV), every balanceAdapters.* entry (ERC20Default included — `02_2`
+  rewrites it from the new `initialize()`), every customPriceFeeds.* entry, and the three
+  `*Assistant` entries.
 NOT cleared (the bridge stack is deferred and decoupled from the NAV):
   BridgeEscrowImplementation, BridgeEscrowProxy, every bridgeAdapters.* entry.
 
@@ -59,10 +61,31 @@ CLEAR_TOP = [
     "NavRegistryLib",
     "NAVCalculatorImplementation",
     "NAVCalculatorProxy",
+    # Must be cleared with the NAV, and for a sharper reason than "the redeploy replaces it".
+    # `08_DeployAssetKindRegistry` branches on `readDeployedAddress("AssetKindRegistry")`: a non-zero
+    # value makes it REUSE the recorded registry instead of deploying one. The registry's `NAV` is
+    # IMMUTABLE while `NAVCalculatorProxy` is not, so reusing it after a NAV redeploy grants the NEW
+    # NAV's MANAGER to a registry still bound to the OLD proxy — and the step completes GREEN, which
+    # `08`'s own header calls out as the failure this guard causes. In a rehearsal, where a fresh
+    # proxy is the entire point, that also means step `08` deploys nothing and the run reports
+    # success for a step it never exercised. Omitting this key was harmless only while it was absent
+    # from every deployment record; it stops being harmless the moment the redeploy writes one.
+    "AssetKindRegistry",
     "NexusMutualStakingPoolsAssistant",
     "EtherFiWithdrawalQueueAssistant",
     "StakeWiseV3ExitQueueAssistant",
 ]
+# Keys to CREATE (blank) when the record lacks them. Deliberately NOT all of CLEAR_TOP: for the
+# three `*Assistant` keys, ABSENCE IS A SIGNAL that another tool reads. `deployer_balances.scope()`
+# counts assistant keys by PRESENCE, not value, to decide whether a chain deploys assistants —
+# 23 of 25 records have no assistant keys at all — so creating them would make every chain report
+# three, inflating its gas estimate by 10.5M units and producing a false "TOP UP" on chains that
+# deploy none. That module's own header calls a false alarm a failure mode in its own right.
+#
+# `AssetKindRegistry` carries no such signal: it is absent from ALL 25 records, so creating it
+# removes no information, and it is the key this tool newly clears — without creating it, adding it
+# to CLEAR_TOP breaks gate 1.1 everywhere.
+CREATE_IF_ABSENT = {"AssetKindRegistry"}
 CLEAR_SECTIONS = ["balanceAdapters", "customPriceFeeds"]
 KEEP = {"BridgeEscrowImplementation", "BridgeEscrowProxy", "bridgeAdapters"}
 
@@ -72,7 +95,11 @@ def plan_for(chain_id: int) -> tuple[dict, list[str]]:
     out = json.loads(json.dumps(rec))  # deep copy, preserves key order
     changes: list[str] = []
     for k in CLEAR_TOP:
-        if k in out and out[k] not in ("", None):
+        if k not in out and k in CREATE_IF_ABSENT:
+            # Created blank rather than left absent.
+            changes.append(f"{k}: <absent> -> \"\" (created; verify_step fails on an absent key)")
+            out[k] = ""
+        elif k in out and out[k] not in ("", None):
             changes.append(f"{k}: {out[k]} -> \"\"")
             out[k] = ""
     for sec in CLEAR_SECTIONS:

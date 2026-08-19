@@ -379,6 +379,27 @@ library ConfigReader {
         return false;
     }
 
+    /// @notice Whether a nav-config entry explicitly asks for the adapter to be DEREGISTERED from the NAV.
+    /// @dev **Explicit intent, deliberately not derived.** The obvious alternative — treat "in the deployment record
+    ///      but not enabled in plain nav-config" as "deregister" — is catastrophically wrong here: on chain 1 that
+    ///      set contains `ERC20Default` (registered by `initialize()`, in no nav-config) and ALL SIXTEEN meta
+    ///      adapters (which live in the sibling `meta-balance-adapters` file). Measured against the live NAV, a
+    ///      derived reconciliation would have deregistered seventeen live adapters and zeroed most of the portfolio.
+    ///
+    ///      So deregistration requires an operator to write `"deregister": true` against the key. A missing or false
+    ///      flag can only ever mean "leave it alone", which makes the failure mode of this reader a no-op rather
+    ///      than a mass deregistration. Absent key -> false, exactly like {isAdapterEnabled}.
+    function isAdapterDeregisterRequested(Vm vm, uint256 chainId, string memory adapterType, string memory adapterName)
+        internal
+        view
+        returns (bool)
+    {
+        (string memory json, string memory prefix) = _resolveAdapterFile(vm, chainId, adapterType, adapterName);
+        string memory jsonPath = string(abi.encodePacked(prefix, ".", adapterName, ".deregister"));
+        if (vm.keyExists(json, jsonPath)) return json.readBool(jsonPath);
+        return false;
+    }
+
     /// @notice Reads an adapter constructor/initialize/bare param from the file selected by `adapterType`
     ///         (see `_adapterFileAndPrefix`; deploy-balance spans both plain + meta folders). "" if absent.
     function readAdapterParam(
@@ -554,6 +575,32 @@ library ConfigReader {
         returns (AccrualKind kind, bool valid)
     {
         return accrualKindFromString(_readAssetString(vm, chainId, symbol, "accrualKind"));
+    }
+
+    /// @notice Reads an asset's display `labels` array. Empty when the file, the asset, or the key is absent.
+    /// @dev **Absence is NOT an error here, unlike `accrualKind` immediately above, and the asymmetry is the point.**
+    ///      There is no defensible default classification, so a missing `accrualKind` aborts the deploy. There IS a
+    ///      defensible default label set — none — because an unlabelled asset is unlabelled, not misconfigured, and
+    ///      `AssetKindRegistry` treats an empty list as a legitimate state rather than a gap. So this reader returns
+    ///      empty and `08` proceeds.
+    ///
+    ///      That is also what lets the labels for the 93 configured rows land as a separate, asset-by-asset reviewable
+    ///      change without holding up the contracts: every chain reads empty until its config gains the key. Those
+    ///      first non-empty writes are no longer the ones that necessarily stick — `AssetKindRegistry.setAssetLabels`
+    ///      can replace them — so a later config correction is a re-run plus a setter call, not a lost opportunity.
+    ///
+    ///      **This reader deliberately does NOT validate.** `AssetKindRegistry` enforces the count, per-label length
+    ///      and non-emptiness on-chain, and re-checking them here would create a second copy of the rule that can drift
+    ///      from the one the chain applies — the #248 failure mode. Structural preflight validation, when it is added,
+    ///      reads `MAX_ASSET_LABELS` / `MAX_ASSET_LABEL_BYTES` off the deployed registry rather than restating them.
+    ///
+    ///      Subject to the same no-`.`-in-symbols constraint as every path-building reader in this file; see
+    ///      {_readAssetString}.
+    function readAssetLabels(Vm vm, uint256 chainId, string memory symbol) internal view returns (string[] memory) {
+        string memory json = _readOrEmpty(vm, _navAssetsPath(vm, chainId));
+        string memory jsonPath = string(abi.encodePacked(".", symbol, ".labels"));
+        if (!vm.keyExistsJson(json, jsonPath)) return new string[](0);
+        return vm.parseJsonStringArray(json, jsonPath);
     }
 
     /// @notice Shared `accrualKind` string -> enum mapping. `valid` is false for an empty/unrecognized value.

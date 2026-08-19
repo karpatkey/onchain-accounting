@@ -45,7 +45,7 @@ script/config/
 │   ├── bridge-adapters/<chainId>.json             # Bridge adapters to deploy: { "<AdapterName>": { enabled, initialize } } — read by 05
 │   └── bridge-escrow/<chainId>.json               # BridgeEscrow post-deploy config: { accounts[], assets{SYMBOL:addr} } — read by 06
 ├── nav-config/
-│   ├── assets-and-price-feeds/<chainId>.json      # Assets to register: { "<SYMBOL>": { address, priceFeeds[] } }
+│   ├── assets-and-price-feeds/<chainId>.json      # Assets to register: { "<SYMBOL>": { address, accrualKind, priceFeeds[] } }
 │   ├── balance-adapters/<chainId>.json            # PLAIN adapters to add on NAV: { "<AdapterName>": { enabled } }
 │   └── meta-balance-adapters/<chainId>.json       # META adapters to add on NAV: { "<AdapterName>": { enabled, instances[] | instancesRaw[] } }
 ├── deployments/
@@ -61,7 +61,7 @@ Safe-transaction batches are written by the manage scripts to a `safe-transactio
 
 ```
 safe-transactions/
-├── 1-deploy-nav-implementation.json
+├── 1-add-balance-adapter.json
 ├── 1-register-assets.json                  # Safe transaction JSONs for multisig execution
 └── ...
 ```
@@ -127,15 +127,13 @@ An asset wires in a deployed feed by name via a `"type":"Custom","feed":"<feedNa
     "$comment": "sUSDS (Sky Savings USDS) price adapter — derives sUSDS/USD from the ERC-4626 vault rate + the base asset (USDS) priced via the NAV.",
     "constructor": {
       "sUsds": "0xa3931d71877C0E7a3148CB7Eb4463524FEc27fbD",
-      "baseAsset": "0x6B175474E89094C44Da98b954EedeAC495271d0F"
+      "baseAsset": "0xdC035D45d973E3EC169d2276DDab16f1e407384F"
     }
   },
   "wstETH": {
     "enabled": true,
     "constructor": {
       "wstEth": "0x7f39C581F595B53c5cb19bD0b3f8dA6c935E2Ca0",
-      "stEthToEthChainlinkOracle": "0x86392dC19c0b719886221c78AB11eb8Cf5c52812",
-      "stEthToEthChainlinkHeartbeat": "86400",
       "baseAsset": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
     }
   }
@@ -234,8 +232,8 @@ As of [ADR 0012](../../docs/decisions/0012-bridge-provable-release-rearchitectur
     "initialize": {
       "admin": "0x...",
       "bridgeEscrow": "0x...",
-      "tokenMessenger": "0xBd3fa81B58Ba92a82136038B25aDec7066af3155",
-      "messageTransmitter": "0x0a992d191DEeC32aFe36203Ad87D7d289a738F81",
+      "tokenMessenger": "0x28b5a0e9C621a5BadaA536219b3a228C8168cf5d",
+      "messageTransmitter": "0x81D40F21F12A8F0E3252Bccb954D722d4c464B64",
       "version": "1.0.0",
       "cctpDomain": 0
     },
@@ -283,7 +281,7 @@ There is **no `callbackSelector` field** as of [ADR 0012](../../docs/decisions/0
 
 ## nav-config/assets-and-price-feeds/{chainId}.json
 
-**Assets to register on NAVCalculator.** Keyed by symbol; each has a token `address` and an ordered `priceFeeds[]` array. Read by `script/manage/RegisterAssets.s.sol`. The first feed becomes the asset's primary feed (`registerAsset`); subsequent feeds are added via `addPriceFeed` (see [ADR 0009](../../docs/decisions/0009-multi-feed-price-redundancy.md)). An asset with no oracle uses an empty `priceFeeds: []`. Top-level keys are symbols — no chainId wrapper.
+**Assets to register on NAVCalculator.** Keyed by symbol; each has a token `address`, an `accrualKind`, and an ordered `priceFeeds[]` array. Read by `script/manage/RegisterAssets.s.sol`. The first feed becomes the asset's primary feed (`registerAsset`); subsequent feeds are added via `addPriceFeed` (see [ADR 0009](../../docs/decisions/0009-multi-feed-price-redundancy.md)). An asset with no oracle uses an empty `priceFeeds: []`. Top-level keys are symbols — no chainId wrapper.
 
 ### Template
 
@@ -291,20 +289,23 @@ There is **no `callbackSelector` field** as of [ADR 0012](../../docs/decisions/0
 {
   "ETH": {
     "address": "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE",
+    "accrualKind": "None",
     "priceFeeds": [
       { "type": "Chainlink", "address": "0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419", "heartbeat": 3600 }
     ]
   },
   "USDC": {
     "address": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+    "accrualKind": "None",
     "priceFeeds": [
-      { "type": "Chainlink", "address": "0x37be050e75C7F0a80F0E8abBFC2c4Ff826728cAa", "heartbeat": 86400 }
+      { "type": "Chainlink", "address": "0x8fFfFfd4AfB6115b954Bd326cbe7B4BA576818f6", "heartbeat": 86400 }
     ]
   },
   "sUSDS": {
     "address": "0xa3931d71877C0E7a3148CB7Eb4463524FEc27fbD",
+    "accrualKind": "Appreciating",
     "priceFeeds": [
-      { "type": "Custom", "feed": "sUSDS", "heartbeat": 82800 }
+      { "type": "Custom", "feed": "sUSDS", "heartbeat": 86400 }
     ]
   }
 }
@@ -317,6 +318,7 @@ There is **no `callbackSelector` field** as of [ADR 0012](../../docs/decisions/0
 | Field | Type | Description |
 |-------|------|-------------|
 | `address` | string | Token contract address on that chain |
+| `accrualKind` | string | `"None"` \| `"Rebasing"` \| `"Appreciating"`. **Required** for any asset `RegisterAssets` will newly register (not yet on-chain, primary feed resolvable) — that registration routes through `AssetKindRegistry.registerAsset`, which carries the classification, and there is deliberately no default: an absent or unrecognized value reverts `AssetAccrualKindMissingOrInvalid(symbol)` and aborts the batch. |
 | `priceFeeds` | array | Ordered list of feed entries (see below). First → `registerAsset`, rest → `addPriceFeed`. Empty `[]` for an asset with no oracle. |
 
 **Feed entry (`priceFeeds[]`)**
@@ -337,7 +339,7 @@ There is **no `callbackSelector` field** as of [ADR 0012](../../docs/decisions/0
 - **`nav-config/balance-adapters/{chainId}.json`** — PLAIN adapters. Keyed by adapter name, each just `{ "enabled": true }`. `06_Configure` calls `NAVCalculator.addBalanceAdapters(...)` for the enabled ones.
 - **`nav-config/meta-balance-adapters/{chainId}.json`** — META adapters. Keyed by adapter name, each with `enabled` plus an instance list. `06_Configure` calls `addMetaBalanceAdapter` then reconciles the instance set via `addMetaInstances` / `removeMetaInstances` (diffed against `getMetaInstances`).
 
-`instances` holds address-coordinate instances (widened to `bytes32` on-chain). `instancesRaw` holds raw `bytes32` coordinates (e.g. Morpho marketIds / Balancer V2 poolIds); the two are mutually exclusive. These replace the old `metaInstances` / `metaInstancesRaw` keys.
+`instances` holds address-coordinate instances (widened to `bytes32` on-chain). `instancesRaw` holds raw `bytes32` coordinates (e.g. Morpho marketIds / Balancer V2 poolIds); an adapter uses one or the other — nothing rejects both being present, `06_Configure` simply **unions** the two lists (and a coordinate repeated across them surfaces as `DuplicateMetaInstance` on `addMetaInstances`). These replace the old `metaInstances` / `metaInstancesRaw` keys.
 
 ### Template — `nav-config/balance-adapters/{chainId}.json`
 
@@ -683,7 +685,7 @@ The script `script/manage/AuthorizeBridgeAdapters.s.sol` authorizes each enabled
 
 ## CREATE2 Salts
 
-CREATE2 salts for deterministic deployments are **computed in code** from the contract name + version — there is no salt JSON file to maintain. The impl/library layer (steps `01`/`02`) deploys via the canonical CREATE2 deployer using these salts; balance/price/bridge adapters use plain CREATE (see CLAUDE.md).
+CREATE2 salts for deterministic deployments are **computed in code** from the contract name + version — there is no salt JSON file to maintain. The impl/library layer (steps `01`/`02`) deploys via the canonical CREATE2 deployer using these salts, and so do the bridge adapters in `05` (same address on every chain, ADR 0012 D7); balance and price adapters use plain CREATE (see CLAUDE.md).
 
 ### Salt Generation Logic
 
@@ -869,6 +871,8 @@ MANAGER (keccak256("MANAGER"))
 
 Typically assigned to: Operations team or Safe Multisig
 ```
+
+> `BridgeEscrow.releaseByInvoiceId()` is **not** in either list: it is callable only by an authorized adapter (`if (!_authorizedAdapters.contains(msg.sender)) revert NotAuthorized();`), which funds the release in the same call. Neither MANAGER nor DEFAULT_ADMIN_ROLE can call it.
 
 ### Role Assignment Pattern
 

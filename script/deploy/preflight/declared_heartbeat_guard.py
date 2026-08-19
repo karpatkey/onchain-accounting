@@ -214,6 +214,14 @@ def configured_chain_ids() -> list[str]:
         d = REPO / "script/config" / sub
         if d.is_dir():
             ids.update(p.stem for p in d.glob("*.json") if p.stem.isdigit())
+    # DELIBERATELY UNFILTERED — scope comes from the config tree and nothing else. A `chains/<id>.json`
+    # requirement was tried here to suppress a stray test fixture being audited as a real chain, and it
+    # was withdrawn: it broke this module's own `--self-test` (whose arm points REPO at a tempdir with no
+    # `chains/` directory), it silently shrank the audit for a chain configured before its metadata file
+    # landed — the exact "evidence must never choose its own scope" failure this function exists to
+    # prevent — and its own not-readable fallback restored the phantom it was added to kill, without even
+    # a warning. Three defects to suppress one visually obvious symptom (an empty `chain 999901` section
+    # from an abnormally-terminated test run, which `git status` also shows) was the wrong trade.
     return sorted(ids, key=int)
 
 
@@ -341,7 +349,14 @@ def registered_feeds(chain_id: str) -> list[dict]:
         for name, v in feeds.items():
             if not isinstance(v, dict):
                 continue
-            ctor = v.get("constructor") or {}
+            # EVERY SCOPE `readAdapterParam` SEARCHES, not just `constructor`. A leg written beside
+            # `constructor` — which that resolver checks FIRST, so `03` deploys from it — produced no row
+            # here at all, and `coverage_census` read the same narrow path, so the containment check
+            # compared a short list against a short expectation and reported FULL coverage over a leg it
+            # had never examined. On an exact key collision the OUTER scope WINS — the last spread in a
+            # dict literal takes precedence, and `readAdapterParam` tests `.<feed>.<key>` FIRST.
+            ctor = {**(v.get("initialize") or {}), **(v.get("constructor") or {}),
+                    **{k: x for k, x in v.items() if not isinstance(x, dict) and not k.startswith("$")}}
             # RATE LEGS ARE FOUND BY SHAPE, NOT BY ONE HARD-CODED KEY NAME. Matching only
             # `yToXFeed`/`yToXHeartbeat` silently missed nine ENABLED custom feeds whose leg is named for
             # the pair it prices — `wstEthToEthChainlink`/`wstEthToEthHeartbeat`,
@@ -600,7 +615,10 @@ def coverage_census(chain_id: str) -> dict:
         for _name, v in raw.items():
             if not isinstance(v, dict):
                 continue
-            ctor = v.get("constructor") or {}
+            # Same merge as `registered_feeds` above — the census must count what that function can see,
+            # or the containment check it feeds is comparing a number against itself.
+            ctor = {**(v.get("initialize") or {}), **(v.get("constructor") or {}),
+                    **{k: x for k, x in v.items() if not isinstance(x, dict) and not k.startswith("$")}}
             hb = [k for k in ctor if k.endswith("Heartbeat")]
             leg_keys += len(hb) or (1 if isinstance(ctor.get("yToXFeed"), str) else 0)
     return {"navEntries": nav_entries, "exemptNamedCustom": exempt_named_custom, "legKeys": leg_keys,

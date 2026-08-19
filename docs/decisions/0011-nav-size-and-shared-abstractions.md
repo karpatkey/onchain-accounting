@@ -64,6 +64,12 @@ far — `cbETH`, `rETH`, `ETHx`, `rsETH`, `ezETH`, `ezETH_L2`, `osToken`, `NXM`)
 outliers stay as-is: `ETHPlus_CustomPriceFeed` (no Chainlink leg), `eETH_CustomPriceFeed` (derived two-feed),
 `ankrETH_CustomPriceFeed` (rate inversion).
 
+(Added later: `eETH_CustomPriceFeed` no longer belongs on that outlier list — it has since been reshaped into a
+`BaseCustomPriceFeed` subclass with a constant unit `_rate()` of `1e18` (`src/prices/protocols/eETH_CustomPriceFeed.sol:13`).
+`ETHPlus_CustomPriceFeed` (`src/prices/protocols/ETHPlus_CustomPriceFeed.sol:37`) and `ankrETH_CustomPriceFeed`
+(`src/prices/protocols/ankrETH_CustomPriceFeed.sol:41`) do still implement `ICustomPriceFeed` directly, as this ADR
+decided.)
+
 ### PR C — `BalanceAdapterBase` base + `StaticCallLib` + `ArrayLib` helpers (maintainability; partially shipped)
 
 - An `abstract BalanceAdapterBase` for the standalone leaf adapters (the 9 plain
@@ -73,7 +79,7 @@ outliers stay as-is: `ETHPlus_CustomPriceFeed` (no Chainlink leg), `eETH_CustomP
   + `IERC165`. A thin `SingleAssetBalanceAdapterBase` subbase adds the single-underlying getter
   triad (`underlyingAssetsSupported` / `getAdapterBalanceForAsset` / `getAdapterBalances`) off one
   `_owedAmount` hook, used by the Lido/Stader/Ethena withdrawal-queue adapters. `_getAssetInfo`
-  was **not** hoisted into the base — it remains a per-adapter copy (Cap, ERC20Default, …).
+  was **not** hoisted into the base — it remains a per-adapter copy (the Cap leg adapters, ERC20Default, …).
 - A `StaticCallLib` carrying the `safeUint` / `safeAddr` staticcall-and-decode helpers
   duplicated (and already drifting) across the Convex (`ConvexCurveLPStakingMetaBalanceAdapter`)
   and `UniswapV2PairLib` call sites. (The Aura adapter, which shared the same copy, has since

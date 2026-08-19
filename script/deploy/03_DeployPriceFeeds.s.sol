@@ -40,6 +40,7 @@ import {ezETH_CrossRateCustomPriceFeed} from "../../src/prices/protocols/ezETH_C
 import {ETHx_CrossRateCustomPriceFeed} from "../../src/prices/protocols/ETHx_CrossRateCustomPriceFeed.sol";
 import {osETH_CrossRateCustomPriceFeed} from "../../src/prices/protocols/osETH_CrossRateCustomPriceFeed.sol";
 import {CrossRateCustomPriceFeed} from "../../src/prices/protocols/CrossRateCustomPriceFeed.sol";
+import {InvertedChainlinkCustomPriceFeed} from "src/prices/protocols/InvertedChainlinkCustomPriceFeed.sol";
 import {ankrETH_CustomPriceFeed} from "../../src/prices/protocols/ankrETH_CustomPriceFeed.sol";
 import {NXM_CustomPriceFeed} from "../../src/prices/protocols/NXM_CustomPriceFeed.sol";
 import {RateFeedGuard} from "../utils/RateFeedGuard.sol";
@@ -48,6 +49,20 @@ import {RateFeedGuard} from "../utils/RateFeedGuard.sol";
 /// @notice Deploys custom price feed adapters for NAVCalculator
 /// @dev Price feeds are NOT upgradeable — add new ones via addPriceFeed, remove old via removePriceFeed
 contract DeployPriceFeeds is BaseDeployScript {
+    /// @notice An inverted feed's config declares a non-zero `baseAsset`, which the constructor cannot honour.
+    /// @dev {InvertedChainlinkCustomPriceFeed.BASE_ASSET} is a compile-time `constant address(0)` — a `USD / X`
+    ///      pair reads no base price out of the NAV. The config key exists only so the feed stays inside
+    ///      preflight's circularity and base-allowlist checks, which read it from config; nothing passes it to
+    ///      the constructor. So a non-zero value would be SILENTLY IGNORED and the config would disagree with an
+    ///      IMMUTABLE contract, with the first sign of it being `verify_step` 1.5 failing against an
+    ///      already-broadcast address that can never be amended. Rejected at deploy time instead.
+    error InvertedFeedBaseAssetMustBeZero(string feed, address declared);
+
+    /// @notice An inverted feed's `baseAsset` is present but is not a 20-byte address.
+    /// @dev Raised instead of letting `vm.parseAddress` revert with an opaque cheatcode message, which
+    ///      would hide which feed and which key were at fault.
+    error InvertedFeedBaseAssetMalformed(string feed, string declared);
+
     function run() public override {
         setUp();
 
@@ -65,6 +80,13 @@ contract DeployPriceFeeds is BaseDeployScript {
         // re-registration on an immutable feed. See {RateFeedGuard} for why identity and band are both required.
         uint256 guarded = RateFeedGuard.checkAll(vm, currentChainId);
         console2.log("Rate-feed pair identity verified for instances:", guarded);
+
+        // BEFORE THE BROADCAST, for the same reason the guard above runs here. This assertion used to sit
+        // inside `_deployInvertedFeed`, i.e. inside `vm.startBroadcast()` — so a non-zero `baseAsset` on an
+        // inverted feed reverted the script only after every earlier feed in the run had already been
+        // broadcast, leaving a half-written `deployments/<id>.json` that the next run's skip-if-deployed
+        // logic then papers over. A pre-deploy stop costs a config edit; the other costs a redeploy.
+        _assertInvertedFeedsDeclareZeroBase();
         console2.log("");
 
         // Deploy price feeds based on chain and enabled configuration
@@ -248,6 +270,14 @@ contract DeployPriceFeeds is BaseDeployScript {
         // Deploy ankrETH Price Oracle (ankrETH/USD = ETH/USD * 1e18 / ratio)
         if (ConfigReader.isAdapterEnabled(vm, currentChainId, "priceFeeds", "ankrETH")) {
             _deployAnkrEth();
+        }
+
+        // Deploy wARS Price Oracle (wARS/USD = 1 / Chainlink "USD / ARS"). Gated ONLY on its own config
+        // entry: nesting this inside another feed's `if` would make an enabled wARS silently not deploy
+        // whenever that unrelated feed is disabled, and RegisterAssets would then skip wARS for want of a
+        // resolved custom-feed address — a silent under-report, not a loud failure.
+        if (ConfigReader.isPriceFeedEnabled(vm, currentChainId, "wARS")) {
+            _deployInvertedFeed("wARS");
         }
 
         // Deploy NXM / wNXM Price Oracle (price = RAMM.getInternalPrice() [ETH/NXM] * ETH/USD)
@@ -609,12 +639,83 @@ contract DeployPriceFeeds is BaseDeployScript {
         console2.log("ezETH_CustomPriceFeed deployed at:", address(ezEthAdapter));
     }
 
+    // NOTE: this section header describes `_deployCrossRateMonitor`, further below — the two
+    // inverted-feed helpers between here and it are a different family.
     // CrossRate redundancy feeds: Y/USD = (X/USD) * (Y/X), X = ETH. The Y/ETH leg is a Redstone market feed,
     // independent of the asset's primary on-chain-rate feed. Registered as a `monitorFeed`, NOT as a pricing feed:
     // it never prices the NAV, it only provides something for the primary to be checked against. An earlier
     // version of this line said "Registered as priceFeeds[1] (freshest-wins)", which described behaviour PR #151
     // removed — and it sat five lines above the docstring below that already says the opposite. A comment
     // asserting the reverse of the behaviour, in the place someone goes to check the behaviour, is worse than none.
+
+    /// @notice Pre-broadcast: every enabled inverted feed must declare `baseAsset` absent or `address(0)`.
+    /// @dev Keyed on the `usdToAssetChainlinkAddress` param, which is what makes an entry an inverted feed —
+    ///      not on a hardcoded name, so a second `USD / X` feed is covered the day it is configured.
+    ///      See {InvertedFeedBaseAssetMustBeZero} for why a non-zero value cannot be honoured.
+    function _assertInvertedFeedsDeclareZeroBase() internal view {
+        // ONE assertion, and deliberately only one. `baseAsset` is the single key an inverted feed can
+        // declare that the CONSTRUCTOR CANNOT HONOUR — {InvertedChainlinkCustomPriceFeed.BASE_ASSET} is a
+        // compile-time `constant address(0)` — so a non-zero value is silently ignored and leaves config
+        // disagreeing with an immutable contract. That is specific to this family and worth a pre-broadcast
+        // stop.
+        //
+        // PRESENCE AND PARSEABILITY OF THE OTHER PARAMS ARE DELIBERATELY *NOT* CHECKED HERE. Two commits
+        // running added such checks in response to review, and both were incomplete in a new way: a digit
+        // loop that red-gated hex values `vm.parseUint` accepts, address params still unvalidated, then the
+        // constructor's own band invariant. The reason it kept growing is that the underlying property is
+        // NOT specific to this feed: EVERY `_deploy*` helper in this script reads and parses its config
+        // inside `vm.startBroadcast()`, so a malformed value anywhere aborts mid-run with earlier feeds
+        // already deployed. Pre-validating one family creates the impression the rest are covered while
+        // chasing an unbounded list of per-key shape rules. **DECLARED, script-wide:** config is parsed
+        // in-broadcast; `preflight_config` is where config shape is gated before a run starts.
+        string[] memory names = ConfigReader.getEnabledAdapters(vm, currentChainId, "deployPriceFeeds");
+        for (uint256 i; i < names.length; ++i) {
+            if (!ConfigReader.isPriceFeedEnabled(vm, currentChainId, names[i])) continue;
+            string memory rate =
+                ConfigReader.readPriceFeedParam(vm, currentChainId, names[i], "usdToAssetChainlinkAddress");
+            if (bytes(rate).length == 0) continue;
+
+            // An ABSENT key is not this gate's business: `preflight_config.base_allowlist_findings` already
+            // ERRORs on a custom feed that declares no `baseAsset` at all, and stating the opposite here
+            // would leave the two gates asserting contradictory contracts for the same key. This one only
+            // rules on a value that IS present.
+            string memory declaredBase = ConfigReader.readPriceFeedParam(vm, currentChainId, names[i], "baseAsset");
+            if (bytes(declaredBase).length == 0) continue;
+            // Shape-check BEFORE `vm.parseAddress`, which reverts with an opaque cheatcode error and would
+            // bury the named error this function exists to raise.
+            if (bytes(declaredBase).length != 42) revert InvertedFeedBaseAssetMalformed(names[i], declaredBase);
+            if (vm.parseAddress(declaredBase) != address(0)) {
+                revert InvertedFeedBaseAssetMustBeZero(names[i], vm.parseAddress(declaredBase));
+            }
+        }
+    }
+
+    /// @notice Deploys a generic {InvertedChainlinkCustomPriceFeed} from config, by feed key.
+    /// @dev For assets whose ONLY Chainlink coverage is quoted `USD / X` (X per USD) — the reciprocal of the
+    ///      asset/USD direction {Prices} registers. The constructor param is named `*ChainlinkAddress` so
+    ///      {RateFeedGuard} recognises it as a rate feed and REQUIRES a `rateFeedGuard` block, which pins both
+    ///      the pair and the direction; without that naming the guard would silently skip this feed.
+    function _deployInvertedFeed(string memory name) internal {
+        address deployed = _readAdapterDeployed("priceFeeds", name);
+        if (deployed != address(0)) {
+            console2.log("InvertedChainlink feed already deployed:", name, deployed);
+            return;
+        }
+        address underlying =
+            vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, name, "underlyingAsset"));
+        address usdToAssetFeed =
+            vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, name, "usdToAssetChainlinkAddress"));
+        uint256 heartbeat =
+            vm.parseUint(ConfigReader.readPriceFeedParam(vm, currentChainId, name, "usdToAssetChainlinkHeartbeat"));
+
+        uint256 minAnswer = vm.parseUint(ConfigReader.readPriceFeedParam(vm, currentChainId, name, "minAnswer"));
+        uint256 maxAnswer = vm.parseUint(ConfigReader.readPriceFeedParam(vm, currentChainId, name, "maxAnswer"));
+
+        InvertedChainlinkCustomPriceFeed adapter =
+            new InvertedChainlinkCustomPriceFeed(underlying, usdToAssetFeed, heartbeat, minAnswer, maxAnswer);
+        ConfigReader.writeAdapterAddress(vm, currentChainId, "priceFeeds", name, address(adapter));
+        console2.log("InvertedChainlinkCustomPriceFeed deployed:", name, address(adapter));
+    }
 
     /// @notice Deploys a generic CrossRate divergence-MONITOR feed (Y/USD = (Y/ETH market) x (ETH/USD)) from its
     ///         config entry `{underlyingAsset, yToXFeed, yToXHeartbeat, baseAsset}`. Used for LSTs whose fundamental

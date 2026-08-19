@@ -2,6 +2,7 @@
 pragma solidity ^0.8.0;
 
 import {ICustomPriceFeed} from "src/prices/ICustomPriceFeed.sol";
+import {INavSourcedPriceFeed} from "src/prices/INavSourcedPriceFeed.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {OracleArgumentChecks} from "src/utils/OracleArgumentChecks.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
@@ -33,8 +34,17 @@ import "src/errors.sol";
 ///
 /// @author KPK
 /* solhint-disable var-name-mixedcase, contract-name-camelcase */
-contract ETHPlus_CustomPriceFeed is ICustomPriceFeed {
+contract ETHPlus_CustomPriceFeed is ICustomPriceFeed, INavSourcedPriceFeed {
     using Math for uint256;
+
+    /// @inheritdoc INavSourcedPriceFeed
+    /// @dev `address(0)` — this feed has NO NAV dependency. Unlike the `rate × base/USD` feeds it does not read a
+    ///      base price back out of the NAV at all: {_calculateETHPlusPriceUSD18} derives ETH+/USD directly from the
+    ///      Reserve Protocol basket's own collateral price bounds. So it cannot participate in the registration
+    ///      circularity {IPrices-CustomFeedBaseCircular} rejects. Declared explicitly rather than omitted because
+    ///      registration REJECTS a custom feed that cannot answer this (`IPrices.CustomFeedBaseUnreadable`) — a feed
+    ///      with no NAV dependency has to be able to say so.
+    address public constant override BASE_ASSET = address(0);
 
     address public immutable ETHPLUS;
     /// @notice Max age of min(lastSave()) across basket components before the price is stale.

@@ -196,7 +196,14 @@ So a slice can get an answer out of a portfolio whose complete read has started 
 ## Measured cost
 
 Mainnet fork, the integration harness's registry (**41 registered assets, 21 registered adapters**; the production
-config has 43 assets and 27 adapters, so production is somewhat higher), most diversified test account:
+config had 42 assets and 27 adapters when this was measured), most diversified test account.
+
+> **These are MEASURED figures from a fork run, not derived counts — they are as of that run and are not
+> updated when the registry grows.** PR #308 adds a Symbiotic meta-adapter AND the wARS asset, so it moves
+> the ADAPTER axis and the ASSET axis both: the production config went from 42 assets / 27 adapters to 43 / 28
+> (measured on both sides), and the harness gains BOTH — the same adapter and the same asset. The gas numbers below were NOT
+> re-measured, so the counts are left at the values they were measured against rather than silently
+> re-stated against a registry the measurement never saw. Re-run the harness to refresh both together.
 
 | Read | Gas |
 |---|---|
@@ -294,9 +301,10 @@ differing only in which adapters are handed to it. There is no second NAV entryp
 ### The precondition is not theoretical — read this before reconciling
 
 Some adapters **fail open inside their own frame and return successfully having dropped legs.**
-`AssistedCoordCache._collect` isolates each cached coordinate behind an *uncapped*
-`try this.valueCoordSelf(…)` / `catch {}`, and `ERC20DefaultBalanceAdapter` records `0` for an asset whose
-`balanceOf` staticcall fails. Nothing upstream can detect either — see the "Scope, stated plainly" note on
+`AssistedCoordCache._collect` isolates each cached coordinate behind a per-item
+`try this.valueCoordSelf{gas: stipend}(…)` and discards any coordinate that reverts (starvation is the one case its
+`catch` raises on, as `CoordinateGasExhausted`), and `ERC20DefaultBalanceAdapter` records `0` for an asset whose
+unstipended `balanceOf` staticcall fails. Nothing upstream can detect either — see the "Scope, stated plainly" note on
 `PriceFeedLib._getAdapterPositions`.
 
 The per-adapter gas stipend is a share of what the **read** still holds *at the moment that adapter is reached*, and
@@ -355,8 +363,8 @@ leg while sibling credit legs survive, which raises reported NAV:
 
 | site | shape |
 |---|---|
-| `EulerVaultsMetaBalanceAdapter._safeDebt` | `StaticCallLib` **capped** probe on `debtOf`; a failure means "no debt leg" while the supply leg is still emitted. Unconditional — extra caller gas does not help. |
-| `FluidVaultLib.aggregate` | `resolver.staticcall(positionByNftId)` with no gas argument, `continue` on failure; drops that NFT's supply *and* borrow, so it over-reports when the dropped NFT is net-debt or is the only debt-carrying one. |
+| `EulerVaultsMetaBalanceAdapter._safeDebt` | `StaticCallLib.probeWordMetered` on `debtOf`; a revert — or a reply shorter than one word — means "no debt leg" while the supply leg is still emitted. Starvation is the one case it does *not* absorb: it raises `DebtReadGasExhausted`. |
+| `FluidVaultLib.aggregate` | `resolver.staticcall(positionByNftId)` under a frame-derived stipend, `continue` on a reply that is unreadable rather than starved (starvation raises `FluidPositionGasExhausted`); the `continue` drops that NFT's supply *and* borrow, so it over-reports when the dropped NFT is net-debt or is the only debt-carrying one. |
 | `GearboxV3CreditAccountsMetaBalanceAdapter._appendBorrow` | uncapped `try`/`catch` that drops only the borrow leg. Mitigated by the `_debtReportable(cm)` gate that drops the whole position first, but that gate is evaluated *before* the gas is drained, so it is a narrow TOCTOU rather than a closed hole. |
 
 None of these is introduced or fixed by the paginated read — they are pre-existing, and two of them over-report the
@@ -371,10 +379,12 @@ loud `AdapterGasExhausted` into a **silent** fail-open drop, and `adaptersCovere
 
 `test/integration/NAV.PaginatedNav.Mainnet.integration.fork.t.sol` — under a singleton partition, a batched
 partition, and a second portfolio shape, with a non-vacuity guard so the assertions cannot pass against an account
-that holds nothing. **That harness covers 41 assets / 21 adapters, not the production 43 / 27** — the six skipped are
-`EthenaCooldown`, `LidoWithdrawalQueue`, `EulerVaultsMeta` and the three assisted adapters, and the counts are
-asserted in the test so this claim cannot silently rot. Note that a fork test cannot exercise the starvation case at
-all: forge grants effectively unlimited gas, so no adapter is ever starved there.
+that holds nothing. **That harness covered 41 assets / 21 adapters at the time of measurement, against a production 42 / 27** — the six skipped are
+`EthenaCooldown`, `LidoWithdrawalQueue`, `EulerVaultsMeta` and the three assisted adapters, and that six-adapter
+*gap* is asserted by name in `test_harnessCoverageGapIsWhatTheDocblockClaims` so this claim cannot silently rot. The
+counts themselves are deliberately **not** pinned — asserting them would redden the suite whenever the mainnet asset
+config grows — so treat 41 / 21 as descriptive. Note that a fork test cannot exercise the starvation case at all:
+forge grants effectively unlimited gas, so no adapter is ever starved there.
 
 Unit-level cases (the three rejections, order preservation, an adapter removed from the registry mid-paging, debt
 netting across a slice boundary, and slice-locality + union recovery for **both** `stalePriceAssets` and

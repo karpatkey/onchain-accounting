@@ -28,7 +28,7 @@ struct PositionBalance {
 
 **`balanceAsset`** — `Asset { address asset; string symbol; uint8 decimals; }`
 
-The ERC20 token (or native-token sentinel `0xEeee…EeeE`) that `amount` is denominated in.
+The ERC20 token (or native-token sentinel `0xEeee…EEeE`) that `amount` is denominated in.
 Populated from NAVCalculator's asset registry; `symbol` and `decimals` are the registry values,
 not read live from the token contract.
 
@@ -119,6 +119,10 @@ struct Position {
     bool    quoteAssetStale;  // true if the quote asset's own feed was stale (value falls back to USD 8dp)
     // + the identity fields: protocolBrand, protocolId, protocolSubId, positionId,
     //   positionKind, isLocked, positionInstanceId
+    bool    irregular;           // true if the asset's primary price diverged from its monitor feeds beyond
+                                 // tolerance (or, for stablecoins, from the $1 peg) — a pricing-QUALITY signal,
+                                 // not a validity flag: price/value are still populated from the primary
+    bool    quoteAssetIrregular; // the same divergence signal for the quote asset; always false for a USD quote
 }
 ```
 
@@ -133,8 +137,8 @@ One representative leg per adapter using realistic but fictional amounts. For ad
 emit multiple legs the most informative leg is shown; other legs are noted inline.
 
 Token addresses (Mainnet): USDC `0xA0b8…6eB48` · WETH `0xC02a…6Cc2` · DAI `0x6B17…1d0F` ·
-stETH `0xae7a…2Ca0` · wstETH `0x7f39…Ca0` · CRV `0xD533…cd52` · AAVE `0x7Fc6…DaE9` ·
-GHO `0x40D1…2f` · USDS `0xdC03…84F` · ETH (native) `0xEeee…EeeE`
+stETH `0xae7a…fE84` · wstETH `0x7f39…Ca0` · CRV `0xD533…cd52` · AAVE `0x7Fc6…DaE9` ·
+GHO `0x40D1…2f` · USDS `0xdC03…84F` · ETH (native) `0xEeee…EEeE`
 
 Protocol contract addresses are shown as `0x<Name>` to remain chain-agnostic.
 
@@ -206,7 +210,7 @@ PositionBalance({
 })
 ```
 
-#### `Cap` — cUSD + stcUSD (two legs)
+#### `Cap` — cUSD + stcUSD (two adapters, one leg each)
 
 Two structurally distinct legs, each valued in USDC: the base synthetic dollar (cUSD) and the staked,
 yield-bearing savings token (stcUSD). The leg is identified by the token in `positionId`.
@@ -215,7 +219,7 @@ yield-bearing savings token (stcUSD). The leg is identified by the token in `pos
 // Leg 1 — held cUSD (label ["Stablecoin", "cUSD"])
 PositionBalance({
     balanceAsset:  Asset({ asset: 0xA0b8…6eB48, symbol: "USDC", decimals: 6 }),
-    balanceAdapter: 0x<CapAdapter>,
+    balanceAdapter: 0x<CapStablecoinAdapter>, // the cUSD leg's OWN adapter
     amount:        2_000_000_000,          // 2 000 USDC
     isDebt:        false,
     protocolSubId: keccak256("cap"),
@@ -225,7 +229,7 @@ PositionBalance({
 // Leg 2 — staked stcUSD (label ["Savings", "stcUSD"])
 PositionBalance({
     balanceAsset:  Asset({ asset: 0xA0b8…6eB48, symbol: "USDC", decimals: 6 }),
-    balanceAdapter: 0x<CapAdapter>,
+    balanceAdapter: 0x<CapSavingsAdapter>, // DIFFERENT adapter from leg 1 — see the note below
     amount:        1_000_000_000,          // 1 000 USDC (stcUSD → cUSD → USDC)
     isDebt:        false,
     protocolSubId: keccak256("cap"),
@@ -234,6 +238,13 @@ PositionBalance({
 })
 ```
 
+> ⚠️ **The two legs report DIFFERENT `balanceAdapter` addresses.** Before the per-leg split one Cap adapter
+> emitted both, and a reconciliation could key Cap on a single adapter address. It no longer can:
+> `CapStablecoinBalanceAdapter` emits the cUSD leg and `CapSavingsBalanceAdapter` the stcUSD leg, and
+> `balanceAdapter` is the documented audit-trail join field. `protocolBrand` / `protocolId` / `protocolSubId`
+> are unchanged and identical across both legs, so **group Cap on `protocolSubId`, not on `balanceAdapter`** —
+> keying on the adapter address will silently drop whichever leg the integrator did not know about.
+
 #### `KelpWithdrawalQueue` — rsETH exit queue
 
 ```solidity
@@ -241,7 +252,7 @@ PositionBalance({
 // One leg PER open request per asset (told apart by isLocked); the payout asset is in balanceAsset,
 // and the request's userNonce rides in positionInstanceId.
 PositionBalance({
-    balanceAsset:       Asset({ asset: 0xae7a…2Ca0, symbol: "stETH", decimals: 18 }),
+    balanceAsset:       Asset({ asset: 0xae7a…fE84, symbol: "stETH", decimals: 18 }),
     balanceAdapter:     0x<KelpWithdrawalQueueAdapter>,
     amount:             2e18,                   // 2 stETH still pending (this request)
     isDebt:             false,
@@ -259,7 +270,7 @@ PositionBalance({
 // One leg PER open withdrawal request, all sharing the static positionId = abi.encode(withdrawalQueue);
 // denominated in ETH (not stETH). The ERC721 request id rides in positionInstanceId, never in positionId.
 PositionBalance({
-    balanceAsset:       Asset({ asset: 0xEeee…EeeE, symbol: "ETH", decimals: 18 }),
+    balanceAsset:       Asset({ asset: 0xEeee…EEeE, symbol: "ETH", decimals: 18 }),
     balanceAdapter:     0x<LidoWithdrawalQueueAdapter>,
     amount:             1e18,                   // this request's claimable (finalized) or amountOfStETH (pending) ETH
     isDebt:             false,
@@ -433,7 +444,7 @@ PositionBalance({
 ```solidity
 // Staking = vault shares → ETH. Other leg: Borrowed (minted osETH debt).
 PositionBalance({
-    balanceAsset:  Asset({ asset: 0xEeee…EeeE, symbol: "ETH", decimals: 18 }),
+    balanceAsset:  Asset({ asset: 0xEeee…EEeE, symbol: "ETH", decimals: 18 }),
     balanceAdapter: 0x<StakeWiseV3VaultsMeta>,
     amount:        2e18,                   // 2 ETH (convertToAssets(getShares))
     isDebt:        false,
@@ -601,6 +612,20 @@ The tables below show what the call returns for a representative account positio
 `IPositionDescribable.protocolName()`; `labels` comes from `IPositionDescribable.positionLabels(positionId)`
 (the ordered hierarchy below `protocolName`, leaf last) — computed lazily from `positionId`, so
 meta-adapters derive it on-chain from live state and per-instance adapters return a fixed array.
+None of those strings is necessarily the adapter's own: `AssetKindRegistry` holds optional per-ADAPTER
+overrides — `setAdapterProtocolName` and `setAdapterLabels`, both `onlyNavManager` — and
+`PriceFeedLib.toVerbose` applies them in preference to the adapter's reply. The name is replaced
+wholesale; `setAdapterLabels` takes a `string[]` that is **index-aligned with the adapter's reply** and
+replaces it **segment by segment**, where `""` at an index means "leave that segment alone". So
+`["Lending Market", ""]` corrects a meta-adapter's category and leaves its computed leaf derived live.
+The overlay applies only for `i < min(reply.length, override.length)`, so on the **position** path — the one
+these `VerbosePosition` rows come from — an override can never write past nor lengthen the adapter's own reply:
+`labels.length` is always the adapter's answer. (The configuration surface `getAdapterDisplayInfo` differs on
+one case by design: an EMPTY reply is grown to the override's leading non-empty prefix, so a meta-adapter, which
+answers `positionLabels("")` with `[]`, still gets a breadcrumb on a configuration page. That surface is not what
+you reconcile against — use these position rows.)
+`src/balances/BALANCE_ADAPTERS.md` §6.2 carries the per-adapter sweep of which segment is a literal and
+which is computed.
 
 > **`protocolName()` names the protocol, never the product.** Every adapter sharing a `protocolId` returns the
 > same string: Aave V3's lending instances, Safety Module and Umbrella are all `"Aave V3"`; Morpho's vaults and
@@ -665,7 +690,7 @@ Scenario: 1 000 USDC staked in stkwaEthUSDC.v1 with 5 USDC rewards pending.
 | USDC  | 5      | +5          | `Rewards`    | `"Aave V3"`       | `["Umbrella Module"]` |
 | **NAV** | | **+1 005** | | | |
 
-#### `Cap` — cUSD + stcUSD
+#### `Cap` — cUSD + stcUSD (one leg per adapter)
 
 Scenario: 2 000 cUSD held + 1 000 USDC-worth of staked stcUSD.
 
@@ -785,9 +810,9 @@ Scenario: 2 000 USDC supplied (base asset), 0.5 WETH as collateral, 10 COMP rewa
 
 | asset | amount | value (USD) | positionKind | protocolName     | labels          |
 |-------|--------|-------------|--------------|------------------|------------------------|
-| USDC  | 2 000  | +2 000      | `Supplied`   | `"Compound V3"`  | `["Market", "Compound USDC"]`      |
-| WETH  | 0.5    | +1 250      | `Collateral` | `"Compound V3"`  | `["Market", "Compound USDC"]`      |
-| COMP  | 10     | +500        | `Rewards`    | `"Compound V3"`  | `["Market", "Compound USDC"]`      |
+| USDC  | 2 000  | +2 000      | `Supplied`   | `"Compound V3"`  | `["Market", "cUSDCv3"]`      |
+| WETH  | 0.5    | +1 250      | `Collateral` | `"Compound V3"`  | `["Market", "cUSDCv3"]`      |
+| COMP  | 10     | +500        | `Rewards`    | `"Compound V3"`  | `["Market", "cUSDCv3"]`      |
 | **NAV** | | **+3 750** | | | |
 
 #### `StakeWiseV3VaultsMeta`
@@ -829,8 +854,8 @@ Scenario: wallet holds BPT representing 800 USDC + 0.32 WETH in a Balancer V3 US
 
 | asset | amount | value (USD) | positionKind | protocolName    | labels        |
 |-------|--------|-------------|--------------|-----------------|----------------------|
-| USDC  | 800    | +800        | `Supplied`   | `"Balancer V3"` | `["AMM Liquidity Pool", "Balancer 50 WETH 50 USDC"]`  |
-| WETH  | 0.32   | +800        | `Supplied`   | `"Balancer V3"` | `["AMM Liquidity Pool", "Balancer 50 WETH 50 USDC"]`  |
+| USDC  | 800    | +800        | `Supplied`   | `"Balancer V3"` | `["AMM Liquidity Pool", "USDC/WETH"]`  |
+| WETH  | 0.32   | +800        | `Supplied`   | `"Balancer V3"` | `["AMM Liquidity Pool", "USDC/WETH"]`  |
 | **NAV** | | **+1 600** | | | |
 
 #### `BalancerV3GaugesMeta`
@@ -839,9 +864,9 @@ Scenario: staked BPT in gauge for a USDC/WETH pool, with 50 BAL rewards accrued.
 
 | asset | amount | value (USD) | positionKind | protocolName    | labels           |
 |-------|--------|-------------|--------------|-----------------|-------------------------|
-| USDC  | 800    | +800        | `Staking`    | `"Balancer V3"` | `["Staking Gauge", "USDC/WETH gauge"]`     |
-| WETH  | 0.32   | +800        | `Staking`    | `"Balancer V3"` | `["Staking Gauge", "USDC/WETH gauge"]`     |
-| BAL   | 50     | +150        | `Rewards`    | `"Balancer V3"` | `["Staking Gauge", "USDC/WETH gauge"]`     |
+| USDC  | 800    | +800        | `Staking`    | `"Balancer V3"` | `["Staking Gauge", "USDC/WETH"]`     |
+| WETH  | 0.32   | +800        | `Staking`    | `"Balancer V3"` | `["Staking Gauge", "USDC/WETH"]`     |
+| BAL   | 50     | +150        | `Rewards`    | `"Balancer V3"` | `["Staking Gauge", "USDC/WETH"]`     |
 | **NAV** | | **+1 750** | | | |
 
 #### `BalancerV2PoolsMeta`
@@ -850,8 +875,8 @@ Scenario: wallet holds V2 BPT representing 800 USDC + 0.32 WETH.
 
 | asset | amount | value (USD) | positionKind | protocolName    | labels       |
 |-------|--------|-------------|--------------|-----------------|---------------------|
-| USDC  | 800    | +800        | `Supplied`   | `"Balancer V2"` | `["AMM Liquidity Pool", "50WETH-50USDC"]` |
-| WETH  | 0.32   | +800        | `Supplied`   | `"Balancer V2"` | `["AMM Liquidity Pool", "50WETH-50USDC"]` |
+| USDC  | 800    | +800        | `Supplied`   | `"Balancer V2"` | `["AMM Liquidity Pool", "USDC/WETH"]` |
+| WETH  | 0.32   | +800        | `Supplied`   | `"Balancer V2"` | `["AMM Liquidity Pool", "USDC/WETH"]` |
 | **NAV** | | **+1 600** | | | |
 
 #### `BalancerV2GaugesMeta`
@@ -860,9 +885,9 @@ Scenario: staked V2 BPT with 50 BAL rewards.
 
 | asset | amount | value (USD) | positionKind | protocolName    | labels           |
 |-------|--------|-------------|--------------|-----------------|-------------------------|
-| USDC  | 800    | +800        | `Staking`    | `"Balancer V2"` | `["Staking Gauge", "50USDC-50WETH gauge"]` |
-| WETH  | 0.32   | +800        | `Staking`    | `"Balancer V2"` | `["Staking Gauge", "50USDC-50WETH gauge"]` |
-| BAL   | 50     | +150        | `Rewards`    | `"Balancer V2"` | `["Staking Gauge", "50USDC-50WETH gauge"]` |
+| USDC  | 800    | +800        | `Staking`    | `"Balancer V2"` | `["Staking Gauge", "USDC/WETH"]` |
+| WETH  | 0.32   | +800        | `Staking`    | `"Balancer V2"` | `["Staking Gauge", "USDC/WETH"]` |
+| BAL   | 50     | +150        | `Rewards`    | `"Balancer V2"` | `["Staking Gauge", "USDC/WETH"]` |
 | **NAV** | | **+1 750** | | | |
 
 #### `CurvePoolsMeta`
@@ -957,6 +982,7 @@ schemas are in the next section and in the per-adapter table above.)
 | `morpho-vaults` | `MORPHO_VAULTS` | `MorphoVaultsMetaBalanceAdapter` — MetaMorpho (ERC4626) vault supply |
 | `morpho-markets` | `MORPHO_MARKETS` | `MorphoMarketsMetaBalanceAdapter` — Morpho isolated-market collateral/supply/borrow |
 | `euler-vaults` | `EULER_VAULTS` | `EulerVaultsMetaBalanceAdapter` — Euler V2 vault supply/collateral/borrow |
+| `symbiotic-vaults` | `SYMBIOTIC_VAULTS` | `SymbioticVaultsMetaBalanceAdapter` — Symbiotic **ERC-4626** vault supply. NOT Symbiotic core vaults (epoch-based `activeBalanceOf` + withdrawal queue), which this adapter does not value |
 | `gearbox-v3-markets` | `GEARBOX_V3_MARKETS` | `GearboxV3MarketsMetaBalanceAdapter` — Gearbox V3 passive-pool deposit |
 | `gearbox-v3-credit-accounts` | `GEARBOX_V3_CREDIT_ACCOUNTS` | `GearboxV3CreditAccountsMetaBalanceAdapter` — Gearbox V3 credit-account collateral/debt |
 | `compound-v3-comets` | `COMPOUND_V3_COMETS` | `CompoundV3CometsMetaBalanceAdapter` — Compound V3 Comet base/collateral/rewards |
@@ -975,7 +1001,7 @@ schemas are in the next section and in the per-adapter table above.)
 | `pancakeswap-v2` | `PANCAKESWAP_V2` | `PancakeSwapV2PoolsMetaBalanceAdapter` — PancakeSwap V2 LP |
 | `stakewise-v3-vaults` | `STAKEWISE_V3_VAULTS` | `StakeWiseV3VaultsMetaBalanceAdapter` — StakeWise V3 vault stake + osToken debt |
 | `nexus-mutual-staking-pools` | `NEXUS_MUTUAL_STAKING_POOLS` | `NexusMutualStakingPoolsAssistedBalanceAdapter` — Nexus Mutual StakingNFT stake + rewards |
-| `cap` | `CAP` | `CapBalanceAdapter` — Cap cUSD (held) and stcUSD (staked) |
+| `cap` | `CAP` | `CapStablecoinBalanceAdapter` (held cUSD) + `CapSavingsBalanceAdapter` (staked stcUSD) — two adapters, one `protocolSubId`: both legs encode the same positionId shape |
 | `merkl` | `MERKL` | Reserved Merkl-rewards slug — no live adapter on `main` (the former `MerklRewardsAssistedBalanceAdapter` was removed; re-add pending). Would emit unclaimed (claimable) Merkl reward tokens |
 | `lido-withdrawal` | `LIDO_WITHDRAWAL` | `LidoWithdrawalQueueBalanceAdapter` — ETH owed from the Lido stETH withdrawal queue |
 | `stader-withdrawal` | `STADER_WITHDRAWAL` | `StaderWithdrawalQueueBalanceAdapter` — ETH owed from the Stader ETHx withdrawal queue |
@@ -1007,6 +1033,7 @@ rather than overloading an existing one.
 | `morpho-vaults` | `(address vault)` |
 | `morpho-markets` | `(bytes32 marketId)` |
 | `euler-vaults` | `(address vault)` |
+| `symbiotic-vaults` | `(address vault)` |
 | `gearbox-v3-markets` | `(address market)` |
 | `gearbox-v3-credit-accounts` | `(address creditAccount)` |
 | `compound-v3-comets` | `(address comet)` |
@@ -1144,6 +1171,7 @@ decodes use `AbiCoder.defaultAbiCoder()` from ethers.js. Protocol ID constants c
 | `MorphoVaultsMeta` | `morpho-vaults` | `Supplied` |
 | `MorphoMarketsMeta` | `morpho-markets` | `Collateral`, `Supplied`, `Borrowed` |
 | `EulerVaultsMeta` | `euler-vaults` | `Supplied`, `Collateral`, `Borrowed` |
+| `SymbioticVaultsMeta` | `symbiotic-vaults` | `Supplied` |
 | `GearboxV3MarketsMeta` | `gearbox-v3-markets` | `Supplied` |
 | `FluidFTokensMeta` | `fluid-ftokens` | `Supplied` |
 | `FluidVaultsMeta` | `fluid-vaults` | `Collateral`, `Borrowed` |
@@ -1436,8 +1464,9 @@ const [anchor] = abi.decode(["address"], pos.positionId);
 // Supplied → up to two legs sharing this positionId: a claimable leg (pos.isLocked === false) and a
 //   pending/locked leg (pos.isLocked === true). Sum both for the total owed; read pos.isLocked to
 //   route Claim vs wait. Per-request detail (the NFT / nonce) is the typed pos.positionInstanceId.
-// balanceAsset is the underlying paid on claim: native ETH sentinel for Lido,
-//   WETH for Stader, and the LST asset (e.g. stETH) for Kelp — all set per-deploy via UNDERLYING_TOKEN
+// balanceAsset is the underlying paid on claim: native ETH sentinel for Lido and WETH for Stader — both
+//   pinned per-deploy as UNDERLYING_TOKEN — and, for Kelp, the requested LST asset (e.g. stETH), which has
+//   no UNDERLYING_TOKEN: Kelp's payout set is discovered at runtime from lrtConfig().getSupportedAssetList()
 ```
 
 ---
@@ -1486,7 +1515,8 @@ navCalculator.getAccountNavVerbose(account, quoteAsset)  // NAV + all verbose po
 `protocolName` comes from each adapter's `IPositionDescribable.protocolName()`; `labels` comes from
 `IPositionDescribable.positionLabels(position.positionId)`. The full breadcrumb is
 `[protocolName, ...labels]`. If an adapter doesn't implement `IPositionDescribable`, both `protocolName`
-and `labels` are empty.
+and `labels` are empty. A per-adapter `AssetKindRegistry` override wins over the adapter's own reply for
+`protocolName` and for `labels[0]` (the category) — see the note under `getAccountPositionsVerbose` above.
 **Never use these strings for identity, indexing, or reconciliation** — they are display-only and may
 change as labels evolve.
 
@@ -1499,9 +1529,13 @@ legs, and a worked example — for every balance adapter on `main`.
 - **Full breadcrumb** = `[protocolName(), ...positionLabels(positionId)]`; the **leaf** is the last element.
 - **`protocolSubId`** column is the `keccak256` slug (constants in [`src/utils/ProtocolIds.sol`](../../src/utils/ProtocolIds.sol)).
 - **Leaf source:** `const` = hardcoded literal · `derived` = read live from chain · `gov` = constructor arg.
-  Nothing is governance-fed today. For meta-adapters the breadcrumb root `protocolName()` is **derived from
+  The one constructor-fed leaf is `StakeWiseV3ExitQueueAssistedBalanceAdapter`'s `receiptSymbol`. For
+  meta-adapters the breadcrumb root `protocolName()` is **derived from
   the adapter's own `_protocolId()`** (`ProtocolNames.forProtocolId`) — not a constructor argument and not
   configurable per deployment — the category is a `const` literal, and the leaf is `derived` on-chain.
+  What the *verbose reads report* is a separate matter: an `AssetKindRegistry` per-adapter override
+  (`setAdapterProtocolName` / `setAdapterLabels`, `onlyNavManager`) replaces the reported `protocolName` and
+  any `labels` SEGMENT — `""` skips a segment — without touching the adapter, which is immutable either way.
   Meta-adapters use a `_labels(category, leaf)` helper that **drops an empty leaf**, so a failed read
   degrades to `[category]`.
 - Labels are returned by `positionLabels(positionId)`; the ephemeral per-item id (request / NFT / ticket)
@@ -1514,9 +1548,9 @@ legs, and a worked example — for every balance adapter on `main`.
 | `ERC20DefaultBalanceAdapter` | `wallet` | `"Wallet"` | `[<symbol>]` (derived); `["native"]`; `[]` on revert | `abi.encode(address asset)` | Wallet | `["Wallet","USDC"]` |
 | `AaveUmbrellaBalanceAdapter` | `aave-v3-umbrella` | `"Aave V3"` | `["Umbrella Module"]` (const) | `abi.encode(address stakeToken)` | Staking / Rewards | `["Aave V3","Umbrella Module"]` |
 | `AaveV3SafetyModuleBalanceAdapter` | `aave-v3-safety-module` | `"Aave V3"` | `["Safety Module"]` (const) | `abi.encode(address stakeToken)` | Staking / Rewards | `["Aave V3","Safety Module"]` |
-| `CapBalanceAdapter` (cUSD) | `cap` | `"Cap"` | `["Stablecoin","cUSD"]` (const) | `abi.encode(address CUSD)` | Supplied | `["Cap","Stablecoin","cUSD"]` |
-| `CapBalanceAdapter` (stcUSD) | `cap` | `"Cap"` | `["Savings","stcUSD"]` (const) | `abi.encode(address STCUSD)` | Staking | `["Cap","Savings","stcUSD"]` |
-| `EthenaCooldownBalanceAdapter` | `ethena-cooldown` | `"Ethena"` | `["Unstaking Cooldown"]` (const) | `abi.encode(address sUSDe)` | Supplied (`isLocked` while cooling) | `["Ethena","Unstaking Cooldown"]` |
+| `CapStablecoinBalanceAdapter` | `cap` | `"Cap"` | `["Stablecoin","cUSD"]` (const) | `abi.encode(address CUSD)` | Supplied | `["Cap","Stablecoin","cUSD"]` |
+| `CapSavingsBalanceAdapter` | `cap` | `"Cap"` | `["Savings","stcUSD"]` (const) | `abi.encode(address STCUSD)` | Staking | `["Cap","Savings","stcUSD"]` |
+| `EthenaCooldownBalanceAdapter` | `ethena-cooldown` | `"Ethena"` | `["Unstaking Cooldown", "sUSDe"]` (const) | `abi.encode(address sUSDe)` | Supplied (`isLocked` while cooling) | `["Ethena","Unstaking Cooldown","sUSDe"]` |
 | `SparkLendBalanceAdapter` | `spark-lend` | `"Spark"` | `["Market","SparkLend"]` (const) | `abi.encode(address POOL)` | Collateral/Supplied / Borrowed | `["Spark","Market","SparkLend"]` |
 | `LidoWithdrawalQueueBalanceAdapter` | `lido-withdrawal` | `"Lido"` | `["Withdrawal Queue", "stETH"]` (const) | `abi.encode(address withdrawalQueue)` | Supplied — one leg **per request** (each `isLocked` = pending), shared positionId, request id in `positionInstanceId` | `["Lido","Withdrawal Queue","stETH"]` |
 | `StaderWithdrawalQueueBalanceAdapter` | `stader-withdrawal` | `"Stader"` | `["Withdrawal Queue", "ETHx"]` (const) | `abi.encode(address userWithdrawalManager)` | Supplied — one leg **per request** (each `isLocked` = pending), shared positionId, request id in `positionInstanceId` | `["Stader","Withdrawal Queue","ETHx"]` |
@@ -1530,10 +1564,11 @@ the same on every chain. Default `positionId` = base `_instancePositionId` (inst
 
 | Adapter | `protocolSubId` | `protocolName()` | `positionLabels()` → (source) | `positionId` schema | `PositionKind` legs | Example breadcrumb |
 |---|---|---|---|---|---|---|
-| `AaveV3InstancesMetaBalanceAdapter` | `aave-v3-lending` | `"Aave V3"` | `["Market", <getMarketId()>]` (derived) | `abi.encode(address pool)` (computed inline) | Collateral/Supplied / Borrowed | `["Aave V3","Market","Aave Ethereum Market"]` |
-| `CompoundV3CometsMetaBalanceAdapter` | `compound-v3-comets` | `"Compound V3"` | `["Market", <comet.name()>]` (derived) | `abi.encode(address comet)` | Supplied/Borrowed / Collateral / Rewards | `["Compound V3","Market","cUSDCv3"]` |
+| `AaveV3InstancesMetaBalanceAdapter` | `aave-v3-lending` | `"Aave V3"` | `["Market", <getMarketId()>]` (derived) | **override** `abi.encode(address pool)` (the Pool resolved from the instance's ProtocolDataProvider coordinate) | Collateral/Supplied / Borrowed | `["Aave V3","Market","Aave Ethereum Market"]` |
+| `CompoundV3CometsMetaBalanceAdapter` | `compound-v3-comets` | `"Compound V3"` | `["Market", <comet.symbol()>]` (derived) | `abi.encode(address comet)` | Supplied/Borrowed / Collateral / Rewards | `["Compound V3","Market","cUSDCv3"]` |
 | `ConvexCurveLPStakingMetaBalanceAdapter` | `convex-curve-lp-staking` | `"Convex"` | `["Staking", "Curve LP", "<coins>"]` (derived) | `abi.encode(address rewarder)` | Staking / Rewards | `["Convex","Staking","Curve LP","DAI/USDC/USDT"]` |
 | `EulerVaultsMetaBalanceAdapter` | `euler-vaults` | `"Euler"` | `["Vault", <vault.name()>]` (derived) | `abi.encode(address vault)` | Collateral/Supplied / Borrowed | `["Euler","Vault","eUSDC"]` |
+| `SymbioticVaultsMetaBalanceAdapter` | `symbiotic-vaults` | `"Symbiotic"` | `["Vault", <vault.name()>]` (derived) | `abi.encode(address vault)` | `Supplied` | `["Symbiotic","Vault","KPK USDC LiquidLane"]` |
 | `FluidFTokensMetaBalanceAdapter` | `fluid-ftokens` | `"Fluid"` | `["Lending", <fToken.symbol()>]` (derived) | `abi.encode(address fToken)` | Supplied | `["Fluid","Lending","fUSDC"]` |
 | `FluidVaultsMetaBalanceAdapter` | `fluid-vaults` | `"Fluid"` | `["Vault", "<collateral>/<debt> #<vaultId>"]` (derived) | `abi.encode(address vault)` | Collateral / Borrowed | `["Fluid","Vault","wstETH/USDC #4"]` |
 | `GearboxV3MarketsMetaBalanceAdapter` | `gearbox-v3-markets` | `"Gearbox"` | `["Market", <market.name()>]` (derived) | `abi.encode(address market)` | Supplied | `["Gearbox","Market","dDAI"]` |
@@ -1541,10 +1576,10 @@ the same on every chain. Default `positionId` = base `_instancePositionId` (inst
 | `MorphoMarketsMetaBalanceAdapter` | `morpho-markets` | `"Morpho"` | `["Market", "<coll>/<loan>"]` (derived) | **override** `abi.encode(bytes32 marketId)` (raw) | Collateral / Supplied / Borrowed | `["Morpho","Market","wETH/USDC"]` |
 | `MorphoVaultsMetaBalanceAdapter` | `morpho-vaults` | `"Morpho"` | `["Vault", <vault.name()>]` (derived) | `abi.encode(address vault)` | Supplied | `["Morpho","Vault","Morpho DAI"]` |
 | `StakeWiseV3VaultsMetaBalanceAdapter` | `stakewise-v3-vaults` | `"StakeWise V3"` | `["Vault", <vault.name()>]`, falling back to `["Vault", "<underlying symbol> <vault address>"]` (derived; only the `…Erc20Vault` variants answer `name()`) | `abi.encode(address vault)` | Staking / Borrowed (osToken) | `["StakeWise V3","Vault","Stakers Union GNO"]` / `["StakeWise V3","Vault","GNO 0x4b4406ed…"]` |
-| `BalancerV2PoolsMetaBalanceAdapter` | `balancer-v2-pools` | `"Balancer V2"` | `["AMM Liquidity Pool", <BPT.name()>]` (derived) | **override** `abi.encode(bytes32 poolId)` (raw) | Supplied | `["Balancer V2","AMM Liquidity Pool","50WETH-50USDC"]` |
-| `BalancerV2GaugesMetaBalanceAdapter` | `balancer-v2-gauges` | `"Balancer V2"` | `["Staking Gauge", <gauge.symbol()>]` (derived) | `abi.encode(address gauge)` | Staking / Rewards | `["Balancer V2","Staking Gauge","…-gauge"]` |
-| `BalancerV3PoolsMetaBalanceAdapter` | `balancer-v3-pools` | `"Balancer V3"` | `["AMM Liquidity Pool", <pool.name()>]` (derived) | `abi.encode(address pool)` | Supplied | `["Balancer V3","AMM Liquidity Pool","Balancer 50 WETH 50 USDC"]` |
-| `BalancerV3GaugesMetaBalanceAdapter` | `balancer-v3-gauges` | `"Balancer V3"` | `["Staking Gauge", <gauge.symbol()>]` (derived) | `abi.encode(address gauge)` | Staking / Rewards | `["Balancer V3","Staking Gauge","…-gauge"]` |
+| `BalancerV2PoolsMetaBalanceAdapter` | `balancer-v2-pools` | `"Balancer V2"` | `["AMM Liquidity Pool", "<sym0>/<sym1>/…"]` (derived; pool tokens from the Vault, excluding the pool's own BPT) | **override** `abi.encode(bytes32 poolId)` (raw) | Supplied | `["Balancer V2","AMM Liquidity Pool","USDC/USDT/DAI"]` |
+| `BalancerV2GaugesMetaBalanceAdapter` | `balancer-v2-gauges` | `"Balancer V2"` | `["Staking Gauge", "<sym0>/<sym1>/…"]` (derived; staked pool's tokens via `lp_token`) | `abi.encode(address gauge)` | Staking / Rewards | `["Balancer V2","Staking Gauge","USDC/USDT/DAI"]` |
+| `BalancerV3PoolsMetaBalanceAdapter` | `balancer-v3-pools` | `"Balancer V3"` | `["AMM Liquidity Pool", "<sym0>/<sym1>/…"]` (derived; `poolTokens()`) | `abi.encode(address pool)` | Supplied | `["Balancer V3","AMM Liquidity Pool","WETH/wstETH"]` |
+| `BalancerV3GaugesMetaBalanceAdapter` | `balancer-v3-gauges` | `"Balancer V3"` | `["Staking Gauge", "<sym0>/<sym1>/…"]` (derived; staked pool's tokens via `lp_token`) | `abi.encode(address gauge)` | Staking / Rewards | `["Balancer V3","Staking Gauge","WETH/wstETH"]` |
 | `CurvePoolsMetaBalanceAdapter` | `curve-pools` | `"Curve"` | `["AMM Liquidity Pool", "<coins>"]` (derived) | `abi.encode(address pool)` | Supplied | `["Curve","AMM Liquidity Pool","USDC/USDT/DAI"]` |
 | `CurveGaugesMetaBalanceAdapter` | `curve-gauges` | `"Curve"` | `["Staking Gauge", "<coins>"]` (derived) | `abi.encode(address gauge)` | Staking / Rewards | `["Curve","Staking Gauge","USDC/USDT/DAI"]` |
 | `UniswapV2PoolsMetaBalanceAdapter` | `uniswap-v2` | `"Uniswap V2"` | `["AMM Liquidity Pool", "<sym0>/<sym1>"]` (derived) | `abi.encode(address pair)` | Supplied | `["Uniswap V2","AMM Liquidity Pool","WETH/USDC"]` |
@@ -1557,7 +1592,7 @@ the same on every chain. Default `positionId` = base `_instancePositionId` (inst
 | Adapter | `protocolSubId` | `protocolName()` | `positionLabels()` → (source) | `positionId` schema | `PositionKind` legs | Example breadcrumb |
 |---|---|---|---|---|---|---|
 | `EtherFiWithdrawalQueueAssistedBalanceAdapter` | `etherfi-withdrawal` | `"ether.fi"` (const) | `["Withdrawal Queue", "eETH"]` (const) | `abi.encode(address withdrawRequestNFT)` | Supplied — one leg **per request** (cached NFT tokenId in `positionInstanceId`; each `isLocked` = pending), shared positionId | `["ether.fi","Withdrawal Queue","eETH"]` |
-| `StakeWiseV3ExitQueueAssistedBalanceAdapter` | `stakewise-v3-exit` | `"StakeWise V3"` (const) | `["Exit Queue", <receiptSymbol>]` (derived) | `abi.encode(address vault)` (per vault) | Supplied — **per request (ticket)** with the `positionTicket` in `positionInstanceId`, up to two legs (claimable + still-queued) sharing the per-vault positionId | `["StakeWise V3","Exit Queue","osETH"]` |
+| `StakeWiseV3ExitQueueAssistedBalanceAdapter` | `stakewise-v3-exit` | `"StakeWise V3"` (const) | `["Exit Queue", <receiptSymbol>]` (gov — constructor arg; bare `["Exit Queue"]` when empty) | `abi.encode(address vault)` (per vault) | Supplied — **per request (ticket)** with the `positionTicket` in `positionInstanceId`, up to two legs (claimable + still-queued) sharing the per-vault positionId | `["StakeWise V3","Exit Queue","osETH"]` |
 | `NexusMutualStakingPoolsAssistedBalanceAdapter` | `nexus-mutual-staking-pools` | `"Nexus Mutual"` (const) | `["Staking Pools", "Pool #<id>"]` (derived) | `abi.encode(address stakingPool)` | Staking / Rewards | `["Nexus Mutual","Staking Pools","Pool #5"]` |
 
 (`MerklRewardsAssistedBalanceAdapter` was removed from `main` and is not listed here; the `merkl` slug is reserved for its pending re-add — see the note in the `protocolSubId` table above.)

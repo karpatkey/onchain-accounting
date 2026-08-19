@@ -2,6 +2,7 @@
 pragma solidity ^0.8;
 
 import {ICustomPriceFeed} from "src/prices/ICustomPriceFeed.sol";
+import {INavSourcedPriceFeed} from "src/prices/INavSourcedPriceFeed.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {AggregatorV3Interface} from "@chainlink/src/v0.8/shared/interfaces/AggregatorV3Interface.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
@@ -30,7 +31,7 @@ import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 ///      invariant). The 5 `ICustomPriceFeed` thunks, the immutables, and constructor validation live here once instead
 ///      of being copy-pasted into each two-feed feed. Feeds with a single 18-decimal rate over a NAV base use
 ///      {BaseCustomPriceFeed}; ERC-4626 vault-rate feeds use {ERC4626VaultRatePriceFeed}.
-abstract contract TwoFeedChainlinkPriceFeed is ICustomPriceFeed {
+abstract contract TwoFeedChainlinkPriceFeed is ICustomPriceFeed, INavSourcedPriceFeed {
     using Math for uint256;
 
     /// @notice The asset whose USD price is returned.
@@ -44,7 +45,7 @@ abstract contract TwoFeedChainlinkPriceFeed is ICustomPriceFeed {
 
     /// @notice The base asset whose USD price is read from the NAV (e.g. WETH). Must be priced by DIRECT feeds on the
     ///         NAV — never by a NAV-sourced custom feed (see {NavBaseUsdLib} circularity invariant).
-    address public immutable BASE_ASSET;
+    address public immutable override BASE_ASSET;
 
     /// @notice Heartbeat (seconds) after which the rate feed is considered stale.
     uint256 public immutable RATE_HEARTBEAT;

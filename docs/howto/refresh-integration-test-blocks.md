@@ -23,12 +23,11 @@ The single source of truth is [`test/integration/accounts.json`](../../test/inte
 ├──────────────────────────────────────────────────────────────────────┤
 │ 1.5. Merkl proof capture per (chain × account) — Merkl API → fixture │
 │    test/integration/merkl-proofs.json. Captures Distributor          │
-│    merkleRoot at the new fork block for diagnostics. Failed proof    │
-│    submissions in step 2 are tolerated (NAV treats them as 0).       │
+│    merkleRoot at the new fork block for diagnostics. Nothing         │
+│    consumes the fixture today — see the note below.                  │
 ├──────────────────────────────────────────────────────────────────────┤
 │ 2. forge build once (warm cache) → forge test per chain (PARALLEL)   │
-│    → deploys NAV stack (incl. MerklRewardsAssisted) at the new       │
-│    fork, replays fixture proofs into the cache, reads NAV per        │
+│    → deploys the NAV stack at the new fork block, reads NAV per      │
 │    enabled account, emits SNAPSHOT|... lines applied via jq          │
 ├──────────────────────────────────────────────────────────────────────┤
 │ 3. (optional) /v1/user/all_complex_protocol_list (1×/account) +      │
@@ -39,9 +38,9 @@ The single source of truth is [`test/integration/accounts.json`](../../test/inte
 └──────────────────────────────────────────────────────────────────────┘
 ```
 
-> **Why a separate Merkl-proof step.** Merkl's API only serves proofs against the *currently published* root. Forge tests pinned at a historical block can only verify a proof if that block's `Distributor.getMerkleRoot()` matches the API's current root — true right after a bump (when `forkBlock = cast block-number`), false a few hours later (Merkl rotates roots ~every 8h). Capturing proofs at bump time is the only window where this alignment holds reliably. After step 1.5, `merkl-proofs.json` is the source of truth that the integration test consumes deterministically — **the Merkl API is not queried during test runs, and you do not need to re-fetch proofs when re-running tests against the same pinned fork block.** The proofs remain valid for a given fork block forever, because `Distributor.getMerkleRoot()` is frozen at that block.
+> **Why a separate Merkl-proof step.** Merkl's API only serves proofs against the *currently published* root. Forge tests pinned at a historical block can only verify a proof if that block's `Distributor.getMerkleRoot()` matches the API's current root — true right after a bump (when `forkBlock = cast block-number`), false a few hours later (Merkl rotates roots ~every 8h). Capturing proofs at bump time is the only window where this alignment holds reliably. **The Merkl API is not queried during test runs, and you do not need to re-fetch proofs when re-running tests against the same pinned fork block.** The proofs remain valid for a given fork block forever, because `Distributor.getMerkleRoot()` is frozen at that block.
 >
-> **Root-mismatch detection.** The fixture stores `expectedRoot` — the root captured from the Distributor at the fork block. `_seedMerklProofs` compares this against the live root at test time; if they differ, it logs a prominent warning and all `submitProof` calls will fail (Merkl rewards silently zero). The fix is always the same: re-run `refresh-integration-snapshot.sh` to re-capture proofs against the current root.
+> **Nothing consumes the fixture today.** The Merkl balance adapter and the test-side proof seeding were both removed from the repo: nothing under `src/balances/` covers Merkl, no `.sol` file reads `merkl-proofs.json`, and no proof is replayed into a cache during a test run. Step 1.5 still runs on every bump and still rewrites the fixture — treat the file (and the `expectedRoot` it records per chain) as a captured diagnostic, not as test input. The script's own inline comment at `script/test/refresh-integration-snapshot.sh:190-192` still claims the test consumes it; that comment is stale.
 
 Step 2 is the bottleneck (deploying a full NAV stack on a fork takes ~1–3 min per chain). Running all five chains in parallel reduces wall time from `sum(chains)` to `max(chains)` — typically Mainnet, since it has the most adapters. A single `forge build` runs before the parallel forge invocations so they share a warm cache without racing on `out/`. Each chain's stdout is captured to a per-chain log file in a temp directory; SNAPSHOT lines are applied to `accounts.json` in chain-id order after all forks finish, so output is deterministic and there's no jq-write race.
 
@@ -54,9 +53,9 @@ Most test accounts hold positions outside what NAV currently supports — sittin
 The script instead reconstructs a Debank-side total that's restricted to NAV's coverage. Two buckets are summed:
 
 1. **Allowlisted protocols (full value).** `chains.<chainId>.supportedDeBankProtocols` in `accounts.json` is the per-chain allowlist of Debank protocol ids that NAV has a dedicated balance adapter for (e.g. `aave3`, `morphoblue`, `balancer3`). NAV's adapter handles the position math (debt netting, projected interest, reward accrual, etc.), so for these protocols we trust Debank's pre-aggregated `portfolio_item_list[].stats.net_usd_value` and sum it in full. Debank uses the bare id on Mainnet (`aave3`) and a chain prefix elsewhere (`arb_aave3`); the script accepts both.
-2. **Wallet tokens.** `/v1/user/token_list?is_all=false` entries whose `id` (lowercased token address) is in `script/config/nav-config/assets-and-price-feeds/<chainId>.json` (top-level keyed by symbol) *or* in `script/test/wallet-aggregating-adapters.json` (currently `Cap → cUsd, stcUsd`). The `is_all=false` flag tells Debank to suppress tokens it has already exposed under a `portfolio_item_list` entry, so LSTs (rETH/sUSDS/wstETH/ETHx/etc.) are counted exactly once via the protocol bucket above. Without this flag (the prior default `is_all=true`), the same dollar appears in both buckets — observed inflating ACCOUNT_10's anchor by ~$58M. Native is included when relevant — every chain we test against registers the ERC-7528 native sentinel (`0xEeeE…eEeE`) and `ERC20DefaultBalanceAdapter._getBalanceForAsset` returns `account.balance` for that address. Debank reports native via the chain id (`eth`, `arb`, `op`, `base`, `xdai`), so the filter accepts a token whose `id` either matches an allowlisted 0x address or equals the chain id when the sentinel is registered.
+2. **Wallet tokens.** `/v1/user/token_list?is_all=false` entries whose `id` (lowercased token address) is in `script/config/nav-config/assets-and-price-feeds/<chainId>.json` (top-level keyed by symbol) *or* in `script/test/wallet-aggregating-adapters.json` (currently `CapStablecoin → cUsd`, `CapSavings → stcUsd`). The `is_all=false` flag tells Debank to suppress tokens it has already exposed under a `portfolio_item_list` entry, so LSTs (rETH/sUSDS/wstETH/ETHx/etc.) are counted exactly once via the protocol bucket above. Without this flag (the prior default `is_all=true`), the same dollar appears in both buckets — observed inflating ACCOUNT_10's anchor by ~$58M. Native is included when relevant — every chain we test against registers the ERC-7528 native sentinel (`0xEeeE…eEeE`) and `ERC20DefaultBalanceAdapter._getBalanceForAsset` returns `account.balance` for that address. Debank reports native via the chain id (`eth`, `arb`, `op`, `base`, `xdai`), so the filter accepts a token whose `id` either matches an allowlisted 0x address or equals the chain id when the sentinel is registered.
 
-> **The `wallet-aggregating-adapters.json` registry.** Some balance adapters (Cap, today) read `balanceOf(token)` for one or more wallet tokens that aren't standalone NAV-registered priceable assets, then aggregate them into a single `PositionBalance` denominated in another asset (Cap reads cUsd + stcUsd → returns USDC). Those wallet tokens still need to count as "covered" in Bucket 2; otherwise the snapshot anchor under-counts vs the live filtered total. The registry maps `adapter_key → [constructor_param_names]`; both `refresh-integration-snapshot.sh` (jq) and `generate-comparison-report.py` (python) read it and union the constructor-arg addresses into the wallet allowlist. Adding a new wallet-aggregating adapter is one line in the JSON; both scripts pick it up.
+> **The `wallet-aggregating-adapters.json` registry.** Some balance adapters (the two Cap leg adapters, today) read `balanceOf(token)` for one or more wallet tokens that aren't standalone NAV-registered priceable assets, then report a `PositionBalance` denominated in another asset (`CapStablecoin` reads cUsd → USDC; `CapSavings` reads stcUsd → USDC). Those wallet tokens still need to count as "covered" in Bucket 2; otherwise the snapshot anchor under-counts vs the live filtered total. The registry maps `adapter_key → [constructor_param_names]`; both `refresh-integration-snapshot.sh` (jq) and `generate-comparison-report.py` (python) read it and union the constructor-arg addresses into the wallet allowlist. Adding a new wallet-aggregating adapter is one line in the JSON; both scripts pick it up.
 
 > **Why we don't walk protocol `asset_token_list` for non-allowlisted protocols.** A natural-looking third bucket — "for any non-allowlisted protocol entry, sum its `asset_token_list[]` filtered to NAV-registered tokens" — *over-counts*. Empirically, the per-protocol `asset_token_list` is synthetic: Kelp DAO reports underlying ETH equivalent (id `eth`, ~$700 worth) of an rsETH position whose actual ERC20 balance shows up correctly in `token_list` (id `0xa129…`); Ethena reports an aggregated USDe count larger than `balanceOf(USDe)`; Lido reports pending rewards that never enter `balanceOf`. Walking these would either double-count Bucket 2 or count value NAV's default adapter never sees. The wallet `token_list` is the only reliable wallet-side source — if a NAV-registered token is on-chain, it's there with the right amount.
 
@@ -104,7 +103,7 @@ Exit codes:
 | Code | Meaning |
 |---|---|
 | `0` | All chains refreshed, no tolerance violations. |
-| `1` | At least one chain failed in step 2 (RPC down, OOM, `forge` revert, hung). The script still proceeds to step 3 (Debank) and step 4 (report) so partial data is preserved; surviving chains' snapshots are written to `accounts.json`. |
+| `1` | At least one chain failed in step 2 — four ways: `forge` exited non-zero (RPC down, OOM, revert); `forge` exited 0 but emitted zero SNAPSHOT lines; a snapshot reported `sequencerDown`; a snapshot reported stale price assets. A failed chain is all-or-nothing: none of its snapshots are applied, its `forkBlock` is rolled back to the pre-run value, and it is excluded from steps 3 and 4 (so its stale NAV is never compared against a fresh Debank reference). The script still proceeds to step 3 (Debank) and step 4 (report) for the chains that succeeded, whose snapshots are written to `accounts.json`. |
 | `2` | Every chain succeeded but at least one (chain × account) drifted past `tolerance`. Inspect the report. |
 
 After a clean run, verify the integration tests still pass against the new snapshots:
@@ -128,9 +127,7 @@ Required secrets / repo vars:
 
 | Name | Where | Notes |
 |---|---|---|
-| `KNODE_URL` (var) | repo variables | Used by this workflow to build the per-chain `*_URL` env (`foundry.yml` itself now uses Alchemy). |
-| `KNODE_API_KEY` | repo secrets | Existing. |
-| `ALCHEMY_API_KEY` | repo secrets | Fallback when a chain-specific `*_URL` is unset. |
+| `ALCHEMY_API_KEY` | repo secrets | Sole RPC source. The workflow deliberately sets no per-chain `*_URL` overrides — `getAlchemyUrl` prefers any `*_URL` that is present, so setting them would only shadow the Alchemy URL the helper already builds. |
 | `DEBANK_API_KEY` | repo secrets | New. Used only when the workflow is triggered with `include_debank: true` (default for cron runs). |
 
 ---
@@ -266,7 +263,7 @@ Severity hint prefix on drift cells: `OK` (≤1%), `WARN` (1–5%), `FAIL` (>5%)
 - Both small but `Δ USD %` non-trivial → rounding or precision loss in the NAV computation (rare).
 - Both large → investigate adapter first (wrong amount usually explains the rest).
 
-Legs with no Debank counterpart (adapter-only positions Debank doesn't expose) appear with `—` in the DB columns. Debank items with no NAV match appear in Section 4.2 instead.
+Legs with no Debank counterpart (adapter-only positions Debank doesn't expose) are excluded from the per-adapter tables and collected in a "NAV-only positions (no DeBank counterpart matched)" subsection at the end of Section 3, with the DB and Δ columns dropped. Debank items with no NAV match appear in Section 4.2 instead.
 
 ### Section 4 — Coverage gap detection
 
@@ -278,10 +275,11 @@ Lists Debank protocol ids that carry non-zero `net_usd_value` for any account on
 
 **4.2 — Debank items in supported protocols with no NAV match**
 
-A protocol is allowlisted but one of its items produced no `LegMatch`. Diagnostic hints per row:
-- *Unregistered token*: the token address isn't an asset in `script/config/nav-config/assets-and-price-feeds/<chainId>.json`.
-- *Missing price feed*: the asset is registered but has no `priceFeeds[]` entry in `script/config/nav-config/assets-and-price-feeds/<chainId>.json` (custom-feed deploy config lives in `script/config/contracts-deployment-config/custom-price-feeds/<chainId>.json`).
-- *Adapter not wired*: `balanceAdapters` in the chain config doesn't include an entry for this market/vault.
+A protocol is allowlisted but one of its items produced no `LegMatch`. Only items worth ≥ $1 are listed, and an item whose every non-zero token is unpriced goes to the Section 5 untracked-by-design footer instead. One of four hints is attached per row:
+- *No `<debank id>` protocol adapter, but `<symbols>` is/are NAV-priced* — no adapter and no price-feed match for that Debank id, yet every non-zero underlying token is a registered (or adapter-aggregated) asset, so the value is already in the NAV total when held in-wallet. A true gap only if the tokens are locked inside the protocol's own contract (withdrawal queue / savings vault).
+- *No NAV adapter/feed registered for `<debank id>` on chain `<chainId>`* — same "no adapter, no feed" branch, but the underlying tokens aren't all NAV-priced either.
+- *Token(s) not in NAV registry: `<symbols>`* — an adapter or feed exists, but one or more of the item's tokens isn't a registered asset in `script/config/nav-config/assets-and-price-feeds/<chainId>.json` (custom-feed deploy config lives in `script/config/contracts-deployment-config/custom-price-feeds/<chainId>.json`).
+- *Adapter registered but no matching position* — zero balance, or a position-identity mismatch between NAV and Debank.
 
 **To action a 4.1 row:**
 
@@ -335,6 +333,6 @@ The `accounts.json` file includes two pre-wired placeholder slots (`ACCOUNT_PLAC
 - `script/test/RefreshIntegrationSnapshot.s.sol` — legacy forge script that emits `SNAPSHOT|…` lines; retained for reference but no longer invoked by the refresh script (which now uses `forge test --match-test test_emitSnapshots` — see "Known issues" above).
 - `script/test/refresh-integration-snapshot.sh` — orchestrator (cast + forge + curl + jq).
 - `script/test/generate-comparison-report.py` — renders `comparison-report.md` (NAV ↔ Debank cross-check, per-adapter detail, coverage gaps). Pass `--from-cache` to regenerate from cached Debank responses without an API key.
-- `script/test/wallet-aggregating-adapters.json` — single-source-of-truth registry of balance adapters that consume wallet tokens via `balanceOf` (e.g. Cap reads cUsd + stcUsd). Both the snapshot script and the comparison report read it; one entry per adapter is enough to keep their allowlists in sync.
+- `script/test/wallet-aggregating-adapters.json` — single-source-of-truth registry of balance adapters that consume wallet tokens via `balanceOf` (e.g. `CapStablecoin` reads cUsd, `CapSavings` reads stcUsd). Both the snapshot script and the comparison report read it; one entry per adapter is enough to keep their allowlists in sync.
 - `.github/workflows/refresh-integration-snapshot.yml` — CI workflow (manual + weekly).
 - `docs/decisions/0003-integration-test-snapshot-workflow.md` — design rationale.

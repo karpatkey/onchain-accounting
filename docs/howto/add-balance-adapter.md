@@ -59,7 +59,7 @@ If no existing constant fits your protocol, add the slug(s) you need to `src/uti
 bytes32 internal constant MY_PROTOCOL = keccak256("my-protocol-v1");
 ```
 
-Slug rules: lowercase ASCII, kebab-case, include the major version. Document the `positionId` ABI-encode schema for this `protocolSubId` in the NatSpec block at the top of the file (it is the schema clients use to decode without runtime sniffing).
+Slug rules: lowercase ASCII, kebab-case, and bake the major version into the slug only where the protocol is a distinct versioned system (`aave-v3`, `balancer-v2`/`-v3`) — unversioned protocols carry no version (`morpho`, `curve`, `euler`). Document the `positionId` ABI-encode schema for this `protocolSubId` in the NatSpec block at the top of the file (it is the schema clients use to decode without runtime sniffing).
 
 ### 1.3 Per-instance adapter skeleton
 
@@ -67,8 +67,8 @@ Slug rules: lowercase ASCII, kebab-case, include the major version. Document the
 // SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8;
 
-import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
+import {BalanceAdapterBase} from "src/balances/BalanceAdapterBase.sol";
 import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
 import {IPositionDescribable} from "src/balances/IPositionDescribable.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
@@ -80,7 +80,7 @@ import {AddressCheckLib} from "src/utils/AddressCheckLib.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/errors.sol";
 
-contract MyProtocolBalanceAdapter is IBalanceAdapter, IPositionDescribable {
+contract MyProtocolBalanceAdapter is BalanceAdapterBase {
     /// @notice The protocol contract this adapter reads from.
     address public immutable PROTOCOL_CONTRACT;
 
@@ -102,11 +102,9 @@ contract MyProtocolBalanceAdapter is IBalanceAdapter, IPositionDescribable {
 
     // ─── IERC165 ─────────────────────────────────────────────────────────────
 
-    function supportsInterface(bytes4 interfaceId) external pure returns (bool) {
-        return interfaceId == type(IBalanceAdapter).interfaceId
-            || interfaceId == type(IPositionDescribable).interfaceId
-            || interfaceId == type(IERC165).interfaceId;
-    }
+    // `supportsInterface` comes from BalanceAdapterBase — it already advertises IBalanceAdapter +
+    // IPositionDescribable + IERC165. It is `public pure virtual`, so override + `super`-chain it only
+    // when the adapter advertises an EXTRA interface (e.g. IPositionEnumerable).
 
     // ─── IPositionDescribable ─────────────────────────────────────────────────
 
@@ -175,7 +173,7 @@ contract MyProtocolBalanceAdapter is IBalanceAdapter, IPositionDescribable {
 Reuse patterns from existing adapters:
 
 - **Per-instance, multi-asset (supply + borrow legs):** `src/balances/BalanceAdapters/SparkLendBalanceAdapter.sol`.
-- **Per-instance, single-asset vault:** `src/balances/BalanceAdapters/CapBalanceAdapter.sol`.
+- **Per-instance, single-asset vault:** `src/balances/BalanceAdapters/cap/CapStablecoinBalanceAdapter.sol` (and its `CapSavings` sibling — a protocol with two structurally distinct legs served by TWO adapters over a shared `CapBalanceAdapterBase`, so each label segment stays a per-adapter constant; see `src/balances/BALANCE_ADAPTERS.md` §6.2).
 - **Meta-adapter, single-leg:** `src/balances/MetaBalanceAdapters/GearboxV3MarketsMetaBalanceAdapter.sol`, `src/balances/MetaBalanceAdapters/MorphoVaultsMetaBalanceAdapter.sol`.
 - **Meta-adapter, multi-leg (LP + rewards):** `src/balances/MetaBalanceAdapters/curve/CurveGaugesMetaBalanceAdapter.sol`, `src/balances/MetaBalanceAdapters/balancer/BalancerV3GaugesMetaBalanceAdapter.sol`.
 

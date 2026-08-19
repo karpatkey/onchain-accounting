@@ -213,6 +213,27 @@ interface INAVCalculator is IBalances {
     }
 
     /// @notice Position enriched with human-readable display labels.
+    /// @dev ⚠️ **NEITHER `protocolName` NOR ANY element of `labels` is necessarily the adapter's own value.**
+    ///      `AssetKindRegistry` holds an optional per-ADAPTER protocol name plus a per-ADAPTER, per-SEGMENT `labels`
+    ///      override, and {PriceFeedLib.toVerbose} applies both in preference to the adapter's reply.
+    ///
+    ///      ⚠️ **Two earlier revisions of this line were narrower than the code, in the same direction each time.**
+    ///      The first said the computed leaf was never overridable; the second said only `labels[0]` was. Both are now
+    ///      false: {IAssetKindRegistry.setAdapterLabels} writes at ANY index, bounded only by
+    ///      `min(reply.length, override.length)` — so the honest statement is that a segment comes from the adapter
+    ///      **unless an operator overrode that index**, and `""` at an index is how an operator declines to.
+    ///
+    ///      What the override CANNOT do is change the array's LENGTH: it never writes past the adapter's own reply and
+    ///      never extends it, so `labels.length` is always the adapter's answer. (The one exception is
+    ///      `getAdapterDisplayInfo`, whose empty-reply case is deliberately grown — see
+    ///      `PriceFeedLib.adapterDisplayInfo`.)
+    ///
+    ///      Which segments an operator SHOULD write is a property of the adapter, not of this struct;
+    ///      `src/balances/BALANCE_ADAPTERS.md` §6.2 carries the per-adapter sweep, and
+    ///      `ERC20DefaultBalanceAdapter` is the one adapter that must not be overridden at all (its single element is
+    ///      the computed token symbol, not a category). `AdapterLabelOverrides.t.sol
+    ///      ::test_labelsOverride_onLeafOnlyAdapter_replacesTheLeaf_documentedHazard` asserts that hazard.
+    ///      Consumers must not treat these strings as identity in any case; see {IPositionDescribable}.
     /// @dev Returned by verbose read methods. Labels are sourced from the adapter's `IPositionDescribable`
     ///      implementation (`positionLabels(positionId)`, via a fail-open staticcall) and are empty otherwise. MUST NOT
     ///      be used for identity, indexing, or reconciliation — use the typed fields on `position` for those purposes.
@@ -980,4 +1001,25 @@ interface INAVCalculator is IBalances {
         external
         view
         returns (int256 value, bool quoteAssetStale);
+
+    /// @notice Every listed adapter's EFFECTIVE display name and positionId-independent breadcrumb — the same values
+    ///         the verbose position reads report, including any {AssetKindRegistry} override.
+    /// @dev Declared here, not only on the concrete contract, so INTERFACE-TYPED consumers can reach it. That is the
+    ///      caller that matters: a consumer holding `INAVCalculator` is exactly the one that would otherwise
+    ///      enumerate `getAllAdapters()` and staticcall `protocolName()` on each adapter itself, which is the
+    ///      surface split this function exists to close. Leaving it off the interface would have left that consumer
+    ///      with no way to reach the fix.
+    /// @param adapters The adapters to describe, typically the result of `getAllAdapters()`.
+    /// @return names Each adapter's effective protocol name.
+    /// @return labels Each adapter's effective breadcrumb, with any {AssetKindRegistry} per-segment override applied.
+    ///         Empty when the adapter derives it per position AND no override is set. When the adapter answers
+    ///         nothing but an override IS set, this path deliberately GROWS the breadcrumb to the override's leading
+    ///         non-empty prefix — so it can be MULTI-segment, not merely a lone category. (It was a lone category
+    ///         under the retired scalar `setAdapterLabelCategory`; do not code against that.) When the adapter DOES
+    ///         answer, the override is overlaid segment-by-segment and can neither lengthen nor truncate the reply.
+    ///         See `PriceFeedLib.adapterDisplayInfo` for why the empty case diverges from the position path.
+    function getAdapterDisplayInfo(address[] calldata adapters)
+        external
+        view
+        returns (string[] memory names, string[][] memory labels);
 }

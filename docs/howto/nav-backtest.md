@@ -191,7 +191,7 @@ Set `BACKTEST_CHAIN` (driver: `--chain <id>`) to any chain registered in `test/i
 
 ## Lint
 
-The driver is plain TypeScript; it has no project-level lint config. The two linters we use elsewhere run cleanly on it:
+The driver is plain TypeScript. The repo-root `biome.json` (`files.includes`) and `.fallowrc.json` (`entry`) both point at exactly this one file, and both linters run cleanly on it:
 
 ```bash
 bunx @biomejs/biome@2.2.4 lint script/test/nav-backtest.ts

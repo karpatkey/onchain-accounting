@@ -19,6 +19,8 @@ The `?proxyAddress=` query parameter is meant to narrow the result to the single
 | Base | 8453 | `ethereum-mainnet-base-1` |
 | Optimism | 10 | `ethereum-mainnet-optimism-1` |
 | Gnosis | 100 | `xdai-mainnet` |
+| BSC | 56 | `bsc-mainnet` |
+| Polygon | 137 | `matic-mainnet` |
 
 ## Key fields in the response
 
@@ -27,7 +29,7 @@ The `?proxyAddress=` query parameter is meant to narrow the result to the single
   "name": "USDC / USD",
   "proxyAddress": "0x8fFfFfd4AfB6115b954Bd326cbe7B4BA576818f6", // recorded as an asset's priceFeeds[].address in nav-config/assets-and-price-feeds/<chainId>.json
   "contractAddress": "0x...",                                    // underlying OCR2 aggregator
-  "heartbeat": 86400,                                            // seconds
+  "heartbeat": 82800,                                            // seconds
   "threshold": 0.25,                                             // deviation % that also triggers update
   "ens": "usdc-usd",
   "feedCategory": "low",
@@ -39,7 +41,7 @@ The `?proxyAddress=` query parameter is meant to narrow the result to the single
 
 ## Example links for feeds used by `nav-config/assets-and-price-feeds/<chainId>.json`
 
-The direct Chainlink feeds below (ETH/USD, USDC/USD, etc.) are recorded as an asset's `priceFeeds[].address`. The LST exchange-rate feeds (stETH/ETH, weETH/eETH, wstETH/ETH, cbETH/ETH, rsETH/ETH) are **not** — those assets use a `Custom` feed, and the proxy address below is wired in as a constructor arg of the Custom adapter in `contracts-deployment-config/custom-price-feeds/<chainId>.json` (e.g. `stEthToEthChainlinkOracle`). Either way, the heartbeat you record in config should track the feed's published `heartbeat` — some entries deliberately tighten it (e.g. mainnet USDC/USDe register `82800` against a published `86400`), so use the published value as the upper bound rather than an exact requirement.
+The direct Chainlink feeds below (ETH/USD, USDC/USD, etc.) are recorded as an asset's `priceFeeds[].address`. The LST exchange-rate feeds (stETH/ETH, weETH/eETH, wstETH/ETH, cbETH/ETH, rsETH/ETH) are **not** — those assets use a `Custom` feed, and the proxy address below is wired in as a constructor arg of the Custom adapter in `contracts-deployment-config/custom-price-feeds/<chainId>.json` (e.g. `wstETH_L2.constructor.wstEthToEthChainlink`, or `stETHCrossRate.constructor.yToXFeed` on mainnet). Either way, the heartbeat you record in config should **exceed** the feed's published `heartbeat` rather than match it: a publisher lands tens of seconds past its declared cadence, so a zero-margin value goes stale at the end of essentially every publish cycle (e.g. mainnet USDC/USDe declare `82800` and are registered at `86400`). That margin is checked by preflight (`script/deploy/preflight/declared_heartbeat_guard.py`, which also runs inside `preflight_config.py`) against the committed snapshot `script/deploy/preflight/chainlink_declared_heartbeats.json`. Zero margin is a **WARN candidate, not a defect** — the guard reserves ERROR for a contradicted exemption, and a deviation-active feed (where the deviation threshold fires long before the heartbeat) can be exempted by an allowlist entry that records its measurement. For a `Custom` feed the guard checks only the constructor `<stem>Heartbeat` on the Chainlink rate leg, never the NAV-side `priceFeeds[i].heartbeat`, so silence about a `Custom` entry means "not examined". Treat the published value as a lower bound rather than an exact requirement.
 
 ### Ethereum Mainnet
 

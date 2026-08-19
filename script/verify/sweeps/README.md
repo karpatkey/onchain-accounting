@@ -9,7 +9,9 @@ lost with their tmpdir, and the next migration had to reconstruct them from a se
 
 ## Inputs (generated, not committed)
 
-Every runner reads two files from this directory, produced by `make_targets.py`:
+The per-instance runners read two files from this directory, produced by `make_targets.py` (the three
+`PriceFeedLib`-only runners — `etherscan_lib.py`, `blockscout_lib.py`, `blockscout_lib_v2.py` —
+hardcode the library address and read neither):
 
 | File | Contents | Derived from |
 | --- | --- | --- |
@@ -19,8 +21,9 @@ Every runner reads two files from this directory, produced by `make_targets.py`:
 They are regenerated rather than committed because both derive from repo state, and the broadcast
 logs they read are themselves untracked. **Run `make_targets.py` on the machine that performed the
 deploy** — without those broadcast logs the feed instances are omitted (the script reports what it
-skipped rather than failing silently). Any runner started without these inputs exits with a pointer
-back to the generator instead of a bare traceback.
+skipped rather than failing silently). A runner started without these inputs exits with a pointer
+back to the generator instead of a bare traceback — except `tenderly_sweep.py`, which reads them
+without that guard.
 
 ## Order
 
@@ -75,7 +78,8 @@ Result of that payload across backends (2026-07-25):
 `?module=contract&action=verifysourcecode` route accepts the submission and then reports
 `Fail - Unable to verify` (`blockscout_lib.py`). The native route — `POST
 /api/v2/smart-contracts/<addr>/verification/via/standard-input`, standard-JSON as a multipart file
-upload — accepts the *identical* payload and verifies (`blockscout_lib_v2.py`). Use the v2 runner;
+upload — accepts the same full-scope payload (`PriceFeedLib_full.json`) and verifies
+(`blockscout_lib_v2.py`). Use the v2 runner;
 `blockscout_lib.py` is kept only to document the dead end. Server-side compilation of the full
 via_ir project can take well over 5 minutes per instance, so poll patiently rather than concluding
 failure.

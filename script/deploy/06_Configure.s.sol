@@ -193,10 +193,50 @@ contract Configure is BaseDeployScript {
         uint256 added;
         uint256 configured;
 
-        // PLAIN balance adapters → addBalanceAdapters.
+        // PLAIN balance adapters → addBalanceAdapters, plus an EXPLICIT deregistration pass.
+        //
+        // ⚠️ **The asymmetry this closes.** Meta instances reconcile BIDIRECTIONALLY below: the script diffs the
+        // on-chain set against the configured set and calls `removeMetaInstances` for the difference. Plain adapters
+        // had no equivalent — this loop only ever called `addBalanceAdapters`, so a retired adapter stayed registered
+        // forever. That is not theoretical: the pre-split `Cap` adapter is registered on the live mainnet NAV today,
+        // and #285 replaces it with two per-leg adapters. Without deregistration an INCREMENTAL deploy would leave
+        // all three registered and DOUBLE-COUNT both Cap legs — the cUSD leg from `Cap` and `CapStablecoin`, the
+        // stcUSD leg from `Cap` and `CapSavings`. A fresh proxy does not bite, which is why it was easy to miss.
+        //
+        // ⚠️ **Why the removal set is DECLARED and not DERIVED.** `removeBalanceAdapters` has existed all along
+        // (`INAVCalculator:628`); the reason to be careful is choosing WHAT to remove. "In the deployment record but
+        // not enabled in plain nav-config" looks like the natural mirror of the meta diff and is catastrophically
+        // wrong: measured against the live chain-1 NAV, that set contains `ERC20Default` (registered by
+        // `initialize()`, present in no nav-config) and all sixteen META adapters (they live in the sibling
+        // `meta-balance-adapters` file). Deriving the set would have deregistered seventeen live adapters. So an
+        // operator writes `"deregister": true` against the key, and the worst a bug in this pass can do is nothing.
         string[] memory plain = ConfigReader.getEnabledAdapters(vm, currentChainId, "navBalanceAdapters");
         for (uint256 i = 0; i < plain.length; i++) {
-            if (!ConfigReader.isAdapterEnabled(vm, currentChainId, "navBalanceAdapters", plain[i])) continue;
+            if (!ConfigReader.isAdapterEnabled(vm, currentChainId, "navBalanceAdapters", plain[i])) {
+                if (!ConfigReader.isAdapterDeregisterRequested(vm, currentChainId, "navBalanceAdapters", plain[i])) {
+                    continue;
+                }
+                address retired = _readAdapterDeployed("balanceAdapters", plain[i]);
+                if (retired == address(0)) {
+                    console2.log("[SKIP] deregister requested but no recorded address:", plain[i]);
+                    continue;
+                }
+                if (!IBalances(navProxy).isAdapterRegistered(retired)) {
+                    console2.log("[SKIP] deregister requested but not registered:", plain[i], retired);
+                    continue;
+                }
+                address[] memory drop = new address[](1);
+                drop[0] = retired;
+                (bool rok, bytes memory rdata) =
+                    navProxy.call(abi.encodeWithSignature("removeBalanceAdapters(address[])", drop));
+                if (!rok) {
+                    revert(
+                        string(abi.encodePacked("removeBalanceAdapters failed for ", plain[i], ": ", _revertMsg(rdata)))
+                    );
+                }
+                console2.log("[OK] Deregistered retired balance adapter:", plain[i], retired);
+                continue;
+            }
             address deployed = _readAdapterDeployed("balanceAdapters", plain[i]);
             if (deployed == address(0)) continue;
             if (IBalances(navProxy).isAdapterRegistered(deployed)) {

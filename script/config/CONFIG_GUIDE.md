@@ -55,8 +55,6 @@ Deployable custom price feed adapters (e.g. sUSDS, wstETH), keyed by feed name, 
     "enabled": true,
     "constructor": {
       "wstEth": "0x7f39C581F595B53c5cb19bD0b3f8dA6c935E2Ca0",
-      "stEthToEthChainlinkOracle": "0x86392dC19c0b719886221c78AB11eb8Cf5c52812",
-      "stEthToEthChainlinkHeartbeat": "86400",
       "baseAsset": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
     }
   }
@@ -114,8 +112,17 @@ Example structure (top-level keys are symbols — no chainId wrapper):
   - `Appreciating` — the **exchange rate** grows while the balance is static (ERC-4626 shares, wstETH, most LSTs).
   - `None` — neither; value moves only with the market price.
   - **The trap worth naming:** a token whose yield accrues only through a *separate* wrapper is `None`, and the wrapper is `Appreciating`. So DAI is `None` and sDAI is `Appreciating`; USDe is `None` and sUSDe is `Appreciating`. Classify the token in front of you, not the family.
-  - It describes the **token**, not a position in it. A token can be `Rebasing` while a particular holder does not rebase (an LP, or a contract that the issuer's token auto-migrated to non-rebasing) — see OETH's `$kindComment` for a worked case.
-  - **Its consumer is NOT yet on `main`.** `08_DeployAssetKindRegistry`, `ConfigReader.readAssetAccrualKind` and the `AccrualKind` enum land with the AssetKindRegistry change (#241); until that merges this key is read by nothing. Once it lands, parsing is **fail-closed with no default** — an absent, empty or unrecognized value aborts that chain's `08` deploy rather than defaulting, because a defaulted classification is indistinguishable from a real one once it is on-chain.
+  - It describes the **token**, not a position in it. A token can be `Rebasing` while a particular holder does not rebase (an LP, or a contract that the issuer's token auto-migrated to non-rebasing). The worked case was OETH's `$kindComment`; OETH was retired on 2026-08-12 (Chainlink sunset its OETH/ETH feed), so it is **preserved here verbatim rather than left as a dangling reference** — it is the clearest example in the repo of the token/position distinction, and its being retired does not make it less instructive:
+
+    > Origin ETH; rebasing to holders, priced via a market OETH/ETH cross-rate. `accrualKind`
+    > describes the TOKEN, not this system's positions: Origin's OToken auto-migrates CONTRACT
+    > holders to non-rebasing on their first balance-changing interaction, and that has already
+    > happened to a registered account here — ACCOUNT_11 (`0x0EFcCBb9E2C09Ea29551879bd9Da32362b32fc89`)
+    > carries `nonRebasingCreditsPerToken = 1e18` with `rebaseState = NotSet`, i.e. auto-classified
+    > with nobody opting out. So do NOT infer balance growth for a Safe's OETH position from
+    > `Rebasing`. No registered account held OETH when this was measured (mainnet block 25656631;
+    > 36% of OETH supply was non-rebasing).
+  - **Its consumers are on `main`.** `08_DeployAssetKindRegistry.s.sol`, `ConfigReader.readAssetAccrualKind` and the `AccrualKind` enum (`src/utils/AssetKind.sol`) shipped with the AssetKindRegistry change (#241). Parsing is **fail-closed with no default** — an absent, empty or unrecognized value aborts that chain's `08` deploy (`AssetKindMissingOrInvalid(symbol, field)`) rather than defaulting, because a defaulted classification is indistinguishable from a real one once it is on-chain. `script/manage/RegisterAssets.s.sol` applies the same rule up front (`AssetAccrualKindMissingOrInvalid(symbol)`).
   - Values are **strings, not integers, deliberately**: a stale integer silently re-maps if the enum gains a member; an unknown string cannot be mistaken for a valid one.
 
 - **There is deliberately NO `pegKind` key.** The peg axis is **derived, not stored**: an asset is `Pegged` exactly when it carries a `pegToleranceBps > 0`, and `Floating` otherwise. The authority is the **on-chain registered** `AssetPricing.pegToleranceBps` — editing this file without re-running registration changes nothing a consumer reads.
@@ -125,7 +132,8 @@ Example structure (top-level keys are symbols — no chainId wrapper):
   - Historical note, since no tool recomputes it: when `pegKind` was still stored, the derived value was checked against the stored value on every configured asset and agreed on all of them. Verified by the PR author at `a4f43fa1` (the commit before the key was dropped); it did **not** hold at `31c8d4ed`, before yield-bearing shares were reclassified.
 
 - **$kindComment**: Optional justification for the classification above, used where the answer is non-obvious (any accrual, or a flagged judgement call). A separate key from `$comment` so a pre-existing comment is not clobbered. **Keep it true for THIS chain** — do not copy a mainnet justification onto an L2 entry whose pricing mechanism differs.
-- **priceFeeds**: The **single** primary feed (array with exactly one entry), used by `registerAsset` to price the asset. An asset with no oracle uses an empty `priceFeeds: []`. Entry fields (`type` / `address` / `feed` / `heartbeat`) are as below.
+- **labels**: Optional array of display labels (e.g. `["Lido", "LST"]`), read by `ConfigReader.readAssetLabels` and carried into `AssetKindRegistry.registerAsset` by `script/manage/RegisterAssets.s.sol` (`08_DeployAssetKindRegistry` classifies but does **not** label). Unlike `accrualKind`, absence is **not** an error — an unlabelled asset is unlabelled, not misconfigured. The bounds are enforced on-chain, not in config-reading code: at most `MAX_ASSET_LABELS` (4) entries, each non-empty and at most `MAX_ASSET_LABEL_BYTES` (32) **bytes**. A later correction is a `setAssetLabels` call, not a redeploy.
+- **priceFeeds**: The **single** primary feed (array with exactly one entry), used by `registerAsset` to price the asset. It must not be empty: `preflight_config.py` errors on an asset with no `priceFeeds`, and `RegisterAssets` silently skips such an asset, leaving it unregistered. Entry fields (`type` / `address` / `feed` / `heartbeat`) are as below.
 - **monitorFeeds**: Optional ordered array of divergence-only feeds (same entry fields). Registered via `addMonitorFeed`; every entry must report 8 decimals (USD-comparable to the primary). Requires `divergenceToleranceBps` to be set. These are the former ADR-0009 redundancy feeds — they no longer price the NAV, they only feed the divergence check.
 - **divergenceToleranceBps**: Basis-point threshold for the **worst-case** deviation between the primary and any single healthy monitor (not an average — a real split can't be masked). Required when `monitorFeeds` is non-empty (must be in `(0, 10000]`). Calibrate by comparison type: **fundamental-vs-market** (a Custom-feed primary watched by a market monitor, e.g. wstETH/weETH/ezETH) uses **250 bps** (real spread expected); **market-vs-market** (a Chainlink primary vs a second market feed, e.g. ETH/USDC/WBTC Chainlink-vs-API3/Redstone) uses **50 bps** (same quantity, ~30× calm-market noise).
 - **pegToleranceBps**: Basis-point threshold for the absolute $1 peg guard, and — since the peg axis is derived — **also the switch that makes an asset `Pegged`**. Set it only on USD-$1 stablecoins; **omit it entirely on everything else, and never write `0`.** A `0` or absent tolerance means `Floating`, so zeroing it on a genuine stablecoin silently reclassifies the asset (see the HAZARD above). Typical: 100. Independent of monitors. Note: this reads the *primary* — if the primary is a Chainlink feed with a `minAnswer` floor it can be blind to a real depeg, so the monitor-divergence check is the primary depeg signal; give stablecoins an independent monitor where a second USD feed exists.
@@ -268,13 +276,13 @@ ConfigReader.writeAdapterAddress(vm, chainId, "balanceAdapters", "AaveV3_USDC", 
 ### ✅ Selective Deployment
 Enable/disable adapters per chain in `contracts-deployment-config/balance-adapters/{chainId}.json`:
 ```jsonc
-// In contracts-deployment-config/balance-adapters/1.json (Mainnet) - enable Cap
-"Cap": {
+// In contracts-deployment-config/balance-adapters/1.json (Mainnet) - enable Cap's cUSD leg
+"CapStablecoin": {
   "enabled": true
 }
 
-// In contracts-deployment-config/balance-adapters/42161.json (Arbitrum) - disable Cap (doesn't exist there)
-"Cap": {
+// In contracts-deployment-config/balance-adapters/42161.json (Arbitrum) - disable it (Cap isn't there)
+"CapStablecoin": {
   "enabled": false
 }
 ```
@@ -419,7 +427,7 @@ Add a per-chain `{newChainId}.json` file in **each** of the nine concern folders
 2. Create `script/config/contracts-deployment-config/custom-price-feeds/{newChainId}.json` with the chain's custom price feeds to deploy (`enabled` + `constructor`).
 3. Create `script/config/contracts-deployment-config/balance-adapters/{newChainId}.json` (plain adapters to deploy) and `script/config/contracts-deployment-config/meta-balance-adapters/{newChainId}.json` (meta adapters to deploy), each with `enabled` + `constructor`; set `enabled: true` for desired adapters.
    Also create `script/config/contracts-deployment-config/bridge-adapters/{newChainId}.json` with the chain's bridge adapters to deploy (`enabled` + `initialize` args + a `remoteChains` array of the remote chain ids whose sibling adapter to trust; standard chain ids, not protocol selectors/domains/eids), and `script/config/contracts-deployment-config/bridge-escrow/{newChainId}.json` with the escrow's post-deploy config (`accounts[]` to authorize + `assets.<SYMBOL>` logical-symbol→local-token map to register).
-4. Create `script/config/nav-config/assets-and-price-feeds/{newChainId}.json` with the chain's assets (`address` + **required `accrualKind`** + `priceFeeds[]`). Omitting `accrualKind` will abort that chain's `08` deploy once #241 lands — it is fail-closed with no default.
+4. Create `script/config/nav-config/assets-and-price-feeds/{newChainId}.json` with the chain's assets (`address` + **required `accrualKind`** + `priceFeeds[]`). Omitting `accrualKind` aborts that chain's `08` deploy — it is fail-closed with no default. `preflight_config.py` rejects it before that, so run preflight rather than discovering it mid-deploy.
 5. Create `script/config/nav-config/balance-adapters/{newChainId}.json` (plain adapters to register) and `script/config/nav-config/meta-balance-adapters/{newChainId}.json` (meta adapters to register, with `instances`/`instancesRaw`).
 6. Create an empty state file `script/config/deployments/{newChainId}.json` (deployed addresses are written here by the scripts).
 7. Run deployment scripts.
@@ -469,7 +477,7 @@ If you have the old `chain-config.json` and `dev-input.json`:
 If you have the older chainId-keyed `assets.json` and `balance-adapters.json` (a single file keyed by chainId), migrate each to the per-concern, per-chain layout (strip the chainId wrapper — the filename is now the chain):
 
 1. Deployed addresses stay in `script/config/deployments/<chainId>.json` (unchanged).
-2. From `assets.json` `<chainId>.assets` → `script/config/nav-config/assets-and-price-feeds/<chainId>.json` (top-level keys = symbols, each `address` + **required `accrualKind`** + `priceFeeds[]`). A migrated row without `accrualKind` will abort `08` once #241 lands.
+2. From `assets.json` `<chainId>.assets` → `script/config/nav-config/assets-and-price-feeds/<chainId>.json` (top-level keys = symbols, each `address` + **required `accrualKind`** + `priceFeeds[]`). A migrated row without `accrualKind` aborts `08`, and `preflight_config.py` rejects it before any transaction is sent.
 3. From `assets.json` `<chainId>.customPriceFeeds` → `script/config/contracts-deployment-config/custom-price-feeds/<chainId>.json` (`enabled` + `constructor`).
 4. From `balance-adapters.json` `<chainId>.<adapter>` `enabled` + `constructor` → `script/config/contracts-deployment-config/balance-adapters/<chainId>.json` (plain) / `script/config/contracts-deployment-config/meta-balance-adapters/<chainId>.json` (meta).
 5. Register the plain adapters in `script/config/nav-config/balance-adapters/<chainId>.json` (`{ "enabled": true }`).

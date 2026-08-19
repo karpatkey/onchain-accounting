@@ -40,6 +40,10 @@
   "USDC": {
     "address": "0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d",
     "accrualKind": "None",
+    "labels": [
+      "Circle",
+      "Stablecoin"
+    ],
     "pegToleranceBps": 100,
     "divergenceToleranceBps": 50,
     "priceFeeds": [
@@ -60,6 +64,10 @@
   "USDT": {
     "address": "0x55d398326f99059fF775485246999027B3197955",
     "accrualKind": "None",
+    "labels": [
+      "Tether",
+      "Stablecoin"
+    ],
     "pegToleranceBps": 100,
     "divergenceToleranceBps": 50,
     "priceFeeds": [
@@ -100,6 +108,10 @@
   "CAKE": {
     "address": "0x0e09FaBB73Bd3Ade0a17ECC321fD13a19e81cE82",
     "accrualKind": "None",
+    "labels": [
+      "PancakeSwap",
+      "Governance"
+    ],
     "divergenceToleranceBps": 50,
     "priceFeeds": [
       {

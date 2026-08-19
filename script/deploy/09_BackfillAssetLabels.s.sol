@@ -24,10 +24,24 @@ import {AssetKindRegistry} from "../../src/nav/AssetKindRegistry.sol";
 ///      state (`WETH` has none), not an absent one, so skipping and writing `[]` are indistinguishable on-chain and the
 ///      cheaper choice is taken.
 ///
-///      **Ordering against the pointer flip.** Run this while the NAV still points at the OLD registry, then flip with
-///      `setAssetKindRegistry`. Reads keep resolving against a fully-populated registry throughout, so no consumer sees
-///      a window of empty breadcrumbs. Running it after the flip also works and is merely less tidy — labels are
-///      presentation, and an empty list degrades a breadcrumb rather than failing a read.
+///      **Ordering against the pointer flip — run this AFTER `08`, and accept the window.** An earlier version of
+///      this note recommended backfilling while the NAV still pointed at the OLD registry and flipping afterwards.
+///      That ordering is not reachable through the documented workflow: `08_DeployAssetKindRegistry` deploys the
+///      registry AND calls `setAssetKindRegistry` in the same run (transactions 1 and 2 of four), so there is no
+///      point at which the new registry exists and the pointer has not yet moved. `REDEPLOY_RUNBOOK.md` §1.4
+///      accordingly sequences this step after `08`.
+///
+///      The consequence is a real but narrow window: between `08` completing and this step completing, the NAV
+///      resolves against a registry that is fully CLASSIFIED but not yet LABELLED. That degrades a breadcrumb, not
+///      a value — `getAssetInfo` still returns the peg and accrual kinds, only the label list comes back empty. No
+///      NAV figure is affected. Keep the two steps adjacent to keep the window short.
+///
+///      **`setAssetLabels` is NAV-MANAGER-gated, and `07_TransferAdminToSecurityCouncil` revokes the deployer's
+///      MANAGER.** So this EOA-broadcast script works only BEFORE that handoff, or on a chain where it has not run.
+///      Once the security-council Safe is sole manager, a backfill has to be a Safe transaction batch (the pattern
+///      `script/manage/RegisterAssets.s.sol` uses), not a `--broadcast` run — this script will revert
+///      `NotAuthorized`. It was used pre-handoff for the 2026-08-19 registry migration, which is why it is
+///      EOA-broadcast.
 contract BackfillAssetLabels is BaseDeployScript {
     /// @notice Thrown when the target registry argument is unset. Refuses to guess which registry to write to.
     error RegistryNotProvided();

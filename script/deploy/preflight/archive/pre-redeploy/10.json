@@ -1,0 +1,13 @@
+{
+  "PriceFeedLib": "0x450421a334DE63F75e1d47399d9713f755aaEfF2",
+  "NavRegistryLib": "0x549f6fB0EC34E18A82A320b79C968a9Ca6e7b96b",
+  "NAVCalculatorImplementation": "0x07bd077cFB40bBDa8A67d0D33ce41b974aB0F8a8",
+  "BridgeEscrowImplementation": "0xe2237d9776041514b1AC66856407Ed344b480De0",
+  "balanceAdapters": {
+    "ERC20Default": "0x41967559D0a20Ad102F6e27b7723b1963390aD75",
+    "AaveV3InstancesMeta": "0xDf311222BFbb8f2bb1572Ff08e96936C3D22418B",
+    "CompoundV3CometsMeta": "0x5ed372f3AC1f3039608180792cafFCACf000E11c"
+  },
+  "NAVCalculatorProxy": "0x80eD5cc6cEbAe4fEE1eD8687279aa492A50afa8d",
+  "customPriceFeeds": {}
+}

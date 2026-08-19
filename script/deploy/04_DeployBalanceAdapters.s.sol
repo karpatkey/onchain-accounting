@@ -3,6 +3,7 @@ pragma solidity ^0.8.28;
 
 import {BaseDeployScript} from "../utils/BaseDeployScript.sol";
 import {ConfigReader} from "../utils/ConfigReader.sol";
+import {DeploySalts} from "./DeploySalts.sol";
 import {console2} from "forge-std/console2.sol";
 
 // Import balance adapters
@@ -473,11 +474,51 @@ contract DeployBalanceAdapters is BaseDeployScript {
         return address(0);
     }
 
+    /// @notice Canonical CREATE2 deployer (Arachnid). Calldata is `salt || init_code`.
+    address internal constant CANONICAL_CREATE2_DEPLOYER = address(0x4e59b44847b379578588920cA78FbF26c0B4956C);
+
+    /// @notice CREATE2-deploys an adapter whose ONLY constructor argument is the NAV proxy.
+    /// @dev **Why these are CREATE2 and most adapters are not.** The NAV proxy is CREATE2-identical on every
+    ///      chain, so for an adapter that takes nothing else the init-code hash is identical fleet-wide and one
+    ///      salt yields ONE address everywhere. Adapters that take a chain-specific protocol address cannot have
+    ///      that property — their init code genuinely differs per chain — so they stay on plain CREATE.
+    ///
+    ///      **Idempotent by address, not by record.** If the predicted address already has code this returns it
+    ///      untouched rather than deploying a second instance, so a re-run is a no-op. It deliberately does NOT
+    ///      consult the deployment record: the record is a plan, not a receipt, and trusting it is what let a
+    ///      simulated run pre-fill addresses that were never broadcast.
+    ///
+    ///      ⚠️ The address is a pure function of (creation code, NAV, salt version). Changing ANY of the three —
+    ///      including a source edit that moves the creation code — moves the adapter, and because the NAV keys
+    ///      its balance-adapter set and each meta-adapter's instance set by ADDRESS, that is a redeploy plus a
+    ///      re-registration, never a silent swap.
+    function _create2NavOnly(bytes memory creationCode, address navCalculator, string memory name, uint256 version)
+        internal
+        returns (address)
+    {
+        bytes32 salt = generateSalt(name, version);
+        bytes memory initCode = abi.encodePacked(creationCode, abi.encode(navCalculator));
+        address predicted = computeCreate2Address(CANONICAL_CREATE2_DEPLOYER, salt, initCode);
+        if (predicted.code.length == 0) {
+            (bool ok,) = CANONICAL_CREATE2_DEPLOYER.call(abi.encodePacked(salt, initCode));
+            require(ok, "CREATE2 adapter deploy failed");
+            console2.log("[OK] CREATE2 adapter deployed:", name, predicted);
+        } else {
+            console2.log("[SKIP] CREATE2 adapter already at:", name, predicted);
+        }
+        return predicted;
+    }
+
     /// @notice Deploys the Aave V3 instances meta-adapter. Constructor takes (navCalculator); the set of
     ///         instance DataProviders to query is configured on NAVCalculator via addMetaInstances/removeMetaInstances in 06 (ADR 0010).
     function _deployAaveV3InstancesMeta(string memory, address navCalculator) internal returns (address) {
-        AaveV3InstancesMetaBalanceAdapter adapter = new AaveV3InstancesMetaBalanceAdapter(navCalculator);
-        return address(adapter);
+        address adapter = _create2NavOnly(
+            type(AaveV3InstancesMetaBalanceAdapter).creationCode,
+            navCalculator,
+            "AaveV3InstancesMetaBalanceAdapter",
+            DeploySalts.AAVE_V3_INSTANCES_META
+        );
+        return adapter;
     }
 
     /// @notice Deploys the Compound V3 comets meta-adapter. Constructor takes (compoundRewards, rewardToken,
@@ -519,25 +560,45 @@ contract DeployBalanceAdapters is BaseDeployScript {
     /// @notice Deploys the Morpho Vaults meta-adapter. Constructor takes only (navCalculator); the set of
     ///         vaults to query is configured on NAVCalculator via addMetaInstances/removeMetaInstances in 06_Configure (ADR 0010).
     function _deployMorphoVaultsMeta(string memory, address navCalculator) internal returns (address) {
-        MorphoVaultsMetaBalanceAdapter adapter = new MorphoVaultsMetaBalanceAdapter(navCalculator);
-        return address(adapter);
+        address adapter = _create2NavOnly(
+            type(MorphoVaultsMetaBalanceAdapter).creationCode,
+            navCalculator,
+            "MorphoVaultsMetaBalanceAdapter",
+            DeploySalts.MORPHO_VAULTS_META
+        );
+        return adapter;
     }
 
     function _deployEulerVaultsMeta(string memory, address navCalculator) internal returns (address) {
-        EulerVaultsMetaBalanceAdapter adapter = new EulerVaultsMetaBalanceAdapter(navCalculator);
-        return address(adapter);
+        address adapter = _create2NavOnly(
+            type(EulerVaultsMetaBalanceAdapter).creationCode,
+            navCalculator,
+            "EulerVaultsMetaBalanceAdapter",
+            DeploySalts.EULER_VAULTS_META
+        );
+        return adapter;
     }
 
     function _deploySymbioticVaultsMeta(string memory, address navCalculator) internal returns (address) {
-        SymbioticVaultsMetaBalanceAdapter adapter = new SymbioticVaultsMetaBalanceAdapter(navCalculator);
-        return address(adapter);
+        address adapter = _create2NavOnly(
+            type(SymbioticVaultsMetaBalanceAdapter).creationCode,
+            navCalculator,
+            "SymbioticVaultsMetaBalanceAdapter",
+            DeploySalts.SYMBIOTIC_VAULTS_META
+        );
+        return adapter;
     }
 
     /// @notice Deploys the Gearbox markets meta-adapter. Constructor takes (navCalculator); the market
     ///         set is configured on NAVCalculator via addMetaInstances/removeMetaInstances in 06 (ADR 0010).
     function _deployGearboxV3MarketsMeta(string memory, address navCalculator) internal returns (address) {
-        GearboxV3MarketsMetaBalanceAdapter adapter = new GearboxV3MarketsMetaBalanceAdapter(navCalculator);
-        return address(adapter);
+        address adapter = _create2NavOnly(
+            type(GearboxV3MarketsMetaBalanceAdapter).creationCode,
+            navCalculator,
+            "GearboxV3MarketsMetaBalanceAdapter",
+            DeploySalts.GEARBOX_V3_MARKETS_META
+        );
+        return adapter;
     }
 
     /// @notice Deploys the Cap cUSD (stablecoin) leg adapter. Reads `cUsd` + `usdc` from its OWN config key —
@@ -566,7 +627,12 @@ contract DeployBalanceAdapters is BaseDeployScript {
     }
 
     function _deployCurvePoolsMeta(string memory, address navCalculator) internal returns (address) {
-        return address(new CurvePoolsMetaBalanceAdapter(navCalculator));
+        return _create2NavOnly(
+            type(CurvePoolsMetaBalanceAdapter).creationCode,
+            navCalculator,
+            "CurvePoolsMetaBalanceAdapter",
+            DeploySalts.CURVE_POOLS_META
+        );
     }
 
     function _deployCurveGaugesMeta(string memory adapterName, address navCalculator) internal returns (address) {
@@ -594,8 +660,13 @@ contract DeployBalanceAdapters is BaseDeployScript {
 
     function _deployAaveV3SafetyModule(string memory, address navCalculator) internal returns (address) {
         // The set of stake tokens is hardcoded in the adapter (AaveV3SafetyModuleBalanceAdapter).
-        AaveV3SafetyModuleBalanceAdapter adapter = new AaveV3SafetyModuleBalanceAdapter(navCalculator);
-        return address(adapter);
+        address adapter = _create2NavOnly(
+            type(AaveV3SafetyModuleBalanceAdapter).creationCode,
+            navCalculator,
+            "AaveV3SafetyModuleBalanceAdapter",
+            DeploySalts.AAVE_V3_SAFETY_MODULE
+        );
+        return adapter;
     }
 
     function _deployAaveUmbrella(string memory adapterName, address navCalculator) internal returns (address) {
@@ -622,8 +693,13 @@ contract DeployBalanceAdapters is BaseDeployScript {
     /// @notice Deploys the Balancer pools meta-adapter. Constructor takes (navCalculator); the set of
     ///         pools to query is configured on NAVCalculator via addMetaInstances/removeMetaInstances in 06_Configure (ADR 0010).
     function _deployBalancerV3PoolsMeta(string memory, address navCalculator) internal returns (address) {
-        BalancerV3PoolsMetaBalanceAdapter adapter = new BalancerV3PoolsMetaBalanceAdapter(navCalculator);
-        return address(adapter);
+        address adapter = _create2NavOnly(
+            type(BalancerV3PoolsMetaBalanceAdapter).creationCode,
+            navCalculator,
+            "BalancerV3PoolsMetaBalanceAdapter",
+            DeploySalts.BALANCER_V3_POOLS_META
+        );
+        return adapter;
     }
 
     /// @notice Deploys the Balancer gauges meta-adapter. Constructor takes (balancerMinter, navCalculator);
@@ -681,8 +757,13 @@ contract DeployBalanceAdapters is BaseDeployScript {
     /// @notice Deploys the Fluid fTokens meta-adapter. Constructor takes (navCalculator); the fToken
     ///         set is configured on NAVCalculator via addMetaInstances/removeMetaInstances in 06 (ADR 0010).
     function _deployFluidFTokensMeta(string memory, address navCalculator) internal returns (address) {
-        FluidFTokensMetaBalanceAdapter adapter = new FluidFTokensMetaBalanceAdapter(navCalculator);
-        return address(adapter);
+        address adapter = _create2NavOnly(
+            type(FluidFTokensMetaBalanceAdapter).creationCode,
+            navCalculator,
+            "FluidFTokensMetaBalanceAdapter",
+            DeploySalts.FLUID_FTOKENS_META
+        );
+        return adapter;
     }
 
     /// @notice Deploys the Fluid vaults meta-adapter. Constructor takes (vaultResolver, navCalculator);
@@ -854,9 +935,19 @@ contract DeployBalanceAdapters is BaseDeployScript {
     ///         (navCalculator); the pair set is configured on NAVCalculator (ADR 0010).
     function _deployUniswapV2PoolsMeta(string memory adapterName, address navCalculator) internal returns (address) {
         if (_equals(adapterName, "PancakeSwapV2PoolsMeta")) {
-            return address(new PancakeSwapV2PoolsMetaBalanceAdapter(navCalculator));
+            return _create2NavOnly(
+                type(PancakeSwapV2PoolsMetaBalanceAdapter).creationCode,
+                navCalculator,
+                "PancakeSwapV2PoolsMetaBalanceAdapter",
+                DeploySalts.PANCAKESWAP_V2_POOLS_META
+            );
         }
-        return address(new UniswapV2PoolsMetaBalanceAdapter(navCalculator));
+        return _create2NavOnly(
+            type(UniswapV2PoolsMetaBalanceAdapter).creationCode,
+            navCalculator,
+            "UniswapV2PoolsMetaBalanceAdapter",
+            DeploySalts.UNISWAP_V2_POOLS_META
+        );
     }
 
     /// @notice Helper to read deployed adapter address

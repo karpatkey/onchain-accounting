@@ -1287,7 +1287,7 @@ missing, but a run that skipped `08` still does not go red. Read the `info` line
 
 | # | transaction | target | wires |
 |---|---|---|---|
-| 1 | `new AssetKindRegistry(nav)` | — | — |
+| 1 | `AssetKindRegistry` via **canonical CREATE2** (`0x4e59…4956C`), salt `DeploySalts.ASSET_KIND_REGISTRY` | — | — |
 | 2 | **`setAssetKindRegistry(registry)`** | **NAV** | **NAV → registry: the READ direction** |
 | 3 | `grantRole(MANAGER, registry)` | NAV | registry → NAV: the WRITE direction |
 | 4 | `setAssetKinds(assets, kinds)` | registry | — |
@@ -1298,6 +1298,28 @@ missing, but a run that skipped `08` still does not go red. Read the `info` line
 > NAV's `assetKindRegistry` at `address(0)` and **every `getAssetInfo` call reverting**, while every other
 > check passed. It was found by a session writing documentation, because it had to say what a caller
 > actually gets.
+
+> **⚠️ TRANSACTION 1 WAS `new` — plain CREATE — AND THAT WAS ALSO A DEFECT.** Every other contract in this
+> stack is CREATE2 so it carries one address fleet-wide; the registry was the lone `new`, so its address
+> followed the deployer's nonce and the 2026-08-18 deploy produced **14 distinct addresses across 24
+> chains**. Worse than the inconvenience: several chains collided on one address by nonce coincidence, and
+> an address-keyed map built from broadcast artefacts then mislabels those registries as whatever contract
+> shares the address elsewhere — which is exactly how five of them were mis-verified. Fixed 2026-08-19: the
+> step now CREATE2-deploys at `0xf60467a88C2b4d0f46C0c41C3Ba0C74da3d3CCD0` on every chain and is
+> **skip-if-already-deployed**, so a re-run is a no-op rather than a second registry.
+>
+> **Replacing a registry does not restore its labels.** Classification (transaction 4, `setAssetKinds`) is
+> re-run by this step, but labels are written by `registerAsset` — which reverts `InvalidArguments` once an
+> asset is already registered on the NAV. A replacement registry therefore starts fully classified and
+> fully **unlabelled**, and the read path degrades silently to empty breadcrumbs. Run
+> `09_BackfillAssetLabels` after this step, passing the new registry explicitly:
+>
+> ```bash
+> ASSET_KIND_REGISTRY=0xf60467a88C2b4d0f46C0c41C3Ba0C74da3d3CCD0 \
+>   forge script script/deploy/09_BackfillAssetLabels.s.sol $BROADCAST
+> ```
+>
+> It is idempotent (`setAssetLabels` overwrites), so a partial run followed by a full one converges.
 >
 > **The two directions are not symmetric and were assumed to be.** Transaction 3 lets the registry WRITE to
 > the NAV. Transaction 2 lets the NAV READ the registry. Each is invisible from inside the other contract,
@@ -2153,12 +2175,35 @@ against, and 2.6 cannot run until the new addresses are recorded.
 
 ### 2.5 Source verification
 
-Use the `verify-contracts` skill. `PriceFeedLib` needs its special recipe: a **287-file**
-standard-json (the import closure of all non-test roots, which pulls in exactly 3 `test/` files that
-`script/test/*` imports), whitespace-only reduction to fit Etherscan's hard **3,000,000-character**
-limit, and `settings.libraries` linking **both** `NAVRegistryLib` and `PriceFeedLib` (self-link).
-Comment-stripping corrupts the bytecode; whitespace-only reduction does not. Always local-compile the
-reduced JSON and assert the `PriceFeedLib` creation size before submitting.
+Use the `verify-contracts` skill.
+
+> **`PriceFeedLib` no longer needs the special recipe — EXECUTED AND MEASURED 2026-08-19.** This step
+> used to prescribe a **287-file** standard-json, whitespace-only reduction to fit Etherscan's
+> 3,000,000-character limit, and a hand-written `settings.libraries` self-link. None of that was
+> needed: `forge verify-contract --show-standard-json-input` emits a **23-source** std-json that
+> already carries **both** library links **including `PriceFeedLib`'s own self-link**, because the
+> addresses are pinned in `foundry.toml [libraries]` — and it reproduces the deployed bytecode
+> exactly. `PriceFeedLib` verified on **all six backends** (Sourcify, Etherscan V2, Blockscout,
+> OKLink, Routescan, Tenderly). The self-link was the *only* thing the 287-file assembly ever bought;
+> the "via_ir scope sensitivity" was a symptom of its absence, not an independent property.
+>
+> **The check that replaces the recipe:** generate each type's std-json, local-recompile it
+> (`~/.svm/0.8.34/solc-0.8.34 --standard-json`), and diff against `out/<file>/<name>.json`
+> `.bytecode.object` — **normalise the `0x` prefix**, which forge's artifact has and solc's output
+> does not. On 2026-08-19 **52 of 52 contract types matched**. Only fall back to the old recipe for a
+> type that genuinely fails that diff.
+
+**Result of the 2026-08-19 run** (236 instances / 111 addresses / 52 types / 24 chains):
+**zero instances with no verified backend.** Sourcify 236/236 · Etherscan V2 206/206 ·
+Blockscout 156/162 · OKLink 162/164 · Routescan 84/93 · Tenderly 212/236. Residuals are platform
+limits: Tenderly does not support opbnb/hyperevm/0g/hemi; `explorer.linea.build` is listed in the
+Blockscout registry but 404s on `/api/v2` and is not a Blockscout instance.
+
+**Two traps worth carrying forward.** (1) Build the address→contract map keyed on **(chain, address)**
+— `AssetKindRegistry` is plain CREATE, so the same address is `AtomicNAVProxyDeployer` on another
+chain; an address-keyed map mislabelled 5 instances, and only the exact-match backends rejected them.
+(2) Read before submitting: Sourcify's propagation had already verified 139 of 206 Etherscan pairs and
+84 of 93 Routescan pairs, cutting Etherscan submissions from 206 to 67.
 
 ### 2.6 Integration snapshots — AFTER the deploy, not before
 

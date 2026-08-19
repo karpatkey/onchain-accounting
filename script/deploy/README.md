@@ -97,7 +97,10 @@ Deploys the per-chain `AssetKindRegistry` and classifies every asset in `nav-con
 
 **Idempotent.** Re-running re-classifies the existing registry instead of deploying a second one, so it composes with the "re-run the numbered sequence" pattern like every other step.
 
-**Run it with `PERSIST_DEPLOYMENTS=1`.** The idempotency above depends on the deployment record, and `saveDeployedAddress` only writes that record when the flag is set. A real `--broadcast` *without* it deploys a live registry and records nothing, so the next run deploys a second one. There is no fallback address to probe — and note the reason is the gated WRITER, not CREATE vs CREATE2: `04`'s adapters also use plain `new` behind a record lookup, but record through the ungated `writeAdapterAddress`, whereas `08` (like `04`'s three assistants) records through the gated `saveDeployedAddress`.
+**Run it with `PERSIST_DEPLOYMENTS=1` — but note the idempotency no longer depends on it.** Since the registry became CREATE2 (2026-08-19), the skip-if-deployed guard probes the **predicted address for code on-chain**, so a re-run without the flag is a no-op rather than a second registry: the address is a pure function of (creation code, NAV, salt), so there is always an address to probe. That closes the old failure mode where a real `--broadcast` without the flag recorded nothing and the next run deployed a duplicate.
+
+The flag is still required, for a different reason: downstream consumers — `09_BackfillAssetLabels`, `verify_step.py 1.4`, the deployment record itself — read the registry address from the record, and `saveDeployedAddress` only writes it when the flag is set. Omit it and the deploy is still correct on-chain, but nothing downstream can find the registry.
+
 
 ```bash
 PERSIST_DEPLOYMENTS=1 \

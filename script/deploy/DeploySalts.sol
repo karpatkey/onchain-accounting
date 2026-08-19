@@ -38,6 +38,20 @@ library DeploySalts {
     /// @notice NAVCalculator implementation salt. Used by 01_DeployImplementations and 01_2_DeployNAVImplementation.
     uint256 internal constant NAV_IMPL = 3;
 
+    /// @notice `AssetKindRegistry` salt. Used by 08_DeployAssetKindRegistry.
+    /// @dev **Version 2, not 1, and the reason is the whole point of this constant.** The 2026-08-18 deploy created
+    ///      the registry with a plain `new AssetKindRegistry(nav)` — CREATE, not CREATE2 — so its address followed the
+    ///      deployer's nonce and came out DIFFERENT on 14 of the 24 chains, with a few chains colliding on one address
+    ///      purely because their nonces matched. That collision is not harmless: an address-keyed map of
+    ///      (address -> contract) built from the broadcast artifacts mislabels those registries as whatever contract
+    ///      shares the address on another chain, which is exactly how five of them were mis-verified.
+    ///
+    ///      Version 1 is deliberately skipped so the CREATE2 address cannot be confused with any first-generation
+    ///      registry, and so a future reader sees at a glance that generation 1 was not CREATE2-derived at all.
+    ///      The constructor takes only `nav`, and the NAV proxy is itself CREATE2-identical on every chain, so the
+    ///      init-code hash is identical fleet-wide and this salt yields ONE address everywhere.
+    uint256 internal constant ASSET_KIND_REGISTRY = 2;
+
     //
     // Bridge adapters (ADR 0012, D7 — CREATE2 same-address across chains)
     //

@@ -3,6 +3,7 @@ pragma solidity ^0.8.28;
 
 import {BaseDeployScript} from "../utils/BaseDeployScript.sol";
 import {ConfigReader} from "../utils/ConfigReader.sol";
+import {DeploySalts} from "./DeploySalts.sol";
 import {console2} from "forge-std/console2.sol";
 import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol";
 
@@ -92,6 +93,11 @@ import "../../src/constants.sol";
 ///      code. Whether the facade becomes the ONLY path is a deploy-time role decision (revoke `MANAGER` from humans on
 ///      the NAV), left to the operator so this step imposes no single point of failure on asset registration.
 contract DeployAssetKindRegistry is BaseDeployScript {
+    /// @notice Canonical CREATE2 deployer (Arachnid). Calldata is `salt || init_code`.
+    /// @dev Same constant and same format `01_2_DeployNAVImplementation` uses for the libraries and the NAV
+    ///      implementation; the registry joins them so every canonical contract shares one address fleet-wide.
+    address internal constant CANONICAL_CREATE2_DEPLOYER = address(0x4e59b44847b379578588920cA78FbF26c0B4956C);
+
     /// @notice Thrown when a configured asset has no valid `accrualKind`. Aborts the deploy.
     error AssetKindMissingOrInvalid(string symbol, string field);
 
@@ -259,7 +265,33 @@ contract DeployAssetKindRegistry is BaseDeployScript {
             // The registry takes only the NAV address: it keeps no roles of its OWN and gates every write on
             // `NAV.hasRole(MANAGER, msg.sender)`, so authority is exactly the NAV's MANAGER set. The deployer can
             // classify in this same run because it already holds that role.
-            registry = new AssetKindRegistry(nav);
+            //
+            // ⚠️ **CREATE2, via the canonical deployer — NOT `new`.** Generation 1 used `new AssetKindRegistry(nav)`,
+            // so the address followed the deployer's nonce and differed on 14 of 24 chains. Every other canonical
+            // contract here (libraries, implementation, proxy) is CREATE2-identical fleet-wide, and consumers
+            // reasonably assume the registry is too — the deployment record is the only place the per-chain address
+            // existed, and an address-keyed map built from broadcast artifacts silently mislabelled the registries
+            // that happened to collide.
+            //
+            // The constructor takes only `nav`, and the NAV proxy is itself CREATE2-identical, so the init code —
+            // and therefore the derived address — is the same on every chain.
+            bytes32 salt = generateSalt("AssetKindRegistry", DeploySalts.ASSET_KIND_REGISTRY);
+            bytes memory initCode = abi.encodePacked(type(AssetKindRegistry).creationCode, abi.encode(nav));
+            address predicted = computeCreate2Address(CANONICAL_CREATE2_DEPLOYER, salt, initCode);
+
+            if (predicted.code.length == 0) {
+                (bool ok,) = CANONICAL_CREATE2_DEPLOYER.call(abi.encodePacked(salt, initCode));
+                require(ok, "AssetKindRegistry CREATE2 deploy failed");
+                console2.log("[OK] AssetKindRegistry deployed at:", predicted);
+            } else {
+                // Same address, already deployed on this chain — idempotent re-run, or a chain reached twice.
+                console2.log("[SKIP] AssetKindRegistry already at:", predicted);
+            }
+            registry = AssetKindRegistry(predicted);
+
+            // The predicted address is only meaningful if it really carries this contract. A CREATE2 address with code
+            // that is NOT ours would otherwise be adopted silently, and every later step would wire the NAV to it.
+            if (address(registry.NAV()) != nav) revert RegistryBoundToDifferentNav(predicted, address(registry.NAV()), nav);
         }
 
         // ⚠️ **THE NAV MUST POINT BACK AT THE REGISTRY, OR THE READ SURFACE IS DEAD ON ARRIVAL.** This is the mirror

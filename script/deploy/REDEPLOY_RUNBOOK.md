@@ -1287,7 +1287,7 @@ missing, but a run that skipped `08` still does not go red. Read the `info` line
 
 | # | transaction | target | wires |
 |---|---|---|---|
-| 1 | `new AssetKindRegistry(nav)` | — | — |
+| 1 | `AssetKindRegistry` via **canonical CREATE2** (`0x4e59…4956C`), salt `DeploySalts.ASSET_KIND_REGISTRY` | — | — |
 | 2 | **`setAssetKindRegistry(registry)`** | **NAV** | **NAV → registry: the READ direction** |
 | 3 | `grantRole(MANAGER, registry)` | NAV | registry → NAV: the WRITE direction |
 | 4 | `setAssetKinds(assets, kinds)` | registry | — |
@@ -1298,6 +1298,28 @@ missing, but a run that skipped `08` still does not go red. Read the `info` line
 > NAV's `assetKindRegistry` at `address(0)` and **every `getAssetInfo` call reverting**, while every other
 > check passed. It was found by a session writing documentation, because it had to say what a caller
 > actually gets.
+
+> **⚠️ TRANSACTION 1 WAS `new` — plain CREATE — AND THAT WAS ALSO A DEFECT.** Every other contract in this
+> stack is CREATE2 so it carries one address fleet-wide; the registry was the lone `new`, so its address
+> followed the deployer's nonce and the 2026-08-18 deploy produced **14 distinct addresses across 24
+> chains**. Worse than the inconvenience: several chains collided on one address by nonce coincidence, and
+> an address-keyed map built from broadcast artefacts then mislabels those registries as whatever contract
+> shares the address elsewhere — which is exactly how five of them were mis-verified. Fixed 2026-08-19: the
+> step now CREATE2-deploys at `0xf60467a88C2b4d0f46C0c41C3Ba0C74da3d3CCD0` on every chain and is
+> **skip-if-already-deployed**, so a re-run is a no-op rather than a second registry.
+>
+> **Replacing a registry does not restore its labels.** Classification (transaction 4, `setAssetKinds`) is
+> re-run by this step, but labels are written by `registerAsset` — which reverts `InvalidArguments` once an
+> asset is already registered on the NAV. A replacement registry therefore starts fully classified and
+> fully **unlabelled**, and the read path degrades silently to empty breadcrumbs. Run
+> `09_BackfillAssetLabels` after this step, passing the new registry explicitly:
+>
+> ```bash
+> ASSET_KIND_REGISTRY=0xf60467a88C2b4d0f46C0c41C3Ba0C74da3d3CCD0 \
+>   forge script script/deploy/09_BackfillAssetLabels.s.sol $BROADCAST
+> ```
+>
+> It is idempotent (`setAssetLabels` overwrites), so a partial run followed by a full one converges.
 >
 > **The two directions are not symmetric and were assumed to be.** Transaction 3 lets the registry WRITE to
 > the NAV. Transaction 2 lets the NAV READ the registry. Each is invisible from inside the other contract,

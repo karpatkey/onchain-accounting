@@ -5,13 +5,13 @@
   "BridgeEscrowImplementation": "0xe2237d9776041514b1AC66856407Ed344b480De0",
   "balanceAdapters": {
     "ERC20Default": "0x4Bc39Dce61245F5A63189d1FA03E6D76646f1EE6",
-    "AaveV3InstancesMeta": "0x82C7fd93010F578c78d08Bd107443f28E57fb277",
+    "AaveV3InstancesMeta": "0x04Ba6789B4AD5D6CF63Ec9cc301c13F6a8A0210b",
     "CompoundV3CometsMeta": "0xFB12e2105287604013dAdee87597F8b80390fc82",
-    "MorphoVaultsMeta": "0x9F5247c5f9f60873e5Cdd81e380C5F616e19dF84",
+    "MorphoVaultsMeta": "0x64e1ba8B12ee2bFdBDdFd4E0863EdfaaE824C86a",
     "MorphoMarketsMeta": "0x2a4d53eF5F149199e2958ce8F29AC85c9072589A",
-    "BalancerV3PoolsMeta": "0x395Be2Fbca9D201cE506c6c4714Dd5ff42CECAB4",
+    "BalancerV3PoolsMeta": "0xbF1785E519067f0471eb5C50A634A7eeE0140A21",
     "BalancerV3GaugesMeta": "0x9F8ef612cd2F71a76FCDAcc2820f332f74415705",
-    "FluidFTokensMeta": "0x26822d956B190DE802db47b2730E54BDe1C64c12"
+    "FluidFTokensMeta": "0x0c312178e10ad15a9DC847d664786146f2C88dcf"
   },
   "NAVCalculatorProxy": "0x54EaD2A1dB7456cA917675Ea8908ec8A997c6214",
   "customPriceFeeds": {
@@ -24,5 +24,5 @@
     "ezETHCrossRate": "0xCEbB97a1c4aA99EbA63b3885e5BbB76a4893C090",
     "rsETHCrossRate": "0x4531e81ce4193071311D0De838412cAfCCc0000C"
   },
-  "AssetKindRegistry": "0x9EcCb61368EC42609C34faeb466067b623D581E1"
+  "AssetKindRegistry": "0xf60467a88C2b4d0f46C0c41C3Ba0C74da3d3CCD0"
 }

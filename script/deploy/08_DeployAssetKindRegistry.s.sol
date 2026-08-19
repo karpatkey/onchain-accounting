@@ -291,7 +291,9 @@ contract DeployAssetKindRegistry is BaseDeployScript {
 
             // The predicted address is only meaningful if it really carries this contract. A CREATE2 address with code
             // that is NOT ours would otherwise be adopted silently, and every later step would wire the NAV to it.
-            if (address(registry.NAV()) != nav) revert RegistryBoundToDifferentNav(predicted, address(registry.NAV()), nav);
+            if (address(registry.NAV()) != nav) {
+                revert RegistryBoundToDifferentNav(predicted, address(registry.NAV()), nav);
+            }
         }
 
         // ⚠️ **THE NAV MUST POINT BACK AT THE REGISTRY, OR THE READ SURFACE IS DEAD ON ARRIVAL.** This is the mirror

@@ -55,6 +55,37 @@ revoked. Do not read them, and do not carry a per-chain registry address out of 
 `.AssetKindRegistry` in `script/config/deployments/<chainId>.json` now holds the same value for every
 chain. The salt is version `2`, not `1`, precisely so a gen-1 address can never be mistaken for it.
 
+### NAV-only balance adapters — also one address on every chain
+
+These adapters take the NAV proxy as their **only** constructor argument. The NAV proxy is itself
+CREATE2-identical fleet-wide, so each has the same init-code hash everywhere and one salt yields one address:
+
+| Adapter | Address | Chains |
+| --- | --- | --- |
+| `AaveV3InstancesMeta` | `0x04Ba6789B4AD5D6CF63Ec9cc301c13F6a8A0210b` | 1, 10, 100, 8453, 42161 |
+| `AaveV3SafetyModule` | `0xa356717027B5d4010a7449904545E5aFb355Bdc9` | 1 |
+| `BalancerV3PoolsMeta` | `0xbF1785E519067f0471eb5C50A634A7eeE0140A21` | 1, 8453, 42161 |
+| `CurvePoolsMeta` | `0xCf200111050Bc5FFbd5c3e675c598995906c3945` | 1 |
+| `EulerVaultsMeta` | `0xCb28C7d1A27e8FB5ea0e1c75Ef62c80722388135` | 1 |
+| `FluidFTokensMeta` | `0x0c312178e10ad15a9DC847d664786146f2C88dcf` | 1, 8453, 42161 |
+| `GearboxV3MarketsMeta` | `0x160017c8d50D44A8fA3667419a89BA1183daaF38` | 1 |
+| `MorphoVaultsMeta` | `0x64e1ba8B12ee2bFdBDdFd4E0863EdfaaE824C86a` | 1, 42161 |
+| `SymbioticVaultsMeta` | `0x599C72cbd3bDe6D992366130009962B4c2Ec5B23` | 1 |
+
+Migrated 2026-08-19 from plain-CREATE originals (which had up to 5 distinct addresses each). Every migration
+was verified against chain state and carried its meta-instance set intact; bytecode is identical to the
+predecessor in every case, so these were pure address changes.
+
+> **⚠️ One deliberate exception: `FluidFTokensMeta` on Polygon (137) is NOT at the address above.** It remains
+> at `0x2182Ec30EFF0f213c6662E5b45D6799ff7de5793`. Polygon's live adapter is an **older build** than the
+> current tree (12,491 vs 13,369 bytes), so completing the swap there would have upgraded the contract as well
+> as moved it — a behaviour change beyond the addressing fix. Read that one from
+> `script/config/deployments/137.json`, which matches the chain.
+
+**Every other balance adapter and all custom price feeds remain plain CREATE, and correctly so:** their
+constructors take chain-specific protocol addresses, so their init code genuinely differs per chain and CREATE2
+could not give them a shared address. Read those per-chain from the deployment records.
+
 > **Deployments-JSON keys** (for `jq` lookups in `script/config/deployments/<chainId>.json`): `NAVCalculatorProxy`, `NAVCalculatorImplementation`, `PriceFeedLib`, `NavRegistryLib` (mixed case — deliberate, to keep the library's CREATE2 salt stable), `BridgeEscrowImplementation`; the default adapter is at `.balanceAdapters.ERC20Default`.
 
 ---

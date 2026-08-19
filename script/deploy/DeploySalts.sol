@@ -53,6 +53,34 @@ library DeploySalts {
     uint256 internal constant ASSET_KIND_REGISTRY = 2;
 
     //
+    // NAV-only balance adapters (CREATE2 same-address across chains)
+    //
+    // These adapters take the NAV proxy as their ONLY constructor argument. The NAV proxy is itself
+    // CREATE2-identical fleet-wide, so each adapter's init-code hash is the same on every chain and one salt
+    // yields ONE address everywhere — the same property that lets `ASSET_KIND_REGISTRY` above collapse to a
+    // single address. Adapters whose constructor takes a chain-specific protocol address (Morpho's `morpho`,
+    // SparkLend's `dataProvider`, Compound's `compoundRewards`, …) are deliberately NOT here: their init code
+    // genuinely differs per chain, so CREATE2 could not give them one address and plain CREATE is correct.
+    //
+    // **Version 2, not 1, for the same reason as the registry.** Generation 1 of each of these was deployed
+    // with plain `new` (CREATE), so its address followed the deployer's nonce and differed on every chain.
+    // Skipping version 1 keeps the numbering aligned with `ASSET_KIND_REGISTRY` and signals at a glance that
+    // generation 1 was not CREATE2-derived. Bumping one of these re-derives that adapter's address on every
+    // chain at once — which means a redeploy AND a re-registration on the NAV, since the NAV's balance-adapter
+    // set and each meta-adapter's instance set are keyed by adapter ADDRESS.
+    uint256 internal constant AAVE_V3_INSTANCES_META = 2;
+    uint256 internal constant AAVE_V3_SAFETY_MODULE = 2;
+    uint256 internal constant BALANCER_V3_POOLS_META = 2;
+    uint256 internal constant CURVE_POOLS_META = 2;
+    uint256 internal constant EULER_VAULTS_META = 2;
+    uint256 internal constant FLUID_FTOKENS_META = 2;
+    uint256 internal constant GEARBOX_V3_MARKETS_META = 2;
+    uint256 internal constant MORPHO_VAULTS_META = 2;
+    uint256 internal constant PANCAKESWAP_V2_POOLS_META = 2;
+    uint256 internal constant SYMBIOTIC_VAULTS_META = 2;
+    uint256 internal constant UNISWAP_V2_POOLS_META = 2;
+
+    //
     // Bridge adapters (ADR 0012, D7 — CREATE2 same-address across chains)
     //
     // Each bridge adapter is a plain (non-proxied) AccessControl contract deployed via the canonical CREATE2

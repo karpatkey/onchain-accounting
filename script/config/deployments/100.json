@@ -5,7 +5,7 @@
   "BridgeEscrowImplementation": "0xe2237d9776041514b1AC66856407Ed344b480De0",
   "balanceAdapters": {
     "ERC20Default": "0x4Bc39Dce61245F5A63189d1FA03E6D76646f1EE6",
-    "AaveV3InstancesMeta": "0xD28cB431688fBe03013e0bB23dE493e105630f45",
+    "AaveV3InstancesMeta": "0x04Ba6789B4AD5D6CF63Ec9cc301c13F6a8A0210b",
     "StakeWiseV3VaultsMeta": "0x8cbAFEC5745AF6727b7be0829e507f58b3b3ce0d",
     "StakeWiseV3ExitQueueAssisted": "0xE1e163663961237C0955b665188864f0fD281020"
   },

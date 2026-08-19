@@ -21,7 +21,7 @@ import "src/errors.sol";
 /// @notice Bridge adapter for Optimism Superchain canonical bridges (L1 <-> L2, both directions).
 /// @dev The destination recipient is always the sibling adapter (`address(this)`, same address across chains
 ///      via CREATE2) for both L1->L2 deposits and L2->L1 withdrawals, so delivered ETH/tokens land on the
-///      adapter and the funded pass-through release (ADR 0012) draws from the adapter's own balance.
+///      adapter and the destination custody record (hold-then-claim, ADR 0024) is funded from the adapter's own balance.
 ///
 ///      Provenance (ADR 0012, D1/D2): there is no escrow fallback dispatcher. Each inbound completion path
 ///      authenticates the genuine OP Stack contract and the source-chain sender:
@@ -311,7 +311,7 @@ contract SuperchainBridgeAdapter is BridgeAdapter, ISuperchainBridgeAdapter {
 
     /// @inheritdoc BridgeAdapter
     /// @dev MANAGER-operated completion. Performs only protocol verification here; the base
-    ///      (`completeBridge`) then funds the escrow and releases (funded pass-through, ADR 0012).
+    ///      (`completeBridge`) then funds the escrow, which records the delivery into custody (hold-then-claim, ADR 0024).
     ///      - On L1 (an L2 → L1 withdrawal completion): finalize the proven withdrawal through the portal,
     ///        which delivers the ETH to this adapter; the base then releases.
     ///      - On L2 (an L1 → L2 deposit completion fallback): the canonical bridge already delivered the
@@ -339,7 +339,7 @@ contract SuperchainBridgeAdapter is BridgeAdapter, ISuperchainBridgeAdapter {
 
     /// @notice Trust-minimized L1 → L2 deposit completion: the L2CrossDomainMessenger relays the deposit
     ///         message to this adapter, which authenticates the messenger + source sender, then funds the
-    ///         escrow and releases (funded pass-through, ADR 0012).
+    ///         escrow, which records the delivery into custody (hold-then-claim, ADR 0024).
     /// @param messagePayload The encoded invoice payload authored on L1 (forwarded through the messenger).
     /// @dev Authenticated path (no MANAGER role): `msg.sender == l2Messenger` and
     ///      `l2Messenger.xDomainMessageSender() == trustedRemoteAdapter[srcChainId]`. The canonical bridge

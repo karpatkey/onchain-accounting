@@ -296,7 +296,10 @@ contract BridgeEscrow is
     /// @inheritdoc IBridgeEscrow
     /// @dev MANAGER-gated. Moves a held delivery to the recorded account (the safe). Because it can only ever
     ///      pay the account stored at `recordDelivery`, and exactly the recorded amount, the gate controls only
-    ///      the TIMING of when funds enter the safe (I4). Strict CEI in `_claim`.
+    ///      the TIMING of when funds enter the safe (I4). Strict CEI in `_claim`. For a native delivery the
+    ///      recorded account MUST be able to receive the native asset (payable): a non-payable recipient makes its
+    ///      own native `claim` revert (`TransferFailed`) and holds its custody until it can accept native — the
+    ///      ERC20 path is unaffected. ADMIN vets authorized accounts, so in practice recipients are payable Safes.
     function claim(bytes32 invoiceHash) external override nonReentrant whenNotPaused onlyRole(MANAGER_ROLE) {
         _claim(invoiceHash);
     }
@@ -355,7 +358,10 @@ contract BridgeEscrow is
 
     /// @inheritdoc IBridgeEscrow
     /// @dev Source-chain bridge-failure recovery. Full CEI + nonReentrant: all bookkeeping completes before
-    ///      the refund transfer leaves the contract.
+    ///      the refund transfer leaves the contract. Gated `whenNotPaused` by design: a pause freezes ALL fund
+    ///      movement — deposit / recordDelivery / claim / cancelInvoice / markInvoiceCompleted alike — and the only
+    ///      path that operates while paused is ADMIN `emergencyWithdraw` (surplus over held custody). To refund a
+    ///      specific invoice during an incident, unpause, cancel, then re-pause if needed.
     function cancelInvoice(bytes32 invoiceHash) external override onlyRole(MANAGER_ROLE) nonReentrant whenNotPaused {
         Invoice storage invoice = invoices[invoiceHash];
 

@@ -74,7 +74,7 @@ interface IAcrossBridgeAdapter is IBridgeAdapter, IAcrossV3Receiver {
 
     /// @notice Default relayer + LP fee percentage (in 1e18, e.g., 0.01e18 = 1%), retained for configuration.
     /// @dev NOT currently applied to `outputAmount`: the V3 `_bridge` sets `outputAmount == inputAmount` so the
-    ///      funded pass-through receives the full invoiced amount on the destination (relayer/LP fees are borne
+    ///      destination custody receives the full invoiced amount (relayer/LP fees are borne
     ///      out-of-band rather than deducted from the bridged amount). Kept for future fee-aware routing.
     /// @return The default relayer fee percentage
     function defaultRelayerFeePct() external view returns (int64);

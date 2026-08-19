@@ -259,10 +259,10 @@ contract GnosisBridgeAdapter is BridgeAdapter, IGnosisBridgeAdapter {
     }
 
     /// @dev Shared inbound-delivery handler for both mediator callbacks. Authenticates the AMB-reported source,
-    ///      verifies the delivered token+amount against the invoice, records provenance, then attempts the funded
-    ///      pass-through release WITHOUT reverting the mediator callback — the OmniBridge swallows a receiver
-    ///      revert, which would strand the delivered tokens with no record; recording first lets the MANAGER
-    ///      fallback (`completeBridge`) finish a recorded-but-unreleased invoice later.
+    ///      verifies the delivered token+amount against the invoice, records provenance, then records the delivery
+    ///      into escrow custody (hold-then-claim, ADR 0024) WITHOUT reverting the mediator callback — the OmniBridge
+    ///      swallows a receiver revert, which would strand the delivered tokens with no record; recording first lets
+    ///      the MANAGER fallback (`completeBridge`) record a delivery the callback failed to record later.
     function _handleInboundDelivery(address deliveredToken, uint256 value, bytes calldata data) internal {
         InvoiceDataLib.InvoiceData memory invoiceData = InvoiceDataLib.decode(data);
 

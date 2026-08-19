@@ -196,6 +196,6 @@ interface IGnosisBridgeAdapter is IBridgeAdapter {
 
     /// @notice Accepts native value sent to the adapter
     /// @dev Native tokens (ETH/xDAI) are not bridged by this adapter (see `NativeTokenNotSupported`). This is kept
-    ///      payable only as a safety net so the funded pass-through native branch in the base cannot strand value.
+    ///      payable only as a safety net so the native custody-funding branch in the base cannot strand value.
     receive() external payable;
 }

@@ -29,7 +29,7 @@ import "src/errors.sol";
 ///      Endpoint call `lzCompose` on it. Inbound: `lzCompose` authenticates `msg.sender == endpoint`, the
 ///      composing OApp (`_from == stargatePool`), the source eid and the source sibling adapter (`composeFrom
 ///      == trustedRemoteAdapter[srcChainId]`), verifies the delivered token+amount against the invoice, then
-///      funds the escrow and releases (funded pass-through). There is no V1 `swap`/bare `lzReceive` path.
+///      funds the escrow, which records the delivery into custody (hold-then-claim, ADR 0024). There is no V1 `swap`/bare `lzReceive` path.
 /// @author KPK
 contract StargateBridgeAdapter is BridgeAdapter, IStargateBridgeAdapter {
     using SafeERC20 for IERC20;
@@ -54,7 +54,7 @@ contract StargateBridgeAdapter is BridgeAdapter, IStargateBridgeAdapter {
     /// @notice Executor options (extraOptions) per destination eid. MUST carry an lzCompose gas option for each
     ///         live lane: `_bridge` passes this as the send's `extraOptions`, and if it is empty the OFT still
     ///         delivers the tokens but the executor is never funded to run `lzCompose`, so the destination's funded
-    ///         pass-through release never auto-fires. Set per lane by `06_Configure` (tunable via setComposeOptions).
+    ///         destination custody record never auto-fires. Set per lane by `06_Configure` (tunable via setComposeOptions).
     mapping(uint32 => bytes) public composeOptions;
 
     /// @notice Mapping to store message payloads by invoice ID
@@ -161,9 +161,9 @@ contract StargateBridgeAdapter is BridgeAdapter, IStargateBridgeAdapter {
 
         // POST-FEE OUTPUT MODEL (resolves the PR#86 fee issue): Stargate V2 applies a protocol fee and SD-dust
         // rounding (so the destination adapter usually receives `amountReceivedLD <= amountLD`), but can also quote
-        // a reward (`OFTFeeDetail` negative fee) making it slightly larger. The destination funded pass-through
-        // must release EXACTLY the amount the payload carries, so we quote the receive amount in this same tx and
-        // re-encode the invoice payload to carry it. The recipient then receives and releases exactly
+        // a reward (`OFTFeeDetail` negative fee) making it slightly larger. The destination custody record
+        // must be funded with EXACTLY the amount the payload carries, so we quote the receive amount in this same tx
+        // and re-encode the invoice payload to carry it. The recipient then receives and the escrow records exactly
         // `amountReceivedLD` (the bridge fee/reward is borne by the transfer, standard bridge UX). The source-chain
         // invoice still records the gross deposit; source↔destination pairing is by `invoiceId` (fee-independent),
         // so the differing post-fee checksum on the destination is immaterial.
@@ -255,7 +255,7 @@ contract StargateBridgeAdapter is BridgeAdapter, IStargateBridgeAdapter {
     /// @dev Auto completion path. Called by the genuine LayerZero V2 Endpoint on the destination chain after
     ///      Stargate delivered the tokens to this adapter. Authenticates the endpoint, the composing Stargate
     ///      pool, the source eid and the source sibling adapter, verifies the delivered token+amount matches
-    ///      the invoice, then funds the escrow and releases (funded pass-through).
+    ///      the invoice, then funds the escrow, which records the delivery into custody (hold-then-claim, ADR 0024).
     function lzCompose(address _from, bytes32, bytes calldata _message, address, bytes calldata)
         external
         payable

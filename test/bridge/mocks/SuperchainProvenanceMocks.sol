@@ -83,3 +83,24 @@ contract MockOptimismPortalReal is IOptimismPortal {
 
     receive() external payable {}
 }
+
+/// @notice Models the L1CrossDomainMessenger → L1StandardBridge relay for an ETH withdrawal: the portal delivers
+///         `value` to the withdrawal `target` (this contract), which forwards it to the real recipient (the sibling
+///         adapter, the `withdrawTo` receiver). Lets tests exercise the REALISTIC OP withdrawal shape where the
+///         portal `target` is NOT the adapter — the shape a `L2StandardBridge.withdrawTo` withdrawal actually
+///         produces. `setRecipient(address(0))` (or forwarding less) models a withdrawal that does not fund the
+///         adapter, so finalize's balance-delta guard must reject it.
+contract MockL1WithdrawalRelay {
+    address payable public recipient;
+
+    function setRecipient(address payable r) external {
+        recipient = r;
+    }
+
+    receive() external payable {
+        if (recipient != address(0) && msg.value > 0) {
+            (bool ok,) = recipient.call{value: msg.value}("");
+            require(ok, "relay forward failed");
+        }
+    }
+}

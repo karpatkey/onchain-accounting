@@ -11,7 +11,11 @@ import "src/constants.sol";
 import {BridgeScenarioHelper} from "test/bridge/BridgeScenarioHelper.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "test/bridge/mocks/MockBridgeProtocols.sol";
-import {MockCrossDomainMessenger, MockOptimismPortalReal} from "test/bridge/mocks/SuperchainProvenanceMocks.sol";
+import {
+    MockCrossDomainMessenger,
+    MockOptimismPortalReal,
+    MockL1WithdrawalRelay
+} from "test/bridge/mocks/SuperchainProvenanceMocks.sol";
 import {Types} from "@optimism/libraries/Types.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/errors.sol";
@@ -139,8 +143,10 @@ contract SuperchainBridgeAdapterTest is BridgeScenarioHelper {
         vm.chainId(SOURCE_CHAIN_ID);
         uint64 baseL2 = 8453;
         MockL1StandardBridge baseBridge = new MockL1StandardBridge();
-        vm.prank(admin);
+        vm.startPrank(admin);
         l1Adapter.setL1BridgeForL2(baseL2, address(baseBridge));
+        l1Adapter.setL2TokenForL2(baseL2, address(usdc), address(usdc));
+        vm.stopPrank();
 
         uint256 amount = 1000 * 10 ** usdc.decimals();
         _approveToken(address(usdc), address(bridgeEscrow), amount);
@@ -149,6 +155,28 @@ contract SuperchainBridgeAdapterTest is BridgeScenarioHelper {
 
         assertEq(usdc.balanceOf(address(baseBridge)), amount, "deposit routed to the destination L2's bridge");
         assertEq(usdc.balanceOf(address(l1Bridge)), 0, "the other L2's bridge is untouched");
+    }
+
+    /// @notice Fail-closed: an ERC20 L1→L2 deposit to a destination L2 with no configured L2 token reverts, instead
+    ///         of silently defaulting the L2 token to the (wrong) L1 address, which would lock the deposit (e.g. WETH).
+    function test_bridge_l1ToL2_erc20_revertsIfL2TokenUnconfigured() public {
+        vm.chainId(SOURCE_CHAIN_ID);
+        uint64 baseL2 = 8453;
+        MockL1StandardBridge baseBridge = new MockL1StandardBridge();
+        // Bridge is configured for baseL2, but setL2TokenForL2(baseL2, usdc) is deliberately NOT called.
+        vm.prank(admin);
+        l1Adapter.setL1BridgeForL2(baseL2, address(baseBridge));
+
+        uint256 amount = 1000 * 10 ** usdc.decimals();
+        _approveToken(address(usdc), address(bridgeEscrow), amount);
+
+        vm.prank(account);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                ISuperchainBridgeAdapter.L2TokenNotConfigured.selector, uint256(baseL2), address(usdc)
+            )
+        );
+        bridgeEscrow.depositAndBridge(baseL2, USDC_SYMBOL, amount, address(l1Adapter));
     }
 
     /// @notice A deposit to an L2 with no configured L1 bridge reverts (no silent misroute).
@@ -349,9 +377,13 @@ contract SuperchainBridgeAdapterTest is BridgeScenarioHelper {
         bytes memory messagePayload = InvoiceDataLib.encode(invoiceData);
         bytes32 invoiceHash = bytes32(uint256(uint192(invoiceData.checksum24)));
 
-        // Real OP withdrawal that delivers `amount` ETH to the L1 adapter (the recipient).
+        // Realistic OP withdrawal shape: a `L2StandardBridge.withdrawTo` withdrawal's portal `target` is the L1
+        // messenger/bridge relay (NOT this adapter). The relay forwards the finalized ETH to the adapter as the
+        // `withdrawTo` receiver. This is exactly the shape the old `target == address(this)` check wrongly rejected.
+        MockL1WithdrawalRelay relay = new MockL1WithdrawalRelay();
+        relay.setRecipient(payable(address(l1Ad)));
         Types.WithdrawalTransaction memory wtx = Types.WithdrawalTransaction({
-            nonce: 1, sender: address(l2Bridge), target: address(l1Ad), value: amount, gasLimit: 200000, data: ""
+            nonce: 1, sender: address(l2Bridge), target: address(relay), value: amount, gasLimit: 200000, data: ""
         });
         bytes32 realHash = l1Ad.hashWithdrawal(wtx);
 
@@ -542,7 +574,10 @@ contract SuperchainBridgeAdapterTest is BridgeScenarioHelper {
         l1Ad.completeBridge(messagePayload, abi.encode(wtx));
     }
 
-    function test_completeBridge_l2ToL1_revertsIfTargetNotAdapter() public {
+    /// @notice A withdrawal whose finalize does not actually credit this adapter `amount` ETH must be rejected by the
+    ///         balance-delta guard — here the ETH is delivered elsewhere (`target == account`), so the adapter's
+    ///         native balance does not rise and finalize reverts (funds roll back with the tx).
+    function test_completeBridge_l2ToL1_revertsIfAdapterNotFunded() public {
         vm.chainId(SOURCE_CHAIN_ID);
         uint256 amount = 1 ether;
 
@@ -555,11 +590,11 @@ contract SuperchainBridgeAdapterTest is BridgeScenarioHelper {
             _createInvoiceData(L2_CHAIN_ID, SOURCE_CHAIN_ID, account, WETH_SYMBOL_BYTES6, amount);
         bytes memory messagePayload = InvoiceDataLib.encode(invoiceData);
 
-        // Withdrawal target is NOT the adapter — funds would not land on the adapter; must be rejected.
+        // Finalize delivers the ETH to `account`, not to the adapter → the adapter's balance delta is 0 < amount.
         Types.WithdrawalTransaction memory wtx = Types.WithdrawalTransaction({
             nonce: 2, sender: address(l2Bridge), target: account, value: amount, gasLimit: 200000, data: ""
         });
-        // Prove it so the only failing check is the target binding.
+        // Prove it so the only failing check is the balance-delta guard.
         vm.prank(manager);
         l1Ad.proveWithdrawal(
             L2_CHAIN_ID,

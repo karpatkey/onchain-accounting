@@ -68,6 +68,13 @@ interface ISuperchainBridgeAdapter is IBridgeAdapter {
     /// @notice Thrown when attempting to bridge an unsupported asset
     error UnsupportedAsset();
 
+    /// @notice Thrown when an ERC20 L1→L2 deposit has no configured L2 token for the destination L2
+    /// @dev Fail-closed guard: the adapter refuses to default the L2 token to the L1 address (wrong for tokens
+    ///      like WETH). Wire the mapping via `setL2TokenForL2` before routing that ERC20 over Superchain.
+    /// @param l2ChainId The destination L2 chain id
+    /// @param l1Token The L1 token that has no L2 mapping
+    error L2TokenNotConfigured(uint256 l2ChainId, address l1Token);
+
     /// @notice Thrown when withdrawal proof data is invalid
     error InvalidWithdrawalProof();
 

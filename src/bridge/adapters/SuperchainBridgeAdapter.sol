@@ -239,11 +239,11 @@ contract SuperchainBridgeAdapter is BridgeAdapter, ISuperchainBridgeAdapter {
             // Pull ERC20 tokens from escrow (escrow approved us in depositAndBridge)
             IERC20(asset).safeTransferFrom(bridgeEscrow, address(this), data.amount);
 
-            // Resolve the L2 token for this destination L2; default to the same address when unmapped.
+            // Resolve the L2 token for this destination L2. Fail closed: an unmapped ERC20 must NOT default to the
+            // L1 address (wrong on L2 for tokens like WETH → the deposit would be unfinalizable / locked). Any ERC20
+            // Superchain route must be wired via `setL2TokenForL2` first.
             address l2Token = l1ToL2TokenForL2[data.destinationChainId][asset];
-            if (l2Token == address(0)) {
-                l2Token = asset;
-            }
+            if (l2Token == address(0)) revert L2TokenNotConfigured(data.destinationChainId, asset);
 
             // Approve L1 bridge to spend tokens and deposit to L2
             IERC20(asset).forceApprove(address(bridge), data.amount);
@@ -375,20 +375,16 @@ contract SuperchainBridgeAdapter is BridgeAdapter, ISuperchainBridgeAdapter {
     /// @param protocolData ABI-encoded `Types.WithdrawalTransaction`.
     /// @param amount The invoiced amount.
     /// @param isEth True for native-ETH withdrawals, false for ERC20.
-    /// @dev For ETH the withdrawal `target` is this adapter and `value == amount`, so we bind both to the
-    ///      invoice. For ERC20 the OP withdrawal `target` is the L1 bridge/messenger and `value == 0` (the
-    ///      ERC20 is delivered to the adapter as the `withdrawTo` receiver, not via `target`/`value`), so those
-    ///      bindings don't apply — provenance still comes from the proven withdrawal hash + portal Merkle
-    ///      proof, and the base `_fundAndRelease` reverts unless the adapter actually received `amount`.
-    ///      The withdrawal must already be proven; the portal enforces the challenge period.
+    /// @dev A withdrawal initiated via `L2StandardBridge.withdrawTo` does NOT produce a portal transaction whose
+    ///      `target` is this adapter: the L2 messenger sends it to the L1CrossDomainMessenger (the portal `target`),
+    ///      which relays `finalizeBridge{ETH,ERC20}` to the L1 StandardBridge, and only that nested call pays this
+    ///      adapter (the `withdrawTo` receiver). So the amount is bound not by the portal `target`/`value` but by
+    ///      what the adapter actually receives across the finalize: for ETH we measure the native-balance delta and
+    ///      require it to cover `amount`; for ERC20 the base `_fundAndRelease` reverts unless the adapter holds
+    ///      `amount`. Provenance comes from the proven withdrawal hash + portal Merkle proof; the portal enforces
+    ///      the challenge period.
     function _finalizeWithdrawal(bytes calldata protocolData, uint256 amount, bool isEth, uint256 l2ChainId) internal {
         Types.WithdrawalTransaction memory withdrawalTx = abi.decode(protocolData, (Types.WithdrawalTransaction));
-
-        if (isEth) {
-            // ETH withdrawals deliver `value` directly to `target` (this adapter); bind both to the invoice.
-            if (withdrawalTx.target != address(this)) revert InvalidWithdrawalFinalization();
-            if (withdrawalTx.value != amount) revert InvalidWithdrawalFinalization();
-        }
 
         // Select the OptimismPortal for the source L2 (the same L2 whose portal the withdrawal was proven on).
         IOptimismPortal portal = optimismPortalForL2[l2ChainId];
@@ -401,8 +397,15 @@ contract SuperchainBridgeAdapter is BridgeAdapter, ISuperchainBridgeAdapter {
             revert WithdrawalNotProven();
         }
 
-        // Finalize the withdrawal (portal checks the challenge period; delivers value to the target adapter).
-        portal.finalizeWithdrawalTransaction(withdrawalTx);
+        // Finalize the withdrawal (portal checks the challenge period; the messenger→bridge relay pays this adapter).
+        if (isEth) {
+            uint256 balanceBefore = address(this).balance;
+            portal.finalizeWithdrawalTransaction(withdrawalTx);
+            // The finalize must have credited this adapter at least `amount` ETH via the L1 bridge relay.
+            if (address(this).balance < balanceBefore + amount) revert InvalidWithdrawalFinalization();
+        } else {
+            portal.finalizeWithdrawalTransaction(withdrawalTx);
+        }
     }
 
     /// @notice Proves a withdrawal transaction and correlates it to its invoice.
@@ -411,8 +414,8 @@ contract SuperchainBridgeAdapter is BridgeAdapter, ISuperchainBridgeAdapter {
     ///        `sourceChainId`, so proving against a different L2's portal here would make finalize revert
     ///        `WithdrawalNotProven` (no fund loss, but the withdrawal cannot be completed until re-proven).
     ///        When `invoiceId` is supplied this is enforced on-chain (reverts `WithdrawalChainIdMismatch`).
-    /// @param withdrawalTx The withdrawal transaction to prove (its `target` is this adapter for ETH
-    ///        withdrawals, or the L1 bridge/messenger for ERC20 — see `_finalizeWithdrawal`).
+    /// @param withdrawalTx The withdrawal transaction to prove (its `target` is the L1CrossDomainMessenger, which
+    ///        relays the L1-bridge call that pays this adapter as the `withdrawTo` receiver — see `_finalizeWithdrawal`).
     /// @param l2OutputIndex The L2 output index
     /// @param outputRootProof The output root proof
     /// @param withdrawalProof The withdrawal proof

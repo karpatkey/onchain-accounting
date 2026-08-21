@@ -110,6 +110,25 @@ contract BridgeEscrowInvariantTest is BridgeEscrowTestBase {
         }
     }
 
+    /// @notice ADR 0025: for each account, every hash in `getHeldInvoices` maps to a genuine unclaimed custody
+    ///         record (right account, amount > 0, not claimed), with no duplicates — so the operator never receives
+    ///         a stale or already-claimed hash. (Value-completeness of the held set is covered by I1 above.)
+    function invariant_heldSet_matchesUnclaimedCustody() public view {
+        address[2] memory accts = [account, account2];
+        for (uint256 a = 0; a < 2; a++) {
+            bytes32[] memory held = destEscrow.getHeldInvoices(accts[a]);
+            for (uint256 i = 0; i < held.length; i++) {
+                (address acct,, uint256 amount,,, bool claimed) = destEscrow.destinationCustody(held[i]);
+                assertEq(acct, accts[a], "held hash belongs to the queried account");
+                assertGt(amount, 0, "held hash has a live custody amount");
+                assertFalse(claimed, "held set never contains a claimed hash");
+                for (uint256 j = i + 1; j < held.length; j++) {
+                    assertTrue(held[i] != held[j], "no duplicate hashes in the held set");
+                }
+            }
+        }
+    }
+
     /// @notice I3: a custody record claimed once can never be claimed again — a second claim reverts.
     function invariant_I3_claimedCannotBeReclaimed() public {
         uint256 n = handler.claimedHashesLength();

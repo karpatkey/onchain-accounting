@@ -38,3 +38,5 @@ Short, numbered records of *why* the codebase looks the way it does. Read these 
 | 0020 | [Custom-feed `getPriceData` reports the *governing leg*'s freshness](0020-custom-feed-governing-leg-freshness.md) | accepted |
 | 0021 | [Bridge adapter provenance + deploy hardening (multi-L2 Superchain, Gnosis mediator auth, initializer guard)](0021-bridge-adapter-provenance-and-deploy-hardening.md) | accepted |
 | 0023 | [Asset classification on two orthogonal axes (`PegKind` × `AccrualKind`), surfaced by a standalone `AssetKindRegistry`](0023-asset-classification-two-axes.md) | accepted |
+| 0024 | [Bridge destination: hold-then-claim (escrow custody + explicit `claim`)](0024-bridge-destination-hold-then-claim.md) | accepted |
+| 0025 | [Operator state must be queryable, not reconstructable (held-invoice enumeration + stored withdrawal tx)](0025-operator-state-queryable-not-reconstructable.md) | accepted |

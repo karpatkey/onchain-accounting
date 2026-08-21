@@ -3,6 +3,7 @@ pragma solidity ^0.8;
 
 import {IBridgeAdapter} from "../../IBridgeAdapter.sol";
 import {IL1StandardBridge, IL2StandardBridge, IOptimismPortal} from "./ISuperchainInterfaces.sol";
+import {Types} from "@optimism/libraries/Types.sol";
 
 /// @title ISuperchainBridgeAdapter Interface
 /// @notice Interface for Superchain (Optimism Canonical Bridge) Adapter
@@ -190,6 +191,13 @@ interface ISuperchainBridgeAdapter is IBridgeAdapter {
     /// @param invoiceId The invoice ID (32 bytes)
     /// @return The message payload, or empty bytes if not found
     function getMessagePayload(bytes32 invoiceId) external view returns (bytes memory);
+
+    /// @notice Gets the full `WithdrawalTransaction` stored at prove time for an invoice (ADR 0025)
+    /// @dev Lets the settlement keeper finalize an already-proven L2->L1 withdrawal without re-deriving the
+    ///      transaction from the source L2 `MessagePassed` log. Returns a zero-valued struct if not proven.
+    /// @param invoiceId The invoice ID (32 bytes)
+    /// @return The stored withdrawal transaction
+    function getWithdrawalTransaction(bytes32 invoiceId) external view returns (Types.WithdrawalTransaction memory);
 
     /// @notice Gets the withdrawal hash for a given invoice ID
     /// @param invoiceId The invoice ID (32 bytes)

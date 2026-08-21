@@ -264,6 +264,12 @@ interface IBridgeEscrow {
     /// @notice Gets all active invoices for an account
     function getActiveInvoices(address account) external view returns (Invoice[] memory);
 
+    /// @notice Held (delivered-but-unclaimed) invoice hashes for `account` — the destination-side enumeration the
+    ///         settlement operator uses to discover claimable invoices in ONE call, instead of reconstructing them
+    ///         from `DeliveryRecorded` logs over a bounded window (ADR 0025). A hash appears after `recordDelivery`
+    ///         and is removed on `claim`. Returns the raw hashes; pair each with `destinationCustody(hash)`.
+    function getHeldInvoices(address account) external view returns (bytes32[] memory);
+
     /// @notice Total in-transit balance for an asset (optionally filtered by account; address(0) = all)
     function getInTransitBalanceForAsset(address asset, address account) external view returns (uint256);
 

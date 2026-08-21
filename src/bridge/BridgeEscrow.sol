@@ -111,6 +111,16 @@ contract BridgeEscrow is
     /// @notice Held-but-unclaimed custody per account and asset (for per-account NAV attribution)
     mapping(address => mapping(address => uint256)) private _heldByAccount;
 
+    /// @notice Enumerable set of held (delivered-but-unclaimed) invoice hashes per account (ADR 0025).
+    /// @dev Lets the settlement operator discover claimable invoices in ONE call (`getHeldInvoices`) instead of
+    ///      reconstructing them from `DeliveryRecorded` logs over a bounded block window. Mirrors the source-side
+    ///      `_activeInvoices`/`_activeInvoicesSet` machinery: a hash is added on `recordDelivery` and removed on
+    ///      `_claim` — the only path that clears held custody (`cancelInvoice`/`emergencyWithdraw` never touch it).
+    ///      Invariant: `_heldInvoices[account]` equals exactly the set of `destinationCustody` records for `account`
+    ///      with `amount > 0 && !claimed`.
+    mapping(address => bytes32[]) private _heldInvoices;
+    mapping(address => mapping(bytes32 => bool)) private _heldInvoicesSet;
+
     //
     // Constructor
     //
@@ -288,6 +298,7 @@ contract BridgeEscrow is
         });
         _heldClaimable[asset] += measured;
         _heldByAccount[data.account][asset] += measured;
+        _addHeldInvoice(data.account, invoiceHash);
 
         emit InvoiceCompleted(invoiceHash, data.invoiceId);
         emit DeliveryRecorded(data.invoiceId, invoiceHash, asset, measured, data.account, msg.sender);
@@ -337,6 +348,7 @@ contract BridgeEscrow is
         rec.claimed = true;
         _heldClaimable[asset] -= amount;
         _heldByAccount[account][asset] -= amount;
+        _removeHeldInvoice(account, invoiceHash);
 
         // Interaction: transfer exactly the recorded `amount` of the recorded asset to the recorded account, and
         // no one else. For every bridged asset (standard ERC20 + native) the account receives exactly `amount`;
@@ -530,6 +542,11 @@ contract BridgeEscrow is
             activeInvoices[i] = invoices[activeInvoiceHashes[i]];
         }
         return activeInvoices;
+    }
+
+    /// @inheritdoc IBridgeEscrow
+    function getHeldInvoices(address account) external view override returns (bytes32[] memory) {
+        return _heldInvoices[account];
     }
 
     /// @inheritdoc IBridgeEscrow
@@ -934,6 +951,30 @@ contract BridgeEscrow is
         }
     }
 
+    /// @notice Add a held (delivered-but-unclaimed) invoice hash to `account`'s enumerable set (ADR 0025).
+    /// @dev Idempotent: `recordDelivery`'s replay guard already prevents a second add for the same hash; the
+    ///      membership check keeps it safe regardless. Removal happens only in `_claim`.
+    function _addHeldInvoice(address account, bytes32 invoiceHash) internal {
+        if (_heldInvoicesSet[account][invoiceHash]) return;
+        _heldInvoices[account].push(invoiceHash);
+        _heldInvoicesSet[account][invoiceHash] = true;
+    }
+
+    /// @notice Remove a held invoice hash from `account`'s set (swap-and-pop), mirroring `_removeActiveInvoice`.
+    function _removeHeldInvoice(address account, bytes32 invoiceHash) internal {
+        if (!_heldInvoicesSet[account][invoiceHash]) return;
+        bytes32[] storage heldList = _heldInvoices[account];
+        uint256 length = heldList.length;
+        for (uint256 i = 0; i < length; i++) {
+            if (heldList[i] == invoiceHash) {
+                heldList[i] = heldList[length - 1];
+                heldList.pop();
+                _heldInvoicesSet[account][invoiceHash] = false;
+                break;
+            }
+        }
+    }
+
     /// @notice Checks if an asset symbol has any active invoices (iterates authorized accounts; MANAGER-gated callers)
     function _hasActiveInvoicesForAsset(bytes6 assetSymbol) internal view returns (bool) {
         uint256 safeCount = _authorizedAccounts.length();
@@ -969,7 +1010,8 @@ contract BridgeEscrow is
     function _authorizeUpgrade(address newImplementation) internal override onlyRole(DEFAULT_ADMIN_ROLE) {}
 
     /// @dev Storage gap for future upgrades. Layout was rewritten clean pre-launch (ADR 0012); the ADR-0024
-    ///      destination-custody maps (destinationCustody, _heldClaimable, _heldByAccount) consumed 3 slots.
+    ///      destination-custody maps (destinationCustody, _heldClaimable, _heldByAccount) consumed 3 slots, and the
+    ///      ADR-0025 held-invoice enumeration (_heldInvoices, _heldInvoicesSet) consumed 2 more (47 -> 45).
     ///      Normal append-only discipline applies from here.
-    uint256[47] private _gap;
+    uint256[45] private _gap;
 }

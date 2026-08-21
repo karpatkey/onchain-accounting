@@ -116,6 +116,10 @@ contract BridgeEscrowTest is BridgeEscrowTestBase {
         assertTrue(destEscrow.isInvoiceCompleted(invoiceHash), "Invoice should be completed on record");
         (,,,,, bool claimedAfterRecord) = destEscrow.destinationCustody(invoiceHash);
         assertFalse(claimedAfterRecord, "custody not claimed yet");
+        // ADR 0025: the held-invoice enumeration reflects the delivery.
+        bytes32[] memory heldAfterRecord = destEscrow.getHeldInvoices(account);
+        assertEq(heldAfterRecord.length, 1, "getHeldInvoices has the invoice after record");
+        assertEq(heldAfterRecord[0], invoiceHash, "getHeldInvoices element == invoiceHash");
 
         // Step 2 (ADR 0024): MANAGER claims — funds move to the recorded account, custody drains.
         vm.prank(manager);
@@ -126,6 +130,65 @@ contract BridgeEscrowTest is BridgeEscrowTestBase {
         assertEq(destEscrow.getHeldBalanceForAsset(address(usdc), address(0)), 0, "held aggregate cleared");
         (,,,,, bool claimedAfter) = destEscrow.destinationCustody(invoiceHash);
         assertTrue(claimedAfter, "custody marked claimed");
+        assertEq(destEscrow.getHeldInvoices(account).length, 0, "getHeldInvoices empty after claim");
+    }
+
+    // ============ getHeldInvoices (ADR 0025) ============
+
+    function test_getHeldInvoices_emptyForFreshAccount() public {
+        (BridgeEscrow destEscrow,,) = _setupDestinationAndValidPayload(address(usdc), 1000e6);
+        assertEq(destEscrow.getHeldInvoices(account).length, 0, "no held invoices before any delivery");
+        assertEq(destEscrow.getHeldInvoices(address(0xBEEF)).length, 0, "unrelated account has none");
+    }
+
+    /// @notice Records 3 distinct deliveries, claims the MIDDLE one, and asserts the enumerable set stays correct
+    ///         under swap-and-pop (order not assumed stable; membership is).
+    function test_getHeldInvoices_multiInvoiceSwapPop() public {
+        (BridgeEscrow destEscrow,, MockBridgeAdapter destMock) = _setupDestinationAndValidPayload(address(usdc), 1000e6);
+
+        // Three distinct payloads for the SAME account+asset — distinct timestamps ⇒ distinct invoiceHashes.
+        bytes32[3] memory hashes;
+        for (uint256 i = 0; i < 3; i++) {
+            uint256 amount = 1000e6 + i; // vary amount too, belt-and-braces for hash distinctness
+            InvoiceDataLib.InvoiceData memory data = _createInvoiceDataWithTimestamp(
+                SOURCE_CHAIN_ID, DEST_CHAIN_ID, account, USDC_SYMBOL_BYTES6, amount, uint64(block.timestamp + i)
+            );
+            bytes memory payload = InvoiceDataLib.encode(data);
+            hashes[i] = bytes32(uint256(uint192(data.checksum24)));
+            usdc.mint(address(destMock), amount);
+            vm.prank(address(destMock));
+            usdc.approve(address(destEscrow), amount);
+            vm.prank(address(destMock));
+            destEscrow.recordDelivery(payload);
+        }
+
+        bytes32[] memory held = destEscrow.getHeldInvoices(account);
+        assertEq(held.length, 3, "three held after three deliveries");
+
+        // Claim the middle one.
+        vm.prank(manager);
+        destEscrow.claim(hashes[1]);
+
+        held = destEscrow.getHeldInvoices(account);
+        assertEq(held.length, 2, "two held after claiming the middle");
+        // hashes[0] and hashes[2] remain (in some order); hashes[1] is gone.
+        bool has0;
+        bool has1;
+        bool has2;
+        for (uint256 i = 0; i < held.length; i++) {
+            if (held[i] == hashes[0]) has0 = true;
+            if (held[i] == hashes[1]) has1 = true;
+            if (held[i] == hashes[2]) has2 = true;
+        }
+        assertTrue(has0 && has2, "the two unclaimed invoices remain");
+        assertFalse(has1, "the claimed invoice is removed");
+
+        // Claim the rest → empty.
+        vm.startPrank(manager);
+        destEscrow.claim(hashes[0]);
+        destEscrow.claim(hashes[2]);
+        vm.stopPrank();
+        assertEq(destEscrow.getHeldInvoices(account).length, 0, "empty after claiming all");
     }
 
     // ============ cancelInvoice ============

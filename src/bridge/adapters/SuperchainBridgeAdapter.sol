@@ -75,6 +75,13 @@ contract SuperchainBridgeAdapter is BridgeAdapter, ISuperchainBridgeAdapter {
     /// @dev Used to track which withdrawal hash was used for each invoice
     mapping(bytes32 => bytes32) public invoiceToWithdrawalHash;
 
+    /// @notice Full `WithdrawalTransaction` stored at prove time, keyed by invoice ID (ADR 0025).
+    /// @dev Lets the settlement keeper read back the exact struct needed to FINALIZE an already-proven L2->L1
+    ///      withdrawal via `getWithdrawalTransaction`, instead of re-deriving it from the source L2 `MessagePassed`
+    ///      log over a >7-day window. MUST be `private` with an explicit struct getter: a `public` auto-getter
+    ///      silently drops the struct's dynamic `data` member.
+    mapping(bytes32 => Types.WithdrawalTransaction) private _withdrawalTxByInvoiceId;
+
     /// @notice L1 token -> L2 token per destination L2 chain id (L1 side only).
     /// @dev Used for ERC20 deposits (L1 → L2). Unmapped (zero) falls back to the same address (standard
     ///      bridge tokens). Keyed per L2 because the same L1 token maps to different L2 token addresses.
@@ -440,6 +447,7 @@ contract SuperchainBridgeAdapter is BridgeAdapter, ISuperchainBridgeAdapter {
         if (invoiceId != bytes32(0)) {
             withdrawalHashToInvoiceId[withdrawalHash] = invoiceId;
             invoiceToWithdrawalHash[invoiceId] = withdrawalHash;
+            _withdrawalTxByInvoiceId[invoiceId] = withdrawalTx;
             emit SuperchainWithdrawalProven(invoiceId, withdrawalHash);
         }
     }
@@ -451,6 +459,11 @@ contract SuperchainBridgeAdapter is BridgeAdapter, ISuperchainBridgeAdapter {
     /// @inheritdoc ISuperchainBridgeAdapter
     function getMessagePayload(bytes32 invoiceId) external view returns (bytes memory) {
         return messagePayloads[invoiceId];
+    }
+
+    /// @inheritdoc ISuperchainBridgeAdapter
+    function getWithdrawalTransaction(bytes32 invoiceId) external view returns (Types.WithdrawalTransaction memory) {
+        return _withdrawalTxByInvoiceId[invoiceId];
     }
 
     /// @inheritdoc ISuperchainBridgeAdapter

@@ -388,6 +388,52 @@ contract SuperchainBridgeAdapterTest is BridgeScenarioHelper {
         assertEq(l1Escrow.getHeldBalanceForAsset(address(0), account), 0, "held cleared after claim");
     }
 
+    /// @notice ADR 0025: `proveWithdrawal` stores the full `WithdrawalTransaction`, readable back for finalize
+    ///         without an L2 log re-read. Round-trips every field (esp. the dynamic `data` — the reason the getter
+    ///         is explicit rather than a `public` auto-getter, which would silently drop it).
+    function test_getWithdrawalTransaction_roundTripAfterProve() public {
+        vm.chainId(SOURCE_CHAIN_ID);
+        uint256 amount = 1 ether;
+        vm.prank(admin);
+        bridgeEscrow.registerAsset(WETH_SYMBOL, address(0));
+        SuperchainBridgeAdapter l1Ad = _deployL1WithdrawalAdapter(bridgeEscrow);
+
+        InvoiceDataLib.InvoiceData memory invoiceData =
+            _createInvoiceData(L2_CHAIN_ID, SOURCE_CHAIN_ID, account, WETH_SYMBOL_BYTES6, amount);
+
+        Types.WithdrawalTransaction memory wtx = Types.WithdrawalTransaction({
+            nonce: 7,
+            sender: address(l2Bridge),
+            target: address(l1Ad),
+            value: amount,
+            gasLimit: 200000,
+            data: hex"c0ffee"
+        });
+
+        // Before prove: unknown invoiceId → zero-valued struct.
+        Types.WithdrawalTransaction memory none = l1Ad.getWithdrawalTransaction(invoiceData.invoiceId);
+        assertEq(none.nonce, 0, "no stored wtx before prove");
+        assertEq(none.data.length, 0, "no stored data before prove");
+
+        vm.prank(manager);
+        l1Ad.proveWithdrawal(
+            L2_CHAIN_ID,
+            wtx,
+            0,
+            Types.OutputRootProof(bytes32(0), bytes32(0), bytes32(0), bytes32(0)),
+            new bytes[](0),
+            invoiceData.invoiceId
+        );
+
+        Types.WithdrawalTransaction memory got = l1Ad.getWithdrawalTransaction(invoiceData.invoiceId);
+        assertEq(got.nonce, wtx.nonce, "nonce round-trips");
+        assertEq(got.sender, wtx.sender, "sender round-trips");
+        assertEq(got.target, wtx.target, "target round-trips");
+        assertEq(got.value, wtx.value, "value round-trips");
+        assertEq(got.gasLimit, wtx.gasLimit, "gasLimit round-trips");
+        assertEq(got.data, wtx.data, "dynamic data round-trips (why the getter is explicit, not auto)");
+    }
+
     /// @notice proveWithdrawal reverts when the supplied l2ChainId disagrees with the invoice's encoded source
     ///         chain id — the operator guard that stops proving on the wrong L2 portal (which would strand finalize).
     function test_proveWithdrawal_revertsOnChainIdMismatch() public {

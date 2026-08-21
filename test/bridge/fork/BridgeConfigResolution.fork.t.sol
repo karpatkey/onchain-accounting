@@ -33,7 +33,7 @@ contract BridgeConfigResolutionForkTest is TestEnvConfigurator {
     /// @dev Same-chain external protocol address params to verify. NOT admin/bridgeEscrow (deploy-populated),
     ///      version/cctpDomain (not addresses), or l1Messenger (cross-layer on L2 configs).
     function _scalarAddressParams() internal pure returns (string[] memory p) {
-        p = new string[](10);
+        p = new string[](11);
         p[0] = "router"; // CCIP
         p[1] = "feeToken"; // CCIP (LINK)
         p[2] = "spokePool"; // Across
@@ -42,8 +42,9 @@ contract BridgeConfigResolutionForkTest is TestEnvConfigurator {
         p[5] = "messageTransmitter"; // CCTP
         p[6] = "omnibridge"; // Gnosis
         p[7] = "amb"; // Gnosis
-        p[8] = "l2Bridge"; // Superchain (L2 predeploy)
-        p[9] = "l2Messenger"; // Superchain (L2 predeploy)
+        p[8] = "usdcTransmuter"; // Gnosis (same-chain USDC.e -> native USDC)
+        p[9] = "l2Bridge"; // Superchain (L2 predeploy)
+        p[10] = "l2Messenger"; // Superchain (L2 predeploy)
     }
 
     function _configJson(uint256 chainId) internal view returns (string memory) {

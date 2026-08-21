@@ -194,10 +194,11 @@ interface ISuperchainBridgeAdapter is IBridgeAdapter {
 
     /// @notice Gets the full `WithdrawalTransaction` stored at prove time for an invoice (ADR 0025)
     /// @dev Lets the settlement keeper finalize an already-proven L2->L1 withdrawal without re-deriving the
-    ///      transaction from the source L2 `MessagePassed` log. Returns a zero-valued struct if not proven.
-    /// @param invoiceId The invoice ID (32 bytes)
+    ///      transaction from the source L2 `MessagePassed` log. Keyed by the per-operation invoice HASH (not the
+    ///      reusable route `invoiceId`). Returns a zero-valued struct if not proven.
+    /// @param invoiceHash The per-operation invoice hash (checksum, 32 bytes)
     /// @return The stored withdrawal transaction
-    function getWithdrawalTransaction(bytes32 invoiceId) external view returns (Types.WithdrawalTransaction memory);
+    function getWithdrawalTransaction(bytes32 invoiceHash) external view returns (Types.WithdrawalTransaction memory);
 
     /// @notice Gets the withdrawal hash for a given invoice ID
     /// @param invoiceId The invoice ID (32 bytes)

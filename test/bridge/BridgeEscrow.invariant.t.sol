@@ -129,6 +129,27 @@ contract BridgeEscrowInvariantTest is BridgeEscrowTestBase {
         }
     }
 
+    /// @notice ADR 0025 completeness (the reverse direction): every recorded delivery that is still live
+    ///         (custody amount > 0 && !claimed) appears in its account's `getHeldInvoices` set — so the keeper never
+    ///         misses a claimable invoice. Guards against a future custody-writing path that forgets the add hook.
+    function invariant_heldSet_isComplete() public view {
+        uint256 n = handler.recordedHashesLength();
+        for (uint256 i = 0; i < n; i++) {
+            bytes32 h = handler.recordedHashAt(i);
+            (address acct,, uint256 amount,,, bool claimed) = destEscrow.destinationCustody(h);
+            if (amount == 0 || claimed) continue; // not live → not required to be in the set
+            bytes32[] memory held = destEscrow.getHeldInvoices(acct);
+            bool found;
+            for (uint256 j = 0; j < held.length; j++) {
+                if (held[j] == h) {
+                    found = true;
+                    break;
+                }
+            }
+            assertTrue(found, "every live unclaimed custody record must appear in getHeldInvoices");
+        }
+    }
+
     /// @notice I3: a custody record claimed once can never be claimed again — a second claim reverts.
     function invariant_I3_claimedCannotBeReclaimed() public {
         uint256 n = handler.claimedHashesLength();
@@ -236,6 +257,14 @@ contract DestinationCustodyHandler is Test {
 
     function claimedHashAt(uint256 i) external view returns (bytes32) {
         return _claimedHashes[i];
+    }
+
+    function recordedHashesLength() external view returns (uint256) {
+        return _recordedHashes.length;
+    }
+
+    function recordedHashAt(uint256 i) external view returns (bytes32) {
+        return _recordedHashes[i];
     }
 
     /// @notice Record a delivery for a random (account, token, amount) via the authorized adapter.

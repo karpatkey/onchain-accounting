@@ -363,7 +363,8 @@ contract SuperchainBridgeAdapterTest is BridgeScenarioHelper {
             0,
             Types.OutputRootProof(bytes32(0), bytes32(0), bytes32(0), bytes32(0)),
             new bytes[](0),
-            invoiceData.invoiceId
+            invoiceData.invoiceId,
+            bytes32(uint256(uint192(invoiceData.checksum24)))
         );
 
         assertTrue(l1Ad.isWithdrawalProven(L2_CHAIN_ID, realHash), "withdrawal proven under real hash");
@@ -400,6 +401,7 @@ contract SuperchainBridgeAdapterTest is BridgeScenarioHelper {
 
         InvoiceDataLib.InvoiceData memory invoiceData =
             _createInvoiceData(L2_CHAIN_ID, SOURCE_CHAIN_ID, account, WETH_SYMBOL_BYTES6, amount);
+        bytes32 invoiceHash = bytes32(uint256(uint192(invoiceData.checksum24)));
 
         Types.WithdrawalTransaction memory wtx = Types.WithdrawalTransaction({
             nonce: 7,
@@ -410,8 +412,8 @@ contract SuperchainBridgeAdapterTest is BridgeScenarioHelper {
             data: hex"c0ffee"
         });
 
-        // Before prove: unknown invoiceId → zero-valued struct.
-        Types.WithdrawalTransaction memory none = l1Ad.getWithdrawalTransaction(invoiceData.invoiceId);
+        // Before prove: unknown invoice hash → zero-valued struct.
+        Types.WithdrawalTransaction memory none = l1Ad.getWithdrawalTransaction(invoiceHash);
         assertEq(none.nonce, 0, "no stored wtx before prove");
         assertEq(none.data.length, 0, "no stored data before prove");
 
@@ -422,16 +424,61 @@ contract SuperchainBridgeAdapterTest is BridgeScenarioHelper {
             0,
             Types.OutputRootProof(bytes32(0), bytes32(0), bytes32(0), bytes32(0)),
             new bytes[](0),
-            invoiceData.invoiceId
+            invoiceData.invoiceId,
+            bytes32(uint256(uint192(invoiceData.checksum24)))
         );
 
-        Types.WithdrawalTransaction memory got = l1Ad.getWithdrawalTransaction(invoiceData.invoiceId);
+        Types.WithdrawalTransaction memory got = l1Ad.getWithdrawalTransaction(invoiceHash);
         assertEq(got.nonce, wtx.nonce, "nonce round-trips");
         assertEq(got.sender, wtx.sender, "sender round-trips");
         assertEq(got.target, wtx.target, "target round-trips");
         assertEq(got.value, wtx.value, "value round-trips");
         assertEq(got.gasLimit, wtx.gasLimit, "gasLimit round-trips");
         assertEq(got.data, wtx.data, "dynamic data round-trips (why the getter is explicit, not auto)");
+    }
+
+    /// @notice ADR 0025 regression: two SAME-LANE withdrawals (same route invoiceId, distinct per-op invoice
+    ///         hashes) both proven in the window must each keep their OWN stored WithdrawalTransaction. Keying the
+    ///         store by invoiceId (the bug Copilot caught) would let the second prove overwrite the first's tx.
+    function test_getWithdrawalTransaction_sameLaneWithdrawalsDoNotCollide() public {
+        vm.chainId(SOURCE_CHAIN_ID);
+        vm.prank(admin);
+        bridgeEscrow.registerAsset(WETH_SYMBOL, address(0));
+        SuperchainBridgeAdapter l1Ad = _deployL1WithdrawalAdapter(bridgeEscrow);
+
+        // Same lane (src/dst/account/symbol → same invoiceId) but distinct amounts → distinct invoice hashes.
+        InvoiceDataLib.InvoiceData memory inv1 =
+            _createInvoiceData(L2_CHAIN_ID, SOURCE_CHAIN_ID, account, WETH_SYMBOL_BYTES6, 1 ether);
+        InvoiceDataLib.InvoiceData memory inv2 =
+            _createInvoiceData(L2_CHAIN_ID, SOURCE_CHAIN_ID, account, WETH_SYMBOL_BYTES6, 2 ether);
+        assertEq(inv1.invoiceId, inv2.invoiceId, "same lane => same route invoiceId");
+        bytes32 hash1 = bytes32(uint256(uint192(inv1.checksum24)));
+        bytes32 hash2 = bytes32(uint256(uint192(inv2.checksum24)));
+        assertTrue(hash1 != hash2, "distinct operations => distinct invoice hashes");
+
+        Types.WithdrawalTransaction memory wtx1 = Types.WithdrawalTransaction({
+            nonce: 1, sender: address(l2Bridge), target: address(l1Ad), value: 1 ether, gasLimit: 200000, data: hex"aa"
+        });
+        Types.WithdrawalTransaction memory wtx2 = Types.WithdrawalTransaction({
+            nonce: 2,
+            sender: address(l2Bridge),
+            target: address(l1Ad),
+            value: 2 ether,
+            gasLimit: 200000,
+            data: hex"bbbb"
+        });
+
+        Types.OutputRootProof memory emptyProof = Types.OutputRootProof(bytes32(0), bytes32(0), bytes32(0), bytes32(0));
+        vm.startPrank(manager);
+        l1Ad.proveWithdrawal(L2_CHAIN_ID, wtx1, 0, emptyProof, new bytes[](0), inv1.invoiceId, hash1);
+        l1Ad.proveWithdrawal(L2_CHAIN_ID, wtx2, 0, emptyProof, new bytes[](0), inv2.invoiceId, hash2);
+        vm.stopPrank();
+
+        // Each per-op hash keeps its own tx — the second prove did NOT overwrite the first.
+        assertEq(l1Ad.getWithdrawalTransaction(hash1).value, 1 ether, "first withdrawal tx intact");
+        assertEq(l1Ad.getWithdrawalTransaction(hash1).data, hex"aa", "first data intact");
+        assertEq(l1Ad.getWithdrawalTransaction(hash2).value, 2 ether, "second withdrawal tx stored");
+        assertEq(l1Ad.getWithdrawalTransaction(hash2).data, hex"bbbb", "second data stored");
     }
 
     /// @notice proveWithdrawal reverts when the supplied l2ChainId disagrees with the invoice's encoded source
@@ -467,7 +514,8 @@ contract SuperchainBridgeAdapterTest is BridgeScenarioHelper {
             0,
             Types.OutputRootProof(bytes32(0), bytes32(0), bytes32(0), bytes32(0)),
             new bytes[](0),
-            invoiceData.invoiceId
+            invoiceData.invoiceId,
+            bytes32(uint256(uint192(invoiceData.checksum24)))
         );
     }
 
@@ -519,7 +567,8 @@ contract SuperchainBridgeAdapterTest is BridgeScenarioHelper {
             0,
             Types.OutputRootProof(bytes32(0), bytes32(0), bytes32(0), bytes32(0)),
             new bytes[](0),
-            invoiceData.invoiceId
+            invoiceData.invoiceId,
+            bytes32(uint256(uint192(invoiceData.checksum24)))
         );
 
         vm.prank(manager);

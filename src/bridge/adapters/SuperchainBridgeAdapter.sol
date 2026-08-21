@@ -75,12 +75,14 @@ contract SuperchainBridgeAdapter is BridgeAdapter, ISuperchainBridgeAdapter {
     /// @dev Used to track which withdrawal hash was used for each invoice
     mapping(bytes32 => bytes32) public invoiceToWithdrawalHash;
 
-    /// @notice Full `WithdrawalTransaction` stored at prove time, keyed by invoice ID (ADR 0025).
+    /// @notice Full `WithdrawalTransaction` stored at prove time, keyed by the PER-OPERATION invoice HASH (ADR 0025).
     /// @dev Lets the settlement keeper read back the exact struct needed to FINALIZE an already-proven L2->L1
     ///      withdrawal via `getWithdrawalTransaction`, instead of re-deriving it from the source L2 `MessagePassed`
-    ///      log over a >7-day window. MUST be `private` with an explicit struct getter: a `public` auto-getter
-    ///      silently drops the struct's dynamic `data` member.
-    mapping(bytes32 => Types.WithdrawalTransaction) private _withdrawalTxByInvoiceId;
+    ///      log over a >7-day window. Keyed by the invoice HASH (the checksum, unique per operation), NOT the route
+    ///      `invoiceId` (reused by every same-lane transfer): two same-lane withdrawals proven in the same window
+    ///      would otherwise collide, the second overwriting the first's tx. MUST be `private` with an explicit struct
+    ///      getter: a `public` auto-getter silently drops the struct's dynamic `data` member.
+    mapping(bytes32 => Types.WithdrawalTransaction) private _withdrawalTxByInvoiceHash;
 
     /// @notice L1 token -> L2 token per destination L2 chain id (L1 side only).
     /// @dev Used for ERC20 deposits (L1 → L2). Unmapped (zero) falls back to the same address (standard
@@ -414,7 +416,10 @@ contract SuperchainBridgeAdapter is BridgeAdapter, ISuperchainBridgeAdapter {
     /// @param l2OutputIndex The L2 output index
     /// @param outputRootProof The output root proof
     /// @param withdrawalProof The withdrawal proof
-    /// @param invoiceId The invoice this withdrawal settles (for invoice ↔ withdrawalHash correlation)
+    /// @param invoiceId The invoice's route id (src｜dst｜account｜symbol) — used for the source-chain-id check and the
+    ///        route-keyed withdrawalHash correlation
+    /// @param invoiceHash The per-operation invoice hash (checksum) — the key the stored `WithdrawalTransaction` is
+    ///        filed under (ADR 0025), so concurrent same-lane withdrawals don't overwrite each other
     /// @dev MANAGER-driven on L1 after the withdrawal is initiated on L2. Computes the REAL OP withdrawal
     ///      hash and records the invoice correlation so completion can be tracked.
     function proveWithdrawal(
@@ -423,7 +428,8 @@ contract SuperchainBridgeAdapter is BridgeAdapter, ISuperchainBridgeAdapter {
         uint256 l2OutputIndex,
         Types.OutputRootProof memory outputRootProof,
         bytes[] calldata withdrawalProof,
-        bytes32 invoiceId
+        bytes32 invoiceId,
+        bytes32 invoiceHash
     ) external onlyRole(MANAGER_ROLE) {
         // Enforce the operator-supplied l2ChainId matches the invoice's encoded source chain id (top 3 bytes of
         // the invoice id — see BridgeEscrow._generateInvoiceId). Finalize selects the portal from the invoice's
@@ -447,8 +453,13 @@ contract SuperchainBridgeAdapter is BridgeAdapter, ISuperchainBridgeAdapter {
         if (invoiceId != bytes32(0)) {
             withdrawalHashToInvoiceId[withdrawalHash] = invoiceId;
             invoiceToWithdrawalHash[invoiceId] = withdrawalHash;
-            _withdrawalTxByInvoiceId[invoiceId] = withdrawalTx;
             emit SuperchainWithdrawalProven(invoiceId, withdrawalHash);
+        }
+        // Store the tx under the PER-OPERATION invoice hash (ADR 0025) so the keeper can finalize without an L2
+        // log re-read. Keyed by the hash, NOT invoiceId, so two same-lane withdrawals proven in the same window
+        // don't collide (the second would otherwise overwrite the first's tx).
+        if (invoiceHash != bytes32(0)) {
+            _withdrawalTxByInvoiceHash[invoiceHash] = withdrawalTx;
         }
     }
 
@@ -462,8 +473,8 @@ contract SuperchainBridgeAdapter is BridgeAdapter, ISuperchainBridgeAdapter {
     }
 
     /// @inheritdoc ISuperchainBridgeAdapter
-    function getWithdrawalTransaction(bytes32 invoiceId) external view returns (Types.WithdrawalTransaction memory) {
-        return _withdrawalTxByInvoiceId[invoiceId];
+    function getWithdrawalTransaction(bytes32 invoiceHash) external view returns (Types.WithdrawalTransaction memory) {
+        return _withdrawalTxByInvoiceHash[invoiceHash];
     }
 
     /// @inheritdoc ISuperchainBridgeAdapter

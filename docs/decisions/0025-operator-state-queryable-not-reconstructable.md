@@ -41,9 +41,12 @@ Make the operator's state **queryable, not reconstructable** — two small, prec
   on `_claim` — the only path that clears held custody. The set mirrors the existing source-side
   `_activeInvoices`/`_activeInvoicesSet` swap-pop machinery exactly. Invariant: `getHeldInvoices(account)` equals
   precisely the `destinationCustody` records for `account` with `amount > 0 && !claimed`.
-- **`SuperchainBridgeAdapter`:** store the full `Types.WithdrawalTransaction` at prove time keyed by invoice id,
-  exposed by **`getWithdrawalTransaction(bytes32 invoiceId)`** (an explicit struct getter — the backing mapping is
-  `private` because a `public` auto-getter silently drops the struct's dynamic `data` member).
+- **`SuperchainBridgeAdapter`:** store the full `Types.WithdrawalTransaction` at prove time keyed by the
+  **per-operation invoice hash** (`proveWithdrawal` takes a `bytes32 invoiceHash` param alongside the reusable route
+  `invoiceId`), exposed by **`getWithdrawalTransaction(bytes32 invoiceHash)`** (an explicit struct getter — the backing
+  mapping is `private` because a `public` auto-getter silently drops the struct's dynamic `data` member). Keying by the
+  per-operation hash rather than the route `invoiceId` keeps two same-lane withdrawals from colliding (each op has its
+  own hash; the route id is reused across ops).
 
 The operator then discovers claimable invoices in one call and finalizes without any historical log access.
 

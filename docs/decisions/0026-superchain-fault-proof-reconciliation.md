@@ -36,6 +36,11 @@ Reconcile the adapter to the fault-proof portals and ground every fix in fork te
   messenger's `successfulMessages(keccak256(withdrawalTx.data))` (the v1 versioned hash equals the relayMessage
   calldata the portal delivered) to confirm the relay actually paid this adapter, and a per-withdrawal-hash
   consumption guard makes settlement one-shot — so a withdrawal filed under two invoice hashes cannot settle twice.
+  The branch further binds the withdrawal to the genuine messenger (`withdrawalTx.target == l1MessengerForL2[l2ChainId]`,
+  so the `successfulMessages` flag isn't read from an attacker-authored target) and, for ETH, binds the delivered amount
+  (`withdrawalTx.value >= amount` — the portal delivers `value` to the adapter), matching the normal branch's delta
+  guard. `proveWithdrawal` rejects zero `invoiceId`/`invoiceHash` so an operator mistake fails atomically at prove
+  rather than surfacing as `WithdrawalNotProven` at completion.
 - **Configurable L1 id.** `chainId == l1ChainId` (an init argument, not `block.chainid == 1`) selects the L1 role, so
   the adapter works on any L1 host; L1 mode fails closed if given L2-only contracts.
 
@@ -48,3 +53,8 @@ Reconcile the adapter to the fault-proof portals and ground every fix in fork te
   air-gapped withdrawal to the adapter), so the Superchain lane stays do-not-deploy until a real L2→L1 finalize is
   exercised end-to-end on the throwaway. Augments [ADR 0021](0021-bridge-adapter-provenance-and-deploy-hardening.md)
   and [ADR 0024](0024-bridge-destination-hold-then-claim.md); does not supersede them.
+- **Known residual (deferred to that e2e):** the already-finalized branch binds ETH delivery via `withdrawalTx.value`
+  but not the **ERC20** delivered amount/recipient (those live in the relay calldata, `value == 0`) — decoding them is
+  OP-version-brittle and unverifiable on a fork without a real proven withdrawal. Superchain is ETH-primary and ERC20
+  deposits are fail-closed, and the residual is MANAGER-gated, no-theft, and one-shot; the ERC20 binding is validated at
+  the real L2→L1 e2e before the lane deploys.

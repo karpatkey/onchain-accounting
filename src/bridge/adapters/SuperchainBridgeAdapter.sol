@@ -536,7 +536,17 @@ contract SuperchainBridgeAdapter is BridgeAdapter, ISuperchainBridgeAdapter {
             // inner relay actually paid this adapter: the L1CrossDomainMessenger (the withdrawal `target`) records a
             // relayed message as successful only if the nested `finalizeBridge{ETH,ERC20}` delivered to the receiver.
             // For a Bedrock v1 message the versioned hash equals keccak256 of the relayMessage calldata, which is
-            // exactly `withdrawalTx.data` (what the portal delivered to the messenger).
+            // exactly `withdrawalTx.data` (what the portal delivered to the messenger). Bind the `target` to THIS L2's
+            // configured L1CrossDomainMessenger first, so `successfulMessages` is read from the genuine messenger and
+            // not an attacker-authored withdrawal whose `target` is a contract returning a spoofed `true`.
+            if (withdrawalTx.target != l1MessengerForL2[l2ChainId]) revert InvalidWithdrawalFinalization();
+            // Bind the delivered amount the normal branch's delta would have enforced. For a StandardBridge ETH
+            // withdrawal the portal delivers `withdrawalTx.value` to the adapter, so a mis-paired smaller withdrawal
+            // (value < amount) settling this invoice from stray/sibling funds is rejected here. (ERC20 carries the
+            // amount inside the relay calldata with value==0, so this native-only check can't bind it — Superchain is
+            // ETH-primary + ERC20 deposits are fail-closed; the ERC20 amount/recipient binding is validated at the
+            // real L2->L1 e2e before the lane deploys.)
+            if (_isNativeToken(asset) && withdrawalTx.value < amount) revert InvalidWithdrawalFinalization();
             // forge-lint: disable-next-line(asm-keccak256)
             bytes32 innerMessageHash = keccak256(withdrawalTx.data);
             if (!ICrossDomainMessenger(withdrawalTx.target).successfulMessages(innerMessageHash)) {
@@ -572,6 +582,12 @@ contract SuperchainBridgeAdapter is BridgeAdapter, ISuperchainBridgeAdapter {
         bytes32 invoiceId,
         bytes32 invoiceHash
     ) external onlyRole(MANAGER_ROLE) {
+        // Both invoice keys are mandatory for the ADR 0025 queryable finalize flow: `invoiceHash` keys the stored
+        // `WithdrawalTransaction` that completion reads, and `invoiceId` drives the source-chain-id check + correlation.
+        // Reject zero keys here so an operator mistake fails atomically at prove, instead of proving on the portal and
+        // only surfacing as `WithdrawalNotProven` at completion (which would defeat ADR 0025 / force a re-prove).
+        if (invoiceId == bytes32(0) || invoiceHash == bytes32(0)) revert InvalidWithdrawalProof();
+
         // Enforce the operator-supplied l2ChainId matches the invoice's encoded source chain id (top 3 bytes of
         // the invoice id — see BridgeEscrow._generateInvoiceId). Finalize selects the portal from the invoice's
         // sourceChainId, so proving against a different L2's portal would strand the withdrawal (WithdrawalNotProven

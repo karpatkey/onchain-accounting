@@ -410,6 +410,8 @@ contract SuperchainBridgeAdapterTest is BridgeScenarioHelper {
         // `withdrawTo` receiver. This is exactly the shape the old `target == address(this)` check wrongly rejected.
         MockL1WithdrawalRelay relay = new MockL1WithdrawalRelay();
         relay.setRecipient(payable(address(l1Ad)));
+        vm.prank(admin);
+        l1Ad.setL1MessengerForL2(L2_CHAIN_ID, address(relay)); // relay stands in for the L1CrossDomainMessenger
         Types.WithdrawalTransaction memory wtx = Types.WithdrawalTransaction({
             nonce: 1, sender: address(l2Bridge), target: address(relay), value: amount, gasLimit: 200000, data: ""
         });
@@ -564,6 +566,8 @@ contract SuperchainBridgeAdapterTest is BridgeScenarioHelper {
 
         MockL1WithdrawalRelay relay = new MockL1WithdrawalRelay();
         relay.setRecipient(payable(address(l1Ad)));
+        vm.prank(admin);
+        l1Ad.setL1MessengerForL2(L2_CHAIN_ID, address(relay)); // relay stands in for the L1CrossDomainMessenger
         Types.WithdrawalTransaction memory wtx = Types.WithdrawalTransaction({
             nonce: 1, sender: address(l2Bridge), target: address(relay), value: amount, gasLimit: 200000, data: ""
         });
@@ -586,6 +590,73 @@ contract SuperchainBridgeAdapterTest is BridgeScenarioHelper {
         vm.prank(manager);
         vm.expectRevert(abi.encodeWithSelector(ISuperchainBridgeAdapter.InvalidWithdrawalFinalization.selector));
         l1Ad.completeBridge(InvoiceDataLib.encode(invB), "");
+    }
+
+    /// @notice proveWithdrawal rejects zero invoice keys atomically (Copilot): a zero invoiceHash would prove on the
+    ///         portal but store no WithdrawalTransaction, defeating the ADR 0025 queryable flow and only surfacing as
+    ///         WithdrawalNotProven at completion. Fail fast at prove instead.
+    function test_proveWithdrawal_revertsOnZeroInvoiceKeys() public {
+        vm.chainId(SOURCE_CHAIN_ID);
+        uint256 amount = 1 ether;
+        vm.prank(admin);
+        bridgeEscrow.registerAsset(WETH_SYMBOL, address(0));
+        SuperchainBridgeAdapter l1Ad = _deployL1WithdrawalAdapter(bridgeEscrow);
+        InvoiceDataLib.InvoiceData memory invoiceData =
+            _createInvoiceData(L2_CHAIN_ID, SOURCE_CHAIN_ID, account, WETH_SYMBOL_BYTES6, amount);
+        bytes32 invoiceHash = bytes32(uint256(uint192(invoiceData.checksum24)));
+        Types.WithdrawalTransaction memory wtx = Types.WithdrawalTransaction({
+            nonce: 1, sender: address(l2Bridge), target: address(l1Ad), value: amount, gasLimit: 200000, data: ""
+        });
+        Types.OutputRootProof memory emptyProof = Types.OutputRootProof(bytes32(0), bytes32(0), bytes32(0), bytes32(0));
+        vm.startPrank(manager);
+        vm.expectRevert(abi.encodeWithSelector(ISuperchainBridgeAdapter.InvalidWithdrawalProof.selector));
+        l1Ad.proveWithdrawal(L2_CHAIN_ID, wtx, 0, emptyProof, new bytes[](0), invoiceData.invoiceId, bytes32(0));
+        vm.expectRevert(abi.encodeWithSelector(ISuperchainBridgeAdapter.InvalidWithdrawalProof.selector));
+        l1Ad.proveWithdrawal(L2_CHAIN_ID, wtx, 0, emptyProof, new bytes[](0), bytes32(0), invoiceHash);
+        vm.stopPrank();
+    }
+
+    /// @notice Skip-branch delivered-amount binding (super-review Low): a front-run-finalized withdrawal that delivered
+    ///         LESS than the invoice amount must not settle from stray/sibling funds. For ETH the delivered amount is
+    ///         `withdrawalTx.value`, so `value < amount` reverts even though the adapter's absolute balance covers `amount`.
+    function test_completeBridge_l2ToL1_skipBranch_revertsOnUnderDeliveredValue() public {
+        vm.chainId(SOURCE_CHAIN_ID);
+        uint256 invoiceAmount = 1 ether;
+        uint256 delivered = 0.5 ether;
+        BridgeEscrow l1Escrow = bridgeEscrow;
+        vm.prank(admin);
+        l1Escrow.registerAsset(WETH_SYMBOL, address(0));
+        SuperchainBridgeAdapter l1Ad = _deployL1WithdrawalAdapter(l1Escrow);
+
+        InvoiceDataLib.InvoiceData memory invoiceData =
+            _createInvoiceData(L2_CHAIN_ID, SOURCE_CHAIN_ID, account, WETH_SYMBOL_BYTES6, invoiceAmount);
+        bytes32 invoiceHash = bytes32(uint256(uint192(invoiceData.checksum24)));
+
+        MockL1WithdrawalRelay relay = new MockL1WithdrawalRelay();
+        relay.setRecipient(payable(address(l1Ad)));
+        vm.prank(admin);
+        l1Ad.setL1MessengerForL2(L2_CHAIN_ID, address(relay));
+        // A withdrawal delivering only `delivered` (< invoiceAmount) mis-filed under the 1-ETH invoice's hash.
+        Types.WithdrawalTransaction memory wtx = Types.WithdrawalTransaction({
+            nonce: 1, sender: address(l2Bridge), target: address(relay), value: delivered, gasLimit: 200000, data: ""
+        });
+        Types.OutputRootProof memory emptyProof = Types.OutputRootProof(bytes32(0), bytes32(0), bytes32(0), bytes32(0));
+        vm.prank(manager);
+        l1Ad.proveWithdrawal(L2_CHAIN_ID, wtx, 0, emptyProof, new bytes[](0), invoiceData.invoiceId, invoiceHash);
+
+        // Front-run finalize delivers `delivered`; top up stray funds so the ABSOLUTE balance covers the full amount.
+        address griefer = makeAddr("griefer");
+        vm.startPrank(griefer);
+        optimismPortal.proveWithdrawalTransaction(wtx, 0, emptyProof, new bytes[](0));
+        optimismPortal.finalizeWithdrawalTransaction(wtx);
+        vm.stopPrank();
+        vm.deal(address(l1Ad), invoiceAmount); // delivered + stray == invoiceAmount (absolute check would pass)
+        // forge-lint: disable-next-line(asm-keccak256)
+        relay.setSuccessfulMessage(keccak256(wtx.data), true);
+
+        vm.prank(manager);
+        vm.expectRevert(abi.encodeWithSelector(ISuperchainBridgeAdapter.InvalidWithdrawalFinalization.selector));
+        l1Ad.completeBridge(InvoiceDataLib.encode(invoiceData), "");
     }
 
     /// @notice RE5-L-01: a deploy-config role flip — an L2 deployment mis-setting `l1ChainId_ == block.chainid` — must
@@ -727,6 +798,8 @@ contract SuperchainBridgeAdapterTest is BridgeScenarioHelper {
 
         MockL1WithdrawalRelay relay = new MockL1WithdrawalRelay();
         relay.setRecipient(payable(address(l1Ad)));
+        vm.prank(admin);
+        l1Ad.setL1MessengerForL2(L2_CHAIN_ID, address(relay)); // relay stands in for the L1CrossDomainMessenger
         Types.WithdrawalTransaction memory wtx = Types.WithdrawalTransaction({
             nonce: 1, sender: address(l2Bridge), target: address(relay), value: amount, gasLimit: 200000, data: ""
         });
@@ -789,6 +862,8 @@ contract SuperchainBridgeAdapterTest is BridgeScenarioHelper {
         // Relay does NOT forward to the adapter (simulates a failed inner relay); the portal still marks finalized.
         MockL1WithdrawalRelay relay = new MockL1WithdrawalRelay();
         relay.setRecipient(payable(address(0)));
+        vm.prank(admin);
+        l1Ad.setL1MessengerForL2(L2_CHAIN_ID, address(relay)); // relay stands in for the L1CrossDomainMessenger
         Types.WithdrawalTransaction memory wtx = Types.WithdrawalTransaction({
             nonce: 1, sender: address(l2Bridge), target: address(relay), value: amount, gasLimit: 200000, data: ""
         });

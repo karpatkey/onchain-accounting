@@ -271,7 +271,7 @@ A cross-chain transfer is only finished when the assets are released to the acco
 | Superchain **L1→L2** | the L1 adapter sends an authenticated `completeDeposit` message via the per-L2 `l1MessengerForL2`; the L2 messenger auto-relays it after the deposit funds land | ✅ auto |
 | Gnosis **ETH→GC** | the AMB auto-affirms on Gnosis (cheap gas) | ✅ auto |
 | **CCTP** (both) | fetch Circle's attestation for the burn, then MANAGER `completeBridge` (`messageTransmitter.receiveMessage`) | 🔧 **keeper** |
-| **Superchain L2→L1** | `proveWithdrawal`, then `finalizeWithdrawal` after the ~7-day challenge window | 🔧 **keeper** |
+| **Superchain L2→L1** | `proveWithdrawal` (fault-proof OP2: pass a dispute-game index), then `completeBridge` (finalizes inside it) once the portal's dispute-game resolution + finality air-gap elapse | 🔧 **keeper** |
 | **Gnosis GC→ETH** | `executeSignatures(msg, sigs)` on the ETH foreign AMB (`0x4C36d291…`) — the OmniBridge "CLAIM" (an AMB affirmation, distinct from the escrow's `claim`); home→foreign is not auto-executed because it costs Ethereum L1 gas. It fires `onTokenBridged`, so the adapter records the delivery into escrow custody in the same tx. | 🔧 **keeper** |
 | **Across** (both) | a relayer must `fillV3Relay` on the destination; our delivery is **zero-margin** (`outputAmount == inputAmount`), so third-party relayers have no incentive — a **designated relayer** must fill | 🔧 **keeper** |
 

@@ -541,6 +541,76 @@ contract SuperchainBridgeAdapterTest is BridgeScenarioHelper {
         assertEq(l1Ad.getWithdrawalTransaction(hash2).data, hex"bbbb", "second data stored");
     }
 
+    /// @notice One withdrawal settles exactly one invoice. The SAME proven+finalized withdrawal filed under two invoice
+    ///         hashes (a MANAGER mis-derivation) must not settle both — the second completion reverts on the one-shot
+    ///         consumption guard even with the messenger's PERMANENT `successfulMessages` flag true and stray adapter
+    ///         funds covering the amount. This makes the already-finalized skip-branch as reuse-proof as the normal
+    ///         branch (where the portal reverts on a second finalize). (Super-review Medium.)
+    function test_completeBridge_l2ToL1_revertsOnWithdrawalReuseAcrossInvoices() public {
+        vm.chainId(SOURCE_CHAIN_ID);
+        uint256 amount = 1 ether;
+        BridgeEscrow l1Escrow = bridgeEscrow;
+        vm.prank(admin);
+        l1Escrow.registerAsset(WETH_SYMBOL, address(0));
+        SuperchainBridgeAdapter l1Ad = _deployL1WithdrawalAdapter(l1Escrow);
+
+        // Two DISTINCT invoices (distinct nonces => distinct invoice hashes), ONE physical withdrawal filed under both.
+        InvoiceDataLib.InvoiceData memory invA =
+            _createInvoiceData(L2_CHAIN_ID, SOURCE_CHAIN_ID, account, WETH_SYMBOL_BYTES6, amount, 1);
+        InvoiceDataLib.InvoiceData memory invB =
+            _createInvoiceData(L2_CHAIN_ID, SOURCE_CHAIN_ID, account, WETH_SYMBOL_BYTES6, amount, 2);
+        bytes32 hashA = bytes32(uint256(uint192(invA.checksum24)));
+        bytes32 hashB = bytes32(uint256(uint192(invB.checksum24)));
+
+        MockL1WithdrawalRelay relay = new MockL1WithdrawalRelay();
+        relay.setRecipient(payable(address(l1Ad)));
+        Types.WithdrawalTransaction memory wtx = Types.WithdrawalTransaction({
+            nonce: 1, sender: address(l2Bridge), target: address(relay), value: amount, gasLimit: 200000, data: ""
+        });
+        Types.OutputRootProof memory emptyProof = Types.OutputRootProof(bytes32(0), bytes32(0), bytes32(0), bytes32(0));
+        vm.startPrank(manager);
+        l1Ad.proveWithdrawal(L2_CHAIN_ID, wtx, 0, emptyProof, new bytes[](0), invA.invoiceId, hashA);
+        l1Ad.proveWithdrawal(L2_CHAIN_ID, wtx, 0, emptyProof, new bytes[](0), invB.invoiceId, hashB);
+        vm.stopPrank();
+
+        // Complete A: normal branch finalizes + delivers `amount`, settling A and consuming the withdrawal.
+        vm.prank(manager);
+        l1Ad.completeBridge(InvoiceDataLib.encode(invA), "");
+        assertTrue(l1Escrow.isInvoiceCompleted(hashA), "A settled");
+
+        // B: the withdrawal is now finalized (skip-branch), successfulMessages is permanently true, and stray funds
+        // cover `amount` — only the consumption guard stops a second settlement.
+        // forge-lint: disable-next-line(asm-keccak256)
+        relay.setSuccessfulMessage(keccak256(wtx.data), true);
+        vm.deal(address(l1Ad), amount);
+        vm.prank(manager);
+        vm.expectRevert(abi.encodeWithSelector(ISuperchainBridgeAdapter.InvalidWithdrawalFinalization.selector));
+        l1Ad.completeBridge(InvoiceDataLib.encode(invB), "");
+    }
+
+    /// @notice RE5-L-01: a deploy-config role flip — an L2 deployment mis-setting `l1ChainId_ == block.chainid` — must
+    ///         fail at init rather than silently run in L1 mode. Supplying L2-shaped args (l2Bridge) in L1 mode reverts.
+    function test_initialize_revertsL1ModeWithL2Contracts() public {
+        vm.chainId(L2_CHAIN_ID);
+        address impl = address(new SuperchainBridgeAdapter(address(0)));
+        vm.expectRevert(abi.encodeWithSelector(ISuperchainBridgeAdapter.InvalidChainId.selector));
+        UnsafeUpgrades.deployUUPSProxy(
+            impl,
+            abi.encodeCall(
+                SuperchainBridgeAdapter.initialize,
+                (
+                    admin,
+                    address(bridgeEscrow),
+                    address(l2Bridge),
+                    address(l1Messenger),
+                    address(0),
+                    uint256(L2_CHAIN_ID),
+                    "1.0.0"
+                )
+            )
+        );
+    }
+
     /// @notice proveWithdrawal reverts when the supplied l2ChainId disagrees with the invoice's encoded source
     ///         chain id — the operator guard that stops proving on the wrong L2 portal (which would strand finalize).
     function test_proveWithdrawal_revertsOnChainIdMismatch() public {

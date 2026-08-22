@@ -616,7 +616,6 @@ contract MockOptimismPortal is IOptimismPortal {
     // Fault-proof OP2 shape: proven keyed by (hash, proof submitter); finalized keyed globally by hash.
     mapping(bytes32 => mapping(address => address)) private _disputeGameProxy;
     mapping(bytes32 => bool) private _finalizedWithdrawals;
-    uint256 public minimumWithdrawalDelay = 0;
     address internal constant SENTINEL_GAME = address(uint160(0xDEAD));
 
     function proveWithdrawalTransaction(

@@ -104,6 +104,15 @@ contract SuperchainBridgeAdapter is BridgeAdapter, ISuperchainBridgeAdapter {
     ///      getter: a `public` auto-getter silently drops the struct's dynamic `data` member.
     mapping(bytes32 => Types.WithdrawalTransaction) private _withdrawalTxByInvoiceHash;
 
+    /// @notice Marks a withdrawal hash whose funds have already settled an invoice on this adapter.
+    /// @dev One-shot settlement guard: a single L2->L1 withdrawal delivers its funds once and must settle exactly one
+    ///      invoice. The normal finalize branch is naturally one-shot (the portal reverts on a second
+    ///      `finalizeWithdrawalTransaction`), but the already-finalized skip-branch keys off the messenger's
+    ///      `successfulMessages` flag, which is set PERMANENTLY and never consumed — so without this guard the same
+    ///      proven+finalized withdrawal filed under two invoice hashes could settle both from the adapter's balance.
+    ///      Set on first settlement in `_finalizeWithdrawal`; a re-use reverts.
+    mapping(bytes32 => bool) private _settledWithdrawals;
+
     /// @notice L1 token -> L2 token per destination L2 chain id (L1 side only).
     /// @dev Used for ERC20 deposits (L1 → L2). Unmapped (zero) falls back to the same address (standard
     ///      bridge tokens). Keyed per L2 because the same L1 token maps to different L2 token addresses.
@@ -148,6 +157,10 @@ contract SuperchainBridgeAdapter is BridgeAdapter, ISuperchainBridgeAdapter {
         // portals / messengers are seeded post-init via setters; the legacy single `l1Messenger` is stored for
         // config compatibility but the OUTBOUND deposit message uses `l1MessengerForL2` (per destination L2).
         if (chainId == l1ChainId_) {
+            // Fail closed on a deploy-config role flip: L1 mode must NOT be given L2-only contracts. If an L2
+            // deployment mis-sets `l1ChainId_ == block.chainid`, its L2-shaped args (l2Bridge/l2Messenger, always
+            // supplied on an L2 deploy) trip this immediately at init instead of failing on the first bridge (RE5-L-01).
+            if (l2Bridge_ != address(0) || l2Messenger_ != address(0)) revert InvalidChainId();
             l1Messenger = l1Messenger_;
         } else {
             // On L2, only initialize L2 contracts
@@ -497,6 +510,14 @@ contract SuperchainBridgeAdapter is BridgeAdapter, ISuperchainBridgeAdapter {
         // which called `proveWithdrawalTransaction`; proven ⟺ a non-zero dispute game is recorded).
         (address disputeGameProxy,) = portal.provenWithdrawals(withdrawalHash, address(this));
         if (disputeGameProxy == address(0)) revert WithdrawalNotProven();
+
+        // One-shot settlement: a withdrawal delivers its funds once, so it settles exactly one invoice. This makes
+        // the already-finalized skip-branch (which keys off the messenger's PERMANENT `successfulMessages` flag) as
+        // reuse-proof as the normal branch (where the portal reverts on a second finalize) — the same proven+finalized
+        // withdrawal filed under two invoice hashes cannot settle both from the adapter's balance. Set before any
+        // external call; a revert below rolls it back.
+        if (_settledWithdrawals[withdrawalHash]) revert InvalidWithdrawalFinalization();
+        _settledWithdrawals[withdrawalHash] = true;
 
         // Finalize idempotently: skip if a front-run already finalized it (the portal's finalize is permissionless
         // and reverts on a second call).

@@ -184,8 +184,4 @@ interface IOptimismPortal {
     /// @param _withdrawalHash Hash of the withdrawal transaction
     /// @return True if already finalized, false otherwise
     function finalizedWithdrawals(bytes32 _withdrawalHash) external view returns (bool);
-
-    /// @notice Gets the minimum time between proving and finalizing a withdrawal
-    /// @return The minimum time in seconds
-    function minimumWithdrawalDelay() external view returns (uint256);
 }

@@ -95,9 +95,6 @@ interface ISuperchainBridgeAdapter is IBridgeAdapter {
     /// @param encoded The source chain id encoded in the invoice id (top 3 bytes)
     error WithdrawalChainIdMismatch(uint256 provided, uint256 encoded);
 
-    /// @notice Thrown when withdrawal challenge period has not elapsed
-    error WithdrawalChallengePeriodNotElapsed();
-
     //
     // State Variables (Public)
     //

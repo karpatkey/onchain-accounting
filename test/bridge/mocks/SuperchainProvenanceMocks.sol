@@ -78,7 +78,6 @@ contract MockOptimismPortalReal is IOptimismPortal {
     // (withdrawal hash => proof submitter => dispute game proxy) — nonzero means proven by that submitter.
     mapping(bytes32 => mapping(address => address)) private _disputeGameProxy;
     mapping(bytes32 => bool) private _finalizedWithdrawals;
-    uint256 public minimumWithdrawalDelay = 0;
 
     // A nonzero sentinel dispute game — the real portal records the game the withdrawal was proven against.
     address internal constant SENTINEL_GAME = address(uint160(0xDEAD));

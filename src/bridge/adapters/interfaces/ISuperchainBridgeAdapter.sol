@@ -213,7 +213,10 @@ interface ISuperchainBridgeAdapter is IBridgeAdapter {
     /// @notice Sets the Optimism Portal for a source L2 chain id
     /// @param l2ChainId The source L2 chain id
     /// @param optimismPortal_ The Optimism Portal contract address for that L2
-    /// @dev Only callable by admin role; only valid on the L1 deployment (reverts InvalidChainId on an L2)
+    /// @dev Only callable by admin role; only valid on the L1 deployment (reverts InvalidChainId on an L2). When
+    ///      enabling a NEW withdrawal-source L2, also wire its `setL1MessengerForL2` — the L2→L1 finalize path binds a
+    ///      front-run withdrawal's target to `l1MessengerForL2[sourceChainId]`, so a portal-only config would revert
+    ///      `MessengerNotConfigured` at completion. (The `05` deploy seeds both together, index-aligned.)
     function setOptimismPortalForL2(uint256 l2ChainId, address optimismPortal_) external;
 
     /// @notice Sets the L2 token for a (destination L2 chain id, L1 token)

@@ -59,10 +59,13 @@ contract SuperchainBridgeAdapter is BridgeAdapter, ISuperchainBridgeAdapter {
     ///      by the destination L2. This field is no longer read on the L1 execution path.
     address public l1Messenger;
 
-    /// @notice L1 Cross-Domain Messenger per destination L2 chain id (L1 side only).
-    /// @dev OP and Base have distinct L1CrossDomainMessengers. The L1 adapter sends the authenticated
-    ///      `completeDeposit` message for an L1 → L2 deposit through this per-L2 messenger, selected by
-    ///      `data.destinationChainId`. Seeded post-init via `setL1MessengerForL2` (like `l1BridgeForL2`).
+    /// @notice L1 Cross-Domain Messenger per L2 chain id (L1 side only). Used in BOTH directions.
+    /// @dev OP and Base have distinct L1CrossDomainMessengers. Deposit (L1 → L2): the adapter sends the authenticated
+    ///      `completeDeposit` message through this messenger, selected by `data.destinationChainId`. Withdrawal
+    ///      finalize (L2 → L1): the already-finalized (front-run) branch binds the withdrawal's `target` to this
+    ///      messenger, selected by `data.sourceChainId`. So it MUST be wired for every L2 the adapter serves in
+    ///      EITHER direction — not just deposit destinations — or a front-run withdrawal completion reverts
+    ///      `MessengerNotConfigured`. Seeded post-init via `setL1MessengerForL2` (like `l1BridgeForL2`).
     mapping(uint256 => address) public l1MessengerForL2;
 
     /// @notice L2 Cross-Domain Messenger contract address
@@ -539,6 +542,10 @@ contract SuperchainBridgeAdapter is BridgeAdapter, ISuperchainBridgeAdapter {
             // exactly `withdrawalTx.data` (what the portal delivered to the messenger). Bind the `target` to THIS L2's
             // configured L1CrossDomainMessenger first, so `successfulMessages` is read from the genuine messenger and
             // not an attacker-authored withdrawal whose `target` is a contract returning a spoofed `true`.
+            // The source L2's L1CrossDomainMessenger must be wired (l1MessengerForL2 is used for BOTH deposit dest-L2
+            // routing AND this withdrawal-finalize target binding). A distinct error makes a partial config (portal
+            // wired via setOptimismPortalForL2 but messenger not) obvious rather than a generic finalize revert.
+            if (l1MessengerForL2[l2ChainId] == address(0)) revert MessengerNotConfigured(l2ChainId);
             if (withdrawalTx.target != l1MessengerForL2[l2ChainId]) revert InvalidWithdrawalFinalization();
             // Bind the delivered amount the normal branch's delta would have enforced. For a StandardBridge ETH
             // withdrawal the portal delivers `withdrawalTx.value` to the adapter, so a mis-paired smaller withdrawal
@@ -592,10 +599,8 @@ contract SuperchainBridgeAdapter is BridgeAdapter, ISuperchainBridgeAdapter {
         // the invoice id — see BridgeEscrow._generateInvoiceId). Finalize selects the portal from the invoice's
         // sourceChainId, so proving against a different L2's portal would strand the withdrawal (WithdrawalNotProven
         // until re-proven). Fail fast on the operator mistake instead of proving on the wrong portal.
-        if (invoiceId != bytes32(0)) {
-            uint256 encodedSrc = uint256(invoiceId) >> 232;
-            if (encodedSrc != l2ChainId) revert WithdrawalChainIdMismatch(l2ChainId, encodedSrc);
-        }
+        uint256 encodedSrc = uint256(invoiceId) >> 232;
+        if (encodedSrc != l2ChainId) revert WithdrawalChainIdMismatch(l2ChainId, encodedSrc);
 
         // Prove against the portal for the source L2; finalize must later use the SAME l2ChainId
         // (the invoice's sourceChainId flows through both, so they match).
@@ -606,18 +611,18 @@ contract SuperchainBridgeAdapter is BridgeAdapter, ISuperchainBridgeAdapter {
 
         portal.proveWithdrawalTransaction(withdrawalTx, disputeGameIndex, outputRootProof, withdrawalProof);
 
-        // Correlate invoice ↔ real withdrawal hash.
-        if (invoiceId != bytes32(0)) {
-            withdrawalHashToInvoiceId[withdrawalHash] = invoiceId;
-            invoiceToWithdrawalHash[invoiceId] = withdrawalHash;
-            emit SuperchainWithdrawalProven(invoiceId, withdrawalHash);
-        }
+        // Correlate invoice ↔ real withdrawal hash (both keys are guaranteed non-zero by the guard above).
+        withdrawalHashToInvoiceId[withdrawalHash] = invoiceId;
+        invoiceToWithdrawalHash[invoiceId] = withdrawalHash;
+        emit SuperchainWithdrawalProven(invoiceId, withdrawalHash);
+
         // Store the tx under the PER-OPERATION invoice hash (ADR 0025) so the keeper can finalize without an L2
         // log re-read. Keyed by the hash, NOT invoiceId, so two same-lane withdrawals proven in the same window
-        // don't collide (the second would otherwise overwrite the first's tx).
-        if (invoiceHash != bytes32(0)) {
-            _withdrawalTxByInvoiceHash[invoiceHash] = withdrawalTx;
-        }
+        // don't collide (the second would otherwise overwrite the first's tx). The caller MUST pass the same key
+        // completion derives — `invoiceHash == bytes32(uint256(uint192(checksum24)))` — otherwise the tx is filed
+        // under a key completion never looks up (self-detecting: completion reverts `WithdrawalNotProven`); the
+        // amount/timestamp/nonce needed to recompute the checksum on-chain aren't available here, so it isn't asserted.
+        _withdrawalTxByInvoiceHash[invoiceHash] = withdrawalTx;
     }
 
     //

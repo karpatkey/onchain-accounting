@@ -616,6 +616,50 @@ contract SuperchainBridgeAdapterTest is BridgeScenarioHelper {
         vm.stopPrank();
     }
 
+    /// @notice Config-coupling (super-review Low): the skip-branch binds the withdrawal target to `l1MessengerForL2` for
+    ///         the SOURCE L2, so a portal-only config (messenger left unwired) makes a front-run-finalized withdrawal
+    ///         revert `MessengerNotConfigured` at completion — a clear error, no fund loss (funds recoverable via MANAGER).
+    function test_completeBridge_l2ToL1_revertsIfSourceMessengerUnconfigured() public {
+        vm.chainId(SOURCE_CHAIN_ID);
+        uint256 amount = 1 ether;
+        BridgeEscrow l1Escrow = bridgeEscrow;
+        vm.prank(admin);
+        l1Escrow.registerAsset(WETH_SYMBOL, address(0));
+        SuperchainBridgeAdapter l1Ad = _deployL1WithdrawalAdapter(l1Escrow); // portal wired, messenger deliberately NOT
+
+        InvoiceDataLib.InvoiceData memory invoiceData =
+            _createInvoiceData(L2_CHAIN_ID, SOURCE_CHAIN_ID, account, WETH_SYMBOL_BYTES6, amount);
+        MockL1WithdrawalRelay relay = new MockL1WithdrawalRelay();
+        relay.setRecipient(payable(address(l1Ad)));
+        Types.WithdrawalTransaction memory wtx = Types.WithdrawalTransaction({
+            nonce: 1, sender: address(l2Bridge), target: address(relay), value: amount, gasLimit: 200000, data: ""
+        });
+        Types.OutputRootProof memory emptyProof = Types.OutputRootProof(bytes32(0), bytes32(0), bytes32(0), bytes32(0));
+        vm.prank(manager);
+        l1Ad.proveWithdrawal(
+            L2_CHAIN_ID,
+            wtx,
+            0,
+            emptyProof,
+            new bytes[](0),
+            invoiceData.invoiceId,
+            bytes32(uint256(uint192(invoiceData.checksum24)))
+        );
+
+        // Front-run finalize delivers the funds; the source messenger is unwired, so completion fails loudly.
+        address griefer = makeAddr("griefer");
+        vm.startPrank(griefer);
+        optimismPortal.proveWithdrawalTransaction(wtx, 0, emptyProof, new bytes[](0));
+        optimismPortal.finalizeWithdrawalTransaction(wtx);
+        vm.stopPrank();
+
+        vm.prank(manager);
+        vm.expectRevert(
+            abi.encodeWithSelector(ISuperchainBridgeAdapter.MessengerNotConfigured.selector, uint256(L2_CHAIN_ID))
+        );
+        l1Ad.completeBridge(InvoiceDataLib.encode(invoiceData), "");
+    }
+
     /// @notice Skip-branch delivered-amount binding (super-review Low): a front-run-finalized withdrawal that delivered
     ///         LESS than the invoice amount must not settle from stray/sibling funds. For ETH the delivered amount is
     ///         `withdrawalTx.value`, so `value < amount` reverts even though the adapter's absolute balance covers `amount`.

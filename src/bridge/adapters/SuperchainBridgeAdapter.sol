@@ -25,13 +25,17 @@ import "src/errors.sol";
 ///
 ///      Provenance (ADR 0012, D1/D2): there is no escrow fallback dispatcher. Each inbound completion path
 ///      authenticates the genuine OP Stack contract and the source-chain sender:
-///        - L1->L2 deposit: the L2CrossDomainMessenger relays the message to this adapter. The adapter
-///          requires `msg.sender == l2Messenger` AND
-///          `l2Messenger.xDomainMessageSender() == trustedRemoteAdapter[srcChainId]`.
+///        - L1->L2 deposit: the L1 adapter initiates the canonical bridge deposit AND sends an authenticated
+///          `completeDeposit` message via the L1CrossDomainMessenger to its L2 sibling. On L2 the deposit's funds
+///          are ordered ahead of that message, so `completeDeposit` sees the funds; it requires
+///          `msg.sender == l2Messenger` AND `l2Messenger.xDomainMessageSender() == trustedRemoteAdapter[srcChainId]`.
+///          (The MANAGER `completeBridge` path remains a backstop if the message is delayed/stuck.)
 ///        - L2->L1 withdrawal: proof-gated through the OptimismPortal. The adapter computes the REAL OP
 ///          withdrawal hash (`keccak256(abi.encode(nonce, sender, target, value, gasLimit, data))`,
-///          matching `Hashing.hashWithdrawal`) and only completes once the portal reports the withdrawal
-///          proven, then finalizes it (the portal delivers the ETH to this adapter as the withdrawal target).
+///          matching `Hashing.hashWithdrawal`) and only completes once the portal reports the withdrawal proven.
+///          A real `withdrawTo` withdrawal's portal `target` is the L1CrossDomainMessenger (which relays the
+///          L1-bridge call that pays this adapter), NOT this adapter — so completion finalizes idempotently
+///          (skipping a front-run finalize) and binds the amount by the adapter's measured balance delta.
 /// @author KPK
 contract SuperchainBridgeAdapter is BridgeAdapter, ISuperchainBridgeAdapter {
     using SafeERC20 for IERC20;
@@ -113,8 +117,8 @@ contract SuperchainBridgeAdapter is BridgeAdapter, ISuperchainBridgeAdapter {
         super._initializeBridgeAdapter(admin_, bridgeEscrow_, "Superchain", version_);
         chainId = block.chainid;
 
-        // On L1 (mainnet), the per-L2 bridges/portals are set via setters after init; only the messenger is
-        // stored here (retained for parity; unused on the L1 execution path).
+        // On L1 (mainnet), the per-L2 bridges/portals are set via setters after init; the L1CrossDomainMessenger
+        // is stored here and USED on deposits to send the authenticated `completeDeposit` message to the L2 sibling.
         if (chainId == 1) {
             if (l1Messenger_ == address(0)) revert InvalidCrossDomainMessenger();
             l1Messenger = l1Messenger_;
@@ -220,8 +224,11 @@ contract SuperchainBridgeAdapter is BridgeAdapter, ISuperchainBridgeAdapter {
     }
 
     /// @notice Handles L1 → L2 deposit
-    /// @dev Recipient on L2 is the sibling adapter (`address(this)`, same address via CREATE2). Delivered
-    ///      ETH/tokens land on the L2 adapter, which authenticates and releases on completion.
+    /// @dev Recipient on L2 is the sibling adapter (`address(this)`, same address via CREATE2). The canonical
+    ///      bridge delivers the ETH/tokens to the L2 sibling; the L1 adapter also sends an AUTHENTICATED
+    ///      `completeDeposit` message through the L1CrossDomainMessenger so the L2 sibling records the delivery
+    ///      with provenance (not merely a MANAGER-attested balance check). Deposit funds are ordered ahead of
+    ///      the message on L2 (portal deposit nonce order), so `completeDeposit` sees the funds already present.
     function _depositToL2(
         InvoiceDataLib.InvoiceData memory data,
         address asset,
@@ -236,19 +243,27 @@ contract SuperchainBridgeAdapter is BridgeAdapter, ISuperchainBridgeAdapter {
         if (isEth) {
             bridge.depositETHTo{value: data.amount}(receiver, defaultL2GasLimit, messagePayload);
         } else {
-            // Pull ERC20 tokens from escrow (escrow approved us in depositAndBridge)
-            IERC20(asset).safeTransferFrom(bridgeEscrow, address(this), data.amount);
-
-            // Resolve the L2 token for this destination L2. Fail closed: an unmapped ERC20 must NOT default to the
+            // Resolve the L2 token BEFORE pulling funds. Fail closed: an unmapped ERC20 must NOT default to the
             // L1 address (wrong on L2 for tokens like WETH → the deposit would be unfinalizable / locked). Any ERC20
             // Superchain route must be wired via `setL2TokenForL2` first.
             address l2Token = l1ToL2TokenForL2[data.destinationChainId][asset];
             if (l2Token == address(0)) revert L2TokenNotConfigured(data.destinationChainId, asset);
 
-            // Approve L1 bridge to spend tokens and deposit to L2
+            // Pull ERC20 tokens from escrow (escrow approved us in depositAndBridge), approve, and deposit to L2.
+            IERC20(asset).safeTransferFrom(bridgeEscrow, address(this), data.amount);
             IERC20(asset).forceApprove(address(bridge), data.amount);
             bridge.depositERC20To(asset, l2Token, receiver, data.amount, defaultL2GasLimit, messagePayload);
         }
+
+        // Deliver an authenticated completion to the L2 sibling. The canonical bridge deposit above is ordered
+        // ahead of this message on L2, so when the sibling's `completeDeposit` runs the funds have landed. Without
+        // this the L2-side authenticated path is unreachable (the standard bridge relays to the L2 bridge with
+        // empty calldata, never the adapter), leaving only the un-provenanced MANAGER `completeBridge` backstop.
+        if (l1Messenger == address(0)) revert InvalidCrossDomainMessenger();
+        ICrossDomainMessenger(l1Messenger)
+            .sendMessage(
+                address(this), abi.encodeWithSelector(this.completeDeposit.selector, messagePayload), defaultL2GasLimit
+            );
 
         // Store messagePayload for later retrieval
         messagePayloads[data.invoiceId] = messagePayload;
@@ -332,11 +347,19 @@ contract SuperchainBridgeAdapter is BridgeAdapter, ISuperchainBridgeAdapter {
         InvoiceDataLib.InvoiceData memory data = InvoiceDataLib.decode(messagePayload);
 
         if (chainId == 1) {
-            // L2 → L1 withdrawal: finalize via the portal (proof-gated).
-            if (protocolData.length == 0) revert InvalidWithdrawalFinalization();
+            // L2 → L1 withdrawal: finalize via the portal (proof-gated). Bind the withdrawal to THIS invoice by
+            // reading the tx stored at prove time under the per-operation invoice hash (ADR 0025), rather than
+            // trusting the operator-supplied protocolData — the route invoiceId is reused per lane and cannot
+            // distinguish concurrent same-lane withdrawals, so an unbound protocolData could settle invoice B with
+            // invoice A's withdrawal. `protocolData` is now ignored (kept for ABI parity).
+            bytes32 invoiceHash = bytes32(uint256(uint192(data.checksum24)));
+            Types.WithdrawalTransaction memory withdrawalTx = _withdrawalTxByInvoiceHash[invoiceHash];
+            // A real stored tx targets the L1CrossDomainMessenger (nonzero); a zero target means nothing was proven
+            // for this exact invoice.
+            if (withdrawalTx.target == address(0)) revert WithdrawalNotProven();
             address asset = IBridgeEscrow(bridgeEscrow).assetRegistry(InvoiceDataLib.bytes6ToStr(data.assetSymbol));
             // Finalize through the portal for the SOURCE L2 (the same L2 whose portal proved it).
-            _finalizeWithdrawal(protocolData, data.amount, _isNativeToken(asset), uint256(data.sourceChainId));
+            _finalizeWithdrawal(withdrawalTx, data.amount, asset, uint256(data.sourceChainId));
         }
         // On L2 the tokens were delivered to this adapter by the canonical bridge; the base verifies the
         // adapter balance covers `amount` in `_fundAndRelease` and reverts otherwise.
@@ -371,21 +394,30 @@ contract SuperchainBridgeAdapter is BridgeAdapter, ISuperchainBridgeAdapter {
         emit SuperchainBridgeCompleted(data.invoiceId, uint64(data.sourceChainId));
     }
 
-    /// @notice Finalizes a withdrawal (L2 → L1) through the portal so the funds are delivered to this adapter.
-    /// @param protocolData ABI-encoded `Types.WithdrawalTransaction`.
+    /// @notice Finalizes a proven withdrawal (L2 → L1) through the portal so the funds are delivered to this adapter.
+    /// @param withdrawalTx The withdrawal transaction, read from storage bound to the invoice (see `_completeBridge`).
     /// @param amount The invoiced amount.
-    /// @param isEth True for native-ETH withdrawals, false for ERC20.
+    /// @param asset The delivered asset (native sentinel or ERC20); selects the balance to measure.
+    /// @param l2ChainId The source L2 chain id selecting the OptimismPortal.
     /// @dev A withdrawal initiated via `L2StandardBridge.withdrawTo` does NOT produce a portal transaction whose
     ///      `target` is this adapter: the L2 messenger sends it to the L1CrossDomainMessenger (the portal `target`),
     ///      which relays `finalizeBridge{ETH,ERC20}` to the L1 StandardBridge, and only that nested call pays this
-    ///      adapter (the `withdrawTo` receiver). So the amount is bound not by the portal `target`/`value` but by
-    ///      what the adapter actually receives across the finalize: for ETH we measure the native-balance delta and
-    ///      require it to cover `amount`; for ERC20 the base `_fundAndRelease` reverts unless the adapter holds
-    ///      `amount`. Provenance comes from the proven withdrawal hash + portal Merkle proof; the portal enforces
-    ///      the challenge period.
-    function _finalizeWithdrawal(bytes calldata protocolData, uint256 amount, bool isEth, uint256 l2ChainId) internal {
-        Types.WithdrawalTransaction memory withdrawalTx = abi.decode(protocolData, (Types.WithdrawalTransaction));
-
+    ///      adapter (the `withdrawTo` receiver). Two consequences handled here:
+    ///        1. Idempotency (H-01): the portal's finalize is PERMISSIONLESS and reverts on a second call, so a
+    ///           third party can front-run it. If it is already finalized (funds already delivered to this adapter),
+    ///           skip the re-finalize instead of reverting the whole completion.
+    ///        2. Amount binding (M-02): the amount is bound not by the portal `target`/`value` but by what the
+    ///           adapter actually receives across the finalize — measure the asset-balance delta and require it to
+    ///           cover `amount` (for BOTH native and ERC20). When the finalize was front-run, the delta cannot be
+    ///           measured here; the base `_fundAndRelease` absolute balance check then gates it.
+    ///      Provenance comes from the proven withdrawal hash + portal Merkle proof; the portal enforces the
+    ///      challenge period.
+    function _finalizeWithdrawal(
+        Types.WithdrawalTransaction memory withdrawalTx,
+        uint256 amount,
+        address asset,
+        uint256 l2ChainId
+    ) internal {
         // Select the OptimismPortal for the source L2 (the same L2 whose portal the withdrawal was proven on).
         IOptimismPortal portal = optimismPortalForL2[l2ChainId];
         if (address(portal) == address(0)) revert InvalidOptimismPortal();
@@ -397,15 +429,17 @@ contract SuperchainBridgeAdapter is BridgeAdapter, ISuperchainBridgeAdapter {
             revert WithdrawalNotProven();
         }
 
-        // Finalize the withdrawal (portal checks the challenge period; the messenger→bridge relay pays this adapter).
-        if (isEth) {
-            uint256 balanceBefore = address(this).balance;
+        // Finalize idempotently: skip if a front-run already finalized it (funds are already on the adapter).
+        if (!portal.finalizedWithdrawals(withdrawalHash)) {
+            bool isEth = _isNativeToken(asset);
+            uint256 balanceBefore = isEth ? address(this).balance : IERC20(asset).balanceOf(address(this));
             portal.finalizeWithdrawalTransaction(withdrawalTx);
-            // The finalize must have credited this adapter at least `amount` ETH via the L1 bridge relay.
-            if (address(this).balance < balanceBefore + amount) revert InvalidWithdrawalFinalization();
-        } else {
-            portal.finalizeWithdrawalTransaction(withdrawalTx);
+            uint256 balanceAfter = isEth ? address(this).balance : IERC20(asset).balanceOf(address(this));
+            // Bind the amount to THIS finalize: the delivered delta must cover `amount` (not merely the adapter's
+            // total balance, which stray/donated funds could satisfy).
+            if (balanceAfter < balanceBefore + amount) revert InvalidWithdrawalFinalization();
         }
+        // else already finalized (front-run): the base `_fundAndRelease` absolute balance>=amount check gates it.
     }
 
     /// @notice Proves a withdrawal transaction and correlates it to its invoice.

@@ -614,6 +614,7 @@ contract MockL2StandardBridge {
 /// @notice Mock Optimism Portal for proving and finalizing L2->L1 withdrawals
 contract MockOptimismPortal is IOptimismPortal {
     mapping(bytes32 => bool) private _provenWithdrawals;
+    mapping(bytes32 => bool) private _finalizedWithdrawals;
     uint256 public minimumWithdrawalDelay = 0;
 
     function proveWithdrawalTransaction(
@@ -629,6 +630,8 @@ contract MockOptimismPortal is IOptimismPortal {
     function finalizeWithdrawalTransaction(Types.WithdrawalTransaction memory _tx) external override {
         bytes32 h = keccak256(abi.encodePacked(_tx.nonce, _tx.sender, _tx.target, _tx.value, _tx.gasLimit, _tx.data));
         require(_provenWithdrawals[h], "withdrawal not proven");
+        require(!_finalizedWithdrawals[h], "OptimismPortal: withdrawal has already been finalized");
+        _finalizedWithdrawals[h] = true;
         if (_tx.value > 0) {
             (bool ok,) = _tx.target.call{value: _tx.value}("");
             require(ok, "ETH transfer failed");
@@ -637,6 +640,10 @@ contract MockOptimismPortal is IOptimismPortal {
 
     function provenWithdrawals(bytes32 _withdrawalHash) external view override returns (bool) {
         return _provenWithdrawals[_withdrawalHash];
+    }
+
+    function finalizedWithdrawals(bytes32 _withdrawalHash) external view override returns (bool) {
+        return _finalizedWithdrawals[_withdrawalHash];
     }
 
     receive() external payable {}

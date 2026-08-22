@@ -19,6 +19,10 @@ contract MockCrossDomainMessenger is ICrossDomainMessenger {
     ///      trusted sibling adapter and a spoofed/unknown sender.
     address public sender;
 
+    /// @dev Captured by `sendMessage` so a deposit test can inspect + relay the outbound completion message.
+    address public lastMessageTarget;
+    bytes public lastMessage;
+
     function setXDomainMessageSender(address sender_) external {
         sender = sender_;
     }
@@ -26,6 +30,13 @@ contract MockCrossDomainMessenger is ICrossDomainMessenger {
     // forge-lint: disable-next-line(mixed-case-function)
     function xDomainMessageSender() external view override returns (address) {
         return sender;
+    }
+
+    /// @notice Captures an outbound cross-domain message (mirrors the L1CrossDomainMessenger enqueuing a deposit
+    ///         message). The test then delivers it with `relayMessage` to the L2 sibling. Payable for parity.
+    function sendMessage(address _target, bytes calldata _message, uint32) external payable override {
+        lastMessageTarget = _target;
+        lastMessage = _message;
     }
 
     /// @notice Relays `data` to `target` as `msg.sender == this messenger` (the genuine relayer), after
@@ -54,6 +65,7 @@ contract MockCrossDomainMessenger is ICrossDomainMessenger {
 /// @notice Mock OptimismPortal that keys proven/finalize on the REAL OP withdrawal hash (abi.encode).
 contract MockOptimismPortalReal is IOptimismPortal {
     mapping(bytes32 => bool) private _provenWithdrawals;
+    mapping(bytes32 => bool) private _finalizedWithdrawals;
     uint256 public minimumWithdrawalDelay = 0;
 
     function _hash(Types.WithdrawalTransaction memory _tx) internal pure returns (bytes32) {
@@ -70,7 +82,11 @@ contract MockOptimismPortalReal is IOptimismPortal {
     }
 
     function finalizeWithdrawalTransaction(Types.WithdrawalTransaction memory _tx) external override {
-        require(_provenWithdrawals[_hash(_tx)], "withdrawal not proven");
+        bytes32 h = _hash(_tx);
+        require(_provenWithdrawals[h], "withdrawal not proven");
+        // Faithful to the real permissionless portal: reverts on a second finalize for the same hash.
+        require(!_finalizedWithdrawals[h], "OptimismPortal: withdrawal has already been finalized");
+        _finalizedWithdrawals[h] = true;
         if (_tx.value > 0) {
             (bool ok,) = _tx.target.call{value: _tx.value}("");
             require(ok, "ETH transfer failed");
@@ -79,6 +95,10 @@ contract MockOptimismPortalReal is IOptimismPortal {
 
     function provenWithdrawals(bytes32 _withdrawalHash) external view override returns (bool) {
         return _provenWithdrawals[_withdrawalHash];
+    }
+
+    function finalizedWithdrawals(bytes32 _withdrawalHash) external view override returns (bool) {
+        return _finalizedWithdrawals[_withdrawalHash];
     }
 
     receive() external payable {}

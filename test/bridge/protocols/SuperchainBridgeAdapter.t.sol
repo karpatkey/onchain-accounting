@@ -33,6 +33,7 @@ contract SuperchainBridgeAdapterTest is BridgeScenarioHelper {
     MockL1StandardBridge public l1Bridge;
     MockL2StandardBridge public l2Bridge;
     MockOptimismPortalReal public optimismPortal;
+    MockCrossDomainMessenger public l1Messenger;
 
     uint64 public constant L2_CHAIN_ID = 10; // Optimism mainnet
 
@@ -44,6 +45,7 @@ contract SuperchainBridgeAdapterTest is BridgeScenarioHelper {
         l1Bridge = new MockL1StandardBridge();
         l2Bridge = new MockL2StandardBridge();
         optimismPortal = new MockOptimismPortalReal();
+        l1Messenger = new MockCrossDomainMessenger();
         vm.deal(address(optimismPortal), 1000 ether);
         _setupL1Adapter();
         vm.label(address(l1Bridge), "MockL1StandardBridge");
@@ -59,7 +61,7 @@ contract SuperchainBridgeAdapterTest is BridgeScenarioHelper {
                 l1AdapterImpl,
                 abi.encodeCall(
                     SuperchainBridgeAdapter.initialize,
-                    (admin, address(bridgeEscrow), address(0), address(1), address(0), "1.0.0")
+                    (admin, address(bridgeEscrow), address(0), address(l1Messenger), address(0), "1.0.0")
                 )
             ));
         l1Adapter = SuperchainBridgeAdapter(l1AdapterProxy);
@@ -611,6 +613,139 @@ contract SuperchainBridgeAdapterTest is BridgeScenarioHelper {
         l1Ad.completeBridge(messagePayload, abi.encode(wtx));
     }
 
+    /// @notice RE3-H-01: the OptimismPortal finalize is PERMISSIONLESS, so a third party can front-run it. The
+    ///         adapter's completeBridge must stay idempotent — skip the re-finalize (which would revert "already
+    ///         finalized") and still record the delivery from the funds the front-run finalize delivered.
+    function test_completeBridge_l2ToL1_idempotentIfAlreadyFinalized() public {
+        vm.chainId(SOURCE_CHAIN_ID);
+        uint256 amount = 1 ether;
+        BridgeEscrow l1Escrow = bridgeEscrow;
+        vm.prank(admin);
+        l1Escrow.registerAsset(WETH_SYMBOL, address(0));
+        SuperchainBridgeAdapter l1Ad = _deployL1WithdrawalAdapter(l1Escrow);
+
+        InvoiceDataLib.InvoiceData memory invoiceData =
+            _createInvoiceData(L2_CHAIN_ID, SOURCE_CHAIN_ID, account, WETH_SYMBOL_BYTES6, amount);
+        bytes memory messagePayload = InvoiceDataLib.encode(invoiceData);
+        bytes32 invoiceHash = bytes32(uint256(uint192(invoiceData.checksum24)));
+
+        MockL1WithdrawalRelay relay = new MockL1WithdrawalRelay();
+        relay.setRecipient(payable(address(l1Ad)));
+        Types.WithdrawalTransaction memory wtx = Types.WithdrawalTransaction({
+            nonce: 1, sender: address(l2Bridge), target: address(relay), value: amount, gasLimit: 200000, data: ""
+        });
+        vm.prank(manager);
+        l1Ad.proveWithdrawal(
+            L2_CHAIN_ID,
+            wtx,
+            0,
+            Types.OutputRootProof(bytes32(0), bytes32(0), bytes32(0), bytes32(0)),
+            new bytes[](0),
+            invoiceData.invoiceId,
+            invoiceHash
+        );
+
+        // Front-run: anyone finalizes directly on the permissionless portal → funds land on the adapter via the relay.
+        optimismPortal.finalizeWithdrawalTransaction(wtx);
+        assertEq(address(l1Ad).balance, amount, "front-run finalize delivered ETH to the adapter");
+
+        // completeBridge must still succeed (skip the re-finalize) and record the delivery.
+        uint256 portfolioBefore = account.balance;
+        vm.prank(manager);
+        l1Ad.completeBridge(messagePayload, "");
+
+        assertTrue(l1Escrow.isInvoiceCompleted(invoiceHash), "invoice completed despite the front-run finalize");
+        assertEq(address(l1Escrow).balance, amount, "escrow holds the withdrawn ETH");
+        assertEq(address(l1Ad).balance, 0, "adapter forwarded all ETH to escrow");
+        assertEq(account.balance, portfolioBefore, "account NOT paid until claim");
+    }
+
+    /// @notice RE3-M-02: the ERC20 finalize binds the amount by a balance DELTA (like ETH), not the adapter's
+    ///         absolute balance — stray/donated tokens must not let a finalize that delivered nothing record a delivery.
+    function test_completeBridge_l2ToL1_erc20_deltaGuard() public {
+        vm.chainId(SOURCE_CHAIN_ID);
+        uint256 amount = 1000 * 10 ** usdc.decimals();
+        BridgeEscrow l1Escrow = bridgeEscrow;
+        vm.prank(admin);
+        l1Escrow.registerAsset(USDC_SYMBOL, address(usdc));
+        SuperchainBridgeAdapter l1Ad = _deployL1WithdrawalAdapter(l1Escrow);
+
+        InvoiceDataLib.InvoiceData memory invoiceData =
+            _createInvoiceData(L2_CHAIN_ID, SOURCE_CHAIN_ID, account, USDC_SYMBOL_BYTES6, amount);
+        bytes memory messagePayload = InvoiceDataLib.encode(invoiceData);
+        bytes32 invoiceHash = bytes32(uint256(uint192(invoiceData.checksum24)));
+
+        // ERC20 withdrawal shape: value 0 (no ETH). The portal mock delivers no tokens to the adapter on finalize.
+        // Non-zero target keeps the "stored" sentinel valid.
+        Types.WithdrawalTransaction memory wtx = Types.WithdrawalTransaction({
+            nonce: 1, sender: address(l2Bridge), target: address(l1Bridge), value: 0, gasLimit: 200000, data: hex"aa"
+        });
+        vm.prank(manager);
+        l1Ad.proveWithdrawal(
+            L2_CHAIN_ID,
+            wtx,
+            0,
+            Types.OutputRootProof(bytes32(0), bytes32(0), bytes32(0), bytes32(0)),
+            new bytes[](0),
+            invoiceData.invoiceId,
+            invoiceHash
+        );
+
+        // Adapter already holds `amount` USDC from an unrelated source. Absolute balance would pass; the delta guard
+        // must reject because THIS finalize delivered nothing.
+        usdc.mint(address(l1Ad), amount);
+
+        vm.prank(manager);
+        vm.expectRevert(abi.encodeWithSelector(ISuperchainBridgeAdapter.InvalidWithdrawalFinalization.selector));
+        l1Ad.completeBridge(messagePayload, "");
+    }
+
+    /// @notice RE3-M-03: an L1→L2 deposit now sends an AUTHENTICATED `completeDeposit` message to the L2 sibling via
+    ///         the L1CrossDomainMessenger (the previously-dead trust-minimized path). Relaying that captured message
+    ///         through the genuine L2 messenger (trusted sibling sender) records the delivery on the L2 escrow.
+    function test_bridge_l1ToL2_sendsAuthenticatedCompletionMessage() public {
+        vm.chainId(SOURCE_CHAIN_ID);
+        uint256 amount = 1000 * 10 ** usdc.decimals();
+
+        // L1 deposit → the adapter enqueues the authenticated completion message on the messenger.
+        _approveToken(address(usdc), address(bridgeEscrow), amount);
+        vm.prank(account);
+        bridgeEscrow.depositAndBridge(L2_CHAIN_ID, USDC_SYMBOL, amount, address(l1Adapter));
+
+        assertEq(l1Messenger.lastMessageTarget(), address(l1Adapter), "completion message targets the sibling adapter");
+        bytes memory sentMsg = l1Messenger.lastMessage();
+        assertEq(bytes4(sentMsg), SuperchainBridgeAdapter.completeDeposit.selector, "message is a completeDeposit call");
+
+        // L2 side: escrow + sibling adapter (trusts the L1 sibling), funded by the canonical bridge.
+        bytes memory payload = _decodeCompleteDepositPayload(sentMsg);
+        InvoiceDataLib.InvoiceData memory data = InvoiceDataLib.decode(payload);
+        bytes32 invoiceHash = bytes32(uint256(uint192(data.checksum24)));
+
+        vm.chainId(L2_CHAIN_ID);
+        BridgeEscrow destEscrow = _setupDestinationChainEscrow(L2_CHAIN_ID);
+        MockCrossDomainMessenger l2Messenger = new MockCrossDomainMessenger();
+        SuperchainBridgeAdapter destAdapter = _setupL2Adapter(destEscrow, address(l2Messenger));
+        usdc.mint(address(destAdapter), amount);
+
+        assertFalse(destEscrow.isInvoiceCompleted(invoiceHash), "not completed yet");
+
+        // Relay the captured authenticated message; source sender is the trusted L1 sibling.
+        l2Messenger.relayMessage(address(destAdapter), l1SiblingAdapter, sentMsg);
+
+        assertTrue(destEscrow.isInvoiceCompleted(invoiceHash), "authenticated completeDeposit recorded the delivery");
+        assertEq(destEscrow.getHeldBalanceForAsset(address(usdc), account), amount, "held for account");
+        assertEq(usdc.balanceOf(address(destAdapter)), 0, "adapter forwarded tokens to escrow");
+    }
+
+    /// @dev Strips the 4-byte selector and abi.decodes the single `bytes` argument (the completeDeposit payload).
+    function _decodeCompleteDepositPayload(bytes memory encodedCall) internal pure returns (bytes memory payload) {
+        bytes memory tail = new bytes(encodedCall.length - 4);
+        for (uint256 i = 0; i < tail.length; i++) {
+            tail[i] = encodedCall[i + 4];
+        }
+        payload = abi.decode(tail, (bytes));
+    }
+
     function test_completeBridge_revertsIfNotManager() public {
         vm.chainId(SOURCE_CHAIN_ID);
         uint256 amount = 1 ether;
@@ -631,7 +766,10 @@ contract SuperchainBridgeAdapterTest is BridgeScenarioHelper {
         l1Ad.completeBridge(messagePayload, abi.encode(wtx));
     }
 
-    function test_completeBridge_l1_revertsForEmptyProtocolData() public {
+    /// @notice RE3-M-01: completion binds to the withdrawal STORED for the exact invoice (per-operation hash), not to
+    ///         operator-supplied protocolData. An invoice that was never proven has no stored tx → reverts, even with
+    ///         empty protocolData (which is now valid — the tx is read from storage, not the caller).
+    function test_completeBridge_l2ToL1_revertsIfWithdrawalNotProvenForInvoice() public {
         vm.chainId(SOURCE_CHAIN_ID);
         uint256 amount = 1 ether;
         BridgeEscrow l1Escrow = bridgeEscrow;
@@ -643,9 +781,9 @@ contract SuperchainBridgeAdapterTest is BridgeScenarioHelper {
             _createInvoiceData(L2_CHAIN_ID, SOURCE_CHAIN_ID, account, WETH_SYMBOL_BYTES6, amount);
         bytes memory messagePayload = InvoiceDataLib.encode(invoiceData);
 
-        // On L1 a withdrawal completion requires the WithdrawalTransaction in protocolData.
+        // No proveWithdrawal for this invoice → no stored WithdrawalTransaction → cannot complete.
         vm.prank(manager);
-        vm.expectRevert(abi.encodeWithSelector(ISuperchainBridgeAdapter.InvalidWithdrawalFinalization.selector));
+        vm.expectRevert(abi.encodeWithSelector(ISuperchainBridgeAdapter.WithdrawalNotProven.selector));
         l1Ad.completeBridge(messagePayload, "");
     }
 

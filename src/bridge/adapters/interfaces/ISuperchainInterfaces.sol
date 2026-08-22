@@ -118,6 +118,15 @@ interface ICrossDomainMessenger {
     /// @return The source-chain sender address (the sibling adapter for an authenticated bridge message).
     // forge-lint: disable-next-line(mixed-case-function)
     function xDomainMessageSender() external view returns (address);
+
+    /// @notice Sends a cross-domain message to `_target` on the other chain (optionally carrying native value).
+    /// @dev Used on L1 by the Superchain adapter to deliver an authenticated `completeDeposit` call to its L2
+    ///      sibling: the L2CrossDomainMessenger relays it with `xDomainMessageSender()` set to this adapter, so
+    ///      the L2 sibling can authenticate provenance (the deposit's funds are ordered ahead of this message).
+    /// @param _target The destination contract on the other chain (the sibling adapter).
+    /// @param _message The calldata to relay to `_target`.
+    /// @param _minGasLimit Minimum gas to relay with on the destination chain.
+    function sendMessage(address _target, bytes calldata _message, uint32 _minGasLimit) external payable;
 }
 
 // ============================================================================
@@ -148,6 +157,14 @@ interface IOptimismPortal {
     /// @param _withdrawalHash Hash of the withdrawal transaction
     /// @return True if proven, false otherwise
     function provenWithdrawals(bytes32 _withdrawalHash) external view returns (bool);
+
+    /// @notice Checks if a withdrawal transaction has already been finalized on the portal
+    /// @dev The portal's finalize is permissionless and reverts on a second call for the same hash. The adapter
+    ///      reads this to stay idempotent: if a third party front-ran the finalize (funds already delivered to the
+    ///      adapter), it skips the re-finalize instead of reverting the whole completion.
+    /// @param _withdrawalHash Hash of the withdrawal transaction
+    /// @return True if already finalized, false otherwise
+    function finalizedWithdrawals(bytes32 _withdrawalHash) external view returns (bool);
 
     /// @notice Gets the minimum time between proving and finalizing a withdrawal
     /// @return The minimum time in seconds

@@ -23,6 +23,13 @@ contract MockCrossDomainMessenger is ICrossDomainMessenger {
     address public lastMessageTarget;
     bytes public lastMessage;
 
+    /// @dev Records whether a relayed cross-domain message was delivered (keyed by the versioned message hash).
+    mapping(bytes32 => bool) public successfulMessages;
+
+    function setSuccessfulMessage(bytes32 messageHash, bool ok) external {
+        successfulMessages[messageHash] = ok;
+    }
+
     function setXDomainMessageSender(address sender_) external {
         sender = sender_;
     }
@@ -62,11 +69,19 @@ contract MockCrossDomainMessenger is ICrossDomainMessenger {
     }
 }
 
-/// @notice Mock OptimismPortal that keys proven/finalize on the REAL OP withdrawal hash (abi.encode).
+/// @notice Mock fault-proof OptimismPortal (OP2) that keys proven withdrawals by (real OP withdrawal hash, proof
+///         submitter) and finalized withdrawals globally by hash — matching the live mainnet portals (OP v5.6.1,
+///         Base v5.2.0): `provenWithdrawals(bytes32,address) -> (address disputeGameProxy, uint64 timestamp)`
+///         (proven ⟺ disputeGameProxy != 0), `finalizedWithdrawals(bytes32) -> bool`, and a finalize that uses
+///         `msg.sender` as the proof submitter and reverts on a second call for the same hash.
 contract MockOptimismPortalReal is IOptimismPortal {
-    mapping(bytes32 => bool) private _provenWithdrawals;
+    // (withdrawal hash => proof submitter => dispute game proxy) — nonzero means proven by that submitter.
+    mapping(bytes32 => mapping(address => address)) private _disputeGameProxy;
     mapping(bytes32 => bool) private _finalizedWithdrawals;
     uint256 public minimumWithdrawalDelay = 0;
+
+    // A nonzero sentinel dispute game — the real portal records the game the withdrawal was proven against.
+    address internal constant SENTINEL_GAME = address(uint160(0xDEAD));
 
     function _hash(Types.WithdrawalTransaction memory _tx) internal pure returns (bytes32) {
         return keccak256(abi.encode(_tx.nonce, _tx.sender, _tx.target, _tx.value, _tx.gasLimit, _tx.data));
@@ -78,12 +93,14 @@ contract MockOptimismPortalReal is IOptimismPortal {
         Types.OutputRootProof memory,
         bytes[] calldata
     ) external override {
-        _provenWithdrawals[_hash(_tx)] = true;
+        // Fault-proof portal keys the proof by the submitter (msg.sender = the proving adapter).
+        _disputeGameProxy[_hash(_tx)][msg.sender] = SENTINEL_GAME;
     }
 
     function finalizeWithdrawalTransaction(Types.WithdrawalTransaction memory _tx) external override {
         bytes32 h = _hash(_tx);
-        require(_provenWithdrawals[h], "withdrawal not proven");
+        // Fault-proof portal uses msg.sender as the proof submitter: the finalizer must have proven it.
+        require(_disputeGameProxy[h][msg.sender] != address(0), "withdrawal not proven");
         // Faithful to the real permissionless portal: reverts on a second finalize for the same hash.
         require(!_finalizedWithdrawals[h], "OptimismPortal: withdrawal has already been finalized");
         _finalizedWithdrawals[h] = true;
@@ -93,8 +110,13 @@ contract MockOptimismPortalReal is IOptimismPortal {
         }
     }
 
-    function provenWithdrawals(bytes32 _withdrawalHash) external view override returns (bool) {
-        return _provenWithdrawals[_withdrawalHash];
+    function provenWithdrawals(bytes32 _withdrawalHash, address _proofSubmitter)
+        external
+        view
+        override
+        returns (address disputeGameProxy, uint64 timestamp)
+    {
+        return (_disputeGameProxy[_withdrawalHash][_proofSubmitter], 0);
     }
 
     function finalizedWithdrawals(bytes32 _withdrawalHash) external view override returns (bool) {
@@ -113,8 +135,16 @@ contract MockOptimismPortalReal is IOptimismPortal {
 contract MockL1WithdrawalRelay {
     address payable public recipient;
 
+    /// @dev Stands in for the L1CrossDomainMessenger's `successfulMessages` — the adapter's finalize skip-branch
+    ///      (RE4-M-01) casts the withdrawal `target` to `ICrossDomainMessenger` and reads this to confirm delivery.
+    mapping(bytes32 => bool) public successfulMessages;
+
     function setRecipient(address payable r) external {
         recipient = r;
+    }
+
+    function setSuccessfulMessage(bytes32 messageHash, bool ok) external {
+        successfulMessages[messageHash] = ok;
     }
 
     receive() external payable {

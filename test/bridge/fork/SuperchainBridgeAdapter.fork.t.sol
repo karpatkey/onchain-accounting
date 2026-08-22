@@ -35,6 +35,11 @@ contract SuperchainBridgeAdapterForkTest is BridgeTestBase {
     // Test amounts
     uint256 public constant TEST_ETH_AMOUNT = 0.1 ether;
 
+    // Base L1 contracts (all deployed on Ethereum mainnet) — used for the fault-proof portal ABI check.
+    address public constant BASE_L1_STANDARD_BRIDGE = 0x3154Cf16ccdb4C6d922629664174b904d80F2C35;
+    address public constant BASE_OPTIMISM_PORTAL = 0x49048044D57e1C92A77f79988d21Fa8fAF74E97e;
+    address public constant BASE_L1_CROSS_DOMAIN_MESSENGER = 0x866E82a600A1414e583f7F13623F1aC5d58b0Afa;
+
     function setUp() public override {
         super.setUp();
         _setupL1Adapter();
@@ -71,16 +76,29 @@ contract SuperchainBridgeAdapterForkTest is BridgeTestBase {
                 l1AdapterImpl,
                 abi.encodeCall(
                     SuperchainBridgeAdapter.initialize,
-                    (admin, address(l1BridgeEscrow), address(0), L1_CROSS_DOMAIN_MESSENGER, address(0), "1.0.0")
+                    (
+                        admin,
+                        address(l1BridgeEscrow),
+                        address(0),
+                        L1_CROSS_DOMAIN_MESSENGER,
+                        address(0),
+                        uint256(MAINNET_CHAIN_ID),
+                        "1.0.0"
+                    )
                 )
             ));
         l1Adapter = SuperchainBridgeAdapter(l1AdapterProxy);
 
         vm.startPrank(admin);
         l1Adapter.grantRole(MANAGER, manager);
-        // Seed the per-L2 bridge + portal for Optimism (the L2 this fork exercises).
+        // Seed the per-L2 bridge + portal + L1 messenger for Optimism (the L2 this fork's deposit tests exercise).
         l1Adapter.setL1BridgeForL2(OPTIMISM_CHAIN_ID, L1_STANDARD_BRIDGE);
         l1Adapter.setOptimismPortalForL2(OPTIMISM_CHAIN_ID, OPTIMISM_PORTAL);
+        l1Adapter.setL1MessengerForL2(OPTIMISM_CHAIN_ID, L1_CROSS_DOMAIN_MESSENGER);
+        // Also seed the Base per-L2 portal + messenger (both are L1 contracts) for the fault-proof ABI fork check.
+        l1Adapter.setL1BridgeForL2(BASE_CHAIN_ID, BASE_L1_STANDARD_BRIDGE);
+        l1Adapter.setOptimismPortalForL2(BASE_CHAIN_ID, BASE_OPTIMISM_PORTAL);
+        l1Adapter.setL1MessengerForL2(BASE_CHAIN_ID, BASE_L1_CROSS_DOMAIN_MESSENGER);
         vm.stopPrank();
 
         _authorizeAdapterForEscrow(address(l1Adapter), l1BridgeEscrow);
@@ -122,7 +140,15 @@ contract SuperchainBridgeAdapterForkTest is BridgeTestBase {
                 l2AdapterImpl,
                 abi.encodeCall(
                     SuperchainBridgeAdapter.initialize,
-                    (admin, address(l2BridgeEscrow), L2_STANDARD_BRIDGE, address(0), L2_CROSS_DOMAIN_MESSENGER, "1.0.0")
+                    (
+                        admin,
+                        address(l2BridgeEscrow),
+                        L2_STANDARD_BRIDGE,
+                        address(0),
+                        L2_CROSS_DOMAIN_MESSENGER,
+                        uint256(MAINNET_CHAIN_ID),
+                        "1.0.0"
+                    )
                 )
             ));
         l2Adapter = SuperchainBridgeAdapter(l2AdapterProxy);
@@ -180,7 +206,7 @@ contract SuperchainBridgeAdapterForkTest is BridgeTestBase {
         );
 
         // Verify messagePayload was stored on L1 (before switching forks)
-        bytes memory storedPayload = l1Adapter.getMessagePayload(invoiceData.invoiceId);
+        bytes memory storedPayload = l1Adapter.getMessagePayload(bytes32(uint256(uint192(invoiceData.checksum24))));
         assertGt(storedPayload.length, 0, "Message payload should be stored on L1");
 
         // Note: To verify L2 receipt, we would need to:
@@ -257,7 +283,7 @@ contract SuperchainBridgeAdapterForkTest is BridgeTestBase {
         );
 
         // The invoice payload was stored on withdrawal initiation.
-        bytes memory storedPayload = l2Adapter.getMessagePayload(invoiceData.invoiceId);
+        bytes memory storedPayload = l2Adapter.getMessagePayload(bytes32(uint256(uint192(invoiceData.checksum24))));
         assertGt(storedPayload.length, 0, "messagePayload should be stored on L2 at withdrawal initiation");
 
         // ADR 0012: the REAL OP withdrawal hash is only computed on L1 at prove time (it depends on the
@@ -301,7 +327,7 @@ contract SuperchainBridgeAdapterForkTest is BridgeTestBase {
         l1BridgeEscrow.depositAndBridge{value: amount}(OPTIMISM_CHAIN_ID, WETH_SYMBOL, amount, address(l1Adapter));
 
         // Verify payload stored on L1
-        bytes memory storedL1Payload = l1Adapter.getMessagePayload(l1ToL2Data.invoiceId);
+        bytes memory storedL1Payload = l1Adapter.getMessagePayload(bytes32(uint256(uint192(l1ToL2Data.checksum24))));
         assertEq(storedL1Payload.length, l1ToL2Payload.length, "L1 payload should be stored");
 
         // Test L2 → L1
@@ -316,7 +342,7 @@ contract SuperchainBridgeAdapterForkTest is BridgeTestBase {
         l2BridgeEscrow.depositAndBridge{value: amount}(MAINNET_CHAIN_ID, WETH_SYMBOL, amount, address(l2Adapter));
 
         // Verify payload stored on L2
-        bytes memory storedL2Payload = l2Adapter.getMessagePayload(l2ToL1Data.invoiceId);
+        bytes memory storedL2Payload = l2Adapter.getMessagePayload(bytes32(uint256(uint192(l2ToL1Data.checksum24))));
         assertEq(storedL2Payload.length, l2ToL1Payload.length, "L2 payload should be stored");
     }
 
@@ -418,5 +444,76 @@ contract SuperchainBridgeAdapterForkTest is BridgeTestBase {
         l2Adapter.completeDeposit(messagePayload);
 
         vm.clearMockedCalls();
+    }
+
+    // ============ Fault-proof (OP2) portal ABI check ============
+
+    /// @notice The adapter's proven-check must match the LIVE fault-proof portals (OP v5.6.1, Base v5.2.0), which
+    ///         expose `provenWithdrawals(bytes32,address) -> (address disputeGameProxy, uint64)` — NOT the legacy
+    ///         single-key `provenWithdrawals(bytes32) -> bool`. Calling the adapter's `isWithdrawalProven` /
+    ///         `canFinalizeWithdrawal` against the REAL portals MUST decode cleanly (returning false for an
+    ///         arbitrary unproven hash) rather than revert — which is exactly what the legacy interface would do.
+    ///         This is the regression that catches HIGH#2 (the adapter was written against the pre-fault-proof ABI).
+    /// @dev A block where BOTH the OP and Base portals are on the fault-proof system. They migrated at different
+    ///      times (OP mid-2024, Base later), so the shared `MAINNET_FORK_BLOCK` (21M) predates Base's migration —
+    ///      hence this test pins its own fork here rather than reuse setUp's fork.
+    uint256 internal constant FAULT_PROOF_MAINNET_BLOCK = 22_000_000;
+
+    function testFork_faultProofPortal_provenWithdrawalsAbiMatchesLivePortals() public {
+        // Own fork at a fault-proof-era block (rolling the shared fork would wipe setUp's deployed contracts).
+        uint256 fpFork = createForkWithCadence(getAlchemyUrl("eth-mainnet"), FAULT_PROOF_MAINNET_BLOCK);
+        vm.selectFork(fpFork);
+
+        // Fresh L1 adapter with the real OP + Base portals seeded (both L1 fault-proof portals at this block).
+        address impl = address(new SuperchainBridgeAdapter(address(0)));
+        address payable proxy = payable(UnsafeUpgrades.deployUUPSProxy(
+                impl,
+                abi.encodeCall(
+                    SuperchainBridgeAdapter.initialize,
+                    (
+                        admin,
+                        address(this),
+                        address(0),
+                        L1_CROSS_DOMAIN_MESSENGER,
+                        address(0),
+                        uint256(MAINNET_CHAIN_ID),
+                        "1.0.0"
+                    )
+                )
+            ));
+        SuperchainBridgeAdapter ad = SuperchainBridgeAdapter(proxy);
+        vm.startPrank(admin);
+        ad.setOptimismPortalForL2(OPTIMISM_CHAIN_ID, OPTIMISM_PORTAL);
+        ad.setOptimismPortalForL2(BASE_CHAIN_ID, BASE_OPTIMISM_PORTAL);
+        vm.stopPrank();
+
+        bytes32 arbitraryHash = keccak256("some-unproven-withdrawal");
+
+        // These MUST decode cleanly (return false) rather than revert — which is exactly what the legacy single-key
+        // `provenWithdrawals(bytes32)` interface would do against the fault-proof portals. This is the HIGH#2 regression.
+        assertFalse(ad.isWithdrawalProven(OPTIMISM_CHAIN_ID, arbitraryHash), "OP: decodes not-proven (no revert)");
+        assertFalse(
+            ad.canFinalizeWithdrawal(OPTIMISM_CHAIN_ID, arbitraryHash), "OP: decodes not-finalizable (no revert)"
+        );
+        assertFalse(ad.isWithdrawalProven(BASE_CHAIN_ID, arbitraryHash), "Base: decodes not-proven (no revert)");
+        assertFalse(ad.canFinalizeWithdrawal(BASE_CHAIN_ID, arbitraryHash), "Base: decodes not-finalizable (no revert)");
+    }
+
+    /// @notice The L1→L2 deposit path must send the authenticated `completeDeposit` message through the REAL
+    ///         per-L2 L1CrossDomainMessenger with the configured gas limit, for BOTH OP and Base (distinct
+    ///         messengers). A single-messenger bug (HIGH#1) or an undersized gas limit would revert here.
+    function testFork_l1ToL2_depositSendsMessageViaRealPerL2Messenger() public {
+        _selectMainnetFork();
+        uint256 amount = TEST_ETH_AMOUNT;
+
+        // OP lane: deposit → real L1StandardBridge.depositETHTo + real OP L1CrossDomainMessenger.sendMessage.
+        _fundAccountWithEth(account, amount * 2);
+        vm.prank(account);
+        l1BridgeEscrow.depositAndBridge{value: amount}(OPTIMISM_CHAIN_ID, WETH_SYMBOL, amount, address(l1Adapter));
+
+        // Base lane: deposit → real Base L1StandardBridge + real Base L1CrossDomainMessenger (distinct addresses).
+        _fundAccountWithEth(account, amount * 2);
+        vm.prank(account);
+        l1BridgeEscrow.depositAndBridge{value: amount}(BASE_CHAIN_ID, WETH_SYMBOL, amount, address(l1Adapter));
     }
 }

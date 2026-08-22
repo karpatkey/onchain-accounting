@@ -84,7 +84,7 @@
     ]
   },
   "Superchain": {
-    "$comment": "L1 side (Superchain multi-L2, Option C): ONE adapter serves multiple OP-stack L2s. Per-L2 L1 standard bridges + OptimismPortals are seeded by 05 via setL1BridgeForL2/setOptimismPortalForL2, keyed by l2ChainIds (arrays are index-aligned). admin/bridgeEscrow default to chainConfig.admin + the deployed escrow. l1Messenger is stored but unused on the L1 execution path.",
+    "$comment": "L1 side (Superchain multi-L2, Option C): ONE adapter serves multiple OP-stack L2s. Per-L2 L1 standard bridges + OptimismPortals + L1CrossDomainMessengers are seeded by 05 via setL1BridgeForL2/setOptimismPortalForL2/setL1MessengerForL2, keyed by l2ChainIds (arrays are index-aligned). admin/bridgeEscrow default to chainConfig.admin + the deployed escrow. The top-level initialize.l1Messenger is legacy (kept for compat); the OUTBOUND deposit message uses the per-L2 l1Messengers array (OP and Base have distinct L1CrossDomainMessengers).",
     "enabled": true,
     "initialize": {
       "admin": "",
@@ -100,6 +100,10 @@
     "optimismPortals": [
       "0xbEb5Fc579115071764c7423A4f12eDde41f106Ed",
       "0x49048044D57e1C92A77f79988d21Fa8fAF74E97e"
+    ],
+    "l1Messengers": [
+      "0x25ace71c97B33Cc4729CF772ae268934F7ab5fA1",
+      "0x866E82a600A1414e583f7F13623F1aC5d58b0Afa"
     ],
     "remoteChains": [10, 8453]
   }

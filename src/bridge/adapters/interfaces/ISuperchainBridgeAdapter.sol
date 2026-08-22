@@ -75,6 +75,12 @@ interface ISuperchainBridgeAdapter is IBridgeAdapter {
     /// @param l1Token The L1 token that has no L2 mapping
     error L2TokenNotConfigured(uint256 l2ChainId, address l1Token);
 
+    /// @notice Thrown when an L1→L2 deposit has no configured L1CrossDomainMessenger for the destination L2
+    /// @dev Each destination L2 (OP, Base) has a DISTINCT L1CrossDomainMessenger; wire it via `setL1MessengerForL2`
+    ///      before routing a deposit to that L2 (a single messenger would route other L2s through the wrong one).
+    /// @param l2ChainId The destination L2 chain id with no configured messenger
+    error MessengerNotConfigured(uint256 l2ChainId);
+
     /// @notice Thrown when withdrawal proof data is invalid
     error InvalidWithdrawalProof();
 
@@ -104,9 +110,23 @@ interface ISuperchainBridgeAdapter is IBridgeAdapter {
     /// @return The L2 Standard Bridge contract instance
     function l2Bridge() external view returns (IL2StandardBridge);
 
-    /// @notice Cross-Domain Messenger contract address (L1)
+    /// @notice Cross-Domain Messenger contract address (L1) — legacy single value; outbound deposit messages use
+    ///         the per-L2 `l1MessengerForL2` instead
     /// @return The Cross-Domain Messenger contract address
     function l1Messenger() external view returns (address);
+
+    /// @notice L1 Cross-Domain Messenger for a destination L2 chain id (L1 side)
+    /// @param l2ChainId The destination L2 chain id
+    /// @return The L1CrossDomainMessenger address the deposit completion message is sent through for that L2
+    function l1MessengerForL2(uint256 l2ChainId) external view returns (address);
+
+    /// @notice The chain id treated as "the L1 side" for this deployment (mainnet = 1)
+    /// @return The configured L1 chain id
+    function l1ChainId() external view returns (uint256);
+
+    /// @notice Min-gas limit for the authenticated `completeDeposit` cross-domain message
+    /// @return The gas limit
+    function completeDepositGasLimit() external view returns (uint32);
 
     /// @notice Cross-Domain Messenger contract address (L2)
     /// @return The Cross-Domain Messenger contract address
@@ -120,10 +140,10 @@ interface ISuperchainBridgeAdapter is IBridgeAdapter {
     /// @return The chain ID
     function chainId() external view returns (uint256);
 
-    /// @notice Gets the stored message payload for an invoice
-    /// @param invoiceId The invoice ID (32 bytes)
+    /// @notice Gets the stored message payload for an operation, keyed by the per-operation invoice hash
+    /// @param invoiceHash The per-operation invoice hash (checksum, 32 bytes)
     /// @return The message payload, or empty bytes if not found
-    function messagePayloads(bytes32 invoiceId) external view returns (bytes memory);
+    function messagePayloads(bytes32 invoiceHash) external view returns (bytes memory);
 
     /// @notice Gets the withdrawal hash for a given invoice ID
     /// @param invoiceId The invoice ID (32 bytes)
@@ -143,16 +163,21 @@ interface ISuperchainBridgeAdapter is IBridgeAdapter {
     /// @param admin_ The admin address
     /// @param bridgeEscrow_ The BridgeEscrow contract address
     /// @param l2Bridge_ The L2 Standard Bridge contract address (L2 side only)
-    /// @param l1Messenger_ The L1 Cross-Domain Messenger contract address (L1 side only)
+    /// @param l1Messenger_ The L1 Cross-Domain Messenger contract address (L1 side only; legacy — outbound uses
+    ///        the per-L2 `l1MessengerForL2`, seeded via `setL1MessengerForL2`)
     /// @param l2Messenger_ The L2 Cross-Domain Messenger contract address (L2 side only)
+    /// @param l1ChainId_ The chain id that is "the L1 side" (mainnet = 1); the adapter plays the L1 role when
+    ///        `block.chainid == l1ChainId_`. Pass the SAME value to both siblings so the CREATE2 address is unaffected.
     /// @param version_ The adapter version
-    /// @dev L1 per-L2 bridges/portals are seeded after init via setL1BridgeForL2 / setOptimismPortalForL2.
+    /// @dev L1 per-L2 bridges/portals/messengers are seeded after init via setL1BridgeForL2 / setOptimismPortalForL2
+    ///      / setL1MessengerForL2.
     function initialize(
         address admin_,
         address bridgeEscrow_,
         address l2Bridge_,
         address l1Messenger_,
         address l2Messenger_,
+        uint256 l1ChainId_,
         string memory version_
     ) external;
 
@@ -167,10 +192,21 @@ interface ISuperchainBridgeAdapter is IBridgeAdapter {
     /// @dev Only callable by admin role; only valid on an L2 deployment (reverts InvalidChainId on L1)
     function setL2Bridge(address l2Bridge_) external;
 
-    /// @notice Sets the L1 Cross-Domain Messenger contract address
+    /// @notice Sets the L1 Cross-Domain Messenger contract address (legacy single value)
     /// @param l1Messenger_ The L1 Cross-Domain Messenger contract address
     /// @dev Only callable by admin role; only valid on the L1 deployment (reverts InvalidChainId on an L2)
     function setL1Messenger(address l1Messenger_) external;
+
+    /// @notice Sets the L1 Cross-Domain Messenger for a destination L2 chain id (used for the deposit message)
+    /// @param l2ChainId The destination L2 chain id
+    /// @param l1Messenger_ The L1CrossDomainMessenger address for that L2 (OP and Base differ)
+    /// @dev Only callable by admin role; only valid on the L1 deployment (reverts InvalidChainId on an L2)
+    function setL1MessengerForL2(uint256 l2ChainId, address l1Messenger_) external;
+
+    /// @notice Sets the min-gas limit for the authenticated `completeDeposit` cross-domain message
+    /// @param gasLimit The gas limit to use
+    /// @dev Only callable by admin role
+    function setCompleteDepositGasLimit(uint32 gasLimit) external;
 
     /// @notice Sets the L2 Cross-Domain Messenger contract address
     /// @param l2Messenger_ The L2 Cross-Domain Messenger contract address
@@ -194,10 +230,10 @@ interface ISuperchainBridgeAdapter is IBridgeAdapter {
     // View Functions
     //
 
-    /// @notice Gets the stored message payload for an invoice
-    /// @param invoiceId The invoice ID (32 bytes)
+    /// @notice Gets the stored message payload for an operation, keyed by the per-operation invoice hash
+    /// @param invoiceHash The per-operation invoice hash (checksum, 32 bytes)
     /// @return The message payload, or empty bytes if not found
-    function getMessagePayload(bytes32 invoiceId) external view returns (bytes memory);
+    function getMessagePayload(bytes32 invoiceHash) external view returns (bytes memory);
 
     /// @notice Gets the full `WithdrawalTransaction` stored at prove time for an invoice (ADR 0025)
     /// @dev Lets the settlement keeper finalize an already-proven L2->L1 withdrawal without re-deriving the

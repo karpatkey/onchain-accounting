@@ -61,7 +61,15 @@ contract SuperchainBridgeAdapterTest is BridgeScenarioHelper {
                 l1AdapterImpl,
                 abi.encodeCall(
                     SuperchainBridgeAdapter.initialize,
-                    (admin, address(bridgeEscrow), address(0), address(l1Messenger), address(0), "1.0.0")
+                    (
+                        admin,
+                        address(bridgeEscrow),
+                        address(0),
+                        address(l1Messenger),
+                        address(0),
+                        uint256(SOURCE_CHAIN_ID),
+                        "1.0.0"
+                    )
                 )
             ));
         l1Adapter = SuperchainBridgeAdapter(l1AdapterProxy);
@@ -69,6 +77,7 @@ contract SuperchainBridgeAdapterTest is BridgeScenarioHelper {
         l1Adapter.grantRole(MANAGER, manager);
         l1Adapter.setL1BridgeForL2(L2_CHAIN_ID, address(l1Bridge));
         l1Adapter.setOptimismPortalForL2(L2_CHAIN_ID, address(optimismPortal));
+        l1Adapter.setL1MessengerForL2(L2_CHAIN_ID, address(l1Messenger));
         l1Adapter.setL2TokenForL2(L2_CHAIN_ID, address(usdc), address(usdc));
         vm.stopPrank();
         _authorizeAdapter(address(l1Adapter));
@@ -82,7 +91,15 @@ contract SuperchainBridgeAdapterTest is BridgeScenarioHelper {
                 l2AdapterImpl,
                 abi.encodeCall(
                     SuperchainBridgeAdapter.initialize,
-                    (admin, address(destEscrow), address(l2Bridge), address(0), l2Messenger_, "1.0.0")
+                    (
+                        admin,
+                        address(destEscrow),
+                        address(l2Bridge),
+                        address(0),
+                        l2Messenger_,
+                        uint256(SOURCE_CHAIN_ID),
+                        "1.0.0"
+                    )
                 )
             ));
         SuperchainBridgeAdapter destAdapter = SuperchainBridgeAdapter(l2AdapterProxy);
@@ -112,7 +129,7 @@ contract SuperchainBridgeAdapterTest is BridgeScenarioHelper {
         bridgeEscrow.depositAndBridge{value: amount}(L2_CHAIN_ID, WETH_SYMBOL, amount, address(l1Adapter));
 
         assertEq(
-            l1Adapter.getMessagePayload(invoiceData.invoiceId).length,
+            l1Adapter.getMessagePayload(bytes32(uint256(uint192(invoiceData.checksum24)))).length,
             InvoiceDataLib.encode(invoiceData).length,
             "payload stored"
         );
@@ -134,7 +151,7 @@ contract SuperchainBridgeAdapterTest is BridgeScenarioHelper {
         // Mock L1 bridge pulled tokens from adapter
         assertEq(usdc.balanceOf(address(l1Bridge)), amount, "L1 bridge received tokens");
         assertEq(
-            l1Adapter.getMessagePayload(invoiceData.invoiceId).length,
+            l1Adapter.getMessagePayload(bytes32(uint256(uint192(invoiceData.checksum24)))).length,
             InvoiceDataLib.encode(invoiceData).length,
             "payload stored"
         );
@@ -148,6 +165,7 @@ contract SuperchainBridgeAdapterTest is BridgeScenarioHelper {
         vm.startPrank(admin);
         l1Adapter.setL1BridgeForL2(baseL2, address(baseBridge));
         l1Adapter.setL2TokenForL2(baseL2, address(usdc), address(usdc));
+        l1Adapter.setL1MessengerForL2(baseL2, address(l1Messenger));
         vm.stopPrank();
 
         uint256 amount = 1000 * 10 ** usdc.decimals();
@@ -301,7 +319,15 @@ contract SuperchainBridgeAdapterTest is BridgeScenarioHelper {
                 l2AdapterImpl,
                 abi.encodeCall(
                     SuperchainBridgeAdapter.initialize,
-                    (admin, address(destEscrow), address(l2Bridge), address(0), address(l2Messenger), "1.0.0")
+                    (
+                        admin,
+                        address(destEscrow),
+                        address(l2Bridge),
+                        address(0),
+                        address(l2Messenger),
+                        uint256(SOURCE_CHAIN_ID),
+                        "1.0.0"
+                    )
                 )
             ));
         SuperchainBridgeAdapter destAdapter = SuperchainBridgeAdapter(l2AdapterProxy);
@@ -352,7 +378,7 @@ contract SuperchainBridgeAdapterTest is BridgeScenarioHelper {
                 l1AdapterImpl,
                 abi.encodeCall(
                     SuperchainBridgeAdapter.initialize,
-                    (admin, address(l1Escrow), address(0), address(1), address(0), "1.0.0")
+                    (admin, address(l1Escrow), address(0), address(1), address(0), uint256(SOURCE_CHAIN_ID), "1.0.0")
                 )
             ));
         SuperchainBridgeAdapter l1Ad = SuperchainBridgeAdapter(l1AdapterProxy);
@@ -645,9 +671,22 @@ contract SuperchainBridgeAdapterTest is BridgeScenarioHelper {
             invoiceHash
         );
 
-        // Front-run: anyone finalizes directly on the permissionless portal → funds land on the adapter via the relay.
+        // Front-run: a third party proves (as itself — fault-proof portals key proofs by submitter) then finalizes
+        // on the permissionless portal → funds land on the adapter via the relay. The adapter also proved it above,
+        // so the adapter's own proven-check still passes.
+        address griefer = makeAddr("griefer");
+        vm.startPrank(griefer);
+        optimismPortal.proveWithdrawalTransaction(
+            wtx, 0, Types.OutputRootProof(bytes32(0), bytes32(0), bytes32(0), bytes32(0)), new bytes[](0)
+        );
         optimismPortal.finalizeWithdrawalTransaction(wtx);
+        vm.stopPrank();
         assertEq(address(l1Ad).balance, amount, "front-run finalize delivered ETH to the adapter");
+
+        // RE4-M-01: the finalize skip-branch confirms the withdrawal's inner relay was delivered before settling.
+        // The relay (the withdrawal `target`) stands in for the L1CrossDomainMessenger's successfulMessages.
+        // forge-lint: disable-next-line(asm-keccak256)
+        relay.setSuccessfulMessage(keccak256(wtx.data), true);
 
         // completeBridge must still succeed (skip the re-finalize) and record the delivery.
         uint256 portfolioBefore = account.balance;
@@ -658,6 +697,58 @@ contract SuperchainBridgeAdapterTest is BridgeScenarioHelper {
         assertEq(address(l1Escrow).balance, amount, "escrow holds the withdrawn ETH");
         assertEq(address(l1Ad).balance, 0, "adapter forwarded all ETH to escrow");
         assertEq(account.balance, portfolioBefore, "account NOT paid until claim");
+    }
+
+    /// @notice RE4-M-01: a front-run finalize whose inner relay FAILED (funds not delivered) must NOT let completeBridge
+    ///         settle the invoice from stray/donated funds on the shared adapter. The skip-branch requires the
+    ///         messenger to report the inner message delivered; here it did not, so completion reverts even though the
+    ///         adapter's absolute balance covers `amount`.
+    function test_completeBridge_l2ToL1_revertsIfFrontRunFinalizeDidNotDeliver() public {
+        vm.chainId(SOURCE_CHAIN_ID);
+        uint256 amount = 1 ether;
+        BridgeEscrow l1Escrow = bridgeEscrow;
+        vm.prank(admin);
+        l1Escrow.registerAsset(WETH_SYMBOL, address(0));
+        SuperchainBridgeAdapter l1Ad = _deployL1WithdrawalAdapter(l1Escrow);
+
+        InvoiceDataLib.InvoiceData memory invoiceData =
+            _createInvoiceData(L2_CHAIN_ID, SOURCE_CHAIN_ID, account, WETH_SYMBOL_BYTES6, amount);
+        bytes memory messagePayload = InvoiceDataLib.encode(invoiceData);
+        bytes32 invoiceHash = bytes32(uint256(uint192(invoiceData.checksum24)));
+
+        // Relay does NOT forward to the adapter (simulates a failed inner relay); the portal still marks finalized.
+        MockL1WithdrawalRelay relay = new MockL1WithdrawalRelay();
+        relay.setRecipient(payable(address(0)));
+        Types.WithdrawalTransaction memory wtx = Types.WithdrawalTransaction({
+            nonce: 1, sender: address(l2Bridge), target: address(relay), value: amount, gasLimit: 200000, data: ""
+        });
+        vm.prank(manager);
+        l1Ad.proveWithdrawal(
+            L2_CHAIN_ID,
+            wtx,
+            0,
+            Types.OutputRootProof(bytes32(0), bytes32(0), bytes32(0), bytes32(0)),
+            new bytes[](0),
+            invoiceData.invoiceId,
+            invoiceHash
+        );
+
+        // Front-run finalize (griefer proves + finalizes). Funds land on the relay, NOT the adapter.
+        address griefer = makeAddr("griefer");
+        vm.startPrank(griefer);
+        optimismPortal.proveWithdrawalTransaction(
+            wtx, 0, Types.OutputRootProof(bytes32(0), bytes32(0), bytes32(0), bytes32(0)), new bytes[](0)
+        );
+        optimismPortal.finalizeWithdrawalTransaction(wtx);
+        vm.stopPrank();
+
+        // Donate stray ETH to the adapter so a bare absolute-balance check WOULD pass — the guard must still block it.
+        vm.deal(address(l1Ad), amount);
+        // The messenger reports the inner message NOT delivered (successfulMessages defaults to false).
+
+        vm.prank(manager);
+        vm.expectRevert(abi.encodeWithSelector(ISuperchainBridgeAdapter.InvalidWithdrawalFinalization.selector));
+        l1Ad.completeBridge(messagePayload, "");
     }
 
     /// @notice RE3-M-02: the ERC20 finalize binds the amount by a balance DELTA (like ETH), not the adapter's
@@ -858,7 +949,7 @@ contract SuperchainBridgeAdapterTest is BridgeScenarioHelper {
         vm.prank(account);
         bridgeEscrow.depositAndBridge(L2_CHAIN_ID, USDC_SYMBOL, amount, address(l1Adapter));
 
-        bytes memory stored = l1Adapter.getMessagePayload(invoiceData.invoiceId);
+        bytes memory stored = l1Adapter.getMessagePayload(bytes32(uint256(uint192(invoiceData.checksum24))));
         assertEq(stored.length, InvoiceDataLib.encode(invoiceData).length);
         InvoiceDataLib.InvoiceData memory decoded = InvoiceDataLib.decode(stored);
         assertEq(decoded.invoiceId, invoiceData.invoiceId);

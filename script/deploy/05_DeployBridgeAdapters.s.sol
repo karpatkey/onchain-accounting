@@ -273,24 +273,42 @@ contract DeployBridgeAdapters is BaseDeployScript {
             address l2Bridge_ = _parseAddr("Superchain", "l2Bridge", address(0));
             address l1Messenger_ = _parseAddr("Superchain", "l1Messenger", address(0));
             address l2Messenger_ = _parseAddr("Superchain", "l2Messenger", address(0));
+            // The Superchain L1 chain id (mainnet = 1). The adapter plays the L1 role when block.chainid equals it;
+            // the SAME value is passed on both the L1 and L2 deployments (so the CREATE2 address is unaffected — it
+            // is an init arg, not a constructor arg). Hardcoded to mainnet here (the deployed Superchain lane's L1);
+            // make it config-driven when a non-mainnet L1 (testnet) is targeted.
+            uint256 l1ChainId_ = 1;
             SuperchainBridgeAdapter(payable(adapter))
-                .initialize(admin_, bridgeEscrow_, l2Bridge_, l1Messenger_, l2Messenger_, _adapterVersion("Superchain"));
+                .initialize(
+                    admin_,
+                    bridgeEscrow_,
+                    l2Bridge_,
+                    l1Messenger_,
+                    l2Messenger_,
+                    l1ChainId_,
+                    _adapterVersion("Superchain")
+                );
 
-            // On L1, seed the per-L2 standard bridges + portals from parallel config arrays.
-            if (currentChainId == 1 && l2ChainIds.length > 0) {
+            // On L1, seed the per-L2 standard bridges + portals + L1 messengers from parallel config arrays.
+            if (currentChainId == l1ChainId_ && l2ChainIds.length > 0) {
                 address[] memory l1Bridges = ConfigReader.readAdapterAddressArray(
                     vm, currentChainId, "bridgeAdapters", "Superchain", "l1Bridges"
                 );
                 address[] memory portals = ConfigReader.readAdapterAddressArray(
                     vm, currentChainId, "bridgeAdapters", "Superchain", "optimismPortals"
                 );
+                address[] memory l1Messengers = ConfigReader.readAdapterAddressArray(
+                    vm, currentChainId, "bridgeAdapters", "Superchain", "l1Messengers"
+                );
                 require(
-                    l1Bridges.length == l2ChainIds.length && portals.length == l2ChainIds.length,
-                    "Superchain: l2ChainIds/l1Bridges/optimismPortals length mismatch"
+                    l1Bridges.length == l2ChainIds.length && portals.length == l2ChainIds.length
+                        && l1Messengers.length == l2ChainIds.length,
+                    "Superchain: l2ChainIds/l1Bridges/optimismPortals/l1Messengers length mismatch"
                 );
                 for (uint256 i = 0; i < l2ChainIds.length; i++) {
                     SuperchainBridgeAdapter(payable(adapter)).setL1BridgeForL2(l2ChainIds[i], l1Bridges[i]);
                     SuperchainBridgeAdapter(payable(adapter)).setOptimismPortalForL2(l2ChainIds[i], portals[i]);
+                    SuperchainBridgeAdapter(payable(adapter)).setL1MessengerForL2(l2ChainIds[i], l1Messengers[i]);
                 }
             }
         }

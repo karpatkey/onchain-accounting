@@ -613,9 +613,11 @@ contract MockL2StandardBridge {
 
 /// @notice Mock Optimism Portal for proving and finalizing L2->L1 withdrawals
 contract MockOptimismPortal is IOptimismPortal {
-    mapping(bytes32 => bool) private _provenWithdrawals;
+    // Fault-proof OP2 shape: proven keyed by (hash, proof submitter); finalized keyed globally by hash.
+    mapping(bytes32 => mapping(address => address)) private _disputeGameProxy;
     mapping(bytes32 => bool) private _finalizedWithdrawals;
     uint256 public minimumWithdrawalDelay = 0;
+    address internal constant SENTINEL_GAME = address(uint160(0xDEAD));
 
     function proveWithdrawalTransaction(
         Types.WithdrawalTransaction memory _tx,
@@ -624,12 +626,12 @@ contract MockOptimismPortal is IOptimismPortal {
         bytes[] calldata
     ) external override {
         bytes32 h = keccak256(abi.encodePacked(_tx.nonce, _tx.sender, _tx.target, _tx.value, _tx.gasLimit, _tx.data));
-        _provenWithdrawals[h] = true;
+        _disputeGameProxy[h][msg.sender] = SENTINEL_GAME;
     }
 
     function finalizeWithdrawalTransaction(Types.WithdrawalTransaction memory _tx) external override {
         bytes32 h = keccak256(abi.encodePacked(_tx.nonce, _tx.sender, _tx.target, _tx.value, _tx.gasLimit, _tx.data));
-        require(_provenWithdrawals[h], "withdrawal not proven");
+        require(_disputeGameProxy[h][msg.sender] != address(0), "withdrawal not proven");
         require(!_finalizedWithdrawals[h], "OptimismPortal: withdrawal has already been finalized");
         _finalizedWithdrawals[h] = true;
         if (_tx.value > 0) {
@@ -638,8 +640,13 @@ contract MockOptimismPortal is IOptimismPortal {
         }
     }
 
-    function provenWithdrawals(bytes32 _withdrawalHash) external view override returns (bool) {
-        return _provenWithdrawals[_withdrawalHash];
+    function provenWithdrawals(bytes32 _withdrawalHash, address _proofSubmitter)
+        external
+        view
+        override
+        returns (address disputeGameProxy, uint64 timestamp)
+    {
+        return (_disputeGameProxy[_withdrawalHash][_proofSubmitter], 0);
     }
 
     function finalizedWithdrawals(bytes32 _withdrawalHash) external view override returns (bool) {

@@ -127,6 +127,15 @@ interface ICrossDomainMessenger {
     /// @param _message The calldata to relay to `_target`.
     /// @param _minGasLimit Minimum gas to relay with on the destination chain.
     function sendMessage(address _target, bytes calldata _message, uint32 _minGasLimit) external payable;
+
+    /// @notice Reports whether a relayed cross-domain message was delivered successfully.
+    /// @dev Keyed by the versioned message hash (`Hashing.hashCrossDomainMessageV1`), which for a Bedrock v1
+    ///      message equals `keccak256(relayMessageCalldata)`. The Superchain adapter uses this on L1 to confirm that
+    ///      an already-finalized withdrawal's inner relay actually paid this adapter (the `finalizeBridge*` receiver)
+    ///      before settling — the finalize skip-branch cannot measure a balance delta for a front-run finalize.
+    /// @param _messageHash The versioned cross-domain message hash.
+    /// @return True if the message was relayed successfully (funds delivered), false otherwise.
+    function successfulMessages(bytes32 _messageHash) external view returns (bool);
 }
 
 // ============================================================================
@@ -137,26 +146,36 @@ interface ICrossDomainMessenger {
 /// @notice Interface for Optimism Portal (used for proving and finalizing withdrawals)
 /// @dev Used for the two-step withdrawal process from L2 to L1
 interface IOptimismPortal {
-    /// @notice Proves a withdrawal transaction
+    /// @notice Proves a withdrawal transaction against a dispute game (fault-proof OP2).
     /// @param _tx Withdrawal transaction to prove
-    /// @param _l2OutputIndex Index of the L2 output
+    /// @param _disputeGameIndex Index of the dispute game the withdrawal is proven against (was the L2 output
+    ///        index in the legacy portal; on fault-proof portals it selects the dispute game)
     /// @param _outputRootProof Proof of the L2 output root
     /// @param _withdrawalProof Proof of the withdrawal
     function proveWithdrawalTransaction(
         Types.WithdrawalTransaction memory _tx,
-        uint256 _l2OutputIndex,
+        uint256 _disputeGameIndex,
         Types.OutputRootProof memory _outputRootProof,
         bytes[] calldata _withdrawalProof
     ) external;
 
     /// @notice Finalizes a withdrawal transaction
+    /// @dev Fault-proof portal: uses `msg.sender` as the proof submitter and internally enforces the proof-maturity
+    ///      delay, the dispute game being resolved in the defender's favour, and the dispute-game-finality air-gap.
     /// @param _tx Withdrawal transaction to finalize
     function finalizeWithdrawalTransaction(Types.WithdrawalTransaction memory _tx) external;
 
-    /// @notice Checks if a withdrawal transaction has been proven
+    /// @notice Returns the proven-withdrawal record for a (withdrawal hash, proof submitter) pair (fault-proof OP2).
+    /// @dev The fault-proof portal keys proven withdrawals by BOTH the hash and the submitter (this adapter, which
+    ///      called `proveWithdrawalTransaction`). A withdrawal is proven ⟺ `disputeGameProxy != address(0)`.
     /// @param _withdrawalHash Hash of the withdrawal transaction
-    /// @return True if proven, false otherwise
-    function provenWithdrawals(bytes32 _withdrawalHash) external view returns (bool);
+    /// @param _proofSubmitter The address that proved the withdrawal (this adapter)
+    /// @return disputeGameProxy The dispute game the withdrawal was proven against (zero if not proven)
+    /// @return timestamp The time at which the withdrawal was proven
+    function provenWithdrawals(bytes32 _withdrawalHash, address _proofSubmitter)
+        external
+        view
+        returns (address disputeGameProxy, uint64 timestamp);
 
     /// @notice Checks if a withdrawal transaction has already been finalized on the portal
     /// @dev The portal's finalize is permissionless and reverts on a second call for the same hash. The adapter

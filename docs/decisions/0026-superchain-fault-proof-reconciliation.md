@@ -48,7 +48,11 @@ Reconcile the adapter to the fault-proof portals and ground every fix in fork te
 
 - The withdrawal path is correct against the real fault-proof portals; fork tests assert the adapter decodes the live
   OP + Base portals without reverting and that deposits route through the real per-L2 messengers.
-- Operators must supply the dispute-game index at prove time and wire `l1MessengerForL2` per L2.
+- Operators must supply the dispute-game index at prove time; pass `invoiceHash == bytes32(uint256(uint192(checksum24)))`
+  (the completion-derived key — not assertable on-chain, self-detecting via `WithdrawalNotProven` otherwise); and wire
+  `l1MessengerForL2` for every L2 the adapter serves in **either** direction (deposit destination *and* withdrawal
+  source), since the finalize skip-branch binds the withdrawal target to it — a portal-only config reverts
+  `MessengerNotConfigured` on a front-run completion. The `05` deploy seeds portal + messenger index-aligned.
 - **Deploy gate:** the fault-proof finalize cannot be fully fork-e2e'd (it needs a real proven + dispute-resolved +
   air-gapped withdrawal to the adapter), so the Superchain lane stays do-not-deploy until a real L2→L1 finalize is
   exercised end-to-end on the throwaway. Augments [ADR 0021](0021-bridge-adapter-provenance-and-deploy-hardening.md)

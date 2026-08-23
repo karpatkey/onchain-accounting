@@ -42,8 +42,8 @@ Make the operator's state **queryable, not reconstructable** — two small, prec
   `_activeInvoices`/`_activeInvoicesSet` swap-pop machinery exactly. Invariant: `getHeldInvoices(account)` equals
   precisely the `destinationCustody` records for `account` with `amount > 0 && !claimed`.
 - **`SuperchainBridgeAdapter`:** store the full `Types.WithdrawalTransaction` at prove time keyed by the
-  **per-operation invoice hash** (`proveWithdrawal` takes a `bytes32 invoiceHash` param alongside the reusable route
-  `invoiceId`), exposed by **`getWithdrawalTransaction(bytes32 invoiceHash)`** (an explicit struct getter — the backing
+  **per-operation invoice hash** (originally a `bytes32 invoiceHash` param; **superseded by [ADR 0026](0026-superchain-fault-proof-reconciliation.md)** — `proveWithdrawal` now takes the invoice `messagePayload` and derives both keys on-chain),
+  exposed by **`getWithdrawalTransaction(bytes32 invoiceHash)`** (an explicit struct getter — the backing
   mapping is `private` because a `public` auto-getter silently drops the struct's dynamic `data` member). Keying by the
   per-operation hash rather than the route `invoiceId` keeps two same-lane withdrawals from colliding (each op has its
   own hash; the route id is reused across ops).

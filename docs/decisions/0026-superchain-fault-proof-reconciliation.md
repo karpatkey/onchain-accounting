@@ -39,17 +39,28 @@ Reconcile the adapter to the fault-proof portals and ground every fix in fork te
   The branch further binds the withdrawal to the genuine messenger (`withdrawalTx.target == l1MessengerForL2[l2ChainId]`,
   so the `successfulMessages` flag isn't read from an attacker-authored target) and, for ETH, binds the delivered amount
   (`withdrawalTx.value >= amount` — the portal delivers `value` to the adapter), matching the normal branch's delta
-  guard. `proveWithdrawal` rejects zero `invoiceId`/`invoiceHash` so an operator mistake fails atomically at prove
-  rather than surfacing as `WithdrawalNotProven` at completion.
+  guard.
+- **Keys derived on-chain, not operator-supplied.** `proveWithdrawal` takes the encoded invoice `messagePayload` and
+  derives both keys on-chain — `invoiceId = data.invoiceId`, `invoiceHash = bytes32(uint256(uint192(data.checksum24)))`,
+  the exact derivation `_completeBridge` uses. This removes the operator-supplied-key class entirely: a caller cannot
+  file the stored `WithdrawalTransaction` under a typo'd/mismatched hash that overwrites another operation's tx (which
+  would let that operation mis-settle without self-detecting). New selector `0x98011b26`.
 - **Configurable L1 id.** `chainId == l1ChainId` (an init argument, not `block.chainid == 1`) selects the L1 role, so
   the adapter works on any L1 host; L1 mode fails closed if given L2-only contracts.
+- **CREATE2 initializer pinned independent of `DEPLOY_ADMIN`.** `05` bakes the adapter's anti-front-run
+  `expectedInitializer` (ADR 0021 §3) into the CREATE2 creation code, so the deterministic address depends on it. It is
+  now the committed, cross-chain-identical `DeploySalts.BRIDGE_ADAPTER_INITIALIZER` (not the `DEPLOY_ADMIN`-overridable
+  `chainConfig.admin`), and `05` asserts the broadcaster equals it — so a runtime role override can no longer diverge
+  the adapter address across chains and silently break the same-address invariant (Superchain sibling / CCTP recipient /
+  `trustedRemoteAdapter`). `DEPLOY_ADMIN` still overrides only the post-init admin *role*.
 
 ## Consequences
 
 - The withdrawal path is correct against the real fault-proof portals; fork tests assert the adapter decodes the live
   OP + Base portals without reverting and that deposits route through the real per-L2 messengers.
-- Operators must supply the dispute-game index at prove time; pass `invoiceHash == bytes32(uint256(uint192(checksum24)))`
-  (the completion-derived key — not assertable on-chain, self-detecting via `WithdrawalNotProven` otherwise); and wire
+- Operators supply the dispute-game index + the invoice `messagePayload` at prove time (both keys are derived on-chain
+  from the payload, so there is no operator-supplied-key to mis-set); broadcast every bridge-adapter deploy from
+  `DeploySalts.BRIDGE_ADAPTER_INITIALIZER` (a single global EOA — changing it shifts all adapter addresses); and wire
   `l1MessengerForL2` for every L2 the adapter serves in **either** direction (deposit destination *and* withdrawal
   source), since the finalize skip-branch binds the withdrawal target to it — a portal-only config reverts
   `MessengerNotConfigured` on a front-run completion. The `05` deploy seeds portal + messenger index-aligned.

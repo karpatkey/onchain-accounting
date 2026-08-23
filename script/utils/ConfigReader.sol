@@ -167,10 +167,12 @@ library ConfigReader {
         config.nativeTokenSymbol = json.readString(".nativeTokenSymbol");
         config.securityCouncil = json.readAddress(".addresses.securityCouncil");
         // The deploy-phase `admin`/`manager` (the deployer EOA; the security council becomes end-state admin via 07)
-        // may be overridden at runtime via DEPLOY_ADMIN / DEPLOY_MANAGER. This lets a deploy be broadcast from a
-        // different EOA (e.g. a fresh key for a clean bridge redeploy) WITHOUT rewriting the committed chain config —
-        // and keeps the adapter `expectedInitializer` (== chainConfig.admin) aligned with the broadcasting key. When
-        // the env vars are unset, the committed JSON values are used unchanged (no behavior change for normal runs).
+        // may be overridden at runtime via DEPLOY_ADMIN / DEPLOY_MANAGER — this sets ONLY the post-init role args
+        // (the granted DEFAULT_ADMIN_ROLE / MANAGER), letting a deploy be broadcast without rewriting the committed
+        // chain config. It does NOT affect the bridge adapters' CREATE2 `expectedInitializer`: `05` bakes the fixed,
+        // cross-chain-identical `DeploySalts.BRIDGE_ADAPTER_INITIALIZER` and hard-reverts unless the broadcaster equals
+        // it (so a role override can never diverge adapter addresses across chains — same-address invariant). When the
+        // env vars are unset, the committed JSON values are used unchanged (no behavior change for normal runs).
         config.admin = _resolveRoleOverride(vm, "DEPLOY_ADMIN", json.readAddress(".addresses.admin"));
         config.manager = _resolveRoleOverride(vm, "DEPLOY_MANAGER", json.readAddress(".addresses.manager"));
     }

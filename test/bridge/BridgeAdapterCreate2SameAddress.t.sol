@@ -28,14 +28,12 @@ contract BridgeAdapterCreate2SameAddressTest is Test {
     /// @notice Canonical CREATE2 deployer (same on every chain) — must match 05_DeployBridgeAdapters.
     address internal constant CANONICAL_CREATE2_DEPLOYER = 0x4e59b44847b379578588920cA78FbF26c0B4956C;
 
-    /// @notice A fixed placeholder for the `expectedInitializer` constructor arg that 05 appends to each
-    ///         adapter's creationCode. Its SPECIFIC value is irrelevant to what this test proves: same-address
-    ///         holds because the arg is byte-identical across the loop (so creationCode is chain-independent),
-    ///         and distinctness holds for any value. The test asserts those two invariants — NOT that the
-    ///         address equals a specific on-chain deploy. At deploy time 05 bakes `chainConfig.admin` (the
-    ///         deployer EOA, which varies per deployment), so this constant need only be a fixed, non-zero
-    ///         address used identically across the loop — it does not need to equal what 05 bakes.
-    address internal constant PINNED_INITIALIZER = 0xd8A2FEc270d6D68B9fA5DBFe5CbEDDE7CefCd7D4;
+    /// @notice The `expectedInitializer` constructor arg 05 appends to each adapter's creationCode. It mirrors 05
+    ///         EXACTLY: `DeploySalts.BRIDGE_ADAPTER_INITIALIZER`, a committed cross-chain-identical constant. Since 05
+    ///         now bakes this constant (NOT the runtime-overridable `chainConfig.admin`/`DEPLOY_ADMIN`), the
+    ///         same-address guarantee is ENFORCED by construction — see
+    ///         `test_bakedInitializer_isCommittedConstant_independentOfDeployAdmin`.
+    address internal constant PINNED_INITIALIZER = DeploySalts.BRIDGE_ADAPTER_INITIALIZER;
 
     /// @notice The seven target chains the same-address guarantee must hold across (ADR 0012 D7 / DeploySalts).
     function _targetChainIds() internal pure returns (uint256[7] memory) {
@@ -144,6 +142,27 @@ contract BridgeAdapterCreate2SameAddressTest is Test {
             address adapter = _predict(specs[i].name, specs[i].version, specs[i].creationCode);
             bytes32 encoded = bytes32(uint256(uint160(adapter)));
             assertEq(address(uint160(uint256(encoded))), adapter, "trustedRemoteAdapter encoding is not lossless");
+        }
+    }
+
+    /// @notice Copilot finding: 05 used to bake `chainConfig.admin` (DEPLOY_ADMIN-overridable) into the CREATE2 code,
+    ///         so the adapter address could diverge per chain. 05 now bakes the committed `DeploySalts`
+    ///         `BRIDGE_ADAPTER_INITIALIZER` constant instead, so the deterministic address is a function of a
+    ///         cross-chain-identical value and is INDEPENDENT of the runtime DEPLOY_ADMIN override. Setting two
+    ///         different DEPLOY_ADMIN values leaves every predicted adapter address unchanged.
+    function test_bakedInitializer_isCommittedConstant_independentOfDeployAdmin() public {
+        assertTrue(DeploySalts.BRIDGE_ADAPTER_INITIALIZER != address(0), "pinned initializer must be non-zero");
+        Spec[6] memory specs = _specs(); // built from PINNED_INITIALIZER == DeploySalts.BRIDGE_ADAPTER_INITIALIZER (what 05 bakes)
+
+        vm.setEnv("DEPLOY_ADMIN", "0x000000000000000000000000000000000000dEaD");
+        address[6] memory withAdminA;
+        for (uint256 i = 0; i < specs.length; i++) {
+            withAdminA[i] = _predict(specs[i].name, specs[i].version, specs[i].creationCode);
+        }
+        vm.setEnv("DEPLOY_ADMIN", "0x00000000000000000000000000000000CAFeBABe");
+        for (uint256 i = 0; i < specs.length; i++) {
+            address withAdminB = _predict(specs[i].name, specs[i].version, specs[i].creationCode);
+            assertEq(withAdminB, withAdminA[i], "adapter CREATE2 address must not depend on DEPLOY_ADMIN");
         }
     }
 }

@@ -151,4 +151,19 @@ library DeploySalts {
     // function is unused by any canary and the deployment is superseded by the post-merge full redeploy from main);
     // salt-4 is what that full redeploy should deploy.
     uint256 internal constant SUPERCHAIN_ADAPTER = 4;
+
+    /// @notice The ONE address baked into every bridge adapter's CREATE2 creation code as its `expectedInitializer`
+    ///         (the anti-front-run pin — only this EOA may call `initialize`). It is committed here, NOT read from the
+    ///         per-chain `chainConfig.admin`, precisely so the deterministic adapter address is a function of a
+    ///         cross-chain-IDENTICAL constant and cannot be diverged per chain by the runtime `DEPLOY_ADMIN` override.
+    /// @dev WHY THIS EXISTS (Copilot finding): `05` used to bake `chainConfig.admin` (which `DEPLOY_ADMIN` can override
+    ///      at runtime) into the creation code, so using the override on only one chain — or different fresh EOAs across
+    ///      the rollout — produced DIFFERENT adapter addresses per chain, silently breaking the same-address invariant
+    ///      the Superchain sibling (`address(this)`), CCTP recipient, and `trustedRemoteAdapter` all depend on; `05`'s
+    ///      per-chain broadcaster check could not detect the cross-chain divergence. Pinning it here makes the address a
+    ///      committed constant everywhere, and `05` now REQUIRES the broadcaster to equal it (so a divergent key fails
+    ///      loudly on the first chain). `DEPLOY_ADMIN`/`DEPLOY_MANAGER` still override the post-init admin/manager ROLE,
+    ///      just not the CREATE2 pin. It equals the committed `chainConfig.admin` (deployer-1) so canonical addresses
+    ///      are preserved; changing it shifts EVERY adapter's CREATE2 address on every chain.
+    address internal constant BRIDGE_ADAPTER_INITIALIZER = 0xAa5A7C7Ea51F276301f881F9CCB501a1dFeF4F72;
 }

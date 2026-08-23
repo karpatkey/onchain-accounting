@@ -425,8 +425,7 @@ contract SuperchainBridgeAdapterTest is BridgeScenarioHelper {
             0,
             Types.OutputRootProof(bytes32(0), bytes32(0), bytes32(0), bytes32(0)),
             new bytes[](0),
-            invoiceData.invoiceId,
-            bytes32(uint256(uint192(invoiceData.checksum24)))
+            InvoiceDataLib.encode(invoiceData)
         );
 
         assertTrue(l1Ad.isWithdrawalProven(L2_CHAIN_ID, realHash), "withdrawal proven under real hash");
@@ -486,8 +485,7 @@ contract SuperchainBridgeAdapterTest is BridgeScenarioHelper {
             0,
             Types.OutputRootProof(bytes32(0), bytes32(0), bytes32(0), bytes32(0)),
             new bytes[](0),
-            invoiceData.invoiceId,
-            bytes32(uint256(uint192(invoiceData.checksum24)))
+            InvoiceDataLib.encode(invoiceData)
         );
 
         Types.WithdrawalTransaction memory got = l1Ad.getWithdrawalTransaction(invoiceHash);
@@ -532,8 +530,8 @@ contract SuperchainBridgeAdapterTest is BridgeScenarioHelper {
 
         Types.OutputRootProof memory emptyProof = Types.OutputRootProof(bytes32(0), bytes32(0), bytes32(0), bytes32(0));
         vm.startPrank(manager);
-        l1Ad.proveWithdrawal(L2_CHAIN_ID, wtx1, 0, emptyProof, new bytes[](0), inv1.invoiceId, hash1);
-        l1Ad.proveWithdrawal(L2_CHAIN_ID, wtx2, 0, emptyProof, new bytes[](0), inv2.invoiceId, hash2);
+        l1Ad.proveWithdrawal(L2_CHAIN_ID, wtx1, 0, emptyProof, new bytes[](0), InvoiceDataLib.encode(inv1));
+        l1Ad.proveWithdrawal(L2_CHAIN_ID, wtx2, 0, emptyProof, new bytes[](0), InvoiceDataLib.encode(inv2));
         vm.stopPrank();
 
         // Each per-op hash keeps its own tx — the second prove did NOT overwrite the first.
@@ -573,8 +571,8 @@ contract SuperchainBridgeAdapterTest is BridgeScenarioHelper {
         });
         Types.OutputRootProof memory emptyProof = Types.OutputRootProof(bytes32(0), bytes32(0), bytes32(0), bytes32(0));
         vm.startPrank(manager);
-        l1Ad.proveWithdrawal(L2_CHAIN_ID, wtx, 0, emptyProof, new bytes[](0), invA.invoiceId, hashA);
-        l1Ad.proveWithdrawal(L2_CHAIN_ID, wtx, 0, emptyProof, new bytes[](0), invB.invoiceId, hashB);
+        l1Ad.proveWithdrawal(L2_CHAIN_ID, wtx, 0, emptyProof, new bytes[](0), InvoiceDataLib.encode(invA));
+        l1Ad.proveWithdrawal(L2_CHAIN_ID, wtx, 0, emptyProof, new bytes[](0), InvoiceDataLib.encode(invB));
         vm.stopPrank();
 
         // Complete A: normal branch finalizes + delivers `amount`, settling A and consuming the withdrawal.
@@ -595,25 +593,58 @@ contract SuperchainBridgeAdapterTest is BridgeScenarioHelper {
     /// @notice proveWithdrawal rejects zero invoice keys atomically (Copilot): a zero invoiceHash would prove on the
     ///         portal but store no WithdrawalTransaction, defeating the ADR 0025 queryable flow and only surfacing as
     ///         WithdrawalNotProven at completion. Fail fast at prove instead.
-    function test_proveWithdrawal_revertsOnZeroInvoiceKeys() public {
+    /// @notice proveWithdrawal now DERIVES both invoice keys on-chain from the payload (Copilot), so an operator can't
+    ///         supply a mismatched/typo'd key that overwrites another op's stored tx. An empty payload reverts
+    ///         InvalidWithdrawalProof (the only zero-key case left reachable via the API).
+    function test_proveWithdrawal_revertsOnEmptyPayload() public {
         vm.chainId(SOURCE_CHAIN_ID);
         uint256 amount = 1 ether;
         vm.prank(admin);
         bridgeEscrow.registerAsset(WETH_SYMBOL, address(0));
         SuperchainBridgeAdapter l1Ad = _deployL1WithdrawalAdapter(bridgeEscrow);
-        InvoiceDataLib.InvoiceData memory invoiceData =
-            _createInvoiceData(L2_CHAIN_ID, SOURCE_CHAIN_ID, account, WETH_SYMBOL_BYTES6, amount);
-        bytes32 invoiceHash = bytes32(uint256(uint192(invoiceData.checksum24)));
         Types.WithdrawalTransaction memory wtx = Types.WithdrawalTransaction({
             nonce: 1, sender: address(l2Bridge), target: address(l1Ad), value: amount, gasLimit: 200000, data: ""
         });
         Types.OutputRootProof memory emptyProof = Types.OutputRootProof(bytes32(0), bytes32(0), bytes32(0), bytes32(0));
+        vm.prank(manager);
+        vm.expectRevert(abi.encodeWithSelector(ISuperchainBridgeAdapter.InvalidWithdrawalProof.selector));
+        l1Ad.proveWithdrawal(L2_CHAIN_ID, wtx, 0, emptyProof, new bytes[](0), "");
+    }
+
+    /// @notice The stored WithdrawalTransaction is keyed by the ON-CHAIN-derived invoice hash, so two same-lane ops
+    ///         proven with their own payloads keep separate stored txs — no operator can overwrite one with the other
+    ///         (the mismatched-key overwrite class is gone since keys are derived, not supplied).
+    function test_proveWithdrawal_derivedKeys_noCrossOpOverwrite() public {
+        vm.chainId(SOURCE_CHAIN_ID);
+        vm.prank(admin);
+        bridgeEscrow.registerAsset(WETH_SYMBOL, address(0));
+        SuperchainBridgeAdapter l1Ad = _deployL1WithdrawalAdapter(bridgeEscrow);
+        // Same lane (same invoiceId), distinct amounts → distinct derived invoice hashes.
+        InvoiceDataLib.InvoiceData memory invA =
+            _createInvoiceData(L2_CHAIN_ID, SOURCE_CHAIN_ID, account, WETH_SYMBOL_BYTES6, 1 ether);
+        InvoiceDataLib.InvoiceData memory invB =
+            _createInvoiceData(L2_CHAIN_ID, SOURCE_CHAIN_ID, account, WETH_SYMBOL_BYTES6, 2 ether);
+        bytes32 hashA = bytes32(uint256(uint192(invA.checksum24)));
+        bytes32 hashB = bytes32(uint256(uint192(invB.checksum24)));
+        Types.WithdrawalTransaction memory wtxA = Types.WithdrawalTransaction({
+            nonce: 1, sender: address(l2Bridge), target: address(l1Ad), value: 1 ether, gasLimit: 200000, data: hex"aa"
+        });
+        Types.WithdrawalTransaction memory wtxB = Types.WithdrawalTransaction({
+            nonce: 2,
+            sender: address(l2Bridge),
+            target: address(l1Ad),
+            value: 2 ether,
+            gasLimit: 200000,
+            data: hex"bbbb"
+        });
+        Types.OutputRootProof memory emptyProof = Types.OutputRootProof(bytes32(0), bytes32(0), bytes32(0), bytes32(0));
         vm.startPrank(manager);
-        vm.expectRevert(abi.encodeWithSelector(ISuperchainBridgeAdapter.InvalidWithdrawalProof.selector));
-        l1Ad.proveWithdrawal(L2_CHAIN_ID, wtx, 0, emptyProof, new bytes[](0), invoiceData.invoiceId, bytes32(0));
-        vm.expectRevert(abi.encodeWithSelector(ISuperchainBridgeAdapter.InvalidWithdrawalProof.selector));
-        l1Ad.proveWithdrawal(L2_CHAIN_ID, wtx, 0, emptyProof, new bytes[](0), bytes32(0), invoiceHash);
+        l1Ad.proveWithdrawal(L2_CHAIN_ID, wtxA, 0, emptyProof, new bytes[](0), InvoiceDataLib.encode(invA));
+        l1Ad.proveWithdrawal(L2_CHAIN_ID, wtxB, 0, emptyProof, new bytes[](0), InvoiceDataLib.encode(invB));
         vm.stopPrank();
+        // Each op's payload derived its own key; neither overwrote the other.
+        assertEq(l1Ad.getWithdrawalTransaction(hashA).data, hex"aa", "op A's tx intact");
+        assertEq(l1Ad.getWithdrawalTransaction(hashB).data, hex"bbbb", "op B's tx intact");
     }
 
     /// @notice Config-coupling (super-review Low): the skip-branch binds the withdrawal target to `l1MessengerForL2` for
@@ -636,15 +667,7 @@ contract SuperchainBridgeAdapterTest is BridgeScenarioHelper {
         });
         Types.OutputRootProof memory emptyProof = Types.OutputRootProof(bytes32(0), bytes32(0), bytes32(0), bytes32(0));
         vm.prank(manager);
-        l1Ad.proveWithdrawal(
-            L2_CHAIN_ID,
-            wtx,
-            0,
-            emptyProof,
-            new bytes[](0),
-            invoiceData.invoiceId,
-            bytes32(uint256(uint192(invoiceData.checksum24)))
-        );
+        l1Ad.proveWithdrawal(L2_CHAIN_ID, wtx, 0, emptyProof, new bytes[](0), InvoiceDataLib.encode(invoiceData));
 
         // Front-run finalize delivers the funds; the source messenger is unwired, so completion fails loudly.
         address griefer = makeAddr("griefer");
@@ -686,7 +709,7 @@ contract SuperchainBridgeAdapterTest is BridgeScenarioHelper {
         });
         Types.OutputRootProof memory emptyProof = Types.OutputRootProof(bytes32(0), bytes32(0), bytes32(0), bytes32(0));
         vm.prank(manager);
-        l1Ad.proveWithdrawal(L2_CHAIN_ID, wtx, 0, emptyProof, new bytes[](0), invoiceData.invoiceId, invoiceHash);
+        l1Ad.proveWithdrawal(L2_CHAIN_ID, wtx, 0, emptyProof, new bytes[](0), InvoiceDataLib.encode(invoiceData));
 
         // Front-run finalize delivers `delivered`; top up stray funds so the ABSOLUTE balance covers the full amount.
         address griefer = makeAddr("griefer");
@@ -759,8 +782,7 @@ contract SuperchainBridgeAdapterTest is BridgeScenarioHelper {
             0,
             Types.OutputRootProof(bytes32(0), bytes32(0), bytes32(0), bytes32(0)),
             new bytes[](0),
-            invoiceData.invoiceId,
-            bytes32(uint256(uint192(invoiceData.checksum24)))
+            InvoiceDataLib.encode(invoiceData)
         );
     }
 
@@ -815,8 +837,7 @@ contract SuperchainBridgeAdapterTest is BridgeScenarioHelper {
             0,
             Types.OutputRootProof(bytes32(0), bytes32(0), bytes32(0), bytes32(0)),
             new bytes[](0),
-            invoiceData.invoiceId,
-            bytes32(uint256(uint192(invoiceData.checksum24)))
+            InvoiceDataLib.encode(invoiceData)
         );
 
         vm.prank(manager);
@@ -854,8 +875,7 @@ contract SuperchainBridgeAdapterTest is BridgeScenarioHelper {
             0,
             Types.OutputRootProof(bytes32(0), bytes32(0), bytes32(0), bytes32(0)),
             new bytes[](0),
-            invoiceData.invoiceId,
-            invoiceHash
+            InvoiceDataLib.encode(invoiceData)
         );
 
         // Front-run: a third party proves (as itself — fault-proof portals key proofs by submitter) then finalizes
@@ -918,8 +938,7 @@ contract SuperchainBridgeAdapterTest is BridgeScenarioHelper {
             0,
             Types.OutputRootProof(bytes32(0), bytes32(0), bytes32(0), bytes32(0)),
             new bytes[](0),
-            invoiceData.invoiceId,
-            invoiceHash
+            InvoiceDataLib.encode(invoiceData)
         );
 
         // Front-run finalize (griefer proves + finalizes). Funds land on the relay, NOT the adapter.
@@ -967,8 +986,7 @@ contract SuperchainBridgeAdapterTest is BridgeScenarioHelper {
             0,
             Types.OutputRootProof(bytes32(0), bytes32(0), bytes32(0), bytes32(0)),
             new bytes[](0),
-            invoiceData.invoiceId,
-            invoiceHash
+            InvoiceDataLib.encode(invoiceData)
         );
 
         // Adapter already holds `amount` USDC from an unrelated source. Absolute balance would pass; the delta guard

@@ -567,17 +567,17 @@ contract SuperchainBridgeAdapter is BridgeAdapter, ISuperchainBridgeAdapter {
     ///        `sourceChainId` — completion (`_finalizeWithdrawal`) selects the portal from the invoice's
     ///        `sourceChainId`, so proving against a different L2's portal here would make finalize revert
     ///        `WithdrawalNotProven` (no fund loss, but the withdrawal cannot be completed until re-proven).
-    ///        When `invoiceId` is supplied this is enforced on-chain (reverts `WithdrawalChainIdMismatch`).
+    ///        Enforced on-chain against the payload's encoded source chain id (reverts `WithdrawalChainIdMismatch`).
     /// @param withdrawalTx The withdrawal transaction to prove (its `target` is the L1CrossDomainMessenger, which
     ///        relays the L1-bridge call that pays this adapter as the `withdrawTo` receiver — see `_finalizeWithdrawal`).
     /// @param disputeGameIndex The dispute-game index the withdrawal is proven against (fault-proof OP2; was the L2
     ///        output index on the legacy portal)
     /// @param outputRootProof The output root proof
     /// @param withdrawalProof The withdrawal proof
-    /// @param invoiceId The invoice's route id (src｜dst｜account｜symbol) — used for the source-chain-id check and the
-    ///        route-keyed withdrawalHash correlation
-    /// @param invoiceHash The per-operation invoice hash (checksum) — the key the stored `WithdrawalTransaction` is
-    ///        filed under (ADR 0025), so concurrent same-lane withdrawals don't overwrite each other
+    /// @param messagePayload The encoded invoice payload (the same bytes used at deposit/completion). BOTH keys — the
+    ///        route `invoiceId` and the per-operation `invoiceHash` (ADR 0025) — are DERIVED from it on-chain, exactly
+    ///        as `_completeBridge` derives them, so an operator can never supply a mismatched/typo'd key that overwrites
+    ///        another operation's stored tx or files the tx under a key completion never looks up.
     /// @dev MANAGER-driven on L1 after the withdrawal is initiated on L2. Computes the REAL OP withdrawal
     ///      hash and records the invoice correlation so completion can be tracked.
     function proveWithdrawal(
@@ -586,16 +586,18 @@ contract SuperchainBridgeAdapter is BridgeAdapter, ISuperchainBridgeAdapter {
         uint256 disputeGameIndex,
         Types.OutputRootProof memory outputRootProof,
         bytes[] calldata withdrawalProof,
-        bytes32 invoiceId,
-        bytes32 invoiceHash
+        bytes calldata messagePayload
     ) external onlyRole(MANAGER_ROLE) {
-        // Both invoice keys are mandatory for the ADR 0025 queryable finalize flow: `invoiceHash` keys the stored
-        // `WithdrawalTransaction` that completion reads, and `invoiceId` drives the source-chain-id check + correlation.
-        // Reject zero keys here so an operator mistake fails atomically at prove, instead of proving on the portal and
-        // only surfacing as `WithdrawalNotProven` at completion (which would defeat ADR 0025 / force a re-prove).
+        // Derive BOTH invoice keys on-chain from the invoice payload — EXACTLY as `_completeBridge` does — so the
+        // operator cannot supply a mismatched/typo'd `invoiceHash` that overwrites another op's stored tx (or files
+        // the tx under a key completion never looks up). This removes the operator-supplied-key mis-correlation class.
+        if (messagePayload.length == 0) revert InvalidWithdrawalProof();
+        InvoiceDataLib.InvoiceData memory data = InvoiceDataLib.decode(messagePayload);
+        bytes32 invoiceId = data.invoiceId;
+        bytes32 invoiceHash = bytes32(uint256(uint192(data.checksum24)));
         if (invoiceId == bytes32(0) || invoiceHash == bytes32(0)) revert InvalidWithdrawalProof();
 
-        // Enforce the operator-supplied l2ChainId matches the invoice's encoded source chain id (top 3 bytes of
+        // Enforce the payload's encoded source chain id matches l2ChainId (top 3 bytes of
         // the invoice id — see BridgeEscrow._generateInvoiceId). Finalize selects the portal from the invoice's
         // sourceChainId, so proving against a different L2's portal would strand the withdrawal (WithdrawalNotProven
         // until re-proven). Fail fast on the operator mistake instead of proving on the wrong portal.
@@ -616,12 +618,9 @@ contract SuperchainBridgeAdapter is BridgeAdapter, ISuperchainBridgeAdapter {
         invoiceToWithdrawalHash[invoiceId] = withdrawalHash;
         emit SuperchainWithdrawalProven(invoiceId, withdrawalHash);
 
-        // Store the tx under the PER-OPERATION invoice hash (ADR 0025) so the keeper can finalize without an L2
-        // log re-read. Keyed by the hash, NOT invoiceId, so two same-lane withdrawals proven in the same window
-        // don't collide (the second would otherwise overwrite the first's tx). The caller MUST pass the same key
-        // completion derives — `invoiceHash == bytes32(uint256(uint192(checksum24)))` — otherwise the tx is filed
-        // under a key completion never looks up (self-detecting: completion reverts `WithdrawalNotProven`); the
-        // amount/timestamp/nonce needed to recompute the checksum on-chain aren't available here, so it isn't asserted.
+        // Store the tx under the PER-OPERATION invoice hash (ADR 0025) so the keeper can finalize without an L2 log
+        // re-read. The hash is derived on-chain above (from the payload), so it is exactly the key completion looks up
+        // — no operator mismatch and no cross-operation overwrite is possible.
         _withdrawalTxByInvoiceHash[invoiceHash] = withdrawalTx;
     }
 

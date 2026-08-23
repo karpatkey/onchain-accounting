@@ -49,14 +49,15 @@ contract DeployBridgeAdapters is BaseDeployScript {
         // across chains, so the per-chain branching of the old flow is gone — config `enabled` is the only gate.
         vm.startBroadcast();
 
-        // Each adapter's initialize is pinned to expectedInitializer (= chainConfig.admin, baked into the
-        // creationCode by _adapterInitCode). If the broadcasting key is not that exact address, every
-        // initialize() would revert NotAuthorized mid-deploy — fail fast here with a clear message. (The
-        // baked value must also be byte-identical across chains or the CREATE2 same-address guarantee breaks.)
+        // Each adapter's initialize is pinned to expectedInitializer (= DeploySalts.BRIDGE_ADAPTER_INITIALIZER, a
+        // committed cross-chain-identical constant, baked into the creationCode by _adapterInitCode). The broadcaster
+        // MUST equal it: otherwise every initialize() would revert NotAuthorized mid-deploy AND — the reason it is
+        // pinned to a constant, not chainConfig.admin — the CREATE2 addresses would diverge from the canonical fleet.
+        // DEPLOY_ADMIN still overrides the post-init admin ROLE, but not this pin, so it can't diverge the address.
         (, address broadcaster,) = vm.readCallers();
         require(
             broadcaster == _expectedInitializer(),
-            "05: broadcaster must equal chainConfig.admin (the pinned expectedInitializer)"
+            "05: broadcaster must equal DeploySalts.BRIDGE_ADAPTER_INITIALIZER (the pinned CREATE2 initializer)"
         );
 
         _deployCcipIfConfigured(bridgeProxy);
@@ -102,13 +103,13 @@ contract DeployBridgeAdapters is BaseDeployScript {
         freshlyDeployed = true;
     }
 
-    /// @notice The address permitted to call each adapter's initialize, baked into the adapter's creationCode
-    ///         so the deploy->initialize window cannot be front-run (see BridgeAdapter.expectedInitializer). It
-    ///         MUST equal the EOA that broadcasts initialize (the deployer = chainConfig.admin in the EOA flow)
-    ///         AND be byte-identical on every chain, or the CREATE2 same-address guarantee breaks.
-    function _expectedInitializer() internal view returns (address) {
-        require(chainConfig.admin != address(0), "expectedInitializer (admin) not configured");
-        return chainConfig.admin;
+    /// @notice The address permitted to call each adapter's initialize, baked into the adapter's creationCode so the
+    ///         deploy->initialize window cannot be front-run (see BridgeAdapter.expectedInitializer). It is the
+    ///         committed, cross-chain-IDENTICAL `DeploySalts.BRIDGE_ADAPTER_INITIALIZER` — NOT `chainConfig.admin` /
+    ///         `DEPLOY_ADMIN`, which could diverge the CREATE2 address per chain and break the same-address guarantee.
+    ///         The broadcaster MUST equal it (asserted in run()), so initialize is not front-runnable.
+    function _expectedInitializer() internal pure returns (address) {
+        return DeploySalts.BRIDGE_ADAPTER_INITIALIZER;
     }
 
     /// @notice Appends the expectedInitializer constructor arg to an adapter's creationCode (mirrors the

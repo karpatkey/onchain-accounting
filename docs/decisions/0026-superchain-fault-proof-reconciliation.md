@@ -52,7 +52,10 @@ Reconcile the adapter to the fault-proof portals and ground every fix in fork te
   now the committed, cross-chain-identical `DeploySalts.BRIDGE_ADAPTER_INITIALIZER` (not the `DEPLOY_ADMIN`-overridable
   `chainConfig.admin`), and `05` asserts the broadcaster equals it — so a runtime role override can no longer diverge
   the adapter address across chains and silently break the same-address invariant (Superchain sibling / CCTP recipient /
-  `trustedRemoteAdapter`). `DEPLOY_ADMIN` still overrides only the post-init admin *role*.
+  `trustedRemoteAdapter`). This pin is the deploy-time **initializer** (the deployer EOA that broadcasts `initialize` — a
+  Safe cannot broadcast a `forge` deploy, so it is an EOA in prod too), **not** the end-state admin: `07` grants
+  DEFAULT_ADMIN + MANAGER to the security-council Safe and strips the deployer afterwards (EOA admin/manager exist only
+  during the deploy window). `DEPLOY_ADMIN` still overrides only the post-init admin *role*, which `07` then hands to the SC.
 
 ## Consequences
 

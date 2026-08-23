@@ -163,7 +163,11 @@ library DeploySalts {
     ///      per-chain broadcaster check could not detect the cross-chain divergence. Pinning it here makes the address a
     ///      committed constant everywhere, and `05` now REQUIRES the broadcaster to equal it (so a divergent key fails
     ///      loudly on the first chain). `DEPLOY_ADMIN`/`DEPLOY_MANAGER` still override the post-init admin/manager ROLE,
-    ///      just not the CREATE2 pin. It equals the committed `chainConfig.admin` (deployer-1) so canonical addresses
-    ///      are preserved; changing it shifts EVERY adapter's CREATE2 address on every chain.
+    ///      just not the CREATE2 pin. This is the deploy-time INITIALIZER (the deployer EOA that broadcasts `initialize`
+    ///      — a Safe cannot broadcast a `forge` deploy, so it is always an EOA, in prod too), NOT the end-state admin:
+    ///      `07_TransferAdminToSecurityCouncil` grants DEFAULT_ADMIN + MANAGER to the security-council Safe and strips the
+    ///      deployer afterwards (EOA admin/manager exist only during the deploy window). It equals the committed
+    ///      deploy-phase `chainConfig.admin` (deployer-1) so canonical addresses are preserved; changing it shifts EVERY
+    ///      adapter's CREATE2 address on every chain.
     address internal constant BRIDGE_ADAPTER_INITIALIZER = 0xAa5A7C7Ea51F276301f881F9CCB501a1dFeF4F72;
 }

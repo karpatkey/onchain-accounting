@@ -68,8 +68,13 @@ Reconcile the adapter to the fault-proof portals and ground every fix in fork te
   air-gapped withdrawal to the adapter), so the Superchain lane stays do-not-deploy until a real L2→L1 finalize is
   exercised end-to-end on the throwaway. Augments [ADR 0021](0021-bridge-adapter-provenance-and-deploy-hardening.md)
   and [ADR 0024](0024-bridge-destination-hold-then-claim.md); does not supersede them.
-- **Known residual (deferred to that e2e):** the already-finalized branch binds ETH delivery via `withdrawalTx.value`
-  but not the **ERC20** delivered amount/recipient (those live in the relay calldata, `value == 0`) — decoding them is
-  OP-version-brittle and unverifiable on a fork without a real proven withdrawal. Superchain is ETH-primary and ERC20
-  deposits are fail-closed, and the residual is MANAGER-gated, no-theft, and one-shot; the ERC20 binding is validated at
-  the real L2→L1 e2e before the lane deploys.
+- **Known residual (deferred to that e2e):** the already-finalized (front-run) branch binds the ETH *amount* via
+  `withdrawalTx.value` and rejects a *failed* relay via `successfulMessages`, but does **not** bind the withdrawal's
+  inner **recipient** (nor the ERC20 amount) to this adapter — those live inside the relayMessage→`finalizeBridge{ETH,ERC20}`
+  calldata (`to`, and for ERC20 the amount, with `value == 0`), and `successfulMessages` proves the relay reached its
+  *encoded* recipient, not necessarily this adapter. Decoding them on-chain is OP-version-brittle and unverifiable on a
+  fork without a real proven withdrawal. Consequence (super-review Low, CONFIRMED): a MANAGER mis-pairing an invoice to a
+  genuine third-party-paying withdrawal, while the adapter holds another invoice's funds, could settle it from those
+  funds (cross-invoice **misallocation**, not exfiltration). Bounded: MANAGER-gated, no theft, one-shot, and only the
+  front-run branch (the normal branch's measured balance delta binds delivery). Superchain is ETH-primary + ERC20
+  deposits fail-closed; the recipient/ERC20 binding is validated at the real L2→L1 e2e before the lane deploys.

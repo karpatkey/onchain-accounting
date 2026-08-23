@@ -487,14 +487,17 @@ contract SuperchainBridgeAdapter is BridgeAdapter, ISuperchainBridgeAdapter {
     ///      adapter (the `withdrawTo` receiver). Two consequences handled here:
     ///        1. Idempotency (H-01): the portal's finalize is PERMISSIONLESS and reverts on a second call, so a
     ///           third party can front-run it. If already finalized, skip the re-finalize instead of reverting the
-    ///           whole completion — but confirm the inner relay actually paid this adapter (see 3).
+    ///           whole completion — but confirm the withdrawal's relay was delivered (see 3; recipient axis is a
+    ///           documented MANAGER-gated residual, not bound on-chain).
     ///        2. Amount binding (M-02): the amount is bound not by the portal `target`/`value` but by what the
     ///           adapter actually receives across the finalize — measure the asset-balance delta and require it to
     ///           cover `amount` (for BOTH native and ERC20).
     ///        3. Front-run delivery check (RE4-M-01): the portal marks a withdrawal finalized even if its inner
     ///           relay FAILED (funds undelivered). For an already-finalized withdrawal (no measurable delta), require
-    ///           the L1CrossDomainMessenger to report the withdrawal's inner message delivered, so completion can't
-    ///           settle this invoice from stray/sibling funds.
+    ///           the L1CrossDomainMessenger to report the withdrawal's inner message delivered (a FAILED relay is
+    ///           rejected). NOTE this proves the relay reached its ENCODED recipient, not that the recipient is this
+    ///           adapter — the inner `to` is not decoded here; a MANAGER mis-pairing to a genuine third-party-paying
+    ///           withdrawal remains a documented residual (see the skip-branch body + ADR 0026), MANAGER-gated, no theft.
     ///      Provenance comes from the proven withdrawal hash (keyed by this adapter as proof submitter, fault-proof
     ///      OP2) + portal Merkle proof; the portal enforces the proof-maturity + dispute-game-finality air-gap.
     function _finalizeWithdrawal(
@@ -536,12 +539,19 @@ contract SuperchainBridgeAdapter is BridgeAdapter, ISuperchainBridgeAdapter {
             // Already finalized (front-run): the delivered delta cannot be measured for a past finalize, and the
             // portal marks a withdrawal finalized even when its inner relay FAILED (funds not delivered) — so a bare
             // absolute-balance check could settle THIS invoice from stray/sibling funds. Confirm the withdrawal's
-            // inner relay actually paid this adapter: the L1CrossDomainMessenger (the withdrawal `target`) records a
-            // relayed message as successful only if the nested `finalizeBridge{ETH,ERC20}` delivered to the receiver.
-            // For a Bedrock v1 message the versioned hash equals keccak256 of the relayMessage calldata, which is
-            // exactly `withdrawalTx.data` (what the portal delivered to the messenger). Bind the `target` to THIS L2's
+            // relay message was successfully delivered: the L1CrossDomainMessenger (the withdrawal `target`) records a
+            // message as successful only if its nested `finalizeBridge{ETH,ERC20}` call did not revert. For a Bedrock v1
+            // message the versioned hash equals keccak256 of the relayMessage calldata, which is exactly
+            // `withdrawalTx.data` (what the portal delivered to the messenger). Bind the `target` to THIS L2's
             // configured L1CrossDomainMessenger first, so `successfulMessages` is read from the genuine messenger and
             // not an attacker-authored withdrawal whose `target` is a contract returning a spoofed `true`.
+            // ⚠ RESIDUAL (MANAGER-gated, no theft): `successfulMessages` proves the relay succeeded to the recipient
+            // ENCODED IN `withdrawalTx.data`, NOT that that recipient is THIS adapter — the inner `to` is not decoded
+            // here (a version-brittle relayMessage→finalizeBridge decode). Combined with the base's ABSOLUTE-balance
+            // settle, a MANAGER mis-pairing invoice B to a genuine third-party-paying withdrawal, while the adapter
+            // holds another invoice's funds, could settle B from those funds (cross-invoice MISALLOCATION, not
+            // exfiltration). Same class as the ERC20 amount residual — validated at the real L2->L1 e2e before deploy
+            // (ADR 0026). The normal (non-front-run) branch has no such gap (its measured balance delta binds delivery).
             // The source L2's L1CrossDomainMessenger must be wired (l1MessengerForL2 is used for BOTH deposit dest-L2
             // routing AND this withdrawal-finalize target binding). A distinct error makes a partial config (portal
             // wired via setOptimismPortalForL2 but messenger not) obvious rather than a generic finalize revert.

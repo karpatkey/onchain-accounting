@@ -603,6 +603,22 @@ contract SuperchainBridgeAdapter is BridgeAdapter, ISuperchainBridgeAdapter {
         // the tx under a key completion never looks up). This removes the operator-supplied-key mis-correlation class.
         if (messagePayload.length == 0) revert InvalidWithdrawalProof();
         InvoiceDataLib.InvoiceData memory data = InvoiceDataLib.decode(messagePayload);
+        // Mirror the escrow's `recordDelivery` payload validation at prove time (amount + checksum), because the
+        // `WithdrawalTransaction` is STORED here with no later validation of the key's genuineness — completion trusts
+        // the stored tx. Two guards, in the escrow's order:
+        //   1. amount != 0 — a zero-amount payload can never complete (recordDelivery rejects it), so storing a tx
+        //      under its key is pure un-completable dust; reject it at the source.
+        //   2. checksum bound to the payload's OWN (invoiceId, amount, timestamp, nonce) — without this, an
+        //      internally-inconsistent payload whose checksum (hence `invoiceHash` key) is borrowed from another live
+        //      operation but whose `invoiceId` differs would derive that operation's key and overwrite its stored tx
+        //      (and cross-wire the correlation maps). Anchoring the key to a self-consistent checksum makes the two
+        //      keys jointly non-forgeable, not merely non-typo'able.
+        if (data.amount == 0) revert InvalidWithdrawalProof();
+        if (
+            data.checksum24 != InvoiceDataLib.calculateChecksum(data.invoiceId, data.amount, data.timestamp, data.nonce)
+        ) {
+            revert InvalidWithdrawalProof();
+        }
         bytes32 invoiceId = data.invoiceId;
         bytes32 invoiceHash = bytes32(uint256(uint192(data.checksum24)));
         if (invoiceId == bytes32(0) || invoiceHash == bytes32(0)) revert InvalidWithdrawalProof();

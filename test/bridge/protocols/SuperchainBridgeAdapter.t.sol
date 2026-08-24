@@ -611,6 +611,71 @@ contract SuperchainBridgeAdapterTest is BridgeScenarioHelper {
         l1Ad.proveWithdrawal(L2_CHAIN_ID, wtx, 0, emptyProof, new bytes[](0), "");
     }
 
+    /// @notice Deriving the storage key on-chain from the payload's `checksum24` is not enough on its own: the checksum
+    ///         must also be validated against the payload's OWN (invoiceId, amount, timestamp, nonce), or an operator
+    ///         could borrow another live operation's checksum (hence its `invoiceHash` key) under a different payload
+    ///         and overwrite that operation's stored WithdrawalTransaction. proveWithdrawal now recomputes + checks the
+    ///         checksum (mirroring recordDelivery), so a forged/inconsistent payload reverts InvalidWithdrawalProof.
+    ///         (Copilot review.)
+    function test_proveWithdrawal_revertsOnForgedChecksum() public {
+        vm.chainId(SOURCE_CHAIN_ID);
+        vm.prank(admin);
+        bridgeEscrow.registerAsset(WETH_SYMBOL, address(0));
+        SuperchainBridgeAdapter l1Ad = _deployL1WithdrawalAdapter(bridgeEscrow);
+        Types.OutputRootProof memory emptyProof = Types.OutputRootProof(bytes32(0), bytes32(0), bytes32(0), bytes32(0));
+
+        // Prove a GENUINE victim operation first (self-consistent checksum) so its WithdrawalTransaction is stored.
+        InvoiceDataLib.InvoiceData memory victim =
+            _createInvoiceData(L2_CHAIN_ID, SOURCE_CHAIN_ID, account, WETH_SYMBOL_BYTES6, 1 ether, 1);
+        bytes32 victimHash = bytes32(uint256(uint192(victim.checksum24)));
+        Types.WithdrawalTransaction memory victimTx = Types.WithdrawalTransaction({
+            nonce: 1, sender: address(l2Bridge), target: address(l1Ad), value: 1 ether, gasLimit: 200000, data: hex"aa"
+        });
+        vm.prank(manager);
+        l1Ad.proveWithdrawal(L2_CHAIN_ID, victimTx, 0, emptyProof, new bytes[](0), InvoiceDataLib.encode(victim));
+
+        // Forge: a payload with a DIFFERENT invoiceId (different account => distinct route id, but the SAME source
+        // chain so it still passes the >>232 source-chain check) that BORROWS the victim's checksum — so it derives the
+        // victim's storage key. Every guard except the checksum passes; only the checksum guard prevents the overwrite.
+        InvoiceDataLib.InvoiceData memory forged =
+            _createInvoiceData(L2_CHAIN_ID, SOURCE_CHAIN_ID, address(0xBEEF), WETH_SYMBOL_BYTES6, 2 ether, 2);
+        assertTrue(forged.invoiceId != victim.invoiceId, "forged carries a distinct route invoiceId");
+        forged.checksum24 = victim.checksum24; // borrow the victim's checksum/key
+        assertEq(bytes32(uint256(uint192(forged.checksum24))), victimHash, "forged derives the victim's storage key");
+
+        Types.WithdrawalTransaction memory forgedTx = Types.WithdrawalTransaction({
+            nonce: 9, sender: address(l2Bridge), target: address(l1Ad), value: 2 ether, gasLimit: 200000, data: hex"cc"
+        });
+        vm.prank(manager);
+        vm.expectRevert(abi.encodeWithSelector(ISuperchainBridgeAdapter.InvalidWithdrawalProof.selector));
+        l1Ad.proveWithdrawal(L2_CHAIN_ID, forgedTx, 0, emptyProof, new bytes[](0), InvoiceDataLib.encode(forged));
+
+        // The guard held: the victim's stored tx is intact — the forged payload did NOT overwrite it.
+        assertEq(l1Ad.getWithdrawalTransaction(victimHash).value, 1 ether, "victim tx value intact");
+        assertEq(l1Ad.getWithdrawalTransaction(victimHash).data, hex"aa", "victim tx data intact");
+    }
+
+    /// @notice prove-time mirrors recordDelivery's amount!=0 guard: a self-consistent zero-amount payload can never
+    ///         complete (recordDelivery rejects amount==0), so storing a WithdrawalTransaction under its key is pure
+    ///         un-completable dust — proveWithdrawal rejects it up front. (claude-review.)
+    function test_proveWithdrawal_revertsOnZeroAmount() public {
+        vm.chainId(SOURCE_CHAIN_ID);
+        vm.prank(admin);
+        bridgeEscrow.registerAsset(WETH_SYMBOL, address(0));
+        SuperchainBridgeAdapter l1Ad = _deployL1WithdrawalAdapter(bridgeEscrow);
+        Types.OutputRootProof memory emptyProof = Types.OutputRootProof(bytes32(0), bytes32(0), bytes32(0), bytes32(0));
+
+        // A payload with amount == 0 but an otherwise self-consistent checksum (so it clears the checksum guard).
+        InvoiceDataLib.InvoiceData memory zero =
+            _createInvoiceData(L2_CHAIN_ID, SOURCE_CHAIN_ID, account, WETH_SYMBOL_BYTES6, 0, 1);
+        Types.WithdrawalTransaction memory wtx = Types.WithdrawalTransaction({
+            nonce: 1, sender: address(l2Bridge), target: address(l1Ad), value: 0, gasLimit: 200000, data: hex"aa"
+        });
+        vm.prank(manager);
+        vm.expectRevert(abi.encodeWithSelector(ISuperchainBridgeAdapter.InvalidWithdrawalProof.selector));
+        l1Ad.proveWithdrawal(L2_CHAIN_ID, wtx, 0, emptyProof, new bytes[](0), InvoiceDataLib.encode(zero));
+    }
+
     /// @notice The stored WithdrawalTransaction is keyed by the ON-CHAIN-derived invoice hash, so two same-lane ops
     ///         proven with their own payloads keep separate stored txs — no operator can overwrite one with the other
     ///         (the mismatched-key overwrite class is gone since keys are derived, not supplied).

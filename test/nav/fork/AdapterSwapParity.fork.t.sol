@@ -50,10 +50,14 @@ contract AdapterSwapParityForkTest is BalanceAdapterTestBase {
     function testSwapPreservesEachAdapterContribution() public {
         vm.selectFork(createForkWithCadence(getAlchemyUrl("eth-mainnet")));
 
-        if (!nav.hasRole(MANAGER, MANAGER_HOLDER)) {
-            console2.log("MANAGER holder changed; skipping");
-            return;
-        }
+        // FAIL rather than skip. This fork tracks the latest block, so a role rotation is not hypothetical,
+        // and returning early here would have made the whole test pass while exercising no swap at all —
+        // coverage disappearing silently at exactly the moment the setup needs attention. A red test says
+        // "update the holder"; a green one says nothing.
+        assertTrue(
+            nav.hasRole(MANAGER, MANAGER_HOLDER),
+            "MANAGER holder rotated - update MANAGER_HOLDER (or impersonate the current one) to keep this test meaningful"
+        );
 
         address[] memory accounts = new address[](2);
         accounts[0] = 0x99b9F5F24205Cb88E33b1CC72008f644Fc23768b; // ACCOUNT_2 (~$933k)

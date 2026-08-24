@@ -307,6 +307,20 @@ jobs:
           python3 -m unittest test_deployer_balances -v
           python3 -O -m unittest test_deployer_balances
 
+      - name: Published addresses match the deployment records
+        # Added after DEPLOYED_ADDRESSES.md was found publishing 66 addresses that appear in NO deployment
+        # record — contracts from a superseded generation. Stale entries still have code, so an integrator
+        # reading the doc called a live contract the NAV does not use and got zeroes rather than an error.
+        # A human noticed; nothing failed.
+        #
+        # Runs the guard both ways: `--self-test` pins the parser (including that the ★ fleet marker never
+        # becomes part of an adapter name), then the plain run compares the committed doc to the committed
+        # records. No network, no build, no secrets — both inputs are in the tree.
+        working-directory: script/deploy/preflight
+        run: |
+          python3 published_addresses_guard.py --self-test
+          python3 published_addresses_guard.py
+
       - name: Heartbeat-guard self-test (declared_heartbeat_guard --self-test)
         # Wired for the same reason as the step below, and after the same failure: a scope change to
         # `configured_chain_ids` made this module's own self-test exit 1 on a clean tree (its arm redirects

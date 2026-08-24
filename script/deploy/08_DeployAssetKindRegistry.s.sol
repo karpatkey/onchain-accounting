@@ -80,8 +80,10 @@ import "../../src/constants.sol";
 ///      `foundry.toml` / `LibraryPins`, never from prose.
 ///
 ///      Re-running is safe — the step is idempotent and re-classifies an existing registry rather than deploying a
-///      second one — **but only with `PERSIST_DEPLOYMENTS=1`**, since the skip guard reads the record that flag gates.
-///      See the warning at the guard itself.
+///      second one. The skip guard probes the CREATE2 address for code ON-CHAIN, so idempotency does not depend on
+///      the deployment record and holds without `PERSIST_DEPLOYMENTS=1`. Pass the flag anyway: downstream consumers
+///      (`09_BackfillAssetLabels`, `verify_step.py 1.4`) read the address FROM the record, and only
+///      `saveDeployedAddress` writes it. See the note at the guard itself.
 ///
 ///      **The registry has NO roles, so there is nothing to hand over.** It holds no `AccessControl`, no admin and no
 ///      manager: every write gates on `NAV.hasRole(MANAGER, msg.sender)`, making authority exactly the NAV's MANAGER
@@ -209,15 +211,17 @@ contract DeployAssetKindRegistry is BaseDeployScript {
         // you to repeat — deploys a fresh registry and overwrites the deployment record, leaving the first one live,
         // still holding MANAGER, still answering `getAssetKind`, and now unmaintained. Two plausible answers with
         // nothing to say which is authoritative is the worst shape available to a misreporting-sensitive system.
-        // ⚠️ **This idempotency is only as good as the deployment record, so it REQUIRES `PERSIST_DEPLOYMENTS=1`.**
-        // The two guards interact: `saveDeployedAddress` (below) writes only when `PERSIST_DEPLOYMENTS` is set, and this
-        // guard reads what that wrote. So a real `--broadcast` WITHOUT `PERSIST_DEPLOYMENTS=1` deploys a live registry
-        // and records nothing, and the next run deploys a second one — exactly the harm this guard exists to prevent.
+        // Idempotency comes from CHAIN STATE, not from the record: the guard above probes the predicted CREATE2
+        // address for code. That address is a pure function of (creation code, NAV, salt), so there is always one to
+        // probe — which is why a re-run without `PERSIST_DEPLOYMENTS=1` is a no-op rather than a second registry.
         //
-        // There is no fallback, and it is worth being exact about why, because the obvious explanation is wrong: it is
-        // NOT simply "CREATE rather than CREATE2". `05` does probe a CREATE2 address for code, but `04` does not — its
-        // adapters use plain `new` behind a deployment-record lookup, structurally identical to this. The real
-        // difference is which writer is used: `03`/`04`'s adapters record through the UNGATED
+        // The flag is still required, for a different reason: `09_BackfillAssetLabels` and `verify_step.py 1.4` read
+        // the registry address from the record, and only `saveDeployedAddress` (below) writes it. Omit the flag and
+        // the chain is correct while nothing downstream can find the registry.
+        //
+        // This was previously the opposite: the guard read the record, so a real `--broadcast` without the flag
+        // recorded nothing and the next run deployed a second registry — two live registries, both holding MANAGER,
+        // with nothing to say which was authoritative.
         // `ConfigReader.writeAdapterAddress`, while this step (like `04`'s three assistants) records through the
         // `PERSIST_DEPLOYMENTS`-gated `saveDeployedAddress`. So `04`'s assistants share this exposure exactly.
         //

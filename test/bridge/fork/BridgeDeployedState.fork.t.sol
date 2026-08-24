@@ -53,7 +53,7 @@ contract BridgeDeployedStateForkTest is TestEnvConfigurator {
             escrow.registerAsset("ETH", address(0)); // idempotent (re-register to same address is a no-op)
             uint256 ethAmt = 5e14; // 0.0005 ETH
             vm.deal(acct, ethAmt + 1 ether);
-            if (feePrefund) vm.deal(adapter, 5 ether);
+            if (feePrefund) vm.deal(adapter, 100 ether);
             vm.prank(acct);
             bytes32 nh = escrow.depositAndBridge{value: ethAmt}(dest, symbol, ethAmt, adapter);
             require(nh != bytes32(0), "no invoice hash");
@@ -70,8 +70,10 @@ contract BridgeDeployedStateForkTest is TestEnvConfigurator {
 
         // Stargate/CCIP pay the messaging fee from the adapter's own native balance. Use generous headroom:
         // LZ fees fluctuate and are denominated in the source chain's native token — on Gnosis (xDAI) the GC->ETH
-        // Stargate quote has been observed >1 xDAI, so 1 ether was too tight and could OutOfFunds. 5 is free in-fork.
-        if (feePrefund) vm.deal(adapter, 5 ether);
+        // Stargate quote is gas-driven by the Ethereum L1 destination and has been observed at ~8.7 xDAI (climbing:
+        // 1 -> 5 -> now past 5), so a fixed 5 ether OutOfFunds. Prefund a large fixed amount — vm.deal is free
+        // in-fork, so the headroom costs nothing and absorbs future fee spikes without another chase.
+        if (feePrefund) vm.deal(adapter, 100 ether);
 
         // Single-shot pranks (never startPrank): a revert inside depositAndBridge must not leave a prank active
         // for the next try/catch lane. Each vm.prank is consumed by exactly one external call.

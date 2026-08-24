@@ -8,7 +8,7 @@
       "name": "mainnet",
       "alchemyNetwork": "eth-mainnet",
       "debankChainId": "eth",
-      "forkBlock": 25735412,
+      "forkBlock": 25823155,
       "supportedDeBankProtocols": [
         "aave2",
         "aave3",
@@ -41,7 +41,7 @@
       "name": "optimism",
       "alchemyNetwork": "opt-mainnet",
       "debankChainId": "op",
-      "forkBlock": 155448290,
+      "forkBlock": 155976557,
       "supportedDeBankProtocols": [
         "aave3",
         "compound3",
@@ -52,7 +52,7 @@
       "name": "gnosis",
       "alchemyNetwork": "gnosis-mainnet",
       "debankChainId": "xdai",
-      "forkBlock": 47678791,
+      "forkBlock": 47885635,
       "supportedDeBankProtocols": [
         "aave3",
         "lido",
@@ -63,7 +63,7 @@
       "name": "base",
       "alchemyNetwork": "base-mainnet",
       "debankChainId": "base",
-      "forkBlock": 49853005,
+      "forkBlock": 50381272,
       "$untracked_by_design": "WALLET / REWARD TOKENS with no price feed: COW. PERMANENT — no COW price feed exists on any chain and none is planned, so this needs no periodic re-evaluation. The Base PancakeSwap V3 WETH/COW pool (PancakeSwapV3_WETH_COW in script/config/contracts-deployment-config/balance-adapters/8453.json) is enabled=false for the same reason: if enabled, NAVCalculator's per-asset registry filter would drop the COW leg and value the LP on its WETH side only, understating it by roughly half — worse than not reporting it. Because no COW-bearing adapter is enabled, NAV reports no COW position on Base and DeBank's COW value lands in this report's 'Untracked by design' section rather than as unexplained drift. Declared here so the classification does not depend on that adapter's enabled flag: if someone ever enables it, this entry still explains why the value is excluded. This key is documentation only — no code reads it (the report emits it as a human pointer). Scope note: it lists ONLY what has been audited for this chain, so absence of an entry is not evidence of full coverage.",
       "supportedDeBankProtocols": [
         "aave3",
@@ -79,7 +79,7 @@
       "name": "arbitrum",
       "alchemyNetwork": "arb-mainnet",
       "debankChainId": "arb",
-      "forkBlock": 493597721,
+      "forkBlock": 497800082,
       "supportedDeBankProtocols": [
         "aave3",
         "balancer3",
@@ -108,24 +108,24 @@
       ],
       "expected": {
         "1": {
-          "navUsd8dp": "30197654006",
-          "debankUsd": "276.320333"
+          "navUsd8dp": "34418621252",
+          "debankUsd": "276.523107"
         },
         "10": {
           "navUsd8dp": "0",
           "debankUsd": "0.000000"
         },
         "100": {
-          "navUsd8dp": "501762427",
-          "debankUsd": "5.019467"
+          "navUsd8dp": "502016133",
+          "debankUsd": "5.019997"
         },
         "8453": {
-          "navUsd8dp": "999946566",
-          "debankUsd": "10.009357"
+          "navUsd8dp": "1000068437",
+          "debankUsd": "10.001350"
         },
         "42161": {
-          "navUsd8dp": "1006326377",
-          "debankUsd": "10.068308"
+          "navUsd8dp": "1007099388",
+          "debankUsd": "10.068552"
         }
       }
     },
@@ -142,15 +142,15 @@
       ],
       "expected": {
         "1": {
-          "navUsd8dp": "93208977209409",
-          "debankUsd": "933136.276845"
+          "navUsd8dp": "121476900379442",
+          "debankUsd": "1221222.972278"
         },
         "10": {
           "navUsd8dp": "0",
           "debankUsd": "0.000000"
         },
         "100": {
-          "navUsd8dp": "999674",
+          "navUsd8dp": "999897",
           "debankUsd": "0.009999"
         },
         "8453": {
@@ -175,8 +175,8 @@
       ],
       "expected": {
         "1": {
-          "navUsd8dp": "22215093402",
-          "debankUsd": "222.393399"
+          "navUsd8dp": "28944182439",
+          "debankUsd": "289.755886"
         },
         "10": {
           "navUsd8dp": "0",
@@ -205,8 +205,8 @@
       ],
       "expected": {
         "1": {
-          "navUsd8dp": "1433310390395",
-          "debankUsd": "14348.397124"
+          "navUsd8dp": "1869586844792",
+          "debankUsd": "18712.849031"
         }
       }
     },
@@ -219,8 +219,8 @@
       ],
       "expected": {
         "1": {
-          "navUsd8dp": "823639313785323",
-          "debankUsd": "8239804.075340"
+          "navUsd8dp": "825441323727887",
+          "debankUsd": "8254578.698369"
         }
       }
     },
@@ -233,8 +233,8 @@
       ],
       "expected": {
         "10": {
-          "navUsd8dp": "338791065223",
-          "debankUsd": "3394.552284"
+          "navUsd8dp": "419844445708",
+          "debankUsd": "4188.776464"
         }
       }
     },
@@ -247,8 +247,8 @@
       ],
       "expected": {
         "42161": {
-          "navUsd8dp": "187474802257199",
-          "debankUsd": "1876507.461567"
+          "navUsd8dp": "187693359090405",
+          "debankUsd": "1876985.564047"
         }
       }
     },
@@ -261,8 +261,8 @@
       ],
       "expected": {
         "8453": {
-          "navUsd8dp": "57623058053329",
-          "debankUsd": "576737.873766"
+          "navUsd8dp": "55724960604850",
+          "debankUsd": "557280.690690"
         }
       }
     },
@@ -275,8 +275,8 @@
       ],
       "expected": {
         "1": {
-          "navUsd8dp": "1635254323450495",
-          "debankUsd": "16628317.910421"
+          "navUsd8dp": "1739097994180847",
+          "debankUsd": "17778534.280985"
         }
       }
     },
@@ -289,8 +289,8 @@
       ],
       "expected": {
         "1": {
-          "navUsd8dp": "7731999304481522",
-          "debankUsd": "77366213.861779"
+          "navUsd8dp": "9251141063863653",
+          "debankUsd": "92567414.748768"
         }
       }
     },
@@ -303,8 +303,8 @@
       ],
       "expected": {
         "1": {
-          "navUsd8dp": "607449022545642",
-          "debankUsd": "6438136.903777"
+          "navUsd8dp": "759192986979338",
+          "debankUsd": "7884680.585483"
         }
       }
     },
@@ -317,8 +317,8 @@
       ],
       "expected": {
         "1": {
-          "navUsd8dp": "3560049046",
-          "debankUsd": "45.298842"
+          "navUsd8dp": "4553829895",
+          "debankUsd": "55.207782"
         }
       }
     },

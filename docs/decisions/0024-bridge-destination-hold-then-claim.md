@@ -177,3 +177,10 @@ and the invariant suite. Code review then surfaced points resolved as follows:
   and NAV never over-reports. Held custody is not stuck (`claim` releases it after unpause; a UUPS upgrade is
   the true last resort if the escrow must be abandoned). Both reviewers flagged the earlier
   reconciles-nothing behavior; this is the adopted fix.
+- **Hold-then-claim is what defuses the inherent source-sender provenance residual.** The permissionless-entrypoint
+  lanes (Across, Gnosis, CCTP) cannot bind the source-chain *sender* — those bridges do not expose it (see
+  `src/bridge/BRIDGE_ADAPTERS.md` §7.1). Because delivery only ever *holds* funds in per-invoice custody for an
+  **authorized account** and a MANAGER must `claim`/route, a fabricated delivery (which an attacker must self-fund
+  through the genuine bridge) can only donate to the fund or grief — never steal, over-credit, or replay. This is the
+  accepted, documented residual for those three lanes; the model is precisely the mitigation that makes the missing
+  source-sender authentication a non-fund-loss property.

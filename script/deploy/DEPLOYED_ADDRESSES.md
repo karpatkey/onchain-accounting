@@ -76,11 +76,12 @@ Migrated 2026-08-19 from plain-CREATE originals (which had up to 5 distinct addr
 was verified against chain state and carried its meta-instance set intact; bytecode is identical to the
 predecessor in every case, so these were pure address changes.
 
-> **⚠️ One deliberate exception: `FluidFTokensMeta` on Polygon (137) is NOT at the address above.** It remains
-> at `0x2182Ec30EFF0f213c6662E5b45D6799ff7de5793`. Polygon's live adapter is an **older build** than the
-> current tree (12,491 vs 13,369 bytes), so completing the swap there would have upgraded the contract as well
-> as moved it — a behaviour change beyond the addressing fix. Read that one from
-> `script/config/deployments/137.json`, which matches the chain.
+> **Polygon's `FluidFTokensMeta` was the last exception and is now migrated (2026-08-24).** Its live adapter
+> had been an older build than the tree (12,491 vs 13,369 bytes), so the swap also upgraded the contract —
+> which is why it was held back from the 2026-08-19 wave until the delta could be checked. Verified before
+> executing: `protocolName()` and `positionLabels()` identical on both builds, and no tracked account held a
+> Fluid position on Polygon. The delta is additive — `positionIds()` (which the old build lacks entirely)
+> plus label-path revert fixes. All 4 governed instances carried across.
 
 **Every other balance adapter and all custom price feeds remain plain CREATE, and correctly so:** their
 constructors take chain-specific protocol addresses, so their init code genuinely differs per chain and CREATE2

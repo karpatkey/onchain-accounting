@@ -83,7 +83,15 @@ contract MigrateNavOnlyAdaptersToCreate2 is BaseDeployScript {
         address nav = ConfigReader.readDeployedAddress(vm, chainId, "NAVCalculatorProxy");
         INavAdmin navAdmin = INavAdmin(nav);
 
-        address sender = msg.sender;
+        // The address that will actually sign, NOT `msg.sender`. Under `forge script` the two need not be
+        // equal, so checking `msg.sender` can fail a valid migration before broadcasting — or, worse, pass
+        // one whose real signer lacks the role, leaving the revert to land mid-sequence with the old
+        // adapter already removed. `script/development/MigrateAssistedAdapters.s.sol` documents the same
+        // distinction and pins the intended broadcaster the same way.
+        //
+        // Resolved from the chain config rather than hard-coded so a chain with a different manager is not
+        // silently checked against mainnet's.
+        address sender = ConfigReader.readChainConfig(vm, chainId).manager;
         if (!navAdmin.hasRole(MANAGER, sender)) revert NotManager(sender);
 
         Entry[] memory entries = _entries();
@@ -110,7 +118,20 @@ contract MigrateNavOnlyAdaptersToCreate2 is BaseDeployScript {
                 continue;
             }
             if (old == predicted) {
-                // Record says migrated, chain disagrees: recover the true predecessor from the live adapter set.
+                // Record says migrated, chain disagrees — the signature of a no-broadcast run, whose
+                // simulation writes the record through the ungated `writeAdapterAddress` while nothing
+                // reaches the chain.
+                //
+                // Recovery matches the predecessor by CODEHASH, which needs the twin to exist, so the
+                // deploy has to happen first. An earlier version looked it up before deploying and always
+                // read `codehash == 0`, so every adapter was skipped and the run reported success against
+                // an untouched NAV. Deploying first is safe: CREATE2 at an occupied address is a no-op.
+                if (predicted.code.length == 0) {
+                    vm.startBroadcast();
+                    (bool deployed,) = CANONICAL_CREATE2_DEPLOYER.call(abi.encodePacked(salt, initCode));
+                    vm.stopBroadcast();
+                    require(deployed, "CREATE2 adapter deploy failed");
+                }
                 old = _registeredPredecessor(navAdmin, predicted);
                 if (old == address(0)) {
                     console2.log("[WARN] record claims migrated but nothing registered:", e.key);

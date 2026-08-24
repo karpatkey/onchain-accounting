@@ -5,7 +5,7 @@
   "BridgeEscrowImplementation": "0xe2237d9776041514b1AC66856407Ed344b480De0",
   "balanceAdapters": {
     "ERC20Default": "0x4Bc39Dce61245F5A63189d1FA03E6D76646f1EE6",
-    "FluidFTokensMeta": "0x2182Ec30EFF0f213c6662E5b45D6799ff7de5793"
+    "FluidFTokensMeta": "0x0c312178e10ad15a9DC847d664786146f2C88dcf"
   },
   "NAVCalculatorProxy": "0x54EaD2A1dB7456cA917675Ea8908ec8A997c6214",
   "customPriceFeeds": {},

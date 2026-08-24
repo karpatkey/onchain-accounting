@@ -117,8 +117,9 @@ contract SuperchainBridgeAdapter is BridgeAdapter, ISuperchainBridgeAdapter {
     mapping(bytes32 => bool) private _settledWithdrawals;
 
     /// @notice L1 token -> L2 token per destination L2 chain id (L1 side only).
-    /// @dev Used for ERC20 deposits (L1 → L2). Unmapped (zero) falls back to the same address (standard
-    ///      bridge tokens). Keyed per L2 because the same L1 token maps to different L2 token addresses.
+    /// @dev Used for ERC20 deposits (L1 → L2). Unmapped (zero) is FAIL-CLOSED: `_depositToL2` reverts
+    ///      `L2TokenNotConfigured` — there is NO same-address fallback, so every ERC20 route must be wired via
+    ///      `setL2TokenForL2` first. Keyed per L2 because the same L1 token maps to different L2 token addresses.
     mapping(uint256 => mapping(address => address)) public l1ToL2TokenForL2;
 
     /// @notice Default L2 gas limit for deposits

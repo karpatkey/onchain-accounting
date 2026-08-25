@@ -106,6 +106,12 @@
         "threshold": 0.25,
         "feedCategory": "low"
       },
+      "0x9944d86ceb9160af5c5feb251fd671923323f8c3": {
+        "name": "PAXG / USD",
+        "declaredHeartbeat": 86400,
+        "threshold": 0.5,
+        "feedCategory": "low"
+      },
       "0xa569d910839ae8865da8f8e70fffb0cba869f961": {
         "name": "USDe / USD",
         "declaredHeartbeat": 82800,

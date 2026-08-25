@@ -579,7 +579,7 @@
     ]
   },
   "RWIV": {
-    "address": "0xCafEaa466736ac01e0AC9CA72644BeF348694731",
+    "address": "0xcAFeAA466736ac01e0AC9Ca72644beF348694731",
     "$kindComment": "Nexus Mutual RWI Vault - ERC-4626 share, USDC underlying; priced USDC/USD x convertToAssets (per feed config).",
     "accrualKind": "Appreciating",
     "labels": [
@@ -779,7 +779,7 @@
     "$comment": "wNXM (wrapped NXM) priced at NXM book value via RAMM (1:1 unwrappable by a Nexus member). Held by the KPK DAO Safe."
   },
   "cbBTC": {
-    "address": "0xcbB7C0000aB88B473b1F5aFd9ef808440eED33Bf",
+    "address": "0xcbB7C0000aB88B473b1f5aFd9ef808440eed33Bf",
     "accrualKind": "None",
     "labels": [
       "Coinbase",

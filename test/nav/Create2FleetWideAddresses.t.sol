@@ -27,6 +27,7 @@ import {
 import {
     UniswapV3PoolsMetaBalanceAdapter
 } from "src/balances/MetaBalanceAdapters/uniswap/UniswapV3PoolsMetaBalanceAdapter.sol";
+import {FluidVaultsMetaBalanceAdapter} from "src/balances/MetaBalanceAdapters/FluidVaultsMetaBalanceAdapter.sol";
 
 /// @title Create2FleetWideAddresses — pins the addresses that must be identical on every chain
 /// @notice Derives each CREATE2 address from (creation code, NAV proxy, salt) and asserts it equals the value
@@ -58,6 +59,11 @@ contract Create2FleetWideAddressesTest is Test {
     /// @dev Morpho on Ethereum and Base. Arbitrum deployed later at a different address (see below).
     address constant MORPHO_ETH_BASE = 0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb;
     address constant MORPHO_ARBITRUM = 0x6c247b1F6182318877311737BaC0844bAa518F5e;
+
+    /// @dev Fluid's VaultResolver — confirmed by calling `FACTORY()` (same `0x324c5Dc1…` everywhere) and
+    ///      `getAllVaultsAddresses()` (real, per-chain vault sets) on Ethereum, BNB, Polygon, Base, Plasma and
+    ///      Arbitrum. Fluid deploys it deterministically.
+    address constant FLUID_VAULT_RESOLVER = 0xA5C3E16523eeeDDcC34706b0E6bE88b4c6EA95cC;
 
     function _derive(bytes memory creationCode, string memory name, uint256 version) internal pure returns (address) {
         return _deriveWithArgs(creationCode, abi.encode(NAV_PROXY), name, version);
@@ -96,6 +102,18 @@ contract Create2FleetWideAddressesTest is Test {
             ),
             0xACdC33b6a453F629d1ab10A14d3513817F492de7,
             "UniswapV3PoolsMeta address moved - see DEPLOYED_ADDRESSES.md"
+        );
+
+        // Fluid Vaults — one address across all six chains carrying the deterministic VaultResolver.
+        assertEq(
+            _deriveWithArgs(
+                type(FluidVaultsMetaBalanceAdapter).creationCode,
+                abi.encode(FLUID_VAULT_RESOLVER, NAV_PROXY),
+                "FluidVaultsMetaBalanceAdapter",
+                DeploySalts.FLUID_VAULTS_META
+            ),
+            0x32E94eE2276a2eb4873a68676e1250212b3433fC,
+            "FluidVaultsMeta address moved - see DEPLOYED_ADDRESSES.md"
         );
 
         bytes memory code = type(MorphoMarketsMetaBalanceAdapter).creationCode;
@@ -259,5 +277,6 @@ contract Create2FleetWideAddressesTest is Test {
         assertEq(DeploySalts.MORPHO_VAULTS_META, 2, "adapter salt version changed");
         assertEq(DeploySalts.UNISWAP_V3_POOLS_META, 2, "UniswapV3PoolsMeta salt version changed");
         assertEq(DeploySalts.MORPHO_MARKETS_META, 2, "MorphoMarketsMeta salt version changed");
+        assertEq(DeploySalts.FLUID_VAULTS_META, 2, "FluidVaultsMeta salt version changed");
     }
 }

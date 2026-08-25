@@ -25,6 +25,7 @@ import {
 import {
     UniswapV3PoolsMetaBalanceAdapter
 } from "../../src/balances/MetaBalanceAdapters/uniswap/UniswapV3PoolsMetaBalanceAdapter.sol";
+import {FluidVaultsMetaBalanceAdapter} from "../../src/balances/MetaBalanceAdapters/FluidVaultsMetaBalanceAdapter.sol";
 import {
     FluidFTokensMetaBalanceAdapter
 } from "../../src/balances/MetaBalanceAdapters/FluidFTokensMetaBalanceAdapter.sol";
@@ -222,7 +223,7 @@ contract MigrateAdaptersToCreate2 is BaseDeployScript {
     }
 
     function _entries() internal pure returns (Entry[] memory e) {
-        e = new Entry[](11);
+        e = new Entry[](12);
         e[0] = Entry(
             "AaveV3InstancesMeta",
             "AaveV3InstancesMetaBalanceAdapter",
@@ -303,6 +304,13 @@ contract MigrateAdaptersToCreate2 is BaseDeployScript {
             DeploySalts.MORPHO_MARKETS_META,
             type(MorphoMarketsMetaBalanceAdapter).creationCode,
             "morpho"
+        );
+        e[11] = Entry(
+            "FluidVaultsMeta",
+            "FluidVaultsMetaBalanceAdapter",
+            DeploySalts.FLUID_VAULTS_META,
+            type(FluidVaultsMetaBalanceAdapter).creationCode,
+            "vaultResolver"
         );
     }
 }

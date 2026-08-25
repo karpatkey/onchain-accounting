@@ -792,8 +792,12 @@ contract DeployBalanceAdapters is BaseDeployScript {
         address vaultResolver = vm.parseAddress(
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "vaultResolver")
         );
-        FluidVaultsMetaBalanceAdapter adapter = new FluidVaultsMetaBalanceAdapter(vaultResolver, navCalculator);
-        return address(adapter);
+        return _create2WithArgs(
+            type(FluidVaultsMetaBalanceAdapter).creationCode,
+            abi.encode(vaultResolver, navCalculator),
+            "FluidVaultsMetaBalanceAdapter",
+            DeploySalts.FLUID_VAULTS_META
+        );
     }
 
     function _deployStaderWithdrawalQueue(string memory adapterName, address navCalculator) internal returns (address) {

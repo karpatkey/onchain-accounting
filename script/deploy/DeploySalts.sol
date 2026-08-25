@@ -104,8 +104,13 @@ library DeploySalts {
     // CREATE2 address from ever being confused with a nonce-derived one. Bumping either re-derives that
     // adapter's address on every chain at once — a redeploy AND a NAV re-registration, since the balance-adapter
     // set and each meta-adapter's instance set are keyed by adapter ADDRESS.
+    //   * `FluidVaultsMeta` — Fluid's VaultResolver is at `0xa5c3e16523eeEDdCC34706b0e6be88b4C6Ea95cC` on
+    //     Ethereum, BNB, Polygon, Base, Plasma and Arbitrum (verified by calling `FACTORY()` and
+    //     `getAllVaultsAddresses()` — same factory `0x324c5Dc1…`, real per-chain vault sets). Fluid deploys its
+    //     resolver deterministically, so this adapter is one address across all six.
     uint256 internal constant UNISWAP_V3_POOLS_META = 2;
     uint256 internal constant MORPHO_MARKETS_META = 2;
+    uint256 internal constant FLUID_VAULTS_META = 2;
 
     //
     // Bridge adapters (ADR 0012, D7 — CREATE2 same-address across chains)

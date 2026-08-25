@@ -133,6 +133,7 @@ address, and take a different — still deterministic — address where it diffe
 | UniswapV3PoolsMeta ☆ | `0xACdC33b6a453F629d1ab10A14d3513817F492de7` | Ethereum, Optimism, Polygon, Arbitrum | those chains host the canonical NonfungiblePositionManager at `0xC36442…FE88` |
 | MorphoMarketsMeta ☆ | `0x5C951CF5C596BC4908A5fd846710070553830b06` | Ethereum, Base | both host Morpho at `0xBBBB…FFCb` |
 | MorphoMarketsMeta ☆ | `0x1a33a8eAE2F927A05e3eaDC87a348323060Ab2a4` | Arbitrum only | Arbitrum's Morpho is a separate deployment at `0x6c247b1F…8F5e` |
+| FluidVaultsMeta ☆ | `0x32E94eE2276a2eb4873a68676e1250212b3433fC` | Ethereum, BNB, Polygon, Base, Plasma, Arbitrum | Fluid deploys its VaultResolver deterministically at `0xA5C3E165…95cC` on all six |
 
 Membership of the Uniswap V3 list is decided by **calling** `name()`/`factory()` on the candidate chain, never
 by checking that the address has code: several chains carry unrelated code at `0xC36442…FE88`, and Base's real
@@ -157,7 +158,7 @@ position manager is at a different address entirely.
 | EtherFiWithdrawalQueueAssisted | `0x5c5c1A98CdF07c9D9B4664933AF98a30e36F3618` |
 | EulerVaultsMeta ★ | `0xCb28C7d1A27e8FB5ea0e1c75Ef62c80722388135` |
 | FluidFTokensMeta ★ | `0x0c312178e10ad15a9DC847d664786146f2C88dcf` |
-| FluidVaultsMeta | `0x49d4A9D5D03134e2096E0795ffe678FBE36E5B14` |
+| FluidVaultsMeta ☆ | `0x32E94eE2276a2eb4873a68676e1250212b3433fC` |
 | GearboxV3MarketsMeta ★ | `0x160017c8d50D44A8fA3667419a89BA1183daaF38` |
 | KelpWithdrawalQueue | `0x136439b0CA2Ff5e9Ec8dC472222248E3A57CeF43` |
 | LidoWithdrawalQueue | `0xD32d7db9c94E0A08ef354D73d618B86b8215A2cF` |

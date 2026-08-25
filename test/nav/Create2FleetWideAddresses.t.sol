@@ -93,10 +93,16 @@ contract Create2FleetWideAddressesTest is Test {
     ///      Arbitrum to the Morpho that chain actually has.
     function testProtocolArgAdapterAddresses() public view {
         // Uniswap V3 — one address across every chain carrying the canonical NonfungiblePositionManager.
+        // The constructor argument is READ FROM CONFIG, not from the constant: script 04 derives the CREATE2
+        // address from whatever config holds, so a test deriving from a literal would stay green while a
+        // repointed `positionManager` silently moved the deployed address. The constant is still asserted, so
+        // an unintended config edit fails here naming the expected value rather than only a shifted address.
+        address npm = _configAddr(1, "UniswapV3PoolsMeta", "positionManager");
+        assertEq(npm, UNIV3_NPM, "chain 1 positionManager is no longer the canonical NonfungiblePositionManager");
         assertEq(
             _deriveWithArgs(
                 type(UniswapV3PoolsMetaBalanceAdapter).creationCode,
-                abi.encode(UNIV3_NPM, NAV_PROXY),
+                abi.encode(npm, NAV_PROXY),
                 "UniswapV3PoolsMetaBalanceAdapter",
                 DeploySalts.UNISWAP_V3_POOLS_META
             ),
@@ -105,10 +111,12 @@ contract Create2FleetWideAddressesTest is Test {
         );
 
         // Fluid Vaults — one address across all six chains carrying the deterministic VaultResolver.
+        address resolver = _configAddr(1, "FluidVaultsMeta", "vaultResolver");
+        assertEq(resolver, FLUID_VAULT_RESOLVER, "chain 1 vaultResolver is no longer Fluid's deterministic one");
         assertEq(
             _deriveWithArgs(
                 type(FluidVaultsMetaBalanceAdapter).creationCode,
-                abi.encode(FLUID_VAULT_RESOLVER, NAV_PROXY),
+                abi.encode(resolver, NAV_PROXY),
                 "FluidVaultsMetaBalanceAdapter",
                 DeploySalts.FLUID_VAULTS_META
             ),
@@ -127,11 +135,18 @@ contract Create2FleetWideAddressesTest is Test {
         assertTrue(onArb != onEth, "Arbitrum must bind its OWN Morpho deployment, not Ethereum's address");
     }
 
+    /// @dev One constructor address as the deploy config actually holds it — the same source script 04 reads.
+    function _configAddr(uint256 chainId, string memory adapterKey, string memory param)
+        internal
+        view
+        returns (address)
+    {
+        return vm.parseAddress(ConfigReader.readAdapterParam(vm, chainId, "balanceAdapters", adapterKey, param));
+    }
+
     /// @dev Derives `MorphoMarketsMeta` for one chain using that chain's CONFIGURED `morpho` address.
     function _deriveForChain(bytes memory code, uint256 chainId) internal view returns (address) {
-        address morpho = vm.parseAddress(
-            ConfigReader.readAdapterParam(vm, chainId, "balanceAdapters", "MorphoMarketsMeta", "morpho")
-        );
+        address morpho = _configAddr(chainId, "MorphoMarketsMeta", "morpho");
         return _deriveWithArgs(
             code, abi.encode(morpho, NAV_PROXY), "MorphoMarketsMetaBalanceAdapter", DeploySalts.MORPHO_MARKETS_META
         );

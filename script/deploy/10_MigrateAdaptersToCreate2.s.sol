@@ -50,12 +50,24 @@ interface INavAdmin {
 
 /// @title 10_MigrateAdaptersToCreate2
 /// @author kpk
-/// @notice Re-deploys every balance adapter whose ONLY constructor argument is the NAV proxy at its CREATE2
-///         address, and hands its registration (and instance set) over from the CREATE-deployed original.
-/// @dev **Why only these adapters.** The NAV proxy is CREATE2-identical fleet-wide, so an adapter that takes
-///      nothing else has an identical init-code hash on every chain and one salt yields ONE address everywhere.
-///      Adapters that take a chain-specific protocol address (Morpho's `morpho`, SparkLend's `dataProvider`,
-///      Compound's `compoundRewards`, …) cannot have that property and deliberately stay on plain CREATE.
+/// @notice Re-deploys balance adapters at their CREATE2 addresses and hands each one's registration (and
+///         instance set) over from the CREATE-deployed original.
+/// @dev **Which adapters, and what each gets.** Two groups, with DIFFERENT guarantees — the entry table below
+///      carries both, and conflating them is how a doc ends up promising more than the code delivers.
+///
+///      *NAV-only* (`paramName == ""`): the constructor takes nothing but the NAV proxy, which is itself
+///      CREATE2-identical fleet-wide, so the init-code hash is identical everywhere and one salt yields ONE
+///      address on every chain.
+///
+///      *Protocol-address* (`paramName` set — `UniswapV3PoolsMeta`, `MorphoMarketsMeta`, `FluidVaultsMeta`):
+///      the constructor also takes one chain-specific protocol address, read here from the same deploy config
+///      `04` uses. The address is a pure function of that argument — a SHARED address across the chains that
+///      share it, a different but still deterministic one where they do not. Weaker than the NAV-only
+///      guarantee, and documented as such (`☆` rather than `★` in `DEPLOYED_ADDRESSES.md`).
+///
+///      Adapters taking MORE than one chain-specific address (`CompoundV3CometsMeta`'s rewards + reward token,
+///      `StakeWiseV3VaultsMeta`, `BalancerV3GaugesMeta`) stay on plain CREATE: their arguments genuinely differ
+///      per chain, so CREATE2 could not give them a shared address and there is nothing to gain.
 ///
 ///      **The handover order is load-bearing: remove FIRST, then re-register.** The reverse leaves the old and
 ///      new adapter both registered at once and, because they report the SAME positions, NAV DOUBLE-COUNTS them

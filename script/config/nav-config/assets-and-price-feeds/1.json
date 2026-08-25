@@ -833,7 +833,7 @@
       {
         "type": "Chainlink",
         "address": "0x214eD9Da11D2fbe465a6fc601a91E62EbEc1a0D6",
-        "$comment": "Chainlink XAU/USD, 8-dp. Declared heartbeat 86400, threshold 0.3%, marketCategory Precious_Metals. REGISTERED AT 90000 (+1h), matching the 16 other declared-86400 feeds in this tree, and it is not cosmetic: gold markets close at the weekend, so the feed then publishes on heartbeat alone. Measured over 11 days the largest real gap was 86,436s -- PAST the declared 86,400 -- on three separate weekend intervals. Registering 86400 would mark XAUt stale every weekend.",
+        "$comment": "Chainlink XAU/USD, 8-dp. Declared heartbeat 86400, threshold 0.3%, marketHours Precious_Metals. REGISTERED AT 90000 (+1h), matching the 16 other declared-86400 feeds in this tree, and it is not cosmetic: gold markets close at the weekend, so the feed then publishes on heartbeat alone. Measured over 11 days the largest real gap was 86,436s -- PAST the declared 86,400 -- on three separate weekend intervals. Registering 86400 would mark XAUt stale every weekend.",
         "heartbeat": 90000
       }
     ],

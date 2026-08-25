@@ -307,6 +307,20 @@ jobs:
           python3 -m unittest test_deployer_balances -v
           python3 -O -m unittest test_deployer_balances
 
+      - name: KEEP invariant (reset_deployment_records)
+        # Added for #303. `KEEP` named the three bridge keys the redeploy reset must never touch, and was
+        # referenced NOWHERE — one occurrence in the whole repo, its own assignment. Those keys survived only
+        # because they happen to be absent from CLEAR_TOP/CLEAR_SECTIONS, which is coincidence, not
+        # enforcement, while the name told reviewers the case was handled. Adding `bridgeAdapters` to
+        # CLEAR_SECTIONS while extending the reset would have wiped the bridge record with nothing objecting.
+        #
+        # -O as well as plain, for the same reason as the job above: the invariant raises rather than asserts
+        # so that optimised runs cannot strip it, and running both ways is what keeps that true.
+        working-directory: script/deploy/preflight
+        run: |
+          python3 -m unittest test_reset_deployment_records -v
+          python3 -O -m unittest test_reset_deployment_records
+
       - name: Published addresses match the deployment records
         # Added after DEPLOYED_ADDRESSES.md was found publishing 66 addresses that appear in NO deployment
         # record — contracts from a superseded generation. Stale entries still have code, so an integrator

@@ -134,7 +134,9 @@ def published_by_chain(doc_text: str) -> dict[str, dict[str, str]]:
                 continue
             row = TABLE_ROW.match(line)
             if row and chain:
-                name = row.group(1).replace("★", "").strip()
+                # ★ = identical on every chain; ☆ = CREATE2 but shared only across the chains that share the
+                # adapter's protocol address. Both are display markers, never part of the recorded key.
+                name = row.group(1).replace("★", "").replace("☆", "").strip()
                 out.setdefault(chain, {})[name] = row.group(2)
     return out
 
@@ -202,6 +204,12 @@ def self_test() -> int:
         "| MorphoVaultsMeta ★ | `0x64e1ba8B12ee2bFdBDdFd4E0863EdfaaE824C86a` |\n"
     )
     assert starred["8453"]["MorphoVaultsMeta"], "the ★ fleet marker must not become part of the name"
+
+    shared = published_by_chain(
+        "## Balance adapters\n\n### Base (8453)\n\n| Adapter | Address |\n| --- | --- |\n"
+        "| MorphoMarketsMeta ☆ | `0x5C951CF5C596BC4908A5fd846710070553830b06` |\n"
+    )
+    assert shared["8453"]["MorphoMarketsMeta"], "the ☆ shared marker must not become part of the name"
 
     problems = check()
     if problems:

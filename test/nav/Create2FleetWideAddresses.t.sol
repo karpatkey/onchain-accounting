@@ -20,9 +20,13 @@ import {
     GearboxV3MarketsMetaBalanceAdapter
 } from "src/balances/MetaBalanceAdapters/GearboxV3MarketsMetaBalanceAdapter.sol";
 import {MorphoVaultsMetaBalanceAdapter} from "src/balances/MetaBalanceAdapters/MorphoVaultsMetaBalanceAdapter.sol";
+import {MorphoMarketsMetaBalanceAdapter} from "src/balances/MetaBalanceAdapters/MorphoMarketsMetaBalanceAdapter.sol";
 import {
     SymbioticVaultsMetaBalanceAdapter
 } from "src/balances/MetaBalanceAdapters/SymbioticVaultsMetaBalanceAdapter.sol";
+import {
+    UniswapV3PoolsMetaBalanceAdapter
+} from "src/balances/MetaBalanceAdapters/uniswap/UniswapV3PoolsMetaBalanceAdapter.sol";
 
 /// @title Create2FleetWideAddresses — pins the addresses that must be identical on every chain
 /// @notice Derives each CREATE2 address from (creation code, NAV proxy, salt) and asserts it equals the value
@@ -45,10 +49,74 @@ contract Create2FleetWideAddressesTest is Test {
     address constant CANONICAL_CREATE2_DEPLOYER = 0x4e59b44847b379578588920cA78FbF26c0B4956C;
     address constant NAV_PROXY = 0x54EaD2A1dB7456cA917675Ea8908ec8A997c6214;
 
+    /// @dev The Uniswap V3 NonfungiblePositionManager, on every chain that actually has the canonical one.
+    ///      Verified by calling `name()` + `factory()` — NOT by codehash, which differs per chain because the
+    ///      NPM stores `factory`/`WETH9` as immutables. Several other chains have unrelated code at this exact
+    ///      address, so presence of code is not evidence of identity.
+    address constant UNIV3_NPM = 0xC36442b4a4522E871399CD717aBDD847Ab11FE88;
+
+    /// @dev Morpho on Ethereum and Base. Arbitrum deployed later at a different address (see below).
+    address constant MORPHO_ETH_BASE = 0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb;
+    address constant MORPHO_ARBITRUM = 0x6c247b1F6182318877311737BaC0844bAa518F5e;
+
     function _derive(bytes memory creationCode, string memory name, uint256 version) internal pure returns (address) {
+        return _deriveWithArgs(creationCode, abi.encode(NAV_PROXY), name, version);
+    }
+
+    function _deriveWithArgs(bytes memory creationCode, bytes memory ctorArgs, string memory name, uint256 version)
+        internal
+        pure
+        returns (address)
+    {
         bytes32 salt = ConfigReader.computeSalt(name, version);
-        bytes memory initCode = abi.encodePacked(creationCode, abi.encode(NAV_PROXY));
+        bytes memory initCode = abi.encodePacked(creationCode, ctorArgs);
         return vm.computeCreate2Address(salt, keccak256(initCode), CANONICAL_CREATE2_DEPLOYER);
+    }
+
+    /// @notice Pins the two protocol-arg adapter addresses, and asserts they collapse to one address exactly
+    ///         where the configured protocol address is shared — no further.
+    /// @dev **Read from config, not from constants, and deliberately so.** These adapters take
+    ///      `(protocolAddress, nav)`, so their address is fleet-wide only across chains that configure the SAME
+    ///      protocol address. Deriving from a hardcoded constant would assert nothing about the deployment; the
+    ///      Morpho arguments are therefore read from
+    ///      `script/config/contracts-deployment-config/meta-balance-adapters/<chainId>.json`, so the day someone
+    ///      repoints one chain's `morpho` this test fails instead of a redeploy silently landing elsewhere.
+    ///
+    ///      Asserting Arbitrum DIFFERS matters as much as asserting Ethereum and Base match: Arbitrum's Morpho is
+    ///      a separate deployment, and a change making all three equal would mean the adapter had stopped binding
+    ///      Arbitrum to the Morpho that chain actually has.
+    function testProtocolArgAdapterAddresses() public view {
+        // Uniswap V3 — one address across every chain carrying the canonical NonfungiblePositionManager.
+        assertEq(
+            _deriveWithArgs(
+                type(UniswapV3PoolsMetaBalanceAdapter).creationCode,
+                abi.encode(UNIV3_NPM, NAV_PROXY),
+                "UniswapV3PoolsMetaBalanceAdapter",
+                DeploySalts.UNISWAP_V3_POOLS_META
+            ),
+            0xACdC33b6a453F629d1ab10A14d3513817F492de7,
+            "UniswapV3PoolsMeta address moved - see DEPLOYED_ADDRESSES.md"
+        );
+
+        bytes memory code = type(MorphoMarketsMetaBalanceAdapter).creationCode;
+        address onEth = _deriveForChain(code, 1);
+        address onBase = _deriveForChain(code, 8453);
+        address onArb = _deriveForChain(code, 42161);
+
+        assertEq(onEth, 0x5C951CF5C596BC4908A5fd846710070553830b06, "MorphoMarketsMeta (Ethereum) address moved");
+        assertEq(onEth, onBase, "MorphoMarketsMeta must share one address across Ethereum and Base");
+        assertEq(onArb, 0x1a33a8eAE2F927A05e3eaDC87a348323060Ab2a4, "MorphoMarketsMeta (Arbitrum) address moved");
+        assertTrue(onArb != onEth, "Arbitrum must bind its OWN Morpho deployment, not Ethereum's address");
+    }
+
+    /// @dev Derives `MorphoMarketsMeta` for one chain using that chain's CONFIGURED `morpho` address.
+    function _deriveForChain(bytes memory code, uint256 chainId) internal view returns (address) {
+        address morpho = vm.parseAddress(
+            ConfigReader.readAdapterParam(vm, chainId, "balanceAdapters", "MorphoMarketsMeta", "morpho")
+        );
+        return _deriveWithArgs(
+            code, abi.encode(morpho, NAV_PROXY), "MorphoMarketsMetaBalanceAdapter", DeploySalts.MORPHO_MARKETS_META
+        );
     }
 
     function testAssetKindRegistryAddress() public pure {
@@ -144,16 +212,34 @@ contract Create2FleetWideAddressesTest is Test {
     }
 
     /// @notice The whole point of these salts: the derivation must not depend on the chain.
-    function testAddressesAreChainIndependent() public {
+    /// @notice Re-derives the fleet-wide addresses using each chain's OWN recorded NAV proxy.
+    /// @dev **Why this reads the deployment records instead of looping over `vm.chainId`.** An earlier version of
+    ///      this test set `vm.chainId(...)` and re-derived from the `NAV_PROXY` constant. That could never fail:
+    ///      `vm.computeCreate2Address` is a pure function of (deployer, salt, init-code hash) and reads no chain
+    ///      state, so the loop asserted a value against itself five times.
+    ///
+    ///      The property that actually matters is that every chain's RECORDED NAV proxy is the same address —
+    ///      that is what makes the init code identical fleet-wide and the derived addresses collapse to one. So
+    ///      the NAV is read per chain from `script/config/deployments/<chainId>.json`, and a single chain whose
+    ///      record drifts (a re-proxied chain, a bad paste) now fails here instead of being discovered when a
+    ///      redeploy silently lands somewhere new.
+    function testAddressesAreChainIndependent() public view {
         uint256[5] memory chains = [uint256(1), 10, 8453, 42161, 534352];
         address registry;
         address morpho;
         for (uint256 i; i < chains.length; ++i) {
-            vm.chainId(chains[i]);
-            address r =
-                _derive(type(AssetKindRegistry).creationCode, "AssetKindRegistry", DeploySalts.ASSET_KIND_REGISTRY);
-            address m = _derive(
+            address navOnChain = ConfigReader.readDeployedAddress(vm, chains[i], "NAVCalculatorProxy");
+            assertEq(navOnChain, NAV_PROXY, "recorded NAV proxy differs from the canonical fleet-wide address");
+
+            address r = _deriveWithArgs(
+                type(AssetKindRegistry).creationCode,
+                abi.encode(navOnChain),
+                "AssetKindRegistry",
+                DeploySalts.ASSET_KIND_REGISTRY
+            );
+            address m = _deriveWithArgs(
                 type(MorphoVaultsMetaBalanceAdapter).creationCode,
+                abi.encode(navOnChain),
                 "MorphoVaultsMetaBalanceAdapter",
                 DeploySalts.MORPHO_VAULTS_META
             );
@@ -171,5 +257,7 @@ contract Create2FleetWideAddressesTest is Test {
     function testSaltVersionsAreTwo() public pure {
         assertEq(DeploySalts.ASSET_KIND_REGISTRY, 2, "registry salt version changed");
         assertEq(DeploySalts.MORPHO_VAULTS_META, 2, "adapter salt version changed");
+        assertEq(DeploySalts.UNISWAP_V3_POOLS_META, 2, "UniswapV3PoolsMeta salt version changed");
+        assertEq(DeploySalts.MORPHO_MARKETS_META, 2, "MorphoMarketsMeta salt version changed");
     }
 }

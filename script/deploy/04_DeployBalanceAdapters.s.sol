@@ -496,8 +496,24 @@ contract DeployBalanceAdapters is BaseDeployScript {
         internal
         returns (address)
     {
+        return _create2WithArgs(creationCode, abi.encode(navCalculator), name, version);
+    }
+
+    /// @notice CREATE2-deploys an adapter with arbitrary already-encoded constructor arguments.
+    /// @dev The general form behind `_create2NavOnly`. Use it for adapters that take ONE chain-specific protocol
+    ///      address alongside the NAV (`UniswapV3PoolsMeta`, `MorphoMarketsMeta`): the resulting address is
+    ///      identical on every chain where that protocol address is identical, and legitimately different where
+    ///      it is not. That is deterministic and pre-computable either way — but it is NOT the fleet-wide
+    ///      guarantee the NAV-only group has, so do not describe it as one. See `DeploySalts` for which chains
+    ///      actually share an address today, and why identity must be checked by CALLING the protocol contract
+    ///      rather than by comparing codehashes.
+    /// @param ctorArgs The full `abi.encode(...)` of the constructor arguments, in declaration order.
+    function _create2WithArgs(bytes memory creationCode, bytes memory ctorArgs, string memory name, uint256 version)
+        internal
+        returns (address)
+    {
         bytes32 salt = generateSalt(name, version);
-        bytes memory initCode = abi.encodePacked(creationCode, abi.encode(navCalculator));
+        bytes memory initCode = abi.encodePacked(creationCode, ctorArgs);
         address predicted = computeCreate2Address(CANONICAL_CREATE2_DEPLOYER, salt, initCode);
         if (predicted.code.length == 0) {
             (bool ok,) = CANONICAL_CREATE2_DEPLOYER.call(abi.encodePacked(salt, initCode));
@@ -553,8 +569,12 @@ contract DeployBalanceAdapters is BaseDeployScript {
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "morpho")
         );
 
-        MorphoMarketsMetaBalanceAdapter adapter = new MorphoMarketsMetaBalanceAdapter(morpho, navCalculator);
-        return address(adapter);
+        return _create2WithArgs(
+            type(MorphoMarketsMetaBalanceAdapter).creationCode,
+            abi.encode(morpho, navCalculator),
+            "MorphoMarketsMetaBalanceAdapter",
+            DeploySalts.MORPHO_MARKETS_META
+        );
     }
 
     /// @notice Deploys the Morpho Vaults meta-adapter. Constructor takes only (navCalculator); the set of
@@ -910,8 +930,12 @@ contract DeployBalanceAdapters is BaseDeployScript {
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionManager")
         );
 
-        UniswapV3PoolsMetaBalanceAdapter adapter = new UniswapV3PoolsMetaBalanceAdapter(positionManager, navCalculator);
-        return address(adapter);
+        return _create2WithArgs(
+            type(UniswapV3PoolsMetaBalanceAdapter).creationCode,
+            abi.encode(positionManager, navCalculator),
+            "UniswapV3PoolsMetaBalanceAdapter",
+            DeploySalts.UNISWAP_V3_POOLS_META
+        );
     }
 
     /// @notice Deploys the PancakeSwap V3 pools meta-adapter (subclass of the Uniswap V3 meta-adapter, differs only

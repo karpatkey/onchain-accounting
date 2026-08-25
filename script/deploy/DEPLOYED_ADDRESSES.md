@@ -124,6 +124,20 @@ marked ★ are the CREATE2 adapters listed above, identical on every chain; the 
 unique per chain because their constructors take chain-specific protocol addresses. `ERC20Default` is
 omitted: it is minted inside `initialize()` and appears in the canonical layer above.
 
+Entries marked ☆ are CREATE2 too, but with a **weaker** guarantee than ★: they take one chain-specific
+protocol address alongside the NAV, so they share a single address across the chains that share that protocol
+address, and take a different — still deterministic — address where it differs.
+
+| Adapter | Address | Shared across | Because |
+| --- | --- | --- | --- |
+| UniswapV3PoolsMeta ☆ | `0xACdC33b6a453F629d1ab10A14d3513817F492de7` | Ethereum, Optimism, Polygon, Arbitrum | those chains host the canonical NonfungiblePositionManager at `0xC36442…FE88` |
+| MorphoMarketsMeta ☆ | `0x5C951CF5C596BC4908A5fd846710070553830b06` | Ethereum, Base | both host Morpho at `0xBBBB…FFCb` |
+| MorphoMarketsMeta ☆ | `0x2a4d53eF5F149199e2958ce8F29AC85c9072589A` | Arbitrum only | Arbitrum's Morpho is a separate deployment at `0x6c247b1F…8F5e` |
+
+Membership of the Uniswap V3 list is decided by **calling** `name()`/`factory()` on the candidate chain, never
+by checking that the address has code: several chains carry unrelated code at `0xC36442…FE88`, and Base's real
+position manager is at a different address entirely.
+
 ### Ethereum (1)
 
 | Adapter | Address |
@@ -147,7 +161,7 @@ omitted: it is minted inside `initialize()` and appears in the canonical layer a
 | GearboxV3MarketsMeta ★ | `0x160017c8d50D44A8fA3667419a89BA1183daaF38` |
 | KelpWithdrawalQueue | `0x136439b0CA2Ff5e9Ec8dC472222248E3A57CeF43` |
 | LidoWithdrawalQueue | `0xD32d7db9c94E0A08ef354D73d618B86b8215A2cF` |
-| MorphoMarketsMeta | `0x7d00A71EDE9A8EEB4a8B4eA4e3ab08083Ad9a3e5` |
+| MorphoMarketsMeta ☆ | `0x5C951CF5C596BC4908A5fd846710070553830b06` |
 | MorphoVaultsMeta ★ | `0x64e1ba8B12ee2bFdBDdFd4E0863EdfaaE824C86a` |
 | NexusMutualStakingPoolsAssisted | `0x25Be749999683381703c7346462503a5EFFFd184` |
 | SparkLend | `0x9ad8dDaAD5166f2f0Fe4e883aFe78902f8BF0CAE` |
@@ -155,7 +169,7 @@ omitted: it is minted inside `initialize()` and appears in the canonical layer a
 | StakeWiseV3ExitQueueAssisted | `0x83375fDE808F6388c85fC0A1dA86a69492a20798` |
 | StakeWiseV3VaultsMeta | `0xc5e92214517314A5C6Ed7f6998C3bdF5810F9cc1` |
 | SymbioticVaultsMeta ★ | `0x599C72cbd3bDe6D992366130009962B4c2Ec5B23` |
-| UniswapV3PoolsMeta | `0xb8E23bd85Ce6E15380F3301ae273a54cF502E035` |
+| UniswapV3PoolsMeta ☆ | `0xACdC33b6a453F629d1ab10A14d3513817F492de7` |
 
 ### Optimism (10)
 
@@ -173,7 +187,7 @@ omitted: it is minted inside `initialize()` and appears in the canonical layer a
 | BalancerV3PoolsMeta ★ | `0xbF1785E519067f0471eb5C50A634A7eeE0140A21` |
 | CompoundV3CometsMeta | `0xFB12e2105287604013dAdee87597F8b80390fc82` |
 | FluidFTokensMeta ★ | `0x0c312178e10ad15a9DC847d664786146f2C88dcf` |
-| MorphoMarketsMeta | `0x2a4d53eF5F149199e2958ce8F29AC85c9072589A` |
+| MorphoMarketsMeta ☆ | `0x2a4d53eF5F149199e2958ce8F29AC85c9072589A` |
 | MorphoVaultsMeta ★ | `0x64e1ba8B12ee2bFdBDdFd4E0863EdfaaE824C86a` |
 
 ### Base (8453)
@@ -185,7 +199,7 @@ omitted: it is minted inside `initialize()` and appears in the canonical layer a
 | BalancerV3PoolsMeta ★ | `0xbF1785E519067f0471eb5C50A634A7eeE0140A21` |
 | CompoundV3CometsMeta | `0xc43D890F5af60E4010266A0AF95b39C31e5c5Abe` |
 | FluidFTokensMeta ★ | `0x0c312178e10ad15a9DC847d664786146f2C88dcf` |
-| MorphoMarketsMeta | `0x007fedC0Cd051A757B6E59eE4b4d620231CB2a56` |
+| MorphoMarketsMeta ☆ | `0x5C951CF5C596BC4908A5fd846710070553830b06` |
 
 ### Gnosis (100)
 

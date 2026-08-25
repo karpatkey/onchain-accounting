@@ -128,12 +128,17 @@ Entries marked ☆ are CREATE2 too, but with a **weaker** guarantee than ★: th
 protocol address alongside the NAV, so they share a single address across the chains that share that protocol
 address, and take a different — still deterministic — address where it differs.
 
-| Adapter | Address | Shared across | Because |
-| --- | --- | --- | --- |
-| UniswapV3PoolsMeta ☆ | `0xACdC33b6a453F629d1ab10A14d3513817F492de7` | Ethereum, Optimism, Polygon, Arbitrum | those chains host the canonical NonfungiblePositionManager at `0xC36442…FE88` |
-| MorphoMarketsMeta ☆ | `0x5C951CF5C596BC4908A5fd846710070553830b06` | Ethereum, Base | both host Morpho at `0xBBBB…FFCb` |
-| MorphoMarketsMeta ☆ | `0x1a33a8eAE2F927A05e3eaDC87a348323060Ab2a4` | Arbitrum only | Arbitrum's Morpho is a separate deployment at `0x6c247b1F…8F5e` |
-| FluidVaultsMeta ☆ | `0x32E94eE2276a2eb4873a68676e1250212b3433fC` | Ethereum, BNB, Polygon, Base, Plasma, Arbitrum | Fluid deploys its VaultResolver deterministically at `0xA5C3E165…95cC` on all six |
+`Deployed on` is where the adapter actually exists today; `would reuse` is where a future deployment would land
+on the same address. They are different claims and are kept in separate columns — CREATE2 fixes *where* a contract
+lands, not *whether* it exists, and an adapter is deployed on a chain only when the funds hold that protocol's
+positions there.
+
+| Adapter | Address | Deployed on | Would reuse this address on | Because |
+| --- | --- | --- | --- | --- |
+| UniswapV3PoolsMeta ☆ | `0xACdC33b6a453F629d1ab10A14d3513817F492de7` | 1 | 10, 137, 42161 | those chains host the canonical NonfungiblePositionManager at `0xC36442…FE88` |
+| MorphoMarketsMeta ☆ | `0x5C951CF5C596BC4908A5fd846710070553830b06` | **1, 8453** | — | both host Morpho at `0xBBBB…FFCb`, so both already answer at this one address |
+| MorphoMarketsMeta ☆ | `0x1a33a8eAE2F927A05e3eaDC87a348323060Ab2a4` | 42161 | — | Arbitrum's Morpho is a separate deployment at `0x6c247b1F…8F5e` |
+| FluidVaultsMeta ☆ | `0x32E94eE2276a2eb4873a68676e1250212b3433fC` | 1 | 56, 137, 8453, 9745, 42161 | Fluid deploys its VaultResolver deterministically at `0xA5C3E165…95cC` on all six |
 
 Membership of the Uniswap V3 list is decided by **calling** `name()`/`factory()` on the candidate chain, never
 by checking that the address has code: several chains carry unrelated code at `0xC36442…FE88`, and Base's real

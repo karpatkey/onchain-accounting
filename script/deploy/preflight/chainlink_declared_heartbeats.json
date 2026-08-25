@@ -16,6 +16,12 @@
         "threshold": 0.5,
         "feedCategory": "custom"
       },
+      "0x214ed9da11d2fbe465a6fc601a91e62ebec1a0d6": {
+        "name": "XAU / USD",
+        "declaredHeartbeat": 86400,
+        "threshold": 0.3,
+        "feedCategory": "low"
+      },
       "0x2665701293fcbeb223d11a08d826563edcce423a": {
         "name": "cbBTC / USD",
         "declaredHeartbeat": 86400,

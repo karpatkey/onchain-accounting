@@ -818,5 +818,23 @@
         "heartbeat": 90000
       }
     ]
+  },
+  "XAUt": {
+    "address": "0x68749665FF8D2d112Fa859AA293F07A622782F38",
+    "accrualKind": "None",
+    "$kindComment": "Tether Gold, 6-dp, 1 XAUt = 1 troy oz gold. Not $1-pegged, so NO pegToleranceBps -> pegKind derives Floating. accrualKind None: the token does not rebase and its redemption ratio does not grow; its USD value moves only with the gold price.",
+    "labels": [
+      "Tether",
+      "Tether Gold"
+    ],
+    "$comment": "PRICED AS SPOT GOLD, NOT AS XAUt. The primary is the Chainlink XAU/USD feed 0x214eD9Da..., which is the SAME source Aave v3 Core uses for this reserve (AaveOracle.getSourceOfAsset(XAUt) == 0x214eD9Da..., verified on-chain). That deliberately mirrors Aave's 1 XAUt = 1 XAU assumption, so the collateral leg of the XAUt OIV carry trade is valued consistently with the protocol it sits in. THE ASSUMPTION IS LOAD-BEARING AND UNMONITORED: a XAUt depeg from gold (Tether issuer or redemption risk) is invisible to this feed, because the feed tracks the metal, not the token. There is no XAUt-specific PUSH feed on mainnet today to monitor it with -- Pyth's XAUT/USD is pull-based and would fail the staleness gate as a passive monitor, and RedStone deploys a XAUt push feed only on request. Add one as a monitorFeed when it exists; see issue #316.",
+    "priceFeeds": [
+      {
+        "type": "Chainlink",
+        "address": "0x214eD9Da11D2fbe465a6fc601a91E62EbEc1a0D6",
+        "$comment": "Chainlink XAU/USD, 8-dp. Declared heartbeat 86400, threshold 0.3%, marketCategory Precious_Metals. REGISTERED AT 90000 (+1h), matching the 16 other declared-86400 feeds in this tree, and it is not cosmetic: gold markets close at the weekend, so the feed then publishes on heartbeat alone. Measured over 11 days the largest real gap was 86,436s -- PAST the declared 86,400 -- on three separate weekend intervals. Registering 86400 would mark XAUt stale every weekend.",
+        "heartbeat": 90000
+      }
+    ]
   }
 }

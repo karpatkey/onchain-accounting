@@ -132,7 +132,7 @@ address, and take a different — still deterministic — address where it diffe
 | --- | --- | --- | --- |
 | UniswapV3PoolsMeta ☆ | `0xACdC33b6a453F629d1ab10A14d3513817F492de7` | Ethereum, Optimism, Polygon, Arbitrum | those chains host the canonical NonfungiblePositionManager at `0xC36442…FE88` |
 | MorphoMarketsMeta ☆ | `0x5C951CF5C596BC4908A5fd846710070553830b06` | Ethereum, Base | both host Morpho at `0xBBBB…FFCb` |
-| MorphoMarketsMeta ☆ | `0x2a4d53eF5F149199e2958ce8F29AC85c9072589A` | Arbitrum only | Arbitrum's Morpho is a separate deployment at `0x6c247b1F…8F5e` |
+| MorphoMarketsMeta ☆ | `0x1a33a8eAE2F927A05e3eaDC87a348323060Ab2a4` | Arbitrum only | Arbitrum's Morpho is a separate deployment at `0x6c247b1F…8F5e` |
 
 Membership of the Uniswap V3 list is decided by **calling** `name()`/`factory()` on the candidate chain, never
 by checking that the address has code: several chains carry unrelated code at `0xC36442…FE88`, and Base's real
@@ -187,7 +187,7 @@ position manager is at a different address entirely.
 | BalancerV3PoolsMeta ★ | `0xbF1785E519067f0471eb5C50A634A7eeE0140A21` |
 | CompoundV3CometsMeta | `0xFB12e2105287604013dAdee87597F8b80390fc82` |
 | FluidFTokensMeta ★ | `0x0c312178e10ad15a9DC847d664786146f2C88dcf` |
-| MorphoMarketsMeta ☆ | `0x2a4d53eF5F149199e2958ce8F29AC85c9072589A` |
+| MorphoMarketsMeta ☆ | `0x1a33a8eAE2F927A05e3eaDC87a348323060Ab2a4` |
 | MorphoVaultsMeta ★ | `0x64e1ba8B12ee2bFdBDdFd4E0863EdfaaE824C86a` |
 
 ### Base (8453)

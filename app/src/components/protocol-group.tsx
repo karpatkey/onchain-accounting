@@ -3,7 +3,7 @@
 import { Fragment } from 'react'
 import type { OnchainPosition } from '@/hooks/use-account-positions'
 import { TokenLogo } from '@/components/token-logo'
-import { AddressChip, CopyIconButton } from '@/components/address-chip'
+import { AddressChip, CopyIconButton, isFullAddress } from '@/components/address-chip'
 import { formatAmount, formatPrice, formatUsd } from '@/lib/format'
 import {
   EthCircleColor,
@@ -72,6 +72,13 @@ const PROTOCOL_IMG_ICONS: Record<string, string> = {
   'ether.fi': 'https://icons.llamao.fi/icons/protocols/ether.fi?w=48&h=48',
   stakewise: 'https://icons.llamao.fi/icons/protocols/stakewise?w=48&h=48',
   nexus: 'https://icons.llamao.fi/icons/protocols/nexus-mutual?w=48&h=48',
+  lido: 'https://icons.llamao.fi/icons/protocols/lido?w=48&h=48',
+  kelp: 'https://icons.llamao.fi/icons/protocols/kelp-dao?w=48&h=48',
+  stader: 'https://icons.llamao.fi/icons/protocols/stader?w=48&h=48',
+  convex: 'https://icons.llamao.fi/icons/protocols/convex-finance?w=48&h=48',
+  fluid: 'https://icons.llamao.fi/icons/protocols/fluid?w=48&h=48',
+  compound: 'https://icons.llamao.fi/icons/protocols/compound-finance?w=48&h=48',
+  merkl: 'https://icons.llamao.fi/icons/protocols/merkl?w=48&h=48',
 }
 
 const PROTOCOL_URLS: Record<string, string> = {
@@ -89,6 +96,76 @@ const PROTOCOL_URLS: Record<string, string> = {
   'ether.fi': 'https://app.ether.fi/',
   stakewise: 'https://app.stakewise.io/',
   nexus: 'https://app.nexusmutual.io/',
+  lido: 'https://stake.lido.fi/',
+  kelp: 'https://kelpdao.xyz/',
+  stader: 'https://www.staderlabs.com/',
+  convex: 'https://www.convexfinance.com/',
+  fluid: 'https://fluid.io/',
+  compound: 'https://app.compound.finance/',
+  merkl: 'https://app.merkl.xyz/',
+}
+
+// PositionKind enum (src/utils/PositionKind.sol) → the per-leg role tag the dashboard renders. Wallet legs
+// (kind 0) render flat with no role tag / sub-header.
+const KIND_TO_TYPE: Record<number, string | null> = {
+  0: null, // Wallet
+  1: 'Supply', // Supplied
+  2: 'Borrow', // Borrowed
+  3: 'Collateral',
+  4: 'Staking',
+  5: 'Rewards',
+  6: 'Fees',
+}
+
+const KIND_COLLATERAL = 3
+const KIND_WALLET = 0
+
+function legRole(positionKind: number): string | null {
+  return KIND_TO_TYPE[positionKind] ?? null
+}
+
+const ZERO_BYTES32 = '0x0000000000000000000000000000000000000000000000000000000000000000'
+
+/// A short display token for a position's ephemeral instance id (NFT / request / ticket coordinate). Decodes a
+/// left-padded small integer (e.g. an NFT token id) to `#<n>`; otherwise shows a truncated hex tail. Returns
+/// null for the zero id (no per-item coordinate).
+function instanceIdLabel(positionInstanceId: string): string | null {
+  if (!positionInstanceId || positionInstanceId.toLowerCase() === ZERO_BYTES32) return null
+  const hex = positionInstanceId.startsWith('0x') ? positionInstanceId.slice(2) : positionInstanceId
+  // Left-padded small integer (NFT token id / request id): render as #<decimal> when it fits a JS-safe range.
+  if (/^0{40}/.test(hex)) {
+    try {
+      const n = BigInt(`0x${hex}`)
+      if (n <= 0xffffffffffffn) return `#${n.toString()}`
+    } catch {
+      // fall through to the hex-tail form
+    }
+  }
+  return `#…${hex.slice(-6)}`
+}
+
+/// Aave instances expose canonical getMarketId() strings that don't match Aave's UI branding. Alias them to
+/// the familiar names for display only — the on-chain positionLabels leaf stays canonical.
+const MARKET_ALIASES: Record<string, string> = {
+  'Aave Ethereum Market': 'Core Market',
+  'Aave V3 Lido Ethereum': 'Prime Market',
+}
+
+/// The leaf (last element) of a position's on-chain label hierarchy — the display name for the position /
+/// pool / market / vault (e.g. "WETH/USDC 0.05%", "Aave Ethereum Market", "NFT #22279"). Aliased for the
+/// few Aave market ids whose canonical string differs from Aave's UI branding. null when there is no label.
+function labelLeaf(labels: readonly string[]): string | null {
+  if (labels.length === 0) return null
+  const leaf = labels[labels.length - 1]
+  if (!leaf) return null
+  return MARKET_ALIASES[leaf] ?? leaf
+}
+
+/// True for a lending-market collateral leg (Aave / Spark reserves supplied as collateral). These read best
+/// grouped by market — every reserve of a market in one card — so their presence routes the group to the
+/// per-vault (positionId-grouped) layout even when no single reserve carries a matching borrow leg.
+function hasLendingMarketLegs(positions: OnchainPosition[]): boolean {
+  return positions.some((p) => p.positionKind === KIND_COLLATERAL)
 }
 
 function getProtocolKey(protocol: string): string {
@@ -197,6 +274,10 @@ function PositionRow({
   // pos.value despite bigint truncation in the proportional division.
   const totalOwed = requests.reduce((sum, r) => sum + r.ethOwed, 0n)
   let allocatedSub = 0n
+  // Ephemeral per-item coordinate (NFT / ticket id). Shown inline only when this leg has no per-request
+  // drill-down (which already breaks the coordinates out row-by-row), so an NFT LP position surfaces its id
+  // without duplicating the queue-adapter sub-rows.
+  const instanceId = requests.length === 0 ? instanceIdLabel(pos.positionInstanceId) : null
   return (
     <>
       <tr className="border-t border-neutral-200 hover:bg-neutral-50 transition-colors">
@@ -213,6 +294,14 @@ function PositionRow({
             )}
             <TokenLogo symbol={pos.underlyingAsset.symbol} address={pos.underlyingAsset.asset} chainId={chainId} />
             {pos.underlyingAsset.symbol}
+            {instanceId && (
+              <span
+                className="inline-block shrink-0 rounded px-1.5 py-0.5 text-[10px] font-mono font-medium text-neutral-600 bg-neutral-100"
+                title={`Instance id ${pos.positionInstanceId}`}
+              >
+                {instanceId}
+              </span>
+            )}
             {pos.isLocked && (
               <span
                 className="inline-block shrink-0 rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide bg-amber-100 text-amber-700"
@@ -224,7 +313,7 @@ function PositionRow({
           </div>
         </td>
         <td className="py-2.5 px-4 text-sm text-right tabular-nums text-neutral-700">
-          {formatAmount(pos.amount, pos.underlyingAsset.decimals, pos.underlyingAsset.symbol)}
+          {formatAmount(pos.amount, pos.underlyingAsset.decimals, '')}
         </td>
         <td className="py-2.5 px-4 text-sm text-right tabular-nums text-neutral-700">
           {formatPrice(pos.price, pos.priceDecimals)}
@@ -284,7 +373,7 @@ function PositionRow({
               </div>
             </td>
             <td className="py-2 px-4 text-xs text-right tabular-nums text-neutral-700">
-              {formatAmount(req.ethOwed, pos.underlyingAsset.decimals, pos.underlyingAsset.symbol)}
+              {formatAmount(req.ethOwed, pos.underlyingAsset.decimals, '')}
             </td>
             <td className="py-2 px-4 text-xs text-right tabular-nums text-neutral-700">
               {formatPrice(pos.price, pos.priceDecimals)}
@@ -302,24 +391,6 @@ function PositionRow({
   )
 }
 
-/// Aave instances expose canonical getMarketId() strings that don't match Aave's UI branding. Alias
-/// them to the familiar names for display only — the on-chain positionLabels leaf stays canonical.
-const MARKET_ALIASES: Record<string, string> = {
-  'Aave Ethereum Market': 'Core Market',
-  'Aave V3 Lido Ethereum': 'Prime Market',
-}
-
-/// If a position's `poolLabel` carries a trailing "(<market>)" — e.g. Aave's "WETH position (Aave Ethereum
-/// Market)" — return the market name aliased for display ("Core" / "Prime"); otherwise null. Lets us sub-group an
-/// oracle's positions by market so instances that share a reserve symbol (Aave Core vs Prime) render apart.
-function marketFromLabel(label: string | null): string | null {
-  if (!label) return null
-  const m = label.match(/\(([^()]+)\)\s*$/)
-  if (!m) return null
-  const raw = m[1].trim()
-  return MARKET_ALIASES[raw] ?? raw
-}
-
 function groupByOracle(positions: OnchainPosition[]): Map<string, OnchainPosition[]> {
   const groups = new Map<string, OnchainPosition[]>()
   for (const pos of positions) {
@@ -331,15 +402,15 @@ function groupByOracle(positions: OnchainPosition[]): Map<string, OnchainPositio
   return groups
 }
 
-/// Group a pool's positions by the `type` discriminator (`pos.type`, from PositionKind), preserving the
-/// adapter's emission order (which is meaningful — Uniswap V3 emits Supply legs before Fees
-/// legs; Curve/Aura emit Supply → Staking → Rewards). Untyped entries collapse to a single
-/// `null` bucket.
+/// Group a pool's positions by their leg role (the on-chain positionKind → Supply / Borrow / Collateral /
+/// Staking / Rewards / Fees), preserving the adapter's emission order (which is meaningful — Uniswap V3 emits
+/// Supply legs before Fees legs; Curve/Aura emit Supply → Staking → Rewards). Wallet legs (kind 0) collapse to
+/// a single `null` (un-tagged) bucket and render flat.
 function groupByType(positions: OnchainPosition[]): Array<{ type: string | null; positions: OnchainPosition[] }> {
   const groups: Array<{ type: string | null; positions: OnchainPosition[] }> = []
   const indexByType = new Map<string | null, number>()
   for (const pos of positions) {
-    const type = pos.type
+    const type = legRole(pos.positionKind)
     const idx = indexByType.get(type)
     if (idx !== undefined) {
       groups[idx].positions.push(pos)
@@ -351,21 +422,20 @@ function groupByType(positions: OnchainPosition[]): Array<{ type: string | null;
   return groups
 }
 
-/// Within one oracle (one adapter), split positions into sub-groups by their market/pool label so each
-/// distinct instance (Aave Core vs Prime, different Uniswap NFTs/pools, …) gets its own sub-header rather
-/// than collapsing every leg under the first one's label.
+/// Within one oracle (one adapter), split positions into sub-groups by their on-chain instance (positionId) so
+/// each distinct instance (Aave Core vs Prime, different Uniswap NFTs/pools, …) gets its own sub-header, titled
+/// by the position's label leaf. Positions with no positionId and no label render flat (no sub-header).
 function groupBySubLabel(
   positions: OnchainPosition[],
 ): Array<{ label: string | null; positions: OnchainPosition[] }> {
   const out: Array<{ label: string | null; positions: OnchainPosition[] }> = []
   const indexByKey = new Map<string, number>()
   for (const pos of positions) {
-    // null label = no market/pool name (e.g. plain wallet holdings) → render flat with no sub-header,
-    // rather than a meaningless "Pool 0x…" fallback.
-    const label = marketFromLabel(pos.poolLabel) ?? pos.poolLabel
-    // Map key only; '' is a safe sentinel for the null (no-label) bucket since real market/pool labels are
-    // always non-empty. The stored `label` stays null so no sub-header renders for that bucket.
-    const key = label ?? ''
+    const label = labelLeaf(pos.labels)
+    // Key on the stable positionId (the on-chain instance coordinate) so instances that share a reserve symbol
+    // (Aave Core vs Prime) render apart even when their label leaf differs; fall back to the label, then to a
+    // single no-instance bucket ('') for plain wallet holdings that carry neither.
+    const key = pos.positionId && pos.positionId !== '0x' ? pos.positionId.toLowerCase() : (label ?? '')
     const idx = indexByKey.get(key)
     if (idx !== undefined) out[idx].positions.push(pos)
     else {
@@ -376,12 +446,6 @@ function groupBySubLabel(
   return out
 }
 
-/// Group a protocol's combined legs by positionId (the on-chain instance coordinate — e.g. a StakeWise vault),
-/// preserving the order of the input array (the caller passes supply legs then borrow legs, so within a vault the
-/// supply/staking leg renders before the borrow leg). For CDP-style protocols where one instance carries both a supply/staking leg and a
-/// borrow leg, this renders the matched legs together under one vault header instead of splitting them across the
-/// protocol's Supply and Borrow sections. `label` is the instance's display name when the adapter's
-/// positionLabels() returns one, else null — the vault header then falls back to the full address from the key.
 /// Recover the full instance address from a positionId for display. `abi.encode(address)` is a 32-byte word
 /// with the address in the low 20 bytes (24 leading hex zeros) → return the 0x address (lowercased, since the
 /// positionId is); for other id shapes (e.g. Morpho marketId, Uniswap NFT tuple) return the full positionId hex.
@@ -391,6 +455,13 @@ function fullAddressFromPositionId(positionId: string): string {
   return positionId
 }
 
+/// Group a protocol's combined legs by positionId (the on-chain instance coordinate — e.g. a StakeWise vault,
+/// an Aave market Pool, a Morpho market), preserving input order (the caller passes supply legs then borrow
+/// legs, so within an instance the supply/staking leg renders before the borrow leg). For CDP-style protocols
+/// where one instance carries both a supply/staking leg and a borrow leg — and for lending markets where every
+/// reserve of a market shares the market Pool's positionId — this renders the matched legs together under one
+/// header instead of splitting them across the protocol's Supply and Borrow sections. `label` is the instance's
+/// display name from its on-chain label leaf, else null — the header then falls back to the address from the key.
 function groupByVault(
   positions: OnchainPosition[],
 ): Array<{ key: string; label: string | null; positions: OnchainPosition[] }> {
@@ -403,7 +474,7 @@ function groupByVault(
     if (i !== undefined) out[i].positions.push(pos)
     else {
       idx.set(key, out.length)
-      out.push({ key, label: pos.poolLabel, positions: [pos] })
+      out.push({ key, label: labelLeaf(pos.labels), positions: [pos] })
     }
   }
   return out
@@ -501,9 +572,11 @@ function PositionSection({
             typeGroups.length > 1 && typeGroups.some((tg) => tg.type !== null)
           return (
             <Fragment key={`${oracle}-${si}`}>
-              {/* Sub-header only when there's a real market/pool label (skip plain wallet holdings). Show its
-                  total only when it aggregates >1 row; for a single leg it would just repeat the row amount. */}
-              {sg.label !== null && (
+              {/* Sub-header only when there's a real market/pool label. Skip wallet holdings (kind 0): their
+                  label leaf is just the token name, which repeats the token symbol on the row below — a
+                  redundant header. Show the total only when it aggregates >1 row; for a single leg it would
+                  just repeat the row amount. */}
+              {sg.label !== null && !sg.positions.every((p) => p.positionKind === KIND_WALLET) && (
                 <PoolSubHeader label={sg.label} total={sg.positions.length > 1 ? subTotal : null} isDebt={isDebt} />
               )}
               {renderTypeSubHeaders
@@ -581,7 +654,19 @@ function VaultSections({
                 >
                   <span className="flex min-w-0 items-center gap-2">
                     {v.label && <span className="text-xs font-semibold text-neutral-900">{v.label}</span>}
-                    <AddressChip address={fullId} chainId={chainId} className="text-[11px] text-neutral-700" />
+                    {/* Only show the instance chip when the positionId is a real 20-byte address (a vault /
+                        pool / comet). Tuple / hash ids (Aave/Spark pool+reserve, Uniswap npm+tokenId, Morpho
+                        marketId, …) aren't addresses — the label above is their identity; rendering the raw
+                        positionId here would dump an unreadable hex blob. */}
+                    {isFullAddress(fullId) ? (
+                      <AddressChip address={fullId} chainId={chainId} className="text-[11px] text-neutral-700" />
+                    ) : (
+                      !v.label && (
+                        <span className="font-mono text-[11px] text-neutral-500" title={fullId}>
+                          {`${fullId.slice(0, 10)}…${fullId.slice(-6)}`}
+                        </span>
+                      )
+                    )}
                   </span>
                   <span
                     className={`shrink-0 text-xs font-semibold tabular-nums ${net < 0n ? 'text-rose-700' : 'text-neutral-800'}`}
@@ -592,8 +677,8 @@ function VaultSections({
               </td>
             </tr>
             {v.positions.map((pos) => {
-              // Reuse the typed kind for both the group key and the kind label.
-              const t = pos.type
+              // Leg role tag from the on-chain positionKind (falls back to Borrow/Supply from isDebt for kind 0).
+              const t = legRole(pos.positionKind)
               return (
                 <PositionRow
                   key={`vault-${v.key}-${pos.positionId}-${pos.underlyingAsset.asset}-${t ?? (pos.isDebt ? 'borrow' : 'supply')}`}
@@ -645,7 +730,7 @@ export function ProtocolGroup({ group, totalPortfolioNav, withdrawalsByKey }: Pr
             <a
               href={protocolUrl}
               target="_blank"
-              rel="noreferrer"
+              rel="noopener noreferrer"
               className="font-semibold text-sm capitalize text-neutral-950 hover:underline"
             >
               {protocol === 'wallet' ? 'Wallet' : protocol}
@@ -667,12 +752,34 @@ export function ProtocolGroup({ group, totalPortfolioNav, withdrawalsByKey }: Pr
         </div>
       </div>
 
-      {/* Positions table — no repeated column headers. CDP-style protocols (a positionId with both a supply and
-          a borrow leg) render grouped by vault so the matched legs sit together; everything else keeps the
-          protocol-wide Supply / Borrow split. */}
-      <table className="w-full">
+      {/* Positions table. A subtle column-header row (thead) labels Amount / Price / USD Value / % — kept inside
+          the table (not the flex card header) so the labels always align with the auto-sized numeric columns.
+          CDP-style protocols (a positionId with both a supply and a borrow leg) render grouped by vault so the
+          matched legs sit together; everything else keeps the protocol-wide Supply / Borrow split. */}
+      {/* table-fixed + shared column widths so the numeric columns align IDENTICALLY across every protocol card
+          (an auto layout sizes each card's columns to its own content, which drifts card-to-card). */}
+      <table className="w-full table-fixed">
+        <thead>
+          <tr className="border-b border-neutral-200">
+            <th className="w-[22%] py-2 px-4 text-left text-[10px] font-semibold uppercase tracking-wide text-neutral-500">
+              Asset
+            </th>
+            <th className="w-[22%] py-2 px-4 text-right text-[10px] font-semibold uppercase tracking-wide text-neutral-500">
+              Amount
+            </th>
+            <th className="w-[16%] py-2 px-4 text-right text-[10px] font-semibold uppercase tracking-wide text-neutral-500">
+              Price
+            </th>
+            <th className="w-[28%] py-2 px-4 text-right text-[10px] font-semibold uppercase tracking-wide text-neutral-500">
+              USD Value
+            </th>
+            <th className="w-[12%] py-2 px-4 text-right text-[10px] font-semibold uppercase tracking-wide text-neutral-500">
+              %
+            </th>
+          </tr>
+        </thead>
         <tbody>
-          {hasMatchedVaultLegs(supply, borrow) ? (
+          {hasMatchedVaultLegs(supply, borrow) || hasLendingMarketLegs([...supply, ...borrow]) ? (
             <VaultSections positions={[...supply, ...borrow]} chainId={chainId} withdrawalsByKey={withdrawalsByKey} />
           ) : (
             <>

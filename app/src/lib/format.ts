@@ -20,6 +20,25 @@ export function formatUsd(value: bigint, decimals = 8): string {
   return value < 0n ? `-${formatted}` : formatted
 }
 
+/// Compact USD for space-constrained UI (e.g. the fixed-width chains sidebar): $73.80M / $786.17K / $372.85.
+/// Compact K/M/B/T notation keeps the width bounded for any realistic NAV, so it can't overflow the row (the
+/// non-finite fallback below is a defensive path for astronomically large / overflowed values only).
+/// Full-precision values belong in the header + positions table (formatUsd).
+export function formatUsdCompact(value: bigint, decimals = 8): string {
+  const abs = value < 0n ? -value : value
+  const num = Number(formatUnits(abs, decimals))
+  const formatted = Number.isFinite(num)
+    ? num.toLocaleString('en-US', {
+        style: 'currency',
+        currency: 'USD',
+        notation: 'compact',
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      })
+    : `$${formatUnits(abs, decimals)}`
+  return value < 0n ? `-${formatted}` : formatted
+}
+
 export function formatAmount(amount: bigint, decimals: number, symbol: string): string {
   const suffix = symbol ? ` ${symbol}` : ''
   const num = Number(formatUnits(amount, decimals))

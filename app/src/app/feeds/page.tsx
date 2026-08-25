@@ -1,18 +1,31 @@
 'use client'
 
-import { useState, useRef, useEffect, useCallback } from 'react'
-import Link from 'next/link'
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { TooltipProvider, Tooltip, TooltipContent, TooltipTrigger } from '@karpatkey/design-system'
 import { PriceFeedsTable, type FilterStatus } from '@/components/price-feeds-table'
+import { DashboardNav } from '@/components/dashboard-nav'
 import { SequencerDetailCard } from '@/components/sequencer-detail-card'
 import { useChainPriceFeeds } from '@/hooks/use-price-feeds'
 import { useRefreshCooldown } from '@/hooks/use-refresh-cooldown'
 import { isStaleWarning } from '@/lib/format'
 import { DEPLOYED_CHAINS } from '@/config/chains'
 
-function ChainHealthPill({ chainIdx, isActive }: { chainIdx: number; isActive: boolean }) {
+function ChainHealthPill({
+  chainIdx,
+  isActive,
+  onCount,
+}: {
+  chainIdx: number
+  isActive: boolean
+  onCount: (chainId: number, count: number) => void
+}) {
   const data = useChainPriceFeeds(chainIdx)
   const config = DEPLOYED_CHAINS[chainIdx]
+
+  // Report the asset count up so the page can sort chains by it (strip + body share one order).
+  useEffect(() => {
+    if (!data.isLoading) onCount(config.chain.id, data.assets.length)
+  }, [data.isLoading, data.assets.length, config.chain.id, onCount])
 
   const issueCount = data.isLoading
     ? null
@@ -129,9 +142,16 @@ export default function FeedsPage() {
   const [filterStatus, setFilterStatus] = useState<FilterStatus>('all')
   const [searchQuery, setSearchQuery] = useState('')
   const [activeChainId, setActiveChainId] = useState<number | null>(null)
-  const [isRefreshing, setIsRefreshing] = useState(false)
-  const { canRefresh, secondsLeft, startCooldown, lastRefreshedLabel } = useRefreshCooldown()
+  const [address, setAddress] = useState<string | null>(null)
+  const { canRefresh, secondsLeft, startCooldown } = useRefreshCooldown()
   const searchRef = useRef<HTMLInputElement>(null)
+
+  // The app reads the account from the URL (not useSearchParams — no Suspense needed); the shared nav
+  // carries it across tabs.
+  useEffect(() => {
+    const addr = new URLSearchParams(window.location.search).get('address')
+    if (addr) setAddress(addr)
+  }, [])
 
   // Scroll-spy: observe each chain section and track which is most in view
   useEffect(() => {
@@ -175,54 +195,57 @@ export default function FeedsPage() {
   }, [])
 
   const handleRefresh = useCallback(() => {
-    setIsRefreshing(true)
     setRefreshKey((k) => k + 1)
     startCooldown()
-    setTimeout(() => setIsRefreshing(false), 800)
   }, [startCooldown])
+
+  // Chains sorted by asset count desc, then alphabetically. Counts are reported up from each chain's
+  // pill (which owns the data); until a chain reports, it sorts as 0 (alphabetical) then settles.
+  const [counts, setCounts] = useState<Record<number, number>>({})
+  const reportCount = useCallback((chainId: number, count: number) => {
+    setCounts((prev) => (prev[chainId] === count ? prev : { ...prev, [chainId]: count }))
+  }, [])
+  const order = useMemo(
+    () =>
+      DEPLOYED_CHAINS.map((_, i) => i).sort((a, b) => {
+        const ca = counts[DEPLOYED_CHAINS[a].chain.id] ?? 0
+        const cb = counts[DEPLOYED_CHAINS[b].chain.id] ?? 0
+        return cb - ca || DEPLOYED_CHAINS[a].label.localeCompare(DEPLOYED_CHAINS[b].label)
+      }),
+    [counts],
+  )
 
   return (
     <TooltipProvider>
-      <div className="space-y-4">
+      <div className="min-h-screen bg-neutral-200">
+        <div className="max-w-6xl mx-auto px-4 pb-12">
+          <DashboardNav
+            active="feeds"
+            address={address}
+            refresh={{ onClick: handleRefresh, canRefresh, secondsLeft }}
+          />
+          <div className="space-y-4">
 
-        {/* Header row */}
-        <div className="flex items-start justify-between">
-          <div>
-            <Link
-              href="/"
-              className="inline-flex items-center gap-1 text-sm font-medium text-neutral-700 hover:text-neutral-950 mb-3 transition-colors"
-            >
-              ← Portfolio
-            </Link>
-            <h1 className={`font-bold text-neutral-950 ${dense ? 'text-xl' : 'text-2xl'}`}>Price Feeds</h1>
-            {!dense && (
-              <p className="text-sm text-neutral-700 mt-1">
-                Chainlink and custom feed health across all deployed chains.
-              </p>
-            )}
-          </div>
-          <div className="flex items-center gap-3 mt-1">
-            <span className="text-xs text-neutral-700">{lastRefreshedLabel}</span>
-            <button
-              type="button"
-              onClick={handleRefresh}
-              disabled={!canRefresh}
-              className={`tabular-nums text-sm transition-colors ${
-                canRefresh
-                  ? 'text-neutral-700 hover:text-neutral-950'
-                  : 'text-neutral-700 opacity-70 cursor-not-allowed'
-              } ${isRefreshing ? 'animate-spin' : ''}`}
-            >
-              ↻{canRefresh ? ' Refresh' : ` ${secondsLeft}s`}
-            </button>
-          </div>
+        {/* Title */}
+        <div>
+          <h1 className={`font-bold text-neutral-950 ${dense ? 'text-xl' : 'text-2xl'}`}>Price Feeds</h1>
+          {!dense && (
+            <p className="text-sm text-neutral-700 mt-1">
+              Chainlink and custom feed health across all deployed chains.
+            </p>
+          )}
         </div>
 
         {/* Health summary strip with scroll overflow + fade mask */}
         <div className="relative">
           <div className="overflow-x-auto no-scrollbar flex items-center gap-x-6 gap-y-2 py-3 px-4 rounded-xl border border-neutral-300 bg-neutral-100 text-sm">
-            {DEPLOYED_CHAINS.map((c, idx) => (
-              <ChainHealthPill key={idx} chainIdx={idx} isActive={activeChainId === c.chain.id} />
+            {order.map((idx) => (
+              <ChainHealthPill
+                key={DEPLOYED_CHAINS[idx].chain.id}
+                chainIdx={idx}
+                isActive={activeChainId === DEPLOYED_CHAINS[idx].chain.id}
+                onCount={reportCount}
+              />
             ))}
           </div>
           {/* Fade mask on the right edge */}
@@ -294,15 +317,17 @@ export default function FeedsPage() {
 
         {/* Chain sections */}
         <div className="space-y-6">
-          {DEPLOYED_CHAINS.map((_, idx) => (
+          {order.map((idx) => (
             <ChainFeedsSection
-              key={`${idx}-${refreshKey}`}
+              key={`${DEPLOYED_CHAINS[idx].chain.id}-${refreshKey}`}
               chainIdx={idx}
               dense={dense}
               filterStatus={filterStatus}
               searchQuery={searchQuery}
             />
           ))}
+        </div>
+          </div>
         </div>
       </div>
     </TooltipProvider>

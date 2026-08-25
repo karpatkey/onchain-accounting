@@ -3,6 +3,7 @@
 import { useState, useMemo, useEffect } from 'react'
 import { isAddress, formatUnits } from 'viem'
 import { TooltipProvider } from '@karpatkey/design-system'
+import { DashboardNav } from '@/components/dashboard-nav'
 import { ProfileHeader } from '@/components/profile-header'
 import { ChainSidebar } from '@/components/chain-sidebar'
 import { ProtocolGroup, type ProtocolGroupData, type WithdrawalsByKey, type WithdrawalRequestRow } from '@/components/protocol-group'
@@ -197,7 +198,9 @@ function PortfolioView({ account, onReset }: { account: `0x${string}`; onReset: 
       })
     }
     else if (sortOrder === 'name-asc') g = [...g].sort((a, b) => a.protocol.localeCompare(b.protocol))
-    return g
+    // Wallet holdings always render on top, regardless of sort order (the ERC20Default adapter's
+    // protocolName() is "Wallet"). Stable partition — preserves the sorted order of the rest.
+    return [...g.filter((gr) => gr.protocol === 'Wallet'), ...g.filter((gr) => gr.protocol !== 'Wallet')]
   }, [allGroups, hideDust, sortOrder])
 
   // Lido withdrawal-queue oracles the account touches — drives the per-NFT-id drill-down (display only;
@@ -329,31 +332,32 @@ function PortfolioView({ account, onReset }: { account: `0x${string}`; onReset: 
     <div className="min-h-screen bg-neutral-200">
       <div className="max-w-6xl mx-auto px-4">
 
-        {/* Top bar */}
-        <div className="flex items-center justify-between py-4">
-          <div className="flex items-center gap-2">
-            <div className="w-7 h-7 rounded-full bg-neutral-950 flex items-center justify-center text-white text-xs font-semibold">k</div>
-            <span className="text-sm font-semibold text-neutral-950">NAV Dashboard</span>
-          </div>
-          <div className="flex items-center gap-4 text-sm">
-            <a href="/" className="text-neutral-950 font-semibold underline underline-offset-4">Portfolio</a>
-            <a href={`/feeds?address=${account}`} className="text-neutral-700 hover:text-neutral-950 transition-colors">Price Feeds</a>
-            <button
-              type="button" onClick={handleRefresh} disabled={!canRefresh}
-              className={`tabular-nums transition-colors ${canRefresh ? 'text-neutral-700 hover:text-neutral-950' : 'text-neutral-700 opacity-70 cursor-not-allowed'}`}
-            >
-              {canRefresh ? '↻ Refresh' : `↻ ${secondsLeft}s`}
-            </button>
-            <button
-              type="button" onClick={() => exportCsv(positionResults, account)} disabled={isLoading}
-              title="Export positions as CSV"
-              className="text-neutral-700 hover:text-neutral-950 transition-colors disabled:opacity-70 disabled:cursor-not-allowed"
-            >
-              ↓ CSV
-            </button>
-            <button type="button" onClick={onReset} className="text-neutral-700 hover:text-neutral-950 transition-colors">✕</button>
-          </div>
-        </div>
+        {/* Top bar — shared across Portfolio / Coverage / Price Feeds */}
+        <DashboardNav
+          active="portfolio"
+          address={account}
+          refresh={{ onClick: handleRefresh, canRefresh, secondsLeft }}
+          right={
+            <>
+              <button
+                type="button"
+                onClick={() => exportCsv(positionResults, account)}
+                disabled={isLoading}
+                title="Export positions as CSV"
+                className="text-neutral-700 hover:text-neutral-950 transition-colors disabled:opacity-70 disabled:cursor-not-allowed"
+              >
+                ↓ CSV
+              </button>
+              <button
+                type="button"
+                onClick={onReset}
+                className="text-neutral-700 hover:text-neutral-950 transition-colors"
+              >
+                ✕
+              </button>
+            </>
+          }
+        />
 
         <ProfileHeader
           address={account}

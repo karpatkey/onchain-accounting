@@ -38,6 +38,8 @@ const SYMBOL_LOGO: Record<string, string> = {
   USDS:     `${CG}/39926/large/usds.webp`,
   sUSDS:    `${CG}/52721/large/sUSDS_Coin.png`,
   GHO:      `${CG}/30663/large/gho-token-logo.png`,
+  // Aave Staked GHO — on-chain symbol is "sGho" (capital S, lowercase gho); reuse the GHO logo.
+  sGho:     `${CG}/30663/large/gho-token-logo.png`,
   crvUSD:   `${CG}/30118/large/crvusd.jpg`,
   LUSD:     `${CG}/14666/large/Group_3.png`,
   FRAX:     `${CG}/13422/large/FRAX_icon.png`,
@@ -74,6 +76,16 @@ const SYMBOL_LOGO: Record<string, string> = {
   // Chain tokens
   OP:       `${CG}/25244/large/Optimism.png`,
   ARB:      `${CG}/16547/large/photo_2023-03-29_18.13.09.jpeg`,
+  // More LSTs / staking receipts (registered assets whose address-CDN fallback had no logo)
+  LsETH:    `${CGI}/28848/large/LsETH-receipt-token-circle.png`,
+  OETH:     `${CGI}/29733/large/OETH.png`,
+  ankrETH:  `${CGI}/13403/large/aETHc.png`,
+  osGNO:    `${CGI}/39458/large/stakewiseosgno_32.webp`,
+  // Gnosis / Arbitrum stablecoins
+  EURe:     `${CGI}/23354/large/eur.png`,
+  'USD₮0':  `${CGI}/53705/large/usdt0.jpg`,
+  // Cover
+  NXM:      `${CGI}/11810/large/NXMmain.png`,
 }
 
 // Consistent hashed colour for fallback monograms (P2 item 9)

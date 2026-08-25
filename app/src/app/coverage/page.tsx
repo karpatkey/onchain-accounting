@@ -1,0 +1,244 @@
+'use client'
+
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
+import { TooltipProvider } from '@karpatkey/design-system'
+import { CoverageTable } from '@/components/coverage-table'
+import { DashboardNav } from '@/components/dashboard-nav'
+import { useChainCoverage } from '@/hooks/use-coverage'
+import { useRefreshCooldown } from '@/hooks/use-refresh-cooldown'
+import { DEPLOYED_CHAINS } from '@/config/chains'
+
+function ChainCoveragePill({
+  chainIdx,
+  isActive,
+  onCount,
+}: {
+  chainIdx: number
+  isActive: boolean
+  onCount: (chainId: number, count: number) => void
+}) {
+  const data = useChainCoverage(chainIdx)
+  const config = DEPLOYED_CHAINS[chainIdx]
+
+  // Report product count up so the page can sort chains by it (strip + body share one order).
+  useEffect(() => {
+    if (!data.isLoading) onCount(config.chain.id, data.productCount)
+  }, [data.isLoading, data.productCount, config.chain.id, onCount])
+
+  return (
+    <a
+      href={`#chain-${config.chain.id}`}
+      className={`flex items-center gap-1.5 text-sm transition-colors ${
+        isActive ? 'text-neutral-950 font-semibold' : 'text-neutral-700 hover:text-neutral-950'
+      }`}
+    >
+      <img
+        src={config.logoUrl}
+        alt={config.label}
+        className="w-4 h-4 rounded-full shrink-0 object-cover"
+      />
+      <span>{config.label}</span>
+      {data.isLoading ? (
+        <span className="text-neutral-700 text-xs">…</span>
+      ) : data.protocols.length > 0 ? (
+        <span className="text-neutral-700">
+          ({data.protocols.length} {data.protocols.length === 1 ? 'protocol' : 'protocols'})
+        </span>
+      ) : (
+        <span className="text-neutral-500 text-xs">none yet</span>
+      )}
+    </a>
+  )
+}
+
+function ChainCoverageSection({ chainIdx, searchQuery }: { chainIdx: number; searchQuery: string }) {
+  const data = useChainCoverage(chainIdx)
+  const chainConfig = DEPLOYED_CHAINS[chainIdx]
+  const isL2 = chainConfig.sequencerFeed !== null
+
+  return (
+    <div
+      id={`chain-${chainConfig.chain.id}`}
+      className="rounded-xl border border-neutral-400 bg-white overflow-hidden shadow-[var(--shadow-1)]"
+      style={{ borderLeftColor: chainConfig.brandColor, borderLeftWidth: 4 }}
+    >
+      <div className="flex items-center justify-between px-5 py-4 border-b border-neutral-300">
+        <div className="flex items-center gap-2">
+          <img
+            src={chainConfig.logoUrl}
+            alt={chainConfig.label}
+            className="w-5 h-5 rounded-full shrink-0 object-cover"
+          />
+          <h2 className="font-semibold text-neutral-950">{chainConfig.label}</h2>
+          <span
+            className={`text-[10px] font-semibold px-1.5 py-0.5 rounded uppercase tracking-wide ${
+              isL2 ? 'bg-violet-100 text-violet-700' : 'bg-neutral-100 text-neutral-700'
+            }`}
+          >
+            {isL2 ? 'L2' : 'L1'}
+          </span>
+        </div>
+        {!data.isLoading && (
+          <span className="text-xs text-neutral-700">
+            {data.protocols.length} {data.protocols.length === 1 ? 'protocol' : 'protocols'} ·{' '}
+            {data.productCount} {data.productCount === 1 ? 'product' : 'products'}
+          </span>
+        )}
+      </div>
+
+      <div className="p-5">
+        <CoverageTable data={data} searchQuery={searchQuery} />
+      </div>
+    </div>
+  )
+}
+
+export default function CoveragePage() {
+  const [searchQuery, setSearchQuery] = useState('')
+  const [activeChainId, setActiveChainId] = useState<number | null>(null)
+  const [address, setAddress] = useState<string | null>(null)
+  const [refreshKey, setRefreshKey] = useState(0)
+  const searchRef = useRef<HTMLInputElement>(null)
+  const { canRefresh, secondsLeft, startCooldown } = useRefreshCooldown()
+
+  // The app reads the account from the URL (not useSearchParams — no Suspense needed); the shared nav
+  // carries it across tabs.
+  useEffect(() => {
+    const addr = new URLSearchParams(window.location.search).get('address')
+    if (addr) setAddress(addr)
+  }, [])
+
+  const handleRefresh = useCallback(() => {
+    setRefreshKey((k) => k + 1)
+    startCooldown()
+  }, [startCooldown])
+
+  // Chains sorted by product count desc, then alphabetically. Counts are reported up from each chain's
+  // pill (which owns the data); until a chain reports, it sorts as 0 (alphabetical) then settles.
+  const [counts, setCounts] = useState<Record<number, number>>({})
+  const reportCount = useCallback((chainId: number, count: number) => {
+    setCounts((prev) => (prev[chainId] === count ? prev : { ...prev, [chainId]: count }))
+  }, [])
+  const order = useMemo(
+    () =>
+      DEPLOYED_CHAINS.map((_, i) => i).sort((a, b) => {
+        const ca = counts[DEPLOYED_CHAINS[a].chain.id] ?? 0
+        const cb = counts[DEPLOYED_CHAINS[b].chain.id] ?? 0
+        return cb - ca || DEPLOYED_CHAINS[a].label.localeCompare(DEPLOYED_CHAINS[b].label)
+      }),
+    [counts],
+  )
+
+  // Scroll-spy: observe each chain section and track which is most in view.
+  useEffect(() => {
+    const sectionIds = DEPLOYED_CHAINS.map((c) => `chain-${c.chain.id}`)
+    const observers: IntersectionObserver[] = []
+    for (const id of sectionIds) {
+      const el = document.getElementById(id)
+      if (!el) continue
+      const obs = new IntersectionObserver(
+        ([entry]) => {
+          if (entry.isIntersecting) setActiveChainId(Number(id.replace('chain-', '')))
+        },
+        { rootMargin: '-20% 0px -60% 0px', threshold: 0 },
+      )
+      obs.observe(el)
+      observers.push(obs)
+    }
+    return () => observers.forEach((o) => o.disconnect())
+  }, [])
+
+  // Cmd+K / "/" to focus search.
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        e.preventDefault()
+        searchRef.current?.focus()
+        searchRef.current?.select()
+      } else if (e.key === '/' && document.activeElement?.tagName !== 'INPUT') {
+        e.preventDefault()
+        searchRef.current?.focus()
+        searchRef.current?.select()
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [])
+
+  return (
+    <TooltipProvider>
+      <div className="min-h-screen bg-neutral-200">
+        <div className="max-w-6xl mx-auto px-4 pb-12">
+          <DashboardNav
+            active="coverage"
+            address={address}
+            refresh={{ onClick: handleRefresh, canRefresh, secondsLeft }}
+          />
+          <div className="space-y-4">
+          {/* Title */}
+          <div>
+            <h1 className="font-bold text-neutral-950 text-2xl">Coverage</h1>
+            <p className="text-sm text-neutral-700 mt-1">
+              The protocols and positions the NAV system tracks, per chain.
+            </p>
+          </div>
+
+          {/* Scope banner */}
+          <div className="rounded-xl border border-neutral-300 border-l-4 border-l-violet-500 bg-violet-50/50 px-5 py-4">
+            <h2 className="text-sm font-semibold text-neutral-950">What the NAV system tracks</h2>
+            <p className="text-sm text-neutral-700 mt-1 max-w-3xl">
+              NAV values only the protocols and positions listed below — the ones KPK actively uses
+              across these accounts. Anything outside this set is intentionally not counted.
+            </p>
+          </div>
+
+          {/* Chain summary strip with scroll overflow + fade mask */}
+          <div className="relative">
+            <div className="overflow-x-auto no-scrollbar flex items-center gap-x-6 gap-y-2 py-3 px-4 rounded-xl border border-neutral-300 bg-neutral-100 text-sm">
+              {order.map((idx) => (
+                <ChainCoveragePill
+                  key={DEPLOYED_CHAINS[idx].chain.id}
+                  chainIdx={idx}
+                  isActive={activeChainId === DEPLOYED_CHAINS[idx].chain.id}
+                  onCount={reportCount}
+                />
+              ))}
+            </div>
+            <div className="pointer-events-none absolute inset-y-0 right-0 w-8 rounded-r-xl bg-gradient-to-l from-neutral-100 to-transparent" />
+          </div>
+
+          {/* Search */}
+          <div className="flex items-center justify-end">
+            <div className="relative">
+              <input
+                ref={searchRef}
+                type="search"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search protocols…"
+                className="text-sm rounded-lg border border-neutral-300 bg-white px-3 py-1.5 pr-16 text-neutral-900 placeholder:text-neutral-700 focus:outline-none focus:ring-2 focus:ring-neutral-400 w-52"
+              />
+              {!searchQuery && (
+                <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-[10px] text-neutral-700 font-mono bg-neutral-100 border border-neutral-200 rounded px-1 py-0.5">
+                  ⌘K
+                </span>
+              )}
+            </div>
+          </div>
+
+          {/* Chain sections */}
+          <div className="space-y-6">
+            {order.map((idx) => (
+              <ChainCoverageSection
+                key={`${DEPLOYED_CHAINS[idx].chain.id}-${refreshKey}`}
+                chainIdx={idx}
+                searchQuery={searchQuery}
+              />
+            ))}
+          </div>
+          </div>
+        </div>
+      </div>
+    </TooltipProvider>
+  )
+}

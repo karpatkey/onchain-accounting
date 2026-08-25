@@ -1,6 +1,7 @@
 'use client'
 
-import { useState } from 'react'
+import { Fragment, useState } from 'react'
+import { zeroAddress } from 'viem'
 import {
   Table,
   THead,
@@ -15,7 +16,7 @@ import {
   TooltipTrigger,
   Skeleton,
 } from '@karpatkey/design-system'
-import type { ChainPriceFeeds, PriceFeedInfo } from '@/hooks/use-price-feeds'
+import type { ChainPriceFeeds, AssetFeedNode, FeedNode } from '@/hooks/use-price-feeds'
 import { TokenLogo } from '@/components/token-logo'
 import { formatAge, formatHeartbeat, formatPrice, isStaleWarning } from '@/lib/format'
 import { AddressChip } from '@/components/address-chip'
@@ -27,48 +28,40 @@ const PRICE_TYPES = ['Chainlink', 'Redstone', 'API3', 'Custom'] as const
 const PRICE_TYPE_CUSTOM = 3
 
 export type FilterStatus = 'all' | 'fresh' | 'warning'
-type SortKey = 'asset' | 'price' | 'heartbeat' | 'lastUpdated' | 'status'
+type SortKey = 'asset' | 'price' | 'status'
 type SortDir = 'asc' | 'desc'
 
-function statusScore(feed: PriceFeedInfo): number {
-  if (feed.sequencerDown || feed.stale) return 2
-  if (isStaleWarning(feed.updatedAt, feed.chainlinkHeartbeat)) return 1
-  return 0
+// Custom feeds: heartbeat and updatedAt are the worst-case across the feed's underlying
+// oracle(s) per ICustomPriceFeed.latestRoundData() convention. updatedAt == 0 is the
+// documented sentinel for "no trackable oracle dependency" (live on-chain rate).
+const CUSTOM_LIVE_TIP = 'Live on-chain rate — no external oracle dependency.'
+
+// --- per-feed status ---------------------------------------------------------
+
+type FeedHealth = 'unavailable' | 'stale' | 'warning' | 'fresh'
+
+function feedHealth(feed: FeedNode, sequencerDown: boolean): FeedHealth {
+  if (!feed.available) return 'unavailable'
+  if (sequencerDown || feed.stale) return 'stale'
+  if (isStaleWarning(feed.updatedAt, feed.chainlinkHeartbeat)) return 'warning'
+  return 'fresh'
 }
 
-function sortFeeds(feeds: PriceFeedInfo[], key: SortKey | null, dir: SortDir): PriceFeedInfo[] {
-  if (!key) return feeds
-  return [...feeds].sort((a, b) => {
-    let d = 0
-    switch (key) {
-      case 'asset':       d = a.asset.symbol.localeCompare(b.asset.symbol); break
-      case 'price':       d = a.price > b.price ? 1 : a.price < b.price ? -1 : 0; break
-      case 'heartbeat':   d = a.chainlinkHeartbeat > b.chainlinkHeartbeat ? 1 : a.chainlinkHeartbeat < b.chainlinkHeartbeat ? -1 : 0; break
-      case 'lastUpdated': d = a.updatedAt > b.updatedAt ? -1 : a.updatedAt < b.updatedAt ? 1 : 0; break
-      case 'status':      d = statusScore(b) - statusScore(a); break
-    }
-    return dir === 'asc' ? d : -d
-  })
-}
-
-function applyFilter(feeds: PriceFeedInfo[], filter: FilterStatus): PriceFeedInfo[] {
-  if (filter === 'all') return feeds
-  return feeds.filter((f) => {
-    const hasIssue = f.stale || f.sequencerDown || isStaleWarning(f.updatedAt, f.chainlinkHeartbeat)
-    return filter === 'warning' ? hasIssue : !hasIssue
-  })
-}
-
-function applySearch(feeds: PriceFeedInfo[], query: string): PriceFeedInfo[] {
-  if (!query.trim()) return feeds
-  const q = query.trim().toLowerCase()
-  return feeds.filter((f) => f.asset.symbol.toLowerCase().includes(q))
-}
-
-function FeedStatusBadge({ feed }: { feed: PriceFeedInfo }) {
-  if (feed.sequencerDown) return <Badge variant="negative">Seq Down</Badge>
+function FeedStatusBadge({ feed, sequencerDown }: { feed: FeedNode; sequencerDown: boolean }) {
+  const h = feedHealth(feed, sequencerDown)
+  if (h === 'unavailable') {
+    return (
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Badge variant="generic" className="bg-neutral-400 text-white cursor-default">Unavailable</Badge>
+        </TooltipTrigger>
+        <TooltipContent>Feed read reverted — live price could not be fetched.</TooltipContent>
+      </Tooltip>
+    )
+  }
+  if (sequencerDown) return <Badge variant="negative">Seq Down</Badge>
   if (feed.stale) return <Badge variant="negative">Stale</Badge>
-  if (isStaleWarning(feed.updatedAt, feed.chainlinkHeartbeat)) {
+  if (h === 'warning') {
     const ageSec = Number(BigInt(Math.floor(Date.now() / 1000)) - feed.updatedAt)
     const heartSec = Number(feed.chainlinkHeartbeat)
     const pct = heartSec > 0 ? Math.round((ageSec / heartSec) * 100) : 0
@@ -84,6 +77,76 @@ function FeedStatusBadge({ feed }: { feed: PriceFeedInfo }) {
   }
   return <Badge variant="positive">Fresh</Badge>
 }
+
+// Redundancy badge: N healthy of M configured. Green when all healthy, amber when degraded
+// (some but not all), red when none.
+function RedundancyBadge({ healthy, total }: { healthy: number; total: number }) {
+  const cls =
+    total === 0 || healthy === 0
+      ? 'bg-red-100 text-red-800'
+      : healthy >= total
+        ? 'bg-green-100 text-green-800'
+        : 'bg-amber-100 text-amber-800'
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span className={`text-xs rounded-full px-2 py-0.5 font-medium tabular-nums cursor-default ${cls}`}>
+          {healthy}/{total} healthy
+        </span>
+      </TooltipTrigger>
+      <TooltipContent>
+        {healthy} of {total} configured {total === 1 ? 'feed' : 'feeds'} currently non-stale (redundancy set).
+      </TooltipContent>
+    </Tooltip>
+  )
+}
+
+// --- asset-level status (for filter/sort) ------------------------------------
+
+// An asset "has an issue" (for the warning filter) when its winning feed is stale/down, its
+// winner is in the heartbeat warning band, or its redundancy is degraded (not all feeds healthy).
+function assetHasIssue(node: AssetFeedNode): boolean {
+  if (node.winner.stale || node.sequencerDown) return true
+  const winnerFeed = node.feeds.find((f) => f.isWinner)
+  if (winnerFeed && isStaleWarning(winnerFeed.updatedAt, winnerFeed.chainlinkHeartbeat)) return true
+  if (node.totalFeeds === 0 || node.healthyFeedCount < node.totalFeeds) return true
+  return false
+}
+
+function assetStatusScore(node: AssetFeedNode): number {
+  if (node.winner.stale || node.sequencerDown) return 3
+  if (node.totalFeeds === 0 || node.healthyFeedCount === 0) return 3
+  const winnerFeed = node.feeds.find((f) => f.isWinner)
+  if (winnerFeed && isStaleWarning(winnerFeed.updatedAt, winnerFeed.chainlinkHeartbeat)) return 2
+  if (node.healthyFeedCount < node.totalFeeds) return 1
+  return 0
+}
+
+function sortNodes(nodes: AssetFeedNode[], key: SortKey | null, dir: SortDir): AssetFeedNode[] {
+  if (!key) return nodes
+  return [...nodes].sort((a, b) => {
+    let d = 0
+    switch (key) {
+      case 'asset':      d = a.asset.symbol.localeCompare(b.asset.symbol); break
+      case 'price':      d = a.winner.price > b.winner.price ? 1 : a.winner.price < b.winner.price ? -1 : 0; break
+      case 'status':     d = assetStatusScore(b) - assetStatusScore(a); break
+    }
+    return dir === 'asc' ? d : -d
+  })
+}
+
+function applyFilter(nodes: AssetFeedNode[], filter: FilterStatus): AssetFeedNode[] {
+  if (filter === 'all') return nodes
+  return nodes.filter((n) => (filter === 'warning' ? assetHasIssue(n) : !assetHasIssue(n)))
+}
+
+function applySearch(nodes: AssetFeedNode[], query: string): AssetFeedNode[] {
+  if (!query.trim()) return nodes
+  const q = query.trim().toLowerCase()
+  return nodes.filter((n) => n.asset.symbol.toLowerCase().includes(q))
+}
+
+// --- sortable header ---------------------------------------------------------
 
 function SortTh({
   children,
@@ -119,10 +182,81 @@ function SortTh({
   )
 }
 
-// Custom feeds: heartbeat and updatedAt are the worst-case across the feed's underlying
-// oracle(s) per ICustomPriceFeed.latestRoundData() convention. updatedAt == 0 is the
-// documented sentinel for "no trackable oracle dependency" (live on-chain rate) — see ADR 0010.
-const CUSTOM_LIVE_TIP = 'Live on-chain rate — no external oracle dependency.'
+// --- child feed row ----------------------------------------------------------
+
+function FeedChildRow({
+  feed,
+  chainId,
+  sequencerDown,
+  td,
+  isLast,
+}: {
+  feed: FeedNode
+  chainId: number
+  sequencerDown: boolean
+  td: string
+  isLast: boolean
+}) {
+  return (
+    <Tr className="bg-neutral-50/60 hover:bg-neutral-100 transition-colors">
+      {/* Feed type — indented under the asset, with a tree connector */}
+      <Td className={td}>
+        <div className="flex items-center gap-2 pl-6">
+          <span className="text-neutral-400 select-none">{isLast ? '└' : '├'}</span>
+          <Badge variant="generic" className="text-xs">
+            {PRICE_TYPES[feed.priceType] ?? 'Unknown'}
+          </Badge>
+          {feed.isWinner && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span className="text-amber-500 cursor-default" aria-label="Winning feed">★</span>
+              </TooltipTrigger>
+              <TooltipContent>Winning feed — freshest non-stale feed selected by NAVCalculator.</TooltipContent>
+            </Tooltip>
+          )}
+        </div>
+      </Td>
+      {/* Feed address */}
+      <Td className={td}>
+        <AddressChip address={feed.priceFeed} chainId={chainId} className="text-sm" />
+      </Td>
+      {/* Live price */}
+      <Td className={`text-right tabular-nums ${td}`}>
+        {feed.available ? formatPrice(feed.price, feed.decimals) : <span className="text-neutral-500">—</span>}
+      </Td>
+      {/* Decimals */}
+      <Td className={`text-right tabular-nums text-neutral-700 ${td}`}>{feed.decimals}</Td>
+      {/* Heartbeat */}
+      <Td className={`text-right tabular-nums text-neutral-700 ${td}`}>
+        {formatHeartbeat(feed.chainlinkHeartbeat)}
+      </Td>
+      {/* Last updated */}
+      <Td className={`text-right tabular-nums ${td}`}>
+        {!feed.available ? (
+          <span className="text-neutral-500">—</span>
+        ) : feed.updatedAt > 0n ? (
+          <Tooltip>
+            <TooltipTrigger className="cursor-default">{formatAge(feed.updatedAt)}</TooltipTrigger>
+            <TooltipContent>{new Date(Number(feed.updatedAt) * 1000).toLocaleString()}</TooltipContent>
+          </Tooltip>
+        ) : feed.priceType === PRICE_TYPE_CUSTOM ? (
+          <Tooltip>
+            <TooltipTrigger className="cursor-default text-neutral-700">Live</TooltipTrigger>
+            <TooltipContent>{CUSTOM_LIVE_TIP}</TooltipContent>
+          </Tooltip>
+        ) : (
+          <span className="text-neutral-700">—</span>
+        )}
+      </Td>
+      {/* Status */}
+      <Td className={`text-center ${td}`}>
+        <FeedStatusBadge feed={feed} sequencerDown={sequencerDown} />
+      </Td>
+    </Tr>
+  )
+}
+
+// --- component ---------------------------------------------------------------
 
 interface PriceFeedsTableProps {
   data: ChainPriceFeeds
@@ -132,13 +266,25 @@ interface PriceFeedsTableProps {
 }
 
 export function PriceFeedsTable({ data, dense = false, filterStatus = 'all', searchQuery = '' }: PriceFeedsTableProps) {
-  const { feeds, isLoading, isError, chainId } = data
-  const [sortKey, setSortKey] = useState<SortKey | null>(null)
+  const { nodes, isLoading, isError, chainId, sequencerDown } = data
+  // Default to alphabetical by asset (Wallet-style pinning doesn't apply to feeds); the header stays sortable.
+  const [sortKey, setSortKey] = useState<SortKey | null>('asset')
   const [sortDir, setSortDir] = useState<SortDir>('asc')
+  // Collapsed set — default expanded so the redundancy is visible at a glance. Keyed by asset address.
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
 
   function handleSort(key: SortKey) {
     if (sortKey === key) setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))
     else { setSortKey(key); setSortDir('asc') }
+  }
+
+  function toggle(addr: string) {
+    setCollapsed((prev) => {
+      const next = new Set(prev)
+      if (next.has(addr)) next.delete(addr)
+      else next.add(addr)
+      return next
+    })
   }
 
   if (isLoading) {
@@ -152,26 +298,15 @@ export function PriceFeedsTable({ data, dense = false, filterStatus = 'all', sea
   }
 
   if (isError) return <p className="text-sm text-destructive py-4">Failed to load price feeds.</p>
-  if (feeds.length === 0) return <p className="text-sm text-neutral-700 py-4">No registered assets found.</p>
+  if (nodes.length === 0) return <p className="text-sm text-neutral-700 py-4">No registered assets found.</p>
 
-  // Build a map of priceFeed address → symbols that share it (for same-feed tooltip)
-  const sharedFeedMap = new Map<string, string[]>()
-  for (const f of feeds) {
-    const addr = f.priceFeed.toLowerCase()
-    const existing = sharedFeedMap.get(addr) ?? []
-    existing.push(f.asset.symbol)
-    sharedFeedMap.set(addr, existing)
-  }
-
-  const displayed = sortFeeds(applySearch(applyFilter(feeds, filterStatus), searchQuery), sortKey, sortDir)
+  const displayed = sortNodes(applySearch(applyFilter(nodes, filterStatus), searchQuery), sortKey, sortDir)
 
   if (displayed.length === 0) {
     const reason = searchQuery.trim()
       ? `No assets matching "${searchQuery.trim()}"`
-      : `No ${filterStatus} feeds on this chain`
-    return (
-      <p className="text-sm text-neutral-700 py-6 text-center">{reason}.</p>
-    )
+      : `No ${filterStatus} assets on this chain`
+    return <p className="text-sm text-neutral-700 py-6 text-center">{reason}.</p>
   }
 
   const td = dense ? '!py-1.5 !text-xs' : ''
@@ -183,83 +318,108 @@ export function PriceFeedsTable({ data, dense = false, filterStatus = 'all', sea
       <Table>
         <THead className="sticky top-0 z-10 bg-white">
           <Tr>
-            <SortTh sortKey="asset" {...sortProps} align="left">Asset</SortTh>
-            <Th>Feed Type</Th>
+            <SortTh sortKey="asset" {...sortProps} align="left">Asset / Feed Type</SortTh>
             <Th>Feed Address</Th>
             <SortTh sortKey="price" {...sortProps} align="right">Price</SortTh>
-            <SortTh sortKey="heartbeat" {...sortProps} align="right">Heartbeat</SortTh>
-            <SortTh sortKey="lastUpdated" {...sortProps} align="right">Last Updated</SortTh>
+            <Th className="text-right">Decimals</Th>
+            <Th className="text-right">Heartbeat</Th>
+            <Th className="text-right">Last Updated</Th>
             <SortTh sortKey="status" {...sortProps} align="center">Status</SortTh>
           </Tr>
         </THead>
         <TBody>
-          {displayed.map((feed, i) => {
-            const sharedWith = (sharedFeedMap.get(feed.priceFeed.toLowerCase()) ?? []).filter(
-              (s) => s !== feed.asset.symbol,
-            )
+          {displayed.map((node) => {
+            const addr = node.asset.asset.toLowerCase()
+            const isCollapsed = collapsed.has(addr)
+            const winnerFeed = node.feeds.find((f) => f.isWinner)
+            // Prefer the winner's own latestRoundData() read; if that per-feed read reverted, fall back to
+            // the updatedAt from getPriceData (the same source as the winner price) so the parent row stays
+            // consistent with the displayed price instead of collapsing to "—".
+            const winnerUpdatedAt = winnerFeed?.available ? winnerFeed.updatedAt : node.winner.updatedAt
             return (
-              <Tr key={i} className="hover:bg-neutral-50 transition-colors">
-                <Td className={td}>
-                  <div className="flex items-center gap-1.5">
-                    <TokenLogo symbol={feed.asset.symbol} address={feed.asset.asset} chainId={chainId} className={logo} />
-                    <span className="font-semibold">{feed.asset.symbol}</span>
-                    <a
-                      href={explorerAddressUrl(chainId, feed.asset.asset)}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="link-icon text-neutral-700 hover:text-neutral-950 inline-flex items-center transition-colors"
-                    >
-                      <Launch className="w-3 h-3" />
-                    </a>
-                  </div>
-                </Td>
-                <Td className={td}>
-                  <Badge variant="generic" className="text-xs">
-                    {PRICE_TYPES[feed.priceType] ?? 'Unknown'}
-                  </Badge>
-                </Td>
-                <Td className={td}>
-                  <div className="flex items-center gap-1.5">
-                    <AddressChip address={feed.priceFeed} chainId={chainId} className="text-sm" />
-                    {sharedWith.length > 0 && (
-                      <Tooltip>
-                        <TooltipTrigger className="cursor-default text-xs text-neutral-500">↔</TooltipTrigger>
-                        <TooltipContent>
-                          <span className="block text-neutral-700 text-xs">Shared feed with {sharedWith.join(', ')}</span>
-                        </TooltipContent>
-                      </Tooltip>
+              <Fragment key={addr}>
+                {/* Asset parent row — clickable + keyboard-operable (Enter/Space) to expand/collapse. */}
+                <Tr
+                  className="hover:bg-neutral-50 transition-colors cursor-pointer border-t-2 border-neutral-200"
+                  onClick={() => toggle(addr)}
+                  role="button"
+                  tabIndex={0}
+                  aria-expanded={!isCollapsed}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault()
+                      toggle(addr)
+                    }
+                  }}
+                >
+                  <Td className={td}>
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-neutral-500 w-3 inline-block select-none">
+                        {isCollapsed ? '▸' : '▾'}
+                      </span>
+                      <TokenLogo symbol={node.asset.symbol} address={node.asset.asset} chainId={chainId} className={logo} />
+                      <span className="font-semibold">{node.asset.symbol}</span>
+                      <a
+                        href={explorerAddressUrl(chainId, node.asset.asset)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={(e) => e.stopPropagation()}
+                        className="link-icon text-neutral-700 hover:text-neutral-950 inline-flex items-center transition-colors"
+                      >
+                        <Launch className="w-3 h-3" />
+                      </a>
+                    </div>
+                  </Td>
+                  <Td className={td}>
+                    <RedundancyBadge healthy={node.healthyFeedCount} total={node.totalFeeds} />
+                  </Td>
+                  <Td className={`text-right tabular-nums font-semibold ${td}`}>
+                    {formatPrice(node.winner.price, node.winner.decimals)}
+                  </Td>
+                  <Td className={td} />
+                  <Td className={td} />
+                  <Td className={`text-right tabular-nums ${td}`}>
+                    {node.winner.priceFeed === zeroAddress ? (
+                      // No winner (getPriceData had none / failed) — nothing to date.
+                      <span className="text-neutral-700">—</span>
+                    ) : winnerUpdatedAt > 0n ? (
+                      // Driven by node.winner (getPriceData), same source as the price cell, so a failed
+                      // getPriceFeeds/per-feed read can't collapse this to "—" while the price still shows.
+                      formatAge(winnerUpdatedAt)
+                    ) : (
+                      <span className="text-neutral-700">Live</span>
                     )}
-                  </div>
-                </Td>
-                <Td className={`text-right tabular-nums ${td}`}>
-                  {formatPrice(feed.price, feed.decimals)}
-                </Td>
-                <Td className={`text-right tabular-nums text-neutral-700 ${td}`}>
-                  {formatHeartbeat(feed.chainlinkHeartbeat)}
-                </Td>
-                <Td className={`text-right tabular-nums ${td}`}>
-                  {feed.updatedAt > 0n ? (
-                    <Tooltip>
-                      <TooltipTrigger className="cursor-default">
-                        {formatAge(feed.updatedAt)}
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        {new Date(Number(feed.updatedAt) * 1000).toLocaleString()}
-                      </TooltipContent>
-                    </Tooltip>
-                  ) : feed.priceType === PRICE_TYPE_CUSTOM ? (
-                    <Tooltip>
-                      <TooltipTrigger className="cursor-default text-neutral-700">Live</TooltipTrigger>
-                      <TooltipContent>{CUSTOM_LIVE_TIP}</TooltipContent>
-                    </Tooltip>
-                  ) : (
-                    <span className="text-neutral-700">—</span>
-                  )}
-                </Td>
-                <Td className={`text-center ${td}`}>
-                  <FeedStatusBadge feed={feed} />
-                </Td>
-              </Tr>
+                  </Td>
+                  <Td className={`text-center ${td}`}>
+                    {node.winner.stale || node.sequencerDown ? (
+                      <Badge variant="negative">{node.sequencerDown ? 'Seq Down' : 'Stale'}</Badge>
+                    ) : node.healthyFeedCount >= node.totalFeeds && node.totalFeeds > 0 ? (
+                      <Badge variant="positive">Fresh</Badge>
+                    ) : (
+                      <Badge variant="generic" className="bg-amber-500 text-white">Degraded</Badge>
+                    )}
+                  </Td>
+                </Tr>
+                {/* Feed child rows */}
+                {!isCollapsed &&
+                  node.feeds.map((feed, fi) => (
+                    <FeedChildRow
+                      key={`${addr}-${feed.priceFeed}-${fi}`}
+                      feed={feed}
+                      chainId={chainId}
+                      sequencerDown={sequencerDown}
+                      td={td}
+                      isLast={fi === node.feeds.length - 1}
+                    />
+                  ))}
+                {!isCollapsed && node.feeds.length === 0 && (
+                  <Tr className="bg-neutral-50/60">
+                    <Td className={td} colSpan={7}>
+                      <span className="pl-6 text-xs text-neutral-500">No configured feeds could be read.</span>
+                    </Td>
+                  </Tr>
+                )}
+              </Fragment>
             )
           })}
         </TBody>

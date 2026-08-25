@@ -30,7 +30,7 @@ export function explorerAddressUrl(chainId: number, address: string): string {
 // IMPORTANT: there is no global `NAV_CALCULATOR_ADDRESS` export. Use `DEPLOYED_CHAINS[i].navAddress`
 // or `lookupNavAddress(chainId)` below. A global would silently target the wrong proxy on dev
 // forks where per-chain addresses diverge.
-const DEFAULT_NAV_ADDRESS = '0x07938ddDfACa63679c4d3F1d80BBe6aB1a6aEB19' as const
+const DEFAULT_NAV_ADDRESS = '0x42aC265991163Af2b0B9E59a222d31d201E39f91' as const
 const GLOBAL_NAV_OVERRIDE = process.env.NEXT_PUBLIC_NAV_ADDRESS || ''
 
 function resolveNavAddress(chainId: number): `0x${string}` {

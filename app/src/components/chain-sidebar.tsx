@@ -2,7 +2,7 @@
 
 import { Tooltip, TooltipContent, TooltipTrigger } from '@karpatkey/design-system'
 import type { ChainNav } from '@/hooks/use-account-nav'
-import { formatUsd } from '@/lib/format'
+import { formatUsdCompact } from '@/lib/format'
 import {
   EthCircleColor,
   OpCircleColor,
@@ -39,7 +39,7 @@ export function ChainSidebar({ navResults, selectedChainId, onSelect }: ChainSid
           <button
             type="button"
             onClick={() => onSelect(null)}
-            className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-sm transition-colors ${
+            className={`w-full flex items-center justify-between gap-2 px-3 py-2 rounded-lg text-sm transition-colors ${
               selectedChainId === null
                 ? 'bg-neutral-300 text-neutral-950 font-semibold'
                 : 'text-neutral-700 hover:bg-neutral-300/60 hover:text-neutral-950'
@@ -52,7 +52,7 @@ export function ChainSidebar({ navResults, selectedChainId, onSelect }: ChainSid
             {isLoading ? (
               <span className="text-neutral-700 text-xs">…</span>
             ) : (
-              <span className="tabular-nums text-xs">{formatUsd(totalNav)}</span>
+              <span className="tabular-nums text-xs shrink-0">{formatUsdCompact(totalNav)}</span>
             )}
           </button>
         </li>
@@ -73,7 +73,7 @@ export function ChainSidebar({ navResults, selectedChainId, onSelect }: ChainSid
             <button
               type="button"
               onClick={() => onSelect(isSelected ? null : chainId)}
-              className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-sm transition-colors ${
+              className={`w-full flex items-center justify-between gap-2 px-3 py-2 rounded-lg text-sm transition-colors ${
                 isSelected
                   ? 'bg-neutral-300 text-neutral-950 font-semibold'
                   : isEmpty
@@ -81,12 +81,12 @@ export function ChainSidebar({ navResults, selectedChainId, onSelect }: ChainSid
                   : 'text-neutral-700 hover:bg-neutral-300/60 hover:text-neutral-950'
               }`}
             >
-              <span className="flex items-center gap-2">
-                <Icon className={`w-5 h-5 ${isEmpty ? 'opacity-70' : ''}`} />
-                {label}
-                {nav?.sequencerDown && <span className="text-rose-700 text-[10px]">↓</span>}
+              <span className="flex items-center gap-2 min-w-0">
+                <Icon className={`w-5 h-5 shrink-0 ${isEmpty ? 'opacity-70' : ''}`} />
+                <span className="truncate">{label}</span>
+                {nav?.sequencerDown && <span className="text-rose-700 text-[10px] shrink-0">↓</span>}
               </span>
-              <span className="flex items-center gap-1.5">
+              <span className="flex items-center gap-1.5 shrink-0">
                 {chainLoading ? (
                   <span className="text-neutral-700 text-xs">…</span>
                 ) : (
@@ -95,7 +95,7 @@ export function ChainSidebar({ navResults, selectedChainId, onSelect }: ChainSid
                       <span className="text-neutral-700 text-[10px]">{pct}%</span>
                     )}
                     <span className={`tabular-nums text-xs ${nav?.stalePriceAssets.length ? 'text-orange-700' : ''}`}>
-                      {formatUsd(nav?.value ?? 0n)}
+                      {formatUsdCompact(nav?.value ?? 0n)}
                     </span>
                   </>
                 )}

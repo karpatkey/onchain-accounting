@@ -176,13 +176,19 @@ contract RegisterAssetsTest is SuperTest {
     ///      index 0 and the NAV everywhere else, which is what {test_happyPath_batchIsMixedTarget_andLabelsLand}
     ///      asserts.
     function _writeTwoFeedAssetConfig() internal {
+        _writeTwoFeedAssetConfig(uint256(DIVERGENCE_TOLERANCE_BPS));
+    }
+
+    /// @dev Same fixture with an explicit divergence tolerance, so a test can perturb it and prove the
+    ///      already-matches skip does not also swallow a REAL change.
+    function _writeTwoFeedAssetConfig(uint256 divergenceBps) internal {
         vm.writeFile(
             _assetsConfigPath(),
             string.concat(
                 '{"TKA":{"address":"',
                 vm.toString(address(tokenA)),
                 '","accrualKind":"Appreciating","labels":["Lido","LST"],"divergenceToleranceBps":',
-                vm.toString(uint256(DIVERGENCE_TOLERANCE_BPS)),
+                vm.toString(divergenceBps),
                 ',"priceFeeds":[{"type":"Chainlink","address":"',
                 vm.toString(address(feedPrimary)),
                 '","heartbeat":',
@@ -482,22 +488,24 @@ contract RegisterAssetsTest is SuperTest {
         assertEq(IPrices(address(nav)).getPriceFeedCount(address(tokenA)), 2, "feeds not duplicated by the re-run");
     }
 
-    /// @notice A re-run over an asset that DOES carry a divergence tolerance re-plans the tolerance setter — one
-    ///         action, targeting the NAV — even though the value on-chain already matches config.
-    /// @dev **Idempotency is per-action, and the tolerance setters are the exception.** `_buildMonitorActs` guards the
-    ///      feed and monitor additions against on-chain state (they must — a duplicate `addPriceFeed`/`addMonitorFeed`
-    ///      reverts and would abort the whole batch), but emits `setDivergenceTolerance`/`setPegTolerance` purely from
-    ///      config, with no on-chain comparison. So the issue's expectation that a settled asset plans zero actions
-    ///      holds only for the no-tolerance shape covered above; every real chain config sets tolerances, so in
-    ///      practice a settled re-run still produces a batch.
+    /// @notice A re-run over an asset that DOES carry a divergence tolerance now plans NOTHING — and a re-run
+    ///         after the tolerance actually changes still plans exactly one setter. Both halves, in one test.
+    /// @dev **This test previously asserted the opposite, and the reversal is the point.** `_buildMonitorActs` used
+    ///      to emit `setDivergenceTolerance`/`setPegTolerance` straight from config with no on-chain comparison,
+    ///      while guarding only the feed and monitor adds. That was recorded here as accepted behaviour on the
+    ///      grounds that re-setting a tolerance to the value it already holds is harmless on-chain, so the only
+    ///      cost was "a batch that reads as work when there is none".
     ///
-    ///      Recorded here as behaviour rather than filed as a defect: re-setting a tolerance to the value it already
-    ///      holds is harmless on-chain (unlike a duplicate feed add, which reverts), so the cost is a batch that reads
-    ///      as work when there is none. This test is what will notice if that ever changes in either direction.
+    ///      That judgement was wrong about the cost, and operating it is what showed why. Registering ONE asset on
+    ///      mainnet planned 27 transactions, 24 of them tolerance rewrites whose values already matched. They are
+    ///      harmless to STATE, but they are 24 real transactions signed against a live NAV, and under `--slow`
+    ///      (which awaits a receipt each) they turned a 3-transaction job into ~5 minutes that looked like a hang.
+    ///      "Harmless" was measured on the wrong axis: not state, but blast radius and operator trust.
     ///
-    ///      The on-chain assertions confirm the re-run did not double-wire anything else: a duplicate feed or monitor
-    ///      add would have reverted during the broadcast and failed `secondOk`.
-    function test_reRun_withTolerances_replansOnlyTheToleranceSetter() public {
+    ///      So the setters are now compared against `getAssetPricing` first. The second half of this test exists
+    ///      because that skip could easily be too broad — one that also swallowed a genuine tolerance change would
+    ///      silently leave the NAV on a stale value, which is a far worse failure than the one being fixed.
+    function test_reRun_withTolerances_plansNothingUnlessAToleranceChanged() public {
         _useFixtureChain(987_607);
         _writeTwoFeedAssetConfig();
         _writeDeployments(true);
@@ -509,24 +517,36 @@ contract RegisterAssetsTest is SuperTest {
         // test before `_cleanup()`, leaving fixture files behind.
         if (vm.exists(_safeTxPath())) vm.removeFile(_safeTxPath());
 
+        // (1) Nothing changed -> nothing planned.
         (bool secondOk, bytes memory secondErr) = _runScriptCatching();
-        string memory batchJson = secondOk && vm.exists(_safeTxPath()) ? vm.readFile(_safeTxPath()) : "";
+        bool batchAfterSettledReRun = vm.exists(_safeTxPath());
+        if (batchAfterSettledReRun) vm.removeFile(_safeTxPath());
+
+        // (2) The tolerance genuinely changes -> exactly one setter, or the skip is too broad.
+        _writeTwoFeedAssetConfig(uint256(DIVERGENCE_TOLERANCE_BPS) + 25);
+        (bool thirdOk, bytes memory thirdErr) = _runScriptCatching();
+        string memory changedBatch = thirdOk && vm.exists(_safeTxPath()) ? vm.readFile(_safeTxPath()) : "";
         _cleanup();
 
         assertTrue(firstOk, "first run must succeed");
         assertTrue(secondOk, string.concat("re-run must not revert; reverted with: ", vm.toString(secondErr)));
-        assertGt(bytes(batchJson).length, 0, "the re-run does write a batch (the tolerance setter is re-planned)");
-
-        address[] memory targets = _batchTargets(batchJson);
-        assertEq(targets.length, 1, "exactly one action survives the re-run");
-        assertEq(targets[0], address(nav), "and it targets the NAV, not the registry");
-        assertEq(
-            bytes32(_selectorOf(vm.parseJsonBytes(batchJson, ".transactions[0].data"))),
-            bytes32(NAVCalculator.setDivergenceTolerance.selector),
-            "the re-planned action is setDivergenceTolerance"
+        assertFalse(
+            batchAfterSettledReRun,
+            "a settled re-run must plan 0 actions: the tolerance setters are compared against getAssetPricing"
         );
 
-        assertEq(IPrices(address(nav)).getPriceFeedCount(address(tokenA)), 2, "feeds not duplicated by the re-run");
+        assertTrue(thirdOk, string.concat("run after the change must not revert; got: ", vm.toString(thirdErr)));
+        assertGt(bytes(changedBatch).length, 0, "a CHANGED tolerance must still be planned - the skip is not blanket");
+        address[] memory targets = _batchTargets(changedBatch);
+        assertEq(targets.length, 1, "exactly one action for the changed tolerance");
+        assertEq(targets[0], address(nav), "and it targets the NAV, not the registry");
+        assertEq(
+            bytes32(_selectorOf(vm.parseJsonBytes(changedBatch, ".transactions[0].data"))),
+            bytes32(NAVCalculator.setDivergenceTolerance.selector),
+            "the planned action is setDivergenceTolerance"
+        );
+
+        assertEq(IPrices(address(nav)).getPriceFeedCount(address(tokenA)), 2, "feeds not duplicated by the re-runs");
         assertEq(IPrices(address(nav)).getMonitorFeeds(address(tokenA)).length, 1, "monitor not duplicated");
     }
 

@@ -369,6 +369,28 @@ library ConfigReader {
         return false;
     }
 
+    /// @notice Whether a deploy-config entry is PRE-PROVISIONED: deployed at its CREATE2 address but deliberately
+    ///         not registered on the NAV.
+    /// @dev **Why this needs a flag rather than being inferred.** `test_DeployedAdaptersAreRegisteredOnNav` exists
+    ///      to catch the deployed-but-not-added mistake, whose failure mode is silent: the adapter is live, the NAV
+    ///      never calls it, and its positions are simply missing from every reading — an under-report behind a
+    ///      complete-looking answer. That check cannot tell "deliberately empty" from "someone forgot the
+    ///      nav-config entry", so the intent has to be stated. An adapter marked here is exempt from that check and
+    ///      from the deploy/nav count parity check, and from nothing else.
+    ///
+    ///      Setting it is a claim that the protocol has NO positions on this chain yet. When that changes, add the
+    ///      adapter to `nav-config/` with its instance set, drop this flag, and run `06`.
+    function isAdapterPreProvisioned(Vm vm, uint256 chainId, string memory adapterType, string memory adapterName)
+        internal
+        view
+        returns (bool)
+    {
+        (string memory json, string memory prefix) = _resolveAdapterFile(vm, chainId, adapterType, adapterName);
+        string memory jsonPath = string(abi.encodePacked(prefix, ".", adapterName, ".preProvisioned"));
+        if (vm.keyExists(json, jsonPath)) return json.readBool(jsonPath);
+        return false;
+    }
+
     /// @notice Whether a nav-config entry explicitly asks for the adapter to be DEREGISTERED from the NAV.
     /// @dev **Explicit intent, deliberately not derived.** The obvious alternative — treat "in the deployment record
     ///      but not enabled in plain nav-config" as "deregister" — is catastrophically wrong here: on chain 1 that

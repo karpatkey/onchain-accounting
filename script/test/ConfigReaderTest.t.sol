@@ -343,6 +343,12 @@ contract ConfigReaderTest is TestEnvConfigurator {
             string[] memory deployNames = ConfigReader.getEnabledAdapters(vm, chainId, "deployBalanceAdapters");
             for (uint256 i = 0; i < deployNames.length; i++) {
                 if (!ConfigReader.isAdapterEnabled(vm, chainId, "deployBalanceAdapters", deployNames[i])) continue;
+                // Pre-provisioned adapters are deployed on purpose without being registered — the protocol has no
+                // positions on this chain yet. The flag is required precisely because this check cannot tell that
+                // apart from a forgotten nav-config entry, which under-reports NAV silently.
+                if (ConfigReader.isAdapterPreProvisioned(vm, chainId, "deployBalanceAdapters", deployNames[i])) {
+                    continue;
+                }
                 bool plain = ConfigReader.isAdapterEnabled(vm, chainId, "navBalanceAdapters", deployNames[i]);
                 bool meta = ConfigReader.isAdapterEnabled(vm, chainId, "navMetaBalanceAdapters", deployNames[i]);
                 assertTrue(
@@ -379,11 +385,32 @@ contract ConfigReaderTest is TestEnvConfigurator {
         for (uint256 c = 0; c < chainIds.length; c++) {
             uint256 chainId = chainIds[c];
             _assertSameSet(
-                ConfigReader.getEnabledAdapters(vm, chainId, "deployMetaBalanceAdapters"),
+                _withoutPreProvisioned(
+                    chainId, ConfigReader.getEnabledAdapters(vm, chainId, "deployMetaBalanceAdapters")
+                ),
                 ConfigReader.getEnabledAdapters(vm, chainId, "navMetaBalanceAdapters"),
                 chainId,
                 "meta"
             );
+        }
+    }
+
+    /// @dev Drops the deliberately-unregistered (pre-provisioned) adapters, which exist in the deploy config but
+    ///      correctly have no nav-config entry. Everything else must still match one-for-one.
+    function _withoutPreProvisioned(uint256 chainId, string[] memory names)
+        internal
+        view
+        returns (string[] memory kept)
+    {
+        string[] memory buf = new string[](names.length);
+        uint256 n;
+        for (uint256 i = 0; i < names.length; i++) {
+            if (ConfigReader.isAdapterPreProvisioned(vm, chainId, "deployMetaBalanceAdapters", names[i])) continue;
+            buf[n++] = names[i];
+        }
+        kept = new string[](n);
+        for (uint256 i = 0; i < n; i++) {
+            kept[i] = buf[i];
         }
     }
 

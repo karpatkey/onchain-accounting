@@ -119,6 +119,13 @@ The 17 impl+proxy chains run the canonical layer only; custom price feeds and ba
 
 ## Balance adapters (per chain)
 
+Entries marked † are **deployed but NOT registered on the NAV Calculator**. The contract exists at its CREATE2
+address and is verified, but the NAV does not call it, so it contributes nothing to any reading and costs nothing
+on the read path. They are pre-provisioned so that onboarding a pool or market later is a single
+`addMetaBalanceAdapter` transaction instead of a deploy plus a registration. They are deliberately absent from
+`nav-config/`, which is the tree `06_Configure` reads — adding them there is what activates one.
+
+
 Generated from `script/config/deployments/<chainId>.json`, the only place deployed addresses live. Entries
 marked ★ are the CREATE2 adapters listed above, identical on every chain; the rest are plain `CREATE` and
 unique per chain because their constructors take chain-specific protocol addresses. `ERC20Default` is
@@ -183,6 +190,7 @@ position manager is at a different address entirely.
 | --- | --- |
 | AaveV3InstancesMeta ★ | `0x04Ba6789B4AD5D6CF63Ec9cc301c13F6a8A0210b` |
 | CompoundV3CometsMeta | `0xEDDbc540eD724aB3cC95B1C419c6f9D6348a373b` |
+| UniswapV3PoolsMeta ☆ † | `0xACdC33b6a453F629d1ab10A14d3513817F492de7` |
 
 ### Arbitrum (42161)
 
@@ -195,6 +203,7 @@ position manager is at a different address entirely.
 | FluidFTokensMeta ★ | `0x0c312178e10ad15a9DC847d664786146f2C88dcf` |
 | MorphoMarketsMeta ☆ | `0x1a33a8eAE2F927A05e3eaDC87a348323060Ab2a4` |
 | MorphoVaultsMeta ★ | `0x64e1ba8B12ee2bFdBDdFd4E0863EdfaaE824C86a` |
+| UniswapV3PoolsMeta ☆ † | `0xACdC33b6a453F629d1ab10A14d3513817F492de7` |
 
 ### Base (8453)
 
@@ -220,6 +229,13 @@ position manager is at a different address entirely.
 | Adapter | Address |
 | --- | --- |
 | FluidFTokensMeta ★ | `0x0c312178e10ad15a9DC847d664786146f2C88dcf` |
+| UniswapV3PoolsMeta ☆ † | `0xACdC33b6a453F629d1ab10A14d3513817F492de7` |
+
+### BNB Chain (56)
+
+| Adapter | Address |
+| --- | --- |
+| MorphoMarketsMeta ☆ † | `0x5C951CF5C596BC4908A5fd846710070553830b06` |
 
 ## Assisted-adapter assistants (per chain, plain CREATE)
 

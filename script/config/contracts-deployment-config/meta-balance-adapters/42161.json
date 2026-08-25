@@ -40,5 +40,13 @@
       "compoundRewards": "0x88730d254A2f7e6AC8388c3198aFd694bA9f7fae",
       "rewardToken": "0x354A6dA3fcde098F8389cad84b0182725c6C91dE"
     }
+  },
+  "UniswapV3PoolsMeta": {
+    "enabled": true,
+    "preProvisioned": true,
+    "$comment": "Pre-provisioned, DEPLOYED BUT NOT REGISTERED on the NAV. Enabled here so 04 deploys it at its CREATE2 address; deliberately ABSENT from nav-config/meta-balance-adapters/42161.json, which is the file 06_Configure reads, so no registration happens until the funds actually hold Uniswap V3 positions on this chain. Registering it now would add an adapter that reports nothing to every NAV read. To activate: add it to nav-config with its instance set and run 06.",
+    "constructor": {
+      "positionManager": "0xC36442b4a4522E871399CD717aBDD847Ab11FE88"
+    }
   }
 }

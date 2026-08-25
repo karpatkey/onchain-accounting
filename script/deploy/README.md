@@ -49,6 +49,12 @@ forge script script/deploy/02_DeployProxies.s.sol --chain-id 1 --broadcast --acc
 
 ## 03_DeployPriceFeeds.s.sol + asset registration
 
+
+> ⚠️ **Run `RegisterAssets.s.sol` under `FOUNDRY_PROFILE=slow` whenever it has real work to do.** On mainnet's 44
+> assets the default profile dies with a bare `EvmError: MemoryOOG` that names nothing. Only `profile.slow` lifts
+> `memory_limit`/`gas_limit` off forge's 32 MiB default. A re-run with nothing to do plans 0 actions and passes on
+> the default profile — which is exactly why this is easy to miss until the one time it matters.
+
 Deploys the custom price-feed adapter contracts only (chain-branched, enabled per `contracts-deployment-config/custom-price-feeds/<chainId>.json`). It does **not** register assets/feeds on `NAVCalculator` — that is a separate EOA step run by the deployer-as-MANAGER via `script/manage/RegisterAssets.s.sol` (first feed per asset through **`AssetKindRegistry.registerAsset`**, which forwards to the NAV and carries the asset's kind and labels; any additional feeds through `addPriceFeed` on the NAV directly, so the batch is mixed-target by design).
 
 ## 04_DeployBalanceAdapters.s.sol

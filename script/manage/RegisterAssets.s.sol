@@ -37,14 +37,17 @@ import {console2} from "forge-std/console2.sol";
 ///     here rather than a workaround.
 ///
 ///     Measured, so the boundary is not guessed: a re-run with nothing to do plans 0 actions and completes fine on
-///     the default profile, which is why this went unnoticed — but perturbing 17 tolerances to force real work
-///     reproduces the OOM immediately.
+///     the default profile — which is why this went unnoticed — while **ONE** action is already enough to OOM.
+///     Confirmed at 1, 2, 4, 8, 12 and 17 actions, and against `origin/main`'s config with no XAUt in it, so this
+///     predates the XAUt entry and is not caused by it.
 ///
-///     The root cause is in `SafeTxBuilder`, not here: `writeSafeTx` accumulates its JSON with
-///     `txsArray = abi.encodePacked(txsArray, ...)` inside a loop, and `encodeMultiSend` does the same to `encoded`.
-///     Each step allocates a fresh buffer and copies, and Solidity never frees, so memory grows QUADRATICALLY in
-///     the number of planned transactions. Fixing that means two-pass buffer sizing in a helper that builds the
-///     Safe batches which move real money, so it belongs in its own PR with its own tests — not as a rider.
+///     Because ONE action is enough, the cause is NOT the batch size. The scan itself already sits just under the
+///     32 MiB ceiling and any batch at all tips it over. The dominant cost is `ConfigReader`: field readers such as
+///     `_readUintOrZero` call `_readOrEmpty(vm, _navAssetsPath(...))`, so the ENTIRE per-chain JSON (~28 KiB, 44
+///     assets) is re-read and re-parsed for EVERY FIELD OF EVERY ASSET, and Solidity frees nothing. `SafeTxBuilder`
+///     compounds it — `writeSafeTx` and `encodeMultiSend` both accumulate via `x = abi.encodePacked(x, ...)` inside
+///     loops, which is quadratic in transaction count — but it is the straw, not the load. Fixing this properly
+///     means caching the parsed config per run, which touches every deploy script, so it belongs in its own PR.
 contract RegisterAssets is BaseDeployScript {
     using ConfigReader for *;
 

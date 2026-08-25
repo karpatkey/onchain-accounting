@@ -81,6 +81,38 @@ library DeploySalts {
     uint256 internal constant UNISWAP_V2_POOLS_META = 2;
 
     //
+    // Meta adapters taking ONE chain-specific protocol address (CREATE2 — same address wherever that
+    // address is the same)
+    //
+    // These take `(protocolAddress, navCalculator)`. The NAV proxy is CREATE2-identical fleet-wide, so the
+    // init-code hash is a pure function of the protocol address — identical on every chain where the protocol
+    // lives at the same address, and legitimately different where it does not. That is a WEAKER guarantee than
+    // the NAV-only group above, and the difference is the whole reason these carry their own section:
+    //
+    //   * `UniswapV3PoolsMeta` — the NonfungiblePositionManager is `0xC36442b4a4522E871399CD717aBDD847Ab11FE88`
+    //     on Ethereum, Optimism, Polygon and Arbitrum (verified by `name()` + `factory()`, not by codehash: the
+    //     NPM bakes `factory`/`WETH9` into immutables, so identical contracts hash differently per chain). Several
+    //     other chains have unrelated code AT that address — Base's real NPM is elsewhere — so a same-address
+    //     deploy there would bind the adapter to a foreign contract. Never assume; re-check `name()` per chain.
+    //
+    //   * `MorphoMarketsMeta` — Morpho is at `0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb` on Ethereum and Base
+    //     (same `owner()`, so the same governance), but Arbitrum deployed later at
+    //     `0x6c247b1F6182318877311737BaC0844bAa518F5e`. Ethereum and Base therefore SHARE one adapter address
+    //     while Arbitrum gets its own — still deterministic and pre-computable, just not fleet-wide.
+    //
+    // **Version 2, not 1**, matching the groups above: generation 1 was plain CREATE, so skipping 1 keeps a
+    // CREATE2 address from ever being confused with a nonce-derived one. Bumping either re-derives that
+    // adapter's address on every chain at once — a redeploy AND a NAV re-registration, since the balance-adapter
+    // set and each meta-adapter's instance set are keyed by adapter ADDRESS.
+    //   * `FluidVaultsMeta` — Fluid's VaultResolver is at `0xa5c3e16523eeEDdCC34706b0e6be88b4C6Ea95cC` on
+    //     Ethereum, BNB, Polygon, Base, Plasma and Arbitrum (verified by calling `FACTORY()` and
+    //     `getAllVaultsAddresses()` — same factory `0x324c5Dc1…`, real per-chain vault sets). Fluid deploys its
+    //     resolver deterministically, so this adapter is one address across all six.
+    uint256 internal constant UNISWAP_V3_POOLS_META = 2;
+    uint256 internal constant MORPHO_MARKETS_META = 2;
+    uint256 internal constant FLUID_VAULTS_META = 2;
+
+    //
     // Bridge adapters (ADR 0012, D7 — CREATE2 same-address across chains)
     //
     // Each bridge adapter is a plain (non-proxied) AccessControl contract deployed via the canonical CREATE2

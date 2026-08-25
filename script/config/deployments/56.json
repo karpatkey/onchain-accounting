@@ -4,7 +4,8 @@
   "NAVCalculatorImplementation": "0x40e4134849308d53F85A8B685324E2189b13ff7D",
   "BridgeEscrowImplementation": "0xe2237d9776041514b1AC66856407Ed344b480De0",
   "balanceAdapters": {
-    "ERC20Default": "0x4Bc39Dce61245F5A63189d1FA03E6D76646f1EE6"
+    "ERC20Default": "0x4Bc39Dce61245F5A63189d1FA03E6D76646f1EE6",
+    "MorphoMarketsMeta": "0x5C951CF5C596BC4908A5fd846710070553830b06"
   },
   "NAVCalculatorProxy": "0x54EaD2A1dB7456cA917675Ea8908ec8A997c6214",
   "customPriceFeeds": {},

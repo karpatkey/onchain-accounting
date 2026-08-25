@@ -84,8 +84,8 @@
     "enabled": false,
     "$comment": "kpk EURC vault (MetaMorpho ERC4626). Superseded by MorphoVaultsMeta (ADR 0010); vault still queried via instances.",
     "constructor": {
-      "vault": "0xa877d5BB0274dCcBA8556154a30E1cA4021a275f",
-      "positionId": "0xa877d5BB0274dCcBA8556154a30E1cA4021a275f"
+      "vault": "0xa877D5bb0274dcCbA8556154A30E1Ca4021a275f",
+      "positionId": "0xa877D5bb0274dcCbA8556154A30E1Ca4021a275f"
     }
   },
   "MorphoMarket_wstETH_USDC": {

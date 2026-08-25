@@ -347,7 +347,7 @@
           "API3": { "address": "0x186FdC638597B235D1255eEAE1f4f10B60d5685F", "dapiName": "GHO/USD", "decimals": 18, "heartbeat": 86400, "deployed": false }
         },
         "COMP": {
-          "address": "0x9e1028F5F1D5EDE59748FFcee5532509976840E0",
+          "address": "0x9e1028F5F1D5eDE59748FFceE5532509976840E0",
           "Chainlink": { "address": "0x9DDa783DE64A9d1A60c49ca761EbE528C35BA428", "pair": "COMP/USD", "decimals": 8, "heartbeat": 86400 },
           "API3": { "address": "0xeBD595af56BeC336aA0F5233E82965c692B9599d", "dapiName": "COMP/USD", "decimals": 18, "heartbeat": 86400, "deployed": false }
         }
@@ -418,7 +418,7 @@
           "API3": { "address": "0x4eadC6ee74b7Ceb09A4ad90a33eA2915fbefcf76", "dapiName": "USDT/USD", "decimals": 18, "heartbeat": 86400, "deployed": true }
         },
         "CAKE": {
-          "address": "0x0e09FaBB73Bd3Ade0a17ECC321fD13a19e81cE82",
+          "address": "0x0E09FaBB73Bd3Ade0a17ECC321fD13a19e81cE82",
           "Chainlink": { "address": "0xB6064eD41d4f67e353768aA239cA86f4F73665a1", "pair": "CAKE/USD", "decimals": 8, "heartbeat": 86400 },
           "API3": { "address": "0x021A9d52DF63b2bBeeF7EC6d600dE56160Ad28dF", "dapiName": "CAKE/USD", "decimals": 18, "heartbeat": 86400, "deployed": false }
         }

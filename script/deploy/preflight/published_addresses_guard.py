@@ -134,9 +134,21 @@ def published_by_chain(doc_text: str) -> dict[str, dict[str, str]]:
                 continue
             row = TABLE_ROW.match(line)
             if row and chain:
-                name = row.group(1).replace("★", "").strip()
+                # ★ = identical on every chain; ☆ = CREATE2 but shared only across the chains that share the
+                # adapter's protocol address; † = deployed but not registered on the NAV. All are display
+                # markers, never part of the recorded key. Whitespace is collapsed rather than merely stripped
+                # because an entry can carry two of them ("Foo ☆ †"), which would otherwise leave a double
+                # space mid-name and fail the lookup against the record.
+                name = " ".join(
+                    row.group(1).replace("★", "").replace("☆", "").replace("†", "").split()
+                )
                 out.setdefault(chain, {})[name] = row.group(2)
     return out
+
+
+def all_recorded_chains() -> list[str]:
+    """Every chainId that has a deployment record on disk."""
+    return [p.stem for p in sorted(RECORDS.glob("*.json"))]
 
 
 def check() -> list[str]:
@@ -180,6 +192,23 @@ def check() -> list[str]:
                 continue
             problems.append(f"chain {chain}: `{name}` is deployed at {addr} but appears in no table")
 
+    # A chain with deployments but NO section at all was invisible to the loop above, which iterates the
+    # chains the DOC mentions. That blind spot let BNB (56) carry an undocumented MorphoMarketsMeta while the
+    # guard reported success — the whole chain was simply never looked at. Close it by walking the records.
+    for chain in sorted(all_recorded_chains(), key=int):
+        if chain in published:
+            continue
+        undocumented = sorted(
+            name
+            for name in recorded_addresses(chain)
+            if name not in NOT_PUBLISHED_PER_CHAIN and name not in CANONICAL_LAYER
+        )
+        if undocumented:
+            problems.append(
+                f"chain {chain}: has no section in the doc, but {len(undocumented)} adapter(s) are "
+                f"deployed there: {', '.join(undocumented)}"
+            )
+
     return problems
 
 
@@ -202,6 +231,18 @@ def self_test() -> int:
         "| MorphoVaultsMeta ★ | `0x64e1ba8B12ee2bFdBDdFd4E0863EdfaaE824C86a` |\n"
     )
     assert starred["8453"]["MorphoVaultsMeta"], "the ★ fleet marker must not become part of the name"
+
+    shared = published_by_chain(
+        "## Balance adapters\n\n### Base (8453)\n\n| Adapter | Address |\n| --- | --- |\n"
+        "| MorphoMarketsMeta ☆ | `0x5C951CF5C596BC4908A5fd846710070553830b06` |\n"
+    )
+    assert shared["8453"]["MorphoMarketsMeta"], "the ☆ shared marker must not become part of the name"
+
+    unregistered = published_by_chain(
+        "## Balance adapters\n\n### BNB Chain (56)\n\n| Adapter | Address |\n| --- | --- |\n"
+        "| MorphoMarketsMeta ☆ † | `0x5C951CF5C596BC4908A5fd846710070553830b06` |\n"
+    )
+    assert unregistered["56"]["MorphoMarketsMeta"], "stacked ☆ † markers must not become part of the name"
 
     problems = check()
     if problems:

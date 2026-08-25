@@ -167,7 +167,7 @@
     ]
   },
   "COMP": {
-    "address": "0x9e1028F5F1D5EDE59748FFcee5532509976840E0",
+    "address": "0x9e1028F5F1D5eDE59748FFceE5532509976840E0",
     "accrualKind": "None",
     "labels": [
       "Compound",
@@ -182,7 +182,7 @@
     ]
   },
   "cbBTC": {
-    "address": "0xcbB7C0000aB88B473b1F5aFd9ef808440eED33Bf",
+    "address": "0xcbB7C0000aB88B473b1f5aFd9ef808440eed33Bf",
     "accrualKind": "None",
     "labels": [
       "Coinbase",

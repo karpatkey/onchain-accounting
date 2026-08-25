@@ -119,10 +119,37 @@ The 17 impl+proxy chains run the canonical layer only; custom price feeds and ba
 
 ## Balance adapters (per chain)
 
+Entries marked † are **deployed but NOT registered on the NAV Calculator**. The contract exists at its CREATE2
+address and is verified, but the NAV does not call it, so it contributes nothing to any reading and costs nothing
+on the read path. They are pre-provisioned so that onboarding a pool or market later is a single
+`addMetaBalanceAdapter` transaction instead of a deploy plus a registration. They are deliberately absent from
+`nav-config/`, which is the tree `06_Configure` reads — adding them there is what activates one.
+
+
 Generated from `script/config/deployments/<chainId>.json`, the only place deployed addresses live. Entries
 marked ★ are the CREATE2 adapters listed above, identical on every chain; the rest are plain `CREATE` and
 unique per chain because their constructors take chain-specific protocol addresses. `ERC20Default` is
 omitted: it is minted inside `initialize()` and appears in the canonical layer above.
+
+Entries marked ☆ are CREATE2 too, but with a **weaker** guarantee than ★: they take one chain-specific
+protocol address alongside the NAV, so they share a single address across the chains that share that protocol
+address, and take a different — still deterministic — address where it differs.
+
+`Deployed on` is where the adapter actually exists today; `would reuse` is where a future deployment would land
+on the same address. They are different claims and are kept in separate columns — CREATE2 fixes *where* a contract
+lands, not *whether* it exists, and an adapter is deployed on a chain only when the funds hold that protocol's
+positions there.
+
+| Adapter | Address | Deployed on | Would reuse this address on | Because |
+| --- | --- | --- | --- | --- |
+| UniswapV3PoolsMeta ☆ | `0xACdC33b6a453F629d1ab10A14d3513817F492de7` | 1 | 10, 137, 42161 | those chains host the canonical NonfungiblePositionManager at `0xC36442…FE88` |
+| MorphoMarketsMeta ☆ | `0x5C951CF5C596BC4908A5fd846710070553830b06` | **1, 8453** | — | both host Morpho at `0xBBBB…FFCb`, so both already answer at this one address |
+| MorphoMarketsMeta ☆ | `0x1a33a8eAE2F927A05e3eaDC87a348323060Ab2a4` | 42161 | — | Arbitrum's Morpho is a separate deployment at `0x6c247b1F…8F5e` |
+| FluidVaultsMeta ☆ | `0x32E94eE2276a2eb4873a68676e1250212b3433fC` | 1 | 56, 137, 8453, 9745, 42161 | Fluid deploys its VaultResolver deterministically at `0xA5C3E165…95cC` on all six |
+
+Membership of the Uniswap V3 list is decided by **calling** `name()`/`factory()` on the candidate chain, never
+by checking that the address has code: several chains carry unrelated code at `0xC36442…FE88`, and Base's real
+position manager is at a different address entirely.
 
 ### Ethereum (1)
 
@@ -143,11 +170,11 @@ omitted: it is minted inside `initialize()` and appears in the canonical layer a
 | EtherFiWithdrawalQueueAssisted | `0x5c5c1A98CdF07c9D9B4664933AF98a30e36F3618` |
 | EulerVaultsMeta ★ | `0xCb28C7d1A27e8FB5ea0e1c75Ef62c80722388135` |
 | FluidFTokensMeta ★ | `0x0c312178e10ad15a9DC847d664786146f2C88dcf` |
-| FluidVaultsMeta | `0x49d4A9D5D03134e2096E0795ffe678FBE36E5B14` |
+| FluidVaultsMeta ☆ | `0x32E94eE2276a2eb4873a68676e1250212b3433fC` |
 | GearboxV3MarketsMeta ★ | `0x160017c8d50D44A8fA3667419a89BA1183daaF38` |
 | KelpWithdrawalQueue | `0x136439b0CA2Ff5e9Ec8dC472222248E3A57CeF43` |
 | LidoWithdrawalQueue | `0xD32d7db9c94E0A08ef354D73d618B86b8215A2cF` |
-| MorphoMarketsMeta | `0x7d00A71EDE9A8EEB4a8B4eA4e3ab08083Ad9a3e5` |
+| MorphoMarketsMeta ☆ | `0x5C951CF5C596BC4908A5fd846710070553830b06` |
 | MorphoVaultsMeta ★ | `0x64e1ba8B12ee2bFdBDdFd4E0863EdfaaE824C86a` |
 | NexusMutualStakingPoolsAssisted | `0x25Be749999683381703c7346462503a5EFFFd184` |
 | SparkLend | `0x9ad8dDaAD5166f2f0Fe4e883aFe78902f8BF0CAE` |
@@ -155,7 +182,7 @@ omitted: it is minted inside `initialize()` and appears in the canonical layer a
 | StakeWiseV3ExitQueueAssisted | `0x83375fDE808F6388c85fC0A1dA86a69492a20798` |
 | StakeWiseV3VaultsMeta | `0xc5e92214517314A5C6Ed7f6998C3bdF5810F9cc1` |
 | SymbioticVaultsMeta ★ | `0x599C72cbd3bDe6D992366130009962B4c2Ec5B23` |
-| UniswapV3PoolsMeta | `0xb8E23bd85Ce6E15380F3301ae273a54cF502E035` |
+| UniswapV3PoolsMeta ☆ | `0xACdC33b6a453F629d1ab10A14d3513817F492de7` |
 
 ### Optimism (10)
 
@@ -163,6 +190,7 @@ omitted: it is minted inside `initialize()` and appears in the canonical layer a
 | --- | --- |
 | AaveV3InstancesMeta ★ | `0x04Ba6789B4AD5D6CF63Ec9cc301c13F6a8A0210b` |
 | CompoundV3CometsMeta | `0xEDDbc540eD724aB3cC95B1C419c6f9D6348a373b` |
+| UniswapV3PoolsMeta ☆ † | `0xACdC33b6a453F629d1ab10A14d3513817F492de7` |
 
 ### Arbitrum (42161)
 
@@ -173,8 +201,9 @@ omitted: it is minted inside `initialize()` and appears in the canonical layer a
 | BalancerV3PoolsMeta ★ | `0xbF1785E519067f0471eb5C50A634A7eeE0140A21` |
 | CompoundV3CometsMeta | `0xFB12e2105287604013dAdee87597F8b80390fc82` |
 | FluidFTokensMeta ★ | `0x0c312178e10ad15a9DC847d664786146f2C88dcf` |
-| MorphoMarketsMeta | `0x2a4d53eF5F149199e2958ce8F29AC85c9072589A` |
+| MorphoMarketsMeta ☆ | `0x1a33a8eAE2F927A05e3eaDC87a348323060Ab2a4` |
 | MorphoVaultsMeta ★ | `0x64e1ba8B12ee2bFdBDdFd4E0863EdfaaE824C86a` |
+| UniswapV3PoolsMeta ☆ † | `0xACdC33b6a453F629d1ab10A14d3513817F492de7` |
 
 ### Base (8453)
 
@@ -185,7 +214,7 @@ omitted: it is minted inside `initialize()` and appears in the canonical layer a
 | BalancerV3PoolsMeta ★ | `0xbF1785E519067f0471eb5C50A634A7eeE0140A21` |
 | CompoundV3CometsMeta | `0xc43D890F5af60E4010266A0AF95b39C31e5c5Abe` |
 | FluidFTokensMeta ★ | `0x0c312178e10ad15a9DC847d664786146f2C88dcf` |
-| MorphoMarketsMeta | `0x007fedC0Cd051A757B6E59eE4b4d620231CB2a56` |
+| MorphoMarketsMeta ☆ | `0x5C951CF5C596BC4908A5fd846710070553830b06` |
 
 ### Gnosis (100)
 
@@ -200,6 +229,13 @@ omitted: it is minted inside `initialize()` and appears in the canonical layer a
 | Adapter | Address |
 | --- | --- |
 | FluidFTokensMeta ★ | `0x0c312178e10ad15a9DC847d664786146f2C88dcf` |
+| UniswapV3PoolsMeta ☆ † | `0xACdC33b6a453F629d1ab10A14d3513817F492de7` |
+
+### BNB Chain (56)
+
+| Adapter | Address |
+| --- | --- |
+| MorphoMarketsMeta ☆ † | `0x5C951CF5C596BC4908A5fd846710070553830b06` |
 
 ## Assisted-adapter assistants (per chain, plain CREATE)
 

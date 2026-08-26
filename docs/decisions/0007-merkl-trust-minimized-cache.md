@@ -96,6 +96,19 @@ Ship `MerklRewardsAssistedBalanceAdapter` (`src/balances/AssistedBalanceAdapters
 - Storage growth is per-(user, token) pair the bot has ever cached. Each `submitProofs` call replaces a user's whole token set (dropping omitted tokens), and `clearAllocation` exists as an explicit cleanup primitive; expect the operator runbook to call it whenever a (user, token) reaches `cumulativeAmount == claimed`.
 - Merkl's `_verifyProof` uses `abi.encode` (32-byte padded) rather than `abi.encodePacked` like OpenZeppelin's `MerkleProof`. The adapter MUST replicate the exact sibling-combination rule. Unit tests build synthetic 1-, 2-, and 4-leaf trees with the same hashing convention and exhaustively cover the verification math; any future drift is caught at the unit-test layer.
 
+## Cache-free preview (added later)
+
+Unclaimed positions are also queryable **live without feeding the cache**: `previewPositions(account, Allocation[])`
+and `previewBalances(account, Allocation[])` are stateless `view`s that verify **caller-supplied** proofs against the
+live Distributor root and value them with the identical `cumulative − claimed` math the write path uses (shared via the
+`_checkProofAndCampaigns` + `_unclaimedFrom` + `_buildTokenLegs` helpers, so a preview can never diverge from what a
+submit would cache). The trust-minimized guarantee is unchanged — proof-verified, under-report-only — and they write no
+storage and do not affect the NAV read (`getAdapterPositions`, which continues to read the agent-fed cache). This is an
+*extra* for a portal / frontend / third party that computes Merkl proofs off-chain (`previewPositions` returns
+NAV-shaped legs and skips tokens not yet registered on NAVCalculator; `previewBalances` is registry-free and returns
+raw `(token, amount)`). It does **not** reduce the agent's role: NAV coverage still depends on the keeper feeding the
+cache.
+
 ## Trust model summary
 
 | Capability | Who | Bound by |

@@ -215,4 +215,37 @@ contract MerklRewardsAttestedBalanceAdapterRealProofForkTest is BalanceAdapterTe
         assertEq(positions[0].positionInstanceId, bytes32(0), "untagged (no campaign breakdown)");
         assertEq(adapter.protocolName(), "Merkl", "protocolName == Merkl");
     }
+
+    /// @notice CACHE-FREE preview against the REAL live root: WITHOUT ever calling `submitProofs`, `previewPositions`
+    ///         verifies the captured proof, values it as `cumulative − live claimed`, and emits the canonical leg —
+    ///         while caching nothing. Proves the trustless, account-agnostic path end-to-end against the real
+    ///         Distributor, and that it does not disturb the NAV (cache) path.
+    function test_realProof_previewMatchesLiveWithoutCaching() public {
+        if (fixtureMissing) vm.skip(true);
+
+        (uint208 claimed,,) = IMerklDistributor(MERKL_DISTRIBUTOR).claimed(fixtureUser, fixtureToken);
+        uint256 expectedUnclaimed = fixtureCumulative > uint256(claimed) ? fixtureCumulative - uint256(claimed) : 0;
+
+        INAVCalculator.PositionBalance[] memory positions = adapter.previewPositions(fixtureUser, _alloc());
+        assertEq(positions.length, 1, "one untagged Merkl reward leg from the supplied proof");
+        assertEq(positions[0].balanceAsset.asset, fixtureToken, "leg asset == reward token");
+        assertEq(positions[0].amount, expectedUnclaimed, "preview leg == cumulative - live claimed");
+        assertGt(
+            positions[0].amount, 0, "fixture entry 0 has no unclaimed left; re-run refresh-integration-snapshot.sh"
+        );
+        assertEq(positions[0].positionId, abi.encode(MERKL_DISTRIBUTOR), "positionId == abi.encode(DISTRIBUTOR)");
+        assertTrue(positions[0].positionKind == PositionKind.Rewards, "positionKind == Rewards");
+
+        // Cache-free: the preview wrote nothing and the NAV path is untouched (never submitted).
+        (uint256 cachedCumulative, bytes32 cachedRoot,) = adapter.allocations(fixtureUser, fixtureToken);
+        assertEq(cachedCumulative, 0, "preview cached no cumulative");
+        assertEq(cachedRoot, bytes32(0), "preview cached no entry");
+        assertEq(adapter.getAdapterPositions(fixtureUser, address(0)).length, 0, "NAV path still empty");
+
+        // The lightweight variant agrees.
+        (address[] memory toks, uint256[] memory amts) = adapter.previewBalances(fixtureUser, _alloc());
+        assertEq(toks.length, 1);
+        assertEq(toks[0], fixtureToken);
+        assertEq(amts[0], expectedUnclaimed, "previewBalances agrees with previewPositions");
+    }
 }

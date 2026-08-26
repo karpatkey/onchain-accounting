@@ -39,7 +39,28 @@ admin-injected amounts, no upgrade path.
   `unclaimed = cachedCumulative − Distributor.claimed(user, token)` (0 if the cached root ≠ `Distributor.getMerkleRoot()`).
   Constructor `(distributor, navCalculator)`. Protocol-specific rationale:
   [ADR 0007](../../../docs/decisions/0007-merkl-trust-minimized-cache.md). Off-chain feeder: the kpk-agents
-  `SubmitMerklProofs` automation.
+  `SubmitMerklProofs` automation. Also exposes the cache-free preview below (`previewPositions` / `previewBalances`).
+
+## Cache-free preview (optional, protocol-specific)
+
+A member MAY additionally expose a **stateless, account-agnostic preview**: a `view` that takes an `account` plus
+**caller-supplied proofs** and returns that account's positions computed live — verifying each proof against the
+protocol's live root and valuing it with the SAME helpers as the write path, so it can only ever surface the account's
+real figure (under-report, never over-report). It **reads no storage and writes none**: it does not feed the cache and
+has no effect on the NAV read (`getAdapterPositions`), which continues to read the agent-fed cache. It is an *extra*
+for a portal / frontend / third party that computes proofs off-chain and wants a live read without waiting for the
+keeper. It is **not** on the universal `IAttestedBalanceAdapter` marker — the proof surface is protocol-specific, like
+`submit`.
+
+Merkl exposes:
+
+- **`previewPositions(account, Allocation[])`** → `PositionBalance[]`, NAV-shaped legs (parity with
+  `getAdapterPositions`); **skips** reward tokens not registered on NAVCalculator (a leg needs the asset metadata).
+- **`previewBalances(account, Allocation[])`** → `(address[] tokens, uint256[] amounts)`, registry-free, so it also
+  returns amounts for a reward token not yet registered.
+
+Both are **fail-loud** (revert on an invalid proof, a campaign-sum mismatch, over-cap campaigns/tokens, or a duplicate
+token) and bounded by the same per-account caps as the cache.
 
 ## Adding a member
 

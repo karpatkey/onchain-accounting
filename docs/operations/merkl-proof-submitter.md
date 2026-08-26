@@ -132,9 +132,12 @@ The adapter exposes a read-only preview the operator (or a portal/frontend) can 
 submitting**, or to show an account's live unclaimed rewards without waiting for the next submit cycle:
 `previewPositions(address account, bytes data)` — the family interface read, where Merkl's `data` is
 `abi.encode(Allocation[])` (the same allocations a submit would take). It verifies every proof against the live
-Distributor root and returns the positions as a `view` — no gas, no state change, no cache write. A proof that would
-revert `submitProofs` reverts the preview the same way, so a preview is a safe pre-flight for a batch. It is a
-convenience only: it does not feed the cache, so NAV coverage still requires the steady-state submit loop below.
+Distributor root and returns the positions as a `view` — no gas, no state change, no cache write. A proof that fails
+verification reverts the preview the same way `submitProofs` would, so it is a safe pre-flight for **proof and
+campaign-shape validity**. It is not full submit-equivalence: the preview omits the cache-only monotonicity check
+(`AmountRegression`) and rejects duplicate tokens / a zero account, so a passing preview does not guarantee the submit
+transaction succeeds. It is a convenience only: it does not feed the cache, so NAV coverage still requires the
+steady-state submit loop below.
 
 ## Submission model
 

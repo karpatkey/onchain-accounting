@@ -272,7 +272,7 @@ contract MerklRewardsAttestedBalanceAdapter is IAttestedBalanceAdapter, IPositio
     /// @notice `clearAllocation` was called on a `(user, token)` with nothing cached.
     error NothingToClear();
 
-    /// @notice The same reward token appears more than once in a {previewPositions}/{previewBalances} input. The cache
+    /// @notice The same reward token appears more than once in a {previewPositions} input. The cache
     ///         path upserts (last-writer-wins, no double count), but a stateless preview would emit a leg set per
     ///         occurrence — a double-count / over-report, the one direction this family forbids — so it is rejected
     ///         fail-loud.
@@ -668,6 +668,9 @@ contract MerklRewardsAttestedBalanceAdapter is IAttestedBalanceAdapter, IPositio
         if (account == address(0) || data.length == 0) return new INAVCalculator.PositionBalance[](0);
         Allocation[] memory allocs = abi.decode(data, (Allocation[]));
         if (allocs.length == 0) return new INAVCalculator.PositionBalance[](0);
+        // Enforce the token cap HERE, before the self-call, so an oversized `allocs` fails loud with `TooManyTokens`
+        // rather than paying to ABI-encode the whole (proof-heavy) array for the self-staticcall first.
+        if (allocs.length > MAX_TOKENS_PER_USER) revert TooManyTokens(account, allocs.length);
         // Self-staticcall so the verify+value+build loop gets its own stack frame (via_ir), mirroring
         // {getAdapterPositions} → {buildPositionsSelf}.
         return this.previewPositionsSelf(account, allocs);
@@ -688,11 +691,14 @@ contract MerklRewardsAttestedBalanceAdapter is IAttestedBalanceAdapter, IPositio
         if (root == bytes32(0)) revert UninitializedRoot();
         _revertOnDuplicateToken(allocs);
 
-        // Upper bound on legs: one per campaign share per token (or one untagged leg per token) — same sizing as
-        // {buildPositionsSelf}. Bounded by MAX_TOKENS_PER_USER × MAX_CAMPAIGNS_PER_TOKEN.
+        // Upper bound on legs: one per campaign share per token (or one untagged leg per token). Enforce the per-token
+        // campaign cap HERE so the sum stays within MAX_TOKENS_PER_USER × MAX_CAMPAIGNS_PER_TOKEN (= 512 legs) and an
+        // oversized `campaigns` array fails loud with `TooManyCampaigns` BEFORE the scratch buffer is sized/allocated
+        // from it — the full per-entry check (proof + Σ-shares == cumulative) still runs in the loop below.
         uint256 cap;
         for (uint256 i; i < allocs.length; ++i) {
             uint256 c = allocs[i].campaigns.length;
+            if (c > MAX_CAMPAIGNS_PER_TOKEN) revert TooManyCampaigns(allocs[i].token, c);
             cap += c == 0 ? 1 : c;
         }
         INAVCalculator.PositionBalance[] memory tmp = new INAVCalculator.PositionBalance[](cap);
@@ -805,8 +811,9 @@ contract MerklRewardsAttestedBalanceAdapter is IAttestedBalanceAdapter, IPositio
         if (root == bytes32(0)) revert UninitializedRoot();
 
         // Verify the leaf + bound the (submitter-supplied) campaign breakdown to the proof-verified per-token total.
-        // Shared verbatim with the cache-free {previewPositions}/{previewBalances} via `_checkProofAndCampaigns`, so the
-        // write path and the preview path can never diverge on what a valid entry is. The Σ-shares == cumulative rule
+        // Shared verbatim with the cache-free {previewPositions} via `_checkProofAndCampaigns`, so the write path and
+        // the preview share ONE definition of a valid proof + campaign breakdown (each then adds its own extra
+        // acceptance: here the AmountRegression check below; preview the duplicate-token + zero-account guards). The Σ-shares == cumulative rule
         // is the safety hinge: a submitter can mis-split value across campaigns but can never make the shares sum to
         // more than the proven total, so NAV is never inflated. An empty breakdown ⇒ one untagged position.
         _checkProofAndCampaigns(root, user, token, cumulativeAmount, proof, campaigns);
@@ -918,7 +925,7 @@ contract MerklRewardsAttestedBalanceAdapter is IAttestedBalanceAdapter, IPositio
 
     /// @dev Live `cumulative − Distributor.claimed(account, asset)`, floored at 0. Shared by the cache read
     ///      ({_unclaimed}, which supplies the CACHED cumulative after establishing freshness via the cached-root ==
-    ///      live-root check) and the cache-free {previewPositions}/{previewBalances} (which supply a PROOF-VERIFIED
+    ///      live-root check) and the cache-free {previewPositions} (which supplies a PROOF-VERIFIED
     ///      cumulative, freshness established by verifying its leaf against the live root before calling). The
     ///      Distributor `claimed` read is unguarded/ABI-decoded — the returndata-reshape hazard documented on
     ///      {_unclaimed} applies identically here.
@@ -929,8 +936,9 @@ contract MerklRewardsAttestedBalanceAdapter is IAttestedBalanceAdapter, IPositio
     }
 
     /// @dev Shared proof + campaign-shape validation used by BOTH the cache write ({_submitProof}) and the stateless
-    ///      cache-free preview ({previewPositions}/{previewBalances}) — the single source of truth for "what is a valid
-    ///      entry", so the two paths cannot diverge. Verifies the per-token leaf
+    ///      cache-free preview ({previewPositions}) — the single source of truth for proof + campaign-shape validity
+    ///      (each path then adds its own extra acceptance rules: submit the cache-only AmountRegression; preview the
+    ///      duplicate-token + zero-account guards). Verifies the per-token leaf
     ///      `keccak256(abi.encode(account, token, cumulativeAmount))` against `root`, then (if a breakdown is present)
     ///      bounds it to at most {MAX_CAMPAIGNS_PER_TOKEN} shares that SUM to the proven per-token total. Does NOT fetch
     ///      the root (the caller fetches it once and reuses it) and does NOT include the cache-only monotonicity check

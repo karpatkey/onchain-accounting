@@ -102,8 +102,10 @@ Unclaimed positions are also queryable **live without feeding the cache** via th
 `previewPositions(address account, bytes calldata data)` (on `IAttestedBalanceAdapter`; ADR 0022). Merkl decodes
 `data` as `abi.encode(Allocation[])`, verifies each **caller-supplied** proof against the live Distributor root, and
 values it with the identical `cumulative − claimed` math the write path uses — shared via the
-`_checkProofAndCampaigns` + `_unclaimedFrom` + `_buildTokenLegs` helpers, so a preview can never diverge from what a
-submit would cache. The trust-minimized guarantee is unchanged — proof-verified, under-report-only — and it writes no
+`_checkProofAndCampaigns` + `_unclaimedFrom` + `_buildTokenLegs` helpers, so the preview's proof + campaign-shape
+checks and valuation are identical to the write path's. (Entry *acceptance* still differs by design: submit adds a
+cache-only monotonicity check, `AmountRegression`; the preview rejects duplicate tokens and a zero account.) The
+trust-minimized guarantee is unchanged — proof-verified, under-report-only — and it writes no
 storage and does not affect the NAV read (`getAdapterPositions`, which continues to read the agent-fed cache). It
 returns NAV-shaped legs and skips tokens not yet registered on NAVCalculator. This is an *extra* for a portal /
 frontend / third party that computes Merkl proofs off-chain; it does **not** reduce the agent's role: NAV coverage

@@ -57,7 +57,9 @@ These adapters are documented exceptions to the immutability rule (like the assi
   (`getAdapterPositions`, which still reads the agent-fed cache). The proof data is **opaque `bytes` on the interface**
   (each member `abi.decode`s it into its own shape — Merkl: `Allocation[]`), so the single signature serves every
   attested adapter, present and future, with `bytes` being whatever the protocol needs. Members reuse their own verify
-  + value helpers (so a preview cannot diverge from what a submit would cache), are fail-loud on an invalid proof, and
+  + value helpers (so the preview's proof + campaign-shape validation and valuation are identical to the write path's —
+  each path may still apply its own extra acceptance rules, e.g. a submit's cache-only monotonicity check), are
+  fail-loud on an invalid proof, and
   bound the returned set by the same per-account caps. (This deliberately supersedes an earlier draft that kept the
   preview off the marker as "protocol-specific": typing the data as `bytes` makes one interface method generic without
   losing per-member decoding.)

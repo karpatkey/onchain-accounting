@@ -65,6 +65,7 @@ reverts on `CampaignSumMismatch` / over-cap campaigns or tokens / a `DuplicateTo
 Implement `IAttestedBalanceAdapter` (+ `IBalanceAdapter`, and `IPositionDescribable` for labels): define the
 per-protocol `submit` surface (typed element shape + its on-chain proof check) **and** the universal
 `previewPositions(account, bytes)` (decode `bytes` into your proof shape, verify, value — reusing the same helpers as
-`submit` so the two cannot diverge). Uphold the invariant above (upsert; proof per write; stale→0; stale-gated
+`submit` so proof + campaign-shape validation and valuation stay identical between the two paths; each may still add
+its own extra acceptance rules). Uphold the invariant above (upsert; proof per write; stale→0; stale-gated
 removal), and register it on `NAVCalculator` like any balance adapter. No assistant contract and no role grant —
 unlike the assisted family.

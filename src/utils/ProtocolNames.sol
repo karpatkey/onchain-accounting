@@ -65,6 +65,9 @@ library ProtocolNames {
     string internal constant BALANCER_V3 = "Balancer V3";
     /// @dev `ProtocolIds.CURVE` — shared by pools and gauges.
     string internal constant CURVE = "Curve";
+
+    /// @dev `ProtocolIds.POLYGON` — Polygon PoS staking, settled on Ethereum L1.
+    string internal constant POLYGON = "Polygon";
     /// @dev `ProtocolIds.CONVEX`.
     string internal constant CONVEX = "Convex";
     /// @dev `ProtocolIds.UNISWAP_V2`.
@@ -141,6 +144,7 @@ library ProtocolNames {
         if (protocolId == ProtocolIds.PANCAKESWAP_V3) return PANCAKESWAP_V3;
 
         if (protocolId == ProtocolIds.STAKEWISE_V3) return STAKEWISE_V3;
+        if (protocolId == ProtocolIds.POLYGON) return POLYGON;
         if (protocolId == ProtocolIds.LIDO) return LIDO;
         if (protocolId == ProtocolIds.KELP) return KELP;
         if (protocolId == ProtocolIds.STADER) return STADER;

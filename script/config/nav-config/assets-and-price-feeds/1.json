@@ -513,6 +513,23 @@
       }
     ]
   },
+  "POL": {
+    "address": "0x455e53CBB86018Ac2B8092FdCd39d8444aFFC3F6",
+    "accrualKind": "None",
+    "$kindComment": "Polygon's staking/gas token, 18-dp. accrualKind None: POL does not rebase and has no redemption ratio that grows; its USD value moves only with the market price. NOT $1-pegged, so no pegToleranceBps.",
+    "labels": [
+      "Polygon",
+      "Staking"
+    ],
+    "$comment": "PRICED BY THE CHAINLINK FEED WHOSE description() READS 'MATIC / USD'. That is not a copy-paste error and should not be 'corrected': Chainlink's own mainnet reference data (reference-data-directory feeds-mainnet.json) lists proxy 0x7bAC85A8... with docs.baseAsset = POL. The display name is legacy, the tracked asset is POL. Corroborated economically: POL is the 1:1 MATIC successor, and PolygonMigration 0x29e7DF7b... still has unmigrationLocked() == false while holding ~9.6B MATIC, so the pair is arbitrage-enforced in BOTH directions rather than by convention. Verified live 2026-08-26: answer 10813489 = $0.10813489, 240s old. HEARTBEAT 90000, NOT the 86400 the feed declares: the declared-heartbeat guard requires margin above the declared value (declared + 1h), and registering at exactly 86400 reproduces the sUSDS incident - priced $0 at the tail of nearly every publish cycle. USDT and XAUt sit at 90000 for the same reason. No monitorFeeds: Chainlink lists exactly ONE POL feed on mainnet, so there is no independent second source to diverge against.",
+    "priceFeeds": [
+      {
+        "type": "Chainlink",
+        "address": "0x7bAC85A8a13A4BcD8abb3eB7d6b4d632c5a57676",
+        "heartbeat": 90000
+      }
+    ]
+  },
   "RLUSD": {
     "address": "0x8292Bb45bf1Ee4d140127049757C2E0fF06317eD",
     "accrualKind": "None",

@@ -24,6 +24,7 @@ import {
 import {
     StakeWiseV3VaultsMetaBalanceAdapter
 } from "src/balances/MetaBalanceAdapters/StakeWiseV3VaultsMetaBalanceAdapter.sol";
+import {PolygonStakingMetaBalanceAdapter} from "src/balances/MetaBalanceAdapters/PolygonStakingMetaBalanceAdapter.sol";
 import {
     CompoundV3CometsMetaBalanceAdapter
 } from "src/balances/MetaBalanceAdapters/CompoundV3CometsMetaBalanceAdapter.sol";
@@ -440,7 +441,7 @@ contract MetaBalanceAdapterAdvertisedShapeTest is PositionIdJoinAsserts {
 
     /// @dev Pinned so adding an adapter fails `test_metaAdapterEnumerationCensus` until the author also adds it to
     ///      `test_everyMetaAdapter_advertisesItsCoordinateUnlessItDeclaresOtherwise`.
-    uint256 internal constant META_ADAPTER_COUNT = 22;
+    uint256 internal constant META_ADAPTER_COUNT = 23;
 
     /// @dev A coordinate with dirty high bits, for the two adapters whose instance is a raw `bytes32` rather than
     ///      an address. Deliberately un-address-like: it proves those adapters really do override
@@ -516,6 +517,7 @@ contract MetaBalanceAdapterAdvertisedShapeTest is PositionIdJoinAsserts {
         i += _assertAdvertisesCoordinate(new GearboxV3MarketsMetaBalanceAdapter(n), "GearboxV3Markets");
         i += _assertAdvertisesCoordinate(new MorphoVaultsMetaBalanceAdapter(n), "MorphoVaults");
         i += _assertAdvertisesCoordinate(new StakeWiseV3VaultsMetaBalanceAdapter(stub, stub, n), "StakeWiseV3Vaults");
+        i += _assertAdvertisesCoordinate(new PolygonStakingMetaBalanceAdapter(stub, n), "PolygonStaking");
         i += _assertAdvertisesCoordinate(new BalancerV2GaugesMetaBalanceAdapter(stub, stub, n), "BalancerV2Gauges");
         i += _assertAdvertisesCoordinate(new BalancerV3GaugesMetaBalanceAdapter(stub, n), "BalancerV3Gauges");
         i += _assertAdvertisesCoordinate(new BalancerV3PoolsMetaBalanceAdapter(n), "BalancerV3Pools");

@@ -21,6 +21,10 @@ pragma solidity ^0.8.0;
 ///      types only — they emit no bytecode — so carrying the unused two costs nothing. Do not prune
 ///      them; pruning would turn a verifiable copy into a maintained fork.
 ///
+///      The upstream MIT licence tag at the top of this file is retained verbatim: this file is NOT
+///      under the repo's BUSL-1.1 licence. Optimism licenses its project MIT; the copyright and
+///      permission notices MIT requires to accompany copies are reproduced in THIRD-PARTY-NOTICES.md.
+///
 ///      The upstream MIT licence tag at the top of this file is retained verbatim: this file
 ///      is NOT under the repo's
 ///      BUSL-1.1 licence. See docs/decisions/0024-dependency-size-vendor-single-file-deps.md and

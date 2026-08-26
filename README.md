@@ -169,7 +169,7 @@ FOUNDRY_PROFILE=slow forge test --match-path "test/**/fork/*.sol"
 ### Config
 
 - **foundry.toml**: `src = "src"`, optimizer, `via_ir = true`, coverage and invariant profiles.
-- **remappings.txt**: OpenZeppelin, Chainlink, Morpho, forge-std. Submodules are all `shallow = true` (see [ADR 0024](docs/decisions/0024-dependency-size-vendor-single-file-deps.md)).
+- **remappings.txt**: OpenZeppelin, Chainlink, Morpho, forge-std. Top-level submodules are `shallow = true`; their **nested** submodules are not, because those `.gitmodules` belong to upstream — so the single largest surviving history, `openzeppelin-contracts` under `openzeppelin-contracts-upgradeable`, is still cloned in full (see [ADR 0024](docs/decisions/0024-dependency-size-vendor-single-file-deps.md)).
 
 ---
 
@@ -190,7 +190,6 @@ MIT licence and recording its pinned upstream rev in a header comment — see
 | File | Upstream |
 |------|----------|
 | `src/bridge/adapters/lib/OptimismTypes.sol` | Optimism `contracts-bedrock` — `src/libraries/Types.sol` |
-| `script/utils/ICreate2Deployer.sol` | Compound `comet` — `contracts/Create2DeployerInterface.sol` |
 
 ---
 

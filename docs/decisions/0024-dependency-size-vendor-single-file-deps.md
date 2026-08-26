@@ -14,7 +14,7 @@ Measured usage, counting distinct files imported from `src/`, `test/`, `script/`
 | `lib/openzeppelin-contracts-upgradeable` | 97 M | 28 M | many |
 | `lib/chainlink-brownie-contracts` | 50 M | 15 M | 5 |
 | `lib/aave-v3-core` | 20 M | 9.6 M | **0** |
-| `lib/comet` | 11 M | 25 M | **1** — `Create2DeployerInterface.sol` |
+| `lib/comet` | 11 M | 25 M | **0** (apparent 1 — `Create2DeployerInterface.sol`, but see below: the single importer was dead code) |
 | `lib/morpho-blue` | 8.9 M | 4.3 M | 3 |
 | `lib/gmx-contracts` | 6.0 M | 11 M | **0** |
 | `lib/openzeppelin-foundry-upgrades` | 2.0 M | 1.9 M | used |
@@ -66,8 +66,9 @@ Dropping a submodule is the only action that fixes both.
 
 Take **option 1**, with option 2 applied to what remains.
 
-- Vendor the two single-file dependencies and delete `lib/optimism`, `lib/comet`, `lib/aave-v3-core`, `lib/gmx-contracts` via `forge remove`.
-- Add `shallow = true` to the two heaviest surviving submodules (`openzeppelin-contracts-upgradeable`, `chainlink-brownie-contracts`) so fresh developer clones stop fetching their full history.
+- Vendor the **one** genuinely-imported single-file dependency (`Types.sol` → `src/bridge/adapters/lib/OptimismTypes.sol`) and delete `lib/optimism`, `lib/comet`, `lib/aave-v3-core`, `lib/gmx-contracts` via `forge remove`.
+- **`lib/comet` needed no vendoring at all.** An earlier version of this decision vendored `Create2DeployerInterface.sol` as well, on the basis that it had one importer. Review established that the importer was dead code: the sole use was `try ICreate2Deployer(CANONICAL_CREATE2_DEPLOYER).computeAddress(…)` in `script/test/Test02_DeployProxies.t.sol`, and `CANONICAL_CREATE2_DEPLOYER` (`0x4e59b448…4956C`) is Arachnid's deterministic-deployment-proxy — 55 bytes of runtime that treat calldata as `salt ++ initCode` and CREATE2 it, with **no selector dispatch**, so it does not implement that interface; and CREATE2 is a state write, so the call reverts under `STATICCALL` in any case. Both arms had always landed in `catch` and logged a `[WARN]` phrased as an environment problem, so the only cross-check that the deploy scripts' CREATE2 derivation agreed with a second source had never run. The probe was replaced with an unconditional `vm.computeCreate2Address` assertion — Foundry's Rust implementation, which shares no code with the Solidity helper — and the interface, now importerless, was dropped rather than vendored. So `lib/comet`'s import count was really **0**, like `aave-v3-core` and `gmx-contracts`. Worth generalising: *"is it imported"* is not the same question as *"does that import do anything"*, and a dependency audit that stops at the first is one grep short.
+- Add `shallow = true` to **all five** surviving submodules so fresh developer clones stop fetching their full history. (An earlier draft of this record said "the two heaviest"; the implementation applies it to all five, which is what `.gitmodules` and the README state.)
 - Keep `submodules: recursive` in CI. It is load-bearing: `openzeppelin-contracts-upgradeable` (4 nested), `morpho-blue` (2), and `openzeppelin-foundry-upgrades` (1) resolve through their own nested submodules, and `remappings.txt` reaches into `lib/openzeppelin-contracts-upgradeable/lib/…`. Do not add `fetch-depth: 0` — `submoduleUpdate` forwards that same value to `--depth`, so it would deepen every submodule and make CI slower.
 
 Vendored files go beside the code that consumes them, not into a new top-level `vendor/` tree, because that is already this repo's convention: `src/bridge/adapters/interfaces/` holds hand-written minimal copies of the Stargate, Gnosis, Across, and Circle CCTP interfaces. `IStargateInterfaces.sol` says so in its own header — "Minimal local copies of the Stargate V2 (OFT-based, LayerZero V2) interfaces … the structs and signatures here mirror upstream exactly". Optimism was the sole bridge integration taking a submodule instead, and for strictly less code than the others.
@@ -76,7 +77,7 @@ Rationale:
 
 - **Consistent with the repo.** Five hand-written bridge interface files already exist. Extending that pattern to Optimism removes a special case rather than adding one.
 - **Consistent with the ecosystem.** `aave-dao/aave-v3-origin` vendors OpenZeppelin, Gnosis, Chainlink and WETH under `src/contracts/dependencies/`; `Vectorized/solady` vendors three forge-std files instead of taking the submodule; `morpho-org/morpho-blue` hand-writes its own `IERC20`/`IOracle`. Vendoring a handful of third-party files is normal practice at this scale, not a shortcut.
-- **Bytecode-neutral in this specific case.** `Types` is a struct-only library and `ICreate2Deployer` is an interface; neither declares a function, so neither contributes code to any consumer. `bytecode_hash = "none"` already strips the metadata trailer, so relocating the source cannot move the deterministic CREATE2 library addresses pinned in `foundry.toml`. `LibraryPinConsistency` re-derives those pins from bytecode and would fail if this were wrong. **This neutrality does not generalise** — vendoring a file containing even one `internal` function changes what gets inlined into consumers.
+- **Bytecode-neutral in this specific case.** `Types` is a struct-only library; it declares no function, so it contributes no code to any consumer. `bytecode_hash = "none"` already strips the metadata trailer, so relocating the source cannot move the deterministic CREATE2 library addresses pinned in `foundry.toml`. `LibraryPinConsistency` re-derives those pins from bytecode and would fail if this were wrong. **This neutrality does not generalise** — vendoring a file containing even one `internal` function changes what gets inlined into consumers.
 - **Pinning is not weakened.** Both files were already frozen at a submodule gitlink; nothing tracked upstream automatically. A vendored file with its upstream URL and rev recorded in the header carries the same information and less machinery.
 
 ## Consequences
@@ -89,10 +90,25 @@ Rationale:
 
 **Negative / things to watch:**
 
-- The two vendored files no longer track upstream. For a frozen struct definition and a two-function interface this is close to zero risk, but the provenance header must be kept accurate if either is ever refreshed.
-- MIT requires the copyright and permission notice to travel with copied source. Neither upstream file carries a copyright line beyond its SPDX identifier, so the identifier is preserved verbatim and attribution is recorded in the header. The root `LICENSE` third-party note is updated to cover them. (Not legal advice.)
-- `ignored_warnings_from = ["lib"]` is prefix-matched and so does not cover `src/bridge/adapters/lib/`. No scoping config was added regardless, because it would be inert: both vendored files compile with zero warnings (verified — `forge build` reports none against either path), `deny = "warnings"` is currently commented out in `foundry.toml`, and neither a struct-only library nor an interface produces coverable statements. If a future vendored file does emit warnings, note that `ignored_warnings_from`, `[lint] ignore`, and `no_match_coverage` scope compiler warnings, lint diagnostics, and coverage independently — setting one does not imply the others.
-- `forge remove` in 1.7.1 does not strip the `[submodule "lib/<name>"]` stanza from `.git/config`, and does not touch `remappings.txt`. Both are handled explicitly.
+- The vendored file no longer tracks upstream. For a frozen struct definition this is close to zero risk, but the provenance header must be kept accurate if either is ever refreshed.
+- MIT requires the copyright and permission notice to travel with copied source. **An earlier draft of this record got this wrong** and is corrected here rather than silently: it claimed "neither upstream file carries a copyright line beyond its SPDX identifier", and used that to justify shipping only the identifier. The premise is false for Optimism — the governing notice lives in that project's root `LICENSE`, which reads `Copyright 2020-2024 Optimism` — and an SPDX tag is an identifier, not the notice. Both notices are therefore reproduced in `THIRD-PARTY-NOTICES.md`, which the root `LICENSE` points at. The two grants differ in kind and the file records that distinction: Optimism licenses its **project** MIT, whereas the comet **project** is Business Source License 1.1 and the MIT tag on the vendored file is a **file-level grant** by the copyright holder — for that file there is no upstream MIT notice in existence to reproduce. (Not legal advice.)
+- `ignored_warnings_from = ["lib"]` is prefix-matched and so does not cover `src/bridge/adapters/lib/`. No scoping config was added regardless, because it would be inert: the vendored file compiles with zero warnings (verified — `forge build` reports none against that path), `deny = "warnings"` is currently commented out in `foundry.toml`, and a struct-only library produces no coverable statements. If a future vendored file does emit warnings, note that `ignored_warnings_from`, `[lint] ignore`, and `no_match_coverage` scope compiler warnings, lint diagnostics, and coverage independently — setting one does not imply the others.
+- `forge remove` in 1.7.1 does not strip the `[submodule "lib/<name>"]` stanza from `.git/config`, and does not touch `remappings.txt`. Both are handled explicitly **in this commit**. What this commit cannot reach is an **existing clone**: removing a submodule from `.gitmodules` and the index does not delete the working tree that is already on someone's disk. Those directories survive, `forge remappings` auto-detects a prefix for every directory under `lib/`, and the result is a developer whose local remapping set differs from CI's while both builds succeed. That is the failure mode to watch — it is silent in both directions. **Migration recipe, once per existing clone** (fresh clones need none of it):
+
+  ```bash
+  git submodule deinit -f lib/optimism lib/comet lib/aave-v3-core lib/gmx-contracts 2>/dev/null || true
+  rm -rf lib/optimism lib/comet lib/aave-v3-core lib/gmx-contracts
+  rm -rf .git/modules/lib/optimism .git/modules/lib/comet \
+         .git/modules/lib/aave-v3-core .git/modules/lib/gmx-contracts
+  git config --remove-section submodule.lib/optimism 2>/dev/null || true   # repeat per submodule
+  git submodule update --init --recursive --force
+  forge remappings | grep -E 'optimism|comet|aave-v3-core|gmx'             # must print nothing
+  git gc --prune=now                                                       # reclaims the pack
+  ```
+
+- **`shallow = true` interacts with the documented dependency-bump flow.** `script/ci/check-foundry-lock.sh` documents that flow as `git -C lib/<dep> checkout <rev> && git add lib/<dep>`. On a **fresh** clone the submodules are now depth-1, so that checkout fails (`reference is not a tree`) for any rev that is not the current tip. The bump flow becomes: `git -C lib/<dep> fetch --unshallow` (or `fetch origin <rev> --depth=1`) **first**, then checkout. Existing clones are unaffected — they already have full history. This is a real ergonomic cost of the shallow flag, accepted because bumps are rare and CI is unaffected (it clones at `--depth=1` regardless).
+
+- **The gitlink was doing enforcement work that vendoring removes.** While `Types` resolved through a submodule, editing it in-tree was impossible: it lived behind a gitlink, and `check-foundry-lock.sh` compared that gitlink to `foundry.lock`. A vendored file has no such protection, and the tests cannot supply it — the bridge mocks import the *same* vendored file, so a struct edit drifts test and production in lockstep and stays green. `script/ci/check-vendored.sh` replaces that enforcement: it hashes each vendored file's comment-stripped body against a committed manifest (offline, always hard) and re-fetches the pinned upstream rev to confirm the manifest itself is honest (soft-skips only on a transport failure, never on a mismatch). The offline half is deliberately the non-skippable one — this repo has already shipped an incident where a guard passed because its input was stale.
 
 ## Convention going forward
 
@@ -101,7 +117,9 @@ When an upstream dependency is needed for a small, stable surface — an interfa
 - Write or copy a minimal local file next to its consumer, following `src/bridge/adapters/interfaces/`.
 - Preserve the upstream `SPDX-License-Identifier` verbatim; do not relicense it as BUSL-1.1.
 - Record upstream repo, exact pinned rev, and upstream path in a `@dev` header so the copy can be diffed against its origin.
-- Register the file's licence in the root `LICENSE` third-party note if it differs from BUSL-1.1.
+- Register the file's licence in the root `LICENSE` third-party note if it differs from BUSL-1.1, and reproduce the upstream copyright + permission notice in `THIRD-PARTY-NOTICES.md`. Record whether the grant is project-wide or file-level — they are not interchangeable.
+- Register the file in `script/ci/check-vendored.sh` (add the row, run `--update` once). A vendored file with no drift check is a fork waiting to happen.
+- **Check `forge fmt --check` against it before committing.** CI formats the whole tree, and the drift guard demands the body stay byte-identical to upstream — so a vendored file that `fmt` wants to reflow puts the two guards in direct conflict, and whichever is "fixed" first silently defeats the other. `OptimismTypes.sol` happens to be fmt-clean (verified), which is luck, not design. If a future vendored file is not, exclude it via `fmt.ignore` in `foundry.toml` rather than reformatting it.
 - Add a submodule only when the dependency is genuinely multi-file and actively tracked. Before adding one, check the ratio of what it costs to what gets imported.
 
 For non-permissively-licensed upstream *math*, ADR 0008 governs instead — it is a stricter case and its GPL analysis still applies.

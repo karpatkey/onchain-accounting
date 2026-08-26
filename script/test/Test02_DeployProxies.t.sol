@@ -11,7 +11,6 @@ import {UUPSProxy} from "../../src/proxy/UUPSProxy.sol";
 import {UUPSPlaceholder} from "../../src/utils/UUPSPlaceholder.sol";
 
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
-import {ICreate2Deployer} from "script/utils/ICreate2Deployer.sol";
 import {SafeTxBuilder} from "../utils/SafeTxBuilder.sol";
 import {MANAGER} from "../../src/constants.sol";
 import {AtomicProxyDeployer} from "../deploy/AtomicProxyDeployer.sol";
@@ -121,29 +120,30 @@ contract Test02a_DeployProxies is TestEnvConfigurator {
         address computedBridgeProxy =
             _computeCreate2Address(CANONICAL_CREATE2_DEPLOYER, saltBridgeProxy, bridgeProxyBytecode);
 
-        // Verify address computation using deployer's computeAddress function (if available)
-        try ICreate2Deployer(CANONICAL_CREATE2_DEPLOYER).computeAddress(saltNavProxy, navProxyBytecodeHash) returns (
-            address deployerComputedNav
-        ) {
-            assertEq(deployerComputedNav, computedNavProxy, "NAV proxy address mismatch with deployer computation");
-            console2.log("[OK] NAV proxy address matches deployer computation");
-        } catch {
-            console2.log("[WARN] Could not verify NAV proxy address with deployer (offline mode or deployer not found)");
-        }
-
-        try ICreate2Deployer(CANONICAL_CREATE2_DEPLOYER)
-            .computeAddress(saltBridgeProxy, bridgeProxyBytecodeHash) returns (
-            address deployerComputedBridge
-        ) {
-            assertEq(
-                deployerComputedBridge, computedBridgeProxy, "Bridge proxy address mismatch with deployer computation"
-            );
-            console2.log("[OK] Bridge proxy address matches deployer computation");
-        } catch {
-            console2.log(
-                "[WARN] Could not verify Bridge proxy address with deployer (offline mode or deployer not found)"
-            );
-        }
+        // Cross-check the local CREATE2 derivation against an INDEPENDENT implementation.
+        //
+        // This previously called `ICreate2Deployer(CANONICAL_CREATE2_DEPLOYER).computeAddress(...)` inside a
+        // try/catch. That check never ran, on any invocation, and could not have: 0x4e59b448…4956C is
+        // Arachnid's deterministic-deployment-proxy — 55 bytes of runtime that read calldata as
+        // `salt ++ initCode` and CREATE2 it. It performs no selector dispatch, so it has no `computeAddress`;
+        // and CREATE2 is a state write, so the call reverts under STATICCALL regardless. Both arms therefore
+        // always landed in `catch` and logged "[WARN] … (offline mode or deployer not found)", which reads
+        // like an environment problem rather than a permanently dead assertion. Nothing compared the script's
+        // salt/address derivation to a second source.
+        //
+        // `vm.computeCreate2Address` is that second source: it is implemented in Foundry's Rust cheatcode
+        // layer, so it shares no code with `_computeCreate2Address` below and a mistake in either is caught.
+        // It is unconditional — no try/catch, no network, no fork.
+        assertEq(
+            vm.computeCreate2Address(saltNavProxy, navProxyBytecodeHash, CANONICAL_CREATE2_DEPLOYER),
+            computedNavProxy,
+            "NAV proxy address disagrees with vm.computeCreate2Address"
+        );
+        assertEq(
+            vm.computeCreate2Address(saltBridgeProxy, bridgeProxyBytecodeHash, CANONICAL_CREATE2_DEPLOYER),
+            computedBridgeProxy,
+            "Bridge proxy address disagrees with vm.computeCreate2Address"
+        );
 
         // Verify addresses are computed correctly and consistently
         // (We don't actually deploy here since the goal is to test address computation)

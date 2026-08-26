@@ -25,3 +25,9 @@ fn against current code before committing docs) makes this worth fixing.
 
 ## Recommendation
 Drop `/{previewBalances}` from all four references, leaving `{previewPositions}`.
+
+## Resolution — FIXED (commit 8fbb05c0)
+All four `/{previewBalances}` references were removed. `grep -rn previewBalances src/`
+now returns nothing — the only cache-free preview entrypoint is
+`previewPositions(address,bytes)`. This record is retained as the point-in-time audit
+trail; the defect no longer exists in the shipped code.

@@ -311,9 +311,9 @@ contract MerklRewardsAttestedBalanceAdapter is IAttestedBalanceAdapter, IPositio
     ///      root for that user's leaf. Each entry is an **upsert** of that `(user, token)`; entries omitted from
     ///      `allocs` are left untouched, so a caller can only add or refresh proven data — it can NEVER suppress a
     ///      live entry it omits (removal is only via the stale-gated `clearAllocation`/`clearAccount`). **Reverts**
-    ///      `InvalidArguments` (zero user/token), `UninitializedRoot`, `InvalidProof`, `AmountRegression` (a proven
-    ///      cumulative below the cached one), `CampaignSumMismatch`, or `TooManyCampaigns` — fail-loud and atomic, so
-    ///      a bad entry reverts the whole call and leaves the prior set intact.
+    ///      `InvalidArguments` (zero user/token), `UninitializedRoot`, `InvalidProof`, `TooManyCampaigns`,
+    ///      `CampaignSumMismatch`, or `AmountRegression` (a proven cumulative below the cached one) — fail-loud and
+    ///      atomic, so a bad entry reverts the whole call and leaves the prior set intact.
     /// @param user        Account the allocations are for.
     /// @param allocs      The (token, cumulativeAmount, proof, campaigns) entries to add/refresh for `user`.
     function submitProofs(address user, Allocation[] calldata allocs) external {
@@ -654,6 +654,12 @@ contract MerklRewardsAttestedBalanceAdapter is IAttestedBalanceAdapter, IPositio
     ///      rather than be caught-and-dropped. **Skips reward tokens not registered on NAVCalculator** (a leg needs the
     ///      asset metadata — mirrors {buildPositionsSelf}). The `MAX_TOKENS_PER_USER × MAX_CAMPAIGNS_PER_TOKEN` product
     ///      bounds the returned leg count exactly as it bounds the cache read.
+    ///
+    ///      **Campaign identity is submitter-supplied, not proof-bound.** The proof commits only the per-token
+    ///      cumulative; the `campaigns` split is caller-controlled and only its SUM is checked, so a consumer must
+    ///      treat the per-campaign `positionInstanceId` / attribution on the returned legs as display-grade, not
+    ///      attested — the per-token *amount* is the proof-backed figure. Same caveat as the cache path; see the
+    ///      {CampaignShare} struct docs.
     /// @param account The account to value (any address).
     /// @param data    ABI-encoded `Allocation[]` (`abi.encode(allocs)`) — each with proofs, the same
     ///                `(token, cumulativeAmount, proof, campaigns)` shape `submitProofs` takes; each token must be

@@ -57,7 +57,10 @@ interface IAttestedBalanceAdapter is IBalanceAdapter {
     ///      write path — every proof in `data` is verified on-chain against the protocol's live root, so it can only
     ///      surface the account's real figure (under-report, never over-report) — and is **fail-loud** on an invalid
     ///      proof. An *extra* read for a portal / frontend / third party that computes proofs off-chain. Empty `data`
-    ///      (or a zero `account`) returns an empty array.
+    ///      (or a zero `account`) returns an empty array. **As on the write path, the attestation covers only the
+    ///      proof-bound value** — any auxiliary sub-position metadata a member returns (e.g. Merkl campaign identity,
+    ///      where only the shares' SUM is checked) is submitter-controlled and NOT attested; consumers must not treat
+    ///      returned position IDENTITY as proof-backed. See the member's docs.
     /// @param account The account to value (any address — proofs are public; the result is that account's real figure).
     /// @param data    ABI-encoded, protocol-specific proof/off-chain data (Merkl: `abi.encode(Allocation[])`).
     function previewPositions(address account, bytes calldata data)

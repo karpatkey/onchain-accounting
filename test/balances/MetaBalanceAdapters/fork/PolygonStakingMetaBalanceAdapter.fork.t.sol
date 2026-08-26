@@ -108,6 +108,42 @@ contract PolygonStakingMetaForkTest is BalanceAdapterTestBase {
         );
     }
 
+    /// @notice EVERY configured instance is a real ValidatorShare, per the StakeManager's own registry.
+    /// @dev The adapter deliberately does not pin the StakeManager — that is the family's immutability idiom, and
+    ///      pinning it would make the adapter chain-specific for no gain. The cost of that choice is that NOTHING
+    ///      on-chain checks a coordinate is a genuine ValidatorShare: any contract answering
+    ///      `getStakeAndRewards(address)` with two large uints becomes NAV the moment a MANAGER adds it.
+    ///
+    ///      `test_instanceIsValidator192` pins the one instance configured today, but a SECOND instance added by
+    ///      config alone — which is the whole point of the meta pattern, an `addMetaInstances` TX rather than a
+    ///      deploy — would inherit no such check. This iterates the nav-config list instead of a hardcoded address,
+    ///      so the guard grows with the config rather than going stale the moment someone uses it as intended.
+    function test_everyConfiguredInstanceIsARealValidatorShare() public {
+        _fork();
+        string memory json = vm.readFile("script/config/nav-config/meta-balance-adapters/1.json");
+        address[] memory configured = vm.parseJsonAddressArray(json, ".PolygonStakingMeta.instances");
+        assertGt(configured.length, 0, "config must list at least one instance");
+
+        for (uint256 i = 0; i < configured.length; i++) {
+            address share = configured[i];
+            // Low-level, so a coordinate that is not a ValidatorShare at all fails with THIS message rather than a
+            // bare `EvmError: Revert` — measured: pointing the config at the POL token produced exactly that
+            // unhelpful revert before this was written, which is no use to whoever added the bad instance.
+            assertGt(share.code.length, 0, "configured instance has no code");
+            (bool ok, bytes memory ret) = share.staticcall(abi.encodeWithSignature("validatorId()"));
+            assertTrue(
+                ok && ret.length == 32,
+                "configured instance does not answer validatorId(); is it really a ValidatorShare?"
+            );
+            uint256 id = abi.decode(ret, (uint256));
+            assertEq(
+                IStakeManager(STAKE_MANAGER).getValidatorContract(id),
+                share,
+                "configured instance is not the StakeManager's share contract for its own validatorId"
+            );
+        }
+    }
+
     /// @notice A live share the user has not delegated to yields NO legs — not zero-amount ones.
     function test_emptyValidator_yieldsNoLegs() public {
         _fork();

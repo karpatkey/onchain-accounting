@@ -63,6 +63,19 @@ contract MockShortReturnShare {
     }
 }
 
+/// @notice `validatorId()` returns a 64-byte payload — MORE than one word. Not a `uint256` reply either, and the
+///         `size != 32` guard must reject it in this direction too: silently taking the first word would render a
+///         confident, wrong validator number from a contract that is not answering this selector.
+contract MockLongReturnShare {
+    fallback() external {
+        assembly {
+            mstore(0x00, 4242)
+            mstore(0x20, 1)
+            return(0x00, 0x40)
+        }
+    }
+}
+
 /// @notice `validatorId()` burns gas without writing state, so it OOGs inside the capped `staticcall`. A storage
 ///         burner would abort on write-protection instead and never loop.
 contract MockGasBurnerShare {
@@ -72,6 +85,18 @@ contract MockGasBurnerShare {
             acc = uint256(keccak256(abi.encode(acc, i)));
         }
         return acc;
+    }
+}
+
+/// @notice Answers EVERY selector with a zero word — a very common contract shape (many proxies and stubs do
+///         this). `validatorId()` therefore "succeeds" with 0, which is not a real validator: StakeManager ids are
+///         1-based and `getValidatorContract(0)` is address(0).
+contract MockZeroWordShare {
+    fallback() external {
+        assembly {
+            mstore(0x00, 0)
+            return(0x00, 0x20)
+        }
     }
 }
 
@@ -225,6 +250,22 @@ contract PolygonStakingMetaBalanceAdapterTest is Test {
     function test_positionLabels_shortReturndata_rejected() public {
         MockShortReturnShare s = new MockShortReturnShare();
         assertEq(meta.positionLabels(abi.encode(address(s)))[1], string.concat("POL ", address(s).toHexString()));
+    }
+
+    /// @dev The other rejection direction from `test_positionLabels_shortReturndata_rejected`. A guard that only
+    ///      caught SHORT replies would take word 0 of this one and print "#4242" for a contract that never
+    ///      answered `validatorId()`.
+    function test_positionLabels_longReturndata_rejected() public {
+        MockLongReturnShare s = new MockLongReturnShare();
+        assertEq(meta.positionLabels(abi.encode(address(s)))[1], string.concat("POL ", address(s).toHexString()));
+    }
+
+    /// @dev A zero id must fall back, not render "Validator #0". This is the one rejection the `size == 32`
+    ///      check cannot make: the reply is a well-formed word, it is just not a validator.
+    function test_positionLabels_zeroValidatorId_fallsBack() public {
+        MockZeroWordShare s = new MockZeroWordShare();
+        string[] memory l = meta.positionLabels(abi.encode(address(s)));
+        assertEq(l[1], string.concat("POL ", address(s).toHexString()), "must not render #0");
     }
 
     function test_positionLabels_gasBurner_isBounded() public {

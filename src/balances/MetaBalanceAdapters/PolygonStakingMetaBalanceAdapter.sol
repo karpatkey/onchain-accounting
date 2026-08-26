@@ -168,7 +168,13 @@ contract PolygonStakingMetaBalanceAdapter is MetaBalanceAdapter {
             size := returndatasize()
             word := mload(0x20)
         }
+        // `size != 32` is the load-bearing check in BOTH directions — a shorter reply zero-extends and a longer
+        // one has a tail; either would render a confident, wrong validator number.
         if (!success || size != 32) return (0, false);
+        // Validator ids are 1-based (`StakeManager.NFTCounter` starts at 1, and `getValidatorContract(0)` is
+        // address(0)), so a zero is never a real validator. Without this, a contract that answers every
+        // selector with a zero word — a very common shape — renders a confident "Validator #0".
+        if (word == 0) return (0, false);
         return (word, true);
     }
 

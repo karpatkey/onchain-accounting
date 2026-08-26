@@ -837,7 +837,7 @@ contract MerklRewardsAttestedBalanceAdapter is IAttestedBalanceAdapter, IPositio
 
         // "Is this a NEW (user, token)?" — keyed on `root`, NOT on `submittedAt`. This branch is the only thing
         // standing between the contract and a DUPLICATE entry in `_userTokens`, which would make `buildPositionsSelf`
-        // run `_appendTokenLegs` twice for one token and report its unclaimed amount twice — an OVER-report, the one
+        // run `_buildTokenLegs` twice for one token and report its unclaimed amount twice — an OVER-report, the one
         // direction this family forbids. `root` is a sentinel the contract enforces itself (`UninitializedRoot` above
         // rejects a zero root, so any stored entry has `root != 0`), whereas `submittedAt != 0` rests on
         // `block.timestamp != 0` — true on every live chain, but an incidental property of the environment rather

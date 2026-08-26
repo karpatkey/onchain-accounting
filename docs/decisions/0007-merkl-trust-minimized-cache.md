@@ -114,6 +114,12 @@ read serves any future attested adapter (Santi, 2026-08-26).
 
 ## Trust model summary
 
+> **Superseded — historical (original role-gated v1).** The table below and Alternatives #1 describe the original
+> `ASSISTANT_ROLE`/`DEFAULT_ADMIN_ROLE` design. The shipped adapter is **permissionless** (no roles): read
+> `ASSISTANT_ROLE` as "any caller" and `DEFAULT_ADMIN_ROLE` as "n/a" throughout — proof-verification, not a role, is
+> the integrity guarantee, and Alternatives #1 (permissionless submit) was adopted. See the **2026-07 amendment** at the
+> top of this ADR for the current model.
+
 | Capability | Who | Bound by |
 |---|---|---|
 | Submit valid proofs | `ASSISTANT_ROLE` only | On-chain `getMerkleRoot()` — cannot fabricate amounts |

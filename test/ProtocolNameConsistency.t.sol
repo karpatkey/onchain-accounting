@@ -156,13 +156,13 @@ contract StaderWithdrawalManagerStub {
 ///
 ///      The invariant has two halves and they need different instruments:
 ///
-///        1. **Hardcoded names** (13 adapters) — a string literal in the adapter, so the name is in the bytecode.
+///        1. **Hardcoded names** (14 adapters) — a string literal in the adapter, so the name is in the bytecode.
 ///           Every one is deployed here and pinned to its `ProtocolNames` constant
 ///           (`test_hardcodedAdapters_matchCanonicalNames`). That is what makes "use the constant, not a literal" a
 ///           checked rule rather than an aspiration: a literal that drifts from its constant fails here even for
 ///           single-member protocols, which no group comparison would catch.
 ///
-///        2. **Meta adapters** (21) — `MetaBalanceAdapter.protocolName()` returns
+///        2. **Meta adapters** (22) — `MetaBalanceAdapter.protocolName()` returns
 ///           `ProtocolNames.forProtocolId(_protocolId())`, so the name is a pure function of the typed identity the
 ///           adapter already declares. Sibling agreement is true **by construction**: two adapters sharing a
 ///           protocol id evaluate the same expression over the same input, so there is nothing left to assert. What

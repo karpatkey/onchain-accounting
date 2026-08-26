@@ -57,13 +57,19 @@ jobs:
           # recompile, so their cache cannot affect a pin value.
           cache: false
 
-      # DO NOT REMOVE — this is not cruft, the build does not fit in the runner without it.
+      # KEPT AS HEADROOM, but the premise below is no longer what it says — corrected rather than deleted,
+      # because the reasoning about WHY memory matters here is still the useful part.
       #
       # A whole-program `via_ir` compile of this repo peaks at 7-8 GB RSS (measured locally with
       # `/usr/bin/time -v forge build --sizes` after `forge clean`; one run on a larger box reported 9.7 GB).
-      # This repo is INTERNAL, so `ubuntu-latest` is a standard GitHub-hosted runner: 2 vCPU / 7 GB RAM.
-      # The compile therefore needs more memory than the runner has, and every green Build on this repo has
-      # been solc landing just under a line it structurally exceeds. A branch that adds even ~1 KB of
+      # This comment used to claim `ubuntu-latest`, 2 vCPU / 7 GB, and that the build "does not fit in the
+      # runner without it". That was true when written; this job now runs on a Blacksmith runner reporting
+      # ~30 GiB RAM with ~11 GiB of swap already active before this step adds 8 more. Against a 7-9.7 GB peak
+      # the step is no longer load-bearing — it is margin, and cheap enough to keep while the peak sits this
+      # close to a structural ceiling. Do not cite it as a hard requirement, and do not remove it on the
+      # grounds that the old justification was wrong; measure the peak on the runner first.
+      #
+      # A branch that adds even ~1 KB of
       # contract code in the wrong shape tips it, and the failure mode is silent and confusing: the log ends
       # at "Compiling NNN files with Solc 0.8.34" and the step exits 143 (SIGTERM, i.e. the kernel killed
       # solc) with no compiler error at all.
@@ -141,51 +147,6 @@ jobs:
   # `script/utils/LibraryPins.sol`, and the authoritative gate remains one clean local full build
   # against the final tree immediately before deploying. A red run here means "regenerate the
   # pins deliberately", never "edit the values until it goes green".
-  pins:
-    name: Library pins (clean build)
-    runs-on: blacksmith-8vcpu-ubuntu-2404
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          submodules: recursive
-
-      - uses: foundry-rs/foundry-toolchain@v1
-        with:
-          version: ${{ env.FOUNDRY_VERSION }}
-          # Same reasoning as the `build` job: a restored Foundry cache reintroduces reusable
-          # compilation state, and reuse is precisely what this job exists to avoid.
-          cache: false
-
-      # See the long note on `build`'s copy of this step. Same compile, same ~7-11 GB peak, same
-      # need — a whole-program `via_ir` compile does not fit in the runner's RAM unaided, and the
-      # failure mode is a silent SIGTERM (exit 143) with no compiler error.
-      - name: Add swap for the via_ir compile
-        run: |
-          sudo fallocate -l 8G /mnt/swapfile-ci
-          sudo chmod 600 /mnt/swapfile-ci
-          sudo mkswap /mnt/swapfile-ci
-          sudo swapon /mnt/swapfile-ci
-          free -h
-          swapon --show
-
-      # `--force` even though no sticky disk is mounted and `out/` starts empty: it states the
-      # requirement in the command rather than relying on the absence of a mount, so a future
-      # cache/mount added to this job cannot silently reintroduce the incremental scope this job
-      # exists to exclude. It costs nothing on an empty `out/`.
-      #
-      # Building the WHOLE program here (rather than letting `forge test` compile just what the
-      # matched tests need) is load-bearing, not tidiness: the authoritative pin is the one a
-      # whole-program compile produces, because that is the scope the pre-deploy local build and
-      # the real CREATE2 deployment used. A narrower scope would reproduce the very bug above.
-      - name: Build from clean (whole program)
-        run: forge build --force
-
-      # Finds everything up to date and recompiles nothing, so it asserts against the artifacts
-      # the step above produced.
-      - name: Library pin assertions
-        run: forge test --match-path "test/LibraryPinConsistency.t.sol" -vv
-
-  # Unit tests (mock-only, no RPC). Default profile.
   unit:
     name: Unit tests
     needs: build
@@ -204,23 +165,31 @@ jobs:
         with:
           name: forge-build
 
-      # `--no-match-contract LibraryPinConsistencyTest` is NOT hiding a failing test — it is moving
-      # an assertion to the only job that can evaluate it. This job does not compile: it downloads
-      # `build`'s artifacts, and `build` compiles incrementally against a branch-shared sticky disk
-      # (full reasoning on the `pins` job above). So the pin value reachable HERE is a correct hash
-      # of an arbitrary compilation scope, and this job has produced repeated false reds on trees
-      # whose pins were provably correct — `0x8b7e4fA9…` has landed in a real CREATE2 deployment.
+      # LibraryPinConsistencyTest runs HERE again, and the exclusion that used to sit on this line is
+      # gone along with the 993 s `pins` job it fed. Both existed for one reason: the assertions read
+      # `type(X).creationCode`, embedded at COMPILE time, so under this job's downloaded `out/` they
+      # hashed whatever scope the cache had served — the false reds that put `0x8b7e4fA9…` into a real
+      # CREATE2 deployment, and that taught the fleet to merge past a red pin check.
       #
-      # Leaving it here was actively harmful: a check that cries wolf on correct trees taught the
-      # fleet to merge past it, which is exactly the state in which a REAL pin drift would sail
-      # through unnoticed. The assertion now runs in `pins`, from clean, where it means something.
+      # The assertions now read `vm.getCode("X")` — the artifact this job downloaded — and
+      # `test_pinnedLibraryArtifactsWereBuiltFromThisTree` content-hashes every source all three
+      # artifacts record against the checked-out tree. A downloaded `out/` from another branch fails
+      # that check by name before any pin is read, which is strictly stronger than what the embedded
+      # form gave: NAVCalculator's artifact was never freshness-checked at all while its creation code
+      # was compiled in.
       #
-      # The remaining LibraryPinConsistency tests move with it — including the freshness tripwire,
-      # which is sound but pointless in a job whose artifacts are downloaded by construction.
+      # MEASURED before removing the clean build, because the whole change rests on it: an incremental
+      # compile of 2 files produces byte-identical creation code to a full 575-file `--force` build for
+      # PriceFeedLib, NAVRegistryLib and NAVCalculator. The "via_ir scope sensitivity" the `pins` job
+      # existed to exclude was a symptom of a missing library self-link, fixed when the addresses were
+      # pinned in `foundry.toml [libraries]` — not a standing property of via_ir.
+      #
+      # If anyone reintroduces an embedded `type(X).creationCode` in that file, this exclusion and the
+      # clean-build job have to come back with it. They are one mechanism.
       - name: Unit tests
         env:
           ALCHEMY_API_KEY: ${{ secrets.ALCHEMY_API_KEY }}
-        run: forge test --no-match-path "*fork*" --no-match-contract LibraryPinConsistencyTest -vvv
+        run: forge test --no-match-path "*fork*" -vvv
 
   # Per-protocol fork tests (slow profile, RPC). Excludes the NAV integration harness.
   fork:

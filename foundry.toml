@@ -11,6 +11,10 @@ fs_permissions = [
   # records having been compiled from. A cheatcode permission, never passed to solc, so it cannot
   # affect emitted bytecode or the `libraries` pins below.
   { access = "read", path = "src" },
+  # Same reasoning, extended to `lib` because the freshness assertion now also covers
+  # NAVCalculator, and 29 of its 55 recorded sources are submodule files under `lib/`. Without
+  # this the check could only hash the 26 under `src/` and would silently attest half an artifact.
+  { access = "read", path = "lib" },
   { access = "read", path = "lib" },
 ]
 ffi = true

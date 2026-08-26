@@ -59,13 +59,24 @@ contract LibraryPinConsistencyTest is Test {
     ///         been observed serving stale bytecode. Everything this file asserts about pins is then a statement
     ///         about that download rather than about this tree — stale artifact in, stale address out, test green.
     ///
-    ///         `type(X).creationCode` is embedded at COMPILE time (foundry.toml deliberately does not set
-    ///         `dynamic_test_linking` — see the comment there for the measurement that removed it), so the pin value
-    ///         is baked into this test contract's own bytecode. That does not close the gap, it only moves it: under
-    ///         a downloaded `out/`, THIS contract is one of the stale artifacts, and its embedded constant is
-    ///         whatever the cache served. Were the flag ever reinstated, `creationCode` would become a `vm.getCode`
-    ///         read of the artifact at RUNTIME and the same staleness would arrive by a shorter path. The assertion
-    ///         below holds in both regimes because it interrogates the artifact directly and never the linkage.
+    ///         The pin assertions now read `vm.getCode("X")` at RUNTIME rather than embedding
+    ///         `type(X).creationCode` at COMPILE time, and this note used to explain why the embedded form did not
+    ///         help. It is worth keeping the reasoning, because it is what makes the runtime read SAFE rather than
+    ///         merely cheaper: embedding never closed the gap, it only moved it. Under a downloaded `out/`, THIS
+    ///         contract was itself one of the stale artifacts and its embedded constant was whatever the cache
+    ///         served — so the compile-time form was already reading the cache, just by a longer path, and it hid
+    ///         the fact that `NAVCalculator`'s artifact was never freshness-checked at all.
+    ///
+    ///         Reading explicitly is strictly better: every value the assertions consume is now a named artifact,
+    ///         and `test_pinnedLibraryArtifactsWereBuiltFromThisTree` covers all three of them. Note this is done
+    ///         WITHOUT setting `dynamic_test_linking` — that flag was removed for a measured reason (see
+    ///         foundry.toml) and its global side effect of routing `new` in test sources through `vm.deployCode` is
+    ///         not wanted. Writing the read out by hand in these three places gets the benefit without the flag.
+    ///
+    ///         **The clean whole-program build this file used to require is therefore gone.** It existed to make
+    ///         the embedded constant trustworthy, at ~993 s per CI run, and it was the entire critical path. The
+    ///         freshness assertion does the same work by content-hash for free. If a future edit reintroduces an
+    ///         embedded `type(X).creationCode` here, it must also reintroduce that build — they are one mechanism.
     ///
     ///         **Content-hash, not mtime, and that choice is load-bearing.** Artifacts restored from a cache are
     ///         WRITTEN at restore time, so their mtimes are newer than the checkout that produced the sources — a
@@ -85,9 +96,16 @@ contract LibraryPinConsistencyTest is Test {
     ///         staleness that a cache restore actually produces. A hypothetically PARTIAL `out/` — both libraries
     ///         fresh, this test contract's own artifact stale — would still pass while the compile-time-embedded
     ///         constant is stale. Not worth a third assertion: no known mechanism restores `out/` per-file.
+    /// @dev Covers EVERY artifact the pin assertions below read — that coupling is the whole scheme. The three
+    ///      assertions now read creation code out of `out/` via `vm.getCode` instead of embedding
+    ///      `type(X).creationCode` at compile time, so a stale artifact would otherwise let them attest bytecode
+    ///      that is not this tree's. `NAVCalculator` is listed for exactly that reason: it was NOT covered while
+    ///      its creation code was embedded, and adding the read without adding it here would have opened the gap
+    ///      this file's own header warns about.
     function test_pinnedLibraryArtifactsWereBuiltFromThisTree() public onlyPinnedProfile {
         _assertArtifactBuiltFromTree("out/PriceFeedLib.sol/PriceFeedLib.json", "PriceFeedLib");
         _assertArtifactBuiltFromTree("out/NAVRegistryLib.sol/NAVRegistryLib.json", "NAVRegistryLib");
+        _assertArtifactBuiltFromTree("out/NAVCalculator.sol/NAVCalculator.json", "NAVCalculator");
     }
 
     /// @dev Re-hashes every source the artifact records, and requires at least one — an artifact with an empty or
@@ -125,14 +143,14 @@ contract LibraryPinConsistencyTest is Test {
     function test_priceFeedLib_pinMatchesCurrentBytecode() public onlyPinnedProfile {
         bytes32 salt = ConfigReader.computeSalt("PriceFeedLib", 1);
         address computed =
-            vm.computeCreate2Address(salt, keccak256(type(PriceFeedLib).creationCode), CANONICAL_CREATE2_DEPLOYER);
+            vm.computeCreate2Address(salt, keccak256(vm.getCode("PriceFeedLib")), CANONICAL_CREATE2_DEPLOYER);
         assertEq(computed, LibraryPins.PRICE_FEED_LIB, "PriceFeedLib pin drift: regenerate LibraryPins + foundry.toml");
     }
 
     function test_navRegistryLib_pinMatchesCurrentBytecode() public onlyPinnedProfile {
         bytes32 salt = ConfigReader.computeSalt("NavRegistryLib", 1);
         address computed =
-            vm.computeCreate2Address(salt, keccak256(type(NAVRegistryLib).creationCode), CANONICAL_CREATE2_DEPLOYER);
+            vm.computeCreate2Address(salt, keccak256(vm.getCode("NAVRegistryLib")), CANONICAL_CREATE2_DEPLOYER);
         assertEq(
             computed, LibraryPins.NAV_REGISTRY_LIB, "NAVRegistryLib pin drift: regenerate LibraryPins + foundry.toml"
         );
@@ -144,7 +162,7 @@ contract LibraryPinConsistencyTest is Test {
     ///         checks cannot, since they compare the computed address only against LibraryPins — and confirms
     ///         NAVCalculator is actually wired to the pinned libraries.
     function test_navCalculator_creationCodeLinkedAgainstPins() public onlyPinnedProfile {
-        bytes memory code = type(NAVCalculator).creationCode;
+        bytes memory code = vm.getCode("NAVCalculator");
         assertTrue(
             LibraryPins.contains(code, LibraryPins.PRICE_FEED_LIB),
             "NAVCalculator not linked against pinned PriceFeedLib (foundry.toml `libraries` drift?)"

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8;
 
-import {Types} from "@optimism/libraries/Types.sol";
+import {Types} from "src/bridge/adapters/lib/OptimismTypes.sol";
 
 /// @title Superchain (Optimism) Bridge Interfaces
 /// @notice Aggregated interfaces for Optimism Superchain canonical bridge integration

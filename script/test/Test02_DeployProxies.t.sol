@@ -11,7 +11,7 @@ import {UUPSProxy} from "../../src/proxy/UUPSProxy.sol";
 import {UUPSPlaceholder} from "../../src/utils/UUPSPlaceholder.sol";
 
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
-import {ICreate2Deployer} from "comet-contracts/Create2DeployerInterface.sol";
+import {ICreate2Deployer} from "script/utils/ICreate2Deployer.sol";
 import {SafeTxBuilder} from "../utils/SafeTxBuilder.sol";
 import {MANAGER} from "../../src/constants.sol";
 import {AtomicProxyDeployer} from "../deploy/AtomicProxyDeployer.sol";

@@ -130,6 +130,38 @@
       "baseAsset": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"
     }
   },
+  "spUSDC": {
+    "enabled": true,
+    "$comment": "Spark Savings USDC - ERC-4626 share, USDC underlying. Priced USDC/USD x convertToAssets(10^decimals)/10^decimals (same pattern as syrupUSDC/sUSDS). Spark deployed this savings family TWICE. A dead earlier generation carries the SAME symbol() at a different address with 18 decimals and totalSupply == 0; the live vault pinned here is the 6-decimal one (spETH is 18-decimal in BOTH generations, so decimals alone does not disambiguate it - the address does). An empty ERC-4626 answers convertToAssets at the 1:1 default instead of reverting, so wiring the dead generation would price silently and wrongly. Verified live 2026-08-26: spUSDC totalSupply 243,090,655.607160 shares, totalAssets 251,073,510.004242 USDC.",
+    "constructor": {
+      "spUsdc": "0x28B3a8fb53B741A8Fd78c0fb9A6B2393d896a43d",
+      "baseAsset": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"
+    }
+  },
+  "spUSDT": {
+    "enabled": true,
+    "$comment": "Spark Savings USDT - ERC-4626 share, USDT underlying. NOTE the registered heartbeat for this asset is 90000, NOT the 86400 used by the USDC-based siblings, because USDT/USD is itself registered at 90000 and a derived feed's updatedAt IS its base feed's timestamp (ADR 0019) - gating tighter than the base can only manufacture a stale verdict while the base is fresh. See the sUSDS $comment in nav-config for the incident that established this. Spark deployed this savings family TWICE. A dead earlier generation carries the SAME symbol() at a different address with 18 decimals and totalSupply == 0; the live vault pinned here is the 6-decimal one (spETH is 18-decimal in BOTH generations, so decimals alone does not disambiguate it - the address does). An empty ERC-4626 answers convertToAssets at the 1:1 default instead of reverting, so wiring the dead generation would price silently and wrongly. Verified live 2026-08-26: spUSDT totalSupply 352,840,114.883034 shares, totalAssets 362,941,640.724074 USDT.",
+    "constructor": {
+      "spUsdt": "0xe2e7a17dFf93280dec073C995595155283e3C372",
+      "baseAsset": "0xdAC17F958D2ee523a2206206994597C13D831ec7"
+    }
+  },
+  "spETH": {
+    "enabled": true,
+    "$comment": "Spark Savings ETH - ERC-4626 share, WETH underlying. Spark deployed this savings family TWICE. A dead earlier generation carries the SAME symbol() at a different address with 18 decimals and totalSupply == 0; the live vault pinned here is the 6-decimal one (spETH is 18-decimal in BOTH generations, so decimals alone does not disambiguate it - the address does). An empty ERC-4626 answers convertToAssets at the 1:1 default instead of reverting, so wiring the dead generation would price silently and wrongly. Verified live 2026-08-26: spETH totalSupply 25,087.742699 shares, totalAssets 25,412.301094 WETH.",
+    "constructor": {
+      "spEth": "0xfE6eb3b609a7C8352A241f7F3A21CEA4e9209B8f",
+      "baseAsset": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
+    }
+  },
+  "sDAI": {
+    "enabled": true,
+    "$comment": "Sky Savings Dai (sDAI) - ERC-4626 share, DAI underlying. NOT a Spark contract: Spark ships no Savings DAI vault, and sDAI is the genuine DAI savings vault (it was Spark's savings-DAI product before the USDS rebrand). A feed of this name was deleted in bbd2b490 as DEAD (nothing referenced it once Gnosis moved to sXDAI and mainnet sDAI was unregistered) - not as wrong. It is referenced again now.",
+    "constructor": {
+      "sDai": "0x83F20F44975D03b1b09e64809B757c47f942BEeA",
+      "baseAsset": "0x6B175474E89094C44Da98b954EedeAC495271d0F"
+    }
+  },
   "RWIV": {
     "enabled": true,
     "$comment": "Nexus Mutual RWI Vault (RWIV) \u2014 ERC-4626 share, USDC underlying. Priced USDC/USD x convertToAssets(10^decimals)/10^decimals (same pattern as syrupUSDC). Makes RWIV a registered priced asset so the UniV3 USDC/RWIV pool LP (held by the Nexus Safe) can be valued by UniswapV3PoolsMeta (pool 0x764D50759FF278b7CfB2E0e8464B742E9aB40C97 must be in that adapter's instance list).",

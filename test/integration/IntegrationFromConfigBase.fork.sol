@@ -80,6 +80,10 @@ import {
 // Price feed adapters (Mainnet)
 import {LDO_CustomPriceFeed} from "src/prices/protocols/LDO_CustomPriceFeed.sol";
 import {sUSDS_CustomPriceFeed} from "src/prices/protocols/sUSDS_CustomPriceFeed.sol";
+import {spUSDC_CustomPriceFeed} from "src/prices/protocols/spUSDC_CustomPriceFeed.sol";
+import {spUSDT_CustomPriceFeed} from "src/prices/protocols/spUSDT_CustomPriceFeed.sol";
+import {spETH_CustomPriceFeed} from "src/prices/protocols/spETH_CustomPriceFeed.sol";
+import {sDAI_CustomPriceFeed} from "src/prices/protocols/sDAI_CustomPriceFeed.sol";
 import {sUSDe_CustomPriceFeed} from "src/prices/protocols/sUSDe_CustomPriceFeed.sol";
 import {syrupUSDC_CustomPriceFeed} from "src/prices/protocols/syrupUSDC_CustomPriceFeed.sol";
 import {sGHO_CustomPriceFeed} from "src/prices/protocols/sGHO_CustomPriceFeed.sol";
@@ -235,6 +239,10 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
             _tryDeployPriceFeed("sGHO", _deploySgho);
             _tryDeployPriceFeed("wARS", _deployWars);
             _tryDeployPriceFeed("syrupUSDC", _deploySyrupUsdc);
+            _tryDeployPriceFeed("spUSDC", _deploySpUsdc);
+            _tryDeployPriceFeed("spUSDT", _deploySpUsdt);
+            _tryDeployPriceFeed("spETH", _deploySpEth);
+            _tryDeployPriceFeed("sDAI", _deploySDai);
             _tryDeployPriceFeed("wstETH", _deployWstEth);
             _tryDeployPriceFeed("stETHFundamental", _deployStEthFundamental);
             _tryDeployPriceFeed("stETHCrossRate", _deployStEthCrossRate);
@@ -292,6 +300,30 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         address sUsds = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "sUSDS", "sUsds"));
         address baseAsset = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "sUSDS", "baseAsset"));
         return address(new sUSDS_CustomPriceFeed(sUsds, address(nav), baseAsset));
+    }
+
+    function _deploySpUsdc() internal returns (address) {
+        address spUsdc = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "spUSDC", "spUsdc"));
+        address baseAsset = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "spUSDC", "baseAsset"));
+        return address(new spUSDC_CustomPriceFeed(spUsdc, address(nav), baseAsset));
+    }
+
+    function _deploySpUsdt() internal returns (address) {
+        address spUsdt = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "spUSDT", "spUsdt"));
+        address baseAsset = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "spUSDT", "baseAsset"));
+        return address(new spUSDT_CustomPriceFeed(spUsdt, address(nav), baseAsset));
+    }
+
+    function _deploySpEth() internal returns (address) {
+        address spEth = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "spETH", "spEth"));
+        address baseAsset = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "spETH", "baseAsset"));
+        return address(new spETH_CustomPriceFeed(spEth, address(nav), baseAsset));
+    }
+
+    function _deploySDai() internal returns (address) {
+        address sDai = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "sDAI", "sDai"));
+        address baseAsset = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, "sDAI", "baseAsset"));
+        return address(new sDAI_CustomPriceFeed(sDai, address(nav), baseAsset));
     }
 
     function _deploySUsde() internal returns (address) {

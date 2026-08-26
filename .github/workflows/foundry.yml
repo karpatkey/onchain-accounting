@@ -363,7 +363,13 @@ jobs:
         # Two checks, deliberately asymmetric. The manifest hash is offline and ALWAYS hard-fails. The upstream
         # re-fetch soft-skips on a transport failure but hard-fails on a mismatch — so a network blip can never
         # be what turns this into a guard that validates nothing, which this repo has already been bitten by.
-        run: script/ci/check-vendored.sh
+        # Runs the guard both ways, like the sibling steps above: `--self-test` pins the normaliser
+        # (including that an empty `/**/` block comment cannot hide code from it — the defect that made
+        # the first version of this guard pass an ABI-changing struct edit), then the plain run checks
+        # the committed tree.
+        run: |
+          python3 script/ci/check_vendored.py --self-test
+          python3 script/ci/check_vendored.py
 
   # Format check
   lockfile:

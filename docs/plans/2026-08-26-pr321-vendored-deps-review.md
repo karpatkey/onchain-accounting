@@ -36,7 +36,7 @@ cast code 0x4e59b44847b379578588920cA78FbF26c0B4956C
 0x7fffff…ffe03601600081602082378035828234f58015156039578182fd5b8082525050506014600cf3
 ```
 
-55 bytes: read calldata as `salt ++ initCode`, CREATE2 it, return 20 bytes. **No selector dispatch.**
+69 bytes: read calldata as `salt ++ initCode`, CREATE2 it, return 20 bytes. **No selector dispatch.**
 It does not implement that interface, and CREATE2 is a state write so the call reverts under
 STATICCALL regardless. Both `try` arms had always landed in `catch`, logging a `[WARN]` worded as an
 environment problem. So `lib/comet`'s import count was really **0**, and the vendored interface was

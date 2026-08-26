@@ -124,7 +124,7 @@ contract Test02a_DeployProxies is TestEnvConfigurator {
         //
         // This previously called `ICreate2Deployer(CANONICAL_CREATE2_DEPLOYER).computeAddress(...)` inside a
         // try/catch. That check never ran, on any invocation, and could not have: 0x4e59b448…4956C is
-        // Arachnid's deterministic-deployment-proxy — 55 bytes of runtime that read calldata as
+        // Arachnid's deterministic-deployment-proxy — 69 bytes of runtime that read calldata as
         // `salt ++ initCode` and CREATE2 it. It performs no selector dispatch, so it has no `computeAddress`;
         // and CREATE2 is a state write, so the call reverts under STATICCALL regardless. Both arms therefore
         // always landed in `catch` and logged "[WARN] … (offline mode or deployer not found)", which reads

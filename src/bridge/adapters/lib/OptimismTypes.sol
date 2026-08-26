@@ -20,15 +20,14 @@ pragma solidity ^0.8.0;
 ///      ABI-identical to the deployed Superchain contracts the bridge adapter talks to. Structs are
 ///      types only — they emit no bytecode — so carrying the unused two costs nothing. Do not prune
 ///      them; pruning would turn a verifiable copy into a maintained fork.
+
 ///
 ///      The upstream MIT licence tag at the top of this file is retained verbatim: this file is NOT
-///      under the repo's BUSL-1.1 licence. Optimism licenses its project MIT; the copyright and
-///      permission notices MIT requires to accompany copies are reproduced in THIRD-PARTY-NOTICES.md.
-///
-///      The upstream MIT licence tag at the top of this file is retained verbatim: this file
-///      is NOT under the repo's
-///      BUSL-1.1 licence. See docs/decisions/0024-dependency-size-vendor-single-file-deps.md and
-///      the third-party note in the root LICENSE.
+///      under the repo's BUSL-1.1 licence. Optimism licenses its project MIT, and the copyright and
+///      permission notices MIT requires to accompany copies — which an SPDX tag alone does not carry
+///      — are reproduced in THIRD-PARTY-NOTICES.md. See also
+///      docs/decisions/0024-dependency-size-vendor-single-file-deps.md and the third-party note in
+///      the root LICENSE.
 library Types {
     /// @notice OutputProposal represents a commitment to the L2 state. The timestamp is the L1
     ///         timestamp that the output root is posted. This timestamp is used to verify that the

@@ -276,6 +276,20 @@ So custom feeds are **building blocks** for value computation. Their staleness f
 
 All in `src/prices/protocols/`. Pattern is one file per asset; L2-specific variants get a `_L2_` infix. Feeds marked **(base)** below extend `BaseCustomPriceFeed` and implement only `_rate()` (see §5.0); the rest either extend a sibling skeleton (`TwoFeedChainlinkPriceFeed` or `ERC4626VaultRatePriceFeed`, also §5.0) or implement `ICustomPriceFeed` directly.
 
+> **Explorer identity collapses across this whole family — verify bindings by CALLING, not by reading.**
+> Every `ERC4626VaultRatePriceFeed` subclass adds nothing but a constructor pass-through, and
+> `foundry.toml` sets `bytecode_hash = "none"`, so the metadata hash that would otherwise distinguish
+> them is stripped. Measured on mainnet 2026-08-26: `RWIV` and `spUSDC` have **identical 2029-byte
+> runtime code differing in exactly 40 bytes** (positions 686–954 — the inlined `VAULT`/`BASE_ASSET`
+> immutables, each emitted at two use sites). Explorers mask immutables when matching, so Etherscan,
+> Sourcify, Routescan and Blockscout all report **every** feed in this family under whichever name was
+> verified first — currently `RWIV_CustomPriceFeed` — and show no constructor arguments.
+>
+> The source they display is functionally the right code, and the contracts ARE verified. But the
+> explorer cannot tell you which vault a given feed is pinned to. To establish that, call
+> `underlyingAssetSupported()` (the vault) and `BASE_ASSET()` (the base asset) on the address itself.
+> This is a property of the family, not of any one deployment.
+
 ### Yield-bearing stable wrappers (rate × USD-feed)
 
 | Feed | Asset | Underlying inputs |

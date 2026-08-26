@@ -223,6 +223,7 @@ position manager is at a different address entirely.
 | AaveV3InstancesMeta ★ | `0x04Ba6789B4AD5D6CF63Ec9cc301c13F6a8A0210b` |
 | StakeWiseV3ExitQueueAssisted | `0xE1e163663961237C0955b665188864f0fD281020` |
 | StakeWiseV3VaultsMeta | `0x8cbAFEC5745AF6727b7be0829e507f58b3b3ce0d` |
+| UniswapV3PoolsMeta ☆ | `0xA336f7171B9CE77de13451419B3254099beF2C24` |
 
 ### Polygon (137)
 

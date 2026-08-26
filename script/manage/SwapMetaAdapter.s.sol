@@ -193,6 +193,17 @@ contract SwapMetaAdapter is BaseDeployScript {
         uint256 residue = navAdmin.getMetaInstances(old).length;
         if (residue != 0) revert PredecessorResidue(old, residue);
 
+        // Persist the successor to the deployment record, so `04` stops skipping on the predecessor and `06`
+        // stops resolving it. Optional because the record may already name the successor (it does when `04`
+        // deployed it, which is the common path); mirrors what 10_MigrateAdaptersToCreate2 does after its swap.
+        string memory adapterKey = vm.envOr("ADAPTER_KEY", string(""));
+        if (bytes(adapterKey).length > 0) {
+            ConfigReader.writeAdapterAddress(vm, chainId, "balanceAdapters", adapterKey, newAdapter);
+            console2.log("  deployment record updated:", adapterKey, newAdapter);
+        } else {
+            console2.log("  ADAPTER_KEY unset - deployment record NOT updated; confirm it names the successor");
+        }
+
         console2.log("[SIMULATED OK] instance count round-tripped:", got);
         console2.log("  NOW RUN THE VERIFY STEP against the chain:");
         console2.log("  OLD_ADAPTER=... NEW_ADAPTER=... forge script script/manage/SwapMetaAdapter.s.sol \\");

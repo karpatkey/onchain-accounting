@@ -1329,11 +1329,12 @@ const [vault] = abi.decode(["address"], pos.positionId);
 
 #### Polygon PoS — `polygon-staking`
 
-```ts
+```typescript
 // One positionId per validator; the two legs are told apart by positionKind, not by id.
-const [validatorShare] = decodeAbiParameters([{ type: "address" }], positionId)
-// positionKind === "Staking" -> delegated principal (POL)
-// positionKind === "Rewards" -> unclaimed rewards  (POL)
+const [validatorShare] = abi.decode(["address"], pos.positionId);
+// validatorShare — the validator's ValidatorShare contract on Ethereum L1
+// Staking → delegated principal (POL)
+// Rewards → unclaimed rewards  (POL)
 // Note: tokens in the unbonding queue are NOT reported — see BALANCE_ADAPTERS.md §7.1.
 ```
 

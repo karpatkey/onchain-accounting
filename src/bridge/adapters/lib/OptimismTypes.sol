@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8.0;
 
 /// @title Types
@@ -14,15 +14,14 @@ pragma solidity ^0.8.0;
 ///      monorepo (17,304 commits, ~1.0 GB pack, nine nested submodules of its own) and this file
 ///      was the only thing imported from it.
 ///
-///      Deviations from upstream: NONE. Every struct is copied unmodified, including the two this
+///      Deviations from upstream: forked, see below. Every struct is copied unmodified, including the two this
 ///      repo does not currently reference (`OutputProposal`, `UserDepositTransaction`), so that the
 ///      file stays a byte-for-byte diff against the pinned upstream revision and stays
 ///      ABI-identical to the deployed Superchain contracts the bridge adapter talks to. Structs are
 ///      types only — they emit no bytecode — so carrying the unused two costs nothing. Do not prune
 ///      them; pruning would turn a verifiable copy into a maintained fork.
-
 ///
-///      The upstream MIT licence tag at the top of this file is retained verbatim: this file is NOT
+///      Relicensed under BUSL-1.1: this file is NOT
 ///      under the repo's BUSL-1.1 licence. Optimism licenses its project MIT, and the copyright and
 ///      permission notices MIT requires to accompany copies — which an SPDX tag alone does not carry
 ///      — are reproduced in THIRD-PARTY-NOTICES.md. See also

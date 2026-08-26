@@ -20,6 +20,7 @@ import {
   SparkCircleColor,
   GearboxCircleColor,
   EulerCircleColor,
+  PolygonCircleColor,
 } from '@karpatkey/design-system'
 
 // Per-request drill-down rows for withdrawal-queue adapters (Lido NFT ids / Stader & Kelp request ids).
@@ -62,6 +63,7 @@ const PROTOCOL_ICONS: Record<string, React.ComponentType<{ className?: string }>
   spark: SparkCircleColor,
   gearbox: GearboxCircleColor,
   euler: EulerCircleColor,
+  polygon: PolygonCircleColor,
 }
 
 // Protocols without a design-system CircleColor icon fall back to a CDN image keyed the same way.
@@ -89,6 +91,7 @@ const PROTOCOL_URLS: Record<string, string> = {
   'ether.fi': 'https://app.ether.fi/',
   stakewise: 'https://app.stakewise.io/',
   nexus: 'https://app.nexusmutual.io/',
+  polygon: 'https://staking.polygon.technology/',
 }
 
 function getProtocolKey(protocol: string): string {

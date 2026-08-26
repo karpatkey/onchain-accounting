@@ -56,7 +56,8 @@
       "supportedDeBankProtocols": [
         "aave3",
         "lido",
-        "sky"
+        "sky",
+        "uniswap3"
       ]
     },
     "8453": {

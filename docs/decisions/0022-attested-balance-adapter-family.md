@@ -14,7 +14,7 @@ A minority of balance adapters cannot derive a position from on-chain state alon
 
 Introduce a fourth balance-adapter family, peer to plain `BalanceAdapter`s, meta-adapters (ADR 0010), and the assisted family (ADR 0015/0018):
 
-- **`IAttestedBalanceAdapter`** (`is IBalanceAdapter`) — a marker interface (ERC-165) identifying the family and exposing the one universal mutator, the stale-gated `clearAccount(address)`. It deliberately does **not** prescribe the per-protocol `submit` surface (element shape + proof), because that differs by protocol.
+- **`IAttestedBalanceAdapter`** (`is IBalanceAdapter`) — a marker interface (ERC-165) identifying the family and exposing the universal mutator (stale-gated `clearAccount(address)`) **and a universal read (`previewPositions(address account, bytes calldata data)`)**. It deliberately does **not** prescribe the per-protocol `submit` surface (typed element shape + proof), because that differs by protocol — but the preview's proof data is opaque `bytes` (each member `abi.decode`s it into its own shape), so a single read signature serves every attested adapter.
 - The family is named **attested** because its defining trait is that **every write carries a protocol-specific validity proof verified on-chain** (an *attestation*) — integrity comes from the proof, not from who submitted or from live-ownership re-verification.
 
 **Trust model / invariant (what makes it safe):**
@@ -50,12 +50,14 @@ These adapters are documented exceptions to the immutability rule (like the assi
 - Read-path failures are loud, not silent, and that is worth knowing when choosing caps: `PriceFeedLib._getAdapterPositions` forwards a stipend and classifies a bubbled out-of-gas via `GasStipendLib.exhausted`, so an over-large fan-out reverts `AdapterGasExhausted` and takes down the account's **whole** NAV read rather than just dropping this adapter. (A plain revert, by contrast, still fails open to an empty position set — a silent under-report.)
   - **That is what happens to an UNISOLATED member. A member may contain it, and Merkl now does.** Valuing each element in its own stipended `try … {gas: stipend}` frame turns both failures into the loss of that one element instead of the whole set (plain revert) or the whole account read (exhaustion). Merkl **drops** the failing element rather than re-raising, and the licence for that is narrow: it emits credit legs exclusively (`positionKind` is always `Rewards`, `isDebt` never set), so a dropped leg can only make NAV *smaller*. `AssistedCoordCache` re-raises `CoordinateGasExhausted` instead precisely because it is a **base** a future debt-emitting member could inherit, where a silently dropped debt leg would make NAV *larger*. **Rule for new members: isolate per element, then choose drop only if the member cannot emit a debt leg — otherwise raise.**
   - Isolation and the cap product are **not substitutes**: stipends partition read cost, they do not shrink it, so an isolated-but-oversized fan-out is still unaffordable; and a bounded-but-unisolated one still loses the whole set to a single failing element. Members need both.
-- **Optional cache-free preview.** A member MAY expose a stateless, account-agnostic `view` that verifies
-  **caller-supplied** proofs against the live root and returns positions **without touching the cache** — an *extra*
-  read for a portal / frontend / third party that has proofs off-chain and wants a live answer without waiting for the
-  agent. It writes nothing and has no effect on the NAV read (`getAdapterPositions`, which still reads the agent-fed
-  cache); and — like `submit` — its proof surface is protocol-specific, so it stays **off** the universal
-  `IAttestedBalanceAdapter` marker. It reuses the member's own verify + value helpers (so it cannot diverge from what a
-  submit would cache), is fail-loud on an invalid proof, and is bounded by the same per-account caps. Merkl:
-  `previewPositions` (NAV-shaped legs; skips tokens not registered on NAVCalculator) / `previewBalances` (registry-free
-  `(token, amount)`).
+- **Universal cache-free preview — `previewPositions(address account, bytes calldata data)`.** The interface carries a
+  stateless, account-agnostic `view` that verifies **caller-supplied** proofs against the live root and returns
+  positions **without touching the cache** — an *extra* read for a portal / frontend / third party that has proofs
+  off-chain and wants a live answer without waiting for the agent. It writes nothing and has no effect on the NAV read
+  (`getAdapterPositions`, which still reads the agent-fed cache). The proof data is **opaque `bytes` on the interface**
+  (each member `abi.decode`s it into its own shape — Merkl: `Allocation[]`), so the single signature serves every
+  attested adapter, present and future, with `bytes` being whatever the protocol needs. Members reuse their own verify
+  + value helpers (so a preview cannot diverge from what a submit would cache), are fail-loud on an invalid proof, and
+  bound the returned set by the same per-account caps. (This deliberately supersedes an earlier draft that kept the
+  preview off the marker as "protocol-specific": typing the data as `bytes` makes one interface method generic without
+  losing per-member decoding.)

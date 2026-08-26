@@ -652,18 +652,22 @@ contract MerklRewardsAttestedBalanceAdapter is IAttestedBalanceAdapter, IPositio
     ///      `TooManyTokens` (more than {MAX_TOKENS_PER_USER} entries), or `DuplicateToken`. Unlike the NAV read it does
     ///      NOT gas-stipend / try-catch per token: it is the caller's own `eth_call` gas, and a bad proof MUST surface
     ///      rather than be caught-and-dropped. **Skips reward tokens not registered on NAVCalculator** (a leg needs the
-    ///      asset metadata — mirrors {buildPositionsSelf}); use {previewBalances} for raw amounts of an unregistered
-    ///      token. The `MAX_TOKENS_PER_USER × MAX_CAMPAIGNS_PER_TOKEN` product bounds the returned leg count exactly as
-    ///      it bounds the cache read.
+    ///      asset metadata — mirrors {buildPositionsSelf}). The `MAX_TOKENS_PER_USER × MAX_CAMPAIGNS_PER_TOKEN` product
+    ///      bounds the returned leg count exactly as it bounds the cache read.
     /// @param account The account to value (any address).
-    /// @param allocs  Merkl allocations with proofs — same `(token, cumulativeAmount, proof, campaigns)` shape as
-    ///                `submitProofs`; each token must be distinct.
-    function previewPositions(address account, Allocation[] calldata allocs)
+    /// @param data    ABI-encoded `Allocation[]` (`abi.encode(allocs)`) — each with proofs, the same
+    ///                `(token, cumulativeAmount, proof, campaigns)` shape `submitProofs` takes; each token must be
+    ///                distinct. The family interface ({IAttestedBalanceAdapter}) types this as opaque `bytes` so one
+    ///                signature serves every attested adapter (ADR 0022); this member decodes it to `Allocation[]`.
+    function previewPositions(address account, bytes calldata data)
         external
         view
+        override
         returns (INAVCalculator.PositionBalance[] memory positions)
     {
-        if (account == address(0) || allocs.length == 0) return new INAVCalculator.PositionBalance[](0);
+        if (account == address(0) || data.length == 0) return new INAVCalculator.PositionBalance[](0);
+        Allocation[] memory allocs = abi.decode(data, (Allocation[]));
+        if (allocs.length == 0) return new INAVCalculator.PositionBalance[](0);
         // Self-staticcall so the verify+value+build loop gets its own stack frame (via_ir), mirroring
         // {getAdapterPositions} → {buildPositionsSelf}.
         return this.previewPositionsSelf(account, allocs);
@@ -712,44 +716,6 @@ contract MerklRewardsAttestedBalanceAdapter is IAttestedBalanceAdapter, IPositio
         positions = new INAVCalculator.PositionBalance[](count);
         for (uint256 i; i < count; ++i) {
             positions[i] = tmp[i];
-        }
-    }
-
-    /// @notice Lightweight cache-free preview: `account`'s unclaimed amount per token from **caller-supplied proofs**,
-    ///         WITHOUT consulting the NAVCalculator registry — so it also returns amounts for a reward token not yet
-    ///         registered on NAVCalculator (which {previewPositions} skips). Same trustless verify + `cumulative − live
-    ///         claimed` math; reads/writes no adapter storage. Fail-loud on invalid input (same errors as
-    ///         {previewPositions}). Returns only tokens with a non-zero unclaimed amount.
-    function previewBalances(address account, Allocation[] calldata allocs)
-        external
-        view
-        returns (address[] memory tokens, uint256[] memory amounts)
-    {
-        if (account == address(0) || allocs.length == 0) return (new address[](0), new uint256[](0));
-        if (allocs.length > MAX_TOKENS_PER_USER) revert TooManyTokens(account, allocs.length);
-
-        bytes32 root = IMerklDistributor(DISTRIBUTOR).getMerkleRoot();
-        if (root == bytes32(0)) revert UninitializedRoot();
-        _revertOnDuplicateToken(allocs);
-
-        address[] memory tmpTok = new address[](allocs.length);
-        uint256[] memory tmpAmt = new uint256[](allocs.length);
-        uint256 count;
-        for (uint256 i; i < allocs.length; ++i) {
-            Allocation calldata al = allocs[i];
-            _checkProofAndCampaigns(root, account, al.token, al.cumulativeAmount, al.proof, al.campaigns);
-            uint256 unclaimed = _unclaimedFrom(account, al.token, al.cumulativeAmount);
-            if (unclaimed == 0) continue;
-            tmpTok[count] = al.token;
-            tmpAmt[count] = unclaimed;
-            ++count;
-        }
-
-        tokens = new address[](count);
-        amounts = new uint256[](count);
-        for (uint256 i; i < count; ++i) {
-            tokens[i] = tmpTok[i];
-            amounts[i] = tmpAmt[i];
         }
     }
 

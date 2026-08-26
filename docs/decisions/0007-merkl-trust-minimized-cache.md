@@ -98,16 +98,17 @@ Ship `MerklRewardsAssistedBalanceAdapter` (`src/balances/AssistedBalanceAdapters
 
 ## Cache-free preview (added later)
 
-Unclaimed positions are also queryable **live without feeding the cache**: `previewPositions(account, Allocation[])`
-and `previewBalances(account, Allocation[])` are stateless `view`s that verify **caller-supplied** proofs against the
-live Distributor root and value them with the identical `cumulative − claimed` math the write path uses (shared via the
+Unclaimed positions are also queryable **live without feeding the cache** via the family's universal read
+`previewPositions(address account, bytes calldata data)` (on `IAttestedBalanceAdapter`; ADR 0022). Merkl decodes
+`data` as `abi.encode(Allocation[])`, verifies each **caller-supplied** proof against the live Distributor root, and
+values it with the identical `cumulative − claimed` math the write path uses — shared via the
 `_checkProofAndCampaigns` + `_unclaimedFrom` + `_buildTokenLegs` helpers, so a preview can never diverge from what a
-submit would cache). The trust-minimized guarantee is unchanged — proof-verified, under-report-only — and they write no
-storage and do not affect the NAV read (`getAdapterPositions`, which continues to read the agent-fed cache). This is an
-*extra* for a portal / frontend / third party that computes Merkl proofs off-chain (`previewPositions` returns
-NAV-shaped legs and skips tokens not yet registered on NAVCalculator; `previewBalances` is registry-free and returns
-raw `(token, amount)`). It does **not** reduce the agent's role: NAV coverage still depends on the keeper feeding the
-cache.
+submit would cache. The trust-minimized guarantee is unchanged — proof-verified, under-report-only — and it writes no
+storage and does not affect the NAV read (`getAdapterPositions`, which continues to read the agent-fed cache). It
+returns NAV-shaped legs and skips tokens not yet registered on NAVCalculator. This is an *extra* for a portal /
+frontend / third party that computes Merkl proofs off-chain; it does **not** reduce the agent's role: NAV coverage
+still depends on the keeper feeding the cache. The proof data is typed as opaque `bytes` on the interface so the same
+read serves any future attested adapter (Santi, 2026-08-26).
 
 ## Trust model summary
 

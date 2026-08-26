@@ -39,32 +39,32 @@ admin-injected amounts, no upgrade path.
   `unclaimed = cachedCumulative − Distributor.claimed(user, token)` (0 if the cached root ≠ `Distributor.getMerkleRoot()`).
   Constructor `(distributor, navCalculator)`. Protocol-specific rationale:
   [ADR 0007](../../../docs/decisions/0007-merkl-trust-minimized-cache.md). Off-chain feeder: the kpk-agents
-  `SubmitMerklProofs` automation. Also exposes the cache-free preview below (`previewPositions` / `previewBalances`).
+  `SubmitMerklProofs` automation. Implements the family's cache-free `previewPositions(account, bytes)` (decoding
+  `bytes` to `Allocation[]`) — see below.
 
-## Cache-free preview (optional, protocol-specific)
+## Cache-free preview (universal read on the interface)
 
-A member MAY additionally expose a **stateless, account-agnostic preview**: a `view` that takes an `account` plus
-**caller-supplied proofs** and returns that account's positions computed live — verifying each proof against the
-protocol's live root and valuing it with the SAME helpers as the write path, so it can only ever surface the account's
-real figure (under-report, never over-report). It **reads no storage and writes none**: it does not feed the cache and
-has no effect on the NAV read (`getAdapterPositions`), which continues to read the agent-fed cache. It is an *extra*
-for a portal / frontend / third party that computes proofs off-chain and wants a live read without waiting for the
-keeper. It is **not** on the universal `IAttestedBalanceAdapter` marker — the proof surface is protocol-specific, like
-`submit`.
+`IAttestedBalanceAdapter` carries one universal read: **`previewPositions(address account, bytes calldata data)` →
+`PositionBalance[]`**. It is a **stateless, account-agnostic** `view` that values `account`'s positions from
+**caller-supplied** proof data, with no prior submit and **without touching the cache** — each member `abi.decode`s the
+opaque `data` into its own proof shape, verifies every proof against the protocol's live root, and values it with the
+SAME helpers as the write path, so it can only ever surface the account's real figure (under-report, never
+over-report). It writes nothing and has no effect on the NAV read (`getAdapterPositions`, which continues to read the
+agent-fed cache). It is an *extra* for a portal / frontend / third party that computes proofs off-chain.
 
-Merkl exposes:
+The proof `data` is opaque `bytes` **on purpose**: one signature serves every attested adapter, present and future,
+with `data` being whatever that protocol needs ([ADR 0022](../../../docs/decisions/0022-attested-balance-adapter-family.md)).
+Members are **fail-loud** (revert on an invalid proof) and bound the returned set by the same per-account caps as the cache.
 
-- **`previewPositions(account, Allocation[])`** → `PositionBalance[]`, NAV-shaped legs (parity with
-  `getAdapterPositions`); **skips** reward tokens not registered on NAVCalculator (a leg needs the asset metadata).
-- **`previewBalances(account, Allocation[])`** → `(address[] tokens, uint256[] amounts)`, registry-free, so it also
-  returns amounts for a reward token not yet registered.
-
-Both are **fail-loud** (revert on an invalid proof, a campaign-sum mismatch, over-cap campaigns/tokens, or a duplicate
-token) and bounded by the same per-account caps as the cache.
+Merkl decodes `data` as `abi.encode(Allocation[])`, returns NAV-shaped `Rewards` legs (parity with
+`getAdapterPositions`), **skips** reward tokens not registered on NAVCalculator (a leg needs the asset metadata), and
+reverts on `CampaignSumMismatch` / over-cap campaigns or tokens / a `DuplicateToken`.
 
 ## Adding a member
 
-Implement `IAttestedBalanceAdapter` (+ `IBalanceAdapter`, and `IPositionDescribable` for labels), define the
-per-protocol `submit` surface (element shape + its on-chain proof check), uphold the invariant above (upsert; proof
-per write; stale→0; stale-gated removal), and register it on `NAVCalculator` like any balance adapter. No assistant
-contract and no role grant — unlike the assisted family.
+Implement `IAttestedBalanceAdapter` (+ `IBalanceAdapter`, and `IPositionDescribable` for labels): define the
+per-protocol `submit` surface (typed element shape + its on-chain proof check) **and** the universal
+`previewPositions(account, bytes)` (decode `bytes` into your proof shape, verify, value — reusing the same helpers as
+`submit` so the two cannot diverge). Uphold the invariant above (upsert; proof per write; stale→0; stale-gated
+removal), and register it on `NAVCalculator` like any balance adapter. No assistant contract and no role grant —
+unlike the assisted family.

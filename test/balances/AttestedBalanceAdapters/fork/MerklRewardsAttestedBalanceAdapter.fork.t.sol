@@ -226,7 +226,7 @@ contract MerklRewardsAttestedBalanceAdapterRealProofForkTest is BalanceAdapterTe
         (uint208 claimed,,) = IMerklDistributor(MERKL_DISTRIBUTOR).claimed(fixtureUser, fixtureToken);
         uint256 expectedUnclaimed = fixtureCumulative > uint256(claimed) ? fixtureCumulative - uint256(claimed) : 0;
 
-        INAVCalculator.PositionBalance[] memory positions = adapter.previewPositions(fixtureUser, _alloc());
+        INAVCalculator.PositionBalance[] memory positions = adapter.previewPositions(fixtureUser, abi.encode(_alloc()));
         assertEq(positions.length, 1, "one untagged Merkl reward leg from the supplied proof");
         assertEq(positions[0].balanceAsset.asset, fixtureToken, "leg asset == reward token");
         assertEq(positions[0].amount, expectedUnclaimed, "preview leg == cumulative - live claimed");
@@ -241,11 +241,5 @@ contract MerklRewardsAttestedBalanceAdapterRealProofForkTest is BalanceAdapterTe
         assertEq(cachedCumulative, 0, "preview cached no cumulative");
         assertEq(cachedRoot, bytes32(0), "preview cached no entry");
         assertEq(adapter.getAdapterPositions(fixtureUser, address(0)).length, 0, "NAV path still empty");
-
-        // The lightweight variant agrees.
-        (address[] memory toks, uint256[] memory amts) = adapter.previewBalances(fixtureUser, _alloc());
-        assertEq(toks.length, 1);
-        assertEq(toks[0], fixtureToken);
-        assertEq(amts[0], expectedUnclaimed, "previewBalances agrees with previewPositions");
     }
 }

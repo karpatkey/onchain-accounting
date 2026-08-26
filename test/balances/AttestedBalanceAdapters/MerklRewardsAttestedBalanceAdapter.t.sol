@@ -1500,22 +1500,23 @@ contract MerklRewardsAttestedBalanceAdapterTest is BalanceAdapterTestBase {
     }
 
     // ============================================
-    // Cache-free preview — previewPositions / previewBalances (verify caller-supplied proofs live, touch no storage)
+    // Cache-free preview — previewPositions(account, bytes) (verify caller-supplied proofs live, touch no storage)
     // ============================================
 
     /// @dev A 1-token Allocation[] with an empty proof (single-leaf tree; caller sets root = the leaf). NOT submitted.
-    function _previewAllocSingle(address token, uint256 cumulative)
-        internal
-        pure
-        returns (MerklRewardsAttestedBalanceAdapter.Allocation[] memory allocs)
-    {
-        allocs = new MerklRewardsAttestedBalanceAdapter.Allocation[](1);
+    /// @dev A 1-token preview payload — `abi.encode(Allocation[])` with an empty proof (single-leaf tree; the caller
+    ///      sets root = the leaf). The adapter's `previewPositions` takes opaque `bytes` (the family interface), so
+    ///      tests pass the encoded form directly.
+    function _previewAllocSingle(address token, uint256 cumulative) internal pure returns (bytes memory) {
+        MerklRewardsAttestedBalanceAdapter.Allocation[] memory allocs =
+            new MerklRewardsAttestedBalanceAdapter.Allocation[](1);
         allocs[0] = MerklRewardsAttestedBalanceAdapter.Allocation({
             token: token,
             cumulativeAmount: cumulative,
             proof: new bytes32[](0),
             campaigns: new MerklRewardsAttestedBalanceAdapter.CampaignShare[](0)
         });
+        return abi.encode(allocs);
     }
 
     function test_previewPositions_validProof_pinsCanonicalIdentity() public {
@@ -1583,7 +1584,7 @@ contract MerklRewardsAttestedBalanceAdapterTest is BalanceAdapterTestBase {
             campaigns: new MerklRewardsAttestedBalanceAdapter.CampaignShare[](0)
         });
 
-        INAVCalculator.PositionBalance[] memory pos = adapter.previewPositions(alice, allocs);
+        INAVCalculator.PositionBalance[] memory pos = adapter.previewPositions(alice, abi.encode(allocs));
         assertEq(pos.length, 2, "one leg per token");
         assertEq(pos[0].balanceAsset.asset, address(arb));
         assertEq(pos[0].amount, 100 ether);
@@ -1644,7 +1645,7 @@ contract MerklRewardsAttestedBalanceAdapterTest is BalanceAdapterTestBase {
             token: address(arb), cumulativeAmount: 100 ether, proof: new bytes32[](0), campaigns: shares
         });
 
-        INAVCalculator.PositionBalance[] memory pos = adapter.previewPositions(alice, allocs);
+        INAVCalculator.PositionBalance[] memory pos = adapter.previewPositions(alice, abi.encode(allocs));
         assertEq(pos.length, 2);
         assertEq(pos[0].amount, 18 ether, "60% of the 30 unclaimed");
         assertEq(pos[1].amount, 12 ether, "40% of the 30 unclaimed");
@@ -1668,7 +1669,7 @@ contract MerklRewardsAttestedBalanceAdapterTest is BalanceAdapterTestBase {
                 MerklRewardsAttestedBalanceAdapter.CampaignSumMismatch.selector, address(arb), 99 ether, 100 ether
             )
         );
-        adapter.previewPositions(alice, allocs);
+        adapter.previewPositions(alice, abi.encode(allocs));
     }
 
     function test_previewPositions_tooManyCampaigns_reverts() public {
@@ -1685,7 +1686,7 @@ contract MerklRewardsAttestedBalanceAdapterTest is BalanceAdapterTestBase {
         vm.expectRevert(
             abi.encodeWithSelector(MerklRewardsAttestedBalanceAdapter.TooManyCampaigns.selector, address(arb), n)
         );
-        adapter.previewPositions(alice, allocs);
+        adapter.previewPositions(alice, abi.encode(allocs));
     }
 
     function test_previewPositions_tooManyTokens_reverts() public {
@@ -1702,26 +1703,32 @@ contract MerklRewardsAttestedBalanceAdapterTest is BalanceAdapterTestBase {
         }
         // The length cap fires before any proof work (root not even set).
         vm.expectRevert(abi.encodeWithSelector(MerklRewardsAttestedBalanceAdapter.TooManyTokens.selector, alice, n));
-        adapter.previewPositions(alice, allocs);
+        adapter.previewPositions(alice, abi.encode(allocs));
     }
 
     function test_previewPositions_duplicateToken_reverts() public {
         distributor.setRoot(_leaf(alice, address(arb), 100 ether));
         MerklRewardsAttestedBalanceAdapter.Allocation[] memory allocs =
             new MerklRewardsAttestedBalanceAdapter.Allocation[](2);
-        allocs[0] = _previewAllocSingle(address(arb), 100 ether)[0];
-        allocs[1] = _previewAllocSingle(address(arb), 100 ether)[0];
+        allocs[0] = MerklRewardsAttestedBalanceAdapter.Allocation({
+            token: address(arb),
+            cumulativeAmount: 100 ether,
+            proof: new bytes32[](0),
+            campaigns: new MerklRewardsAttestedBalanceAdapter.CampaignShare[](0)
+        });
+        allocs[1] = allocs[0];
         vm.expectRevert(
             abi.encodeWithSelector(MerklRewardsAttestedBalanceAdapter.DuplicateToken.selector, address(arb))
         );
-        adapter.previewPositions(alice, allocs);
+        adapter.previewPositions(alice, abi.encode(allocs));
     }
 
     function test_previewPositions_emptyAllocs_returnsEmpty() public {
         distributor.setRoot(_leaf(alice, address(arb), 100 ether));
         MerklRewardsAttestedBalanceAdapter.Allocation[] memory allocs =
             new MerklRewardsAttestedBalanceAdapter.Allocation[](0);
-        assertEq(adapter.previewPositions(alice, allocs).length, 0, "empty input -> empty");
+        assertEq(adapter.previewPositions(alice, abi.encode(allocs)).length, 0, "empty array -> empty");
+        assertEq(adapter.previewPositions(alice, "").length, 0, "empty bytes -> empty");
         assertEq(
             adapter.previewPositions(address(0), _previewAllocSingle(address(arb), 100 ether)).length,
             0,
@@ -1735,65 +1742,5 @@ contract MerklRewardsAttestedBalanceAdapterTest is BalanceAdapterTestBase {
         INAVCalculator.PositionBalance[] memory pos =
             adapter.previewPositions(alice, _previewAllocSingle(unreg, 100 ether));
         assertEq(pos.length, 0, "unregistered token has no NAV metadata -> skipped");
-    }
-
-    // --- previewBalances (registry-free) ---
-
-    function test_previewBalances_returnsUnregisteredToken() public {
-        address unreg = makeAddr("unregisteredReward2");
-        distributor.setRoot(_leaf(alice, unreg, 100 ether));
-        (address[] memory toks, uint256[] memory amts) =
-            adapter.previewBalances(alice, _previewAllocSingle(unreg, 100 ether));
-        assertEq(toks.length, 1, "returns the amount even though the token is unregistered");
-        assertEq(toks[0], unreg);
-        assertEq(amts[0], 100 ether);
-    }
-
-    function test_previewBalances_partiallyClaimed_and_dropsZero() public {
-        bytes32 la = _leaf(alice, address(arb), 100 ether);
-        bytes32 lb = _leaf(alice, address(op), 50 ether);
-        (bytes32 root, bytes32[] memory pa) = _buildTree2([la, lb], 0);
-        (, bytes32[] memory pb) = _buildTree2([la, lb], 1);
-        distributor.setRoot(root);
-        distributor.setClaimed(alice, address(arb), uint208(70 ether), uint48(block.timestamp), bytes32(0));
-        distributor.setClaimed(alice, address(op), uint208(50 ether), uint48(block.timestamp), bytes32(0)); // fully claimed -> dropped
-
-        MerklRewardsAttestedBalanceAdapter.Allocation[] memory allocs =
-            new MerklRewardsAttestedBalanceAdapter.Allocation[](2);
-        allocs[0] = MerklRewardsAttestedBalanceAdapter.Allocation({
-            token: address(arb),
-            cumulativeAmount: 100 ether,
-            proof: pa,
-            campaigns: new MerklRewardsAttestedBalanceAdapter.CampaignShare[](0)
-        });
-        allocs[1] = MerklRewardsAttestedBalanceAdapter.Allocation({
-            token: address(op),
-            cumulativeAmount: 50 ether,
-            proof: pb,
-            campaigns: new MerklRewardsAttestedBalanceAdapter.CampaignShare[](0)
-        });
-
-        (address[] memory toks, uint256[] memory amts) = adapter.previewBalances(alice, allocs);
-        assertEq(toks.length, 1, "only the non-zero token is returned");
-        assertEq(toks[0], address(arb));
-        assertEq(amts[0], 30 ether, "cumulative - claimed");
-    }
-
-    function test_previewBalances_invalidProof_reverts() public {
-        distributor.setRoot(_leaf(alice, address(arb), 999 ether));
-        vm.expectRevert(MerklRewardsAttestedBalanceAdapter.InvalidProof.selector);
-        adapter.previewBalances(alice, _previewAllocSingle(address(arb), 100 ether));
-    }
-
-    function test_previewBalances_duplicateToken_reverts() public {
-        distributor.setRoot(_leaf(alice, address(arb), 100 ether));
-        MerklRewardsAttestedBalanceAdapter.Allocation[] memory allocs =
-            new MerklRewardsAttestedBalanceAdapter.Allocation[](2);
-        allocs[0] = _previewAllocSingle(address(arb), 100 ether)[0];
-        allocs[1] = _previewAllocSingle(address(arb), 100 ether)[0];
-        vm.expectRevert(
-            abi.encodeWithSelector(MerklRewardsAttestedBalanceAdapter.DuplicateToken.selector, address(arb))
-        );
-        adapter.previewBalances(alice, allocs);
     }
 }

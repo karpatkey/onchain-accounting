@@ -2,6 +2,7 @@
 pragma solidity ^0.8;
 
 import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
+import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 
 /// @title IAttestedBalanceAdapter
 /// @author KPK
@@ -33,8 +34,11 @@ import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
 ///      a live entry by submitting a partial or empty set. Removal is only via the stale-gated `clearAccount` (below)
 ///      / a per-protocol per-element clear. Stale entries read as 0 (e.g. cached root ≠ live root).
 ///
-///      The per-protocol **submit** signature (element shape + its validity proof) is deliberately NOT prescribed
-///      here — it varies by protocol. The interface advertises the family (via ERC-165) and the one universal mutator.
+///      The per-protocol **submit** signature (typed element shape + its validity proof) is deliberately NOT
+///      prescribed here — it varies by protocol. The interface advertises the family (via ERC-165), the one universal
+///      mutator (`clearAccount`), and one universal **read** (`previewPositions(account, bytes)`): the read's proof
+///      data is opaque `bytes` at the family level (each member `abi.decode`s it into its own shape), so a single
+///      signature serves every attested adapter, present and future, with the `bytes` being whatever that protocol needs.
 interface IAttestedBalanceAdapter is IBalanceAdapter {
     /// @notice Drop **all** of `account`'s cached elements — permissionless, **stale-gated** garbage collection.
     /// @dev Takes an explicit `account` because this family is submit-on-behalf-of (contrast
@@ -43,4 +47,21 @@ interface IAttestedBalanceAdapter is IBalanceAdapter {
     ///      *refreshed* via the per-protocol submit, never suppressed by a third party — preserving the
     ///      under-report-only invariant. Clears only when the whole set is stale/dead (reads already 0).
     function clearAccount(address account) external;
+
+    /// @notice Trustless, CACHE-FREE preview: value `account`'s positions from **caller-supplied** off-chain proof
+    ///         data, with no prior submit and without touching the cache. `data` is opaque at the family level — each
+    ///         member `abi.decode`s it into its own proof shape (Merkl: `abi.encode(Allocation[])`) — so this one
+    ///         signature serves every attested adapter, with `data` being whatever that protocol needs.
+    /// @dev A `view`: reads no member cache and writes none, so it does not feed the cache and has no effect on the NAV
+    ///      read (`getAdapterPositions`, which keeps reading the agent-fed cache). It carries the same integrity as the
+    ///      write path — every proof in `data` is verified on-chain against the protocol's live root, so it can only
+    ///      surface the account's real figure (under-report, never over-report) — and is **fail-loud** on an invalid
+    ///      proof. An *extra* read for a portal / frontend / third party that computes proofs off-chain. Empty `data`
+    ///      (or a zero `account`) returns an empty array.
+    /// @param account The account to value (any address — proofs are public; the result is that account's real figure).
+    /// @param data    ABI-encoded, protocol-specific proof/off-chain data (Merkl: `abi.encode(Allocation[])`).
+    function previewPositions(address account, bytes calldata data)
+        external
+        view
+        returns (INAVCalculator.PositionBalance[] memory positions);
 }

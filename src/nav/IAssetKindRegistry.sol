@@ -92,12 +92,16 @@ interface IAssetKindRegistry {
     ///         becomes authoritative again.
     event AdapterProtocolNameCleared(address indexed adapter);
 
-    /// @notice Emitted when a balance adapter's label-category override (segment 0 of `positionLabels()`) is written
-    ///         or replaced.
-    event AdapterLabelCategorySet(address indexed adapter, string category);
+    /// @notice Emitted when a balance adapter's per-segment `positionLabels()` override is written or replaced.
+    /// @dev The payload is the full replacement array, never a delta, and it carries the `""` skip sentinels verbatim
+    ///      — an indexer must reproduce the read path's rule (overlay only where the element is non-empty) rather
+    ///      than treating every element as a value. Absence of an override is not observable from this event alone;
+    ///      pair it with {AdapterLabelsCleared}.
+    event AdapterLabelsSet(address indexed adapter, string[] labels);
 
-    /// @notice Emitted when a balance adapter's label-category override is removed.
-    event AdapterLabelCategoryCleared(address indexed adapter);
+    /// @notice Emitted when a balance adapter's per-segment label override is removed and every segment reverts to
+    ///         what the adapter itself reports.
+    event AdapterLabelsCleared(address indexed adapter);
 
     /// @notice The asset has no classification.
     /// @dev Thrown on the READ path ({getAssetKind}, {getAssetKinds}) so reads fail closed rather than defaulting, AND
@@ -117,12 +121,50 @@ interface IAssetKindRegistry {
     ///      path documents at {AssetNotRegisteredForLabels}, avoided here rather than reproduced.
     error AdapterNotRegistered(address adapter);
 
-    /// @notice A label override was supplied as the empty string.
+    /// @notice An override was supplied that would read back as absence: `""` for {setAdapterProtocolName}, or — for
+    ///         {setAdapterLabels} — an empty array, or an array whose every element is `""`.
     /// @dev `""` is the MISS sentinel on the read path — {PriceFeedLib} treats an empty reply as "no override" and
     ///      falls back to the adapter. So storing one would be a write that reads back as absence, and a caller
     ///      trying to clear via `set(adapter, "")` would get silence instead of the clear it asked for. Use
-    ///      {AssetKindRegistry.clearAdapterProtocolName} / {AssetKindRegistry.clearAdapterLabelCategory} instead.
+    ///      {AssetKindRegistry.clearAdapterProtocolName} / {AssetKindRegistry.clearAdapterLabels} instead.
+    ///
+    ///      The array case covers both no-op shapes with one exit, because they are the same mistake: an override
+    ///      with no non-empty element overlays nothing at any index, so it is indistinguishable from never having
+    ///      been set. Note this is NOT a ban on `""` ELEMENTS — those are the per-segment skip sentinel and are the
+    ///      normal way to leave a computed leaf alone. It is a ban on an array in which every element is one.
     error EmptyAdapterOverride(address adapter);
+
+    /// @notice More segments were supplied for one adapter's label override than
+    ///         {AssetKindRegistry.MAX_ADAPTER_LABEL_SEGMENTS}.
+    /// @dev Not a read-path bound: on the account path the overlay applies only within the adapter's own reply, so
+    ///      extra segments are inert rather than dangerous. (On the configuration surface an empty reply IS grown to
+    ///      the override's leading non-empty prefix, so segments there are not inert — still not dangerous, since
+    ///      the read-side `decodeStringArray` cap rejects anything longer than `_MAX_LABEL_ELEMENTS`.) This bounds
+    ///      the operator's own gas and this contract's storage.
+    error TooManyAdapterLabels(address adapter, uint256 count, uint256 max);
+
+    /// @notice One segment of an adapter's label override is longer than {AssetKindRegistry.MAX_ASSET_LABEL_BYTES}.
+    /// @dev `length` is in BYTES, not characters. Carries the `index` — unlike the scalar {AdapterOverrideTooLong} —
+    ///      because with eight candidate segments "one of them is too long" is not an actionable error.
+    error AdapterLabelTooLong(address adapter, uint256 index, uint256 length, uint256 max);
+
+    /// @notice A non-empty literal was supplied at an index the adapter DECLARES it computes from on-chain state.
+    /// @dev Carries the offending index and the adapter's whole declared mask, so the revert tells an operator both
+    ///      what they did and what they are allowed to write, without a second call.
+    ///
+    ///      Freezing a computed segment is occasionally INTENDED — `BALANCE_ADAPTERS.md` says so ("pass `""` unless
+    ///      you intend to freeze it"), which is why this is not the end of the story: {forceAdapterLabels} does it
+    ///      deliberately and emits a distinct event. The default setter reverts so that a freeze cannot happen by
+    ///      accident, and so that a deliberate one is greppable in a transaction history rather than
+    ///      indistinguishable from a routine correction.
+    error ComputedSegmentNotOverridable(address adapter, uint256 index, uint256 computedMask);
+
+    /// @notice Emitted by {forceAdapterLabels} instead of {AdapterLabelsSet}, when a declared-computed segment is
+    ///         deliberately frozen behind a literal.
+    /// @dev A SEPARATE event on purpose. An indexer or reviewer auditing "did anyone freeze a derived label" must be
+    ///      able to answer it from logs alone; if the forced path reused {AdapterLabelsSet} the answer would require
+    ///      re-deriving every adapter's mask at every historical block.
+    event AdapterLabelsForced(address indexed adapter, string[] labels, uint256 computedMask);
 
     /// @notice A label override is longer than {AssetKindRegistry.MAX_ASSET_LABEL_BYTES}.
     /// @dev `length` is in BYTES, not characters. Shares the asset-label bound because it is the same kind of value
@@ -303,17 +345,35 @@ interface IAssetKindRegistry {
     // ---------------------------------------------------------------------------------------------------------------
     // Balance-adapter display overrides
     //
-    // A ≤45-row, per-ADAPTER table that lets an operator correct the two label segments that are compile-time
-    // CONSTANTS of an adapter — its protocol name and its label category — without redeploying and re-registering it.
+    // A per-ADAPTER table — one row per registered adapter per chain, `ERC20Default` included — that lets an
+    // operator correct an adapter's display strings: its protocol name and
+    // any segment of its `positionLabels()` breadcrumb — without redeploying and re-registering it.
     //
-    // **What this deliberately does NOT cover: the label LEAF.** 21 of the 33 deployable adapters derive their leaf
-    // from live on-chain state (`UniswapV3PoolsMetaBalanceAdapter` builds `"WETH/USDC 0.05%"` from live `token0()` /
-    // `token1()` / `fee()` probes; `FluidVaultsMetaBalanceAdapter` reads `vaultInfo` plus the registered-asset array).
-    // A table cannot hold a computed value: it would freeze a derivation that IS the feature, would need a fresh write
-    // on every `addMetaInstances` call or the new instance would silently fall back, and could not fix the actual
-    // failure mode anyway — a wrong leaf means the DERIVATION is wrong across every instance, which a per-row override
-    // masks one row at a time. The leaf therefore stays computed, always, and these overrides are keyed by ADAPTER
-    // rather than by position precisely so that no per-position bookkeeping exists to drift.
+    // **Any DEPTH is reachable, and `""` is how a segment is left alone.** {setAdapterLabels} takes an array that is
+    // index-aligned with the adapter's own reply and overlays element-by-element; `""` at an index means "do not
+    // touch that segment". So `["Lending Market", ""]` corrects a meta-adapter's category and leaves its computed
+    // leaf derived live, while `["Withdrawal Queue", "Lido stETH"]` replaces both segments of an adapter whose leaf
+    // is itself a literal. (The predecessor could only write index 0. It was removed rather than kept alongside this
+    // — see {AssetKindRegistry}'s note on `_adapterLabels` for why two stores for one display value was rejected.)
+    //
+    // **What is possible is wider than what is advisable, and the mechanism does not police the difference.** Two
+    // classes of segment should normally be given `""`:
+    //
+    //   1. **A COMPUTED segment.** 23 of the 34 deployable adapters derive their leaf from live on-chain state
+    //      (`UniswapV3PoolsMetaBalanceAdapter` builds `"WETH/USDC 0.05%"` from live `token0()` / `token1()` / `fee()`
+    //      probes; `FluidVaultsMetaBalanceAdapter` reads `vaultInfo` plus the registered-asset array). A stored value
+    //      freezes a derivation that IS the feature, is stamped onto EVERY instance of a meta-adapter, does not track
+    //      `addMetaInstances`, and cannot fix the actual failure mode — a wrong leaf means the DERIVATION is wrong
+    //      across every instance, which a per-row override masks one row at a time.
+    //   2. **A segment that varies BY POSITION.** These overrides are keyed by ADAPTER precisely so that no
+    //      per-position bookkeeping exists to drift, which means a per-adapter row cannot express a per-position
+    //      value: one write rewrites every position of that adapter. Exactly one adapter used to be in this state at
+    //      a LITERAL segment — the combined `CapBalanceAdapter`, at both indices — and it was split into
+    //      `CapStablecoinBalanceAdapter` / `CapSavingsBalanceAdapter` rather than papered over here.
+    //
+    // `src/balances/BALANCE_ADAPTERS.md` §6.2 carries the per-adapter, per-segment sweep that says which index is
+    // which. Neither class is detectable on-chain — this contract sees an array, not the adapter's source — so both
+    // are operational guidance, and both are asserted as documented hazards in `AdapterLabelOverrides.t.sol`.
     // ---------------------------------------------------------------------------------------------------------------
 
     /// @notice Overrides what `getAccountPositionsVerbose` reports as `protocolName` for every position of `adapter`.
@@ -372,40 +432,79 @@ interface IAssetKindRegistry {
     ///      override set is part of replacing the registry**, and is not something the contracts can enforce.
     function clearAdapterProtocolName(address adapter) external;
 
-    /// @notice Overrides segment 0 — the CATEGORY — of every `positionLabels()` reply from `adapter`, leaving every
-    ///         deeper segment exactly as the adapter computed it.
-    /// @dev **Replaces index 0 and nothing else.** For the 31 adapters whose index 0 is a SINGLE string literal (the
-    ///      whole meta family via `MetaBalanceAdapter._labels("Category", leaf)`, plus most plain and assisted
-    ///      adapters) that is precisely the category, and the computed leaf at index 1 is untouched and still read
-    ///      live.
+    /// @notice Overrides `adapter`'s `positionLabels()` breadcrumb **segment by segment**, index-aligned with the
+    ///         adapter's own reply. `""` at an index leaves that segment exactly as the adapter computed it.
+    /// @dev ```
+    ///      setAdapterLabels(morphoMeta, ["Lending Market", ""])            // category replaced, leaf still live
+    ///      setAdapterLabels(lidoQueue,  ["Withdrawal Queue", "Lido stETH"]) // both segments are literals: both go
+    ///      setAdapterLabels(convexMeta, ["Staking Position", "Curve Pool", ""])
+    ///      ```
     ///
-    ///      **TWO of the 33 deployable adapters must NOT be given a category override, for two different reasons.**
-    ///      The override is keyed by ADAPTER, so it is only meaningful when index 0 is both a literal AND the same
-    ///      literal for every position that adapter emits. Two adapters break one half of that each:
+    ///      **The overlay applies only for `i < min(reply.length, labels.length)`, and BOTH halves of that bound are
+    ///      load-bearing.**
     ///
-    ///      1. `ERC20DefaultBalanceAdapter` — index 0 is not a category at all. Its reply is a single element that IS
-    ///         the computed token symbol, so an override replaces the leaf.
-    ///      2. `CapBalanceAdapter` — index 0 is a literal, but it VARIES BY POSITION: `"Savings"` for the stcUSD leg
-    ///         and `"Stablecoin"` for the cUSD leg (`CapBalanceAdapter.positionLabels`). A per-adapter override
-    ///         rewrites both, so correcting one leg silently corrupts the other. This is the case an earlier revision
-    ///         of this note missed by generalising from the first branch of that function; a per-adapter table simply
-    ///         cannot express a per-position category, and adding one would be the per-position bookkeeping this
-    ///         design exists to avoid.
+    ///      - It cannot write past a SHORTER reply. That is not theoretical:
+    ///        `ConvexCurveLPStakingMetaBalanceAdapter.positionLabels` returns 2 OR 3 elements depending on whether its
+    ///        `rewarderCoinSymbols` probe answers, and most of the meta family returns 0, 1 or 2 depending on whether
+    ///        the leaf read succeeded. Writing index `i` of a shorter array is `Panic(0x32)`, which would destroy the
+    ///        never-revert property the whole label path is built on.
+    ///      - On the ACCOUNT path it cannot LENGTHEN a reply either: a segment past the adapter's own reply is
+    ///        silently inert, so if a supplied segment does not appear there, the adapter emitted fewer segments
+    ///        than you assumed. ⚠️ **Not so on the CONFIGURATION surface**, and an earlier revision of this bullet
+    ///        stated it unconditionally: `getAdapterDisplayInfo` grows an EMPTY reply to the override's leading
+    ///        non-empty prefix, which is how a meta-adapter — every one of which answers `positionLabels("")` with
+    ///        `[]` — gets a breadcrumb on a configuration page at all.
+    ///      - `NAVCalculator`'s `_MAX_LABEL_ELEMENTS = 8` stays unreachable from this side either way, but NOT
+    ///        because of the overlay bound: the registry's reply reaches the read path through the same
+    ///        `decodeStringArray` shim an adapter's does, and that shim rejects any array longer than the cap. The
+    ///        write-side {AssetKindRegistry.MAX_ADAPTER_LABEL_SEGMENTS} is set equal to it so a legal write is
+    ///        always readable; the READ-side check is what makes the ceiling uncrossable.
     ///
-    ///      The mechanism cannot detect either case — it sees an array, not the source — so both exclusions are
-    ///      operational rather than enforced, and both are asserted as documented hazards in
-    ///      `AdapterLabelOverrides.t.sol`.
+    ///      **Which segments are safe to write is a property of the ADAPTER, and this contract cannot check it** — see
+    ///      the section note above and the per-adapter sweep in `src/balances/BALANCE_ADAPTERS.md` §6.2. The one
+    ///      adapter that must be left alone entirely is `ERC20DefaultBalanceAdapter`: its single segment is not a
+    ///      category at all but the computed token symbol, so any override there replaces the leaf. It is asserted as
+    ///      a documented hazard in `AdapterLabelOverrides.t.sol`, not prevented.
     ///
-    ///      A reply with NO segments is left empty rather than grown to one: an adapter that declined to describe a
-    ///      position has no category to correct, and synthesising one would change the array's length rather than
-    ///      override a value.
-    /// @param adapter The balance adapter whose label category should be replaced.
-    /// @param category The replacement category, e.g. "Lending Market".
-    function setAdapterLabelCategory(address adapter, string calldata category) external;
+    ///      **A reply with NO segments is left empty on the POSITION path and GROWN on the CONFIGURATION path, and
+    ///      that asymmetry is deliberate** — see `PriceFeedLib.adapterDisplayInfo`, where the reasoning lives. The
+    ///      configuration path grows an empty reply to the override's LEADING NON-EMPTY PREFIX, so an override whose
+    ///      element 0 is `""` grows nothing rather than shifting a deeper segment up to index 0.
+    ///
+    ///      Gated on the NAV's `MANAGER`. Reverts {AdapterNotRegistered} for an address the NAV does not hold,
+    ///      {EmptyAdapterOverride} for an array with no non-empty element (the empty array included),
+    ///      {TooManyAdapterLabels} past {AssetKindRegistry.MAX_ADAPTER_LABEL_SEGMENTS}, and {AdapterLabelTooLong} —
+    ///      naming the index — for a segment over {AssetKindRegistry.MAX_ASSET_LABEL_BYTES}. Emits
+    ///      {AdapterLabelsSet}. One operational note that applies to BOTH setters lives on
+    ///      {clearAdapterProtocolName}: overrides are lost when the registry is replaced.
+    /// @param adapter The balance adapter whose breadcrumb segments should be replaced.
+    /// @param labels The per-segment replacements, index-aligned with the adapter's reply; `""` skips a segment.
+    ///        Replaces the existing override wholesale.
+    function setAdapterLabels(address adapter, string[] calldata labels) external;
 
-    /// @notice Removes `adapter`'s label-category override; its own segment 0 becomes authoritative again.
-    /// @dev Reverts {AdapterOverrideNotSet} when there is nothing to clear. Emits {AdapterLabelCategoryCleared}.
-    function clearAdapterLabelCategory(address adapter) external;
+    /// @notice Same as {setAdapterLabels} but permitted to freeze a segment the adapter DECLARES it computes.
+    /// @dev **The escape hatch, and it exists because freezing a computed segment is occasionally intended.**
+    ///      `BALANCE_ADAPTERS.md` says as much — "pass `""` unless you intend to freeze it" — so a hard, unconditional
+    ///      revert would have removed a real capability rather than a footgun. The split is between ACCIDENT and
+    ///      INTENT, not between allowed and forbidden:
+    ///        - {setAdapterLabels} reverts {ComputedSegmentNotOverridable}, so a freeze cannot happen by mistyping an
+    ///          index or by not knowing the adapter derives that leaf;
+    ///        - this function does it, and emits {AdapterLabelsForced} rather than {AdapterLabelsSet}, so the act is
+    ///          answerable from logs alone.
+    ///
+    ///      Same MANAGER gate, same shape validation, same store. The ONLY difference is the index guard, which is
+    ///      why both entry points share one private validator — a second copy of the length and byte checks is
+    ///      exactly how the two display surfaces in this feature came to disagree.
+    ///
+    ///      ⚠️ **Freezing a computed segment on a META adapter freezes it for EVERY instance**, since the override is
+    ///      keyed by adapter address and the derivation is per instance. That is not a reason to forbid it, but it is
+    ///      the reason to reach for this deliberately rather than reflexively.
+    function forceAdapterLabels(address adapter, string[] calldata labels) external;
+
+    /// @notice Removes `adapter`'s per-segment label override; every segment it reports becomes authoritative again.
+    /// @dev Reverts {AdapterOverrideNotSet} when there is nothing to clear. Emits {AdapterLabelsCleared}. Not guarded
+    ///      on registration, for the same anti-stranding reason as {clearAdapterProtocolName}.
+    function clearAdapterLabels(address adapter) external;
 
     /// @notice `adapter`'s protocol-name override, or `""` when none is set.
     /// @dev `""` is the miss sentinel the read path keys on, and is unambiguous because the setter rejects it.
@@ -413,7 +512,13 @@ interface IAssetKindRegistry {
     ///      changes that call site.
     function getAdapterProtocolName(address adapter) external view returns (string memory name);
 
-    /// @notice `adapter`'s label-category override, or `""` when none is set.
-    /// @dev Same miss-sentinel contract as {getAdapterProtocolName}, and likewise read by {PriceFeedLib}.
-    function getAdapterLabelCategory(address adapter) external view returns (string memory category);
+    /// @notice `adapter`'s per-segment label override, or an EMPTY ARRAY when none is set.
+    /// @dev An empty array is the miss sentinel here, which is why the setter refuses to store one. Individual `""`
+    ///      ELEMENTS are meaningful and are returned verbatim — a caller reproducing the read path must skip them
+    ///      rather than render them.
+    ///
+    ///      **This is the selector {PriceFeedLib} staticcalls** on both display paths (via `_labelOverride`), through
+    ///      the same fail-open, gas-capped, output-windowed shim as everything else there — so changing its signature
+    ///      changes that call site, and a registry that cannot answer it degrades to "no override".
+    function getAdapterLabels(address adapter) external view returns (string[] memory labels);
 }

@@ -20,7 +20,7 @@ error RedeemValueGasExhausted(address vault, uint256 stipend, uint256 consumed);
 ///         fee. {redeemValue} reports `previewRedeem` — which, per EIP-4626 §4.3, is net of any redemption fee —
 ///         and reports **nothing** when that read fails, rather than substituting a value known to be an upper
 ///         bound.
-/// @dev Extracted so the Morpho-vault and Aave-Umbrella adapters share one copy of this subtle preference rather
+/// @dev Extracted so its callers share one copy of this subtle preference rather
 ///      than each inlining the read. Adapters that deliberately value at the raw rate (Euler, Fluid, Gearbox,
 ///      StakeWise, Cap) call `convertToAssets` directly and do NOT use this library.
 library ERC4626RedeemLib {
@@ -57,9 +57,11 @@ library ERC4626RedeemLib {
     ///      **The cost, stated so it is not rediscovered as a bug.** A vault whose `previewRedeem` is unavailable
     ///      now contributes nothing instead of contributing a gross figure. That is a visible under-report — the
     ///      position disappears from a report the fund can compare against its own expectations — where the
-    ///      behaviour it replaces was an invisible over-report. Both callers already treat 0 as "no leg"
-    ///      (`MorphoVaultsMetaBalanceAdapter` returns an empty array; `AaveUmbrellaBalanceAdapter` skips the
-    ///      leg), so no caller-side change is needed and no caller learns to trust a fabricated number.
+    ///      behaviour it replaces was an invisible over-report. Every caller already treats 0 as "no leg"
+    ///      (`MorphoVaultsMetaBalanceAdapter` and `SymbioticVaultsMetaBalanceAdapter` return an empty array;
+    ///      `AaveUmbrellaBalanceAdapter` skips the leg), so no caller-side change is needed and no caller learns
+    ///      to trust a fabricated number. **That list is exhaustive as written; grep `redeemValue` before
+    ///      relying on it** — it has already gone stale once, when a third caller was added.
     ///
     ///      **Why this is a raw staticcall and not `try`/`catch`.** An earlier revision used `try`/`catch` and
     ///      justified it with "the return type is a single `uint256`, so there is no decode that can revert past

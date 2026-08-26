@@ -14,8 +14,18 @@
   "AaveUmbrella": {
     "enabled": true
   },
+  "CapStablecoin": {
+    "enabled": true,
+    "$comment": "Cap cUSD leg. Registered via addBalanceAdapters, alongside its CapSavings sibling \u2014 the former single `Cap` key registered one contract that served both legs."
+  },
+  "CapSavings": {
+    "enabled": true,
+    "$comment": "Cap stcUSD leg. Registered via addBalanceAdapters, alongside its CapStablecoin sibling."
+  },
   "Cap": {
-    "enabled": true
+    "enabled": false,
+    "deregister": true,
+    "$comment": "RETIRED, and this entry is load-bearing rather than documentation. The pre-split combined Cap adapter (0x5B50A5FF...) is REGISTERED on the live mainnet NAV. It is superseded by CapStablecoin + CapSavings above. `deregister: true` makes 06_Configure call removeBalanceAdapters for it; without that an incremental deploy leaves all three registered and DOUBLE-COUNTS both Cap legs. Delete this entry only once the adapter is confirmed deregistered on every chain that had it."
   },
   "MorphoVault_kpkETHPrime_V1": {
     "enabled": false

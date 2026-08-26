@@ -242,12 +242,51 @@ def check_immutable_pointers(chain_id: int, url: str, res: dict) -> None:
     if not targets:
         return
 
+    # A custom feed that reads no base price out of the NAV has NO `NAV` immutable to point anywhere —
+    # `InvertedChainlinkCustomPriceFeed` is the first such ENABLED feed, and `ETHPlus_CustomPriceFeed`
+    # has the same shape. Without this second probe such a feed records `UNREADABLE` forever, which is
+    # indistinguishable from the stale old-generation pointer this check exists to catch.
+    #
+    # **A DECLARED GAP, stated because the alternative is an operator inferring cover that is not there.**
+    # This exemption is keyed on the CONTRACT's zero word alone. `verify_step` 1.5 exempts the same feed
+    # class on strictly stronger evidence — it additionally requires `underlyingAssetSupported()` to equal
+    # the asset nav-config registers the feed against. So the two tools do NOT cross-confirm each other
+    # here, and an earlier version of this comment claiming they "must agree" was simply wrong. For this
+    # feed class `--require-current` cannot detect a leftover old-generation feed on its own: the tool
+    # masks `immutableReferences` before comparing, so a previous deployment carrying a different band or
+    # underlying reproduces the current build's masked code exactly and tallies as CURRENT. **verify_step
+    # 1.5 is the binding gate for these feeds; a clean run here is not evidence about them.**
+    feed_addrs = [a for a, _d, kind in targets if kind == "feed"]
+    bases: dict[str, object] = {}
+    if feed_addrs:
+        base_out = c.rpc_batch(url, [("eth_call", [{"to": a, "data": _sel("BASE_ASSET()")}, "latest"])
+                                     for a in feed_addrs])
+        bases = dict(zip((a.lower() for a in feed_addrs), base_out))
+
     out = c.rpc_batch(url, [("eth_call", [{"to": a, "data": d}, "latest"]) for a, d, _ in targets])
     for (addr, _d, kind), val in zip(targets, out):
         e = by_addr[addr.lower()]
         if isinstance(val, Exception) or not isinstance(val, str) or len(val) < 66:
+            base_val = bases.get(addr.lower())
+            if (kind == "feed" and isinstance(base_val, str) and len(base_val) == 66
+                    and int(base_val, 16) == 0):
+                # Declared, by the CONTRACT, to have no NAV dependency. Non-applicable, not unreadable.
+                e["pointerCheck"] = "N/A (BASE_ASSET() == 0, no NAV dependency)"
+                continue
+            # `rpc_batch` returns its errors IN BAND and fills a whole window with them on one failed POST,
+            # so a BASE_ASSET() window that errored makes `base_val` an exception rather than a zero word —
+            # and the exemption above cannot fire. Say TRANSPORT explicitly: for a feed with no NAV member
+            # RECORD, DO NOT ESCALATE — this is origin/main behaviour, deliberately restored. An
+            # escalation to CURRENT_CODE_STALE_POINTER was added here and produced a defect in three
+            # consecutive review rounds: it red-gated correct deploys on one dropped POST, then (once
+            # transport was excluded) suppressed itself on a genuine revert whenever the SEPARATE
+            # BASE_ASSET window happened to fail, letting `--require-current` exit 0 on the very
+            # leftover-feed case it was added for. Two `rpc_batch` windows cannot be combined into one
+            # verdict this way, and the gate that actually binds these addresses is `verify_step` 1.5,
+            # which reads them itself and says so. Withdrawn rather than patched a fourth time.
             e["pointerCheck"] = f"UNREADABLE ({val})"
             continue
+
         ptr = "0x" + val[-40:]
         e["pointer"] = ptr
         if kind == "feed":
@@ -282,6 +321,11 @@ def check_immutable_pointers(chain_id: int, url: str, res: dict) -> None:
             else:
                 e["pointerCheck"] = "OK"
         # A contract whose code is current but whose pointer is stale still has to be redeployed.
+        # Reached only by entries that produced a READABLE pointer above; the N/A and UNREADABLE branches
+        # both `continue` before here and set their own status (N/A deliberately leaves it CURRENT — a
+        # contract that declares no NAV pointer has nothing that could be stale). An earlier revision added
+        # an `N/A` exemption to THIS condition, which was dead code: the comment claimed the exemption
+        # would otherwise be inert, but the `continue` already skipped this line entirely.
         if e["pointerCheck"] != "OK" and e["status"].startswith("CURRENT"):
             e["status"] = "CURRENT_CODE_STALE_POINTER"
 

@@ -369,6 +369,49 @@ library ConfigReader {
         return false;
     }
 
+    /// @notice Whether a deploy-config entry is PRE-PROVISIONED: deployed at its CREATE2 address but deliberately
+    ///         not registered on the NAV.
+    /// @dev **Why this needs a flag rather than being inferred.** `test_DeployedAdaptersAreRegisteredOnNav` exists
+    ///      to catch the deployed-but-not-added mistake, whose failure mode is silent: the adapter is live, the NAV
+    ///      never calls it, and its positions are simply missing from every reading — an under-report behind a
+    ///      complete-looking answer. That check cannot tell "deliberately empty" from "someone forgot the
+    ///      nav-config entry", so the intent has to be stated. An adapter marked here is exempt from that check and
+    ///      from the deploy/nav count parity check, and from nothing else.
+    ///
+    ///      Setting it is a claim that the protocol has NO positions on this chain yet. When that changes, add the
+    ///      adapter to `nav-config/` with its instance set, drop this flag, and run `06`.
+    function isAdapterPreProvisioned(Vm vm, uint256 chainId, string memory adapterType, string memory adapterName)
+        internal
+        view
+        returns (bool)
+    {
+        (string memory json, string memory prefix) = _resolveAdapterFile(vm, chainId, adapterType, adapterName);
+        string memory jsonPath = string(abi.encodePacked(prefix, ".", adapterName, ".preProvisioned"));
+        if (vm.keyExists(json, jsonPath)) return json.readBool(jsonPath);
+        return false;
+    }
+
+    /// @notice Whether a nav-config entry explicitly asks for the adapter to be DEREGISTERED from the NAV.
+    /// @dev **Explicit intent, deliberately not derived.** The obvious alternative — treat "in the deployment record
+    ///      but not enabled in plain nav-config" as "deregister" — is catastrophically wrong here: on chain 1 that
+    ///      set contains `ERC20Default` (registered by `initialize()`, in no nav-config) and ALL SIXTEEN meta
+    ///      adapters (which live in the sibling `meta-balance-adapters` file). Measured against the live NAV, a
+    ///      derived reconciliation would have deregistered seventeen live adapters and zeroed most of the portfolio.
+    ///
+    ///      So deregistration requires an operator to write `"deregister": true` against the key. A missing or false
+    ///      flag can only ever mean "leave it alone", which makes the failure mode of this reader a no-op rather
+    ///      than a mass deregistration. Absent key -> false, exactly like {isAdapterEnabled}.
+    function isAdapterDeregisterRequested(Vm vm, uint256 chainId, string memory adapterType, string memory adapterName)
+        internal
+        view
+        returns (bool)
+    {
+        (string memory json, string memory prefix) = _resolveAdapterFile(vm, chainId, adapterType, adapterName);
+        string memory jsonPath = string(abi.encodePacked(prefix, ".", adapterName, ".deregister"));
+        if (vm.keyExists(json, jsonPath)) return json.readBool(jsonPath);
+        return false;
+    }
+
     /// @notice Reads an adapter constructor/initialize/bare param from the file selected by `adapterType`
     ///         (see `_adapterFileAndPrefix`; deploy-balance spans both plain + meta folders). "" if absent.
     function readAdapterParam(

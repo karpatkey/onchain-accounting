@@ -3,6 +3,7 @@ pragma solidity ^0.8.28;
 
 import {BaseDeployScript} from "../utils/BaseDeployScript.sol";
 import {ConfigReader} from "../utils/ConfigReader.sol";
+import {DeploySalts} from "./DeploySalts.sol";
 import {console2} from "forge-std/console2.sol";
 import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol";
 
@@ -79,8 +80,10 @@ import "../../src/constants.sol";
 ///      `foundry.toml` / `LibraryPins`, never from prose.
 ///
 ///      Re-running is safe — the step is idempotent and re-classifies an existing registry rather than deploying a
-///      second one — **but only with `PERSIST_DEPLOYMENTS=1`**, since the skip guard reads the record that flag gates.
-///      See the warning at the guard itself.
+///      second one. The skip guard probes the CREATE2 address for code ON-CHAIN, so idempotency does not depend on
+///      the deployment record and holds without `PERSIST_DEPLOYMENTS=1`. Pass the flag anyway: downstream consumers
+///      (`09_BackfillAssetLabels`, `verify_step.py 1.4`) read the address FROM the record, and only
+///      `saveDeployedAddress` writes it. See the note at the guard itself.
 ///
 ///      **The registry has NO roles, so there is nothing to hand over.** It holds no `AccessControl`, no admin and no
 ///      manager: every write gates on `NAV.hasRole(MANAGER, msg.sender)`, making authority exactly the NAV's MANAGER
@@ -92,6 +95,11 @@ import "../../src/constants.sol";
 ///      code. Whether the facade becomes the ONLY path is a deploy-time role decision (revoke `MANAGER` from humans on
 ///      the NAV), left to the operator so this step imposes no single point of failure on asset registration.
 contract DeployAssetKindRegistry is BaseDeployScript {
+    /// @notice Canonical CREATE2 deployer (Arachnid). Calldata is `salt || init_code`.
+    /// @dev Same constant and same format `01_2_DeployNAVImplementation` uses for the libraries and the NAV
+    ///      implementation; the registry joins them so every canonical contract shares one address fleet-wide.
+    address internal constant CANONICAL_CREATE2_DEPLOYER = address(0x4e59b44847b379578588920cA78FbF26c0B4956C);
+
     /// @notice Thrown when a configured asset has no valid `accrualKind`. Aborts the deploy.
     error AssetKindMissingOrInvalid(string symbol, string field);
 
@@ -203,15 +211,17 @@ contract DeployAssetKindRegistry is BaseDeployScript {
         // you to repeat — deploys a fresh registry and overwrites the deployment record, leaving the first one live,
         // still holding MANAGER, still answering `getAssetKind`, and now unmaintained. Two plausible answers with
         // nothing to say which is authoritative is the worst shape available to a misreporting-sensitive system.
-        // ⚠️ **This idempotency is only as good as the deployment record, so it REQUIRES `PERSIST_DEPLOYMENTS=1`.**
-        // The two guards interact: `saveDeployedAddress` (below) writes only when `PERSIST_DEPLOYMENTS` is set, and this
-        // guard reads what that wrote. So a real `--broadcast` WITHOUT `PERSIST_DEPLOYMENTS=1` deploys a live registry
-        // and records nothing, and the next run deploys a second one — exactly the harm this guard exists to prevent.
+        // Idempotency comes from CHAIN STATE, not from the record: the guard above probes the predicted CREATE2
+        // address for code. That address is a pure function of (creation code, NAV, salt), so there is always one to
+        // probe — which is why a re-run without `PERSIST_DEPLOYMENTS=1` is a no-op rather than a second registry.
         //
-        // There is no fallback, and it is worth being exact about why, because the obvious explanation is wrong: it is
-        // NOT simply "CREATE rather than CREATE2". `05` does probe a CREATE2 address for code, but `04` does not — its
-        // adapters use plain `new` behind a deployment-record lookup, structurally identical to this. The real
-        // difference is which writer is used: `03`/`04`'s adapters record through the UNGATED
+        // The flag is still required, for a different reason: `09_BackfillAssetLabels` and `verify_step.py 1.4` read
+        // the registry address from the record, and only `saveDeployedAddress` (below) writes it. Omit the flag and
+        // the chain is correct while nothing downstream can find the registry.
+        //
+        // This was previously the opposite: the guard read the record, so a real `--broadcast` without the flag
+        // recorded nothing and the next run deployed a second registry — two live registries, both holding MANAGER,
+        // with nothing to say which was authoritative.
         // `ConfigReader.writeAdapterAddress`, while this step (like `04`'s three assistants) records through the
         // `PERSIST_DEPLOYMENTS`-gated `saveDeployedAddress`. So `04`'s assistants share this exposure exactly.
         //
@@ -259,7 +269,35 @@ contract DeployAssetKindRegistry is BaseDeployScript {
             // The registry takes only the NAV address: it keeps no roles of its OWN and gates every write on
             // `NAV.hasRole(MANAGER, msg.sender)`, so authority is exactly the NAV's MANAGER set. The deployer can
             // classify in this same run because it already holds that role.
-            registry = new AssetKindRegistry(nav);
+            //
+            // ⚠️ **CREATE2, via the canonical deployer — NOT `new`.** Generation 1 used `new AssetKindRegistry(nav)`,
+            // so the address followed the deployer's nonce and differed on 14 of 24 chains. Every other canonical
+            // contract here (libraries, implementation, proxy) is CREATE2-identical fleet-wide, and consumers
+            // reasonably assume the registry is too — the deployment record is the only place the per-chain address
+            // existed, and an address-keyed map built from broadcast artifacts silently mislabelled the registries
+            // that happened to collide.
+            //
+            // The constructor takes only `nav`, and the NAV proxy is itself CREATE2-identical, so the init code —
+            // and therefore the derived address — is the same on every chain.
+            bytes32 salt = generateSalt("AssetKindRegistry", DeploySalts.ASSET_KIND_REGISTRY);
+            bytes memory initCode = abi.encodePacked(type(AssetKindRegistry).creationCode, abi.encode(nav));
+            address predicted = computeCreate2Address(CANONICAL_CREATE2_DEPLOYER, salt, initCode);
+
+            if (predicted.code.length == 0) {
+                (bool ok,) = CANONICAL_CREATE2_DEPLOYER.call(abi.encodePacked(salt, initCode));
+                require(ok, "AssetKindRegistry CREATE2 deploy failed");
+                console2.log("[OK] AssetKindRegistry deployed at:", predicted);
+            } else {
+                // Same address, already deployed on this chain — idempotent re-run, or a chain reached twice.
+                console2.log("[SKIP] AssetKindRegistry already at:", predicted);
+            }
+            registry = AssetKindRegistry(predicted);
+
+            // The predicted address is only meaningful if it really carries this contract. A CREATE2 address with code
+            // that is NOT ours would otherwise be adopted silently, and every later step would wire the NAV to it.
+            if (address(registry.NAV()) != nav) {
+                revert RegistryBoundToDifferentNav(predicted, address(registry.NAV()), nav);
+            }
         }
 
         // ⚠️ **THE NAV MUST POINT BACK AT THE REGISTRY, OR THE READ SURFACE IS DEAD ON ARRIVAL.** This is the mirror

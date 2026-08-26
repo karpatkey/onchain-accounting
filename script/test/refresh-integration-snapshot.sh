@@ -53,7 +53,9 @@ cd "$ROOT"
 
 ACCOUNTS_JSON="test/integration/accounts.json"
 NAV_ASSETS_DIR="script/config/nav-config/assets-and-price-feeds"
-CHAINS_CONFIG_DIR="script/config/chains"
+# Adapter deploy config. Since the 2026-06-17 config split (5e25464d) the per-adapter entries live
+# here, NOT under chains/<id>.json.balanceAdapters — that key no longer exists on any chain.
+BALANCE_ADAPTERS_CONFIG_DIR="script/config/contracts-deployment-config/balance-adapters"
 WALLET_AGGREGATING_REGISTRY="script/test/wallet-aggregating-adapters.json"
 MERKL_PROOFS_JSON="test/integration/merkl-proofs.json"
 MERKL_DISTRIBUTOR="0x3Ef3D8bA38EBe18DB133cEc108f4D14CE00Dd9Ae"
@@ -563,15 +565,16 @@ if [[ "$debank_active" == "true" ]]; then
       #   1. nav-config/assets-and-price-feeds/<chain>.json — standalone priceable assets in the
       #      NAV registry (keyed by symbol → {address, priceFeeds}). Missing file ⇒ {} (no assets).
       #   2. wallet-aggregating-adapters.json — tokens NOT in (1) but consumed by an
-      #      enabled adapter via balanceOf (e.g. Cap reads cUsd + stcUsd via constructor
-      #      args in chains/<cid>.json). Without this, accounts holding cUsd/stcUsd would
-      #      have an anchor that disagrees with the report's rendered total.
-      chain_cfg="$CHAINS_CONFIG_DIR/${chain_id}.json"
+      #      enabled adapter via balanceOf (e.g. Cap reads cUsd + stcUsd via constructor args in
+      #      contracts-deployment-config/balance-adapters/<cid>.json). Without this, accounts holding
+      #      cUsd/stcUsd would have an anchor that disagrees with the report's rendered total.
       assets_file="$NAV_ASSETS_DIR/${chain_id}.json"
       chain_assets=$([[ -f "$assets_file" ]] && cat "$assets_file" || echo '{}')
+      adapters_file="$BALANCE_ADAPTERS_CONFIG_DIR/${chain_id}.json"
+      chain_adapters=$([[ -f "$adapters_file" ]] && cat "$adapters_file" || echo '{}')
       asset_allowlist=$(jq -c -n \
         --argjson assets "$chain_assets" \
-        --slurpfile chain "$chain_cfg" \
+        --argjson adapters "$chain_adapters" \
         --slurpfile reg "$WALLET_AGGREGATING_REGISTRY" \
         '
           ([($assets // {}) | to_entries[] | select(.key | startswith("$") | not) | .value.address | ascii_downcase])
@@ -582,7 +585,7 @@ if [[ "$debank_active" == "true" ]]; then
             | select(.key | startswith("$") | not)
             | .key as $adapter_key
             | .value as $param_names
-            | ($chain[0].balanceAdapters[$adapter_key] // null)
+            | ($adapters[$adapter_key] // null)
             | select(. != null and .enabled == true)
             | .constructor as $ctor
             | $param_names[]

@@ -49,6 +49,14 @@ forge script script/deploy/02_DeployProxies.s.sol --chain-id 1 --broadcast --acc
 
 ## 03_DeployPriceFeeds.s.sol + asset registration
 
+
+> ⚠️ **Run `RegisterAssets.s.sol` under `FOUNDRY_PROFILE=slow` whenever it has real work to do.** On mainnet's 44
+> assets the default profile dies with a bare `EvmError: MemoryOOG` that names nothing. Only `profile.slow` lifts
+> `memory_limit`/`gas_limit` off forge's 32 MiB default. A re-run with nothing to do plans 0 actions and passes on
+> the default profile — which is exactly why this is easy to miss until the one time it matters. **One** planned
+> action is already enough to trip it (measured at 1, 2, 4, 8, 12 and 17), because the config scan alone sits just
+> under the ceiling; see the script's docstring for the measured cause.
+
 Deploys the custom price-feed adapter contracts only (chain-branched, enabled per `contracts-deployment-config/custom-price-feeds/<chainId>.json`). It does **not** register assets/feeds on `NAVCalculator` — that is a separate EOA step run by the deployer-as-MANAGER via `script/manage/RegisterAssets.s.sol` (first feed per asset through **`AssetKindRegistry.registerAsset`**, which forwards to the NAV and carries the asset's kind and labels; any additional feeds through `addPriceFeed` on the NAV directly, so the batch is mixed-target by design).
 
 ## 04_DeployBalanceAdapters.s.sol
@@ -97,7 +105,10 @@ Deploys the per-chain `AssetKindRegistry` and classifies every asset in `nav-con
 
 **Idempotent.** Re-running re-classifies the existing registry instead of deploying a second one, so it composes with the "re-run the numbered sequence" pattern like every other step.
 
-**Run it with `PERSIST_DEPLOYMENTS=1`.** The idempotency above depends on the deployment record, and `saveDeployedAddress` only writes that record when the flag is set. A real `--broadcast` *without* it deploys a live registry and records nothing, so the next run deploys a second one. There is no fallback address to probe — and note the reason is the gated WRITER, not CREATE vs CREATE2: `04`'s adapters also use plain `new` behind a record lookup, but record through the ungated `writeAdapterAddress`, whereas `08` (like `04`'s three assistants) records through the gated `saveDeployedAddress`.
+**Run it with `PERSIST_DEPLOYMENTS=1` — but note the idempotency no longer depends on it.** Since the registry became CREATE2 (2026-08-19), the skip-if-deployed guard probes the **predicted address for code on-chain**, so a re-run without the flag is a no-op rather than a second registry: the address is a pure function of (creation code, NAV, salt), so there is always an address to probe. That closes the old failure mode where a real `--broadcast` without the flag recorded nothing and the next run deployed a duplicate.
+
+The flag is still required, for a different reason: downstream consumers — `09_BackfillAssetLabels`, `verify_step.py 1.4`, the deployment record itself — read the registry address from the record, and `saveDeployedAddress` only writes it when the flag is set. Omit it and the deploy is still correct on-chain, but nothing downstream can find the registry.
+
 
 ```bash
 PERSIST_DEPLOYMENTS=1 \

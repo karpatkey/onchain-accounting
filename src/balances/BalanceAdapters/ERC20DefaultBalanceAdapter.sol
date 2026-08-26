@@ -6,6 +6,7 @@ import {EnumerableSet} from "@openzeppelin/contracts/utils/structs/EnumerableSet
 import {IBalanceAdapter} from "../IBalanceAdapter.sol";
 import {LabelLib} from "src/balances/LabelLib.sol";
 import {IPositionDescribable} from "../IPositionDescribable.sol";
+import {IComputedLabelSegments} from "src/balances/IComputedLabelSegments.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
@@ -18,7 +19,7 @@ import "src/errors.sol";
 /// @dev Returns PositionBalance structs (balance-only data) without pricing information.
 /// @dev NAVCalculator enriches these positions with pricing data to create full Position structs.
 /// @author KPK
-contract ERC20DefaultBalanceAdapter is BalanceAdapterBase {
+contract ERC20DefaultBalanceAdapter is BalanceAdapterBase, IComputedLabelSegments {
     using EnumerableSet for EnumerableSet.AddressSet;
 
     /// @notice Reference to NAVCalculator for asset registry access
@@ -183,6 +184,31 @@ contract ERC20DefaultBalanceAdapter is BalanceAdapterBase {
 
     function protocolName() external pure returns (string memory) {
         return "Wallet";
+    }
+
+    /// @inheritdoc IComputedLabelSegments
+    /// @dev **Bit 0 set: this adapter's ONLY segment is the computed token symbol.** It is not a category with a
+    ///      derived leaf under it — index 0 *is* the derivation, which is why `BALANCE_ADAPTERS.md` §6.2 marks it
+    ///      `C` and says "Never override".
+    ///
+    ///      That instruction previously lived only in markdown. This declaration is the same fact placed where
+    ///      `AssetKindRegistry.setAdapterLabels` can act on it, so a literal at index 0 now reverts
+    ///      {IAssetKindRegistry.ComputedSegmentNotOverridable} instead of succeeding.
+    ///
+    ///      ⚠️ **The blast radius is why this adapter is the first adopter.** It is registered on EVERY chain by
+    ///      `initialize()`, and one accepted override would stamp a single frozen symbol onto every ERC20 wallet
+    ///      position on that chain — rendering as a plausible label rather than as an error, which is the worst
+    ///      failure shape available on a display path.
+    function computedLabelSegments() external pure override returns (uint256) {
+        return 1; // bit 0
+    }
+
+    /// @inheritdoc BalanceAdapterBase
+    /// @dev Extends the base set with {IComputedLabelSegments}. The registry ERC-165-probes before reading the mask,
+    ///      so without this bit the declaration above would never be consulted and the guard would silently not
+    ///      apply — an advertised-but-unreachable capability, which is worse than none.
+    function supportsInterface(bytes4 interfaceId) public pure override returns (bool) {
+        return interfaceId == type(IComputedLabelSegments).interfaceId || super.supportsInterface(interfaceId);
     }
 
     /// @inheritdoc IPositionDescribable

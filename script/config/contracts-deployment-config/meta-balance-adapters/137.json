@@ -3,5 +3,13 @@
     "enabled": true,
     "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Fluid fToken. Supersedes per-instance Fluid_fToken_* adapters, disabled below.",
     "constructor": {}
+  },
+  "UniswapV3PoolsMeta": {
+    "enabled": true,
+    "preProvisioned": true,
+    "$comment": "Pre-provisioned, DEPLOYED BUT NOT REGISTERED on the NAV. Enabled here so 04 deploys it at its CREATE2 address; deliberately ABSENT from nav-config/meta-balance-adapters/137.json, which is the file 06_Configure reads, so no registration happens until the funds actually hold Uniswap V3 positions on this chain. Registering it now would add an adapter that reports nothing to every NAV read. To activate: add it to nav-config with its instance set and run 06.",
+    "constructor": {
+      "positionManager": "0xC36442b4a4522E871399CD717aBDD847Ab11FE88"
+    }
   }
 }

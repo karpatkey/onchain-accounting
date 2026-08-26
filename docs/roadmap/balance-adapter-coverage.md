@@ -46,7 +46,7 @@ These are not queues but represent value that lives outside the wallet and is no
 ### Restaking / LRT primitives
 
 - **EigenLayer**: native ETH and LST stake delegated to operators (`StrategyManager`, `DelegationManager`). Open queue: `withdrawalQueue` for delegated unstakes. Likely needed if any Alpha fund delegates to operators.
-- **Symbiotic**: similar shape to EigenLayer; vaults + delegations.
+- **Symbiotic**: the ERC-4626 vault shape is COVERED by `SymbioticVaultsMetaBalanceAdapter` (PR #308). Still open: Symbiotic **CORE** vaults, which are epoch-based (`activeBalanceOf` + a withdrawal queue) and are NOT valued by that adapter, plus delegations.
 - **Karak**: ditto.
 
 ### DEX LP / AMM positions

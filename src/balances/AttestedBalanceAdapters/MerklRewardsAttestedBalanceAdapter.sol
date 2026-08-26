@@ -272,6 +272,12 @@ contract MerklRewardsAttestedBalanceAdapter is IAttestedBalanceAdapter, IPositio
     /// @notice `clearAllocation` was called on a `(user, token)` with nothing cached.
     error NothingToClear();
 
+    /// @notice The same reward token appears more than once in a {previewPositions} input. The cache
+    ///         path upserts (last-writer-wins, no double count), but a stateless preview would emit a leg set per
+    ///         occurrence — a double-count / over-report, the one direction this family forbids — so it is rejected
+    ///         fail-loud.
+    error DuplicateToken(address token);
+
     //
     // Constructor
     //
@@ -305,9 +311,9 @@ contract MerklRewardsAttestedBalanceAdapter is IAttestedBalanceAdapter, IPositio
     ///      root for that user's leaf. Each entry is an **upsert** of that `(user, token)`; entries omitted from
     ///      `allocs` are left untouched, so a caller can only add or refresh proven data — it can NEVER suppress a
     ///      live entry it omits (removal is only via the stale-gated `clearAllocation`/`clearAccount`). **Reverts**
-    ///      `InvalidArguments` (zero user/token), `UninitializedRoot`, `InvalidProof`, `AmountRegression` (a proven
-    ///      cumulative below the cached one), `CampaignSumMismatch`, or `TooManyCampaigns` — fail-loud and atomic, so
-    ///      a bad entry reverts the whole call and leaves the prior set intact.
+    ///      `InvalidArguments` (zero user/token), `UninitializedRoot`, `InvalidProof`, `TooManyCampaigns`,
+    ///      `CampaignSumMismatch`, or `AmountRegression` (a proven cumulative below the cached one) — fail-loud and
+    ///      atomic, so a bad entry reverts the whole call and leaves the prior set intact.
     /// @param user        Account the allocations are for.
     /// @param allocs      The (token, cumulativeAmount, proof, campaigns) entries to add/refresh for `user`.
     function submitProofs(address user, Allocation[] calldata allocs) external {
@@ -622,18 +628,138 @@ contract MerklRewardsAttestedBalanceAdapter is IAttestedBalanceAdapter, IPositio
         returns (INAVCalculator.PositionBalance[] memory legs)
     {
         if (msg.sender != address(this)) revert NotAuthorized();
-        bytes memory pid = abi.encode(DISTRIBUTOR); // identical for every leg of every token
         uint256 unclaimed = _unclaimed(account, token);
+        // Early return before loading `_campaigns` storage when there is nothing to value (the common case).
         if (unclaimed == 0) return new INAVCalculator.PositionBalance[](0);
+        return
+            _buildTokenLegs(meta, unclaimed, allocations[account][token].cumulativeAmount, _campaigns[account][token]);
+    }
 
-        CampaignShare[] memory shares = _campaigns[account][token];
+    //
+    // Reads — cache-free preview (verify caller-supplied proofs live; touch no storage)
+    //
+
+    /// @notice Trustless, CACHE-FREE preview of `account`'s unclaimed Merkl positions from **caller-supplied proofs** —
+    ///         no prior `submitProofs` required. Verifies every leaf against the LIVE Distributor root and values each
+    ///         token as `cumulative − live claimed`, using the SAME helpers as the cache path
+    ///         (`_checkProofAndCampaigns` + `_unclaimedFrom` + `_buildTokenLegs`), so a caller can only ever surface
+    ///         the account's REAL figure — under-report, never over-report. Reads no adapter storage and **writes
+    ///         none**: it does not feed the cache and has no effect on {getAdapterPositions} (the NAV path). Intended
+    ///         for a portal / frontend / third party that computes Merkl proofs off-chain and wants a live read without
+    ///         waiting for the keeper to feed the cache.
+    /// @dev **Account-agnostic** (proofs are public; the returned figure is `account`'s real one) and **fail-loud**:
+    ///      reverts `UninitializedRoot`, `InvalidProof`, `TooManyCampaigns`, `CampaignSumMismatch`,
+    ///      `TooManyTokens` (more than {MAX_TOKENS_PER_USER} entries), or `DuplicateToken`. Unlike the NAV read it does
+    ///      NOT gas-stipend / try-catch per token: it is the caller's own `eth_call` gas, and a bad proof MUST surface
+    ///      rather than be caught-and-dropped. **Skips reward tokens not registered on NAVCalculator** (a leg needs the
+    ///      asset metadata — mirrors {buildPositionsSelf}). The `MAX_TOKENS_PER_USER × MAX_CAMPAIGNS_PER_TOKEN` product
+    ///      bounds the returned leg count exactly as it bounds the cache read.
+    ///
+    ///      **Campaign identity is submitter-supplied, not proof-bound.** The proof commits only the per-token
+    ///      cumulative; the `campaigns` split is caller-controlled and only its SUM is checked, so a consumer must
+    ///      treat the per-campaign `positionInstanceId` / attribution on the returned legs as display-grade, not
+    ///      attested — the per-token *amount* is the proof-backed figure. Same caveat as the cache path; see the
+    ///      {CampaignShare} struct docs.
+    /// @param account The account to value (any address).
+    /// @param data    ABI-encoded `Allocation[]` (`abi.encode(allocs)`) — each with proofs, the same
+    ///                `(token, cumulativeAmount, proof, campaigns)` shape `submitProofs` takes; each token must be
+    ///                distinct. The family interface ({IAttestedBalanceAdapter}) types this as opaque `bytes` so one
+    ///                signature serves every attested adapter (ADR 0022); this member decodes it to `Allocation[]`.
+    function previewPositions(address account, bytes calldata data)
+        external
+        view
+        override
+        returns (INAVCalculator.PositionBalance[] memory positions)
+    {
+        if (account == address(0) || data.length == 0) return new INAVCalculator.PositionBalance[](0);
+        Allocation[] memory allocs = abi.decode(data, (Allocation[]));
+        if (allocs.length == 0) return new INAVCalculator.PositionBalance[](0);
+        // Enforce the token cap HERE, before the self-call, so an oversized `allocs` fails loud with `TooManyTokens`
+        // rather than paying to ABI-encode the whole (proof-heavy) array for the self-staticcall first.
+        if (allocs.length > MAX_TOKENS_PER_USER) revert TooManyTokens(account, allocs.length);
+        // Self-staticcall so the verify+value+build loop gets its own stack frame (via_ir), mirroring
+        // {getAdapterPositions} → {buildPositionsSelf}.
+        return this.previewPositionsSelf(account, allocs);
+    }
+
+    /// @notice External self-call frame for {previewPositions}'s loop — `msg.sender`-guarded to `address(this)` so it
+    ///         is not a usable external surface; it exists only to give the loop its own via_ir stack frame. `view`,
+    ///         so the self-call is a staticcall. Mirrors {buildPositionsSelf}.
+    function previewPositionsSelf(address account, Allocation[] calldata allocs)
+        external
+        view
+        returns (INAVCalculator.PositionBalance[] memory positions)
+    {
+        if (msg.sender != address(this)) revert NotAuthorized();
+        if (allocs.length > MAX_TOKENS_PER_USER) revert TooManyTokens(account, allocs.length);
+
+        bytes32 root = IMerklDistributor(DISTRIBUTOR).getMerkleRoot();
+        if (root == bytes32(0)) revert UninitializedRoot();
+        _revertOnDuplicateToken(allocs);
+
+        // Upper bound on legs: one per campaign share per token (or one untagged leg per token). Enforce the per-token
+        // campaign cap HERE so the sum stays within MAX_TOKENS_PER_USER × MAX_CAMPAIGNS_PER_TOKEN (= 512 legs) and an
+        // oversized `campaigns` array fails loud with `TooManyCampaigns` BEFORE the scratch buffer is sized/allocated
+        // from it — the full per-entry check (proof + Σ-shares == cumulative) still runs in the loop below.
+        uint256 cap;
+        for (uint256 i; i < allocs.length; ++i) {
+            uint256 c = allocs[i].campaigns.length;
+            if (c > MAX_CAMPAIGNS_PER_TOKEN) revert TooManyCampaigns(allocs[i].token, c);
+            cap += c == 0 ? 1 : c;
+        }
+        INAVCalculator.PositionBalance[] memory tmp = new INAVCalculator.PositionBalance[](cap);
+        uint256 count;
+
+        for (uint256 i; i < allocs.length; ++i) {
+            Allocation calldata al = allocs[i];
+            // Verify the leaf + campaign shape against the LIVE root (fail-loud, same rules as submit).
+            _checkProofAndCampaigns(root, account, al.token, al.cumulativeAmount, al.proof, al.campaigns);
+            // Skip tokens NAVCalculator does not price (a leg needs the Asset metadata) — mirrors buildPositionsSelf.
+            (INAVCalculator.Asset memory meta, bool found) = NAV_CALCULATOR.getRegisteredAsset(al.token);
+            if (!found) continue;
+            uint256 unclaimed = _unclaimedFrom(account, al.token, al.cumulativeAmount);
+            INAVCalculator.PositionBalance[] memory legs =
+                _buildTokenLegs(meta, unclaimed, al.cumulativeAmount, al.campaigns);
+            for (uint256 k; k < legs.length; ++k) {
+                tmp[count++] = legs[k];
+            }
+        }
+
+        positions = new INAVCalculator.PositionBalance[](count);
+        for (uint256 i; i < count; ++i) {
+            positions[i] = tmp[i];
+        }
+    }
+
+    /// @dev Reverts `DuplicateToken` if any reward token appears twice in `allocs`. The cache path upserts
+    ///      (last-writer-wins), but a stateless preview would emit a leg set / amount per occurrence — a double-count.
+    ///      O(n²) over ≤ {MAX_TOKENS_PER_USER} entries; the caller pays its own `eth_call` gas.
+    function _revertOnDuplicateToken(Allocation[] calldata allocs) private pure {
+        for (uint256 i; i < allocs.length; ++i) {
+            for (uint256 j = i + 1; j < allocs.length; ++j) {
+                if (allocs[i].token == allocs[j].token) revert DuplicateToken(allocs[i].token);
+            }
+        }
+    }
+
+    /// @notice Builds a token's `Rewards` legs from an already-resolved `(unclaimed, tokenCumulative, shares)` — the
+    ///         shared leg-construction reused by the cache read ({tokenLegsSelf}) and the cache-free preview
+    ///         ({previewPositionsSelf}), so both produce identical legs. **Load-bearing:** the per-campaign split uses
+    ///         `unclaimed` (not `tokenCumulative`) as the `Math.mulDiv` numerator, so the legs of a token always sum to
+    ///         at most its unclaimed total — the over-report guard. Empty `shares` ⇒ one untagged leg.
+    function _buildTokenLegs(
+        INAVCalculator.Asset memory meta,
+        uint256 unclaimed,
+        uint256 tokenCumulative,
+        CampaignShare[] memory shares
+    ) private view returns (INAVCalculator.PositionBalance[] memory legs) {
+        if (unclaimed == 0) return new INAVCalculator.PositionBalance[](0);
+        bytes memory pid = abi.encode(DISTRIBUTOR); // identical for every leg of every token
         if (shares.length == 0) {
             legs = new INAVCalculator.PositionBalance[](1);
             legs[0] = _row(meta, unclaimed, pid, bytes32(0)); // untagged single position
             return legs;
         }
-
-        uint256 tokenCumulative = allocations[account][token].cumulativeAmount; // == Σ shares[].cumulativeAmount
         if (tokenCumulative == 0) return new INAVCalculator.PositionBalance[](0); // defensive: nothing to split
         INAVCalculator.PositionBalance[] memory tmp = new INAVCalculator.PositionBalance[](shares.length);
         uint256 n;
@@ -690,29 +816,24 @@ contract MerklRewardsAttestedBalanceAdapter is IAttestedBalanceAdapter, IPositio
         bytes32 root = IMerklDistributor(DISTRIBUTOR).getMerkleRoot();
         if (root == bytes32(0)) revert UninitializedRoot();
 
-        bytes32 leaf = keccak256(abi.encode(user, token, cumulativeAmount));
-        if (!_verifyMerklProof(leaf, proof, root)) revert InvalidProof();
+        // Verify the leaf + bound the (submitter-supplied) campaign breakdown to the proof-verified per-token total.
+        // Shared verbatim with the cache-free {previewPositions} via `_checkProofAndCampaigns`, so the write path and
+        // the preview share ONE definition of a valid proof + campaign breakdown (each then adds its own extra
+        // acceptance: here the AmountRegression check below; preview the duplicate-token + zero-account guards). The Σ-shares == cumulative rule
+        // is the safety hinge: a submitter can mis-split value across campaigns but can never make the shares sum to
+        // more than the proven total, so NAV is never inflated. An empty breakdown ⇒ one untagged position.
+        _checkProofAndCampaigns(root, user, token, cumulativeAmount, proof, campaigns);
 
         // Defense in depth: Merkl's tree generator guarantees per-(user, token) cumulative amounts are monotonic
         // (lifetime-cumulative, non-decreasing across roots). A regression suggests stale or wrong data; reject
         // loudly. A legitimately lower value can only arise after a root rotation, which makes the cached entry stale
-        // (reads 0) and thus clearable via `clearAllocation` before a fresh submit.
+        // (reads 0) and thus clearable via `clearAllocation` before a fresh submit. Cache-only: the preview has no
+        // prior cached value to regress against.
         CachedAllocation storage a = allocations[user][token];
         if (cumulativeAmount < a.cumulativeAmount) revert AmountRegression();
 
-        // Campaign breakdown: bound the (submitter-supplied) per-campaign shares to the proof-verified per-token
-        // total — Σ shares MUST equal `cumulativeAmount`. This is the safety hinge: a submitter can mis-split value
-        // across campaigns but can never make the shares sum to more than the proven total, so NAV is never inflated.
-        // An empty breakdown is allowed (one untagged position for the whole token).
+        // Re-read for the storage-write loop below (the shape + sum were validated by `_checkProofAndCampaigns`).
         uint256 nCampaigns = campaigns.length;
-        if (nCampaigns > MAX_CAMPAIGNS_PER_TOKEN) revert TooManyCampaigns(token, nCampaigns);
-        if (nCampaigns != 0) {
-            uint256 sumShares;
-            for (uint256 i; i < nCampaigns; ++i) {
-                sumShares += campaigns[i].cumulativeAmount;
-            }
-            if (sumShares != cumulativeAmount) revert CampaignSumMismatch(token, sumShares, cumulativeAmount);
-        }
 
         // "Is this a NEW (user, token)?" — keyed on `root`, NOT on `submittedAt`. This branch is the only thing
         // standing between the contract and a DUPLICATE entry in `_userTokens`, which would make `buildPositionsSelf`
@@ -805,9 +926,49 @@ contract MerklRewardsAttestedBalanceAdapter is IAttestedBalanceAdapter, IPositio
         if (a.root == bytes32(0)) return 0;
         bytes32 currentRoot = IMerklDistributor(DISTRIBUTOR).getMerkleRoot();
         if (a.root != currentRoot) return 0;
+        return _unclaimedFrom(account, asset, a.cumulativeAmount);
+    }
+
+    /// @dev Live `cumulative − Distributor.claimed(account, asset)`, floored at 0. Shared by the cache read
+    ///      ({_unclaimed}, which supplies the CACHED cumulative after establishing freshness via the cached-root ==
+    ///      live-root check) and the cache-free {previewPositions} (which supplies a PROOF-VERIFIED
+    ///      cumulative, freshness established by verifying its leaf against the live root before calling). The
+    ///      Distributor `claimed` read is unguarded/ABI-decoded — the returndata-reshape hazard documented on
+    ///      {_unclaimed} applies identically here.
+    function _unclaimedFrom(address account, address asset, uint256 cumulative) internal view returns (uint256) {
         (uint208 claimedAmt,,) = IMerklDistributor(DISTRIBUTOR).claimed(account, asset);
-        if (a.cumulativeAmount <= uint256(claimedAmt)) return 0;
-        return a.cumulativeAmount - uint256(claimedAmt);
+        if (cumulative <= uint256(claimedAmt)) return 0;
+        return cumulative - uint256(claimedAmt);
+    }
+
+    /// @dev Shared proof + campaign-shape validation used by BOTH the cache write ({_submitProof}) and the stateless
+    ///      cache-free preview ({previewPositions}) — the single source of truth for proof + campaign-shape validity
+    ///      (each path then adds its own extra acceptance rules: submit the cache-only AmountRegression; preview the
+    ///      duplicate-token + zero-account guards). Verifies the per-token leaf
+    ///      `keccak256(abi.encode(account, token, cumulativeAmount))` against `root`, then (if a breakdown is present)
+    ///      bounds it to at most {MAX_CAMPAIGNS_PER_TOKEN} shares that SUM to the proven per-token total. Does NOT fetch
+    ///      the root (the caller fetches it once and reuses it) and does NOT include the cache-only monotonicity check
+    ///      (that stays in {_submitProof}). Reverts `InvalidProof` / `TooManyCampaigns` / `CampaignSumMismatch`.
+    function _checkProofAndCampaigns(
+        bytes32 root,
+        address account,
+        address token,
+        uint256 cumulativeAmount,
+        bytes32[] memory proof,
+        CampaignShare[] memory campaigns
+    ) internal pure {
+        bytes32 leaf = keccak256(abi.encode(account, token, cumulativeAmount));
+        if (!_verifyMerklProof(leaf, proof, root)) revert InvalidProof();
+
+        uint256 nCampaigns = campaigns.length;
+        if (nCampaigns > MAX_CAMPAIGNS_PER_TOKEN) revert TooManyCampaigns(token, nCampaigns);
+        if (nCampaigns != 0) {
+            uint256 sumShares;
+            for (uint256 i; i < nCampaigns; ++i) {
+                sumShares += campaigns[i].cumulativeAmount;
+            }
+            if (sumShares != cumulativeAmount) revert CampaignSumMismatch(token, sumShares, cumulativeAmount);
+        }
     }
 
     /// @dev Replicates Merkl's `_verifyProof` byte-for-byte: sorted-pair, `keccak256(abi.encode(a, b))`. The use

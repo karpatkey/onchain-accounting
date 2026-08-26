@@ -126,6 +126,19 @@ Operationally:
 - **Don't rely on hour-aligned scheduling.** Merkl's rotation isn't strictly periodic. If the bot's run aligns badly with a rotation, the next run picks up the new root.
 - **Avoid running multiple submitters in parallel** for the same `(adapter, account)`. They will race; because each submit **upserts** the `(user, token)` entries it carries, the later submission simply refreshes what the earlier one wrote (it does not replace the account's set, and neither run can drop a token the other submitted), so in steady state it is wasted gas. Use a per-chain mutex / leader election if HA matters.
 
+## Dry-run / preview (read-only)
+
+The adapter exposes a read-only preview the operator (or a portal/frontend) can use to **validate proofs before
+submitting**, or to show an account's live unclaimed rewards without waiting for the next submit cycle:
+`previewPositions(address account, bytes data)` — the family interface read, where Merkl's `data` is
+`abi.encode(Allocation[])` (the same allocations a submit would take). It verifies every proof against the live
+Distributor root and returns the positions as a `view` — no gas, no state change, no cache write. A proof that fails
+verification reverts the preview the same way `submitProofs` would, so it is a safe pre-flight for **proof and
+campaign-shape validity**. It is not full submit-equivalence: the preview omits the cache-only monotonicity check
+(`AmountRegression`) and rejects duplicate tokens / a zero account, so a passing preview does not guarantee the submit
+transaction succeeds. It is a convenience only: it does not feed the cache, so NAV coverage still requires the
+steady-state submit loop below.
+
 ## Submission model
 
 The adapter is **permissionless**: `submitProofs(user, allocs)` / `submitProofsBatch` are callable by anyone, so the bot simply signs and sends from a funded keeper EOA — no Safe module, no role grant, no ownership wiring. A plain hot EOA is acceptable because proof-verification bounds what any caller can do: it can only cache a user's *real*, Merkl-attested per-token **amount** — it cannot fabricate or inflate that amount, and `clearAllocation` is stale-gated so it cannot suppress an already-admitted live entry. (Two things it *can* do: fabricate the campaign split of a real amount, and — see the `TooManyTokens` row under Failure modes — occupy cache slots. Neither inflates NAV.) Keep the EOA funded with gas on each chain and rotate it with ordinary hot-key hygiene; there are no on-chain permissions to manage.

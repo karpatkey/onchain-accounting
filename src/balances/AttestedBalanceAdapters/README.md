@@ -39,11 +39,33 @@ admin-injected amounts, no upgrade path.
   `unclaimed = cachedCumulative − Distributor.claimed(user, token)` (0 if the cached root ≠ `Distributor.getMerkleRoot()`).
   Constructor `(distributor, navCalculator)`. Protocol-specific rationale:
   [ADR 0007](../../../docs/decisions/0007-merkl-trust-minimized-cache.md). Off-chain feeder: the kpk-agents
-  `SubmitMerklProofs` automation.
+  `SubmitMerklProofs` automation. Implements the family's cache-free `previewPositions(account, bytes)` (decoding
+  `bytes` to `Allocation[]`) — see below.
+
+## Cache-free preview (universal read on the interface)
+
+`IAttestedBalanceAdapter` carries one universal read: **`previewPositions(address account, bytes calldata data)` →
+`PositionBalance[]`**. It is a **stateless, account-agnostic** `view` that values `account`'s positions from
+**caller-supplied** proof data, with no prior submit and **without touching the cache** — each member `abi.decode`s the
+opaque `data` into its own proof shape, verifies every proof against the protocol's live root, and values it with the
+SAME helpers as the write path, so it can only ever surface the account's real figure (under-report, never
+over-report). It writes nothing and has no effect on the NAV read (`getAdapterPositions`, which continues to read the
+agent-fed cache). It is an *extra* for a portal / frontend / third party that computes proofs off-chain.
+
+The proof `data` is opaque `bytes` **on purpose**: one signature serves every attested adapter, present and future,
+with `data` being whatever that protocol needs ([ADR 0022](../../../docs/decisions/0022-attested-balance-adapter-family.md)).
+Members are **fail-loud** (revert on an invalid proof) and bound the returned set by the same per-account caps as the cache.
+
+Merkl decodes `data` as `abi.encode(Allocation[])`, returns NAV-shaped `Rewards` legs (parity with
+`getAdapterPositions`), **skips** reward tokens not registered on NAVCalculator (a leg needs the asset metadata), and
+reverts on `CampaignSumMismatch` / over-cap campaigns or tokens / a `DuplicateToken`.
 
 ## Adding a member
 
-Implement `IAttestedBalanceAdapter` (+ `IBalanceAdapter`, and `IPositionDescribable` for labels), define the
-per-protocol `submit` surface (element shape + its on-chain proof check), uphold the invariant above (upsert; proof
-per write; stale→0; stale-gated removal), and register it on `NAVCalculator` like any balance adapter. No assistant
-contract and no role grant — unlike the assisted family.
+Implement `IAttestedBalanceAdapter` (+ `IBalanceAdapter`, and `IPositionDescribable` for labels): define the
+per-protocol `submit` surface (typed element shape + its on-chain proof check) **and** the universal
+`previewPositions(account, bytes)` (decode `bytes` into your proof shape, verify, value — reusing the same helpers as
+`submit` so proof + campaign-shape validation and valuation stay identical between the two paths; each may still add
+its own extra acceptance rules). Uphold the invariant above (upsert; proof per write; stale→0; stale-gated
+removal), and register it on `NAVCalculator` like any balance adapter. No assistant contract and no role grant —
+unlike the assisted family.

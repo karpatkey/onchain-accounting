@@ -351,6 +351,10 @@ contract MerklRewardsAttestedBalanceAdapter is IAttestedBalanceAdapter, IPositio
     ///         `docs/operations/merkl-proof-submitter.md`.
     /// @dev Garbage-collects tokens whose proof no longer validates or that the user has fully claimed — keeps storage
     ///      and the per-user enumeration list bounded. Not required for correctness (such entries already read as 0).
+    ///      Edge case: a stale (root-rotated) entry cleared here does NOT re-activate if Merkl later reverts to its
+    ///      root (`revokeTree` oscillation `R2 -> R3 -> R2`); it reads 0 until a resubmit — under-report only and
+    ///      self-healing. Not closable on-chain (no root-finality signal). See Gap 3 in
+    ///      `docs/operations/merkl-proof-submitter.md`.
     function clearAllocation(address user, address token) external {
         if (user == address(0) || token == address(0)) revert InvalidArguments();
         if (allocations[user][token].root == bytes32(0)) revert NothingToClear();

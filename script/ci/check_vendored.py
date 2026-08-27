@@ -160,7 +160,7 @@ def body_hash(src: str) -> str:
     return hashlib.sha256(normalise(src).encode()).hexdigest()
 
 
-def header_provenance_problem(src: str, repo: str, upath: str) -> str | None:
+def header_provenance_problem(src: str, repo: str, upath: str, rev: str) -> str | None:
     """None when the header's repo/path agree with the manifest, else a description of the problem.
 
     Split out of `verify` so `--self-test` can pin it without a network. Only the pinned REV used
@@ -176,15 +176,35 @@ def header_provenance_problem(src: str, repo: str, upath: str) -> str | None:
     # legal in an org name, so that is registerable) and `https://evil.example.com/<repo>`. Worse,
     # the self-test's negative case used `attacker/optimism`, which endswith happens to reject —
     # so the arm read as coverage it did not provide.
+    # The header records the full browsable URL; the manifest records the bare `owner/name` the raw
+    # API needs. Say so explicitly in the message: comparing the two forms naively produced
+    # "header repo (owner/name) disagrees with the manifest repo (owner/name)" — two identical
+    # strings called different — for the likeliest mistake, writing the header in the bare form.
     if hdr_repo.group(1).rstrip("/") != f"https://github.com/{repo}":
-        return f"header repo ({hdr_repo.group(1)}) disagrees with the manifest repo ({repo})"
+        return (
+            f"header repo ({hdr_repo.group(1)}) is not the canonical URL for the manifest repo "
+            f"({repo}); expected exactly https://github.com/{repo}"
+        )
     if hdr_path.group(1) != upath:
         return f"header path ({hdr_path.group(1)}) disagrees with the manifest path ({upath})"
+
+    # The `Source:` blob URL is the one a HUMAN auditor clicks, and it independently encodes repo,
+    # rev and path. Hardening only the machine-read lines above left it free to point anywhere:
+    # repointing it at `https://github.com/evil-ethereum-optimism/optimism/blob/...` left the guard
+    # printing "verbatim", because it is a comment and the body hash cannot see it. Checked against
+    # the single canonical form so one comparison covers all three coordinates at once.
+    want = f"https://github.com/{repo}/blob/{rev}/{upath}"
+    if not re.search(re.escape(want) + r"\s*$", src, re.M):
+        found = re.search(r"https://github\.com/\S+/blob/\S+", src)
+        return (
+            f"header 'Source:' URL ({found.group(0) if found else 'missing'}) is not the canonical "
+            f"blob URL for this manifest entry ({want})"
+        )
     return None
 
 
 def _read_source(path: Path) -> str:
-    """Read a source file the way the guard must read it.
+    r"""Read a source file the way the guard must read it.
 
     TEXT MODE IS LOAD-BEARING, not incidental. It applies universal-newline translation, so a lone
     `\r` becomes `\n` before the normaliser runs. solc treats a bare `\r` as a line-comment
@@ -309,7 +329,12 @@ def do_update(allow_offline: bool = False) -> int:
                     f"      an UNVERIFIED hash deliberately."
                 )
                 return 1
-            if body_hash(upstream) != new:
+            try:
+                upstream_hash = body_hash(upstream)
+            except DriftError as exc:
+                print(f"FAIL  {rel} — upstream copy could not be normalised: {exc}")
+                return 1
+            if upstream_hash != new:
                 print(
                     f"FAIL  {rel} — refusing to record a hash that does not match upstream\n"
                     f"      {_repo}@{_rev[:12]}:{_upath}\n"
@@ -385,7 +410,7 @@ def verify() -> int:
         # Without this only the REV was tied to the manifest, and the body hash excludes comments,
         # so the header could name a different repo/path than the one being verified — the exact
         # shape that lets a hand-edited `upstream_path` send the fetch somewhere harmless.
-        problem = header_provenance_problem(src, repo, upath)
+        problem = header_provenance_problem(src, repo, upath, rev)
         if problem:
             failures.append(f"FAIL  {rel} — {problem}")
             continue
@@ -516,7 +541,12 @@ def self_test() -> int:
     # a real exploit: leave the rev untouched so the rev check still passes, and send the fetch at
     # a path that 404s.
     _REPO, _UPATH = "ethereum-optimism/optimism", "packages/contracts-bedrock/src/libraries/Types.sol"
-    _good = f"/// Upstream repo: https://github.com/{_REPO}\n/// Upstream path: {_UPATH}\n"
+    _REV = "f707883038d527cbf1e9f8ea513fe33255deadbc"
+    _good = (
+        f"///      https://github.com/{_REPO}/blob/{_REV}/{_UPATH}\n"
+        f"/// Upstream repo: https://github.com/{_REPO}\n"
+        f"/// Upstream path: {_UPATH}\n"
+    )
     for name, hdr, want_problem in (
         ("matching header accepted", _good, False),
         ("repointed path rejected", _good.replace("/src/", "/contracts/"), True),
@@ -526,8 +556,14 @@ def self_test() -> int:
         ("suffix-org repo rejected", _good.replace(_REPO, f"evil-{_REPO}"), True),
         ("foreign host rejected", _good.replace("https://github.com/", "https://evil.example.com/"), True),
         ("missing header rejected", "/// no provenance here\n", True),
+        # The `Source:` blob URL is the line a human auditor follows. It was checked by nothing
+        # while the machine-read lines were exact-matched, so it could point at an attacker fork
+        # with the guard still printing "verbatim".
+        ("repointed Source URL rejected", _good.replace(f"/{_REPO}/blob/", f"/evil-{_REPO}/blob/"), True),
+        ("Source URL at wrong rev rejected", _good.replace(_REV, "0" * 40, 1), True),
+        ("missing Source URL rejected", "\n".join(_good.split("\n")[1:]), True),
     ):
-        if (header_provenance_problem(hdr, _REPO, _UPATH) is not None) != want_problem:
+        if (header_provenance_problem(hdr, _REPO, _UPATH, _REV) is not None) != want_problem:
             print(f"SELF-TEST FAIL  provenance: {name}")
             failed += 1
         else:

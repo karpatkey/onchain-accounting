@@ -542,7 +542,15 @@ def lido_stvaults_findings(chain_id: int, nav_meta: dict) -> list[tuple[str, str
     instances = list(entry.get("instances") or [])
     for b in entry.get("instancesRaw") or []:
         t = str(b)
-        if is_bytes32(t) and int(t, 16) >> 160 == 0:
+        # `is_bytes32` checks the 0x prefix and the LENGTH only, not hex-ness, so `int(t, 16)` can raise on a
+        # typo'd entry. That ValueError propagates into `_check_chain`'s blanket `except Exception`, which
+        # downgrades this ENTIRE axis to a non-blocking WARN -- one bad character would silently disable all
+        # ownership and liveness coverage for the chain. Validate before converting.
+        try:
+            widenable = is_bytes32(t) and int(t, 16) >> 160 == 0
+        except ValueError:
+            widenable = False
+        if widenable:
             instances.append("0x" + t[-40:])
         else:
             instances.append(t)  # falls through to the not-an-address ERROR below
@@ -576,12 +584,23 @@ def lido_stvaults_findings(chain_id: int, nav_meta: dict) -> list[tuple[str, str
         return [(WARN, f"LidoStVaultsMeta has {len(instances)} instance(s) but NO tracked accounts are enabled "
                        f"on chain {chain_id} -- every instance would report zero")]
 
-    def word(target: str, data: str):
+    def probe(target: str, data: str):
+        """(reached, word). `reached` is False ONLY when the RPC itself failed.
+
+        The distinction is load-bearing and an earlier revision collapsed it. An `eth_call` against an address
+        with no `hasRole` entrypoint -- a plain Safe or EOA owner, which the adapter explicitly supports --
+        returns `0x`: a SUCCESSFUL call with no data. Treating that as "unreadable" made the gate emit an
+        undetermined-controller ERROR telling the operator to re-run, on a vault whose ownership is in fact fully
+        determined and which can never clear. That is a fail-CLOSED introduced while closing a fail-open.
+        """
         try:
             r = c.rpc(url, "eth_call", [{"to": target, "data": data}, "latest"])
         except Exception:  # noqa: BLE001
-            return None
-        return r if isinstance(r, str) and len(r) >= 66 else None
+            return False, None
+        return True, (r if isinstance(r, str) and len(r) >= 66 else None)
+
+    def word(target: str, data: str):
+        return probe(target, data)[1]
 
     def sel(sig: str) -> str:
         from eth_hash.auto import keccak
@@ -616,8 +635,10 @@ def lido_stvaults_findings(chain_id: int, nav_meta: dict) -> list[tuple[str, str
             if acct.lower() == owner.lower():
                 controllers.append(acct)
                 continue
-            r = word(owner, sel("hasRole(bytes32,address)") + DEFAULT_ADMIN_ROLE[2:] + arg(acct))
-            if r is None:
+            reached, r = probe(owner, sel("hasRole(bytes32,address)") + DEFAULT_ADMIN_ROLE[2:] + arg(acct))
+            if reached and r is None:
+                continue  # the call answered with no data: no `hasRole` entrypoint, so not a controller
+            if not reached:
                 # AN UNREADABLE PROBE IS NOT A "NO". Collapsing the two was a fail-OPEN in the over-report
                 # direction: one throttled eth_call (this loop is one call per vault per tracked account, so
                 # rate-limiting is the EXPECTED failure) would drop an account out of `controllers`, turn a
@@ -1102,6 +1123,18 @@ def self_test() -> int:
               raw=["0x" + "0" * 24 + "a" * 40])
     check("stVaults: instancesRaw is covered (06 registers instances UNION instancesRaw)",
           any("NO tracked account holds" in m for m in errs(r)))
+
+    # A Safe/EOA owner has no `hasRole` entrypoint, so the call SUCCEEDS with `0x`. That must read as "not a
+    # controller", never as "undetermined" -- an earlier revision emitted an unclearable ERROR for this shape.
+    r = _lido([VLT], {conn: ownerword, role: "0x", **live}, [A1, A2])
+    check("stVaults: an EOA/Safe owner (empty hasRole reply) is NOT-a-controller, not UNDETERMINED",
+          not any("UNDETERMINED" in m for m in errs(r)) and any("NO tracked account holds" in m for m in errs(r)))
+
+    # A length-valid but NON-HEX instancesRaw entry must produce the address ERROR, not raise into the caller's
+    # blanket except (which downgrades the whole axis to a non-blocking WARN).
+    r = _lido([], {conn: ownerword, role: W(1), **live}, [A1], raw=["0x" + "g" * 64])
+    check("stVaults: a non-hex instancesRaw entry ERRORs instead of disabling the axis",
+          any("not a 20-byte address" in m for m in errs(r)))
 
     r = _lido([VLT], {conn: ownerword, role: W(1),
                       (HUB, sel_of("totalValue(address)")): None,

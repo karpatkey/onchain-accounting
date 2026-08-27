@@ -39,13 +39,18 @@ interface ILidoStETH {
 ///         `addMetaInstances`/`removeMetaInstances`. See ADR 0010.
 ///
 /// @dev **FIXED-STIPEND PROBES: A STARVED READ DROPS THE INSTANCE SILENTLY, AND THAT IS ADJUDICATED, NOT
-///      OVERLOOKED.** Every NAV-bearing read goes through {StaticCallLib.probeWord}, which forwards a fixed
+///      OVERLOOKED.** Every read of a LIDO contract goes through a fixed `PROBE_GAS` stipend -- four via
+///      {StaticCallLib.probeWord} and `obligations()` via the hand-rolled two-word probe below, which forwards
+///      the same constant. (Not "every NAV-bearing read": the three {_getAssetInfo} registry lookups are typed
+///      calls with no cap, and an earlier revision of this block said otherwise.) The stipend forwards a fixed
 ///      `PROBE_GAS`. If a callee ever costs more than that -- a VaultHub upgrade, a longer proxy chain, a
 ///      replaced Dashboard; Lido V3 is pre-1.0 and all of these are upgradeable -- the probe fails, this adapter
 ///      absorbs its own out-of-gas and returns EMPTY. Because it absorbs it, `consumed` stays tiny against a
 ///      multi-megagas instance stipend, `GasStipendLib.exhausted` reads false, and `MetaBalanceAdapter`'s
-///      {INAVCalculator.InstanceGasExhausted} CAN NEVER FIRE FOR THIS ADAPTER. The position reports zero,
-///      permanently and silently.
+///      {INAVCalculator.InstanceGasExhausted} DOES NOT FIRE FOR A STARVED LIDO READ. The position reports zero,
+///      permanently and silently. (It can still fire for this adapter by another route -- the uncapped
+///      {_getAssetInfo} calls propagate an out-of-gas rather than absorbing it -- so the accurate claim is about
+///      the STIPENDED reads, not about the adapter as a whole. An earlier revision overstated it.)
 ///
 ///      **Why this deviates from `EulerVaultsMetaBalanceAdapter`, which uses `probeWordMetered` and REVERTS on
 ///      `starved`.** Direction. In Euler a starved debt read removes an instance's only leg while sibling vaults

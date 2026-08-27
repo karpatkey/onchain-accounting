@@ -50,9 +50,23 @@ attested adapter that is not protocol-specific**, so a new member is a small fil
 | stale handling (`epoch != live` ⇒ reads **0**, never extrapolated) | `_liveValue(...)` — how a cached figure becomes today's amount |
 | the stale-gated `clearAttestation` / `clearAccount` | `_verifyPreviewPayload(...)` — the proof scheme |
 | the NAV-version constructor probe | `_assetLegs(...)` — how one asset's value becomes legs |
-| the whole gas-isolated read fan-out and its shared-budget stipend | `_maxAssetsPerAccount()` / `_maxLegsPerAsset()` |
+| the whole gas-isolated read fan-out and its shared-budget stipend | `_maxAssetsPerAccount()`, `_cachedLegCount` / `_previewLegCount` |
 | the `previewPositions` skeleton, duplicate-asset guard and cap | the typed-identity hooks |
-| `supportsInterface`, `underlyingAssetsSupported`, the `IBalanceAdapter` reads, `_row` | |
+| `supportsInterface`, `underlyingAssetsSupported`, the `IBalanceAdapter` reads, `_row` | `_deleteMemberState` (drop member state on a clear) |
+
+There is deliberately **no `_maxLegsPerAsset` hook**: the per-asset leg cap belongs on the WRITE path, enforced
+fail-loud by the member before the data exists (Merkl's `TooManyCampaigns`), because rejecting at write is what
+keeps the read bounded. The base needs only the ACTUAL count (`_cachedLegCount` / `_previewLegCount`) to size its
+scratch buffer — and it **bounds the copy against that buffer anyway**, because those are member hooks and the legs
+come from the unrelated `_assetLegs`: in the monolith both derived from one expression and could not disagree, so
+this is a hazard the extraction created rather than inherited. Over-emitting loses the surplus legs, never the
+whole read.
+
+**Accepted consequence: a base edit moves every member's bytecode.** The monolith's own constructor declined to
+share the NAV-version probe with `MetaBalanceAdapter` for exactly this reason — extracting a common helper would
+have recompiled every deployed meta-adapter. Inside the attested family that coupling is accepted: it is free while
+nothing is deployed, but once a member is live, a base change implies redeploying it. Weigh that before editing
+`AttestedValueCache` after the first attested deployment.
 
 Two properties of the split are load-bearing and a new member must not work around them:
 

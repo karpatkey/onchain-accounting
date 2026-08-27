@@ -1,5 +1,11 @@
 # 0007 — Merkl rewards adapter: proof-verified, trust-minimized cache
 
+> **Naming note (2026-08-27):** the function, error and event names below are **PRE-REFACTOR**. The adapter now
+> extends the shared `AttestedValueCache` base (ADR 0022) and uses the family-generic surface —
+> `clearAttestation`, `assetsOf`, `attestations`, `UninitializedEpoch`, `TooManyAttestations`,
+> `AttestationStillLive`, `DuplicateAsset`, `AttestationCached`. The reasoning in this ADR is unchanged; only the
+> names moved. For the live ABI see `docs/operations/merkl-proof-submitter.md`.
+
 **Status:** accepted — **amended 2026-07 (permissionless refactor; see the amendment below).** The role-gated v1
 described in the body was removed in PR #141 (with the legacy `AssistantFedBalanceAdapter` base); the adapter is
 re-added in the permissionless shape this ADR itself anticipated (Alternatives #1). Read the amendment first; the

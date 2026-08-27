@@ -78,8 +78,15 @@ abstract contract AttestedValueCache is IAttestedBalanceAdapter, IPositionDescri
     /// @notice NAVCalculator — resolves the `Asset` metadata every emitted leg carries.
     INAVCalculator public immutable NAV_CALCULATOR;
 
-    /// @notice Cached attestations: `attestations[account][asset]`.
-    mapping(address account => mapping(address asset => Attestation)) public attestations;
+    /// @dev Cached attestations. **`private`, deliberately** — see {_upsertAttestation}. If this were `public`
+    ///      (or `internal`) a member could write it directly, and the base's central claim would be enforced by a
+    ///      docstring rather than by the compiler. The concrete over-report that buys: a member zeroing an entry's
+    ///      `epoch` while the asset is still in `_assetList` makes the next {_upsertAttestation} compute
+    ///      `isNew == true` and push the SAME asset a second time, after which the read values it twice and
+    ///      `_removeAsset`'s swap-and-pop can only ever remove one copy. `_assetList` / `_assetIdxPlus1` were
+    ///      already `private` for exactly this reason; this makes the visibility symmetric. Read access for members
+    ///      is {_attestationOf}; there is deliberately no write accessor.
+    mapping(address account => mapping(address asset => Attestation)) private _attestations;
 
     /// @dev Per-account asset enumeration. Attested adapters cannot enumerate their universe ahead of time (the set
     ///      of assets a protocol may attest is open), so {underlyingAssetsSupported} returns empty and the reads are
@@ -88,6 +95,24 @@ abstract contract AttestedValueCache is IAttestedBalanceAdapter, IPositionDescri
 
     /// @dev `idxPlus1` = index of `asset` in `_assetList[account]` plus 1. Zero ⇒ not present.
     mapping(address account => mapping(address asset => uint256)) private _assetIdxPlus1;
+
+    /// @notice The cached attestation for `(account, asset)`: `(value, epoch, attestedAt)`.
+    /// @dev ABI-identical to the public mapping this replaced, so no consumer sees a difference. An entry with
+    ///      `epoch == 0` is absent; a non-zero `epoch` that no longer equals {_liveEpoch} is stale and reads 0.
+    function attestations(address account, address asset)
+        external
+        view
+        returns (uint256 value, bytes32 epoch, uint64 attestedAt)
+    {
+        Attestation memory a = _attestations[account][asset];
+        return (a.value, a.epoch, a.attestedAt);
+    }
+
+    /// @dev Read-only accessor for members. There is deliberately NO write accessor: {_upsertAttestation} is the
+    ///      only way a value enters the cache.
+    function _attestationOf(address account, address asset) internal view returns (Attestation memory) {
+        return _attestations[account][asset];
+    }
 
     //
     // Events
@@ -193,7 +218,7 @@ abstract contract AttestedValueCache is IAttestedBalanceAdapter, IPositionDescri
     ///      its own for one that wedges until a human intervenes.
     function clearAttestation(address account, address asset) external {
         if (account == address(0) || asset == address(0)) revert InvalidArguments();
-        if (attestations[account][asset].epoch == bytes32(0)) revert NothingToClear();
+        if (_attestations[account][asset].epoch == bytes32(0)) revert NothingToClear();
         if (_valueOf(account, asset) != 0) revert AttestationStillLive(account, asset);
         _deleteAttestation(account, asset);
         _removeAsset(account, asset);
@@ -371,6 +396,9 @@ abstract contract AttestedValueCache is IAttestedBalanceAdapter, IPositionDescri
 
         (address[] memory assets, uint256[] memory values, bytes[] memory ctxs) =
             _verifyPreviewPayload(epoch, account, data);
+        // The three are indexed in lockstep below. A member returning ragged arrays would otherwise surface as a
+        // bare Panic 0x32; fail loud with an attributable error instead.
+        if (values.length != assets.length || ctxs.length != assets.length) revert InvalidArguments();
         if (assets.length == 0) return new INAVCalculator.PositionBalance[](0);
         if (assets.length > _maxAssetsPerAccount()) revert TooManyAttestations(account, assets.length);
         _revertOnDuplicateAsset(assets);
@@ -402,7 +430,7 @@ abstract contract AttestedValueCache is IAttestedBalanceAdapter, IPositionDescri
         if (account == address(0) || asset == address(0)) revert InvalidArguments();
         if (epoch == bytes32(0)) revert UninitializedEpoch();
 
-        Attestation storage a = attestations[account][asset];
+        Attestation storage a = _attestations[account][asset];
         isNew = a.epoch == bytes32(0);
         if (isNew) {
             uint256 n = _assetList[account].length;
@@ -418,10 +446,34 @@ abstract contract AttestedValueCache is IAttestedBalanceAdapter, IPositionDescri
         emit AttestationCached(account, asset, msg.sender, value, epoch, a.attestedAt);
     }
 
-    /// @dev Hook for members holding extra per-`(account, asset)` state (Merkl's campaign breakdown) so it is
-    ///      dropped in lockstep with the attestation. Default: nothing.
-    function _deleteAttestation(address account, address asset) internal virtual {
-        delete attestations[account][asset];
+    /// @dev Erase one attestation and any member state hanging off the same key. **DELIBERATELY `private`, so it
+    ///      cannot be overridden**, because this is the ONLY deletion of `attestations` in the base and an override
+    ///      that forgot to call `super` would permanently wedge the entry — not merely leak state.
+    ///
+    ///      That failure is worth spelling out, because an earlier revision of this base *was* overridable and
+    ///      described its own body as "Default: nothing", which invited exactly the mistake. With the record left
+    ///      behind, `clearAttestation` still pops the asset from `_assetList` — so the enumeration says absent
+    ///      while `attestations` says present. Re-admission then computes `isNew = a.epoch == bytes32(0)`, gets
+    ///      **false**, and never re-pushes. The pair is now invisible to {getAdapterPositions} and
+    ///      {getAdapterBalances} (both drive off the list) while {getAdapterBalanceForAsset} still reports it (it
+    ///      reads the mapping) — the two `IBalanceAdapter` surfaces disagree, and the entry is unrecoverable,
+    ///      because the clear that would reset it now reverts `AttestationStillLive` on a live epoch.
+    ///
+    ///      Members extend this through {_deleteMemberState}, whose default really is nothing, so forgetting
+    ///      `super` there costs a member its own bookkeeping and cannot desynchronise the base's.
+    function _deleteAttestation(address account, address asset) private {
+        delete _attestations[account][asset];
+        _deleteMemberState(account, asset);
+    }
+
+    /// @notice Drop any extra per-`(account, asset)` state the member keeps alongside the attestation (Merkl's
+    ///         campaign breakdown), so it goes in lockstep with the clears. Default: genuinely nothing.
+    /// @dev Called by every deletion path in this base. A member overriding it need NOT call `super` — the base's
+    ///      own record is erased by {_deleteAttestation}, which is `private` precisely so that guarantee does not
+    ///      depend on the member remembering.
+    function _deleteMemberState(address account, address asset) internal virtual {
+        account;
+        asset;
     }
 
     /// @dev Swap-and-pop `asset` out of `account`'s enumeration, keeping the index map exact.
@@ -447,7 +499,7 @@ abstract contract AttestedValueCache is IAttestedBalanceAdapter, IPositionDescri
     /// @dev The cached attestation's live value, or 0 when nothing is cached or the epoch has moved on.
     ///      **Stale ⇒ 0, never extrapolated** — a new epoch requires a fresh attestation.
     function _valueOf(address account, address asset) internal view returns (uint256) {
-        Attestation memory a = attestations[account][asset];
+        Attestation memory a = _attestations[account][asset];
         if (a.epoch == bytes32(0)) return 0;
         if (a.epoch != _liveEpoch()) return 0;
         return _liveValue(account, asset, a.value);
@@ -530,6 +582,14 @@ abstract contract AttestedValueCache is IAttestedBalanceAdapter, IPositionDescri
                 INAVCalculator.PositionBalance[] memory legs
             ) {
                 for (uint256 j; j < legs.length; ++j) {
+                    // BOUND, do not trust {_cachedLegCount}. It is a member hook, and the buffer was sized from
+                    // it while the legs come from the unrelated {_assetLegs} — the monolith derived both from one
+                    // expression, so they could not disagree; here they can. Writing past `tmp` raises Panic 0x32
+                    // in THIS frame, outside the per-asset `try`, so the catch below cannot absorb it: it bubbles
+                    // out of {getAdapterPositions}, `PriceFeedLib` fails open, and the adapter's ENTIRE leg set
+                    // silently leaves NAV for every account. Dropping the excess loses only the surplus legs, and
+                    // in the direction this family already permits.
+                    if (count == tmp.length) break;
                     tmp[count++] = legs[j];
                 }
             } catch {
@@ -555,7 +615,7 @@ abstract contract AttestedValueCache is IAttestedBalanceAdapter, IPositionDescri
         uint256 value = _valueOf(account, asset);
         // Early return before the member touches its own storage when there is nothing to value (the common case).
         if (value == 0) return new INAVCalculator.PositionBalance[](0);
-        return _assetLegs(account, asset, meta, value, attestations[account][asset].value, "");
+        return _assetLegs(account, asset, meta, value, _attestations[account][asset].value, "");
     }
 
     /// @dev Shared tail of the preview: skip assets NAVCalculator does not price, value each through the SAME
@@ -582,6 +642,7 @@ abstract contract AttestedValueCache is IAttestedBalanceAdapter, IPositionDescri
             INAVCalculator.PositionBalance[] memory legs =
                 _assetLegs(account, assets[i], meta, live, values[i], ctxs[i]);
             for (uint256 k; k < legs.length; ++k) {
+                if (count == tmp.length) break; // see the bound in {_collectLegs}
                 tmp[count++] = legs[k];
             }
         }

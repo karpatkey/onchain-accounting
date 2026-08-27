@@ -25,7 +25,9 @@ _liveEpoch()               -> bytes32   what the attestation epoch is (Merkl: ge
 _liveValue(...)            -> uint256   cached figure -> today's amount (Merkl: cumulative - claimed)
 _verifyPreviewPayload(...)             decode + verify caller-supplied proofs (the proof scheme)
 _assetLegs(...)            -> legs      one asset's value -> PositionBalance[]
-_maxAssetsPerAccount() / _maxLegsPerAsset()      the two caps whose PRODUCT bounds the read
+_maxAssetsPerAccount()                 the per-account cache cap
+_cachedLegCount / _previewLegCount      ACTUAL legs per asset, for scratch-buffer sizing
+_deleteMemberState(...)                drop member state alongside the attestation
 _protocolBrand/_protocolId/_protocolSubId/_positionKind          typed identity
 ```
 

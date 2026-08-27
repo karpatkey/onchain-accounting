@@ -243,7 +243,7 @@ contract MerklRewardsAttestedBalanceAdapter is AttestedValueCache {
         // and recovery needed a human to hand-run a clear. Gating on liveness keeps the guard exactly where it
         // carries meaning: a stale entry has no authority to veto a figure the LIVE root attests. This cannot
         // over-report — `cumulativeAmount` was proof-verified against that live root immediately above.
-        Attestation storage a = attestations[user][token];
+        Attestation memory a = _attestationOf(user, token);
         if (a.epoch == root && cumulativeAmount < a.value) revert AmountRegression();
 
         _upsertAttestation(user, token, cumulativeAmount, root);
@@ -426,8 +426,8 @@ contract MerklRewardsAttestedBalanceAdapter is AttestedValueCache {
 
     /// @inheritdoc AttestedValueCache
     /// @dev Drops the campaign breakdown in lockstep with the attestation, so no orphan shares survive a clear.
-    function _deleteAttestation(address account, address asset) internal override {
-        super._deleteAttestation(account, asset);
+    ///      No `super` call is needed or possible: the base erases its own record in a `private` function.
+    function _deleteMemberState(address account, address asset) internal override {
         delete _campaigns[account][asset];
     }
 

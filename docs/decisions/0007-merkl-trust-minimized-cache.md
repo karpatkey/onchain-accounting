@@ -4,7 +4,10 @@
 > extends the shared `AttestedValueCache` base (ADR 0022) and uses the family-generic surface —
 > `clearAttestation`, `assetsOf`, `attestations`, `UninitializedEpoch`, `TooManyAttestations`,
 > `AttestationStillLive`, `DuplicateAsset`, `AttestationCached`. The reasoning in this ADR is unchanged; only the
-> names moved. For the live ABI see `docs/operations/merkl-proof-submitter.md`.
+> names moved. The same applies to INTERNAL helpers named below (`_unclaimed`, `_unclaimedFrom`, `_buildTokenLegs`,
+> `_submitProof`'s cache handling): the shared proof/campaign validation is now `_checkProofAndCampaigns` on the
+> member, and valuation/leg-building moved to the base's `_liveValue` / `_assetLegs` hooks. For the live ABI see
+> `docs/operations/merkl-proof-submitter.md`.
 
 **Status:** accepted — **amended 2026-07 (permissionless refactor; see the amendment below).** The role-gated v1
 described in the body was removed in PR #141 (with the legacy `AssistantFedBalanceAdapter` base); the adapter is

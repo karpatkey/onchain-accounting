@@ -38,6 +38,40 @@ interface ILidoStETH {
 ///         **StakingVault** address widened to bytes32; the active set is governed on NAVCalculator via
 ///         `addMetaInstances`/`removeMetaInstances`. See ADR 0010.
 ///
+/// @dev **THE OWNERSHIP PREDICATE IS `DEFAULT_ADMIN_ROLE`, AND THAT IS NARROWER THAN 'CONTROLS THE ETH'.**
+///      A Dashboard splits duties: `FUND_ROLE` / `WITHDRAW_ROLE` / `MINT_ROLE` / `BURN_ROLE` are the operational
+///      roles that actually move value, and they are routinely held by a DIFFERENT address from the admin.
+///      Measured 2026-08-27 - on all three vaults inspected, the WITHDRAW_ROLE holder held NO admin role:
+///        `0xd402937b...` admin `0xae6a126c...`, withdraw `0x9e14e047...`
+///        `0x2df8CCb9...` admin `0x892bb7ee...`, withdraw `0xeb63cabd...`
+///        `0x62e0D92c...` admin `0xc28317c7...`, withdraw `0x90f497ec...`
+///      Keying on the admin is the DELIBERATE narrow choice: it is the ultimate owner (it can grant itself every
+///      other role), and widening the accepted set would widen the double-count surface described below.
+///
+///      **CONSEQUENCE THAT MUST BE CHECKED BEFORE THE FIRST POSITION, NOT AFTER.** If a tracked Safe is wired as
+///      the OPERATIONAL manager while `DEFAULT_ADMIN_ROLE` sits with a separate governance key or custodian, this
+///      adapter reports NOTHING for that Safe - a silent under-report, position present and NAV zero. Verify the
+///      Safe holds `DEFAULT_ADMIN_ROLE` on the Dashboard when a vault is first taken; if the shape turns out to be
+///      operational-roles-only, this predicate needs revisiting rather than the config.
+///
+/// @dev **ORACLE-REPORT LAG, MEASURED AND DELIBERATELY NOT GATED.** Both `totalValue` and the two fee
+///      components are written at oracle report, so between reports every figure this adapter reads LAGS reality.
+///      Measured 2026-08-27 against Lido's own UI, which projects accrual forward off-chain:
+///        FRESH  `0x2df8CCb9...` fee lag 0.0000 ETH (UI 0.0745 == chain 0.0745)
+///        STALE  `0x62e0D92c...` fee lag 0.0122 ETH, value lag 0.0985 ETH
+///        STALE  `0xd402937b...` fee lag 0.0898 ETH, value lag 0.6400 ETH
+///        STALE  `0x5E25c5a4...` fee lag 0.1271 ETH, value lag 35.19 ETH - **7.46% of the vault**
+///      That last row is the one to remember: the lag is bounded by accrual-since-report, not by anything small.
+///      Note the middle row: a stale report does NOT make the fee read zero. `0xd402937b...` reads zero only
+///      because its fees were zero at ITS last report, and generalising that one vault into a rule is a mistake
+///      this file made once already.
+///
+///      `isReportFresh` is therefore NOT gated on, and the reason is structural rather than tolerant: the fee is a
+///      FRACTION of the reward that generates it (a 5% node-operator fee plus the Lido share), so the un-reported
+///      reward always exceeds the un-reported fee. A stale report consequently UNDER-reports net equity - measured
+///      -0.086 and -0.55 ETH on the two stale vaults above - which is the safe direction. Gating the instance out
+///      would trade that bounded under-report for a total one.
+///
 /// @dev **KNOWN, UNFIXABLE-ON-CHAIN OVER-REPORT: a Dashboard's `DEFAULT_ADMIN_ROLE` is not enumerable.** If TWO
 ///      tracked accounts both hold admin on one vault, both report the whole vault and the NAV double-counts it.
 ///      There is no on-chain fix — the role set cannot be read back — so the mitigation is governance: the MANAGER

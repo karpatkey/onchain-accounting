@@ -33,6 +33,11 @@ contract LidoStVaultsMetaBalanceAdapterForkTest is BalanceAdapterTestBase {
     ///      arise from the protocol's own creation flow.
     address public constant HOLDER = 0xC28317c7F9e4aEE13931a61D4e36e93d9481B298;
 
+    /// @dev A vault whose oracle report was FRESH at this block - the positive control for the freshness model
+    ///      documented on the adapter. The primary fixture above was STALE at the same block, which is what makes
+    ///      the pair a controlled comparison rather than two anecdotes.
+    address public constant FRESH_VAULT = 0x2df8CCb91c80c9600EA9436b1f940c48cC008ca7;
+
     uint256 public constant FORK_BLOCK = 25_848_000;
 
     LidoStVaultsMetaBalanceAdapter public meta;
@@ -117,20 +122,47 @@ contract LidoStVaultsMetaBalanceAdapterForkTest is BalanceAdapterTestBase {
         assertFalse(okRate, "nodeOperatorFeeRate() does not exist on the live Dashboard");
     }
 
-    /// @notice `totalValue` = beacon-chain validator balances + ETH held by the vault contract.
-    /// @dev Pins the decomposition because an external tracker measuring only the VALIDATOR half looks like a
-    ///      plausible cross-check and is not one. Measured 2026-08-27 against DeBank for this vault: its
-    ///      `eth2 / Staked` item read 561.378009 ETH while `totalValue` was 638.756491 — the 77.378 ETH gap is the
-    ///      vault contract's own balance (77.437 measured, the ~0.06 residual being pending-deposit/report lag).
-    ///      DeBank also shows the position GROSS, with no borrow leg for the 555 ETH stETH liability, so it is not
-    ///      a usable oracle for this protocol. Asserted as an INEQUALITY because the two components drift between
-    ///      reports; the strict identity would be flaky at a moving block.
+    /// @notice `totalValue` STRICTLY EXCEEDS the vault contract's own ETH - it also covers validators and,
+    ///         critically, EIP-6110 PENDING deposits.
+    /// @dev WARNING: `totalValue` is NOT `validators + contract balance`, and an earlier revision of this comment
+    ///      claimed it was. That held only by coincidence on THIS fixture (DeBank `eth2/Staked` 561.378 vs
+    ///      `totalValue` 638.756, gap 77.378 ~= the 77.437 contract balance) because it has no queued deposits.
+    ///      COUNTEREXAMPLE measured 2026-08-27 on vault 0x2df8CCb9...: validators 625.708 + balance 0.725 = 626.43
+    ///      against a `totalValue` of 5701.42 - a 5,075 ETH gap that is pending deposits (~159 queued validators).
+    ///      A decomposition-based cross-check that ignores the deposit queue reads a correct vault as
+    ///      catastrophically over-reported. Asserted as an INEQUALITY for exactly that reason.
+    ///
+    ///      Separately: DeBank shows the position GROSS, with no borrow leg for the 555 ETH stETH liability, and
+    ///      indexes it under the VAULT rather than the owner - so it is not a usable oracle for this protocol.
     function test_totalValueExceedsTheVaultsOwnEthBalance() public view {
         (bool ok, uint256 tv) = _u(VAULT_HUB, abi.encodeWithSignature("totalValue(address)", VAULT));
         assertTrue(ok, "totalValue readable");
         uint256 onContract = VAULT.balance;
         assertGt(tv, onContract, "totalValue must include validator balances beyond the contract's own ETH");
         assertGt(onContract, 0, "this fixture holds loose ETH, so the decomposition is actually exercised");
+    }
+
+    /// @notice The fee identity holds on a FRESH report too - the positive control for the whole fee model.
+    /// @dev On-chain fee obligations are written at oracle report; Lido's UI projects accrual forward, so the
+    ///      chain figure LAGS by the accrual since that report. Measured 2026-08-27: FRESH 0x2df8CCb9... lag
+    ///      0.0000 (UI 0.0745 == chain 0.0745); STALE 0x62e0D92c... lag 0.0122; STALE 0xd402937b... lag 0.0898
+    ///      (its whole amount, because its fees were zero at its last report - which is why 'stale means zero' is
+    ///      NOT the rule and an earlier note here said it was).
+    ///
+    ///      The lag is NOT gated on, deliberately: `totalValue` lags too, and the fee is a FRACTION of the reward
+    ///      that generates it, so the un-reported reward always exceeds the un-reported fee. A stale report is
+    ///      therefore structurally CONSERVATIVE - measured net -0.086 and -0.55 ETH on the two stale vaults.
+    ///      Dropping a stale instance would trade a bounded under-report for a total one.
+    function test_feeIdentityHoldsOnAFreshReport() public view {
+        (bool okFresh, uint256 fresh) = _u(VAULT_HUB, abi.encodeWithSignature("isReportFresh(address)", FRESH_VAULT));
+        assertTrue(okFresh, "isReportFresh readable");
+        if (fresh != 1) return; // fixture drifted out of freshness; the identity below is the durable claim
+
+        (bool okOb, uint256 fees) = _feesToSettle(FRESH_VAULT);
+        (bool okTv, uint256 tv) = _u(VAULT_HUB, abi.encodeWithSignature("totalValue(address)", FRESH_VAULT));
+        (bool okMl, uint256 ml) = _u(VAULT_HUB, abi.encodeWithSignature("maxLockableValue(address)", FRESH_VAULT));
+        assertTrue(okOb && okTv && okMl, "reads answer on a fresh vault");
+        assertEq(tv - ml, fees, "gross-of-fees identity holds on a FRESH report, not only on stale ones");
     }
 
     // ── the adapter itself ──────────────────────────────────────────────────────────────────────────────────────

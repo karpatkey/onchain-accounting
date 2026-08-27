@@ -50,8 +50,11 @@ Usage:
                                           failure. FETCHES upstream and refuses to record a hash
                                           that does not match it, so it needs network
   script/ci/check_vendored.py --update --offline
-                                          same, but skip the upstream check and record an
-                                          UNVERIFIED hash. For a genuine outage only
+                                          same, but skip the upstream check and record the hash with an
+                                          UNVERIFIED: prefix. For a genuine outage only. That prefix is
+                                          PERSISTED: until a networked --update replaces it, a run that
+                                          cannot reach upstream FAILS rather than passing on a hash
+                                          nothing ever validated
   script/ci/check_vendored.py --self-test prove the normaliser and the guard actually fire
 """
 
@@ -312,6 +315,9 @@ def discover_vendored() -> set[str]:
 _UNRESOLVABLE_STATUSES = frozenset({404, 410})
 
 
+UNVERIFIED_PREFIX = "UNVERIFIED:"
+
+
 class ProvenanceError(Exception):
     """The upstream rev/path does not resolve, so the provenance claim cannot be checked at all."""
 
@@ -399,6 +405,13 @@ def do_update(allow_offline: bool = False) -> int:
                 return 1
         # Replace the 4th tuple element for this entry — matched by position, not by a one-shot
         # placeholder, so --update stays repeatable instead of silently no-opping after first use.
+        # PERSIST the unverified state. Printing "[UNVERIFIED]" told the operator and nobody else: once the
+        # process exited, the manifest was indistinguishable from an online-validated one, so a later run that
+        # soft-skipped the fetch would accept a hash that had NEVER been compared to upstream. The prefix makes
+        # the state a property of the RECORD rather than of one console session.
+        if allow_offline:
+            new = UNVERIFIED_PREFIX + new
+
         text, count = _rewrite_entry(text, rel, new)
         if count != 1:
             print(f"FAIL  could not rewrite the hash row for {rel} (matched {count} times)")
@@ -443,6 +456,13 @@ def verify() -> int:
             failures.append(f"FAIL  {rel} — {exc}")
             continue
 
+        # An offline-recorded hash was never compared to upstream, so the offline half alone proves only
+        # that the file still matches ITSELF. It is a provisional record, and the upstream comparison is
+        # the thing that would make it real — so a soft-skip must NOT pass here (see below).
+        unverified = expected.startswith(UNVERIFIED_PREFIX)
+        if unverified:
+            expected = expected[len(UNVERIFIED_PREFIX):]
+
         if expected == "PLACEHOLDER":
             failures.append(f"FAIL  {rel} — manifest hash was never filled in (run --update once)")
             continue
@@ -486,6 +506,15 @@ def verify() -> int:
             upstream = fetch_upstream(repo, upath, rev)
         except ProvenanceError as exc:
             failures.append(f"FAIL  {rel} — {exc}")
+            continue
+        if upstream is None and unverified:
+            failures.append(
+                f"FAIL  {rel} — the manifest hash was recorded with `--update --offline` and has NEVER been\n"
+                f"        validated against upstream, and this run could not reach upstream either. There is no\n"
+                f"        verified baseline for this file, so passing would attest nothing. When the network is\n"
+                f"        back, re-run `--update` (WITHOUT --offline) to replace it with a validated hash —\n"
+                f"        `verify()` does not rewrite the manifest, so the marker persists until you do."
+            )
             continue
         if upstream is None:
             print(f"::warning::vendored: {rel} upstream comparison skipped (network)")

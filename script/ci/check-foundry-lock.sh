@@ -11,6 +11,11 @@
 # `git -C lib/<dep> checkout <rev> && git add lib/<dep>`, which moves the gitlink and leaves the lock untouched,
 # and `forge build` never writes the lock back. Nothing else in CI compares the two.
 #
+# NOTE: since the submodules became `shallow = true`, that checkout fails on a FRESH clone for any rev that is
+# not the current tip (`reference is not a tree`) — fetch first (`git -C lib/<dep> fetch --unshallow`, or
+# `fetch origin <rev> --depth=1`), then checkout. Existing clones already have full history and are unaffected.
+# See docs/decisions/0024-dependency-size-vendor-single-file-deps.md.
+#
 # WHAT IT CHECKS
 #   1. foundry.lock is valid JSON               (it was not: a trailing comma made it unparseable)
 #   2. every gitlink has a lock entry, and vice versa

@@ -9,7 +9,7 @@ import {IRouterClient} from "@chainlink/src/v0.8/ccip/interfaces/IRouterClient.s
 import {Client} from "@chainlink/src/v0.8/ccip/libraries/Client.sol";
 import {IStargateRouter} from "src/bridge/adapters/interfaces/IStargateInterfaces.sol";
 import {IOmnibridge, IAMB} from "src/bridge/adapters/interfaces/IGnosisInterfaces.sol";
-import {Types} from "@optimism/libraries/Types.sol";
+import {Types} from "src/bridge/adapters/lib/OptimismTypes.sol";
 import {IOptimismPortal} from "src/bridge/adapters/interfaces/ISuperchainInterfaces.sol";
 
 /// @notice Extended ERC20 with mint function for testing

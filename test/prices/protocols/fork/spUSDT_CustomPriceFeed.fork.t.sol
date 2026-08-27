@@ -4,6 +4,7 @@ pragma solidity ^0.8.0;
 import {TestEnvConfigurator} from "test/TestEnvConfigurator.sol";
 import {spUSDT_CustomPriceFeed} from "src/prices/protocols/spUSDT_CustomPriceFeed.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
+import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 
 contract spUSDT_CustomPriceFeedForkTest is TestEnvConfigurator {
@@ -30,7 +31,12 @@ contract spUSDT_CustomPriceFeedForkTest is TestEnvConfigurator {
     function test_getLatestPrice() public view {
         INAVCalculator.PriceFeedData memory pd = INAVCalculator(NAV).getPriceData(BASE);
         uint256 base8 = uint256(pd.price);
-        uint256 unit = 10 ** IERC4626(VAULT).decimals();
+        // ASSET decimals, not SHARE decimals: `ERC4626VaultRatePriceFeed` divides by `_assetUnit`.
+        // Identical for this vault (shares and asset share a decimals value), so nothing fails today —
+        // but this line is advertised as an INDEPENDENT ground truth for the price band, and reading
+        // share decimals would silently reproduce an offset-vault bug rather than catch it. That is the
+        // exact case `_assetUnit` exists for, and this file is the obvious template for the next feed.
+        uint256 unit = 10 ** IERC20Metadata(IERC4626(VAULT).asset()).decimals();
         uint256 assetsPerShare = IERC4626(VAULT).convertToAssets(unit);
         uint256 expected = (assetsPerShare * base8) / unit;
 

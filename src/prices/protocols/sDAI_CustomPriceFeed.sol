@@ -14,6 +14,12 @@ import {ERC4626VaultRatePriceFeed} from "src/prices/ERC4626VaultRatePriceFeed.so
 ///      asset and Gnosis had been superseded by sXDAI_CustomPriceFeed — NOT because the recipe was wrong.
 ///      Mainnet sDAI IS a registered asset now, so this feed is live. Do not delete it again as dead code
 ///      without first checking script/config/nav-config/assets-and-price-feeds/1.json.
+///
+///      TRUST MODEL — unlike its Spark Savings siblings (spUSDC/spUSDT/spETH), `SavingsDai` is NOT upgradeable:
+///      it has no EIP-1967 implementation slot and derives its rate from the Sky Pot's `chi`/`dsr`. The four are
+///      grouped together in config and in the integration fixtures, so the difference is recorded here rather
+///      than inferred. The rate is a pure time accumulator — no `totalSupply`, `totalAssets` or `balanceOf` in
+///      the path — so it is donation-, inflation- and flash-loan-proof.
 /// @author KPK
 /* solhint-disable contract-name-camelcase */
 contract sDAI_CustomPriceFeed is ERC4626VaultRatePriceFeed {

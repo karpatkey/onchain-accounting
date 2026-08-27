@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: BUSL-1.1
-pragma solidity ^0.8.0;
+pragma solidity ^0.8;
 
 import {TestEnvConfigurator} from "test/TestEnvConfigurator.sol";
 import {sDAI_CustomPriceFeed} from "src/prices/protocols/sDAI_CustomPriceFeed.sol";
@@ -10,9 +10,11 @@ import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 contract sDAI_CustomPriceFeedForkTest is TestEnvConfigurator {
     sDAI_CustomPriceFeed oracle;
 
-    /// @dev The LIVE vault. Spark shipped this savings family twice and the dead generation answers the same
-    ///      `symbol()`; an empty ERC-4626 returns `convertToAssets` at the 1:1 default instead of reverting, so
-    ///      the wrong address would price plausibly and wrongly. `test_vaultIsTheLiveGeneration` pins this.
+    /// @dev sDAI is a SKY vault (`SavingsDai` over the Sky Pot), NOT one of Spark's twice-deployed savings
+    ///      vaults — it has no dead twin, and an earlier revision of this comment claimed Spark's address trap
+    ///      applied here. It does not. The guard below is still worth keeping for a different reason: it pins
+    ///      that this address is a live, non-empty 4626 whose `asset()` is the configured base, which is what
+    ///      any wrong-address edit would break. Unlike the Spark siblings, `SavingsDai` is also NOT upgradeable.
     address constant VAULT = 0x83F20F44975D03b1b09e64809B757c47f942BEeA;
     address constant NAV = 0x42aC265991163Af2b0B9E59a222d31d201E39f91;
     address constant BASE = 0x6B175474E89094C44Da98b954EedeAC495271d0F;
@@ -52,8 +54,27 @@ contract sDAI_CustomPriceFeedForkTest is TestEnvConfigurator {
 
     /// @dev Guards the address trap directly: the dead generation has `totalSupply == 0`. If VAULT is ever
     ///      re-pointed at it, the price assert above would still pass (1:1 default rate) but this fails.
-    function test_vaultIsTheLiveGeneration() public view {
-        assertGt(IERC4626(VAULT).totalSupply(), 0, "vault has no shares - wrong (dead) generation?");
+    /// @notice The vault this test pins IS the one the deploy script will read from config.
+    /// @dev Without this the regression guard below is disconnected from production: `VAULT` is a constant here,
+    ///      so re-pointing `custom-price-feeds/1.json` at the dead generation would leave every assertion in this
+    ///      file green while the deployed feed priced the wrong vault. Binding the two means the address can only
+    ///      be changed in both places at once, which is the point at which someone has to think about it.
+    function test_pinnedVaultMatchesDeployConfig() public view {
+        string memory cfg = vm.readFile("script/config/contracts-deployment-config/custom-price-feeds/1.json");
+        assertEq(
+            vm.parseJsonAddress(cfg, ".sDAI.constructor.sDai"),
+            VAULT,
+            "deploy config points at a different vault than this test pins"
+        );
+        assertEq(
+            vm.parseJsonAddress(cfg, ".sDAI.constructor.baseAsset"),
+            BASE,
+            "deploy config points at a different base asset than this test pins"
+        );
+    }
+
+    function test_vaultIsLiveAndMatchesBase() public view {
+        assertGt(IERC4626(VAULT).totalSupply(), 0, "vault has no shares - wrong address?");
         assertEq(IERC4626(VAULT).asset(), BASE, "vault underlying must be the configured base asset");
     }
 

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: BUSL-1.1
-pragma solidity ^0.8.0;
+pragma solidity ^0.8;
 
 import {TestEnvConfigurator} from "test/TestEnvConfigurator.sol";
 import {spUSDT_CustomPriceFeed} from "src/prices/protocols/spUSDT_CustomPriceFeed.sol";
@@ -52,6 +52,25 @@ contract spUSDT_CustomPriceFeedForkTest is TestEnvConfigurator {
 
     /// @dev Guards the address trap directly: the dead generation has `totalSupply == 0`. If VAULT is ever
     ///      re-pointed at it, the price assert above would still pass (1:1 default rate) but this fails.
+    /// @notice The vault this test pins IS the one the deploy script will read from config.
+    /// @dev Without this the regression guard below is disconnected from production: `VAULT` is a constant here,
+    ///      so re-pointing `custom-price-feeds/1.json` at the dead generation would leave every assertion in this
+    ///      file green while the deployed feed priced the wrong vault. Binding the two means the address can only
+    ///      be changed in both places at once, which is the point at which someone has to think about it.
+    function test_pinnedVaultMatchesDeployConfig() public view {
+        string memory cfg = vm.readFile("script/config/contracts-deployment-config/custom-price-feeds/1.json");
+        assertEq(
+            vm.parseJsonAddress(cfg, ".spUSDT.constructor.spUsdt"),
+            VAULT,
+            "deploy config points at a different vault than this test pins"
+        );
+        assertEq(
+            vm.parseJsonAddress(cfg, ".spUSDT.constructor.baseAsset"),
+            BASE,
+            "deploy config points at a different base asset than this test pins"
+        );
+    }
+
     function test_vaultIsTheLiveGeneration() public view {
         assertGt(IERC4626(VAULT).totalSupply(), 0, "vault has no shares - wrong (dead) generation?");
         assertEq(IERC4626(VAULT).asset(), BASE, "vault underlying must be the configured base asset");

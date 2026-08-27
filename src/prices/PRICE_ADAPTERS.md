@@ -290,7 +290,9 @@ All in `src/prices/protocols/`. Pattern is one file per asset; L2-specific varia
 > `underlyingAssetSupported()` (the vault) and `BASE_ASSET()` (the base asset) on the address itself.
 > This is a property of the family, not of any one deployment.
 
-### Yield-bearing stable wrappers (rate × USD-feed)
+### Yield-bearing vault wrappers (rate × base-USD feed)
+
+Mostly stablecoin-denominated, but not exclusively: `spETH_Price` is WETH-denominated and sits here because the mechanism is identical — a vault share rate multiplied by its base asset's USD feed. The heading said "stable wrappers", which made the taxonomy wrong the moment spETH was added.
 
 | Feed | Asset | Underlying inputs |
 |---|---|---|

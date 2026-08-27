@@ -148,7 +148,7 @@
   },
   "spETH": {
     "enabled": true,
-    "$comment": "Spark Savings ETH - ERC-4626 share, WETH underlying. Spark deployed this savings family TWICE. A dead earlier generation carries the SAME symbol() at a different address with 18 decimals and totalSupply == 0; the live vault pinned here is the 6-decimal one (spETH is 18-decimal in BOTH generations, so decimals alone does not disambiguate it - the address does). An empty ERC-4626 answers convertToAssets at the 1:1 default instead of reverting, so wiring the dead generation would price silently and wrongly. Verified live 2026-08-26: spETH totalSupply 25,087.742699 shares, totalAssets 25,412.301094 WETH.",
+    "$comment": "Spark Savings ETH - ERC-4626 share, WETH underlying. Spark deployed this savings family TWICE. A dead earlier generation carries the SAME symbol() at a different address with totalSupply == 0. DECIMALS DO NOT DISAMBIGUATE spETH: both generations are 18-decimal, so ONLY the address pinned here identifies the live vault (an earlier revision of this comment said the live one was 'the 6-decimal one', which is the spUSDC/spUSDT shape and is wrong here - there is no 6-decimal spETH, so that sentence pointed at the dead address). This is also the member where the trap is genuinely SILENT: the dead vault's 18/18 decimals make convertToAssets return the 1:1 default, giving exactly base WETH/USD - plausible, wrong, and invisible to a price band, unlike spUSDC/spUSDT whose dead twins over-report by 1e12. Verified live 2026-08-26: spETH totalSupply 25,087.742699 shares, totalAssets 25,412.301094 WETH.",
     "constructor": {
       "spEth": "0xfE6eb3b609a7C8352A241f7F3A21CEA4e9209B8f",
       "baseAsset": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"

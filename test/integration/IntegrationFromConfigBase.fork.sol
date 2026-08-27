@@ -790,10 +790,14 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         return address(new KelpWithdrawalQueueBalanceAdapter(withdrawalManager, navAddr));
     }
 
-    /// @dev A MISSING entry here is a SILENT SKIP: the harness runs the adapter's inert path and the suite passes
-    ///      whether the config is right or wrong. While karpatkey holds no stVault (measured 2026-08-27: zero tracked
-    ///      accounts are a `vaultConnection.owner` or hold `DEFAULT_ADMIN_ROLE` on any of the 24 connected vaults),
-    ///      this dispatch only ever exercises the inert path — so the FORK TEST, not this suite, is the real coverage.
+    /// @dev **CORRECTED: a missing entry here is NOT a silent skip.** An earlier revision of this comment said it
+    ///      was. `UndispatchedAdapterGuard` collects enabled adapters that resolve to `address(0)` and FAILS unless
+    ///      they are declared in `test/integration/undispatched-adapters.json`, so an undeclared omission is loud.
+    ///      What IS true, and is why this entry still buys nothing today: the adapter ships `enabled:false` because
+    ///      no tracked account controls any of the 24 connected vaults (measured 2026-08-27 - zero are a
+    ///      `vaultConnection.owner`, zero hold `DEFAULT_ADMIN_ROLE`). Integration coverage is ZERO right now, and
+    ///      the inert path is what runs once it is enabled but still unheld. The FORK TEST is the real coverage in
+    ///      both states.
     function _deployLidoStVaultsMeta(string memory name, address navAddr) internal returns (address) {
         address vaultHub =
             vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "vaultHub"));

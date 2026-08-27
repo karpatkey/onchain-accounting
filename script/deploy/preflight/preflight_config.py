@@ -508,6 +508,12 @@ def heartbeat_findings(chain_id: int, assets: dict, dep_feeds: dict) -> list[tup
     return f
 
 
+def sel_of(sig: str) -> str:
+    """4-byte selector, as the gate builds it — shared with `lido_stvaults_findings`'s self-test arms."""
+    from eth_hash.auto import keccak
+    return "0x" + keccak(sig.encode()).hex()[:8]
+
+
 DEFAULT_ADMIN_ROLE = "0x" + "0" * 64
 
 
@@ -529,7 +535,17 @@ def lido_stvaults_findings(chain_id: int, nav_meta: dict) -> list[tuple[str, str
     if not isinstance(entry, dict) or entry.get("enabled") is not True:
         return []
 
-    instances = entry.get("instances") or []
+    # 06_Configure registers `instances` (widened) UNION `instancesRaw`, so a gate reading only the first leaves
+    # a raw-coordinate vault with NO ownership coverage at all -- silently, which is the failure mode of the thing
+    # being gated. Raw entries must still decode to a clean address: the adapter's `_toAddress` reverts on dirty
+    # high bits, so a bytes32 with junk above 160 is an instance that can never report.
+    instances = list(entry.get("instances") or [])
+    for b in entry.get("instancesRaw") or []:
+        t = str(b)
+        if is_bytes32(t) and int(t, 16) >> 160 == 0:
+            instances.append("0x" + t[-40:])
+        else:
+            instances.append(t)  # falls through to the not-an-address ERROR below
     if not instances:
         # The empty denominator is NOT restated here, deliberately. The adapter-config section already emits
         # "enabled but has an EMPTY instance set" as a WARN, which is both louder and more accurate than
@@ -537,15 +553,19 @@ def lido_stvaults_findings(chain_id: int, nav_meta: dict) -> list[tuple[str, str
         # non-INFO findings. A line that reads as coverage and renders nothing is worse than no line.
         return []
 
-    hub = ((dcfg("meta-balance-adapters", chain_id).get("LidoStVaultsMeta") or {})
-           .get("constructor", {}).get("vaultHub"))
+    # `resolve_param`, not a hard-coded `constructor` lookup: the deploy reader resolves root -> constructor ->
+    # initialize, so a root-level override would deploy against one VaultHub while the gate verified another.
+    hub = resolve_param(dcfg("meta-balance-adapters", chain_id).get("LidoStVaultsMeta") or {}, "vaultHub")
     if not is_address_shaped(hub):
         return [(ERROR, f"LidoStVaultsMeta has {len(instances)} instance(s) but no usable `vaultHub` in "
                         f"contracts-deployment-config -- ownership cannot be verified")]
 
     url, note = c.resolve_rpc(chain_id, allow_fallback=False)
     if not url:
-        return [(WARN, f"LidoStVaultsMeta ownership UNVERIFIED for {len(instances)} instance(s): no RPC ({note})")]
+        # ERROR, not WARN. The runtime has NO protection against either ownership failure, so a gate that cannot
+        # establish its own invariant must not exit successfully -- "unverified" and "verified" must not both pass.
+        return [(ERROR, f"LidoStVaultsMeta ownership UNVERIFIABLE for {len(instances)} instance(s): no RPC "
+                        f"({note}). Neither the zero-controller under-report nor the double-count can be ruled out.")]
 
     try:
         import snapshot_production as sp
@@ -572,7 +592,15 @@ def lido_stvaults_findings(chain_id: int, nav_meta: dict) -> list[tuple[str, str
 
     out: list[tuple[str, str]] = []
     for raw in instances:
-        vault = raw if is_address_shaped(raw) else "0x" + str(raw)[-40:]
+        # ERROR rather than mask. An earlier revision took `"0x" + str(raw)[-40:]`, which quietly turned a bytes32
+        # coordinate with junk in the high bits into a plausible address, verified ownership of THAT address, and
+        # printed a green line -- while the adapter's `_toAddress` REVERTS on dirty high bits and drops the instance
+        # forever. The gate would have certified the exact silent under-report it exists to catch.
+        if not is_address_shaped(raw):
+            out.append((ERROR, f"LidoStVaultsMeta instance {raw!r} is not a 20-byte address. The adapter's "
+                               f"`_toAddress` reverts on dirty high bits and drops the instance silently."))
+            continue
+        vault = raw
         conn = word(hub, sel("vaultConnection(address)") + arg(vault))
         if conn is None:
             out.append((ERROR, f"LidoStVaults {vault}: vaultConnection() unreadable -- cannot verify ownership"))
@@ -583,13 +611,27 @@ def lido_stvaults_findings(chain_id: int, nav_meta: dict) -> list[tuple[str, str
                                f"adapter reports nothing for it"))
             continue
         controllers = []
+        unreadable = []
         for acct in tracked:
             if acct.lower() == owner.lower():
                 controllers.append(acct)
                 continue
             r = word(owner, sel("hasRole(bytes32,address)") + DEFAULT_ADMIN_ROLE[2:] + arg(acct))
-            if r is not None and int(r, 16) == 1:
+            if r is None:
+                # AN UNREADABLE PROBE IS NOT A "NO". Collapsing the two was a fail-OPEN in the over-report
+                # direction: one throttled eth_call (this loop is one call per vault per tracked account, so
+                # rate-limiting is the EXPECTED failure) would drop an account out of `controllers`, turn a
+                # two-controller DOUBLE-COUNT into a single-controller pass, and report it as "verified on-chain".
+                unreadable.append(acct)
+                continue
+            if int(r, 16) == 1:
                 controllers.append(acct)
+        if unreadable:
+            out.append((ERROR, f"LidoStVaults {vault}: could not read DEFAULT_ADMIN_ROLE on Dashboard {owner} for "
+                               f"{len(unreadable)} tracked account(s) ({', '.join(unreadable[:3])}) -- the "
+                               f"controller set is UNDETERMINED, so neither the zero-controller under-report nor "
+                               f"the multi-controller double-count can be ruled out. Re-run; do not proceed."))
+            continue
         if not controllers:
             out.append((ERROR, f"LidoStVaults {vault}: NO tracked account holds DEFAULT_ADMIN_ROLE on its "
                                f"Dashboard {owner} -- the adapter reports ZERO for this vault (silent "
@@ -603,6 +645,23 @@ def lido_stvaults_findings(chain_id: int, nav_meta: dict) -> list[tuple[str, str
             # INFO is not printed by main(); this is a record for programmatic callers, not an operator-visible
             # confirmation. Silence from this axis means "no vault failed", never "the axis ran".
             out.append((INFO, f"LidoStVaults {vault}: controlled by {controllers[0]} (verified on-chain)"))
+
+        # LIVENESS. Every read the adapter's NAV legs depend on must actually answer. On-chain the adapter fails
+        # CLOSED on an unreadable read -- it drops the whole instance -- and because it absorbs its own
+        # out-of-gas inside a fixed-stipend probe, `MetaBalanceAdapter`'s `InstanceGasExhausted` can never fire
+        # for it. That is the safe DIRECTION (under-report) but it is SILENT and permanent, so this gate is the
+        # only place the condition becomes visible. A selector renamed by a Lido upgrade, or a read grown past
+        # the probe stipend, shows up here as an ERROR instead of as a vault that quietly reports zero forever.
+        for sig, target, why in (
+            ("totalValue(address)", hub, "the Staking leg"),
+            ("liabilityShares(address)", hub, "the Borrowed leg"),
+            ("obligations(address)", hub, "the Fees leg"),
+        ):
+            if word(target, sel(sig) + arg(vault)) is None:
+                out.append((ERROR, f"LidoStVaults {vault}: `{sig}` on the hub is UNREADABLE -- {why} cannot be "
+                                   f"valued and the adapter drops the whole instance SILENTLY"))
+        # `accruedFee()` is probed on the owner; a non-answering owner is legitimately zero (an EOA/Safe owner
+        # carries no node-operator fee), so its absence is NOT an error here -- only the hub reads are mandatory.
     return out
 
 
@@ -973,6 +1032,83 @@ def self_test() -> int:
         feeds = {"der": {"enabled": True, "constructor": {"baseAsset": WETH}},
                  "basefeed": {"enabled": True, "constructor": {"baseAsset": base_ctor or OTHER}}}
         return heartbeat_findings(1, assets, feeds)
+
+    # ── Lido stVaults ownership gate ────────────────────────────────────────────────────────────────────────
+    # Stubs `c.rpc` so the arms are pure logic: no chain, no RPC, deterministic. The gate is INERT until a vault
+    # is enabled, and inert code is exactly the code that rots between now and enable-day.
+    import types as _types
+
+    def _lido(instances, replies, tracked_accts, raw=None):
+        """Run the gate against stubbed config + RPC. `replies` maps (to, selector4) -> hex word or None."""
+        entry = {"enabled": True, "instances": list(instances)}
+        if raw is not None:
+            entry["instancesRaw"] = list(raw)
+        real_rpc, real_dcfg, real_resolve = c.rpc, globals()["dcfg"], c.resolve_rpc
+        import snapshot_production as _sp
+        real_accts = _sp.accounts_for_chain
+        try:
+            c.resolve_rpc = lambda cid, allow_fallback=True: ("http://stub", "stub")
+            globals()["dcfg"] = lambda sub, cid: (
+                {"LidoStVaultsMeta": {"constructor": {"vaultHub": "0x" + "9" * 40}}} if sub == "meta-balance-adapters"
+                else real_dcfg(sub, cid))
+            _sp.accounts_for_chain = lambda cid: [{"address": a, "label": ""} for a in tracked_accts]
+
+            def stub(url, method, params):
+                to = params[0]["to"].lower()
+                s4 = params[0]["data"][:10]
+                v = replies.get((to, s4), "MISSING")
+                if v == "MISSING" or v is None:
+                    raise RuntimeError("stubbed RPC failure")
+                return v
+            c.rpc = stub
+            return lido_stvaults_findings(1, {"LidoStVaultsMeta": entry})
+        finally:
+            c.rpc, globals()["dcfg"], c.resolve_rpc = real_rpc, real_dcfg, real_resolve
+            _sp.accounts_for_chain = real_accts
+
+    HUB = "0x" + "9" * 40
+    VLT = "0x" + "a" * 40
+    DASH = "0x" + "b" * 40
+    A1 = "0x" + "c" * 40
+    A2 = "0x" + "d" * 40
+    W = lambda n: "0x" + hex(n)[2:].rjust(64, "0")  # noqa: E731
+    ownerword = "0x" + DASH[2:].rjust(64, "0")
+    conn = (HUB, sel_of("vaultConnection(address)"))
+    role = (DASH, sel_of("hasRole(bytes32,address)"))
+    live = {(HUB, sel_of("totalValue(address)")): W(1),
+            (HUB, sel_of("liabilityShares(address)")): W(0),
+            (HUB, sel_of("obligations(address)")): W(0)}
+
+    r = _lido([VLT], {conn: ownerword, role: W(0), **live}, [A1, A2])
+    check("stVaults: zero controllers ERRORs (silent under-report)",
+          any("NO tracked account holds" in m for m in errs(r)))
+
+    r = _lido([VLT], {conn: ownerword, role: W(1), **live}, [A1, A2])
+    check("stVaults: two controllers ERRORs (double-count)",
+          any("DOUBLE-COUNT" in m or "double-count" in m.lower() for m in errs(r)))
+
+    r = _lido([VLT], {conn: ownerword, **live}, [A1, A2])  # hasRole reply absent -> RPC failure
+    check("stVaults: an UNREADABLE hasRole probe ERRORs, never reads as 'not a controller'",
+          any("UNDETERMINED" in m for m in errs(r)))
+
+    r = _lido(["0xdead"], {conn: ownerword, role: W(1), **live}, [A1])
+    check("stVaults: a non-address instance ERRORs instead of being masked",
+          any("not a 20-byte address" in m for m in errs(r)))
+
+    # DISCRIMINATING shape: a raw-coordinate vault that NO tracked account controls. If `instancesRaw` were
+    # ignored, `instances` would be empty, the gate would return early, and there would be NO error at all --
+    # so the presence of the zero-controller error is exactly the proof that the raw entry was covered.
+    r = _lido([], {conn: ownerword, role: W(0), **live}, [A1],
+              raw=["0x" + "0" * 24 + "a" * 40])
+    check("stVaults: instancesRaw is covered (06 registers instances UNION instancesRaw)",
+          any("NO tracked account holds" in m for m in errs(r)))
+
+    r = _lido([VLT], {conn: ownerword, role: W(1),
+                      (HUB, sel_of("totalValue(address)")): None,
+                      (HUB, sel_of("liabilityShares(address)")): W(0),
+                      (HUB, sel_of("obligations(address)")): W(0)}, [A1])
+    check("stVaults: an unreadable hub selector ERRORs (liveness probe)",
+          any("UNREADABLE" in m for m in errs(r)))
 
     print("synthetic cases:")
     # The asymmetry: this is the case that must NOT be flagged, and the one most likely to be got wrong.

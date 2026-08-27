@@ -16,6 +16,9 @@ Identity is the tuple `(chainId, protocolSubId, positionId, balanceAsset.asset, 
 
 | Adapter | `protocolSubId` slug | `positionId` schema | Leg | `PositionKind` | `isDebt` | `balanceAsset` |
 |---|---|---|---|---|---|---|
+| `LidoStVaultsMeta` | `lido-stvaults` | `abi.encode(address stakingVault)` | vault total value | `Staking` | `false` | ETH sentinel |
+| `LidoStVaultsMeta` | `lido-stvaults` | `abi.encode(address stakingVault)` | stETH liability (shares -> ether) | `Borrowed` | `true` | stETH |
+| `LidoStVaultsMeta` | `lido-stvaults` | `abi.encode(address stakingVault)` | unsettled Lido + node-operator fees | `Fees` | **`true`** | ETH sentinel |
 | ERC20DefaultBalanceAdapter | `wallet` | `abi.encode(address asset)` | wallet balance | `Wallet` | false | the asset itself |
 | AaveV3InstancesMeta | `aave-v3-lending` | `abi.encode(address pool)` | supply (collateral toggle off) | `Supplied` | false | reserve |
 | | | | supply (collateral toggle on) | `Collateral` | false | reserve |
@@ -99,7 +102,7 @@ split legs of the withdrawal-queue / cooldown adapters, which each emit a `Suppl
 
 ## Other observable invariants
 
-- `isDebt == true` occurs **only** with `positionKind == Borrowed` at all current Borrowed emission sites. This correlation is observational: `isDebt` remains the canonical NAV-sign signal (per `PositionKind.sol`), so consumers should read it directly rather than infer sign from `positionKind`.
+- `isDebt == true` occurs with `positionKind == Borrowed` **and, since `LidoStVaultsMeta`, with `positionKind == Fees`** — a vault's unsettled Lido + node-operator fees are an obligation OWED, not a receivable, so that leg is a debt. This is the fleet's first `Fees` leg with `isDebt = true`; every other `Fees` emission (Uniswap V3 / PancakeSwap V3) is an uncollected-fee CREDIT. The old "only with Borrowed" reading was observational and is now false: `isDebt` remains the canonical NAV-sign signal (per `PositionKind.sol`), so consumers should read it directly rather than infer sign from `positionKind`.
 - `Collateral` and `Staking` are always `isDebt == false`.
 - **Static positionId, ephemeral request id in `positionInstanceId`.** The withdrawal/exit queues (Lido, Kelp, Stader, ether.fi, StakeWise V3) and the Ethena cooldown encode a **static, timeless** coordinate — `abi.encode(address <queue/manager/vault/sUSDe>)` (StakeWise: per vault) — never a per-request id; the owed/payout asset is in `balanceAsset`. The four withdrawal queues now emit **one leg per open request** (StakeWise: up to two legs per `positionTicket` — claimable + still-queued — since a single exit can be partially processed), each leg's `isLocked` reflecting that request's own state, and the ephemeral request id (ERC721 request id / `userNonce` / cached tokenId / `positionTicket`) carried in the typed `positionInstanceId` (`bytes32(<id>)`), never in `positionId`. All legs of an account share the static positionId. (Ethena stays a single cooldown leg; the staking-with-cooldown adapters Aave SM & Umbrella keep their two staking legs — active=locked, in-window=unlocked — plus a reward leg, all sharing `abi.encode(address stakeToken)`, distinguished by `isLocked` + `positionKind`.) All other adapters encode at least one address (or `bytes32` poolId/marketId). Uniswap/PancakeSwap V3 and Nexus Mutual staking encode the **pool contract address** (the V3 pool / the staking pool) — a stable coordinate — and carry the ephemeral per-NFT id only in the typed `positionInstanceId`, never in `positionId`. No adapter emits an empty `positionId`.
 - One `protocolSubId` slug ⇒ exactly one `positionId` decode schema, as required by the slug rules — no adapter violates this.

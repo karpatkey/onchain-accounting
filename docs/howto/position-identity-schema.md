@@ -46,7 +46,7 @@ by `isDebt = true`, never by a negative `amount`. NAVCalculator multiplies by `-
 **`isDebt`** — `bool`
 
 `true` → this row subtracts from NAV (borrow, debt). `false` → this row adds to NAV (credit,
-supply, rewards, fees). `positionKind == Borrowed` implies `isDebt = true`; all other kinds
+supply, rewards, fees). `positionKind == Borrowed` implies `isDebt = true`. **`Fees` may be EITHER**: an uncollected-fee credit (Uniswap V3 / PancakeSwap V3) or an owed-fee debt (`LidoStVaultsMeta`), so it must be read from `isDebt` and never inferred from the kind. All other kinds
 imply `isDebt = false`.
 
 **`protocolBrand` / `protocolId` / `protocolSubId`** — `bytes32` each

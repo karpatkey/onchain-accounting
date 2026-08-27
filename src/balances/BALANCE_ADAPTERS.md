@@ -460,7 +460,7 @@ stand-in whose array getter reverts, so any implementation that reaches for it f
 
 ## 7. Implemented adapters
 
-### 7.1 Meta-adapters (22)
+### 7.1 Meta-adapters (23)
 
 Meta-adapters extend `MetaBalanceAdapter` (PancakeSwap V2 extends `UniswapV2PoolsMetaBalanceAdapter`, which itself extends the base). The instance set is configured on NAVCalculator via `addMetaInstances`/`removeMetaInstances`.
 

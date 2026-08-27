@@ -38,6 +38,30 @@ interface ILidoStETH {
 ///         **StakingVault** address widened to bytes32; the active set is governed on NAVCalculator via
 ///         `addMetaInstances`/`removeMetaInstances`. See ADR 0010.
 ///
+/// @dev **FIXED-STIPEND PROBES: A STARVED READ DROPS THE INSTANCE SILENTLY, AND THAT IS ADJUDICATED, NOT
+///      OVERLOOKED.** Every NAV-bearing read goes through {StaticCallLib.probeWord}, which forwards a fixed
+///      `PROBE_GAS`. If a callee ever costs more than that -- a VaultHub upgrade, a longer proxy chain, a
+///      replaced Dashboard; Lido V3 is pre-1.0 and all of these are upgradeable -- the probe fails, this adapter
+///      absorbs its own out-of-gas and returns EMPTY. Because it absorbs it, `consumed` stays tiny against a
+///      multi-megagas instance stipend, `GasStipendLib.exhausted` reads false, and `MetaBalanceAdapter`'s
+///      {INAVCalculator.InstanceGasExhausted} CAN NEVER FIRE FOR THIS ADAPTER. The position reports zero,
+///      permanently and silently.
+///
+///      **Why this deviates from `EulerVaultsMetaBalanceAdapter`, which uses `probeWordMetered` and REVERTS on
+///      `starved`.** Direction. In Euler a starved debt read removes an instance's only leg while sibling vaults
+///      keep reporting collateral in full -- an OVER-report, which nothing inside the instance can offset, so
+///      only refusing to answer is safe. Here the credit leg drops with the debt legs, so starvation costs the
+///      whole position and the direction is UNDER-report, which this repo tolerates. Adopting the metered route
+///      would convert a bounded under-report into a reverted NAV read for the whole account whenever one Lido
+///      contract becomes legitimately expensive -- trading a tolerated failure for an availability one.
+///
+///      **The residual is therefore silence, and silence is what is instrumented instead.**
+///      `preflight_config.lido_stvaults_findings` eth_calls `totalValue`, `liabilityShares` and `obligations`
+///      for every configured instance and raises an ERROR when any is unreadable, so a selector renamed by an
+///      upgrade -- or a read grown past the stipend -- surfaces at the gate rather than as a vault that quietly
+///      reports zero. That gate is the detection channel this adjudication depends on; if it is ever removed,
+///      this decision must be revisited, not merely inherited.
+///
 /// @dev **THE OWNERSHIP PREDICATE IS `DEFAULT_ADMIN_ROLE`, AND THAT IS NARROWER THAN 'CONTROLS THE ETH'.**
 ///      A Dashboard splits duties: `FUND_ROLE` / `WITHDRAW_ROLE` / `MINT_ROLE` / `BURN_ROLE` are the operational
 ///      roles that actually move value, and they are routinely held by a DIFFERENT address from the admin.
@@ -113,6 +137,11 @@ contract LidoStVaultsMetaBalanceAdapter is MetaBalanceAdapter {
         if (underlyingToken_ == address(0)) revert InvalidArguments();
         AddressCheckLib.requireContract(vaultHub_, "vaultHub");
         AddressCheckLib.requireContract(steth_, "steth");
+        // Aliasing any two of the three would mislabel legs (a Borrowed leg denominated in the underlying, or a
+        // hub that is also the debt token). The artifact is immutable, so this is a deploy-time check or a redeploy.
+        if (steth_ == underlyingToken_ || vaultHub_ == steth_ || vaultHub_ == underlyingToken_) {
+            revert InvalidArguments();
+        }
         VAULT_HUB = IVaultHub(vaultHub_);
         STETH = steth_;
         UNDERLYING_TOKEN = underlyingToken_;
@@ -229,8 +258,15 @@ contract LidoStVaultsMetaBalanceAdapter is MetaBalanceAdapter {
     /// @dev Two components, and they are DISTINCT rather than nested — measured on mainnet 2026-08-27: `accruedFee`
     ///      was ~2700x `feesToSettle` on the sampled vault, and `maxLockableValue` nets only `feesToSettle`.
     ///        * `obligations().feesToSettle` — owed to the Lido core protocol, read from the hub.
-    ///        * the Dashboard's `accruedFee()` — owed to the node operator. Only exists on the Dashboard path: when
-    ///          `account` IS the recorded owner there is no Dashboard in the chain and this component is zero.
+    ///        * the owner's `accruedFee()` — owed to the node operator. **PROBED ON BOTH PATHS, and an earlier
+    ///          revision did not.** That revision skipped it whenever `account == owner`, reasoning that "there is
+    ///          no Dashboard in the chain" — which the evidence refutes: `vaultConnection.owner` is a DASHBOARD on
+    ///          every vault inspected on mainnet 2026-08-27 (the party Lido's UI calls "Vault Owner" is that
+    ///          Dashboard's `DEFAULT_ADMIN`, not the recorded owner). So a tracked account that IS the recorded
+    ///          owner would have had a real node-operator debt silently omitted — an OVER-report, the one direction
+    ///          this adapter does not tolerate. Probing on both paths costs one staticcall and cannot over-report:
+    ///          an owner that does not answer contributes zero, and one that answers with garbage adds a spurious
+    ///          DEBT, which under-reports.
     ///      `sharesToBurn` is deliberately NOT added, for TWO independent reasons. It is a subset of
     ///      `liabilityShares` already carried by the Borrowed leg, so adding it double-counts; and per Lido's own
     ///      technical design the obligation categories it covers (health obligation, redemptions) are denominated
@@ -241,11 +277,15 @@ contract LidoStVaultsMetaBalanceAdapter is MetaBalanceAdapter {
             _secondWord(address(VAULT_HUB), abi.encodeCall(IVaultHub.obligations, (vault)));
         if (!obOk) return (false, 0);
         fee = feesToSettle;
-        if (owner == account) return (true, fee);
 
         (bool accOk, uint256 accrued) = _word(owner, abi.encodeWithSignature("accruedFee()"));
-        if (!accOk) return (false, 0);
-        return (true, fee + accrued);
+        if (accOk) return (true, fee + accrued);
+        // An owner that does not ANSWER `accruedFee()` carries no node-operator fee, so a missing reply is zero
+        // rather than a failure — but ONLY when the account is the owner itself. On the ROLE path the owner is a
+        // Dashboard by construction (we reached here through its `hasRole`), so a Dashboard that cannot answer its
+        // own fee getter is a broken read on a DEBT, and the whole instance drops.
+        if (owner == account) return (true, fee);
+        return (false, 0);
     }
 
     /// @dev First returned word, requiring the callee actually produced one. `hasWord`, never the bare success flag.
@@ -261,11 +301,16 @@ contract LidoStVaultsMetaBalanceAdapter is MetaBalanceAdapter {
     function _secondWord(address target, bytes memory data) private view returns (bool ok, uint256 value) {
         uint256 size;
         bool success;
+        // Routed through a local so the SYMBOLIC stipend reaches the assembly block — the
+        // `AaveUmbrellaBalanceAdapter` idiom. A bare numeric literal here was the only one in `src/`, and it would
+        // have silently kept the OLD ceiling on a DEBT read if `PROBE_GAS` were ever raised repo-wide to rescue an
+        // honest-but-expensive call: the repo-wide fix would look applied while this instance kept dropping.
+        uint256 probeGas = StaticCallLib.PROBE_GAS;
         assembly ("memory-safe") {
             let out := mload(0x40)
             mstore(out, 0)
             mstore(add(out, 0x20), 0)
-            success := staticcall(100000, target, add(data, 0x20), mload(data), out, 0x40)
+            success := staticcall(probeGas, target, add(data, 0x20), mload(data), out, 0x40)
             size := returndatasize()
             value := mload(add(out, 0x20))
         }

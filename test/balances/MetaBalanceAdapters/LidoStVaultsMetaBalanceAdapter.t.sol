@@ -81,9 +81,31 @@ contract MockVaultHub {
         return shares[vault];
     }
 
+    /// @dev 0 = well-formed 64 bytes; 1 = ONE word (32 bytes); 2 = zero bytes; 3 = three words (96 bytes).
+    ///      The hand-rolled `_secondWord` guard is the file's only non-library fail-open, and it was the one
+    ///      shape the suite did not pin.
+    uint8 public obShape;
+
+    function setObShape(uint8 v) external {
+        obShape = v;
+    }
+
     function obligations(address vault) external view returns (uint256, uint256) {
         require(!revertObligations, "obligations");
-        return (sharesToBurn[vault], feesToSettle[vault]);
+        uint256 a = sharesToBurn[vault];
+        uint256 b = feesToSettle[vault];
+        uint8 shape = obShape;
+        if (shape == 0) return (a, b);
+        assembly {
+            let out := mload(0x40)
+            mstore(out, a)
+            mstore(add(out, 0x20), b)
+            mstore(add(out, 0x40), 0xdead)
+            switch shape
+            case 1 { return(out, 0x20) }
+            case 2 { return(out, 0) }
+            default { return(out, 0x60) }
+        }
     }
 }
 
@@ -159,7 +181,7 @@ contract LidoStVaultsMetaBalanceAdapterTest is Test {
     function setUp() public {
         nav = new Mock_NAVCalculator();
         eth = new MockToken();
-        steth = new MockStETH(2e18); // 1 share = 2 ether — deliberately NOT 1:1
+        steth = new MockStETH(2e18); // 1 share = 2 ether - deliberately NOT 1:1
         hub = new MockVaultHub();
         dash = new MockDashboard();
 
@@ -307,6 +329,61 @@ contract LidoStVaultsMetaBalanceAdapterTest is Test {
 
         bytes32[] memory noDebt = _one(vaultDash);
         assertEq(m2.getAdapterPositionsForInstances(alice, noDebt, address(0)).length, 2, "no debt -> still reports");
+    }
+
+    // ── the fee obligation on BOTH ownership paths ──────────────────────────────────────────────────────────────
+
+    /// @dev THE OVER-REPORT AN EARLIER REVISION SHIPPED. It skipped `accruedFee()` whenever `account == owner`,
+    ///      on the stated ground that "there is no Dashboard in the chain". Measured on mainnet, `vaultConnection
+    ///      .owner` IS a Dashboard on every vault, so a tracked account that is the recorded owner had a real
+    ///      node-operator debt silently dropped. Here the Dashboard IS the tracked account.
+    function test_ownerIsItselfADashboard_feeIncludesAccruedFee() public {
+        hub.setConn(vaultDirect, address(dash)); // the tracked account and the recorded owner are the same contract
+        INAVCalculator.PositionBalance[] memory p = _get(address(dash), vaultDirect, address(0));
+        assertEq(p.length, 3, "staking + borrowed + fees");
+        // feesToSettle 5 + accruedFee 7; the old code returned 5 and under-stated the debt.
+        assertEq(p[2].amount, 12, "accruedFee must be probed even when the account IS the owner");
+        assertTrue(p[2].isDebt);
+    }
+
+    /// @dev The other direction of the same change: an owner that does NOT answer `accruedFee()` carries no
+    ///      node-operator fee, so a missing reply is zero rather than a whole-instance drop. `alice` is an EOA.
+    function test_ownerWithoutAccruedFee_isZero_notAFailure() public view {
+        INAVCalculator.PositionBalance[] memory p = _get(alice, vaultDirect, address(0));
+        assertEq(p.length, 3, "an EOA owner still reports");
+        assertEq(p[2].amount, 5, "feesToSettle only - a silent EOA contributes zero, not a drop");
+    }
+
+    /// @dev …but on the ROLE path the owner is a Dashboard by construction, so a Dashboard that cannot answer its
+    ///      own fee getter is a broken DEBT read and the instance drops. Guards the fix's other direction.
+    function test_roleePath_dashboardSilentOnAccruedFee_stillDrops() public {
+        dash.setRevertFee(true);
+        assertEq(_get(alice, vaultDash, address(0)).length, 0, "role path must still fail closed");
+    }
+
+    // ── the hand-rolled two-word guard ──────────────────────────────────────────────────────────────────────────
+
+    function test_obligationsShortReply_dropsWholeInstance() public {
+        hub.setObShape(1); // 32 bytes: feesToSettle absent
+        assertEq(_get(alice, vaultDirect, address(0)).length, 0, "one word is not a two-word reply");
+        hub.setObShape(2); // 0 bytes
+        assertEq(_get(alice, vaultDirect, address(0)).length, 0, "empty reply is not a zero fee");
+    }
+
+    function test_obligationsOverlongReply_stillSelectsTheSecondWord() public {
+        hub.setObShape(3); // 96 bytes, trailing junk
+        INAVCalculator.PositionBalance[] memory p = _get(alice, vaultDirect, address(0));
+        assertEq(p.length, 3);
+        assertEq(p[2].amount, 5, "word[1] is feesToSettle; the trailing word must be ignored");
+    }
+
+    // ── constructor ─────────────────────────────────────────────────────────────────────────────────────────────
+
+    function test_constructor_rejectsAliasedArguments() public {
+        vm.expectRevert();
+        new LidoStVaultsMetaBalanceAdapter(address(hub), address(eth), address(eth), address(nav));
+        vm.expectRevert();
+        new LidoStVaultsMetaBalanceAdapter(address(hub), address(hub), address(eth), address(nav));
     }
 
     // ── filter, zeros, labels ───────────────────────────────────────────────────────────────────────────────────

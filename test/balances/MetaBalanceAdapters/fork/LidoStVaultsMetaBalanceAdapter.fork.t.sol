@@ -84,15 +84,18 @@ contract LidoStVaultsMetaBalanceAdapterForkTest is BalanceAdapterTestBase {
         // idiomatic one.
         for (uint256 i = 1; i <= count; i++) {
             address v = _vaultByIndex(i);
-            if (v == address(0)) continue;
+            assertTrue(v != address(0), "vaultByIndex must resolve for every index in 1..vaultsCount()");
             (bool okTv, uint256 tv) = _u(VAULT_HUB, abi.encodeWithSignature("totalValue(address)", v));
             (bool okMl, uint256 ml) = _u(VAULT_HUB, abi.encodeWithSignature("maxLockableValue(address)", v));
             (bool okOb, uint256 fees) = _feesToSettle(v);
-            if (!okTv || !okMl || !okOb) continue;
+            // NO `continue`. An earlier revision skipped unreadable vaults and then asserted only
+            // `checked > 10`, so this test claimed "across EVERY connected vault" while passing on 11 of 24 --
+            // a regression that broke half the set would have stayed green. An unreadable read IS the finding.
+            assertTrue(okTv && okMl && okOb, "every connected vault's accounting reads must answer");
             assertEq(tv - ml, fees, "totalValue must be gross of feesToSettle");
             checked++;
         }
-        assertGt(checked, 10, "identity must be exercised over a meaningful sample");
+        assertEq(checked, count, "the identity must hold on EVERY connected vault, not a sample");
     }
 
     /// @notice `vaultByIndex` is 1-indexed — `vaultByIndex(0)` reverts.
@@ -156,7 +159,10 @@ contract LidoStVaultsMetaBalanceAdapterForkTest is BalanceAdapterTestBase {
     function test_feeIdentityHoldsOnAFreshReport() public view {
         (bool okFresh, uint256 fresh) = _u(VAULT_HUB, abi.encodeWithSignature("isReportFresh(address)", FRESH_VAULT));
         assertTrue(okFresh, "isReportFresh readable");
-        if (fresh != 1) return; // fixture drifted out of freshness; the identity below is the durable claim
+        // FAIL, do not return. The block is PINNED, so this fixture cannot drift on its own -- if it is no longer
+        // fresh, someone bumped FORK_BLOCK and the positive control silently stopped existing. Returning early
+        // here would delete the only fresh-report coverage in the suite without anything going red.
+        assertEq(fresh, 1, "FRESH_VAULT is no longer fresh at FORK_BLOCK -- pick a new fixture, do not skip");
 
         (bool okOb, uint256 fees) = _feesToSettle(FRESH_VAULT);
         (bool okTv, uint256 tv) = _u(VAULT_HUB, abi.encodeWithSignature("totalValue(address)", FRESH_VAULT));

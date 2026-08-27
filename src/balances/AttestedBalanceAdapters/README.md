@@ -54,7 +54,10 @@ duplicate-asset guard, the `IBalanceAdapter` reads, and `_row`.
   and split, only their SUM checked) is NOT attested and must be documented by the member.
 - **Upsert, never suppress.** A submit adds/refreshes the elements it carries and **never drops** an omitted one;
   removal is only via the **stale-gated** `clearAccount` / a per-element clear (which revert while any entry is live).
-  So a third party can neither inflate nor suppress an account's balance.
+  So a third party can neither inflate an account's balance nor suppress an entry **already in the cache**. It
+  does NOT mean an entry can always get in: admission is capped and fails loud, so a third party holding the
+  account's public proofs can squat the cap with low-value elements and keep a valuable one out (Gap 1 in the
+  operator runbook) — under-report only, and an open design call rather than a closed guarantee.
 - **Stale reads → 0.** A cached entry whose root ≠ the live root reads 0 (no extrapolation across a root rotation).
 
 These adapters are documented exceptions to the immutability rule (cf.

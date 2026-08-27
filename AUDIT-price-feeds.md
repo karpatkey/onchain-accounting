@@ -70,6 +70,15 @@ The absence applies to every non-4626 feed (all `BaseCustomPriceFeed` and `TwoFe
 
 ### B. `cbETH_CustomPriceFeed`, `ETHPlus_CustomPriceFeed` — and `sDAI_CustomPriceFeed` — are deployed on no chain. Three, not two.
 
+> **SUPERSEDED FOR `sDAI` (2026-08-27).** This finding was accurate when written and is now wrong on
+> sDAI specifically. `sDAI_CustomPriceFeed` was revived as an `ERC4626VaultRatePriceFeed` subclass,
+> deployed to mainnet at `0x84eDa44d3ab2982692804b153D4bE88A0AfD533C`, and sDAI IS a registered
+> mainnet asset — so every claim below about sDAI having "no config entry on any chain", being
+> "genuinely dead", and mainnet sDAI "not being a registered asset" no longer holds, and the
+> suggestion to drop the contract must not be acted on. The contract is also no longer the chi-based
+> implementation this document describes. `cbETH` and `ETHPlus` are unaffected and the finding stands
+> for them. Left in place rather than rewritten so the reasoning stays legible.
+
 Confirmed from **both** independent sources, which agree:
 
 - **Deployed-address records** (`script/config/deployments/<chainId>.json`, key `customPriceFeeds`) — populated across all 25 chain files, totalling exactly **39 instances**: mainnet 24, Arbitrum 8, Base 4, Gnosis 3, and empty on the other 21 chains. `cbETH`, `ETHPlus` and `sDAI` appear in **none** of them.

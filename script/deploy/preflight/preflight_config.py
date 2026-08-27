@@ -508,6 +508,104 @@ def heartbeat_findings(chain_id: int, assets: dict, dep_feeds: dict) -> list[tup
     return f
 
 
+DEFAULT_ADMIN_ROLE = "0x" + "0" * 64
+
+
+def lido_stvaults_findings(chain_id: int, nav_meta: dict) -> list[tuple[str, str]]:
+    """Every configured Lido stVault must be controlled by EXACTLY ONE tracked account.
+
+    Why this exists, and why the adapter cannot do it itself. `LidoStVaultsMetaBalanceAdapter` keys on
+    `DEFAULT_ADMIN_ROLE` of the vault's Dashboard. That is deliberately NARROWER than "can move the ETH":
+    measured on mainnet 2026-08-27, the `WITHDRAW_ROLE`/`FUND_ROLE`/`MINT_ROLE` holder was a DIFFERENT address
+    from the admin on all three vaults inspected. So a Safe wired as the OPERATIONAL manager, with admin held
+    by a separate governance key, gets reported as ZERO -- a silent under-report, position present and NAV blank.
+
+    The mirror failure is an over-report: `DEFAULT_ADMIN_ROLE` is not enumerable, so if TWO tracked accounts
+    hold admin on one vault they each report it in FULL and the NAV double-counts. Reachable in practice --
+    one connected vault carried five live admins when this was written. The adapter is called per-account and
+    cannot see the others, so neither direction is detectable from inside it. Both are detectable HERE.
+    """
+    entry = (nav_meta or {}).get("LidoStVaultsMeta")
+    if not isinstance(entry, dict) or entry.get("enabled") is not True:
+        return []
+
+    instances = entry.get("instances") or []
+    if not instances:
+        # The empty denominator is NOT restated here, deliberately. The adapter-config section already emits
+        # "enabled but has an EMPTY instance set" as a WARN, which is both louder and more accurate than
+        # anything this axis could add -- and an INFO would be strictly invisible, since main() prints only
+        # non-INFO findings. A line that reads as coverage and renders nothing is worse than no line.
+        return []
+
+    hub = ((dcfg("meta-balance-adapters", chain_id).get("LidoStVaultsMeta") or {})
+           .get("constructor", {}).get("vaultHub"))
+    if not is_address_shaped(hub):
+        return [(ERROR, f"LidoStVaultsMeta has {len(instances)} instance(s) but no usable `vaultHub` in "
+                        f"contracts-deployment-config -- ownership cannot be verified")]
+
+    url, note = c.resolve_rpc(chain_id, allow_fallback=False)
+    if not url:
+        return [(WARN, f"LidoStVaultsMeta ownership UNVERIFIED for {len(instances)} instance(s): no RPC ({note})")]
+
+    try:
+        import snapshot_production as sp
+        tracked = [a["address"] for a in sp.accounts_for_chain(chain_id)]
+    except Exception as e:  # noqa: BLE001
+        return [(WARN, f"LidoStVaultsMeta ownership UNVERIFIED: tracked-account list unreadable ({e!r})")]
+    if not tracked:
+        return [(WARN, f"LidoStVaultsMeta has {len(instances)} instance(s) but NO tracked accounts are enabled "
+                       f"on chain {chain_id} -- every instance would report zero")]
+
+    def word(target: str, data: str):
+        try:
+            r = c.rpc(url, "eth_call", [{"to": target, "data": data}, "latest"])
+        except Exception:  # noqa: BLE001
+            return None
+        return r if isinstance(r, str) and len(r) >= 66 else None
+
+    def sel(sig: str) -> str:
+        from eth_hash.auto import keccak
+        return "0x" + keccak(sig.encode()).hex()[:8]
+
+    def arg(a: str) -> str:
+        return a.lower().replace("0x", "").rjust(64, "0")
+
+    out: list[tuple[str, str]] = []
+    for raw in instances:
+        vault = raw if is_address_shaped(raw) else "0x" + str(raw)[-40:]
+        conn = word(hub, sel("vaultConnection(address)") + arg(vault))
+        if conn is None:
+            out.append((ERROR, f"LidoStVaults {vault}: vaultConnection() unreadable -- cannot verify ownership"))
+            continue
+        owner = "0x" + conn[2:][24:64]
+        if int(owner, 16) == 0:
+            out.append((ERROR, f"LidoStVaults {vault}: NOT CONNECTED to the hub (no recorded owner); the "
+                               f"adapter reports nothing for it"))
+            continue
+        controllers = []
+        for acct in tracked:
+            if acct.lower() == owner.lower():
+                controllers.append(acct)
+                continue
+            r = word(owner, sel("hasRole(bytes32,address)") + DEFAULT_ADMIN_ROLE[2:] + arg(acct))
+            if r is not None and int(r, 16) == 1:
+                controllers.append(acct)
+        if not controllers:
+            out.append((ERROR, f"LidoStVaults {vault}: NO tracked account holds DEFAULT_ADMIN_ROLE on its "
+                               f"Dashboard {owner} -- the adapter reports ZERO for this vault (silent "
+                               f"under-report). The adapter keys on admin, NOT on WITHDRAW/FUND/MINT, which "
+                               f"are routinely held by a different address."))
+        elif len(controllers) > 1:
+            out.append((ERROR, f"LidoStVaults {vault}: {len(controllers)} tracked accounts hold "
+                               f"DEFAULT_ADMIN_ROLE ({', '.join(controllers)}) -- each reports the vault in "
+                               f"FULL, so the NAV DOUBLE-COUNTS it. Curate to exactly one."))
+        else:
+            # INFO is not printed by main(); this is a record for programmatic callers, not an operator-visible
+            # confirmation. Silence from this axis means "no vault failed", never "the axis ran".
+            out.append((INFO, f"LidoStVaults {vault}: controlled by {controllers[0]} (verified on-chain)"))
+    return out
+
+
 def _config_error_findings(chain_id: int, msgs) -> list[tuple[str, str]]:
     return [(ERROR, f"config file {msg} — could not be read, so whatever it governs on chain "
                     f"{chain_id} has NO preflight coverage. That is not the same as clean.")
@@ -616,6 +714,16 @@ def _check_chain(chain_id: int) -> list[tuple[str, str]]:
     # --- adapter config coherence (only chains that have nav-config) --------
     nav_plain = cfg("balance-adapters", chain_id)
     nav_meta = cfg("meta-balance-adapters", chain_id)
+
+    # Lido stVaults: verify EXACTLY ONE tracked account controls each configured vault. Neither direction of
+    # failure is visible to the adapter itself (it is called per-account and cannot see the others), and both
+    # are silent in production NAV -- zero for an uncontrolled vault, double for a doubly-controlled one.
+    # Fail-soft like the heartbeat axis: this must never take out the other config checks.
+    try:
+        f += lido_stvaults_findings(chain_id, nav_meta)
+    except Exception as e:  # noqa: BLE001
+        f.append((WARN, f"Lido stVaults ownership check produced NO coverage for chain {chain_id} "
+                        f"(other checks unaffected): {e!r}"))
     dep_plain = dcfg("balance-adapters", chain_id)
     dep_meta = dcfg("meta-balance-adapters", chain_id)
     if not (nav_plain or nav_meta):

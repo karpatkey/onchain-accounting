@@ -116,9 +116,17 @@ jobs:
             cache/
           retention-days: 1
 
-  # HISTORY — why a separate clean-build `pins` job existed here until #323, and what would bring
-  # it back. Kept because the observation below is the only in-tree record of it, and because the
-  # reasoning is the argument anyone must defeat before trusting an artifact-derived pin.
+  # HISTORY — why a separate clean-build `pins` job existed here until #323, what replaced it, and
+  # what would bring it back. Kept because the observation below is the only in-tree record of it,
+  # and because the reasoning is the argument anyone must defeat before trusting an artifact-derived
+  # pin.
+  #
+  # IT WAS NOT SIMPLY DELETED. `.github/workflows/pin-canary.yml` does the same clean whole-program
+  # build and runs the same assertions, weekly and on every push to main that can move a pin. What
+  # changed is the CADENCE, not the check: pins move when code or compiler settings LAND, not when a
+  # PR is opened, so per-PR was paying ~993 s on the critical path for a signal that was not there.
+  # If that canary ever goes red on an unchanged source closure it FALSIFIES the premise of #323,
+  # and the correct reaction is to restore this job — never to repin.
   #
   # `build` mounts two Blacksmith sticky disks over `out/` and `cache/`, keyed on
   # `${{ github.repository }}` and nothing else. They are shared by every run of every branch, so

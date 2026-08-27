@@ -90,10 +90,16 @@ contract LibraryPinConsistencyTest is Test {
     ///         foundry.toml) and its global side effect of routing `new` in test sources through `vm.deployCode` is
     ///         not wanted. Writing the read out by hand in these three places gets the benefit without the flag.
     ///
-    ///         **The clean whole-program build this file used to require is therefore gone.** It existed to make
-    ///         the embedded constant trustworthy, at ~993 s per CI run, and it was the entire critical path. The
-    ///         freshness assertion does the same work by content-hash for free. If a future edit reintroduces an
-    ///         embedded `type(X).creationCode` here, it must also reintroduce that build — they are one mechanism.
+    ///         **The clean whole-program build is no longer required PER PR** — it existed to make the embedded
+    ///         constant trustworthy, at ~993 s on the critical path of every run, and the freshness assertion
+    ///         below does that work by content-hash for free. It has NOT gone away: `.github/workflows/
+    ///         pin-canary.yml` runs the same clean build and these same assertions weekly and on every push to
+    ///         main that can move a pin. That canary is the standing falsifier for the assumption this file now
+    ///         rests on — that a contract's creation code is independent of compilation SCOPE. If it ever goes
+    ///         red on an unchanged source closure, restore the per-PR job; do not repin.
+    ///
+    ///         If a future edit reintroduces an embedded `type(X).creationCode` here, it must also reintroduce
+    ///         the per-PR build — they are one mechanism.
     ///
     ///         **Content-hash, not mtime, and that choice is load-bearing.** Artifacts restored from a cache are
     ///         WRITTEN at restore time, so their mtimes are newer than the checkout that produced the sources — a

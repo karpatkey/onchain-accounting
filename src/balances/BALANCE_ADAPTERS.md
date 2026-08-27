@@ -321,6 +321,7 @@ The table below is the sweep of every `positionLabels` implementation in `src/ba
 | `MorphoMarketsMetaBalanceAdapter` | `U` "Market" | `C` `"<collateral>/<loan>"` | — | 0–2 | |
 | `MorphoVaultsMetaBalanceAdapter` | `U` "Vault" | `C` vault name | — | 0–2 | |
 | `StakeWiseV3VaultsMetaBalanceAdapter` | `U` "Vault" | `C` vault name / symbol+hex | — | 1–2 | |
+| `PolygonStakingMetaBalanceAdapter` | `U` "Validator" | `C` `#<validatorId>` / symbol+hex | — | 1–2 | |
 | `BalancerV2PoolsMetaBalanceAdapter` | `U` "AMM Liquidity Pool" | `C` joined token symbols | — | 0–2 | |
 | `BalancerV2GaugesMetaBalanceAdapter` | `U` "Staking Gauge" | `C` joined token symbols | — | 0–2 | |
 | `BalancerV3PoolsMetaBalanceAdapter` | `U` "AMM Liquidity Pool" | `C` joined token symbols | — | 0–2 | |
@@ -460,7 +461,7 @@ stand-in whose array getter reverts, so any implementation that reaches for it f
 
 ## 7. Implemented adapters
 
-### 7.1 Meta-adapters (22)
+### 7.1 Meta-adapters (23)
 
 Meta-adapters extend `MetaBalanceAdapter` (PancakeSwap V2 extends `UniswapV2PoolsMetaBalanceAdapter`, which itself extends the base). The instance set is configured on NAVCalculator via `addMetaInstances`/`removeMetaInstances`.
 
@@ -484,6 +485,7 @@ Meta-adapters extend `MetaBalanceAdapter` (PancakeSwap V2 extends `UniswapV2Pool
 | **MorphoVaultsMeta** | All Morpho ERC4626 vaults (MetaMorpho). Instance coordinate = vault address. positionId = `abi.encode(vault)`. One `Supplied` leg per vault (shares → underlying). | `(navCalculator)` | `MorphoVaultsMeta`; vaults under `instances`. |
 | **MorphoMarketsMeta** | All Morpho markets. Instance coordinate = raw bytes32 marketId. positionId = `abi.encode(bytes32 marketId)`. Up to 3 rows per market (`Collateral`, `Supplied`, `Borrowed`). Morpho contract pinned in constructor. | `(morpho, navCalculator)` | `MorphoMarketsMeta`; marketIds under `instancesRaw`. |
 | **StakeWiseV3VaultsMeta** | All StakeWise V3 vaults. Instance coordinate = vault address. positionId = `abi.encode(vault)`. `Staking` (vault shares → assets) + `Borrowed` (osToken debt) legs. Underlying token and osToken vault controller pinned in constructor. | `(underlyingToken, osTokenVaultController, navCalculator)` | `StakeWiseV3VaultsMeta`; vaults under `instances`. |
+| **PolygonStakingMeta** | All Polygon PoS validators. **Settles on Ethereum L1** (StakeManager `0x5e3Ef299…D908`), so it is a chain-1 adapter despite the name. Instance coordinate = `ValidatorShare` address. positionId = `abi.encode(validatorShare)`. `Staking` (delegated principal) + `Rewards` (unclaimed) legs, both POL, both non-debt, told apart by `positionKind`. One `getStakeAndRewards` call yields both. Underlying token pinned in constructor (equals `StakeManager.token()`). **Unbonding positions are NOT reported** — a deliberate, documented under-report (the queue is an unbounded per-account nonce walk). | `(underlyingToken, navCalculator)` | `PolygonStakingMeta`; ValidatorShares under `instances`. |
 | **UniswapV2PoolsMeta** | LP of all Uniswap V2 pairs. Instance coordinate = pair address. positionId = `abi.encode(pair)`. One `Supplied` leg per token (dilution-adjusted pro-rata reserves). Also serves SushiSwap/PancakeSwap V2 forks. | `(navCalculator)` | `UniswapV2PoolsMeta`; pairs under `instances`. |
 | **PancakeSwapV2PoolsMeta** | Thin subclass of `UniswapV2PoolsMeta` (PancakeSwap V2 is a byte-for-byte V2 fork). | `(navCalculator)` | `PancakeSwapV2PoolsMeta`; pairs under `instances`. |
 | **UniswapV3PoolsMeta** | Uniswap V3 LP across all configured pools. Instance coordinate = pool address. Enumerates the account's NFTs on-chain via the `ERC721Enumerable` NonfungiblePositionManager (`balanceOf` → `tokenOfOwnerByIndex` → `positions`, bounded by `MAX_POSITIONS` = 1000 — a griefing/DoS guard since `balanceOf` is attacker-inflatable via force-minted NFTs; see ADR 0010 for the rationale), keeping the NFTs whose `(token0, token1, fee)` matches the pool. positionId = `abi.encode(pool)`; up to 4 legs per NFT — `Supplied` ×2 (in-range split off the pool's live `slot0`) + `Fees` ×2 (full unclaimed = `feeGrowthInside`-since-poke + settled `tokensOwed`). The NFT tokenId rides in `positionInstanceId`. **Both** pool tokens must be registered or the whole instance is dropped. NonfungiblePositionManager pinned in constructor. Spot manipulation of the split is mitigated by the asynchronous NAV consumer (ADR 0017); links GPL-2.0-or-later Uniswap math (ADR 0008). | `(positionManager, navCalculator)` | `UniswapV3PoolsMeta`; pools under `instances`. |

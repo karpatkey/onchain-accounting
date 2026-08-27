@@ -34,6 +34,7 @@ import {
 import {
     StakeWiseV3VaultsMetaBalanceAdapter
 } from "src/balances/MetaBalanceAdapters/StakeWiseV3VaultsMetaBalanceAdapter.sol";
+import {PolygonStakingMetaBalanceAdapter} from "src/balances/MetaBalanceAdapters/PolygonStakingMetaBalanceAdapter.sol";
 import {
     CompoundV3CometsMetaBalanceAdapter
 } from "src/balances/MetaBalanceAdapters/CompoundV3CometsMetaBalanceAdapter.sol";
@@ -178,7 +179,7 @@ contract ProtocolNameConsistencyTest is Test {
 
     /// @dev Number of concrete meta adapters. Pinned so adding one fails `test_metaAdapterCensus` until the
     ///      author also adds it to `test_everyMetaAdapterReportsItsProtocolName`.
-    uint256 internal constant META_ADAPTER_COUNT = 22;
+    uint256 internal constant META_ADAPTER_COUNT = 23;
 
     /// @dev Number of concrete plain + assisted adapters, i.e. the family whose name is a bytecode LITERAL rather
     ///      than derived. Pinned so adding one fails `test_hardcodedAdapterCensus` until the author also adds it to
@@ -373,6 +374,9 @@ contract ProtocolNameConsistencyTest is Test {
             new StakeWiseV3VaultsMetaBalanceAdapter(stub, stub, n).protocolName(),
             ProtocolNames.STAKEWISE_V3,
             "StakeWiseV3Vaults"
+        );
+        i += _expectName(
+            new PolygonStakingMetaBalanceAdapter(stub, n).protocolName(), ProtocolNames.POLYGON, "PolygonStaking"
         );
         i += _expectName(
             new BalancerV2GaugesMetaBalanceAdapter(stub, stub, n).protocolName(),

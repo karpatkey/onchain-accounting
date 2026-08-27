@@ -65,6 +65,12 @@ library ProtocolNames {
     string internal constant BALANCER_V3 = "Balancer V3";
     /// @dev `ProtocolIds.CURVE` — shared by pools and gauges.
     string internal constant CURVE = "Curve";
+
+    /// @dev `ProtocolIds.POLYGON` — Polygon PoS staking, settled on Ethereum L1.
+    ///      Named for the PRODUCT ("Polygon Staking"), not the brand, because that is what the position is: the
+    ///      chain is not the protocol here, and "Polygon" alone reads as a network row in a portfolio. Matches the
+    ///      label DeBank uses and the product at https://staking.polygon.technology/.
+    string internal constant POLYGON = "Polygon Staking";
     /// @dev `ProtocolIds.CONVEX`.
     string internal constant CONVEX = "Convex";
     /// @dev `ProtocolIds.UNISWAP_V2`.
@@ -143,6 +149,7 @@ library ProtocolNames {
         if (protocolId == ProtocolIds.PANCAKESWAP_V3) return PANCAKESWAP_V3;
 
         if (protocolId == ProtocolIds.STAKEWISE_V3) return STAKEWISE_V3;
+        if (protocolId == ProtocolIds.POLYGON) return POLYGON;
         if (protocolId == ProtocolIds.LIDO) return LIDO;
         if (protocolId == ProtocolIds.KELP) return KELP;
         if (protocolId == ProtocolIds.STADER) return STADER;

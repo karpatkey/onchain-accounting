@@ -117,10 +117,12 @@ When an upstream dependency is needed for a small, stable surface — an interfa
 - Write or copy a minimal local file next to its consumer, following `src/bridge/adapters/interfaces/`.
 - Preserve the upstream `SPDX-License-Identifier` verbatim; do not relicense it as BUSL-1.1.
 - Record upstream repo, exact pinned rev, and upstream path in a `@dev` header so the copy can be diffed against its origin. **The exact format is checked**, because these lines are comments and so invisible to the body hash — `check_vendored.py` cross-checks all four of them against the manifest and will reject anything else:
-  - `Source:` followed by exactly `https://github.com/<owner>/<name>/blob/<rev>/<upstream-path>` (the URL a human auditor clicks — it was unchecked once, and could be repointed at an attacker fork while the guard still reported "verbatim");
-  - `Upstream repo:` followed by exactly `https://github.com/<owner>/<name>` (the full URL, not the bare `owner/name` the manifest row uses);
+  - `Source:` followed by exactly `https://github.com/<owner>/<name>/blob/<rev>/<upstream-path>` — the URL a human auditor clicks. It was unchecked once, then checked file-wide (which a "previously vendored from" note defeated), and is now read from the `Source:` label itself;
+  - `Upstream repo:` followed by exactly `https://github.com/<owner>/<name>` — the full URL, not the bare `owner/name` the manifest row uses, and no trailing slash;
   - `Upstream path:` followed by the path exactly as it appears in the manifest;
   - `Pinned rev:` followed by the 40-hex rev.
+
+  Each label's value may sit on the label's own line or wrap onto the next comment line (the blob URL is ~150 chars and natspec wraps it), and a label may appear mid-line — `… contracts-bedrock. Source:` is the shape the one vendored file uses. Each of the four is checked independently, so removing any one of them turns `--self-test` red.
 - Register the file's licence in the root `LICENSE` third-party note if it differs from BUSL-1.1, and reproduce the upstream copyright + permission notice in `THIRD-PARTY-NOTICES.md`. Record whether the grant is project-wide or file-level — they are not interchangeable.
 - Register the file in `script/ci/check_vendored.py` (add the row with a `"PLACEHOLDER"` hash, then run `--update` once — it fetches the pinned rev and refuses to record a hash that does not match upstream, so it needs network). A vendored file with no drift check is a fork waiting to happen.
 - **Check `forge fmt --check` against it before committing.** CI formats the whole tree, and the drift guard demands the body stay byte-identical to upstream — so a vendored file that `fmt` wants to reflow puts the two guards in direct conflict, and whichever is "fixed" first silently defeats the other. `OptimismTypes.sol` happens to be fmt-clean (verified), which is luck, not design. If a future vendored file is not, exclude it via `fmt.ignore` in `foundry.toml` rather than reformatting it.

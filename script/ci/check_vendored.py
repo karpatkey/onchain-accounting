@@ -160,46 +160,66 @@ def body_hash(src: str) -> str:
     return hashlib.sha256(normalise(src).encode()).hexdigest()
 
 
-def header_provenance_problem(src: str, repo: str, upath: str, rev: str) -> str | None:
-    """None when the header's repo/path agree with the manifest, else a description of the problem.
+# The labelled lines a vendored header must carry. Every one is cross-checked against the manifest,
+# because they are COMMENTS and so invisible to the body hash.
+_PROVENANCE_LABELS = ("Source:", "Upstream repo:", "Upstream path:", "Pinned rev:")
 
-    Split out of `verify` so `--self-test` can pin it without a network. Only the pinned REV used
-    to be tied to the manifest, and the body hash excludes comments, so nothing stopped the header
-    from naming a different repo/path than the one the fetch actually uses.
+
+def _header_field(src: str, label: str) -> str | None:
+    """The single value belonging to `label`, ANCHORED to that label. None if absent or empty.
+
+    Anchored is the whole point. An earlier revision checked the Source URL with a bare
+    `re.search` over the file, which is a presence test, not a check on the Source line: an
+    attacker repointed the clickable URL and left the canonical string in a "previously vendored
+    from" note, and the guard still printed "verbatim". Locate the label, then read ITS value.
+
+    Tolerates natspec wrapping — the value may sit on the label's own line or on the next comment
+    line, because the vendored header's 151-char blob URL wraps that way. A following line that is
+    itself a label is not consumed, so a missing value stays missing.
     """
-    hdr_repo = re.search(r"Upstream repo:\s+(\S+)", src)
-    hdr_path = re.search(r"Upstream path:\s+(\S+)", src)
-    if not hdr_repo or not hdr_path:
-        return "header is missing a parseable 'Upstream repo:'/'Upstream path:' line"
-    # Exact equality against the canonical GitHub URL, NOT `endswith(repo)`. An earlier revision
-    # used endswith, which accepts `https://github.com/evil-ethereum-optimism/optimism` (a `-` is
-    # legal in an org name, so that is registerable) and `https://evil.example.com/<repo>`. Worse,
-    # the self-test's negative case used `attacker/optimism`, which endswith happens to reject —
-    # so the arm read as coverage it did not provide.
-    # The header records the full browsable URL; the manifest records the bare `owner/name` the raw
-    # API needs. Say so explicitly in the message: comparing the two forms naively produced
-    # "header repo (owner/name) disagrees with the manifest repo (owner/name)" — two identical
-    # strings called different — for the likeliest mistake, writing the header in the bare form.
-    if hdr_repo.group(1).rstrip("/") != f"https://github.com/{repo}":
-        return (
-            f"header repo ({hdr_repo.group(1)}) is not the canonical URL for the manifest repo "
-            f"({repo}); expected exactly https://github.com/{repo}"
-        )
-    if hdr_path.group(1) != upath:
-        return f"header path ({hdr_path.group(1)}) disagrees with the manifest path ({upath})"
+    lines = [re.sub(r"^\s*(?:///|//|\*)?\s*", "", ln) for ln in src.splitlines()]
+    for i, ln in enumerate(lines):
+        # The label may sit mid-line, not just at line start: the vendored header ends a prose
+        # sentence with "... contracts-bedrock. Source:" and wraps the URL onto the next line.
+        # First occurrence wins.
+        at = ln.find(label)
+        if at < 0:
+            continue
+        rest = ln[at + len(label):].strip()
+        if not rest and i + 1 < len(lines):
+            nxt = lines[i + 1].strip()
+            if not any(other in nxt for other in _PROVENANCE_LABELS):
+                rest = nxt
+        parts = rest.split()
+        return parts[0] if parts else None
+    return None
 
-    # The `Source:` blob URL is the one a HUMAN auditor clicks, and it independently encodes repo,
-    # rev and path. Hardening only the machine-read lines above left it free to point anywhere:
-    # repointing it at `https://github.com/evil-ethereum-optimism/optimism/blob/...` left the guard
-    # printing "verbatim", because it is a comment and the body hash cannot see it. Checked against
-    # the single canonical form so one comparison covers all three coordinates at once.
-    want = f"https://github.com/{repo}/blob/{rev}/{upath}"
-    if not re.search(re.escape(want) + r"\s*$", src, re.M):
-        found = re.search(r"https://github\.com/\S+/blob/\S+", src)
-        return (
-            f"header 'Source:' URL ({found.group(0) if found else 'missing'}) is not the canonical "
-            f"blob URL for this manifest entry ({want})"
-        )
+
+def header_provenance_problem(src: str, repo: str, upath: str, rev: str) -> str | None:
+    """None when every labelled provenance line agrees with the manifest, else what disagrees.
+
+    Split out of `verify` so `--self-test` can pin it without a network, and written as a uniform
+    per-label loop rather than a chain of bespoke comparisons. That shape is deliberate: the
+    bespoke chain it replaced kept growing a new special case per review round, and each new case
+    made the previous ones VACUOUS — mutation-testing showed the `Upstream repo:` and
+    `Upstream path:` checks could both be deleted with the whole self-test still green, because a
+    later file-wide check happened to catch the same mutants. One rule per label, one arm per
+    label, each independently pinned.
+    """
+    want = {
+        # The URL a human auditor clicks. It independently encodes repo, rev and path.
+        "Source:": f"https://github.com/{repo}/blob/{rev}/{upath}",
+        # The full canonical URL, NOT the bare `owner/name` the manifest row uses.
+        "Upstream repo:": f"https://github.com/{repo}",
+        "Upstream path:": upath,
+        "Pinned rev:": rev,
+    }
+    for label, expected in want.items():
+        got = _header_field(src, label)
+        if got is None:
+            return f"header has no '{label}' value (expected exactly {expected})"
+        if got != expected:
+            return f"header '{label}' is {got!r}, expected exactly {expected!r}"
     return None
 
 
@@ -540,28 +560,52 @@ def self_test() -> int:
     # The header/manifest provenance agreement, offline. The repointed-path case is the shape of
     # a real exploit: leave the rev untouched so the rev check still passes, and send the fetch at
     # a path that 404s.
-    _REPO, _UPATH = "ethereum-optimism/optimism", "packages/contracts-bedrock/src/libraries/Types.sol"
+    _REPO = "ethereum-optimism/optimism"
+    _UPATH = "packages/contracts-bedrock/src/libraries/Types.sol"
     _REV = "f707883038d527cbf1e9f8ea513fe33255deadbc"
-    _good = (
-        f"///      https://github.com/{_REPO}/blob/{_REV}/{_UPATH}\n"
-        f"/// Upstream repo: https://github.com/{_REPO}\n"
-        f"/// Upstream path: {_UPATH}\n"
-    )
+
+    # ONE ARM PER LABEL, each mutating exactly that label's value and nothing else. That
+    # discipline is the point, not tidiness: a previous revision built its negative cases by
+    # string-replacing a fragment shared by several labels, so one later check caught every
+    # mutant and the other checks became VACUOUS — mutation-testing showed two of them could be
+    # deleted outright with the self-test still fully green. Each arm below fails if, and only
+    # if, its own check is removed.
+    def _hdr(source=None, repo=None, upath=None, rev=None):
+        return (
+            f"/// @dev Vendored VERBATIM. Source:\n"
+            f"///      {source or f'https://github.com/{_REPO}/blob/{_REV}/{_UPATH}'}\n"
+            f"///\n"
+            f"///      Upstream repo: {repo or f'https://github.com/{_REPO}'}\n"
+            f"///      Upstream path: {upath or _UPATH}\n"
+            f"///      Pinned rev:    {rev or _REV}\n"
+        )
+
     for name, hdr, want_problem in (
-        ("matching header accepted", _good, False),
-        ("repointed path rejected", _good.replace("/src/", "/contracts/"), True),
-        ("swapped repo rejected", _good.replace(_REPO, "attacker/optimism"), True),
-        # The cases an `endswith` check would WRONGLY accept. `-` is legal in a GitHub org name,
-        # so the first is registerable by anyone.
-        ("suffix-org repo rejected", _good.replace(_REPO, f"evil-{_REPO}"), True),
-        ("foreign host rejected", _good.replace("https://github.com/", "https://evil.example.com/"), True),
+        ("matching header accepted", _hdr(), False),
+        # Source: — the URL a human auditor clicks, and the one that was checked by nothing.
+        ("Source repointed to a fork", _hdr(source=f"https://github.com/evil-{_REPO}/blob/{_REV}/{_UPATH}"), True),
+        ("Source at the wrong rev", _hdr(source=f"https://github.com/{_REPO}/blob/{'0' * 40}/{_UPATH}"), True),
+        ("Source on a foreign host", _hdr(source=f"https://evil.example.com/{_REPO}/blob/{_REV}/{_UPATH}"), True),
+        # The canonical URL present ELSEWHERE must not satisfy the Source check. This is the
+        # bypass that a file-wide `re.search` allowed: repoint the real line, leave the canonical
+        # string in a "previously vendored from" note.
+        (
+            "canonical URL in a footnote does not excuse a repointed Source",
+            _hdr(source=f"https://github.com/evil-{_REPO}/blob/{_REV}/{_UPATH}")
+            + f"///      Previously vendored from\n///      https://github.com/{_REPO}/blob/{_REV}/{_UPATH}\n",
+            True,
+        ),
+        # Upstream repo: — independently pinned.
+        ("repo suffix-org rejected", _hdr(repo=f"https://github.com/evil-{_REPO}"), True),
+        ("repo bare owner/name rejected", _hdr(repo=_REPO), True),
+        # Upstream path: — independently pinned.
+        ("path repointed rejected", _hdr(upath=_UPATH.replace("/src/", "/contracts/")), True),
+        # Pinned rev: — independently pinned.
+        ("rev mismatch rejected", _hdr(rev="0" * 40), True),
+        # Absent labels.
         ("missing header rejected", "/// no provenance here\n", True),
-        # The `Source:` blob URL is the line a human auditor follows. It was checked by nothing
-        # while the machine-read lines were exact-matched, so it could point at an attacker fork
-        # with the guard still printing "verbatim".
-        ("repointed Source URL rejected", _good.replace(f"/{_REPO}/blob/", f"/evil-{_REPO}/blob/"), True),
-        ("Source URL at wrong rev rejected", _good.replace(_REV, "0" * 40, 1), True),
-        ("missing Source URL rejected", "\n".join(_good.split("\n")[1:]), True),
+        ("missing Source value rejected", _hdr().replace(
+            f"///      https://github.com/{_REPO}/blob/{_REV}/{_UPATH}\n", "", 1), True),
     ):
         if (header_provenance_problem(hdr, _REPO, _UPATH, _REV) is not None) != want_problem:
             print(f"SELF-TEST FAIL  provenance: {name}")

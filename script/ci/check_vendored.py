@@ -165,33 +165,67 @@ def body_hash(src: str) -> str:
 _PROVENANCE_LABELS = ("Source:", "Upstream repo:", "Upstream path:", "Pinned rev:")
 
 
-def _header_field(src: str, label: str) -> str | None:
-    """The single value belonging to `label`, ANCHORED to that label. None if absent or empty.
+def _header_region(src: str) -> list[str]:
+    r"""The contiguous comment block at the TOP of the file, stripped of comment markers.
 
-    Anchored is the whole point. An earlier revision checked the Source URL with a bare
-    `re.search` over the file, which is a presence test, not a check on the Source line: an
-    attacker repointed the clickable URL and left the canonical string in a "previously vendored
-    from" note, and the guard still printed "verbatim". Locate the label, then read ITS value.
-
-    Tolerates natspec wrapping — the value may sit on the label's own line or on the next comment
-    line, because the vendored header's 151-char blob URL wraps that way. A following line that is
-    itself a label is not consumed, so a missing value stays missing.
+    Scanning the whole file for a label was the defect that survived three rewrites. It gave the
+    attacker a free choice of where the satisfying text lives: a decoy line ABOVE a fully repointed
+    header passed, and so did a header whose labels were Cyrillic homoglyphs with a real ASCII line
+    appended at the bottom of the file. Both produced "verbatim" on a file whose visible provenance
+    was a lie. The header is a bounded region, so bound it: stop at the first line that is not a
+    comment and not blank — which for a Solidity source is the `pragma`, the `contract`, or an
+    import, i.e. always past the header.
     """
-    lines = [re.sub(r"^\s*(?:///|//|\*)?\s*", "", ln) for ln in src.splitlines()]
+    out: list[str] = []
+    for raw in src.splitlines():
+        line = raw.strip()
+        # Stop at the declaration. Everything a vendored header can legitimately occupy — the SPDX
+        # line, the pragma, imports, and the natspec block — precedes it, and nothing after it is
+        # header. Bounding on the declaration rather than on "first non-comment line" is what makes
+        # this work for a real Solidity file, where the pragma sits between the SPDX comment and
+        # the natspec block.
+        if re.match(r"^(abstract\s+)?(contract|library|interface)\b", line):
+            break
+        if line.startswith(("///", "//", "*", "/*")):
+            out.append(re.sub(r"^\s*(?:///|//|/\*|\*)\s?", "", raw).rstrip())
+        else:
+            out.append("")
+    return out
+
+
+def _header_field(src: str, label: str) -> str | None:
+    r"""The single value belonging to `label` within the HEADER REGION. None if absent or empty.
+
+    Three properties, each of which a previous revision lacked and an attacker used:
+    1. **Region-bounded** — only the top-of-file comment block is searched (see {_header_region}),
+       so text elsewhere in the file cannot satisfy a header check.
+    2. **ASCII-only labels and values** — a line containing non-ASCII is skipped outright. Cyrillic
+       `о`/`а`/`е` are invisible to `str.find` and were used to make a header that reads correctly
+       to a human match nothing at all, letting a truth line elsewhere satisfy the check.
+    3. **No trailing content** — the value must be the ONLY token after the label. Previously
+       `parts[0]` silently discarded a tail, so `Pinned rev: f7078...  <- SUPERSEDED, real rev is
+       dede...` passed while telling a reader the opposite.
+
+    Tolerates natspec wrapping: the value may sit on the label's own line or the next line, and a
+    following line that is itself a label is not consumed.
+    """
+    lines = _header_region(src)
     for i, ln in enumerate(lines):
-        # The label may sit mid-line, not just at line start: the vendored header ends a prose
-        # sentence with "... contracts-bedrock. Source:" and wraps the URL onto the next line.
-        # First occurrence wins.
+        if not ln.isascii():
+            continue
         at = ln.find(label)
         if at < 0:
             continue
         rest = ln[at + len(label):].strip()
         if not rest and i + 1 < len(lines):
             nxt = lines[i + 1].strip()
-            if not any(other in nxt for other in _PROVENANCE_LABELS):
+            if nxt.isascii() and not any(other in nxt for other in _PROVENANCE_LABELS):
                 rest = nxt
         parts = rest.split()
-        return parts[0] if parts else None
+        if not parts:
+            return None
+        # Exactly one token: a tail is a lie waiting to happen, not a formatting nicety.
+        return parts[0] if len(parts) == 1 else None
     return None
 
 
@@ -556,6 +590,47 @@ def self_test() -> int:
             failed += 1
         else:
             print("self-test ok    lone-CR line comment does NOT hide code")
+
+    # END-TO-END: run `verify()` itself against a scratch tree. Every arm above pins a HELPER;
+    # none of them pinned `verify()`'s own checks, and mutation-testing found 8 of 20 defences
+    # survived their own deletion — including the manifest compare, which this module's docstring
+    # calls the check that is "never allowed to be the thing that gets skipped". An arm that
+    # asserts `body_hash(mutated) != body_hash(src)` proves the HASH changes; it does not prove
+    # `verify()` acts on it. These two arms do.
+    def _verify_against(tree_body: str, upstream_body: str | None) -> int:
+        rel = next(iter(MANIFEST))
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / rel).parent.mkdir(parents=True, exist_ok=True)
+            (root / rel).write_text(tree_body, encoding="utf-8")
+            real_root, real_fetch = globals()["ROOT"], globals()["fetch_upstream"]
+            globals()["ROOT"] = root
+            globals()["fetch_upstream"] = lambda *_a, **_k: upstream_body
+            try:
+                return verify()
+            finally:
+                globals()["ROOT"], globals()["fetch_upstream"] = real_root, real_fetch
+
+    _pristine = _read_source(ROOT / next(iter(MANIFEST)))
+    _tampered = _pristine.replace("uint256 nonce;", "uint256 nonce;\n        /**/ uint256 injected;", 1)
+    for name, body, upstream, want_rc in (
+        ("verify() passes on the real tree", _pristine, _pristine, 0),
+        ("verify() FAILS on an injected struct member", _tampered, _pristine, 1),
+        ("verify() FAILS when upstream disagrees", _pristine, _tampered, 1),
+        # ISOLATES THE OFFLINE MANIFEST COMPARE. Upstream is given the SAME tampered body, so the
+        # upstream comparison agrees and cannot be what fails — only the recorded manifest hash
+        # disagrees. Without this the previous arm passed via the upstream check and the offline
+        # one stayed unpinned: neutering `if actual != expected:` left the whole self-test green.
+        # This is the scenario the module exists for — an attacker who controls the upstream copy
+        # too, or an upstream that has simply moved on.
+        ("verify() FAILS on manifest drift even when upstream agrees", _tampered, _tampered, 1),
+    ):
+        got = _verify_against(body, upstream)
+        if got != want_rc:
+            print(f"SELF-TEST FAIL  {name} (rc={got}, want {want_rc})")
+            failed += 1
+        else:
+            print(f"self-test ok    {name}")
 
     # The header/manifest provenance agreement, offline. The repointed-path case is the shape of
     # a real exploit: leave the rev untouched so the rev check still passes, and send the fetch at

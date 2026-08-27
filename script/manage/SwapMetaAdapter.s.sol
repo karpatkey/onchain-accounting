@@ -123,6 +123,13 @@ contract SwapMetaAdapter is BaseDeployScript {
     /// @notice Thrown when the successor is not a meta-adapter, so its instance set would never be read.
     error SuccessorNotMetaAdapter(address newAdapter);
 
+    /// @notice The predecessor is registered, but not as a META adapter.
+    /// @dev `isAdapterRegistered` answers for BOTH namespaces. Without this, pointing OLD_ADAPTER at a plain
+    ///      adapter passes that check, skips the instance-compatibility block (its meta set is empty), and the
+    ///      script happily DEREGISTERS an unrelated plain adapter while registering the successor with no
+    ///      instances — a silent under-report of everything the plain adapter reported.
+    error PredecessorNotMetaAdapter(address old);
+
     /// @notice Thrown when predecessor and successor do not report the same underlying assets for the carried
     ///         instance set — i.e. they are not the same protocol, and the addresses were probably transposed.
     error AdapterMismatch(address old, address newAdapter);
@@ -142,6 +149,10 @@ contract SwapMetaAdapter is BaseDeployScript {
         if (old == address(0) || newAdapter == address(0)) revert AdapterNotProvided();
         if (newAdapter.code.length == 0) revert SuccessorHasNoCode(newAdapter);
         if (!navAdmin.isAdapterRegistered(old)) revert PredecessorNotRegistered(old);
+        // Registered is not enough: `isAdapterRegistered` answers for the plain namespace too.
+        // Fail CLOSED if the predecessor cannot prove it is a meta adapter — a predecessor whose
+        // `supportsInterface` reverts or is absent stops the script rather than being swapped blind.
+        if (!_isMetaAdapter(old)) revert PredecessorNotMetaAdapter(old);
         // A non-meta successor would leave the carried instances unread. Compute the id, never hardcode it.
         if (!IPinnedToNav(newAdapter).supportsInterface(type(IMetaBalanceAdapter).interfaceId)) {
             revert SuccessorNotMetaAdapter(newAdapter);
@@ -196,13 +207,12 @@ contract SwapMetaAdapter is BaseDeployScript {
         // Persist the successor to the deployment record, so `04` stops skipping on the predecessor and `06`
         // stops resolving it. Optional because the record may already name the successor (it does when `04`
         // deployed it, which is the common path); mirrors what 10_MigrateAdaptersToCreate2 does after its swap.
-        string memory adapterKey = vm.envOr("ADAPTER_KEY", string(""));
-        if (bytes(adapterKey).length > 0) {
-            ConfigReader.writeAdapterAddress(vm, chainId, "balanceAdapters", adapterKey, newAdapter);
-            console2.log("  deployment record updated:", adapterKey, newAdapter);
-        } else {
-            console2.log("  ADAPTER_KEY unset - deployment record NOT updated; confirm it names the successor");
-        }
+        // The deployment record is NOT written here. This block runs during Forge's local simulation, BEFORE
+        // the recorded transactions are submitted, so writing here would leave the git-tracked record naming the
+        // successor even if a broadcast reverted and the live NAV still held the predecessor — the record
+        // asserting a state that never happened. It is written by `verify()` instead, after the on-chain
+        // assertions pass, which is the only point at which the successor is a fact rather than an intention.
+        console2.log("  deployment record NOT yet updated - verify() writes it once the chain agrees");
 
         console2.log("[SIMULATED OK] instance count round-tripped:", got);
         console2.log("  NOW RUN THE VERIFY STEP against the chain:");
@@ -219,7 +229,18 @@ contract SwapMetaAdapter is BaseDeployScript {
     ///        - the remove drops but the add lands  → BOTH adapters registered → NAV double-counts;
     ///        - the remove lands but the add drops  → the position vanishes (under-report, the safe direction).
     ///      This entry point does no broadcasting and reads only live state, so it can distinguish them.
-    function verify() public view {
+    /// @dev Fail-closed `IMetaBalanceAdapter` probe. A revert, a missing function, or a `false` all mean
+    ///      "cannot prove it is a meta adapter", which is the answer that stops the script.
+    function _isMetaAdapter(address adapter) internal view returns (bool) {
+        if (adapter.code.length == 0) return false;
+        try IPinnedToNav(adapter).supportsInterface(type(IMetaBalanceAdapter).interfaceId) returns (bool ok) {
+            return ok;
+        } catch {
+            return false;
+        }
+    }
+
+    function verify() public {
         uint256 chainId = block.chainid;
         address nav = ConfigReader.readDeployedAddress(vm, chainId, "NAVCalculatorProxy");
         INavAdmin navAdmin = INavAdmin(nav);
@@ -241,8 +262,28 @@ contract SwapMetaAdapter is BaseDeployScript {
         if (oldReg) revert PredecessorStillRegistered(old);
         if (!newReg) revert SuccessorNotRegistered(newAdapter);
         if (residue != 0) revert PredecessorResidue(old, residue);
-        if (carried == 0) revert InstanceSetLost(newAdapter, 1, 0);
+        // EXPECTED_INSTANCES is the count `run()` printed as round-tripped. Supplying it makes this an exact
+        // comparison; without it the check can only say "not zero", which both misses a partial carry and
+        // wrongly fails a legitimate zero-instance swap (the registration API permits one). An earlier revision
+        // hardcoded `InstanceSetLost(newAdapter, 1, 0)`, which asserted a count of 1 for every adapter.
+        uint256 expected = vm.envOr("EXPECTED_INSTANCES", type(uint256).max);
+        if (expected != type(uint256).max) {
+            if (carried != expected) revert InstanceSetLost(newAdapter, expected, carried);
+        } else if (carried == 0) {
+            console2.log("  WARNING: successor carries ZERO instances and EXPECTED_INSTANCES was not set.");
+            console2.log("  If the swap was meant to carry instances, this is an INSTANCE SET LOST condition.");
+            console2.log("  Re-run with EXPECTED_INSTANCES=<count> to make this an assertion instead of a warning.");
+        }
 
         console2.log("[VERIFIED ON CHAIN] swap is complete and leaves no residue");
+
+        // Only NOW is the successor a fact rather than an intention, so this is where the record moves.
+        string memory adapterKey = vm.envOr("ADAPTER_KEY", string(""));
+        if (bytes(adapterKey).length > 0) {
+            ConfigReader.writeAdapterAddress(vm, chainId, "balanceAdapters", adapterKey, newAdapter);
+            console2.log("  deployment record updated:", adapterKey, newAdapter);
+        } else {
+            console2.log("  ADAPTER_KEY unset - deployment record NOT updated; set it and re-run verify()");
+        }
     }
 }

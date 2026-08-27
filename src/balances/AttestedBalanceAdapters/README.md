@@ -15,6 +15,33 @@ off-chain** (so there is no coordinate to cache and value live — that's the as
 Marker: **`IAttestedBalanceAdapter`** (`is IBalanceAdapter`, `src/balances/IAttestedBalanceAdapter.sol`) — advertises
 the family via ERC-165 and the one universal mutator, the stale-gated `clearAccount(address)`.
 
+## The shared base — `AttestedValueCache`
+
+`AttestedValueCache.sol` is the family's abstract base (the peer of `AssistedCoordCache` next door). A new member
+implements hooks, not machinery:
+
+```
+_liveEpoch()               -> bytes32   what the attestation epoch is (Merkl: getMerkleRoot())
+_liveValue(...)            -> uint256   cached figure -> today's amount (Merkl: cumulative - claimed)
+_verifyPreviewPayload(...)             decode + verify caller-supplied proofs (the proof scheme)
+_assetLegs(...)            -> legs      one asset's value -> PositionBalance[]
+_maxAssetsPerAccount() / _maxLegsPerAsset()      the two caps whose PRODUCT bounds the read
+_protocolBrand/_protocolId/_protocolSubId/_positionKind          typed identity
+```
+
+The base owns the `(value, epoch)` cache and its enumeration, stale-reads-zero, the stale-gated clears, the
+NAV-version constructor probe, the per-asset gas-isolated read fan-out, the `previewPositions` skeleton with its
+duplicate-asset guard, the `IBalanceAdapter` reads, and `_row`.
+
+**Two rules a new member must not work around:**
+
+1. `_upsertAttestation` is the **single point where a number enters the cache**, and it does not inspect a proof —
+   it cannot, since the scheme is per-protocol. **Verify before calling it.**
+2. The base's per-asset `catch` **drops** the failing asset. That is safe only for a **credit-only** member. A
+   member that can emit a **debt** leg must override `_collectLegs` and raise instead, because a silently dropped
+   debt leg makes NAV *larger* — the one direction forbidden here.
+
+
 ## Invariant (what makes it safe)
 
 - **Permissionless, submit-on-behalf-of.** The submit mutator takes an explicit `account`; anyone can call it (one
@@ -58,7 +85,7 @@ Members are **fail-loud** (revert on an invalid proof) and bound the returned se
 
 Merkl decodes `data` as `abi.encode(Allocation[])`, returns NAV-shaped `Rewards` legs (parity with
 `getAdapterPositions`), **skips** reward tokens not registered on NAVCalculator (a leg needs the asset metadata), and
-reverts on `CampaignSumMismatch` / over-cap campaigns or tokens / a `DuplicateToken`.
+reverts on `CampaignSumMismatch` / over-cap campaigns or tokens / a `DuplicateAsset`.
 
 ## Adding a member
 

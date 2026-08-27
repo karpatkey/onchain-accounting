@@ -38,6 +38,41 @@ These adapters are documented exceptions to the immutability rule (like the assi
 | Suppression-safe via | per-element `msg.sender`-keyed removal | per-element **upsert** (never drops omitted) + stale-gated clear |
 | Under-report-only via | value-live + re-verify | proof-verification + stale-root→0 |
 
+### The shared base: `AttestedValueCache`
+
+The family ships an abstract base, `src/balances/AttestedBalanceAdapters/AttestedValueCache.sol` — the peer of
+`AssistedCoordCache` in the assisted family, and deliberately shaped after it. It owns **everything about an
+attested adapter that is not protocol-specific**, so a new member is a small file rather than a re-derivation:
+
+| Owned by the base | Supplied by the member |
+|---|---|
+| the `(value, epoch)` cache, its per-account asset enumeration and index map | `_liveEpoch()` — what the attestation epoch is |
+| stale handling (`epoch != live` ⇒ reads **0**, never extrapolated) | `_liveValue(...)` — how a cached figure becomes today's amount |
+| the stale-gated `clearAttestation` / `clearAccount` | `_verifyPreviewPayload(...)` — the proof scheme |
+| the NAV-version constructor probe | `_assetLegs(...)` — how one asset's value becomes legs |
+| the whole gas-isolated read fan-out and its shared-budget stipend | `_maxAssetsPerAccount()` / `_maxLegsPerAsset()` |
+| the `previewPositions` skeleton, duplicate-asset guard and cap | the typed-identity hooks |
+| `supportsInterface`, `underlyingAssetsSupported`, the `IBalanceAdapter` reads, `_row` | |
+
+Two properties of the split are load-bearing and a new member must not work around them:
+
+1. **`_upsertAttestation` is the single point where a number enters the cache**, and it does **not** inspect a
+   proof — it cannot, because the scheme is per-protocol. A member MUST verify its attestation before calling it.
+   Concentrating admission in one place is what makes "did we check the proof?" a question with one answer instead
+   of one per call site.
+2. **The base's per-asset read `catch` DROPS the failing asset.** That is licensed only because every attested
+   member today emits credit legs exclusively, so a dropped leg can only shrink NAV. A member that can emit a
+   **debt** leg must override `_collectLegs` and raise instead — silently dropping a debt leg makes NAV *larger*,
+   the one direction this codebase forbids. `AssistedCoordCache` raises for exactly this reason.
+
+Elements are keyed by **asset address** rather than by an opaque hashed blob (the assisted base's choice) because an
+attested value is always attested *for an asset* — it must resolve through `getRegisteredAsset` to be valued at all
+— so the address is the natural key and keeps the hot read path free of the coordinate cache's hashing and `bytes`
+copies. A member needing richer per-entry state (Merkl's campaign breakdown) keeps its own mapping on the same
+`(account, asset)` key and threads it through the `ctx` parameter of `_assetLegs`, which is what lets the cache read
+and the cache-free preview share one leg builder and therefore never diverge.
+
+
 ## Consequences
 
 - On-chain identifiability: `supportsInterface(type(IAttestedBalanceAdapter).interfaceId)` marks the family (it is NOT an `IAssistedBalanceAdapter` — it advertises neither that marker nor `ASSISTANT_ROLE`).

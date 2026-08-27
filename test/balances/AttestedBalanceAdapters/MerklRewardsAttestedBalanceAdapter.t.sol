@@ -7,6 +7,7 @@ import {
     MerklRewardsAttestedBalanceAdapter,
     IMerklDistributor
 } from "src/balances/AttestedBalanceAdapters/MerklRewardsAttestedBalanceAdapter.sol";
+import {AttestedValueCache} from "src/balances/AttestedBalanceAdapters/AttestedValueCache.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
 import {IAttestedBalanceAdapter} from "src/balances/IAttestedBalanceAdapter.sol";
@@ -98,7 +99,7 @@ contract MockMerklDistributor is IMerklDistributor {
 /// @dev    The adapter is PERMISSIONLESS: `submitProofs`/`submitProofsBatch` take no roles and are callable by anyone
 ///         (integrity comes from live-root proof verification). Submit is UPSERT semantics: each `(token, proof)`
 ///         entry adds/refreshes just that `(user, token)` and never drops a token it omits — so a third party can't
-///         suppress a live entry (removal is only via the stale-gated `clearAllocation`/`clearAccount`). Across-submit
+///         suppress a live entry (removal is only via the stale-gated `clearAttestation`/`clearAccount`). Across-submit
 ///         monotonicity (`AmountRegression`) is enforced. Batching a user's tokens in one call is a convenience.
 contract MerklRewardsAttestedBalanceAdapterTest is BalanceAdapterTestBase {
     MerklRewardsAttestedBalanceAdapter public adapter;
@@ -244,14 +245,14 @@ contract MerklRewardsAttestedBalanceAdapterTest is BalanceAdapterTestBase {
     /// @dev A NAV serving only the OLD array getter — a proxy on an implementation predating `getRegisteredAsset`.
     function test_constructor_revertsAgainstNavPredatingGetRegisteredAsset() public {
         address old = address(new OldNav());
-        vm.expectRevert(abi.encodeWithSelector(MerklRewardsAttestedBalanceAdapter.NAVCalculatorTooOld.selector, old));
+        vm.expectRevert(abi.encodeWithSelector(AttestedValueCache.NAVCalculatorTooOld.selector, old));
         new MerklRewardsAttestedBalanceAdapter(address(distributor), old);
     }
 
     /// @dev Success with EMPTY returndata. Checking only the staticcall's success flag would accept this and pin it.
     function test_constructor_revertsAgainstSilentFallbackNav() public {
         address silent = address(new SilentFallbackNav());
-        vm.expectRevert(abi.encodeWithSelector(MerklRewardsAttestedBalanceAdapter.NAVCalculatorTooOld.selector, silent));
+        vm.expectRevert(abi.encodeWithSelector(AttestedValueCache.NAVCalculatorTooOld.selector, silent));
         new MerklRewardsAttestedBalanceAdapter(address(distributor), silent);
     }
 
@@ -259,7 +260,7 @@ contract MerklRewardsAttestedBalanceAdapterTest is BalanceAdapterTestBase {
     ///      what makes the specific 192-byte floor load-bearing rather than merely commented.
     function test_constructor_revertsAgainstShortReturndata() public {
         address short = address(new ShortReturnNav());
-        vm.expectRevert(abi.encodeWithSelector(MerklRewardsAttestedBalanceAdapter.NAVCalculatorTooOld.selector, short));
+        vm.expectRevert(abi.encodeWithSelector(AttestedValueCache.NAVCalculatorTooOld.selector, short));
         new MerklRewardsAttestedBalanceAdapter(address(distributor), short);
     }
 
@@ -269,9 +270,7 @@ contract MerklRewardsAttestedBalanceAdapterTest is BalanceAdapterTestBase {
     ///      the success flag can reject it. Mutation: drop `!ok ||` and this is the one test that fails.
     function test_constructor_revertsAgainstNavThatRevertsWithLongReason() public {
         address longRevert = address(new LongRevertNav());
-        vm.expectRevert(
-            abi.encodeWithSelector(MerklRewardsAttestedBalanceAdapter.NAVCalculatorTooOld.selector, longRevert)
-        );
+        vm.expectRevert(abi.encodeWithSelector(AttestedValueCache.NAVCalculatorTooOld.selector, longRevert));
         new MerklRewardsAttestedBalanceAdapter(address(distributor), longRevert);
     }
 
@@ -331,13 +330,13 @@ contract MerklRewardsAttestedBalanceAdapterTest is BalanceAdapterTestBase {
         // The event attributes the actual caller (stranger), not the beneficiary user (alice) — this is the
         // off-chain monitoring hook for a third-party (potentially griefing) submitter on a permissionless write.
         vm.expectEmit(true, true, true, true, address(adapter));
-        emit MerklRewardsAttestedBalanceAdapter.AllocationCached(
-            alice, address(arb), stranger, 100 ether, leaf, uint64(block.timestamp), 0
+        emit AttestedValueCache.AttestationCached(
+            alice, address(arb), stranger, 100 ether, leaf, uint64(block.timestamp)
         );
         vm.prank(stranger);
         adapter.submitProofs(alice, allocs);
 
-        (uint256 amt,,) = adapter.allocations(alice, address(arb));
+        (uint256 amt,,) = adapter.attestations(alice, address(arb));
         assertEq(amt, 100 ether);
     }
 
@@ -371,7 +370,7 @@ contract MerklRewardsAttestedBalanceAdapterTest is BalanceAdapterTestBase {
 
         _submitOne(alice, address(arb), 100 ether, new bytes32[](0));
 
-        (uint256 amt, bytes32 root, uint64 ts) = adapter.allocations(alice, address(arb));
+        (uint256 amt, bytes32 root, uint64 ts) = adapter.attestations(alice, address(arb));
         assertEq(amt, 100 ether);
         assertEq(root, leaf);
         assertEq(ts, uint64(block.timestamp));
@@ -387,12 +386,12 @@ contract MerklRewardsAttestedBalanceAdapterTest is BalanceAdapterTestBase {
 
         _submitOne(alice, address(arb), 100 ether, proof);
 
-        (uint256 amt, bytes32 cachedRoot,) = adapter.allocations(alice, address(arb));
+        (uint256 amt, bytes32 cachedRoot,) = adapter.attestations(alice, address(arb));
         assertEq(amt, 100 ether);
         assertEq(cachedRoot, root);
 
-        // _userTokens populated
-        address[] memory tokens = adapter.userTokens(alice);
+        // the base enumeration populated
+        address[] memory tokens = adapter.assetsOf(alice);
         assertEq(tokens.length, 1);
         assertEq(tokens[0], address(arb));
     }
@@ -423,12 +422,12 @@ contract MerklRewardsAttestedBalanceAdapterTest is BalanceAdapterTestBase {
         (, bytes32[] memory bobProof) = _buildTree4(leaves, 1);
         _submitOne(bob, address(arb), 200 ether, bobProof);
 
-        address[] memory aliceTokens = adapter.userTokens(alice);
+        address[] memory aliceTokens = adapter.assetsOf(alice);
         assertEq(aliceTokens.length, 2);
         assertEq(aliceTokens[0], address(arb));
         assertEq(aliceTokens[1], address(op));
 
-        address[] memory bobTokens = adapter.userTokens(bob);
+        address[] memory bobTokens = adapter.assetsOf(bob);
         assertEq(bobTokens.length, 1);
         assertEq(bobTokens[0], address(arb));
     }
@@ -438,15 +437,15 @@ contract MerklRewardsAttestedBalanceAdapterTest is BalanceAdapterTestBase {
         distributor.setRoot(leaf);
 
         vm.expectEmit(true, true, true, true, address(adapter));
-        emit MerklRewardsAttestedBalanceAdapter.AllocationCached(
-            alice, address(arb), address(this), 100 ether, leaf, uint64(block.timestamp), 0
+        emit AttestedValueCache.AttestationCached(
+            alice, address(arb), address(this), 100 ether, leaf, uint64(block.timestamp)
         );
         _submitOne(alice, address(arb), 100 ether, new bytes32[](0));
     }
 
     /// @notice UPSERT semantics (not replace): a submit that OMITS a token leaves that token's live entry intact — a
     ///         caller can never suppress a live allocation by omitting it (removal is only via the stale-gated
-    ///         `clearAllocation`/`clearAccount`). This is the fix for the permissionless-suppression finding.
+    ///         `clearAttestation`/`clearAccount`). This is the fix for the permissionless-suppression finding.
     function test_submitProofs_upsertKeepsOmittedTokens() public {
         // Seed alice with {ARB, OP} under one root.
         bytes32[2] memory leaves;
@@ -465,13 +464,13 @@ contract MerklRewardsAttestedBalanceAdapterTest is BalanceAdapterTestBase {
         amounts[1] = 50 ether;
         proofs[1] = p1;
         _submitMany(alice, tokens, amounts, proofs);
-        assertEq(adapter.userTokens(alice).length, 2);
+        assertEq(adapter.assetsOf(alice).length, 2);
 
         // Re-submit ONLY {OP} against the SAME (still-live) root — an upsert of OP; ARB is NOT dropped.
         _submitOne(alice, address(op), 50 ether, p1);
 
-        assertEq(adapter.userTokens(alice).length, 2, "omitted token NOT dropped (upsert, not replace)");
-        (uint256 arbAmt,,) = adapter.allocations(alice, address(arb));
+        assertEq(adapter.assetsOf(alice).length, 2, "omitted token NOT dropped (upsert, not replace)");
+        (uint256 arbAmt,,) = adapter.attestations(alice, address(arb));
         assertEq(arbAmt, 100 ether, "omitted ARB entry left intact");
     }
 
@@ -481,14 +480,14 @@ contract MerklRewardsAttestedBalanceAdapterTest is BalanceAdapterTestBase {
         bytes32 leaf = _leaf(alice, address(arb), 100 ether);
         distributor.setRoot(leaf);
         _submitOne(alice, address(arb), 100 ether, new bytes32[](0));
-        assertEq(adapter.userTokens(alice).length, 1);
+        assertEq(adapter.assetsOf(alice).length, 1);
 
         // Attacker submits an EMPTY list for alice — a no-op, not a wipe.
         vm.prank(makeAddr("attacker"));
         adapter.submitProofs(alice, new MerklRewardsAttestedBalanceAdapter.Allocation[](0));
 
-        assertEq(adapter.userTokens(alice).length, 1, "empty submit must not drop live entries");
-        (uint256 amt,,) = adapter.allocations(alice, address(arb));
+        assertEq(adapter.assetsOf(alice).length, 1, "empty submit must not drop live entries");
+        (uint256 amt,,) = adapter.attestations(alice, address(arb));
         assertEq(amt, 100 ether, "live ARB entry untouched by third-party empty submit");
     }
 
@@ -504,12 +503,12 @@ contract MerklRewardsAttestedBalanceAdapterTest is BalanceAdapterTestBase {
         distributor.setRoot(leaf2);
         _submitOne(alice, address(arb), 150 ether, new bytes32[](0));
 
-        // _userTokens should have ARB exactly once
-        address[] memory tokens = adapter.userTokens(alice);
+        // the base enumeration should have ARB exactly once
+        address[] memory tokens = adapter.assetsOf(alice);
         assertEq(tokens.length, 1);
         assertEq(tokens[0], address(arb));
 
-        (uint256 amt, bytes32 cachedRoot, uint64 ts) = adapter.allocations(alice, address(arb));
+        (uint256 amt, bytes32 cachedRoot, uint64 ts) = adapter.attestations(alice, address(arb));
         assertEq(amt, 150 ether);
         assertEq(cachedRoot, leaf2);
         assertEq(ts, uint64(block.timestamp));
@@ -533,9 +532,9 @@ contract MerklRewardsAttestedBalanceAdapterTest is BalanceAdapterTestBase {
         _submitOne(alice, address(0), 100 ether, new bytes32[](0));
     }
 
-    function test_submitProofs_revertsOnUninitializedRoot() public {
+    function test_submitProofs_revertsOnUninitializedEpoch() public {
         // root == 0
-        vm.expectRevert(MerklRewardsAttestedBalanceAdapter.UninitializedRoot.selector);
+        vm.expectRevert(AttestedValueCache.UninitializedEpoch.selector);
         _submitOne(alice, address(arb), 100 ether, new bytes32[](0));
     }
 
@@ -599,7 +598,7 @@ contract MerklRewardsAttestedBalanceAdapterTest is BalanceAdapterTestBase {
     }
 
     /// @notice After a root rotation, a lower cumulative proven against the NEW live root lands directly — no
-    ///         `clearAllocation` first. The monotonicity guard only binds while the cached entry is still live.
+    ///         `clearAttestation` first. The monotonicity guard only binds while the cached entry is still live.
     /// @dev    This test previously asserted the opposite (`vm.expectRevert(AmountRegression)` followed by a manual
     ///         clear). That behaviour was the wedge described below in
     ///         {test_submitProofs_staleEntryAcceptsLowerAmountAndDoesNotBlockSiblings}: the guard compared against a
@@ -615,7 +614,7 @@ contract MerklRewardsAttestedBalanceAdapterTest is BalanceAdapterTestBase {
 
         // The cached entry is stale (cached root != live root), so it cannot veto the newly attested figure.
         _submitOne(alice, address(arb), 50 ether, new bytes32[](0));
-        (uint256 amt,,) = adapter.allocations(alice, address(arb));
+        (uint256 amt,,) = adapter.attestations(alice, address(arb));
         assertEq(amt, 50 ether);
     }
 
@@ -625,7 +624,7 @@ contract MerklRewardsAttestedBalanceAdapterTest is BalanceAdapterTestBase {
     ///         checking that the cached entry was still live, so this reverted `AmountRegression`. Because `_upsert`
     ///         is atomic over the whole list, the OP refresh in the same call rolled back too — and since both cached
     ///         roots were by then stale, the account's ENTIRE Merkl contribution read 0 until a human hand-ran
-    ///         `clearAllocation`. Every subsequent keeper cycle hit the same revert, so it did not self-heal.
+    ///         `clearAttestation`. Every subsequent keeper cycle hit the same revert, so it did not self-heal.
     ///
     ///         THE DISCRIMINATING MUTATION: drop the `a.root == root &&` conjunct at the guard and this fails again
     ///         with `AmountRegression`. Deleting the guard entirely instead fails
@@ -654,7 +653,7 @@ contract MerklRewardsAttestedBalanceAdapterTest is BalanceAdapterTestBase {
 
         _submitMany(alice, tokens, amounts, proofs);
 
-        (uint256 arbCached,,) = adapter.allocations(alice, address(arb));
+        (uint256 arbCached,,) = adapter.attestations(alice, address(arb));
         assertEq(arbCached, 40 ether, "stale entry refreshed DOWN to the newly attested figure");
         (uint256 opAmt,) = adapter.getAdapterBalanceForAsset(alice, address(op));
         assertEq(opAmt, 50 ether, "the sibling token in the same atomic call was refreshed, not rolled back");
@@ -723,8 +722,8 @@ contract MerklRewardsAttestedBalanceAdapterTest is BalanceAdapterTestBase {
 
         adapter.submitProofsBatch(users, allocs);
 
-        assertEq(adapter.userTokens(alice).length, 2);
-        assertEq(adapter.userTokens(bob).length, 2);
+        assertEq(adapter.assetsOf(alice).length, 2);
+        assertEq(adapter.assetsOf(bob).length, 2);
     }
 
     function test_submitProofsBatch_revertsOnLengthMismatch() public {
@@ -737,7 +736,7 @@ contract MerklRewardsAttestedBalanceAdapterTest is BalanceAdapterTestBase {
     }
 
     // ============================================
-    // clearAllocation — stale-gated GC
+    // clearAttestation — stale-gated GC
     // ============================================
 
     function _seedAllocation(address user, address token, uint256 amount) internal {
@@ -748,59 +747,57 @@ contract MerklRewardsAttestedBalanceAdapterTest is BalanceAdapterTestBase {
 
     /// @notice A stale (root-rotated) entry contributes 0 to NAV, so it can be cleared: the cache zeroes and the token
     ///         drops off the enumeration list.
-    function test_clearAllocation_removesStaleEntry() public {
+    function test_clearAttestation_removesStaleEntry() public {
         _seedAllocation(alice, address(arb), 100 ether);
         // Root rotates → entry is stale → unclaimed reads 0 → clearable.
         distributor.setRoot(keccak256("rotated root"));
 
-        adapter.clearAllocation(alice, address(arb));
+        adapter.clearAttestation(alice, address(arb));
 
-        (uint256 amt, bytes32 root, uint64 ts) = adapter.allocations(alice, address(arb));
+        (uint256 amt, bytes32 root, uint64 ts) = adapter.attestations(alice, address(arb));
         assertEq(amt, 0);
         assertEq(root, ZERO);
         assertEq(ts, 0);
-        assertEq(adapter.userTokens(alice).length, 0);
+        assertEq(adapter.assetsOf(alice).length, 0);
     }
 
     /// @notice A fully-claimed entry contributes 0 to NAV, so it can be cleared.
-    function test_clearAllocation_removesFullyClaimedEntry() public {
+    function test_clearAttestation_removesFullyClaimedEntry() public {
         _seedAllocation(alice, address(arb), 100 ether);
         // Fully claimed → unclaimed 0 → clearable even with a live root.
         distributor.setClaimed(alice, address(arb), uint208(100 ether), uint48(block.timestamp), bytes32(0));
 
-        adapter.clearAllocation(alice, address(arb));
+        adapter.clearAttestation(alice, address(arb));
 
-        assertEq(adapter.userTokens(alice).length, 0);
-        (uint256 amt,,) = adapter.allocations(alice, address(arb));
+        assertEq(adapter.assetsOf(alice).length, 0);
+        (uint256 amt,,) = adapter.attestations(alice, address(arb));
         assertEq(amt, 0);
     }
 
     /// @notice A LIVE entry (fresh root, unclaimed > 0) cannot be cleared — it can only be *replaced* via submit. This
     ///         is the stale-gate that makes the permissionless clear safe (the fix for the old ASSISTANT_ROLE L-02
     ///         vector: no caller can zero out another account's valid reward).
-    function test_clearAllocation_revertsWhenLive() public {
+    function test_clearAttestation_revertsWhenLive() public {
         _seedAllocation(alice, address(arb), 100 ether);
-        vm.expectRevert(
-            abi.encodeWithSelector(MerklRewardsAttestedBalanceAdapter.AllocationStillLive.selector, alice, address(arb))
-        );
-        adapter.clearAllocation(alice, address(arb));
+        vm.expectRevert(abi.encodeWithSelector(AttestedValueCache.AttestationStillLive.selector, alice, address(arb)));
+        adapter.clearAttestation(alice, address(arb));
     }
 
     /// @notice Clearing a (user, token) with nothing cached reverts NothingToClear.
-    function test_clearAllocation_revertsNothingToClear() public {
-        vm.expectRevert(MerklRewardsAttestedBalanceAdapter.NothingToClear.selector);
-        adapter.clearAllocation(alice, address(arb));
+    function test_clearAttestation_revertsNothingToClear() public {
+        vm.expectRevert(AttestedValueCache.NothingToClear.selector);
+        adapter.clearAttestation(alice, address(arb));
     }
 
-    function test_clearAllocation_revertsOnZeroArgs() public {
+    function test_clearAttestation_revertsOnZeroArgs() public {
         vm.expectRevert(InvalidArguments.selector);
-        adapter.clearAllocation(address(0), address(arb));
+        adapter.clearAttestation(address(0), address(arb));
 
         vm.expectRevert(InvalidArguments.selector);
-        adapter.clearAllocation(alice, address(0));
+        adapter.clearAttestation(alice, address(0));
     }
 
-    function test_clearAllocation_swapAndPopFromMiddle() public {
+    function test_clearAttestation_swapAndPopFromMiddle() public {
         // Seed three tokens for alice in ONE replace submit (a 4-leaf tree; the 4th leaf is an unused filler).
         bytes32[4] memory leaves;
         leaves[0] = _leaf(alice, address(arb), 100 ether);
@@ -825,15 +822,15 @@ contract MerklRewardsAttestedBalanceAdapterTest is BalanceAdapterTestBase {
         _submitMany(alice, tokens, amounts, proofs);
 
         // Sanity: list is [arb, op, morpho]
-        address[] memory before = adapter.userTokens(alice);
+        address[] memory before = adapter.assetsOf(alice);
         assertEq(before.length, 3);
 
         // Make OP clearable by fully claiming it (unclaimed → 0), then clear it (the middle one).
         // Expect swap-and-pop: list becomes [arb, morpho].
         distributor.setClaimed(alice, address(op), uint208(50 ether), uint48(block.timestamp), bytes32(0));
-        adapter.clearAllocation(alice, address(op));
+        adapter.clearAttestation(alice, address(op));
 
-        address[] memory after_ = adapter.userTokens(alice);
+        address[] memory after_ = adapter.assetsOf(alice);
         assertEq(after_.length, 2);
         assertEq(after_[0], address(arb));
         assertEq(after_[1], address(morpho));
@@ -866,20 +863,18 @@ contract MerklRewardsAttestedBalanceAdapterTest is BalanceAdapterTestBase {
     }
 
     /// @notice An account with ≥2 tokens, at least one still live (fresh root, unclaimed > 0), cannot be bulk-cleared —
-    ///         reverts AllocationStillLive on the first live token. This is the stale-gate that prevents a third party
+    ///         reverts AttestationStillLive on the first live token. This is the stale-gate that prevents a third party
     ///         from suppressing a live reward set.
     function test_clearAccount_revertsWhenAnyLive() public {
         _seedTwoTokens(alice, 100 ether, 50 ether);
         // Make OP dead (fully claimed) but leave ARB live → the first live token trips the gate.
         distributor.setClaimed(alice, address(op), uint208(50 ether), uint48(block.timestamp), bytes32(0));
 
-        vm.expectRevert(
-            abi.encodeWithSelector(MerklRewardsAttestedBalanceAdapter.AllocationStillLive.selector, alice, address(arb))
-        );
+        vm.expectRevert(abi.encodeWithSelector(AttestedValueCache.AttestationStillLive.selector, alice, address(arb)));
         adapter.clearAccount(alice);
 
         // Nothing removed — the set is intact.
-        assertEq(adapter.userTokens(alice).length, 2);
+        assertEq(adapter.assetsOf(alice).length, 2);
     }
 
     /// @notice When every token is dead (mix of stale-root and fully-claimed), clearAccount wipes the whole set, emits
@@ -891,14 +886,14 @@ contract MerklRewardsAttestedBalanceAdapterTest is BalanceAdapterTestBase {
         distributor.setRoot(keccak256("rotated root"));
 
         vm.expectEmit(true, false, false, false, address(adapter));
-        emit MerklRewardsAttestedBalanceAdapter.AccountCleared(alice);
+        emit AttestedValueCache.AccountCleared(alice);
         adapter.clearAccount(alice);
 
-        assertEq(adapter.userTokens(alice).length, 0);
+        assertEq(adapter.assetsOf(alice).length, 0);
 
-        (uint256 arbAmt,,) = adapter.allocations(alice, address(arb));
+        (uint256 arbAmt,,) = adapter.attestations(alice, address(arb));
         assertEq(arbAmt, 0);
-        (uint256 opAmt,,) = adapter.allocations(alice, address(op));
+        (uint256 opAmt,,) = adapter.attestations(alice, address(op));
         assertEq(opAmt, 0);
 
         (address[] memory assets, uint256[] memory amounts,) = adapter.getAdapterBalances(alice);
@@ -911,7 +906,7 @@ contract MerklRewardsAttestedBalanceAdapterTest is BalanceAdapterTestBase {
 
     /// @notice Bulk-clearing a never-cached account reverts NothingToClear.
     function test_clearAccount_revertsNothingToClear() public {
-        vm.expectRevert(MerklRewardsAttestedBalanceAdapter.NothingToClear.selector);
+        vm.expectRevert(AttestedValueCache.NothingToClear.selector);
         adapter.clearAccount(alice);
     }
 
@@ -1148,7 +1143,7 @@ contract MerklRewardsAttestedBalanceAdapterTest is BalanceAdapterTestBase {
     }
 
     /// @notice CHARACTERIZATION — the reactivation the test above asserts is CONDITIONAL on nobody clearing the
-    ///         entry during the window where it is stale. `clearAllocation` is permissionless and gates only on the
+    ///         entry during the window where it is stale. `clearAttestation` is permissionless and gates only on the
     ///         INSTANTANEOUS `_unclaimed == 0`, which is true for the whole R3 window, so the entry is clearable
     ///         there. When the root returns to R2 the allocation is simply gone.
     /// @dev    Not a hypothetical, and not primarily an attack: `docs/operations/merkl-proof-submitter.md` mandates
@@ -1158,7 +1153,7 @@ contract MerklRewardsAttestedBalanceAdapterTest is BalanceAdapterTestBase {
     ///
     ///         Direction is UNDER-report, and it self-heals: the cache is empty, so the keeper's `changed()`
     ///         predicate fires on the next cycle and re-submits the still-valid R2 proof. The deliberate choice NOT
-    ///         to fix this in the contract is recorded on {clearAllocation} — retaining stale entries until a
+    ///         to fix this in the contract is recorded on {clearAttestation} — retaining stale entries until a
     ///         replacement root is final would make them un-clearable, which walks straight into the
     ///         `TooManyTokens` slot-exhaustion outage that the stale-gated GC exists to prevent. That trade swaps a
     ///         self-healing under-report for a wedged one.
@@ -1171,7 +1166,7 @@ contract MerklRewardsAttestedBalanceAdapterTest is BalanceAdapterTestBase {
 
         // Stale => clearable, by ANYONE. This is what the runbook's automatic GC pass does every cycle.
         vm.prank(stranger);
-        adapter.clearAllocation(alice, address(arb));
+        adapter.clearAttestation(alice, address(arb));
 
         // R3 is disputed and revoked: the live root returns to R2. There is nothing left to reactivate.
         distributor.setRoot(r2);
@@ -1383,7 +1378,7 @@ contract MerklRewardsAttestedBalanceAdapterTest is BalanceAdapterTestBase {
     ///      ones discriminates.
     ///
     ///      arb is submitted FIRST so it holds index 0, the fillers rotate the root, then arb is RE-submitted
-    ///      against the final root — a refresh does not move it in `_userTokens`, so it stays first AND stays live.
+    ///      against the final root — a refresh does not move it in `the base enumeration`, so it stays first AND stays live.
     function test_isolation_skippedTokensDoNotStarveAnExpensiveRegisteredToken() public {
         MerklRewardsAttestedBalanceAdapter.CampaignShare[] memory shares =
             new MerklRewardsAttestedBalanceAdapter.CampaignShare[](8);
@@ -1392,7 +1387,7 @@ contract MerklRewardsAttestedBalanceAdapterTest is BalanceAdapterTestBase {
                 campaignId: keccak256(abi.encode("c", i)), subCampaignId: ZERO, cumulativeAmount: 1 ether
             });
         }
-        _submitWithCampaigns(alice, address(arb), 8 ether, shares); // arb -> _userTokens[0]
+        _submitWithCampaigns(alice, address(arb), 8 ether, shares); // arb -> the base enumeration[0]
 
         for (uint256 i; i < 60; ++i) {
             address filler = address(uint160(0xF11E0000 + i));
@@ -1402,8 +1397,8 @@ contract MerklRewardsAttestedBalanceAdapterTest is BalanceAdapterTestBase {
         }
         _submitWithCampaigns(alice, address(arb), 8 ether, shares); // refresh arb against the CURRENT root
 
-        assertEq(adapter.userTokens(alice)[0], address(arb), "fixture: the registered token is valued FIRST");
-        assertEq(adapter.userTokens(alice).length, 61, "fixture: 60 skipped tokens behind it");
+        assertEq(adapter.assetsOf(alice)[0], address(arb), "fixture: the registered token is valued FIRST");
+        assertEq(adapter.assetsOf(alice).length, 61, "fixture: 60 skipped tokens behind it");
 
         INAVCalculator.PositionBalance[] memory pos = adapter.getAdapterPositions{gas: 2_000_000}(alice, address(0));
 
@@ -1422,7 +1417,7 @@ contract MerklRewardsAttestedBalanceAdapterTest is BalanceAdapterTestBase {
     ///      actually hold. Both other isolation tests place the griefer SECOND, where the bug is invisible.
     function test_isolation_griefingTokenFirstDoesNotStarveTheRest() public {
         _seedTwoLive(100 ether, 50 ether);
-        assertEq(adapter.userTokens(alice)[0], address(arb), "fixture: the griefed token must be valued FIRST");
+        assertEq(adapter.assetsOf(alice)[0], address(arb), "fixture: the griefed token must be valued FIRST");
         distributor.setBurnsFor(address(arb), true);
 
         // 400_000 is measured, not arbitrary: WITHOUT the griefer this budget values both tokens fine (control run),
@@ -1540,10 +1535,10 @@ contract MerklRewardsAttestedBalanceAdapterTest is BalanceAdapterTestBase {
 
     /// @dev Fills `alice`'s token cache to exactly `MAX_TOKENS_PER_USER`, one synthetic token per single-leaf root.
     ///      Each submit rotates the mock root to that token's own leaf, so earlier entries go stale — which is the
-    ///      point: a stale entry still OCCUPIES its slot (only the stale-gated `clearAllocation` frees one), so the
+    ///      point: a stale entry still OCCUPIES its slot (only the stale-gated `clearAttestation` frees one), so the
     ///      cap is reached by accumulation across roots, not only by a large simultaneous footprint.
     ///      Synthetic (non-contract) token addresses are fine here: the adapter never calls the reward token, and the
-    ///      cap is enforced purely on `_userTokens` length.
+    ///      cap is enforced purely on `the base enumeration` length.
     function _fillTokenCache(address user, uint256 count) internal {
         for (uint256 i; i < count; ++i) {
             address token = address(uint160(0xDEAD0000 + i));
@@ -1555,15 +1550,15 @@ contract MerklRewardsAttestedBalanceAdapterTest is BalanceAdapterTestBase {
 
     /// @dev A NEW token beyond `MAX_TOKENS_PER_USER` reverts fail-loud. This is the cap ADR 0022's read-gas argument
     ///      rests on, and it was previously untested — a `>=` vs `>` slip here would silently ship an off-by-one.
-    function test_submit_revertsWhenTooManyTokens() public {
+    function test_submit_revertsWhenTooManyAttestations() public {
         uint256 max = adapter.MAX_TOKENS_PER_USER();
         _fillTokenCache(alice, max);
-        assertEq(adapter.userTokens(alice).length, max, "cache filled to the cap");
+        assertEq(adapter.assetsOf(alice).length, max, "cache filled to the cap");
 
         address oneTooMany = address(uint160(0xBEEF0001));
         bytes32 leaf = _leaf(alice, oneTooMany, 1 ether);
         distributor.setRoot(leaf);
-        vm.expectRevert(abi.encodeWithSelector(MerklRewardsAttestedBalanceAdapter.TooManyTokens.selector, alice, max));
+        vm.expectRevert(abi.encodeWithSelector(AttestedValueCache.TooManyAttestations.selector, alice, max));
         _submitOne(alice, oneTooMany, 1 ether, new bytes32[](0));
     }
 
@@ -1579,9 +1574,9 @@ contract MerklRewardsAttestedBalanceAdapterTest is BalanceAdapterTestBase {
         bytes32 refreshLeaf = _leaf(alice, existing, 5 ether);
         distributor.setRoot(refreshLeaf);
         _submitOne(alice, existing, 5 ether, new bytes32[](0));
-        (uint256 amt,,) = adapter.allocations(alice, existing);
+        (uint256 amt,,) = adapter.attestations(alice, existing);
         assertEq(amt, 5 ether, "refresh at the cap lands");
-        assertEq(adapter.userTokens(alice).length, max, "refresh consumes no slot");
+        assertEq(adapter.assetsOf(alice).length, max, "refresh consumes no slot");
 
         // A two-entry submit whose SECOND entry is a new token at the cap reverts atomically — the first entry's
         // refresh is rolled back with it. This is the keeper-wedge shape: nothing gets refreshed.
@@ -1607,18 +1602,18 @@ contract MerklRewardsAttestedBalanceAdapterTest is BalanceAdapterTestBase {
             proof: p1,
             campaigns: new MerklRewardsAttestedBalanceAdapter.CampaignShare[](0)
         });
-        vm.expectRevert(abi.encodeWithSelector(MerklRewardsAttestedBalanceAdapter.TooManyTokens.selector, alice, max));
+        vm.expectRevert(abi.encodeWithSelector(AttestedValueCache.TooManyAttestations.selector, alice, max));
         adapter.submitProofs(alice, allocs);
 
-        (uint256 after_,,) = adapter.allocations(alice, existing);
+        (uint256 after_,,) = adapter.attestations(alice, existing);
         assertEq(after_, 5 ether, "the whole submit rolled back: the co-listed refresh did NOT land");
     }
 
-    /// @dev The `_userTokens` no-duplicate invariant, which is the ONLY double-count mechanism in this contract: a
+    /// @dev The `the base enumeration` no-duplicate invariant, which is the ONLY double-count mechanism in this contract: a
     ///      token present twice in the enumeration list would make `buildPositionsSelf` value it twice and OVER-report
     ///      NAV — the one direction the family forbids. Re-submitting the same `(user, token)` many times, across a
     ///      root rotation, must never grow the list. The presence sentinel is `root != 0`, enforced by the contract's
-    ///      own `UninitializedRoot` check, rather than `submittedAt != 0`, which would rest on `block.timestamp != 0`.
+    ///      own `UninitializedEpoch` check, rather than `submittedAt != 0`, which would rest on `block.timestamp != 0`.
     function test_submit_repeatedSubmitsNeverDuplicateUserTokens() public {
         uint256 amount = 100 ether;
         for (uint256 i; i < 5; ++i) {
@@ -1626,7 +1621,7 @@ contract MerklRewardsAttestedBalanceAdapterTest is BalanceAdapterTestBase {
             bytes32 leaf = _leaf(alice, address(arb), amount);
             distributor.setRoot(leaf); // rotate the root each time
             _submitOne(alice, address(arb), amount, new bytes32[](0));
-            assertEq(adapter.userTokens(alice).length, 1, "re-submit must never push a second slot");
+            assertEq(adapter.assetsOf(alice).length, 1, "re-submit must never push a second slot");
         }
 
         // And the read values it exactly once — no double count.
@@ -1645,7 +1640,7 @@ contract MerklRewardsAttestedBalanceAdapterTest is BalanceAdapterTestBase {
         distributor.setRoot(leaf);
         _submitOne(alice, address(arb), 100 ether, new bytes32[](0));
         _submitOne(alice, address(arb), 100 ether, new bytes32[](0)); // same root, same amount — a pure refresh
-        assertEq(adapter.userTokens(alice).length, 1, "no duplicate slot even with submittedAt == 0");
+        assertEq(adapter.assetsOf(alice).length, 1, "no duplicate slot even with submittedAt == 0");
 
         INAVCalculator.PositionBalance[] memory pos = adapter.getAdapterPositions(alice, address(0));
         assertEq(pos.length, 1, "valued once");
@@ -1708,7 +1703,7 @@ contract MerklRewardsAttestedBalanceAdapterTest is BalanceAdapterTestBase {
     function test_previewPositions_accountAgnostic_readsWithoutCacheOrWrite() public {
         distributor.setRoot(_leaf(alice, address(arb), 100 ether));
 
-        assertEq(adapter.userTokens(alice).length, 0, "nothing cached before");
+        assertEq(adapter.assetsOf(alice).length, 0, "nothing cached before");
         assertEq(adapter.getAdapterPositions(alice, address(0)).length, 0, "NAV path empty before");
 
         INAVCalculator.PositionBalance[] memory pos =
@@ -1717,10 +1712,10 @@ contract MerklRewardsAttestedBalanceAdapterTest is BalanceAdapterTestBase {
         assertEq(pos[0].amount, 100 ether);
 
         // Wrote nothing: the cache is still empty and the NAV path still returns nothing.
-        (uint256 amt, bytes32 root,) = adapter.allocations(alice, address(arb));
+        (uint256 amt, bytes32 root,) = adapter.attestations(alice, address(arb));
         assertEq(amt, 0, "no cumulative cached");
         assertEq(root, ZERO, "no entry cached");
-        assertEq(adapter.userTokens(alice).length, 0, "nothing cached after");
+        assertEq(adapter.assetsOf(alice).length, 0, "nothing cached after");
         assertEq(adapter.getAdapterPositions(alice, address(0)).length, 0, "NAV path still empty after");
     }
 
@@ -1765,7 +1760,7 @@ contract MerklRewardsAttestedBalanceAdapterTest is BalanceAdapterTestBase {
 
     function test_previewPositions_uninitializedRoot_reverts() public {
         distributor.setRoot(bytes32(0));
-        vm.expectRevert(MerklRewardsAttestedBalanceAdapter.UninitializedRoot.selector);
+        vm.expectRevert(AttestedValueCache.UninitializedEpoch.selector);
         adapter.previewPositions(alice, _previewAllocSingle(address(arb), 100 ether));
     }
 
@@ -1865,8 +1860,11 @@ contract MerklRewardsAttestedBalanceAdapterTest is BalanceAdapterTestBase {
                 campaigns: new MerklRewardsAttestedBalanceAdapter.CampaignShare[](0)
             });
         }
-        // The length cap fires before any proof work (root not even set).
-        vm.expectRevert(abi.encodeWithSelector(MerklRewardsAttestedBalanceAdapter.TooManyTokens.selector, alice, n));
+        // The length cap fires immediately after the decode, BEFORE any proof is verified — so an over-cap
+        // payload never pays the merkle cost. A live root is set so the epoch check (which the base performs first,
+        // since it owns epoch handling) passes and the cap is demonstrably what rejects.
+        distributor.setRoot(_leaf(alice, address(arb), 1 ether));
+        vm.expectRevert(abi.encodeWithSelector(AttestedValueCache.TooManyAttestations.selector, alice, n));
         adapter.previewPositions(alice, abi.encode(allocs));
     }
 
@@ -1881,9 +1879,7 @@ contract MerklRewardsAttestedBalanceAdapterTest is BalanceAdapterTestBase {
             campaigns: new MerklRewardsAttestedBalanceAdapter.CampaignShare[](0)
         });
         allocs[1] = allocs[0];
-        vm.expectRevert(
-            abi.encodeWithSelector(MerklRewardsAttestedBalanceAdapter.DuplicateToken.selector, address(arb))
-        );
+        vm.expectRevert(abi.encodeWithSelector(AttestedValueCache.DuplicateAsset.selector, address(arb)));
         adapter.previewPositions(alice, abi.encode(allocs));
     }
 

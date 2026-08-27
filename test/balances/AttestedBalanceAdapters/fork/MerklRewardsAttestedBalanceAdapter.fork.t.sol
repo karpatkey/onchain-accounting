@@ -95,7 +95,7 @@ contract MerklRewardsAttestedBalanceAdapterForkTest is BalanceAdapterTestBase {
 
     function test_adapter_uninitializedRootGuardWithRealDistributor() public view {
         // Real distributor's root is non-zero at this block; this test sanity-checks the contrapositive: when we
-        // change nothing, the UninitializedRoot path is not reachable (otherwise our `submitProofs` test above
+        // change nothing, the UninitializedEpoch path is not reachable (otherwise our `submitProofs` test above
         // would have hit it before the proof check). Here we just assert non-zero root at the pinned block.
         assertTrue(IMerklDistributor(MERKL_DISTRIBUTOR).getMerkleRoot() != bytes32(0));
     }
@@ -179,7 +179,7 @@ contract MerklRewardsAttestedBalanceAdapterRealProofForkTest is BalanceAdapterTe
     function test_realProof_verifiesAndCaches() public {
         if (fixtureMissing) vm.skip(true);
         adapter.submitProofs(fixtureUser, _alloc());
-        (uint256 cachedCumulative, bytes32 cachedRoot,) = adapter.allocations(fixtureUser, fixtureToken);
+        (uint256 cachedCumulative, bytes32 cachedRoot,) = adapter.attestations(fixtureUser, fixtureToken);
         assertEq(cachedCumulative, fixtureCumulative, "cached cumulative == proven amount");
         assertEq(cachedRoot, fixtureRoot, "cached root == live root");
     }
@@ -237,7 +237,7 @@ contract MerklRewardsAttestedBalanceAdapterRealProofForkTest is BalanceAdapterTe
         assertTrue(positions[0].positionKind == PositionKind.Rewards, "positionKind == Rewards");
 
         // Cache-free: the preview wrote nothing and the NAV path is untouched (never submitted).
-        (uint256 cachedCumulative, bytes32 cachedRoot,) = adapter.allocations(fixtureUser, fixtureToken);
+        (uint256 cachedCumulative, bytes32 cachedRoot,) = adapter.attestations(fixtureUser, fixtureToken);
         assertEq(cachedCumulative, 0, "preview cached no cumulative");
         assertEq(cachedRoot, bytes32(0), "preview cached no entry");
         assertEq(adapter.getAdapterPositions(fixtureUser, address(0)).length, 0, "NAV path still empty");

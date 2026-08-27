@@ -1,0 +1,101 @@
+name: Bytecode drift
+
+# Does every address in the deployment records actually run code this tree produces?
+#
+# WHY THIS IS NOT A PER-PR CHECK. It needs two expensive things: a CLEAN whole-program build (under
+# via_ir an incremental build yields stale artifacts, which would produce false STALE verdicts) and
+# live RPC to every deployed chain. Roughly 20 minutes and ~24 chains' worth of calls. Paying that on
+# every PR would buy almost nothing: drift appears when something is DEPLOYED, not when a PR is opened.
+#
+# WHY IT EXISTS AT ALL. `bytecode_audit.py` has been in the tree for a while and is documented as step
+# 2.2 of the redeploy runbook — but only as a manual runbook step. Anything deployed OUTSIDE a full
+# redeploy never reaches it. That is not hypothetical: `PolygonStakingMeta` was swapped in with
+# `script/manage/SwapMetaAdapter.s.sol`, never passed through the runbook, and ran code six bytes
+# short of its own source on mainnet through a complete review round without anything noticing. A
+# capability nobody runs is not a guard.
+on:
+  workflow_dispatch:
+    inputs:
+      chains:
+        description: "Space-separated chain ids to audit. Empty = every chain with a deployment record."
+        required: false
+        type: string
+        default: ""
+  schedule:
+    # Daily at 05:00 UTC, an hour before the snapshot refresh so the two do not contend for RPC.
+    # Daily rather than weekly because the window it bounds is "how long can production run code we
+    # cannot reproduce before anyone knows" — a week of that is what this is meant to prevent.
+    - cron: "0 5 * * *"
+  push:
+    branches: [main]
+    # Only when something that can change the answer lands: the deployment records themselves, the
+    # contracts, the compiler settings, or this guard and its baseline.
+    paths:
+      - "script/config/deployments/**"
+      - "script/deploy/preflight/bytecode_audit.py"
+      - "script/deploy/preflight/accepted-bytecode-drift.json"
+      - "src/**"
+      - "foundry.toml"
+      - ".github/workflows/bytecode-drift.yml"
+
+permissions:
+  contents: read
+
+env:
+  FOUNDRY_VERSION: v1.7.1
+  ALCHEMY_API_KEY: ${{ secrets.ALCHEMY_API_KEY }}
+
+jobs:
+  audit:
+    name: Deployed code matches this tree
+    runs-on: blacksmith-8vcpu-ubuntu-2404
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: foundry-rs/foundry-toolchain@v1
+        with:
+          # No cache. A restored Foundry cache reintroduces reusable compilation state, and the whole
+          # premise of this job is that the artifacts came from a clean compile of THIS tree.
+          version: ${{ env.FOUNDRY_VERSION }}
+          cache: false
+
+      # See the long note on foundry.yml's `build` job. Same compile, same 7-9.7 GB peak, same silent
+      # SIGTERM (exit 143, no compiler error) when it does not fit.
+      - name: Add swap for the via_ir compile
+        run: |
+          sudo fallocate -l 8G /mnt/swapfile-ci
+          sudo chmod 600 /mnt/swapfile-ci
+          sudo mkswap /mnt/swapfile-ci
+          sudo swapon /mnt/swapfile-ci
+          free -h
+
+      # `--force` on an already-empty out/ states the requirement in the command rather than relying
+      # on the absence of a mount, so a cache added here later cannot silently reintroduce the
+      # incremental scope this job exists to exclude.
+      - name: Build from clean (whole program)
+        run: forge build --force
+
+      # Proves the comparator before trusting its verdict. Offline.
+      - name: Self-test the comparator
+        run: python3 script/deploy/preflight/bytecode_audit.py --self-test
+
+      - name: Audit deployed bytecode
+        # --require-current turns STALE into a non-zero exit; --baseline lets the two known,
+        # documented drifts pass while ANY other one fails. The baseline is enforced in both
+        # directions, so an entry whose address has since been redeployed fails too and must be
+        # deleted — that is what stops the file becoming a blindfold.
+        run: |
+          python3 script/deploy/preflight/bytecode_audit.py ${{ inputs.chains }} \
+            --require-current \
+            --baseline script/deploy/preflight/accepted-bytecode-drift.json \
+            --json bytecode-drift.json
+
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bytecode-drift
+          path: bytecode-drift.json
+          retention-days: 14

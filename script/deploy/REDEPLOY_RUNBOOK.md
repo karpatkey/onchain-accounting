@@ -675,6 +675,30 @@ yields a wrong address that looks authoritative.
 > document into `LibraryPins.sol`; the direction of trust runs the other way. See
 > `reference_pricefeedlib_pin_drift` for the full history.
 
+### 0.3b This audit also runs on a schedule now — and it caught something this step never would
+
+`bytecode_audit.py` was, until 2026-08-27, **only** a runbook step. That is a real gap rather than a
+tidiness one: anything deployed OUTSIDE a full redeploy never reaches step 2.2. `PolygonStakingMeta`
+was swapped in with `script/manage/SwapMetaAdapter.s.sol`, never passed through this runbook, and ran
+code six bytes short of its own source on mainnet through an entire review round — while a tool
+capable of detecting it sat in the tree, unrun. A capability nobody runs is not a guard.
+
+`.github/workflows/bytecode-drift.yml` now runs it daily, on pushes to `main` that touch the
+deployment records or `src/`, and on demand. It does a clean whole-program build first, because under
+`via_ir` an incremental build yields stale artifacts and would produce false STALE verdicts.
+
+**The accepted-drift baseline.** A gate that is permanently red gets ignored, which is how a check
+that cries wolf ends up hiding a real finding — this repo has been there with the pin test. So known
+drift is declared in `script/deploy/preflight/accepted-bytecode-drift.json`, each entry with a reason,
+and everything else fails. It is enforced in BOTH directions: an un-listed STALE address fails, and a
+listed address that has become CURRENT also fails, so the file cannot rot into a rubber stamp. When
+you redeploy something listed there, **delete its entry** — leaving it would silently accept a future
+drift at that address.
+
+Two entries exist today: `PolygonStakingMeta` (diagnosed, display-only, awaiting a redeploy) and
+`BridgeEscrowImplementation` (**undiagnosed** — found by the guard's first run, recorded so the gate
+could go green on everything else, explicitly not an assessment that it is harmless).
+
 ### 0.4 Submodules at the recorded commits — **root cause fixed, keep the check**
 
 This was a live hazard during deploy prep and is now resolved. The history is worth keeping because
@@ -1892,7 +1916,9 @@ deployer.
 ```bash
 forge clean && forge build
 python3 script/deploy/preflight/bytecode_audit.py --self-test
-python3 script/deploy/preflight/bytecode_audit.py --require-current --json post-deploy-bytecode.json
+python3 script/deploy/preflight/bytecode_audit.py --require-current \
+  --baseline script/deploy/preflight/accepted-bytecode-drift.json \
+  --json post-deploy-bytecode.json
 python3 script/deploy/preflight/verify_step.py all          # every step's post-condition, all 24
 ```
 

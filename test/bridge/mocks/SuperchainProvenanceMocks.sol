@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8.0;
 
-import {Types} from "@optimism/libraries/Types.sol";
+import {Types} from "src/bridge/adapters/lib/OptimismTypes.sol";
 import {IOptimismPortal, ICrossDomainMessenger} from "src/bridge/adapters/interfaces/ISuperchainInterfaces.sol";
 
 /// @title SuperchainProvenanceMocks

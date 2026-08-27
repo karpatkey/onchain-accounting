@@ -38,3 +38,4 @@ Short, numbered records of *why* the codebase looks the way it does. Read these 
 | 0020 | [Custom-feed `getPriceData` reports the *governing leg*'s freshness](0020-custom-feed-governing-leg-freshness.md) | accepted |
 | 0022 | [Attested balance-adapter family (proof-verified, agent-fed cache)](0022-attested-balance-adapter-family.md) | accepted |
 | 0023 | [Asset classification on two orthogonal axes (`PegKind` × `AccrualKind`), surfaced by a standalone `AssetKindRegistry`](0023-asset-classification-two-axes.md) | accepted |
+| 0024 | [Drop oversized submodules; vendor single-file dependencies](0024-dependency-size-vendor-single-file-deps.md) | accepted |

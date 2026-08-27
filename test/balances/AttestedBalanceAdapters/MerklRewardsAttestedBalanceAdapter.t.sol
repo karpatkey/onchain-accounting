@@ -745,8 +745,6 @@ contract MerklRewardsAttestedBalanceAdapterTest is BalanceAdapterTestBase {
         _submitOne(user, token, amount, new bytes32[](0));
     }
 
-    /// @notice A stale (root-rotated) entry contributes 0 to NAV, so it can be cleared: the cache zeroes and the token
-    ///         drops off the enumeration list.
     /// @notice The campaign breakdown is dropped in lockstep with the attestation, on BOTH clear paths.
     /// @dev    `_deleteMemberState` is Merkl's half of the deletion contract; nothing else in the suite asserted
     ///         that the shares actually go. Orphaned shares cannot over-report (a re-admission replaces them
@@ -779,6 +777,8 @@ contract MerklRewardsAttestedBalanceAdapterTest is BalanceAdapterTestBase {
         assertEq(adapter.campaignsOf(alice, address(arb)).length, 0, "clearAccount drops it too");
     }
 
+    /// @notice A stale (root-rotated) entry contributes 0 to NAV, so it can be cleared: the cache zeroes and the
+    ///         token drops off the enumeration list.
     function test_clearAttestation_removesStaleEntry() public {
         _seedAllocation(alice, address(arb), 100 ether);
         // Root rotates → entry is stale → unclaimed reads 0 → clearable.

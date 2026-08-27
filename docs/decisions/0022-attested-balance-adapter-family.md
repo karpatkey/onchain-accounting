@@ -56,8 +56,8 @@ attested adapter that is not protocol-specific**, so a new member is a small fil
 
 There is deliberately **no `_maxLegsPerAsset` hook**: the per-asset leg cap belongs on the WRITE path, enforced
 fail-loud by the member before the data exists (Merkl's `TooManyCampaigns`), because rejecting at write is what
-keeps the read bounded. The base needs only the ACTUAL count (`_cachedLegCount` / `_previewLegCount`) to size its
-scratch buffer — and it **bounds the copy against that buffer anyway**, because those are member hooks and the legs
+keeps the read bounded. The base needs only a per-asset leg count (`_cachedLegCount` / `_previewLegCount`, which MUST be an UPPER
+BOUND on what `_assetLegs` returns) to size its scratch buffer — and it **bounds the copy against that buffer anyway**, because those are member hooks and the legs
 come from the unrelated `_assetLegs`: in the monolith both derived from one expression and could not disagree, so
 this is a hazard the extraction created rather than inherited. Over-emitting loses the surplus legs, never the
 whole read.

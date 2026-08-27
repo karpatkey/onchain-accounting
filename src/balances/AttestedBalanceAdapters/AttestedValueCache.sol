@@ -222,6 +222,7 @@ abstract contract AttestedValueCache is IAttestedBalanceAdapter, IPositionDescri
         if (_valueOf(account, asset) != 0) revert AttestationStillLive(account, asset);
         _deleteAttestation(account, asset);
         _removeAsset(account, asset);
+        _deleteMemberState(account, asset); // last: the cache is fully settled before member code runs
         emit AttestationCleared(account, asset);
     }
 
@@ -240,6 +241,11 @@ abstract contract AttestedValueCache is IAttestedBalanceAdapter, IPositionDescri
             delete _assetIdxPlus1[account][list[i]];
         }
         delete _assetList[account];
+        // Member hooks LAST, in a second pass, for the ordering reason on {_deleteAttestation}: no member code may
+        // run while any part of this account's cache is still half-cleared.
+        for (uint256 i; i < list.length; ++i) {
+            _deleteMemberState(account, list[i]);
+        }
         emit AccountCleared(account);
     }
 
@@ -446,31 +452,31 @@ abstract contract AttestedValueCache is IAttestedBalanceAdapter, IPositionDescri
         emit AttestationCached(account, asset, msg.sender, value, epoch, a.attestedAt);
     }
 
-    /// @dev Erase one attestation and any member state hanging off the same key. **DELIBERATELY `private`, so it
-    ///      cannot be overridden**, because this is the ONLY deletion of `attestations` in the base and an override
-    ///      that forgot to call `super` would permanently wedge the entry — not merely leak state.
+    /// @dev Erase one attestation's base record. **DELIBERATELY `private`, so it cannot be overridden**, because
+    ///      this is the ONLY deletion of `_attestations` in the base and an override that forgot to call `super`
+    ///      would permanently wedge the entry — the record would survive while the clear delisted the asset, after
+    ///      which re-admission computes `isNew == false` and never re-pushes, leaving the pair invisible to
+    ///      {getAdapterPositions}/{getAdapterBalances} while {getAdapterBalanceForAsset} still reported it, and
+    ///      unrecoverable because the clear that would reset it now reverts `AttestationStillLive`.
     ///
-    ///      That failure is worth spelling out, because an earlier revision of this base *was* overridable and
-    ///      described its own body as "Default: nothing", which invited exactly the mistake. With the record left
-    ///      behind, `clearAttestation` still pops the asset from `_assetList` — so the enumeration says absent
-    ///      while `attestations` says present. Re-admission then computes `isNew = a.epoch == bytes32(0)`, gets
-    ///      **false**, and never re-pushes. The pair is now invisible to {getAdapterPositions} and
-    ///      {getAdapterBalances} (both drive off the list) while {getAdapterBalanceForAsset} still reports it (it
-    ///      reads the mapping) — the two `IBalanceAdapter` surfaces disagree, and the entry is unrecoverable,
-    ///      because the clear that would reset it now reverts `AttestationStillLive` on a live epoch.
-    ///
-    ///      Members extend this through {_deleteMemberState}, whose default really is nothing, so forgetting
-    ///      `super` there costs a member its own bookkeeping and cannot desynchronise the base's.
+    ///      **It deliberately does NOT invoke {_deleteMemberState}.** Callers run that LAST, once the record AND
+    ///      the enumeration are both settled, because the hook is the one place in a clear where MEMBER code
+    ///      executes. Invoking it here — between the record delete and the enumeration update — would expose the
+    ///      exact `record absent, asset still enumerated` state that {_upsertAttestation}'s `isNew` branch reads as
+    ///      "new": a member whose hook called back into a submit (directly, or by making an external call that
+    ///      re-enters) would push the still-enumerated asset a SECOND time, and the read would value it twice.
+    ///      That is the duplicate-push OVER-report the `private` mapping closes at the member's own level, and
+    ///      ordering is what closes it at the hook's.
     function _deleteAttestation(address account, address asset) private {
         delete _attestations[account][asset];
-        _deleteMemberState(account, asset);
     }
 
     /// @notice Drop any extra per-`(account, asset)` state the member keeps alongside the attestation (Merkl's
     ///         campaign breakdown), so it goes in lockstep with the clears. Default: genuinely nothing.
-    /// @dev Called by every deletion path in this base. A member overriding it need NOT call `super` — the base's
-    ///      own record is erased by {_deleteAttestation}, which is `private` precisely so that guarantee does not
-    ///      depend on the member remembering.
+    /// @dev Called by every deletion path in this base, and always **LAST** — after the record has been erased and
+    ///      the asset delisted, so member code never observes a half-cleared cache. A member overriding it need NOT
+    ///      call `super`: the base's own record is erased by {_deleteAttestation}, which is `private` precisely so
+    ///      that guarantee does not depend on the member remembering.
     function _deleteMemberState(address account, address asset) internal virtual {
         account;
         asset;
@@ -560,9 +566,13 @@ abstract contract AttestedValueCache is IAttestedBalanceAdapter, IPositionDescri
         }
         if (liveCount == 0) return new INAVCalculator.PositionBalance[](0);
 
+        // Per-asset declared leg counts, kept so the copy below can be bounded against THIS asset's own slice
+        // rather than against the shared buffer — see the bound in the loop.
+        uint256[] memory legCaps = new uint256[](liveCount);
         uint256 cap;
         for (uint256 i; i < liveCount; ++i) {
-            cap += _cachedLegCount(account, live[i]);
+            legCaps[i] = _cachedLegCount(account, live[i]);
+            cap += legCaps[i];
         }
 
         // COMPLETION RESERVE, held back from every stipend so the loop can always finish: the catch arm and the
@@ -581,16 +591,28 @@ abstract contract AttestedValueCache is IAttestedBalanceAdapter, IPositionDescri
             try this.assetLegsSelf{gas: stipend}(account, live[i], metas[i]) returns (
                 INAVCalculator.PositionBalance[] memory legs
             ) {
+                // BOUND AGAINST THIS ASSET'S OWN SLICE, not against the shared buffer. {_cachedLegCount} is a
+                // member hook and the legs come from the unrelated {_assetLegs}; the monolith derived both from
+                // one expression so they could not disagree, but here they can, and writing past `tmp` raises
+                // Panic 0x32 in THIS frame — outside the per-asset `try`, so the catch below cannot absorb it. It
+                // would bubble out of {getAdapterPositions}, `PriceFeedLib` would fail open, and the adapter's
+                // ENTIRE leg set would silently leave NAV for every account.
+                //
+                // The slice is what makes the blast radius honest. An earlier version bounded on
+                // `count == tmp.length`, i.e. the ACCOUNT-WIDE buffer: an over-emitting asset then consumed the
+                // capacity reserved for the assets after it, and those lost ALL their legs rather than none —
+                // "drops only the surplus" was false, and a single-asset test could not see it. Capping each
+                // asset at what it declared confines the loss to that asset's own surplus.
+                //
+                // **This is the SECOND silent-drop site in this function**, and a debt-emitting member must treat
+                // it exactly like the `catch` arm below: dropping a DEBT leg makes NAV LARGER. Overriding
+                // {_collectLegs} to raise on `catch` while leaving this bound intact would re-open the over-report
+                // direction through the quieter of the two doors.
+                uint256 taken;
                 for (uint256 j; j < legs.length; ++j) {
-                    // BOUND, do not trust {_cachedLegCount}. It is a member hook, and the buffer was sized from
-                    // it while the legs come from the unrelated {_assetLegs} — the monolith derived both from one
-                    // expression, so they could not disagree; here they can. Writing past `tmp` raises Panic 0x32
-                    // in THIS frame, outside the per-asset `try`, so the catch below cannot absorb it: it bubbles
-                    // out of {getAdapterPositions}, `PriceFeedLib` fails open, and the adapter's ENTIRE leg set
-                    // silently leaves NAV for every account. Dropping the excess loses only the surplus legs, and
-                    // in the direction this family already permits.
-                    if (count == tmp.length) break;
+                    if (taken == legCaps[i]) break;
                     tmp[count++] = legs[j];
+                    ++taken;
                 }
             } catch {
                 // Drop this asset entirely — never revert, and never emit a partial set for it. See the docstring.
@@ -641,8 +663,13 @@ abstract contract AttestedValueCache is IAttestedBalanceAdapter, IPositionDescri
             if (live == 0) continue;
             INAVCalculator.PositionBalance[] memory legs =
                 _assetLegs(account, assets[i], meta, live, values[i], ctxs[i]);
+            // FAIL LOUD here, unlike the cache path. The silent drop in {_collectLegs} is licensed by the NAV
+            // read's fail-open behaviour — losing a leg beats losing the account's whole NAV. This path has
+            // neither: it is the caller's own `eth_call`, documented fail-loud, and a member whose
+            // {_previewLegCount} under-declares is a bug the caller should see rather than a truncated answer
+            // that reads as complete.
+            if (count + legs.length > tmp.length) revert InvalidArguments();
             for (uint256 k; k < legs.length; ++k) {
-                if (count == tmp.length) break; // see the bound in {_collectLegs}
                 tmp[count++] = legs[k];
             }
         }

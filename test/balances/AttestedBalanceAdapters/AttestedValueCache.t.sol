@@ -6,6 +6,8 @@ import {AttestedValueCache} from "src/balances/AttestedBalanceAdapters/AttestedV
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {Mock_ERC20} from "test/mocks/tokens.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
+// forge-lint: disable-next-line(unaliased-plain-import)
+import "src/errors.sol";
 
 /// @notice A minimal SECOND member of the attested family, written the way a new member plausibly would be.
 /// @dev Deliberately keeps its own per-`(account, asset)` bookkeeping and overrides {_deleteMemberState} to drop
@@ -47,7 +49,8 @@ contract ProbeMember is AttestedValueCache {
 
     function _verifyPreviewPayload(bytes32, address, bytes calldata)
         internal
-        pure
+        view
+        virtual
         override
         returns (address[] memory, uint256[] memory, bytes[] memory)
     {
@@ -108,6 +111,70 @@ contract OverEmittingMember is ProbeMember {
         legs = new INAVCalculator.PositionBalance[](2); // declares 1 (inherited default), emits 2
         legs[0] = _row(meta, liveValue, abi.encode(address(this)), bytes32(0));
         legs[1] = _row(meta, liveValue, abi.encode(address(this)), keccak256("second"));
+    }
+}
+
+/// @notice Over-emits for ONE asset and is perfectly correct for the other — the shape that exposes whether the
+///         leg budget is per-asset or account-wide.
+contract SelectiveOverEmitter is ProbeMember {
+    address public greedy;
+
+    constructor(address nav_, address greedy_) ProbeMember(nav_) {
+        greedy = greedy_;
+    }
+
+    function _assetLegs(
+        address a,
+        address asset,
+        INAVCalculator.Asset memory meta,
+        uint256 liveValue,
+        uint256 v,
+        bytes memory c
+    ) internal view override returns (INAVCalculator.PositionBalance[] memory legs) {
+        if (asset != greedy) return super._assetLegs(a, asset, meta, liveValue, v, c);
+        legs = new INAVCalculator.PositionBalance[](3); // declares 1, emits 3
+        for (uint256 i; i < 3; ++i) {
+            legs[i] = _row(meta, liveValue, abi.encode(address(this)), bytes32(i));
+        }
+    }
+}
+
+/// @notice Returns ONE preview entry while `_assetLegs` emits two — an under-declaring member on the fail-loud path.
+contract PreviewOverEmitter is OverEmittingMember {
+    address public asset;
+
+    constructor(address nav_, address asset_) OverEmittingMember(nav_) {
+        asset = asset_;
+    }
+
+    function _verifyPreviewPayload(bytes32, address, bytes calldata)
+        internal
+        view
+        override
+        returns (address[] memory assets, uint256[] memory values, bytes[] memory ctxs)
+    {
+        assets = new address[](1);
+        values = new uint256[](1);
+        ctxs = new bytes[](1);
+        assets[0] = asset;
+        values[0] = 100 ether;
+        ctxs[0] = "";
+    }
+}
+
+/// @notice Returns arrays of mismatched length from the preview payload hook.
+contract RaggedPreviewMember is ProbeMember {
+    constructor(address nav_) ProbeMember(nav_) {}
+
+    function _verifyPreviewPayload(bytes32, address, bytes calldata)
+        internal
+        view
+        override
+        returns (address[] memory assets, uint256[] memory values, bytes[] memory ctxs)
+    {
+        assets = new address[](2); // ragged: 2 assets, 1 value, 1 ctx
+        values = new uint256[](1);
+        ctxs = new bytes[](1);
     }
 }
 
@@ -208,6 +275,61 @@ contract AttestedValueCacheTest is BalanceAdapterTestBase {
         assertFalse(positions[0].isDebt, "the drop licence depends on this being credit-only");
         assertFalse(positions[0].isLocked, "and on isLocked defaulting false");
         assertEq(positions[0].balanceAdapter, address(probe), "balanceAdapter is always address(this)");
+    }
+
+    /// @notice An over-emitting asset must NOT consume a well-behaved neighbour's leg budget.
+    /// @dev    THE REGRESSION, and the one my previous fix got wrong. The first bound was written against the
+    ///         ACCOUNT-WIDE scratch buffer (`count == tmp.length`), so the greedy asset simply took the slots
+    ///         reserved for the assets after it, and those lost ALL their legs — while the docstring, ADR 0022 and
+    ///         the single-asset test all claimed "only the surplus". It also made the adapter answer two different
+    ///         ways for the same account: the FILTERED read `getAdapterPositions(a, honest)` returned the leg
+    ///         (because the filter makes `cap == 1`) while the unfiltered read omitted it.
+    ///
+    ///         A single-asset fixture cannot see any of that, which is why this one seeds TWO with the greedy one
+    ///         FIRST. THE DISCRIMINATING MUTATION: restore the bound to `if (count == tmp.length) break;` and the
+    ///         honest asset's leg disappears.
+    function test_overEmittingAsset_doesNotStarveAWellBehavedNeighbour() public {
+        Mock_ERC20 honest = new Mock_ERC20("HONEST", 18);
+        balances.addSupportedAssetForTest(address(honest));
+        SelectiveOverEmitter m = new SelectiveOverEmitter(address(balances), address(tok));
+        m.feed(alice, address(tok), 100 ether); // greedy, enumerated FIRST
+        m.feed(alice, address(honest), 777 ether);
+
+        INAVCalculator.PositionBalance[] memory positions = m.getAdapterPositions(alice, address(0));
+
+        assertEq(positions.length, 2, "one leg each: greedy capped at its declared 1, honest keeps its own");
+        bool sawHonest;
+        for (uint256 i; i < positions.length; ++i) {
+            if (positions[i].balanceAsset.asset == address(honest)) {
+                sawHonest = true;
+                assertEq(positions[i].amount, 777 ether, "and at the right amount");
+            }
+        }
+        assertTrue(sawHonest, "the well-behaved neighbour must survive its greedy predecessor");
+
+        // The filtered and unfiltered reads must agree — they did not under the account-wide bound.
+        assertEq(m.getAdapterPositions(alice, address(honest)).length, 1, "filtered read agrees with unfiltered");
+    }
+
+    /// @notice The PREVIEW is fail-loud by contract, so an under-declaring member must revert there, not truncate.
+    /// @dev    The cache path's silent drop is licensed by the NAV read's fail-open behaviour — losing a leg beats
+    ///         losing the account's whole NAV. The preview has neither that licence nor that risk: it is the
+    ///         caller's own `eth_call`. Vigilo measured that deleting the old silent bound here left the entire
+    ///         suite green, i.e. it was asserted by nothing.
+    ///         THE DISCRIMINATING MUTATION: drop the `count + legs.length > tmp.length` revert and this passes.
+    function test_previewUnderDeclaringMember_failsLoudRatherThanTruncating() public {
+        PreviewOverEmitter over = new PreviewOverEmitter(address(balances), address(tok));
+        vm.expectRevert(InvalidArguments.selector);
+        over.previewPositions(alice, abi.encode(uint256(1)));
+    }
+
+    /// @notice Ragged arrays out of `_verifyPreviewPayload` must fail loud and attributably.
+    /// @dev    Also asserted by nothing until now (Vigilo mutation-verified: deleting the guard left 98/98 green).
+    ///         THE DISCRIMINATING MUTATION: drop the length check and this reverts with a bare Panic instead.
+    function test_previewRaggedArrays_revertAttributably() public {
+        RaggedPreviewMember ragged = new RaggedPreviewMember(address(balances));
+        vm.expectRevert(InvalidArguments.selector);
+        ragged.previewPositions(alice, abi.encode(uint256(1)));
     }
 
     /// @notice A member that emits more legs than its `_cachedLegCount` declares must lose only the SURPLUS legs —

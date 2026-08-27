@@ -8,11 +8,24 @@
   },
   "StakeWiseV3VaultsMeta": {
     "enabled": true,
-    "$comment": "StakeWise V3 vaults on Gnosis (GNO staking + osGNO debt, both denominated in GNO). Instances are the Gnosis vault addresses held by balancer-dao (0x0EFc…fc89) and CoW (0x616d…0669): 0x00025c… + 0x2cd404… (balancer) and 0x4b4406… (balancer + cow). GNO + osGNO are registered+priced on Gnosis. Reconciled on NAV via addMetaInstances/removeMetaInstances.",
+    "$comment": "StakeWise V3 vaults on Gnosis (GNO staking + osGNO debt, both denominated in GNO). Instances are the Gnosis vault addresses held by balancer-dao (0x0EFc\u2026fc89) and CoW (0x616d\u20260669): 0x00025c\u2026 + 0x2cd404\u2026 (balancer) and 0x4b4406\u2026 (balancer + cow). GNO + osGNO are registered+priced on Gnosis. Reconciled on NAV via addMetaInstances/removeMetaInstances.",
     "instances": [
       "0x00025C729A3364FaEf02c7D1F577068d87E90ba6",
       "0x2Cd404D9d75436e7d6dDbCcc2fB9cF7C06941BF1",
       "0x4b4406Ed8659D03423490D8b62a1639206dA0A7a"
+    ]
+  },
+  "UniswapV3PoolsMeta": {
+    "enabled": true,
+    "$comment": "Active Uniswap V3 pool set on Gnosis. Both tokens of a pool MUST be registered assets or the whole instance is dropped (NAV values an LP from the sum of its two legs, so a half-priced LP would understate it) - all seven below are pairs of chain-100 registered assets. SELECTION: the factory was queried for every pair x fee-tier combination of the 11 registered chain-100 assets (2026-08-26), which found 24 live pools; these are the seven holding more than $10k, together ~$3.4M of the ~$3.4M total. The other 17 are empty or dust and are deliberately omitted because _instancePositions re-enumerates an account's NFTs ONCE PER CONFIGURED POOL - the cost is O(pools x NFTs), so an empty pool is pure overhead on every NAV read for every Gnosis account. Adding one later is an addMetaInstances config TX, not a deploy. Omitted (all ~$0): WETH/sDAI 500, WXDAI/WETH 500, wstETH/GNO 3000, sDAI/EURe 500+3000, wstETH/sDAI 3000+10000, WETH/GNO 3000, WETH/EURe 3000, sDAI/GNO 3000, osGNO/sDAI 3000, osGNO/WXDAI 10000, USDCe/GNO 500+10000, USDCe/GHO 100, WXDAI/GNO 3000, WXDAI/sDAI 100. NOTE the under-report direction: a position in an UNconfigured pool is silently skipped, never over-reported. RE-RUN TRIGGER: that selection is a point-in-time query (2026-08-26) and nothing re-runs it. Re-run it when chain-100 drift appears in the comparison report, or when a covered account mints a Uniswap V3 position on this chain. Materiality lives in ACCOUNT HOLDINGS, not pool TVL \u2014 a large pool none of it karpatkey's is irrelevant, and a small position in an omitted pool is not. The Gnosis COW/WETH pool is excluded PERMANENTLY and is not a candidate at any TVL: COW is unpriceable, and NAV values an LP as the sum of its legs, so wiring it would report about half the position. See chains.100.$untracked_by_design in test/integration/accounts.json.",
+    "instances": [
+      "0xe8a249626d3f3B876B887C30A3355513CB3FA9e4",
+      "0x777d8FDCe12499Ae2D66520865811eEE8c7dE679",
+      "0x46f2dA8A69A150390a87Db78e7AaD8572c564963",
+      "0xBeB0a58E627FeE7AFc795eE9BaaF9E4C934913d7",
+      "0xf5E40cC12f69121B0329c256A99F4ab3ebDfAA2E",
+      "0xc87442b49d6B18facFb8C95483FbeA67c1bb96cE",
+      "0x5a2Fb66e66b2aF7F1c2F71c6c695492FaAB2E587"
     ]
   }
 }

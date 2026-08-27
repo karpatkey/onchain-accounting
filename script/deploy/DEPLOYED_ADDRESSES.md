@@ -143,6 +143,7 @@ positions there.
 | Adapter | Address | Deployed on | Would reuse this address on | Because |
 | --- | --- | --- | --- | --- |
 | UniswapV3PoolsMeta ☆ | `0xACdC33b6a453F629d1ab10A14d3513817F492de7` | 1 | 10, 137, 42161 | those chains host the canonical NonfungiblePositionManager at `0xC36442…FE88` |
+| UniswapV3PoolsMeta ☆ | `0xA336f7171B9CE77de13451419B3254099beF2C24` | 100 | — | Gnosis hosts its OWN Uniswap V3: NPM `0xAE8fbE…9FA3`, factory `0xe32F7d…89B1`. A different constructor arg, so a different address — it is not part of the row above |
 | MorphoMarketsMeta ☆ | `0x5C951CF5C596BC4908A5fd846710070553830b06` | **1, 8453** | — | both host Morpho at `0xBBBB…FFCb`, so both already answer at this one address |
 | MorphoMarketsMeta ☆ | `0x1a33a8eAE2F927A05e3eaDC87a348323060Ab2a4` | 42161 | — | Arbitrum's Morpho is a separate deployment at `0x6c247b1F…8F5e` |
 | FluidVaultsMeta ☆ | `0x32E94eE2276a2eb4873a68676e1250212b3433fC` | 1 | 56, 137, 8453, 9745, 42161 | Fluid deploys its VaultResolver deterministically at `0xA5C3E165…95cC` on all six |
@@ -224,6 +225,7 @@ position manager is at a different address entirely.
 | AaveV3InstancesMeta ★ | `0x04Ba6789B4AD5D6CF63Ec9cc301c13F6a8A0210b` |
 | StakeWiseV3ExitQueueAssisted | `0xE1e163663961237C0955b665188864f0fD281020` |
 | StakeWiseV3VaultsMeta | `0x8cbAFEC5745AF6727b7be0829e507f58b3b3ce0d` |
+| UniswapV3PoolsMeta ☆ | `0xA336f7171B9CE77de13451419B3254099beF2C24` |
 
 ### Polygon (137)
 

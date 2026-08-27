@@ -37,3 +37,4 @@ Short, numbered records of *why* the codebase looks the way it does. Read these 
 | 0019 | [Custom price feeds source their base/USD from the NAV (one price source per base asset)](0019-nav-sourced-base-price.md) | accepted |
 | 0020 | [Custom-feed `getPriceData` reports the *governing leg*'s freshness](0020-custom-feed-governing-leg-freshness.md) | accepted |
 | 0023 | [Asset classification on two orthogonal axes (`PegKind` × `AccrualKind`), surfaced by a standalone `AssetKindRegistry`](0023-asset-classification-two-axes.md) | accepted |
+| 0024 | [Drop oversized submodules; vendor single-file dependencies](0024-dependency-size-vendor-single-file-deps.md) | accepted |

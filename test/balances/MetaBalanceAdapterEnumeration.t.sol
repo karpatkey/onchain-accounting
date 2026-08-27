@@ -545,12 +545,15 @@ contract MetaBalanceAdapterAdvertisedShapeTest is PositionIdJoinAsserts {
             " _instancePositionId(instance) to _leg, it can drift: add an emitted-side case in"
             " MetaBalanceAdapterEmittedJoinTest and bump DRIFT_CAPABLE_COUNT. (A DERIVED id like Aave V3's must"
             " also override _instancePositionId, but the join cannot guard that -- the value assertion here can.)"
-            " If the count changed without you adding one, suspect a stale out/ artifact (forge clean)."
+            " Artifacts whose source is absent from this tree are already filtered, so a count that changed"
+            " without you adding an adapter means a NEW artifact shape this census cannot classify -- read"
+            " _isLiveConcreteArtifact before reaching for forge clean."
         );
     }
 
-    /// @dev Counts concrete meta-adapter CONTRACT artifacts, excluding the abstract base and the interface. See
-    ///      the original in `test/ProtocolNameConsistency.t.sol` for the reasoning behind the directory filter.
+    /// @dev Counts concrete meta-adapter CONTRACT artifacts, excluding the abstract base, the interface, and any
+    ///      artifact whose source is no longer in the tree. See the original in `test/ProtocolNameConsistency.t.sol`
+    ///      for the reasoning behind the directory filter.
     function _countMetaAdapterContracts(string memory relDir) internal view returns (uint256 count) {
         Vm.DirEntry[] memory dirs = vm.readDir(string.concat(vm.projectRoot(), "/", relDir));
         for (uint256 i = 0; i < dirs.length; i++) {
@@ -558,11 +561,53 @@ contract MetaBalanceAdapterAdvertisedShapeTest is PositionIdJoinAsserts {
             Vm.DirEntry[] memory artifacts = vm.readDir(dirs[i].path);
             for (uint256 j = 0; j < artifacts.length; j++) {
                 if (!_endsWith(artifacts[j].path, "MetaBalanceAdapter.json")) continue;
-                if (_endsWith(artifacts[j].path, "/MetaBalanceAdapter.json")) continue; // abstract base
-                if (_endsWith(artifacts[j].path, "/IMetaBalanceAdapter.json")) continue; // interface
+                if (!_isLiveConcreteArtifact(artifacts[j].path)) continue; // interface, abstract base, or stale
                 count++;
             }
         }
+    }
+
+    /// @dev True when `artifactPath` is a CONCRETE contract that is still part of the tree. Ported verbatim from
+    ///      the census in `test/ProtocolNameConsistency.t.sol`, which grew these two checks after this copy was
+    ///      forked; keep the two in sync.
+    /// @dev **1. Kind, not spelling.** Interfaces and abstract contracts have no creation bytecode, so an empty
+    ///      `bytecode.object` identifies them by what they ARE. This replaces the hand-maintained
+    ///      `/MetaBalanceAdapter.json` / `/IMetaBalanceAdapter.json` exclusions this helper used to carry, which
+    ///      were a filename rule: every future marker interface or abstract base is now handled without editing a
+    ///      list, as is a stale artifact of a DELETED one, which no such list could name in advance.
+    /// @dev **2. The source must still exist.** The artifact records the file it was compiled from, and a foreign
+    ///      or stale artifact's file is absent from THIS tree. That is the case this census actually failed on:
+    ///      the `unit` job does not compile — it downloads `build`'s artifacts, and `build` compiles incrementally
+    ///      against a **branch-shared sticky disk**, so `out/` carries adapters belonging to other branches
+    ///      entirely. Measured: a sibling branch's `PolygonStakingMetaBalanceAdapter` artifact dropped into an
+    ///      otherwise-clean `out/` took this count to 23 while the filtered census next door read 22.
+    /// @dev Fails LOUD, not silent: if the artifact does not record a source path, it is COUNTED rather than
+    ///      skipped, so an unrecognised artifact shape trips the census instead of quietly shrinking it. The whole
+    ///      point of this test is that an unexplained count is a signal.
+    function _isLiveConcreteArtifact(string memory artifactPath) internal view returns (bool) {
+        string memory json = vm.readFile(artifactPath);
+        if (bytes(vm.parseJsonString(json, ".bytecode.object")).length <= 2) return false; // "0x" or empty
+        if (!vm.keyExists(json, ".ast.absolutePath")) return true; // undeterminable: count it, do not hide it
+        string memory sourcePath = vm.parseJsonString(json, ".ast.absolutePath");
+        // `vm.exists` REVERTS — it does not return false — on a path outside `fs_permissions`, and
+        // only `src`, `script`, `lib`, `out`, `safe-transactions` and `test/integration` are
+        // granted. The premise of this filter is an `out/` carrying artifacts from arbitrary other
+        // branches, so a branch with a matching source under, say, `test/mocks/` would blow up the
+        // census with an fs-permission revert instead of its own message. A production adapter
+        // always lives under `src/`, so anything else is foreign by construction: filter it rather
+        // than probing the filesystem for it.
+        if (!_startsWith(sourcePath, "src/")) return false;
+        return vm.exists(string.concat(vm.projectRoot(), "/", sourcePath));
+    }
+
+    function _startsWith(string memory value, string memory prefix) internal pure returns (bool) {
+        bytes memory v = bytes(value);
+        bytes memory pfx = bytes(prefix);
+        if (v.length < pfx.length) return false;
+        for (uint256 i = 0; i < pfx.length; i++) {
+            if (v[i] != pfx[i]) return false;
+        }
+        return true;
     }
 
     function _endsWith(string memory value, string memory suffix) internal pure returns (bool) {

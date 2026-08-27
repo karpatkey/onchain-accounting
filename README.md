@@ -169,7 +169,7 @@ FOUNDRY_PROFILE=slow forge test --match-path "test/**/fork/*.sol"
 ### Config
 
 - **foundry.toml**: `src = "src"`, optimizer, `via_ir = true`, coverage and invariant profiles.
-- **remappings.txt**: OpenZeppelin, Chainlink, Aave, Comet, Morpho, GMX, Optimism (`@optimism/`), etc.
+- **remappings.txt**: OpenZeppelin, Chainlink, Morpho, forge-std. Top-level submodules are `shallow = true`; their **nested** submodules are not, because those `.gitmodules` belong to upstream — so the single largest surviving history, `openzeppelin-contracts` under `openzeppelin-contracts-upgradeable`, is still cloned in full (see [ADR 0024](docs/decisions/0024-dependency-size-vendor-single-file-deps.md)).
 
 ---
 
@@ -180,12 +180,16 @@ FOUNDRY_PROFILE=slow forge test --match-path "test/**/fork/*.sol"
 | `@openzeppelin/*` | OpenZeppelin Contracts (upgradeable) |
 | `@chainlink/*` | Chainlink (CCIP, CCTP, price feed interfaces) |
 | `forge-std/` | Foundry standard library |
-| `@optimism/` | Optimism contracts-bedrock (Superchain adapter) |
-| `aave-v3-core/` | Aave V3 |
-| `comet-contracts/` | Compound III |
 | `morpho-blue/` | Morpho |
-| `gmx-contracts/` | GMX |
 | `openzeppelin-foundry-upgrades/` | UUPS deploy helpers |
+
+Third-party files vendored in-tree rather than carried as a submodule, each retaining its upstream
+MIT licence and recording its pinned upstream rev in a header comment — see
+[ADR 0024](docs/decisions/0024-dependency-size-vendor-single-file-deps.md):
+
+| File | Upstream |
+|------|----------|
+| `src/bridge/adapters/lib/OptimismTypes.sol` | Optimism `contracts-bedrock` — `src/libraries/Types.sol` |
 
 ---
 

@@ -22,6 +22,20 @@ import {PositionKind} from "src/utils/PositionKind.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/errors.sol";
 
+/// @notice REVERTS with a long reason — ≥192 bytes of revert data, so the returndata LENGTH check alone accepts it.
+/// @dev    This mock exists to pin the `!ok` half of the constructor probe. Without it the success flag is dead
+///         weight: `OldNav` reverts with EMPTY returndata, so the 192-byte floor already catches that case, and
+///         deleting `!ok ||` leaves the whole suite green. A proxy whose fallback reverts with a long reason string
+///         is the shape that gets through on length alone — it must still be rejected. Not present in the mirrored
+///         `MetaAdapterNavVersionGuard` suite, which has the same hole.
+contract LongRevertNav {
+    fallback() external {
+        assembly {
+            revert(0, 256)
+        }
+    }
+}
+
 /// @notice Mock Merkl Distributor: lets the test set the active root and the per-(user, token) claimed amount.
 /// @dev    Returns are auto-flat-tuple-style to match Solidity's auto-generated public mapping getter.
 contract MockMerklDistributor is IMerklDistributor {
@@ -247,6 +261,18 @@ contract MerklRewardsAttestedBalanceAdapterTest is BalanceAdapterTestBase {
         address short = address(new ShortReturnNav());
         vm.expectRevert(abi.encodeWithSelector(MerklRewardsAttestedBalanceAdapter.NAVCalculatorTooOld.selector, short));
         new MerklRewardsAttestedBalanceAdapter(address(distributor), short);
+    }
+
+    /// @dev Pins the `!ok` conjunct specifically. Every other negative case here reverts with EMPTY returndata, so
+    ///      the 192-byte floor alone rejects them and `!ok ||` could be deleted with the suite still green. A
+    ///      fallback that REVERTS with ≥192 bytes of reason data is the shape that passes the length check, so only
+    ///      the success flag can reject it. Mutation: drop `!ok ||` and this is the one test that fails.
+    function test_constructor_revertsAgainstNavThatRevertsWithLongReason() public {
+        address longRevert = address(new LongRevertNav());
+        vm.expectRevert(
+            abi.encodeWithSelector(MerklRewardsAttestedBalanceAdapter.NAVCalculatorTooOld.selector, longRevert)
+        );
+        new MerklRewardsAttestedBalanceAdapter(address(distributor), longRevert);
     }
 
     /// @dev The other direction — the guard must NOT fire on a capable NAV. Without this, deleting the probe body

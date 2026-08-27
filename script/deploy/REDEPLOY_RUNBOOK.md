@@ -695,11 +695,19 @@ listed address that has become CURRENT also fails, so the file cannot rot into a
 you redeploy something listed there, **delete its entry** — leaving it would silently accept a future
 drift at that address.
 
-One drift is declared today: `BridgeEscrowImplementation`, **undiagnosed** — found by the guard's
-first run, recorded so the gate could go green on everything else, explicitly not an assessment that
-it is harmless. It occupies 23 entries, one per chain that records the address: the implementation is
-CREATE2-deployed from fixed creation code, so every copy shares the one mismatch, and entries are
-per-chain so a per-chain disappearance is still caught as a dangling entry.
+One drift is declared today: `BridgeEscrowImplementation`, occupying 23 entries — one per chain that
+records the address. The implementation is CREATE2-deployed from fixed creation code, so every copy
+shares the one mismatch; entries are per-chain so a per-chain disappearance is still caught as a
+dangling entry.
+
+It is declared because **the bridge contracts are out of scope as of 2026-08-27**, so the drift is
+accepted rather than pursued. That is a SCOPE ruling and not a safety assessment: the drift is real
+and remains **undiagnosed** — nobody has established which commit it was built from or whether the
+difference is material. When bridge work resumes, that diagnosis is the first thing owed.
+
+Everything currently in the baseline is bridge, so the guard is green on every **in-scope** address.
+That makes the next non-bridge entry worth real scrutiny rather than a quiet append to an existing
+list.
 
 `PolygonStakingMeta` is **not** declared. Its address is not in this tree's deployment records yet —
 PR #328 adds it — and a dangling entry is exactly what the bidirectional check rejects. When #328

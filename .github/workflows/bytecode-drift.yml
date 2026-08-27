@@ -61,6 +61,39 @@ jobs:
           version: ${{ env.FOUNDRY_VERSION }}
           cache: false
 
+      # BEFORE the build, not after. `bytecode_audit.py` reaches two third-party packages at RUNTIME:
+      # `requests` (via `chainlib`) and `eth_utils` (via `_sel`, which imports it LAZILY inside the
+      # function). This repo has no requirements file, so — exactly as the `preflight` job in
+      # foundry.yml does for `requests` — the dependency is declared by name here.
+      #
+      # The first run of this workflow on main died with `ModuleNotFoundError: No module named
+      # 'eth_utils'` AFTER paying for the ~20-minute clean build, because the lazy import is not
+      # reached until the audit is already walking chains. Installing and then PROVING the import
+      # resolves costs seconds and moves that failure to the front of the job.
+      #
+      # This declares two known dependencies; it is not a dependency GATE. A future third-party
+      # import that the runner image happens to ship would still go green here and fail nowhere —
+      # the same limitation foundry.yml's preflight step documents. Closing that needs a
+      # requirements file plus an isolated interpreter, which this repo does not have.
+      - name: Install and prove the audit's dependencies
+        run: |
+          # `eth-hash[pycryptodome]` is NOT optional padding: `eth_utils.keccak` delegates to
+          # `eth_hash`, which ships NO hashing backend of its own and raises ImportError
+          # ("None of these hashing backends are installed") the first time it is called.
+          # Installing `eth_utils` alone therefore imports fine and fails on first use.
+          python3 -m pip install --no-cache-dir requests eth_utils "eth-hash[pycryptodome]"
+          python3 - <<'EOF'
+          import requests                    # chainlib
+          from eth_utils import keccak       # bytecode_audit._sel, imported lazily at call time
+          # Exercise keccak rather than just importing it: a real selector, so this fails if the
+          # package is present but broken, not only if it is absent. That distinction is not
+          # theoretical — it is exactly how the missing eth-hash backend was caught, in seconds at
+          # the front of the job, instead of after the ~20-minute build inside the audit.
+          sel = "0x" + keccak(text="NAV()")[:4].hex()
+          assert sel == "0x52fd856b", f"eth_utils.keccak produced {sel}, expected 0x52fd856b"
+          print("dependency check ok: requests +", "eth_utils (NAV() ->", sel + ")")
+          EOF
+
       # See the long note on foundry.yml's `build` job. Same compile, same 7-9.7 GB peak, same silent
       # SIGTERM (exit 143, no compiler error) when it does not fit.
       - name: Add swap for the via_ir compile

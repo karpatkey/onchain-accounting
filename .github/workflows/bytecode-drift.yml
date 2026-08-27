@@ -82,8 +82,11 @@ jobs:
         run: python3 script/deploy/preflight/bytecode_audit.py --self-test
 
       - name: Audit deployed bytecode
-        # --require-current turns STALE into a non-zero exit; --baseline lets the two known,
-        # documented drifts pass while ANY other one fails. The baseline is enforced in both
+        # --require-current turns STALE into a non-zero exit; --baseline lets the DECLARED drift pass
+        # while ANY other one fails. One drift is declared today (BridgeEscrowImplementation, on the
+        # 23 chains that record it). PolygonStakingMeta is deliberately NOT declared — it is not in
+        # the deployment records until PR #328 lands, and this run will correctly go red on it then.
+        # The baseline is enforced in both
         # directions, so an entry whose address has since been redeployed fails too and must be
         # deleted — that is what stops the file becoming a blindfold.
         run: |

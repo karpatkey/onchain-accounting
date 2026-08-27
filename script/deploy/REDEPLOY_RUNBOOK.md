@@ -695,9 +695,16 @@ listed address that has become CURRENT also fails, so the file cannot rot into a
 you redeploy something listed there, **delete its entry** — leaving it would silently accept a future
 drift at that address.
 
-Two entries exist today: `PolygonStakingMeta` (diagnosed, display-only, awaiting a redeploy) and
-`BridgeEscrowImplementation` (**undiagnosed** — found by the guard's first run, recorded so the gate
-could go green on everything else, explicitly not an assessment that it is harmless).
+One drift is declared today: `BridgeEscrowImplementation`, **undiagnosed** — found by the guard's
+first run, recorded so the gate could go green on everything else, explicitly not an assessment that
+it is harmless. It occupies 23 entries, one per chain that records the address: the implementation is
+CREATE2-deployed from fixed creation code, so every copy shares the one mismatch, and entries are
+per-chain so a per-chain disappearance is still caught as a dangling entry.
+
+`PolygonStakingMeta` is **not** declared. Its address is not in this tree's deployment records yet —
+PR #328 adds it — and a dangling entry is exactly what the bidirectional check rejects. When #328
+merges the daily run will correctly go red on it until it is redeployed or declared; the ready-made
+entry is parked in the file's `$pendingOnMerge` note.
 
 ### 0.4 Submodules at the recorded commits — **root cause fixed, keep the check**
 
@@ -1922,13 +1929,19 @@ python3 script/deploy/preflight/bytecode_audit.py --require-current \
 python3 script/deploy/preflight/verify_step.py all          # every step's post-condition, all 24
 ```
 
-Every address in every `deployments/<chainId>.json` must report `CURRENT`. Any `STALE` is an address
-still running code this build does not produce — i.e. something was missed.
+Every address in every `deployments/<chainId>.json` must report `CURRENT`, or be DECLARED in
+`accepted-bytecode-drift.json` with a reason. Any other `STALE` is an address still running code this
+build does not produce — i.e. something was missed.
+
+After a redeploy the right expectation is that the baseline is **empty**: a redeploy is exactly the
+event that fixes declared drift, and the guard fails on an entry whose address has become `CURRENT`,
+so it will tell you which ones to delete. Do not carry entries forward "just in case" — a stale entry
+silently accepts a future drift at that address.
 
 **`--require-current` is what makes this a gate.** Without it the audit prints its findings and exits
 0 regardless, which is right for the *pre*-deploy run — where 155 `STALE` out of 231 was the expected
-answer, not a failure — and wrong here. With it, any non-`CURRENT` address *or any unreachable chain*
-exits 1: a chain that was never read has not passed. Pair it with `verify_step.py all`, which asserts
+answer, not a failure — and wrong here. With it, any UNDECLARED non-`CURRENT` address *or any
+unreachable chain* exits 1: a chain that was never read has not passed. Pair it with `verify_step.py all`, which asserts
 the shape (counts, sets, pointers, roles) that identical bytecode alone does not guarantee.
 
 ### 2.3 Before/after NAV comparison

@@ -12,7 +12,7 @@ import {
     IOptimismPortal,
     ICrossDomainMessenger
 } from "./interfaces/ISuperchainInterfaces.sol";
-import {Types} from "@optimism/libraries/Types.sol";
+import {Types} from "src/bridge/adapters/lib/OptimismTypes.sol";
 import {ISuperchainBridgeAdapter} from "./interfaces/ISuperchainBridgeAdapter.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/errors.sol";

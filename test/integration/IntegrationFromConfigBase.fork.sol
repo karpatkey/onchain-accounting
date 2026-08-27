@@ -64,6 +64,7 @@ import {KelpWithdrawalQueueBalanceAdapter} from "src/balances/BalanceAdapters/Ke
 import {
     StakeWiseV3VaultsMetaBalanceAdapter
 } from "src/balances/MetaBalanceAdapters/StakeWiseV3VaultsMetaBalanceAdapter.sol";
+import {LidoStVaultsMetaBalanceAdapter} from "src/balances/MetaBalanceAdapters/LidoStVaultsMetaBalanceAdapter.sol";
 import {
     UniswapV3PoolsMetaBalanceAdapter
 } from "src/balances/MetaBalanceAdapters/uniswap/UniswapV3PoolsMetaBalanceAdapter.sol";
@@ -632,6 +633,9 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         if (_equals(name, "StakeWiseV3VaultsMeta")) {
             return _deployStakeWiseV3VaultsMeta(name, navAddr);
         }
+        if (_equals(name, "LidoStVaultsMeta")) {
+            return _deployLidoStVaultsMeta(name, navAddr);
+        }
         if (_equals(name, "UniswapV3PoolsMeta")) {
             return _deployUniswapV3PoolsMeta(name, navAddr);
         }
@@ -784,6 +788,19 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         address withdrawalManager =
             vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "withdrawalManager"));
         return address(new KelpWithdrawalQueueBalanceAdapter(withdrawalManager, navAddr));
+    }
+
+    /// @dev A MISSING entry here is a SILENT SKIP: the harness runs the adapter's inert path and the suite passes
+    ///      whether the config is right or wrong. While karpatkey holds no stVault (measured 2026-08-27: zero tracked
+    ///      accounts are a `vaultConnection.owner` or hold `DEFAULT_ADMIN_ROLE` on any of the 24 connected vaults),
+    ///      this dispatch only ever exercises the inert path — so the FORK TEST, not this suite, is the real coverage.
+    function _deployLidoStVaultsMeta(string memory name, address navAddr) internal returns (address) {
+        address vaultHub =
+            vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "vaultHub"));
+        address steth = vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "steth"));
+        address underlyingToken =
+            vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "underlyingToken"));
+        return address(new LidoStVaultsMetaBalanceAdapter(vaultHub, steth, underlyingToken, navAddr));
     }
 
     function _deployStakeWiseV3VaultsMeta(string memory name, address navAddr) internal returns (address) {

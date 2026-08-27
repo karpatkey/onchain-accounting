@@ -97,6 +97,15 @@
       "osTokenVaultController": "0x2A261e60FB14586B474C208b1B7AC6D0f5000306"
     }
   },
+  "LidoStVaultsMeta": {
+    "enabled": false,
+    "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Lido V3 stVault. Three gross legs per vault - Staking (VaultHub.totalValue, in the ETH sentinel), Borrowed (liabilityShares converted to ether through stETH.getPooledEthByShares - stETH SHARES, a different rate object from anything vault-local) and Fees (obligations().feesToSettle + the Dashboard's accruedFee(), a debt). The Fees leg is NOT optional: VaultHub.totalValue is GROSS of unsettled fees. Measured on mainnet 2026-08-12..2026-08-27 across all 24 connected vaults, totalValue - maxLockableValue == obligations().feesToSettle held on 24 of 24 to the wei, so reporting totalValue alone over-reports by the fee obligation. The instance coordinate is the StakingVault address, NEVER its Dashboard (a Dashboard is replaceable by an ownership transfer). Ownership is vaultConnection(vault).owner, never vault.owner() - on connection the vault's Ownable owner is transferred to VaultHub itself. ENABLED=false: as of 2026-08-27 no tracked account owns or holds DEFAULT_ADMIN_ROLE on any of the 24 connected vaults, so this adapter would register with an empty instance set. Flip to true and populate instances in nav-config when karpatkey first takes a stVault position.",
+    "constructor": {
+      "vaultHub": "0x1d201BE093d847f6446530Efb0E8Fb426d176709",
+      "steth": "0xae7ab96520DE3A18E5e111B5EaAb095312D7fE84",
+      "underlyingToken": "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE"
+    }
+  },
   "EulerVaultsMeta": {
     "enabled": true,
     "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Euler V2 ERC4626 vault \u2014 EulerEarn aggregators (Earn) and core eVaults (Lend/Borrow). Active vault set lives on NAVCalculator via addMetaInstances (from nav-config). Emits a Supply leg (convertToAssets) and, for core eVaults the account borrows from, a Borrow leg (debtOf).",

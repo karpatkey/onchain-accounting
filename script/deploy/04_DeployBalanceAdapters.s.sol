@@ -57,6 +57,7 @@ import {
 import {
     StakeWiseV3VaultsMetaBalanceAdapter
 } from "../../src/balances/MetaBalanceAdapters/StakeWiseV3VaultsMetaBalanceAdapter.sol";
+import {LidoStVaultsMetaBalanceAdapter} from "src/balances/MetaBalanceAdapters/LidoStVaultsMetaBalanceAdapter.sol";
 import {
     FluidFTokensMetaBalanceAdapter
 } from "../../src/balances/MetaBalanceAdapters/FluidFTokensMetaBalanceAdapter.sol";
@@ -183,6 +184,7 @@ contract DeployBalanceAdapters is BaseDeployScript {
 
         // --- StakeWise V3 (Mainnet) — Genesis Vault deposit (osETH itself is now a Custom-priced ERC20, not a balance adapter) ---
         _deployIfEnabled("StakeWiseV3VaultsMeta"); // Meta-adapter: all StakeWise V3 vaults; vault set on NAV (ADR 0010)
+        _deployIfEnabled("LidoStVaultsMeta"); // Meta-adapter: all Lido V3 stVaults; vault set on NAV (ADR 0010)
 
         // --- ether.fi withdrawal-queue cache adapter (assisted; permissionless assistant-fed, ADR 0018) ---
         _deployIfEnabled("EtherFiWithdrawalQueueAssisted");
@@ -413,6 +415,11 @@ contract DeployBalanceAdapters is BaseDeployScript {
         // StakeWise V3 meta-adapter (per-instance adapters removed — superseded by StakeWiseV3VaultsMeta)
         if (_equals(adapterName, "StakeWiseV3VaultsMeta")) {
             return _deployStakeWiseV3VaultsMeta(adapterName, navCalculator);
+        }
+
+        // Lido V3 stVaults meta-adapter (one adapter for every stVault; vault set on NAV — ADR 0010)
+        if (_equals(adapterName, "LidoStVaultsMeta")) {
+            return _deployLidoStVaultsMeta(adapterName, navCalculator);
         }
 
         // Fluid meta-adapters (one adapter for all fTokens / all T1 vaults; instance set on NAV — ADR 0010)
@@ -771,6 +778,24 @@ contract DeployBalanceAdapters is BaseDeployScript {
 
         StakeWiseV3VaultsMetaBalanceAdapter adapter =
             new StakeWiseV3VaultsMetaBalanceAdapter(underlyingToken, osTokenVaultController, navCalculator);
+        return address(adapter);
+    }
+
+    /// @notice Deploys the Lido V3 stVaults meta-adapter. Constructor takes (vaultHub, steth, underlyingToken,
+    ///         navCalculator); the vault set is configured on NAVCalculator via addMetaInstances/removeMetaInstances
+    ///         in 06 (ADR 0010). The instance coordinate is the StakingVault address, never its Dashboard.
+    function _deployLidoStVaultsMeta(string memory adapterName, address navCalculator) internal returns (address) {
+        address vaultHub = vm.parseAddress(
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "vaultHub")
+        );
+        address steth =
+            vm.parseAddress(ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "steth"));
+        address underlyingToken = vm.parseAddress(
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "underlyingToken")
+        );
+
+        LidoStVaultsMetaBalanceAdapter adapter =
+            new LidoStVaultsMetaBalanceAdapter(vaultHub, steth, underlyingToken, navCalculator);
         return address(adapter);
     }
 

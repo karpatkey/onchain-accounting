@@ -18,6 +18,8 @@ pragma solidity ^0.8;
 ///                                          the reward leg shares it too, told apart by positionKind=Rewards
 ///        MORPHO_VAULTS / GEARBOX_V3_MARKETS / GEARBOX_V3_CREDIT_ACCOUNTS / EULER_VAULTS / ERC4626 /
 ///        STAKEWISE_V3_VAULTS / FLUID_VAULTS / SYMBIOTIC_VAULTS → (address vault / market / credit account)
+///        LIDO_STVAULTS                   → (address stakingVault) — the VAULT, never its Dashboard: the
+///                                          Dashboard is replaceable by an ownership transfer, the vault is not
 ///        CAP                             → (address token: cUSD or stcUSD) — one leg per token
 ///        MORPHO_MARKETS                  → (bytes32 marketId)
 ///        BALANCER_V3_POOLS                → (address pool)
@@ -114,6 +116,10 @@ library ProtocolIds {
 
     // StakeWise
     bytes32 internal constant STAKEWISE_V3_VAULTS = keccak256("stakewise-v3-vaults");
+
+    // Lido stVaults — a second Lido PRODUCT, not a second protocol, so it reuses `LIDO` as its protocolId and is
+    // told apart from `LIDO_WITHDRAWAL` only here. "Name the protocol, never the product."
+    bytes32 internal constant LIDO_STVAULTS = keccak256("lido-stvaults");
 
     // Nexus Mutual
     bytes32 internal constant NEXUS_MUTUAL_STAKING_POOLS = keccak256("nexus-mutual-staking-pools");

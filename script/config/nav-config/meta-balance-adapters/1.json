@@ -155,6 +155,11 @@
       "0x15639e82d2072fa510e5d2b5f0db361c823bcad3"
     ]
   },
+  "LidoStVaultsMeta": {
+    "enabled": false,
+    "$comment": "No tracked account holds a Lido stVault as of 2026-08-27 (probed all 12 accounts in test/integration/accounts.json against all 24 connected vaults: zero are vaultConnection.owner and zero hold DEFAULT_ADMIN_ROLE on the owning Dashboard). Instances are StakingVault addresses - never Dashboards. Enable and list vaults here when a position is first taken; 06_Configure reconciles the on-chain set to this list.",
+    "instances": []
+  },
   "EulerVaultsMeta": {
     "enabled": true,
     "$comment": "Euler V2 vaults held by KPK DAO/Foundation: KPK_ETH_Term (WETH) + kpk_RWA_USDC (USDC) \u2014 both EulerEarn (Earn) aggregator vaults today, supply-only. Both underlyings already registered. The adapter also handles core eVaults (Lend/Borrow): add future Euler vaults here.",

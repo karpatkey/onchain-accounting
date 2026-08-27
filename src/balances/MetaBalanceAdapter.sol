@@ -139,7 +139,7 @@ abstract contract MetaBalanceAdapter is IMetaBalanceAdapter, IPositionDescribabl
     ///         that unit tests construct against. `verify_step.py 1.3` comparing the recorded implementation
     ///         against the proxy's EIP-1967 slot is the check that catches this one.
     ///
-    ///      Costs zero NAVCalculator bytecode — the budget under pressure is that contract's (181 bytes under
+    ///      Costs zero NAVCalculator bytecode — the budget under pressure is that contract's (101 bytes under
     ///      EIP-170), not the adapters', which carry 14-19 KB of margin each.
     constructor(address navCalculator_) {
         AddressCheckLib.requireContract(navCalculator_, "NAVCalculator");

@@ -401,7 +401,9 @@ contract MerklRewardsAttestedBalanceAdapter is IAttestedBalanceAdapter, IPositio
     ///         exists to prevent (Gap 1 in the runbook). It would trade an under-report that SELF-HEALS — the cache
     ///         is empty, so the keeper's `changed()` predicate fires and re-submits the still-valid proof next
     ///         cycle — for one that wedges until a human intervenes. Direction is under-report either way; only one
-    ///         of them recovers on its own.
+    ///         of them recovers on its own. It is also not closable on-chain even in principle: the contract has no
+    ///         signal for whether the current root is final or about to be revoked — Merkl decides that off-chain,
+    ///         over time. Tracked as Gap 3 in `docs/operations/merkl-proof-submitter.md`.
     /// @dev Garbage-collects tokens whose proof no longer validates or that the user has fully claimed — keeps storage
     ///      and the per-user enumeration list bounded. Not required for correctness (such entries already read as 0).
     function clearAllocation(address user, address token) external {

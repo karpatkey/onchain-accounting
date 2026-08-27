@@ -159,9 +159,9 @@ The adapter is **permissionless**: `submitProofs(user, allocs)` / `submitProofsB
 
 ## Known gaps — OPEN DESIGN CALLS, not settled behaviour
 
-Two properties of this design were surfaced by review, confirmed against the code, and **deliberately left
+Four properties of this design were surfaced by review, confirmed against the code, and **deliberately left
 unpatched pending the user's decision**. They are documented here so an operator meets them in the runbook rather
-than in production. Neither can inflate NAV — both are under-report or attribution-only.
+than in production. None can inflate NAV — all are under-report or attribution-only.
 
 **Gap 1 — cache-slot squatting is possible and un-evictable at the current root.** Merkl proofs are public (the
 API is keyed on address). Any third party can therefore call `submitProofs(account, …)` with the account's own
@@ -182,7 +182,19 @@ is real but **this keeper will never perform it**. Including `campaignsOf(accoun
 close it, at the cost of letting a griefer force a resubmit — and therefore keeper gas — at will. **Awaiting the
 user — this trades attribution correctness against a running operational bill.**
 
-**Gap 3 — per-token gas isolation does not cover the read's own prologue, so a large cache can make the whole
+**Gap 3 — stale-root GC during a Merkl dispute-revoke can drop a reactivating entry.** Merkl's root is
+non-monotonic: `getMerkleRoot()` serves `lastTree.merkleRoot` during the dispute window and `revokeTree()` reverts a
+disputed tree, so the live root can go `R2 → R3 → R2`. While R3 is live, a cached R2 entry is stale and reads 0, so
+`clearAllocation` — and the routine per-cycle GC pass below — can delete it. If the root then reverts to R2, that
+entry would have re-activated at exactly the figure R2 attests (pinned by
+`test_rootOscillation_revokeBackReactivatesAtAttestedFigure`), but it is gone and reads 0 until a resubmit.
+**Under-report only and self-healing** — one permissionless resubmit (the next keeper cycle) restores it. It cannot
+be closed on-chain: the contract has no signal for whether R3 is final or about to be revoked (Merkl decides
+off-chain, over time), and *delaying* stale-root GC to protect this case would reintroduce Gap 1's cap-fill outage —
+the two pull in opposite directions. Operational mitigation, no contract change: the keeper can skip the GC pass
+during a known Merkl dispute window, or simply rely on the self-heal. **Accepted tradeoff.**
+
+**Gap 4 — per-token gas isolation does not cover the read's own prologue, so a large cache can make the whole
 account's `getAccountNav` revert.** `buildPositionsSelf` resolves `getRegisteredAsset` for every cached token, sums
 the leg `cap`, and allocates a `cap`-sized scratch buffer **before** the first `try … {gas: stipend}` frame. That
 prologue is therefore outside every per-token guard, and `getAdapterPositions` does not wrap the

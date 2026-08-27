@@ -192,6 +192,24 @@ contract AttestedValueCacheTest is BalanceAdapterTestBase {
         assertEq(probe.assetsOf(alice).length, 2, "both re-enumerated");
     }
 
+    /// @notice Every leg the base builds is a CREDIT. This is the precondition the per-asset DROP depends on.
+    /// @dev    The base's `catch` discards a failing asset rather than re-raising, and that is licensed ONLY
+    ///         because a dropped credit leg can just make NAV smaller. `AssistedCoordCache` re-raises instead,
+    ///         precisely because a future member of THAT family could emit a debt leg, where a silent drop would
+    ///         make NAV LARGER — the one direction forbidden here. Until now the licence was carried entirely in
+    ///         prose; this pins the half that IS mechanical: `_row`, the base's only leg constructor, never sets
+    ///         `isDebt` or `isLocked`. The other half stays a review rule, because nothing forces a member to
+    ///         build its legs through `_row` — a member that emits debt MUST override `_collectLegs` to raise.
+    ///         THE DISCRIMINATING MUTATION: set `row.isDebt = true` in `_row` and this fails.
+    function test_baseLegConstructor_neverEmitsDebt() public {
+        probe.feed(alice, address(tok), 100 ether);
+        INAVCalculator.PositionBalance[] memory positions = probe.getAdapterPositions(alice, address(0));
+        assertEq(positions.length, 1, "precondition: one leg");
+        assertFalse(positions[0].isDebt, "the drop licence depends on this being credit-only");
+        assertFalse(positions[0].isLocked, "and on isLocked defaulting false");
+        assertEq(positions[0].balanceAdapter, address(probe), "balanceAdapter is always address(this)");
+    }
+
     /// @notice A member that emits more legs than its `_cachedLegCount` declares must lose only the SURPLUS legs —
     ///         never the whole adapter.
     /// @dev    THE REGRESSION. The scratch buffer is sized from `_cachedLegCount` while the legs come from the

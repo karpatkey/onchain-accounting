@@ -747,6 +747,38 @@ contract MerklRewardsAttestedBalanceAdapterTest is BalanceAdapterTestBase {
 
     /// @notice A stale (root-rotated) entry contributes 0 to NAV, so it can be cleared: the cache zeroes and the token
     ///         drops off the enumeration list.
+    /// @notice The campaign breakdown is dropped in lockstep with the attestation, on BOTH clear paths.
+    /// @dev    `_deleteMemberState` is Merkl's half of the deletion contract; nothing else in the suite asserted
+    ///         that the shares actually go. Orphaned shares cannot over-report (a re-admission replaces them
+    ///         wholesale before pushing, and they are unreadable while the entry is absent), so this binds hygiene
+    ///         rather than an invariant — but an orphan would survive into a later epoch unnoticed.
+    ///         THE DISCRIMINATING MUTATION: empty out Merkl's `_deleteMemberState` body and both halves fail.
+    function test_clear_dropsTheCampaignBreakdownInLockstep() public {
+        MerklRewardsAttestedBalanceAdapter.CampaignShare[] memory shares =
+            new MerklRewardsAttestedBalanceAdapter.CampaignShare[](2);
+        shares[0] = MerklRewardsAttestedBalanceAdapter.CampaignShare({
+            campaignId: keccak256("c0"), subCampaignId: ZERO, cumulativeAmount: 60 ether
+        });
+        shares[1] = MerklRewardsAttestedBalanceAdapter.CampaignShare({
+            campaignId: keccak256("c1"), subCampaignId: ZERO, cumulativeAmount: 40 ether
+        });
+        _submitWithCampaigns(alice, address(arb), 100 ether, shares);
+        assertEq(adapter.campaignsOf(alice, address(arb)).length, 2, "precondition: shares cached");
+
+        // Single-entry clear.
+        distributor.setRoot(keccak256("rotated"));
+        adapter.clearAttestation(alice, address(arb));
+        assertEq(adapter.campaignsOf(alice, address(arb)).length, 0, "clearAttestation drops the breakdown");
+
+        // Bulk clear.
+        distributor.setRoot(_leaf(alice, address(arb), 100 ether));
+        _submitWithCampaigns(alice, address(arb), 100 ether, shares);
+        assertEq(adapter.campaignsOf(alice, address(arb)).length, 2, "re-seeded");
+        distributor.setRoot(keccak256("rotated2"));
+        adapter.clearAccount(alice);
+        assertEq(adapter.campaignsOf(alice, address(arb)).length, 0, "clearAccount drops it too");
+    }
+
     function test_clearAttestation_removesStaleEntry() public {
         _seedAllocation(alice, address(arb), 100 ether);
         // Root rotates → entry is stale → unclaimed reads 0 → clearable.

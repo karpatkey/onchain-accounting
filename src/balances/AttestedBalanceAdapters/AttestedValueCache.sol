@@ -693,6 +693,13 @@ abstract contract AttestedValueCache is IAttestedBalanceAdapter, IPositionDescri
     /// @notice Turn a cached/verified attested figure into the amount to report NOW, reading live protocol state
     ///         (Merkl: `attestedValue − Distributor.claimed(...)`, floored at 0). Reached only after the epoch has
     ///         been established as live, so it must not re-check staleness.
+    /// @dev **POSTCONDITION: the return value SHOULD NOT exceed `attestedValue`.** Nothing here clamps it, and that
+    ///      is deliberate — a clamp would be wrong for a member whose live figure can legitimately grow past what
+    ///      was attested (an attested principal that accrues on-chain, say). But the family's guarantee is that the
+    ///      **attestation bounds the reported number**, so a member that can exceed it has stepped outside that
+    ///      guarantee and MUST say so explicitly in its own docs: past that point "under-report only" no longer
+    ///      follows from the proof, and the over-report direction is live. Merkl satisfies the postcondition
+    ///      trivially — it subtracts a non-negative claimed amount.
     function _liveValue(address account, address asset, uint256 attestedValue) internal view virtual returns (uint256);
 
     /// @notice Per-account cache cap — the only bound this base enforces.
@@ -706,6 +713,10 @@ abstract contract AttestedValueCache is IAttestedBalanceAdapter, IPositionDescri
 
     /// @notice Legs this asset will emit from the CACHE, for scratch-buffer sizing. Default: one. A member that
     ///         splits an asset into sub-positions overrides it.
+    /// @dev **MUST be an UPPER BOUND on what {_assetLegs} returns for the same asset.** The two are separate hooks
+    ///      that the base cannot reconcile, so under-declaring would write past the scratch buffer. {_collectLegs}
+    ///      bounds the copy defensively, so the consequence is the surplus legs being dropped rather than the whole
+    ///      read dying — but the legs are lost silently, so get this right rather than relying on the backstop.
     function _cachedLegCount(address account, address asset) internal view virtual returns (uint256) {
         account;
         asset;
@@ -713,6 +724,7 @@ abstract contract AttestedValueCache is IAttestedBalanceAdapter, IPositionDescri
     }
 
     /// @notice Legs a PREVIEW entry will emit, from that entry's `ctx`. Default: one.
+    /// @dev Same upper-bound requirement as {_cachedLegCount}, for the preview's buffer.
     function _previewLegCount(bytes memory ctx) internal view virtual returns (uint256) {
         ctx;
         return 1;
@@ -723,7 +735,14 @@ abstract contract AttestedValueCache is IAttestedBalanceAdapter, IPositionDescri
     ///         identical legs from identical inputs.
     /// @param liveValue     What to report — already resolved through {_liveValue}, always non-zero here.
     /// @param attestedValue The attested figure `liveValue` derives from; the denominator for any pro-rata split.
-    /// @param ctx           Member-defined per-entry context. Empty on the cache path.
+    /// @param ctx           Member-defined per-entry context. **Empty on the cache path**, which members use to
+    ///                       decide "read my own storage" vs "use the caller's payload". That convention is
+    ///                       load-bearing and easy to break from the preview side: `abi.encode` of an EMPTY array
+    ///                       is 64 bytes, not 0, so an empty breakdown still arrives as non-empty `ctx` — but a
+    ///                       member that returns a literal `bytes("")` from {_verifyPreviewPayload} for a
+    ///                       breakdown-less entry would silently fall through to CACHED state while valuing a
+    ///                       caller-supplied amount, mixing the two paths. Never return an empty `ctx` from the
+    ///                       preview; encode the empty collection instead.
     function _assetLegs(
         address account,
         address asset,

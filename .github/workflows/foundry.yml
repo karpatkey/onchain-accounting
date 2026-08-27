@@ -340,6 +340,24 @@ jobs:
         # fails the build the way the unittest above does.
         run: python3 script/deploy/preflight/preflight_config.py --self-test
 
+      - name: Vendored dependencies have not drifted from upstream
+        # ADR 0024 vendors single upstream files verbatim at a pinned rev. That promise was previously
+        # enforced by the submodule gitlink (you could not edit the file in-tree) plus `check-foundry-lock.sh`.
+        # Vendoring removes both, and the tests cannot replace them: the bridge mocks import the SAME vendored
+        # file, so a struct edit drifts test and production in lockstep and stays green. This is that guard.
+        #
+        # THREE checks, deliberately asymmetric. Coverage (every file carrying the vendored marker must have
+        # a manifest row) and the manifest hash are offline and ALWAYS hard-fail. The upstream
+        # re-fetch soft-skips on a transport failure but hard-fails on a mismatch — so a network blip can never
+        # be what turns this into a guard that validates nothing, which this repo has already been bitten by.
+        # Runs the guard both ways, like the sibling steps above: `--self-test` pins the normaliser
+        # (including that an empty `/**/` block comment cannot hide code from it — the defect that made
+        # the first version of this guard pass an ABI-changing struct edit), then the plain run checks
+        # the committed tree.
+        run: |
+          python3 script/ci/check_vendored.py --self-test
+          python3 script/ci/check_vendored.py
+
   # Format check
   lockfile:
     name: Lockfile

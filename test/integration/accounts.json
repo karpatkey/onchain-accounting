@@ -56,8 +56,10 @@
       "supportedDeBankProtocols": [
         "aave3",
         "lido",
-        "sky"
-      ]
+        "sky",
+        "uniswap3"
+      ],
+      "$untracked_by_design": "Protocols and holdings deliberately outside this chain's NAV coverage. uniswap3 PARTIAL COVERAGE: 7 of the 24 live pools formed from chain-100 registered-asset pairs are configured (those above $10k, selected 2026-08-26, ~$3.4M of ~$3.4M); the other 17 are empty or dust. That selection is a point-in-time query and nothing re-runs it — re-run it when chain-100 drift appears or when a covered account mints a Uniswap V3 position. COW/WETH IS PERMANENTLY EXCLUDED, and it is not dust: the checked-in DeBank cache shows ACCOUNT_9 holding $61,062.16 of the Gnosis COW/WETH pool under xdai_uniswap3. It is latent only because ACCOUNT_9 is enabledChains [1], so chain 100 is never evaluated for it. It can never be configured: COW has no price feed on any chain and none is planned (see chains.1.$untracked_by_design, where COW is marked PERMANENT), and NAV values an LP as the sum of its two legs — so wiring the pool would drop the COW leg and report roughly half the position, which is worse than not reporting it. CONSEQUENCE, stated plainly: adding uniswap3 to this chain's allowlist (done in the same change that deployed the adapter here) means that the moment any account holding that pool is enabled on chain 100, ~$61k enters the filtered DeBank anchor as permanent unexplained drift. That is expected and declared, not a defect to chase."
     },
     "8453": {
       "name": "base",

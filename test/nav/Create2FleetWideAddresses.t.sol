@@ -55,6 +55,8 @@ contract Create2FleetWideAddressesTest is Test {
     ///      NPM stores `factory`/`WETH9` as immutables. Several other chains have unrelated code at this exact
     ///      address, so presence of code is not evidence of identity.
     address constant UNIV3_NPM = 0xC36442b4a4522E871399CD717aBDD847Ab11FE88;
+    /// @dev Gnosis hosts its own Uniswap V3 deployment; its NPM is NOT the canonical one above.
+    address constant GNOSIS_UNIV3_NPM = 0xAE8fbE656a77519a7490054274910129c9244FA3;
 
     /// @dev Morpho on Ethereum and Base. Arbitrum deployed later at a different address (see below).
     address constant MORPHO_ETH_BASE = 0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb;
@@ -108,6 +110,36 @@ contract Create2FleetWideAddressesTest is Test {
             ),
             0xACdC33b6a453F629d1ab10A14d3513817F492de7,
             "UniswapV3PoolsMeta address moved - see DEPLOYED_ADDRESSES.md"
+        );
+
+        // Uniswap V3 on GNOSIS binds a DIFFERENT NonfungiblePositionManager, so it is NOT part of the ☆ set
+        // above and gets its own address. Same shape as the Morpho-Arbitrum case below: derive from chain-100
+        // config, pin the result, and assert it DIFFERS from the canonical-NPM address — the last assertion is
+        // the one that would catch a config edit silently re-pointing Gnosis at Ethereum's NPM, which would
+        // collapse the two addresses and leave the recorded Gnosis deployment orphaned.
+        //
+        // Added because nothing derived this address: `0xA336f717…` appeared only in
+        // `script/config/deployments/100.json` and `DEPLOYED_ADDRESSES.md`, so creation-code drift or a salt
+        // bump would move the real deployment while every record still named the old value — the exact
+        // "silent and expensive" class this file's header exists to prevent.
+        address npmGnosis = _configAddr(100, "UniswapV3PoolsMeta", "positionManager");
+        assertEq(
+            npmGnosis, GNOSIS_UNIV3_NPM, "chain 100 positionManager is no longer Gnosis's NonfungiblePositionManager"
+        );
+        address univ3OnGnosis = _deriveWithArgs(
+            type(UniswapV3PoolsMetaBalanceAdapter).creationCode,
+            abi.encode(npmGnosis, NAV_PROXY),
+            "UniswapV3PoolsMetaBalanceAdapter",
+            DeploySalts.UNISWAP_V3_POOLS_META
+        );
+        assertEq(
+            univ3OnGnosis,
+            0xA336f7171B9CE77de13451419B3254099beF2C24,
+            "UniswapV3PoolsMeta (Gnosis) address moved - see DEPLOYED_ADDRESSES.md"
+        );
+        assertTrue(
+            univ3OnGnosis != 0xACdC33b6a453F629d1ab10A14d3513817F492de7,
+            "Gnosis must bind its OWN NonfungiblePositionManager, not the canonical one"
         );
 
         // Fluid Vaults — one address across all six chains carrying the deterministic VaultResolver.

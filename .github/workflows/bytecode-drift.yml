@@ -77,12 +77,18 @@ jobs:
       # requirements file plus an isolated interpreter, which this repo does not have.
       - name: Install and prove the audit's dependencies
         run: |
-          python3 -m pip install --no-cache-dir requests eth_utils
+          # `eth-hash[pycryptodome]` is NOT optional padding: `eth_utils.keccak` delegates to
+          # `eth_hash`, which ships NO hashing backend of its own and raises ImportError
+          # ("None of these hashing backends are installed") the first time it is called.
+          # Installing `eth_utils` alone therefore imports fine and fails on first use.
+          python3 -m pip install --no-cache-dir requests eth_utils "eth-hash[pycryptodome]"
           python3 - <<'EOF'
           import requests                    # chainlib
           from eth_utils import keccak       # bytecode_audit._sel, imported lazily at call time
           # Exercise keccak rather than just importing it: a real selector, so this fails if the
-          # package is present but broken, not only if it is absent.
+          # package is present but broken, not only if it is absent. That distinction is not
+          # theoretical — it is exactly how the missing eth-hash backend was caught, in seconds at
+          # the front of the job, instead of after the ~20-minute build inside the audit.
           sel = "0x" + keccak(text="NAV()")[:4].hex()
           assert sel == "0x52fd856b", f"eth_utils.keccak produced {sel}, expected 0x52fd856b"
           print("dependency check ok: requests +", "eth_utils (NAV() ->", sel + ")")

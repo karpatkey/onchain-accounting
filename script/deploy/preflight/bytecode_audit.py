@@ -152,6 +152,112 @@ def self_test(index: Index, artifacts: list[dict]) -> int:
         if not cond:
             failures.append(label)
 
+    # --- the ENFORCEMENT decision --------------------------------------------------------------
+    # These cover `evaluate_drift`, which is what actually decides pass/fail. The loader arms below
+    # do NOT cover this: a review of the first version pointed out that every test exercised the
+    # baseline PARSER while nothing exercised the decision, and it was right — an exemption scoped
+    # to one chain, for an address deployed identically on 23, passes every parser test and still
+    # leaves the scheduled all-chain run red. That case is the last arm here.
+    def _res(chain_id, *entries):
+        return {"chainId": chain_id, "name": f"c{chain_id}", "error": None,
+                "entries": [{"address": a, "status": st, "key": k} for a, st, k in entries]}
+
+    A, B = "0xAaAa", "0xBbBb"
+    bl_ok, unacc, hits = evaluate_drift([_res(1, (A, "CURRENT", "K"))], {})
+    check("a CURRENT address with no baseline is not a failure", (bl_ok, unacc) == ([], []))
+
+    bl_ok, unacc, hits = evaluate_drift([_res(1, (A, "STALE", "K"))], {})
+    check("an undeclared STALE address IS a failure", len(unacc) == 1 and bl_ok == [])
+
+    bl_ok, unacc, hits = evaluate_drift([_res(1, (A, "STALE", "K"))], {"1:0xaaaa": {"reason": "r"}})
+    check("a declared STALE address is accepted, not failed", (bl_ok, unacc) == ([], []) and len(hits) == 1)
+
+    bl_ok, unacc, hits = evaluate_drift([_res(1, (A, "CURRENT", "K"))], {"1:0xaaaa": {"reason": "r"}})
+    check("a baselined address that is now CURRENT fails (baseline rot)", len(bl_ok) == 1)
+
+    bl_ok, unacc, hits = evaluate_drift([_res(1, (A, "CURRENT", "K"))], {"1:0xzzzz": {"reason": "r"}})
+    check("a baseline entry for an un-audited address fails (dangling)", len(bl_ok) == 1)
+
+    # A status that is neither CURRENT nor STALE must be treated as a failure, not silently ignored.
+    bl_ok, unacc, hits = evaluate_drift([_res(1, (A, "UNKNOWN", "K"))], {})
+    check("a non-CURRENT status other than STALE also fails", len(unacc) == 1)
+
+    # THE CHAIN-SCOPE CASE. One address, same bytecode, recorded on two chains; the exemption names
+    # only the first. The second must still fail — this is the bug the loader tests could not see.
+    bl_ok, unacc, hits = evaluate_drift(
+        [_res(1, (A, "STALE", "K")), _res(10, (A, "STALE", "K"))], {"1:0xaaaa": {"reason": "r"}})
+    check("an exemption scoped to one chain does NOT excuse the same address on another",
+          len(unacc) == 1 and unacc[0].startswith("10:"))
+
+    # And the same address declared on both chains passes on both.
+    bl_ok, unacc, hits = evaluate_drift(
+        [_res(1, (A, "STALE", "K")), _res(10, (A, "STALE", "K"))],
+        {"1:0xaaaa": {"reason": "r"}, "10:0xaaaa": {"reason": "r"}})
+    check("declaring every affected chain passes", (bl_ok, unacc) == ([], []) and len(hits) == 2)
+
+    # SCOPED AUDIT. Declaring 23 chains and auditing one must NOT report the other 22 as dangling —
+    # auditing a subset is the common case, and the first version failed exactly there.
+    bl_ok, unacc, hits = evaluate_drift(
+        [_res(1, (A, "STALE", "K"))], {"1:0xaaaa": {"reason": "r"}, "10:0xaaaa": {"reason": "r"}})
+    check("a baseline entry for an OUT-OF-SCOPE chain is not dangling", (bl_ok, unacc) == ([], []))
+
+    # But an in-scope chain that no longer records the address still IS dangling.
+    bl_ok, unacc, hits = evaluate_drift(
+        [_res(1, (B, "CURRENT", "K2"))], {"1:0xaaaa": {"reason": "r"}})
+    check("an in-scope chain missing the address IS dangling", len(bl_ok) == 1)
+
+    # A chain that ERRORED is not in scope either — its entries prove nothing.
+    errored = {"chainId": 10, "name": "c10", "error": "rpc down", "entries": []}
+    bl_ok, unacc, hits = evaluate_drift(
+        [_res(1, (A, "STALE", "K")), errored], {"1:0xaaaa": {"reason": "r"}, "10:0xaaaa": {"reason": "r"}})
+    check("an entry for a chain that ERRORED is not dangling", (bl_ok, unacc) == ([], []))
+
+    bl_ok, unacc, hits = evaluate_drift([_res(1, (A, "STALE", "K"), (B, "STALE", "K2"))],
+                                        {"1:0xaaaa": {"reason": "r"}})
+    check("one declared and one undeclared on the same chain fails only the undeclared",
+          len(unacc) == 1 and B.lower() in unacc[0])
+
+    # --- the accepted-drift baseline -------------------------------------------------------------
+    # These pin the LOADER, which is the half that decides whether an exemption is honoured at all.
+    # A baseline that silently loads as empty flips the gate red for the wrong reason; one that
+    # silently loads as "everything exempt" flips it green for a far worse one.
+    import tempfile as _tf
+
+    def _bl(text: str):
+        # Write, CLOSE, then read. Reading inside the `with` returns an unflushed (empty) file, which
+        # loads as a JSON error and makes every positive arm below fail for the wrong reason — the
+        # first run of these arms did exactly that.
+        fh = _tf.NamedTemporaryFile("w", suffix=".json", delete=False)
+        try:
+            fh.write(text)
+        finally:
+            fh.close()
+        return _load_baseline(fh.name)
+
+    check("no --baseline means no exemptions and no complaint", _load_baseline(None) == ({}, []))
+    check("a NAMED baseline that does not exist is a FAILURE, not an empty exemption set",
+          bool(_load_baseline("/nonexistent/accepted.json")[1]))
+    check("malformed JSON fails rather than loading as empty", bool(_bl("{not json")[1]))
+    check("a non-object 'accepted' fails", bool(_bl('{"accepted": []}')[1]))
+    ok_entry = '{"accepted": {"1:0xAbC": {"reason": "because", "key": "K"}}}'
+    check("a well-formed entry loads, lowercased", _bl(ok_entry)[0].get("1:0xabc") is not None)
+    check("a well-formed entry raises no problem", _bl(ok_entry)[1] == [])
+    check("an entry WITHOUT a reason is rejected — an exemption with no reason is not a decision",
+          bool(_bl('{"accepted": {"1:0xAbC": {"key": "K"}}}')[1]))
+    check("a key that is not '<chainId>:<address>' is rejected",
+          bool(_bl('{"accepted": {"nochain": {"reason": "r"}}}')[1]))
+    check("$-prefixed doc keys are ignored, not parsed as entries",
+          _bl('{"accepted": {"$note": "prose", "1:0xAbC": {"reason": "r"}}}')[1] == []
+          and len(_bl('{"accepted": {"$note": "prose", "1:0xAbC": {"reason": "r"}}}')[0]) == 1)
+
+    # The shipped file must itself be loadable and non-empty of reasons — a baseline that fails to
+    # parse would otherwise only be discovered on a live run.
+    shipped = Path(__file__).with_name("accepted-bytecode-drift.json")
+    if shipped.is_file():
+        entries, problems = _load_baseline(str(shipped))
+        check("the shipped accepted-drift file parses with no problems", problems == [])
+        check("every shipped entry carries a reason", all(e.get("reason") for e in entries.values()))
+
     with_imm = [a for a in artifacts if a["refs"]]
     without_imm = [a for a in artifacts if not a["refs"]]
     check("build contains artifacts with immutables", bool(with_imm))
@@ -370,12 +476,103 @@ def audit_chain(chain_id: int, index: Index) -> dict:
     return res
 
 
+def evaluate_drift(results: list[dict], accepted: dict) -> tuple[list[str], list[str], list[str]]:
+    """Decide, from audit results plus the accepted-drift map, what fails.
+
+    Extracted from `main` so `--self-test` can exercise it offline. That split is not cosmetic: the
+    first version of this guard tested only the baseline LOADER, and a review pointed out that
+    nothing covered the decision — which is where the interesting mistakes live. It was right: an
+    exemption written for one chain, on an address deployed identically to 23, would have passed
+    every loader test while leaving the scheduled all-chain run red.
+
+    Returns (baseline_failures, unaccepted, accepted_hits).
+    """
+    audited: dict[str, str] = {}
+    # Chains that produced a verdict. A baseline entry for a chain OUTSIDE this set is not dangling —
+    # we simply have no information about it, which is the normal case when auditing a subset
+    # (`bytecode_audit.py 1`). Treating out-of-scope entries as dangling made a correct baseline fail
+    # the moment anyone audited one chain, which is how this is run most of the time.
+    audited_chains = {r["chainId"] for r in results if not r.get("error")}
+    for r in results:
+        for e in r.get("entries", []):
+            audited[f"{r['chainId']}:{e['address'].lower()}"] = e["status"]
+
+    baseline_failures: list[str] = []
+    for ref, meta in sorted(accepted.items()):
+        if int(ref.split(":", 1)[0]) not in audited_chains:
+            continue
+        status = audited.get(ref)
+        if status is None:
+            baseline_failures.append(
+                f"baseline entry {ref} ({meta.get('key', '?')}) was not audited at all — the address is "
+                f"gone from the deployment records, or its chain was out of scope. Remove the entry, or "
+                f"widen the scope so it is checked.")
+        elif status == "CURRENT":
+            baseline_failures.append(
+                f"baseline entry {ref} ({meta.get('key', '?')}) is now CURRENT — the drift it accepted is "
+                f"fixed. DELETE the entry; leaving it would silently accept a FUTURE drift at this address.")
+
+    unaccepted: list[str] = []
+    accepted_hits: list[str] = []
+    for r in results:
+        for e in r.get("entries", []):
+            if e["status"] == "CURRENT":
+                continue
+            ref = f"{r['chainId']}:{e['address'].lower()}"
+            if ref in accepted:
+                accepted_hits.append(f"{ref} {e['key']} — {accepted[ref].get('reason', 'no reason given')}")
+            else:
+                unaccepted.append(f"{ref} {e['key']} [{e['status']}]")
+    return baseline_failures, unaccepted, accepted_hits
+
+
+def _load_baseline(path: str | None) -> tuple[dict, list[str]]:
+    """Read the accepted-drift file. Returns (entries, structural failures).
+
+    A malformed or missing-but-named baseline is a FAILURE, never an empty dict: silently treating an
+    unreadable exemption file as "nothing is exempt" would flip the gate red for the wrong reason, and
+    treating it as "everything is exempt" would flip it green for a far worse one.
+    """
+    if not path:
+        return {}, []
+    f = Path(path)
+    if not f.is_file():
+        return {}, [f"baseline file {path} does not exist"]
+    try:
+        raw = json.loads(f.read_text())
+    except json.JSONDecodeError as exc:
+        return {}, [f"baseline file {path} is not valid JSON: {exc}"]
+    entries = raw.get("accepted", raw)
+    if not isinstance(entries, dict):
+        return {}, [f"baseline file {path}: expected an object of '<chainId>:<address>' -> {{reason, ...}}"]
+    out, problems = {}, []
+    for ref, meta in entries.items():
+        if ref.startswith("$"):
+            continue
+        if not isinstance(meta, dict) or not meta.get("reason"):
+            problems.append(f"baseline entry {ref} has no 'reason' — an exemption without one is not a decision")
+            continue
+        try:
+            cid, addr = ref.split(":", 1)
+            int(cid)
+        except ValueError:
+            problems.append(f"baseline key {ref!r} is not '<chainId>:<address>'")
+            continue
+        out[f"{int(cid)}:{addr.lower()}"] = meta
+    return out, problems
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("chains", nargs="*", type=int)
     ap.add_argument("--self-test", action="store_true")
     ap.add_argument("--jobs", type=int, default=6)
     ap.add_argument("--json", help="write the full report here")
+    ap.add_argument("--baseline",
+                    help="JSON file of ACCEPTED drift: addresses known not to be reproduced by this build, "
+                         "each with a reason. Enforced in BOTH directions — an un-baselined STALE fails, and "
+                         "a baselined address that has become CURRENT also fails, so the file cannot rot into "
+                         "a rubber stamp. Only meaningful with --require-current.")
     ap.add_argument("--require-current", action="store_true",
                     help="exit non-zero unless every audited address is CURRENT and every chain was "
                          "reachable — the runbook 2.2 acceptance gate. Omit for the pre-deploy run, "
@@ -438,25 +635,43 @@ def main() -> int:
     # only `r["error"]` misses that second case entirely: a chain whose record never got written
     # (PERSIST_DEPLOYMENTS unset, or a deploy that silently no-op'd) answers RPC fine, yields
     # `entries: []`, and would ride to PASS on the other chains' addresses.
+    # ACCEPTED DRIFT. A permanently-red gate is worse than no gate: this repo has already had a check
+    # that cried wolf on correct trees and taught the fleet to merge past it, which is the state in
+    # which a REAL finding sails through. So known drift is declared, with a reason, and everything
+    # else fails. The file is enforced BOTH ways — the same rule `undispatched-adapters.json` uses —
+    # because a baseline nobody prunes stops being a record of accepted risk and becomes a blindfold.
+    accepted, baseline_failures = _load_baseline(args.baseline)
+    extra_failures, unaccepted, accepted_hits = evaluate_drift(results, accepted)
+    baseline_failures.extend(extra_failures)
+    for line in accepted_hits:
+        print(f"  ACCEPTED-STALE {line}")
+
     skipped = [r for r in results if r["error"]]
     empty = [r for r in results if not r["error"] and not r["entries"]]
-    not_current = tally_total = 0
-    for k, v in tally.items():
+    tally_total = 0
+    for v in tally.values():
         tally_total += v
-        if k != "CURRENT":
-            not_current += v
+    not_current = len(unaccepted)
     if not tally_total:
         print("\nFAIL: no addresses were audited at all.")
         return 1
+    if baseline_failures:
+        print("\nFAIL (--baseline): the accepted-drift file no longer describes reality:")
+        for f in baseline_failures:
+            print(f"  - {f}")
+        return 1
     if skipped or empty or not_current:
-        print(f"\nFAIL (--require-current): {not_current} address(es) not CURRENT, "
+        for u in unaccepted:
+            print(f"  UNACCEPTED DRIFT {u}")
+        print(f"\nFAIL (--require-current): {not_current} address(es) not CURRENT and not in the "
+              f"accepted-drift baseline, "
               f"{len(skipped)} chain(s) unreachable "
               f"({', '.join(str(r['chainId']) for r in skipped) or 'none'}), "
               f"{len(empty)} chain(s) with an EMPTY deployment record "
               f"({', '.join(str(r['chainId']) for r in empty) or 'none'}).")
         return 1
     print(f"\nPASS (--require-current): all {tally_total} address(es) across {len(results)} chain(s) "
-          f"are CURRENT.")
+          f"are CURRENT or declared in the accepted-drift baseline ({len(accepted)} entr(ies)).")
     return 0
 
 

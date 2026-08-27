@@ -178,6 +178,7 @@ position manager is at a different address entirely.
 | MorphoMarketsMeta ☆ | `0x5C951CF5C596BC4908A5fd846710070553830b06` |
 | MorphoVaultsMeta ★ | `0x64e1ba8B12ee2bFdBDdFd4E0863EdfaaE824C86a` |
 | NexusMutualStakingPoolsAssisted | `0x25Be749999683381703c7346462503a5EFFFd184` |
+| PolygonStakingMeta | `0x3Feb6F1e0cd384BE4440cFCCd1aa90394A05b1a4` |
 | SparkLend | `0x9ad8dDaAD5166f2f0Fe4e883aFe78902f8BF0CAE` |
 | StaderWithdrawalQueue | `0xCB975897AfA295C8fAEB0C33B333C77B95195094` |
 | StakeWiseV3ExitQueueAssisted | `0x83375fDE808F6388c85fC0A1dA86a69492a20798` |

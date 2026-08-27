@@ -31,8 +31,8 @@ import {ProtocolNames} from "src/utils/ProtocolNames.sol";
 ///      attestation is proven** (Merkl's sorted-pair merkle proof), and **how one token's value becomes legs** (the
 ///      per-campaign pro-rata split).
 ///
-///      **Permissionless & submit-on-behalf-of.** `submitProofs(user, …)` takes an explicit `user` and is callable
-///      by anyone — no roles. Because every write is proof-verified, opening it to anyone adds no fabrication risk
+///      **Role-gated & submit-on-behalf-of.** `submitProofs(user, …)` takes an explicit `user` and requires
+///      `SUBMITTER_ROLE`. Because every write is proof-verified, opening it to anyone adds no fabrication risk
 ///      *in the amounts*. **That is not the same as "a griefer can do nothing".** The proof binds the per-token
 ///      cumulative but NOT the campaign split — only the shares' SUM is checked — so a third party holding an
 ///      account's (public) proof can re-submit it split into up to {MAX_CAMPAIGNS_PER_TOKEN} fabricated legs,
@@ -169,8 +169,13 @@ contract MerklRewardsAttestedBalanceAdapter is AttestedValueCache {
     /// @param navCalculator_ The NAVCalculator address. Validated by {AttestedValueCache}, including the
     ///                       NAV-version probe — so a NAV that cannot serve `getRegisteredAsset` is refused here
     ///                       too, without this member restating the reasoning.
-    /// @dev No admin/assistant roles: permissionless. Everything is immutable except the proof-verified cache.
-    constructor(address distributor_, address navCalculator_) AttestedValueCache(navCalculator_) {
+    /// @param admin_         Holder of `DEFAULT_ADMIN_ROLE`, which grants and revokes `SUBMITTER_ROLE` (the
+    ///                       keeper). Intended to be the security-council Safe. Cannot be zero.
+    /// @dev Submits are gated on `SUBMITTER_ROLE`; the stale-gated clears stay permissionless. Everything is
+    ///      immutable except the proof-verified cache and the role set.
+    constructor(address distributor_, address navCalculator_, address admin_)
+        AttestedValueCache(navCalculator_, admin_)
+    {
         if (distributor_ == address(0)) revert InvalidArguments();
         AddressCheckLib.requireContract(distributor_, "Distributor");
         DISTRIBUTOR = distributor_;
@@ -182,8 +187,8 @@ contract MerklRewardsAttestedBalanceAdapter is AttestedValueCache {
 
     /// @notice Submit Merkl allocations for `user` — each entry **upserts** its `(user, token)` cache; tokens
     ///         omitted from `allocs` are left untouched, so this can never suppress a live entry.
-    /// @dev Permissionless: keyed on the explicit `user` arg and callable by anyone — proof-verification is the
-    ///      integrity guarantee. **Reverts** `InvalidArguments`, `UninitializedEpoch`, `InvalidProof`,
+    /// @dev Requires `SUBMITTER_ROLE` (enforced by the base at `_upsertAttestation`). Proof-verification remains the
+    ///      integrity guarantee for the AMOUNT; the role governs who may occupy the cache and set labels. **Reverts** `InvalidArguments`, `UninitializedEpoch`, `InvalidProof`,
     ///      `TooManyCampaigns`, `CampaignSumMismatch`, `TooManyAttestations`, or `AmountRegression` — fail-loud and
     ///      atomic, so a bad entry reverts the whole call and leaves the prior set intact.
     function submitProofs(address user, Allocation[] calldata allocs) external {

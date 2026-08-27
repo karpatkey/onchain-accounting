@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8;
 
+import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {AddressCheckLib} from "src/utils/AddressCheckLib.sol";
 
@@ -12,6 +13,7 @@ import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import "src/errors.sol";
 import {GasStipendLib} from "src/utils/GasStipendLib.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
+import {SUBMITTER} from "src/constants.sol";
 
 /// @title AttestedValueCache
 /// @author KPK
@@ -49,7 +51,7 @@ import {PositionKind} from "src/utils/PositionKind.sol";
 ///      epoch reads 0, an unregistered asset is skipped, a starved element is dropped. Whether dropping is *safe*
 ///      depends on the member — see {_collectLegs}, which documents why the drop is licensed only for credit-only
 ///      members and what a debt-emitting member would have to change.
-abstract contract AttestedValueCache is IAttestedBalanceAdapter, IPositionDescribable {
+abstract contract AttestedValueCache is IAttestedBalanceAdapter, IPositionDescribable, AccessControl {
     //
     // Type Definitions
     //
@@ -75,6 +77,10 @@ abstract contract AttestedValueCache is IAttestedBalanceAdapter, IPositionDescri
     // State
     //
 
+    /// @inheritdoc IAttestedBalanceAdapter
+    /// @dev Gates the SUBMIT surface only — see the interface for why the clears deliberately stay permissionless.
+    bytes32 public constant SUBMITTER_ROLE = SUBMITTER;
+
     /// @notice NAVCalculator — resolves the `Asset` metadata every emitted leg carries.
     INAVCalculator public immutable NAV_CALCULATOR;
 
@@ -99,9 +105,11 @@ abstract contract AttestedValueCache is IAttestedBalanceAdapter, IPositionDescri
     /// @notice The cached attestation for `(account, asset)`: `(value, epoch, attestedAt)`.
     /// @dev ABI-identical to the public mapping this replaced, so no consumer sees a difference. An entry with
     ///      `epoch == 0` is absent; a non-zero `epoch` that no longer equals {_liveEpoch} is stale and reads 0.
+    /// @inheritdoc IAttestedBalanceAdapter
     function attestations(address account, address asset)
         external
         view
+        override
         returns (uint256 value, bytes32 epoch, uint64 attestedAt)
     {
         Attestation memory a = _attestations[account][asset];
@@ -114,53 +122,8 @@ abstract contract AttestedValueCache is IAttestedBalanceAdapter, IPositionDescri
         return _attestations[account][asset];
     }
 
-    //
-    // Events
-    //
-
-    /// @notice Emitted on every `(account, asset)` upsert.
-    /// @param submitter The caller that fed this attestation (`msg.sender`). Recorded for off-chain attribution
-    ///                  ONLY — this family is submit-on-behalf-of and permissionless, so it is NOT an authorization
-    ///                  check and carries no privilege. Integrity comes from the member's proof.
-    event AttestationCached(
-        address indexed account,
-        address indexed asset,
-        address indexed submitter,
-        uint256 value,
-        bytes32 epoch,
-        uint64 attestedAt
-    );
-    event AttestationCleared(address indexed account, address indexed asset);
-    event AccountCleared(address indexed account);
-
-    //
-    // Errors
-    //
-
-    /// @notice The NAVCalculator supplied at construction cannot serve `getRegisteredAsset(address)` — it predates
-    ///         that getter, or is not a NAVCalculator at all. Refused at deploy because the failure it would
-    ///         otherwise cause is SILENT (see the constructor).
-    error NAVCalculatorTooOld(address navCalculator);
-
-    /// @notice {_liveEpoch} returned zero (the attestation source is uninitialized). Rejected rather than stored,
-    ///         because a zero epoch would collide with the presence sentinel.
-    error UninitializedEpoch();
-
-    /// @notice Adding this asset would exceed {_maxAssetsPerAccount} distinct cached assets for `account`.
-    error TooManyAttestations(address account, uint256 count);
-
-    /// @notice A clear was attempted on an entry that still contributes to NAV (its epoch is live AND it values
-    ///         non-zero). Clearing is GC for dead entries only — a live entry can only be *refreshed* by a fresh
-    ///         attestation, never suppressed. This is what makes permissionless clearing safe.
-    error AttestationStillLive(address account, address asset);
-
-    /// @notice A clear was attempted on an `(account, asset)` with nothing cached.
-    error NothingToClear();
-
-    /// @notice The same asset appeared more than once in a {previewPositions} payload. The cache path upserts
-    ///         (last-writer-wins, no double count), but a stateless preview would emit a leg set per occurrence — an
-    ///         over-report, the one direction this family forbids — so it is rejected fail-loud.
-    error DuplicateAsset(address asset);
+    // Events and errors are declared on {IAttestedBalanceAdapter} — they are universal to the family, so a
+    // consumer can subscribe and decode reverts without importing this base or any member.
 
     //
     // Constructor
@@ -188,8 +151,8 @@ abstract contract AttestedValueCache is IAttestedBalanceAdapter, IPositionDescri
     ///      re-probe on the hot path), and pointing at a NAVCalculator *implementation* rather than its proxy passes,
     ///      because the implementation serves the selector honestly and merely has empty storage. It binds the
     ///      deploy, not the lifetime.
-    constructor(address navCalculator_) {
-        if (navCalculator_ == address(0)) revert InvalidArguments();
+    constructor(address navCalculator_, address admin_) {
+        if (navCalculator_ == address(0) || admin_ == address(0)) revert InvalidArguments();
         AddressCheckLib.requireContract(navCalculator_, "NAVCalculator");
 
         (bool ok, bytes memory ret) =
@@ -197,6 +160,7 @@ abstract contract AttestedValueCache is IAttestedBalanceAdapter, IPositionDescri
         if (!ok || ret.length < 192) revert NAVCalculatorTooOld(navCalculator_);
 
         NAV_CALCULATOR = INAVCalculator(navCalculator_);
+        _grantRole(DEFAULT_ADMIN_ROLE, admin_);
     }
 
     //
@@ -216,7 +180,7 @@ abstract contract AttestedValueCache is IAttestedBalanceAdapter, IPositionDescri
     ///      feed cycle. Retaining stale entries instead would make them un-clearable for the whole window, which is
     ///      the un-evictable-slot condition behind cap-exhaustion outages — trading an under-report that recovers on
     ///      its own for one that wedges until a human intervenes.
-    function clearAttestation(address account, address asset) external {
+    function clearAttestation(address account, address asset) external override {
         if (account == address(0) || asset == address(0)) revert InvalidArguments();
         if (_attestations[account][asset].epoch == bytes32(0)) revert NothingToClear();
         if (_valueOf(account, asset) != 0) revert AttestationStillLive(account, asset);
@@ -255,17 +219,18 @@ abstract contract AttestedValueCache is IAttestedBalanceAdapter, IPositionDescri
 
     /// @notice Assets currently cached for `account`.
     /// @dev Returned regardless of staleness. Filter at the call site on `attestations(account, asset).epoch`.
-    function assetsOf(address account) external view returns (address[] memory) {
+    /// @inheritdoc IAttestedBalanceAdapter
+    function assetsOf(address account) external view override returns (address[] memory) {
         return _assetList[account];
     }
 
     /// @inheritdoc IERC165
     /// @dev Advertises the family marker plus the two adapter interfaces every member implements. A member adding a
     ///      further interface overrides and `super`s.
-    function supportsInterface(bytes4 interfaceId) public pure virtual override returns (bool) {
+    function supportsInterface(bytes4 interfaceId) public view virtual override(AccessControl, IERC165) returns (bool) {
         return interfaceId == type(IAttestedBalanceAdapter).interfaceId
             || interfaceId == type(IBalanceAdapter).interfaceId || interfaceId == type(IPositionDescribable).interfaceId
-            || interfaceId == type(IERC165).interfaceId;
+            || super.supportsInterface(interfaceId);
     }
 
     /// @inheritdoc IBalanceAdapter
@@ -433,6 +398,12 @@ abstract contract AttestedValueCache is IAttestedBalanceAdapter, IPositionDescri
         internal
         returns (bool isNew)
     {
+        // THE AUTHORIZATION POINT, deliberately co-located with the ADMISSION point. Gating here rather than on
+        // each member's typed `submit` means a member cannot ship an ungated write path by omission: every route
+        // into the cache passes through this function, so every route is gated. `msg.sender` is the original
+        // external caller — this is `internal`, so no frame is introduced between the member's entrypoint and here.
+        _checkRole(SUBMITTER_ROLE);
+
         if (account == address(0) || asset == address(0)) revert InvalidArguments();
         if (epoch == bytes32(0)) revert UninitializedEpoch();
 

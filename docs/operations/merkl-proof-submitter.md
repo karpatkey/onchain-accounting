@@ -8,6 +8,13 @@ The `MerklRewardsAttestedBalanceAdapter` adapter (`src/balances/AttestedBalanceA
 
 This document specifies what the bot must do, how often, with what inputs and what failure modes. It does **not** specify the language, framework, or deployment topology — those are operator choices. The bot lives outside this repo; this file is the contract between the on-chain adapter and whatever ops process keeps it fed.
 
+> **⚠️ SUBMITS ARE NOW ROLE-GATED.** `submitProofs` / `submitProofsBatch` require **`SUBMITTER_ROLE`**, granted and
+> revoked by `DEFAULT_ADMIN_ROLE` (the security council). The keeper EOA must be granted it before it can feed the
+> cache — an ungranted keeper's every submit reverts `AccessControlUnauthorizedAccount`. **The clears stay
+> permissionless and stale-gated on purpose** (`clearAttestation` / `clearAccount`): role-gating removal is what
+> audit finding L-02 flagged, since a compromised role-holder could then delete valid live allocations. So the
+> keeper needs the role to write and needs nothing to garbage-collect.
+>
 > **⚠️ ABI CHANGED (attested-family refactor).** The adapter now extends the shared base `AttestedValueCache`, and
 > its external surface was renamed to the family-generic names used throughout this guide:
 > `clearAllocation`→`clearAttestation`, `userTokens`→`assetsOf`, `allocations`→`attestations`, and the errors
@@ -169,11 +176,18 @@ The adapter is **permissionless**: `submitProofs(user, allocs)` / `submitProofsB
 
 ## Known gaps — OPEN DESIGN CALLS, not settled behaviour
 
-Four properties of this design were surfaced by review, confirmed against the code, and **deliberately left
-unpatched pending the user's decision**. They are documented here so an operator meets them in the runbook rather
+**Gaps 1 and 2 are now CLOSED** by the `SUBMITTER_ROLE` gate on submits (see the ABI note at the top): both were
+reachable only because *any* address could write. A caller without the role can no longer squat cache slots (Gap 1)
+nor rewrite a proven total's campaign labels (Gap 2). They are retained below, struck through, because the
+reasoning explains what the role is actually protecting — the space the merkle proof never covered — and because
+the keeper's own submits can still hit Gap 1's cap through ordinary accumulation, which is why the GC pass and
+per-token feeding still matter.
+
+Of the four properties originally surfaced by review, two remain open and two are closed. The remaining two were
+**deliberately left unpatched pending the user's decision**. They are documented here so an operator meets them in the runbook rather
 than in production. None can inflate NAV — all are under-report or attribution-only.
 
-**Gap 1 — cache-slot squatting is possible and un-evictable at the current root.** Merkl proofs are public (the
+**~~Gap 1 — cache-slot squatting is possible and un-evictable at the current root.~~ CLOSED by `SUBMITTER_ROLE`** — a third party can no longer submit at all. The *cap* still binds for the keeper's own accumulated entries, so the GC pass below remains mandatory and per-token feeding is still the safer shape. Original analysis: Merkl proofs are public (the
 API is keyed on address). Any third party can therefore call `submitProofs(account, …)` with the account's own
 genuinely-earned but low- or zero-value tokens and occupy `MAX_TOKENS_PER_USER` (64) slots. Every such entry is
 proof-valid, so it is *live*, so `clearAttestation` reverts `AttestationStillLive` on it — **no caller, including the
@@ -183,11 +197,14 @@ token in the same call. Options on the table: skip-over-cap instead of reverting
 entry to admit a new one; or feed per-token rather than batched (removes the amplifier, not the squat, and needs no
 contract change). **Awaiting the user — this changes a balance adapter's admission semantics.**
 
-**Gap 2 — the "already current" skip cannot see a fabricated campaign split.** The `changed()` predicate below
+**~~Gap 2 — the "already current" skip cannot see a fabricated campaign split.~~ CLOSED by `SUBMITTER_ROLE`** — only role-holders can write a breakdown, so a third party can no longer fabricate one. If you ever run multiple submitters, the analysis below applies between them. Original analysis: The `changed()` predicate below
 compares the API amount against the cached `cumulativeAmount` and the cached root against the live root. A third
 party who re-submits the account's real proof under fabricated `campaignId`s **preserves both** — they are the only
-two things the merkle proof binds. So `changed()` reports "already current" forever and the keeper never
-resubmits. ADR 0022 records that such a fabrication is "repairable by one upsert, callable by anyone"; that repair
+two things the merkle proof binds. So `changed()` reports "already current" and the keeper never resubmits — **for
+the remainder of the root epoch, renewably**, not literally forever: at the next rotation the cached entry goes
+stale, the GC pass clears it, and the following submit writes the real breakdown again. A determined griefer simply
+repeats the fabrication each epoch (proofs are public and it is cheap on an L2), so in practice it persists; a
+one-off decays within one epoch (~8h). ADR 0022 records that such a fabrication is "repairable by one upsert, callable by anyone"; that repair
 is real but **this keeper will never perform it**. Including `campaignsOf(account, token)` in the comparison would
 close it, at the cost of letting a griefer force a resubmit — and therefore keeper gas — at will. **Awaiting the
 user — this trades attribution correctness against a running operational bill.**

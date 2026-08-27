@@ -121,7 +121,11 @@ contract MerklRewardsAttestedBalanceAdapterTest is BalanceAdapterTestBase {
         morpho = _createAndRegisterToken("MORPHO", 18);
 
         // Permissionless: no admin/assistant roles.
-        adapter = new MerklRewardsAttestedBalanceAdapter(address(distributor), address(balances));
+        adapter = new MerklRewardsAttestedBalanceAdapter(address(distributor), address(balances), admin);
+        // Submits are role-gated (ADR 0022): the admin grants the test contract the keeper's role.
+        bytes32 submitterRole = adapter.SUBMITTER_ROLE();
+        vm.prank(admin);
+        adapter.grantRole(submitterRole, address(this));
     }
 
     // ============================================
@@ -210,22 +214,22 @@ contract MerklRewardsAttestedBalanceAdapterTest is BalanceAdapterTestBase {
 
     function test_constructor_revertsOnZeroDistributor() public {
         vm.expectRevert(InvalidArguments.selector);
-        new MerklRewardsAttestedBalanceAdapter(address(0), address(balances));
+        new MerklRewardsAttestedBalanceAdapter(address(0), address(balances), admin);
     }
 
     function test_constructor_revertsOnZeroNavCalculator() public {
         vm.expectRevert(InvalidArguments.selector);
-        new MerklRewardsAttestedBalanceAdapter(address(distributor), address(0));
+        new MerklRewardsAttestedBalanceAdapter(address(distributor), address(0), admin);
     }
 
     function test_constructor_revertsOnNonContractDistributor() public {
         vm.expectRevert(abi.encodeWithSelector(NotAContract.selector, "Distributor"));
-        new MerklRewardsAttestedBalanceAdapter(makeAddr("eoa"), address(balances));
+        new MerklRewardsAttestedBalanceAdapter(makeAddr("eoa"), address(balances), admin);
     }
 
     function test_constructor_revertsOnNonContractNavCalculator() public {
         vm.expectRevert(abi.encodeWithSelector(NotAContract.selector, "NAVCalculator"));
-        new MerklRewardsAttestedBalanceAdapter(address(distributor), makeAddr("eoa"));
+        new MerklRewardsAttestedBalanceAdapter(address(distributor), makeAddr("eoa"), admin);
     }
 
     function test_constructor_setsImmutableState() public view {
@@ -245,23 +249,23 @@ contract MerklRewardsAttestedBalanceAdapterTest is BalanceAdapterTestBase {
     /// @dev A NAV serving only the OLD array getter — a proxy on an implementation predating `getRegisteredAsset`.
     function test_constructor_revertsAgainstNavPredatingGetRegisteredAsset() public {
         address old = address(new OldNav());
-        vm.expectRevert(abi.encodeWithSelector(AttestedValueCache.NAVCalculatorTooOld.selector, old));
-        new MerklRewardsAttestedBalanceAdapter(address(distributor), old);
+        vm.expectRevert(abi.encodeWithSelector(IAttestedBalanceAdapter.NAVCalculatorTooOld.selector, old));
+        new MerklRewardsAttestedBalanceAdapter(address(distributor), old, admin);
     }
 
     /// @dev Success with EMPTY returndata. Checking only the staticcall's success flag would accept this and pin it.
     function test_constructor_revertsAgainstSilentFallbackNav() public {
         address silent = address(new SilentFallbackNav());
-        vm.expectRevert(abi.encodeWithSelector(AttestedValueCache.NAVCalculatorTooOld.selector, silent));
-        new MerklRewardsAttestedBalanceAdapter(address(distributor), silent);
+        vm.expectRevert(abi.encodeWithSelector(IAttestedBalanceAdapter.NAVCalculatorTooOld.selector, silent));
+        new MerklRewardsAttestedBalanceAdapter(address(distributor), silent, admin);
     }
 
     /// @dev Success with 96 bytes — above a naive 64-byte floor but short of a real `(Asset, bool)` answer. This is
     ///      what makes the specific 192-byte floor load-bearing rather than merely commented.
     function test_constructor_revertsAgainstShortReturndata() public {
         address short = address(new ShortReturnNav());
-        vm.expectRevert(abi.encodeWithSelector(AttestedValueCache.NAVCalculatorTooOld.selector, short));
-        new MerklRewardsAttestedBalanceAdapter(address(distributor), short);
+        vm.expectRevert(abi.encodeWithSelector(IAttestedBalanceAdapter.NAVCalculatorTooOld.selector, short));
+        new MerklRewardsAttestedBalanceAdapter(address(distributor), short, admin);
     }
 
     /// @dev Pins the `!ok` conjunct specifically. Every other negative case here reverts with EMPTY returndata, so
@@ -270,15 +274,15 @@ contract MerklRewardsAttestedBalanceAdapterTest is BalanceAdapterTestBase {
     ///      the success flag can reject it. Mutation: drop `!ok ||` and this is the one test that fails.
     function test_constructor_revertsAgainstNavThatRevertsWithLongReason() public {
         address longRevert = address(new LongRevertNav());
-        vm.expectRevert(abi.encodeWithSelector(AttestedValueCache.NAVCalculatorTooOld.selector, longRevert));
-        new MerklRewardsAttestedBalanceAdapter(address(distributor), longRevert);
+        vm.expectRevert(abi.encodeWithSelector(IAttestedBalanceAdapter.NAVCalculatorTooOld.selector, longRevert));
+        new MerklRewardsAttestedBalanceAdapter(address(distributor), longRevert, admin);
     }
 
     /// @dev The other direction — the guard must NOT fire on a capable NAV. Without this, deleting the probe body
     ///      and reverting unconditionally would pass the three tests above.
     function test_constructor_succeedsAgainstCapableNav() public {
         MerklRewardsAttestedBalanceAdapter a =
-            new MerklRewardsAttestedBalanceAdapter(address(distributor), address(new NewNav()));
+            new MerklRewardsAttestedBalanceAdapter(address(distributor), address(new NewNav()), admin);
         assertEq(a.DISTRIBUTOR(), address(distributor), "capable NAV is accepted, not rejected");
     }
 
@@ -291,8 +295,9 @@ contract MerklRewardsAttestedBalanceAdapterTest is BalanceAdapterTestBase {
         assertTrue(adapter.supportsInterface(type(IAttestedBalanceAdapter).interfaceId));
         assertTrue(adapter.supportsInterface(type(IPositionDescribable).interfaceId));
         assertTrue(adapter.supportsInterface(type(IERC165).interfaceId));
-        // No AccessControl anymore — permissionless.
-        assertFalse(adapter.supportsInterface(type(IAccessControl).interfaceId));
+        // Submits are role-gated (ADR 0022), so the family marker now extends IAccessControl and the adapter
+        // must advertise it — a consumer discovering the adapter needs to know a role governs the write path.
+        assertTrue(adapter.supportsInterface(type(IAccessControl).interfaceId));
         assertFalse(adapter.supportsInterface(bytes4(0xdeadbeef)));
     }
 
@@ -315,7 +320,13 @@ contract MerklRewardsAttestedBalanceAdapterTest is BalanceAdapterTestBase {
     // ============================================
 
     /// @notice Anyone can submit — no role required. An arbitrary caller submits a real (proof-verified) allocation.
-    function test_submitProofs_permissionless_arbitraryCaller() public {
+    /// @notice A caller WITHOUT `SUBMITTER_ROLE` cannot write, however valid its proof.
+    /// @dev    This test asserted the OPPOSITE until the role landed: it pinned that any stranger could submit, and
+    ///         that was the deliberate design — the merkle proof, not the caller, guaranteed the amount. The role
+    ///         does not change that guarantee; it closes the space the proof never covered (who may occupy the
+    ///         per-account cache, and how a proven total is labelled). Note the proof here is perfectly valid, so
+    ///         the rejection is purely on authorization.
+    function test_submitProofs_unauthorizedCallerRejected() public {
         bytes32 leaf = _leaf(alice, address(arb), 100 ether);
         distributor.setRoot(leaf);
 
@@ -327,17 +338,66 @@ contract MerklRewardsAttestedBalanceAdapterTest is BalanceAdapterTestBase {
             proof: new bytes32[](0),
             campaigns: new MerklRewardsAttestedBalanceAdapter.CampaignShare[](0)
         });
-        // The event attributes the actual caller (stranger), not the beneficiary user (alice) — this is the
-        // off-chain monitoring hook for a third-party (potentially griefing) submitter on a permissionless write.
-        vm.expectEmit(true, true, true, true, address(adapter));
-        emit AttestedValueCache.AttestationCached(
-            alice, address(arb), stranger, 100 ether, leaf, uint64(block.timestamp)
+
+        // Read the role BEFORE pranking: `vm.prank` applies to the next call, and `adapter.SUBMITTER_ROLE()` is
+        // itself a call, so evaluating it inside the expectRevert args would consume the prank.
+        bytes32 role = adapter.SUBMITTER_ROLE();
+        vm.expectRevert(
+            abi.encodeWithSelector(IAccessControl.AccessControlUnauthorizedAccount.selector, stranger, role)
         );
         vm.prank(stranger);
         adapter.submitProofs(alice, allocs);
 
         (uint256 amt,,) = adapter.attestations(alice, address(arb));
+        assertEq(amt, 0, "nothing was cached");
+    }
+
+    /// @notice The OTHER direction: a granted submitter writes normally, and the event still attributes the actual
+    ///         caller rather than the beneficiary.
+    /// @dev    Both directions matter here. A gate that rejects everyone would pass the test above, so this pins
+    ///         that the role admits the holder. `submitter` is granted by the admin, exactly as the keeper will be.
+    function test_submitProofs_grantedSubmitterAccepted() public {
+        address submitter = makeAddr("submitter");
+        bytes32 role = adapter.SUBMITTER_ROLE();
+        vm.prank(admin);
+        adapter.grantRole(role, submitter);
+
+        bytes32 leaf = _leaf(alice, address(arb), 100 ether);
+        distributor.setRoot(leaf);
+
+        MerklRewardsAttestedBalanceAdapter.Allocation[] memory allocs =
+            new MerklRewardsAttestedBalanceAdapter.Allocation[](1);
+        allocs[0] = MerklRewardsAttestedBalanceAdapter.Allocation({
+            token: address(arb),
+            cumulativeAmount: 100 ether,
+            proof: new bytes32[](0),
+            campaigns: new MerklRewardsAttestedBalanceAdapter.CampaignShare[](0)
+        });
+
+        vm.expectEmit(true, true, true, true, address(adapter));
+        emit IAttestedBalanceAdapter.AttestationCached(
+            alice, address(arb), submitter, 100 ether, leaf, uint64(block.timestamp)
+        );
+        vm.prank(submitter);
+        adapter.submitProofs(alice, allocs);
+
+        (uint256 amt,,) = adapter.attestations(alice, address(arb));
         assertEq(amt, 100 ether);
+    }
+
+    /// @notice The CLEARS stay permissionless — a stranger may GC a dead entry, and that is deliberate.
+    /// @dev    Role-gating removal is what audit finding L-02 flagged: a compromised role-holder could delete valid
+    ///         LIVE allocations. The stale gate makes clearing safe for anyone, so it needs no role, and keeping it
+    ///         open means a wedged cache can be repaired by anybody rather than only by the keyholder.
+    ///         THE DISCRIMINATING MUTATION: add `onlyRole(SUBMITTER_ROLE)` to `clearAttestation` and this fails.
+    function test_clearsRemainPermissionlessAfterTheRoleLanded() public {
+        _seedAllocation(alice, address(arb), 100 ether);
+        distributor.setRoot(keccak256("rotated")); // entry now stale -> reads 0 -> clearable
+
+        vm.prank(stranger); // holds no role of any kind
+        adapter.clearAttestation(alice, address(arb));
+
+        assertEq(adapter.assetsOf(alice).length, 0, "a roleless caller can still GC a dead entry");
     }
 
     /// @notice Permissionless does NOT weaken integrity: an arbitrary caller cannot fabricate an amount — a bad proof
@@ -437,7 +497,7 @@ contract MerklRewardsAttestedBalanceAdapterTest is BalanceAdapterTestBase {
         distributor.setRoot(leaf);
 
         vm.expectEmit(true, true, true, true, address(adapter));
-        emit AttestedValueCache.AttestationCached(
+        emit IAttestedBalanceAdapter.AttestationCached(
             alice, address(arb), address(this), 100 ether, leaf, uint64(block.timestamp)
         );
         _submitOne(alice, address(arb), 100 ether, new bytes32[](0));
@@ -534,7 +594,7 @@ contract MerklRewardsAttestedBalanceAdapterTest is BalanceAdapterTestBase {
 
     function test_submitProofs_revertsOnUninitializedEpoch() public {
         // root == 0
-        vm.expectRevert(AttestedValueCache.UninitializedEpoch.selector);
+        vm.expectRevert(IAttestedBalanceAdapter.UninitializedEpoch.selector);
         _submitOne(alice, address(arb), 100 ether, new bytes32[](0));
     }
 
@@ -811,13 +871,15 @@ contract MerklRewardsAttestedBalanceAdapterTest is BalanceAdapterTestBase {
     ///         vector: no caller can zero out another account's valid reward).
     function test_clearAttestation_revertsWhenLive() public {
         _seedAllocation(alice, address(arb), 100 ether);
-        vm.expectRevert(abi.encodeWithSelector(AttestedValueCache.AttestationStillLive.selector, alice, address(arb)));
+        vm.expectRevert(
+            abi.encodeWithSelector(IAttestedBalanceAdapter.AttestationStillLive.selector, alice, address(arb))
+        );
         adapter.clearAttestation(alice, address(arb));
     }
 
     /// @notice Clearing a (user, token) with nothing cached reverts NothingToClear.
     function test_clearAttestation_revertsNothingToClear() public {
-        vm.expectRevert(AttestedValueCache.NothingToClear.selector);
+        vm.expectRevert(IAttestedBalanceAdapter.NothingToClear.selector);
         adapter.clearAttestation(alice, address(arb));
     }
 
@@ -902,7 +964,9 @@ contract MerklRewardsAttestedBalanceAdapterTest is BalanceAdapterTestBase {
         // Make OP dead (fully claimed) but leave ARB live → the first live token trips the gate.
         distributor.setClaimed(alice, address(op), uint208(50 ether), uint48(block.timestamp), bytes32(0));
 
-        vm.expectRevert(abi.encodeWithSelector(AttestedValueCache.AttestationStillLive.selector, alice, address(arb)));
+        vm.expectRevert(
+            abi.encodeWithSelector(IAttestedBalanceAdapter.AttestationStillLive.selector, alice, address(arb))
+        );
         adapter.clearAccount(alice);
 
         // Nothing removed — the set is intact.
@@ -918,7 +982,7 @@ contract MerklRewardsAttestedBalanceAdapterTest is BalanceAdapterTestBase {
         distributor.setRoot(keccak256("rotated root"));
 
         vm.expectEmit(true, false, false, false, address(adapter));
-        emit AttestedValueCache.AccountCleared(alice);
+        emit IAttestedBalanceAdapter.AccountCleared(alice);
         adapter.clearAccount(alice);
 
         assertEq(adapter.assetsOf(alice).length, 0);
@@ -938,7 +1002,7 @@ contract MerklRewardsAttestedBalanceAdapterTest is BalanceAdapterTestBase {
 
     /// @notice Bulk-clearing a never-cached account reverts NothingToClear.
     function test_clearAccount_revertsNothingToClear() public {
-        vm.expectRevert(AttestedValueCache.NothingToClear.selector);
+        vm.expectRevert(IAttestedBalanceAdapter.NothingToClear.selector);
         adapter.clearAccount(alice);
     }
 
@@ -1590,7 +1654,7 @@ contract MerklRewardsAttestedBalanceAdapterTest is BalanceAdapterTestBase {
         address oneTooMany = address(uint160(0xBEEF0001));
         bytes32 leaf = _leaf(alice, oneTooMany, 1 ether);
         distributor.setRoot(leaf);
-        vm.expectRevert(abi.encodeWithSelector(AttestedValueCache.TooManyAttestations.selector, alice, max));
+        vm.expectRevert(abi.encodeWithSelector(IAttestedBalanceAdapter.TooManyAttestations.selector, alice, max));
         _submitOne(alice, oneTooMany, 1 ether, new bytes32[](0));
     }
 
@@ -1634,7 +1698,7 @@ contract MerklRewardsAttestedBalanceAdapterTest is BalanceAdapterTestBase {
             proof: p1,
             campaigns: new MerklRewardsAttestedBalanceAdapter.CampaignShare[](0)
         });
-        vm.expectRevert(abi.encodeWithSelector(AttestedValueCache.TooManyAttestations.selector, alice, max));
+        vm.expectRevert(abi.encodeWithSelector(IAttestedBalanceAdapter.TooManyAttestations.selector, alice, max));
         adapter.submitProofs(alice, allocs);
 
         (uint256 after_,,) = adapter.attestations(alice, existing);
@@ -1792,7 +1856,7 @@ contract MerklRewardsAttestedBalanceAdapterTest is BalanceAdapterTestBase {
 
     function test_previewPositions_uninitializedRoot_reverts() public {
         distributor.setRoot(bytes32(0));
-        vm.expectRevert(AttestedValueCache.UninitializedEpoch.selector);
+        vm.expectRevert(IAttestedBalanceAdapter.UninitializedEpoch.selector);
         adapter.previewPositions(alice, _previewAllocSingle(address(arb), 100 ether));
     }
 
@@ -1896,7 +1960,7 @@ contract MerklRewardsAttestedBalanceAdapterTest is BalanceAdapterTestBase {
         // payload never pays the merkle cost. A live root is set so the epoch check (which the base performs first,
         // since it owns epoch handling) passes and the cap is demonstrably what rejects.
         distributor.setRoot(_leaf(alice, address(arb), 1 ether));
-        vm.expectRevert(abi.encodeWithSelector(AttestedValueCache.TooManyAttestations.selector, alice, n));
+        vm.expectRevert(abi.encodeWithSelector(IAttestedBalanceAdapter.TooManyAttestations.selector, alice, n));
         adapter.previewPositions(alice, abi.encode(allocs));
     }
 
@@ -1911,7 +1975,7 @@ contract MerklRewardsAttestedBalanceAdapterTest is BalanceAdapterTestBase {
             campaigns: new MerklRewardsAttestedBalanceAdapter.CampaignShare[](0)
         });
         allocs[1] = allocs[0];
-        vm.expectRevert(abi.encodeWithSelector(AttestedValueCache.DuplicateAsset.selector, address(arb)));
+        vm.expectRevert(abi.encodeWithSelector(IAttestedBalanceAdapter.DuplicateAsset.selector, address(arb)));
         adapter.previewPositions(alice, abi.encode(allocs));
     }
 

@@ -46,7 +46,10 @@ duplicate-asset guard, the `IBalanceAdapter` reads, and `_row`.
 
 ## Invariant (what makes it safe)
 
-- **Permissionless, submit-on-behalf-of.** The submit mutator takes an explicit `account`; anyone can call it (one
+- **Role-gated submit, on-behalf-of.** The submit mutator takes an explicit `account` and requires
+  **`SUBMITTER_ROLE`** (granted/revoked by `DEFAULT_ADMIN_ROLE`), enforced by the base at `_upsertAttestation` so a
+  member cannot omit it. The **clears stay permissionless and stale-gated** — role-gating removal was audit finding
+  L-02. The role does not protect the amount (the proof does); it protects cache admission and label integrity. (one
   agent feeds many accounts). No roles, no `AccessControl`, no `delegatecall` assistant.
 - **Proof-verified.** A write lands only if its proof validates against the protocol's live root → a faulty/malicious
   feeder can only cache an account's **real proof-bound VALUE**: **under-report, never over-report** on the number.

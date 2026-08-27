@@ -32,7 +32,8 @@ contract MerklRewardsAttestedBalanceAdapterForkTest is BalanceAdapterTestBase {
         fork = createSelectForkWithCadence(getAlchemyUrl("eth-mainnet"), FORK_BLOCK);
         balances = _deployBalancesForAdapter(MAINNET_DAI); // any registered asset; ARB isn't on Mainnet's NAV
         // Permissionless: no admin/assistant roles.
-        adapter = new MerklRewardsAttestedBalanceAdapter(MERKL_DISTRIBUTOR, address(balances));
+        adapter = new MerklRewardsAttestedBalanceAdapter(MERKL_DISTRIBUTOR, address(balances), address(this));
+        adapter.grantRole(adapter.SUBMITTER_ROLE(), address(this));
     }
 
     // ============================================
@@ -156,7 +157,8 @@ contract MerklRewardsAttestedBalanceAdapterRealProofForkTest is BalanceAdapterTe
         // Register the reward token so getAdapterPositions can resolve its asset metadata and emit a leg.
         balances = _deployBalancesForAdapter(fixtureToken);
         // Permissionless: no admin/assistant roles.
-        adapter = new MerklRewardsAttestedBalanceAdapter(MERKL_DISTRIBUTOR, address(balances));
+        adapter = new MerklRewardsAttestedBalanceAdapter(MERKL_DISTRIBUTOR, address(balances), address(this));
+        adapter.grantRole(adapter.SUBMITTER_ROLE(), address(this));
     }
 
     function _alloc() internal view returns (MerklRewardsAttestedBalanceAdapter.Allocation[] memory allocs) {

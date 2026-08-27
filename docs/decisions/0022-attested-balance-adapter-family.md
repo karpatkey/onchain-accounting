@@ -1,5 +1,23 @@
 # 0022 — Attested balance-adapter family (proof-verified, agent-fed cache)
 
+> **Amendment (2026-08-28) — SUBMITS ARE ROLE-GATED.** The family now carries **`SUBMITTER_ROLE`** on
+> `IAttestedBalanceAdapter` (OZ `AccessControl`, implemented in `AttestedValueCache`), enforced at
+> `_upsertAttestation` — the single admission point — so no member can ship an ungated write path by omission.
+> Everything below describing submits as *permissionless* is superseded on that point only; the trust argument is
+> unchanged, because the role does **not** protect the reported amount. The per-write proof already did that, and
+> always will. What the role protects is the space the proof never covered: **which elements occupy the capped
+> per-account cache**, and **how a proven total is labelled** (member-supplied sub-position metadata). Those were
+> the two open griefs recorded against the permissionless design, and gating the write closes both.
+>
+> **The clears are deliberately NOT gated** and remain permissionless + stale-gated. Role-gating removal is what
+> audit finding L-02 flagged on an earlier draft: a compromised role-holder could delete valid LIVE allocations, a
+> targeted under-report caused by the mechanism meant to prevent one. The stale gate (an entry may only be cleared
+> once it already contributes 0) makes clearing safe for any caller, so it needs no role — and keeping it open means
+> a wedged cache can be repaired by anybody, not only by the keyholder.
+>
+> **The cost, stated plainly:** a privileged key to protect and rotate, and a liveness chokepoint — if the keeper's
+> role is revoked or its key lost, nothing refreshes the cache and NAV under-counts until a new holder is granted.
+
 Status: accepted
 
 > Peer ADRs: the **assisted** family — [ADR 0015](0015-assisted-balance-adapter-family.md) + [ADR 0018](0018-assistant-fed-assisted-balance-adapters.md) — and the meta family ([ADR 0010](0010-meta-balance-adapters.md)). Immutability-exception context: [ADR 0005](0005-aave-safety-module-hardcoded-immutable.md). The first (and currently only) member is the Merkl rewards adapter — protocol-specific rationale in [ADR 0007](0007-merkl-trust-minimized-cache.md).

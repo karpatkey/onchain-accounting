@@ -275,7 +275,7 @@ contract ProtocolNameConsistencyTest is Test {
             "ERC20Default"
         );
         assertEq(
-            new MerklRewardsAttestedBalanceAdapter(stub, address(nav)).protocolName(),
+            new MerklRewardsAttestedBalanceAdapter(stub, address(nav), address(this)).protocolName(),
             ProtocolNames.MERKL,
             "MerklRewards"
         );

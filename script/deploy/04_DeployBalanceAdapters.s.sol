@@ -822,13 +822,18 @@ contract DeployBalanceAdapters is BaseDeployScript {
     }
 
     /// @notice Deploys the Merkl rewards adapter (attested family, ADR 0022). Constructor takes
-    ///         (distributor, navCalculator) — permissionless, proof-verified; NO assistant contract. The Merkl
-    ///         Distributor is the same address on every supported EVM chain (0x3Ef3D8bA…), read from config.
+    ///         (distributor, navCalculator, admin). Proof-verified; NO assistant contract. The Merkl Distributor is
+    ///         the same address on every supported EVM chain (0x3Ef3D8bA…), read from config.
+    /// @dev The admin is the **security council**, matching where `07_TransferAdminToSecurityCouncil` puts
+    ///      `DEFAULT_ADMIN_ROLE` on the NAVCalculator — so the same body that governs NAV also governs who may feed
+    ///      this adapter. It holds `DEFAULT_ADMIN_ROLE` only; `SUBMITTER_ROLE` is granted to the keeper EOA
+    ///      post-deploy, deliberately NOT here, so the deployer EOA never holds a live submit right.
     function _deployMerklRewards(string memory adapterName, address navCalculator) internal returns (address) {
         address distributor = vm.parseAddress(
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "distributor")
         );
-        MerklRewardsAttestedBalanceAdapter adapter = new MerklRewardsAttestedBalanceAdapter(distributor, navCalculator);
+        MerklRewardsAttestedBalanceAdapter adapter =
+            new MerklRewardsAttestedBalanceAdapter(distributor, navCalculator, chainConfig.securityCouncil);
         return address(adapter);
     }
 

@@ -17,7 +17,7 @@ contract ProbeMember is AttestedValueCache {
     bytes32 public epoch = keccak256("E1");
     mapping(address => mapping(address => uint256)) public memberState;
 
-    constructor(address nav_) AttestedValueCache(nav_) {}
+    constructor(address nav_, address admin_) AttestedValueCache(nav_, admin_) {}
 
     function setEpoch(bytes32 e) external {
         epoch = e;
@@ -100,7 +100,7 @@ contract ProbeMember is AttestedValueCache {
 ///      pre-refactor monolith the buffer size and the legs were derived from ONE expression and could not
 ///      disagree; the extraction split them into two independent hooks, so they can.
 contract OverEmittingMember is ProbeMember {
-    constructor(address nav_) ProbeMember(nav_) {}
+    constructor(address nav_, address admin_) ProbeMember(nav_, admin_) {}
 
     function _assetLegs(address, address, INAVCalculator.Asset memory meta, uint256 liveValue, uint256, bytes memory)
         internal
@@ -119,7 +119,7 @@ contract OverEmittingMember is ProbeMember {
 contract SelectiveOverEmitter is ProbeMember {
     address public greedy;
 
-    constructor(address nav_, address greedy_) ProbeMember(nav_) {
+    constructor(address nav_, address admin_, address greedy_) ProbeMember(nav_, admin_) {
         greedy = greedy_;
     }
 
@@ -143,7 +143,7 @@ contract SelectiveOverEmitter is ProbeMember {
 contract PreviewOverEmitter is OverEmittingMember {
     address public asset;
 
-    constructor(address nav_, address asset_) OverEmittingMember(nav_) {
+    constructor(address nav_, address admin_, address asset_) OverEmittingMember(nav_, admin_) {
         asset = asset_;
     }
 
@@ -164,7 +164,7 @@ contract PreviewOverEmitter is OverEmittingMember {
 
 /// @notice Returns arrays of mismatched length from the preview payload hook.
 contract RaggedPreviewMember is ProbeMember {
-    constructor(address nav_) ProbeMember(nav_) {}
+    constructor(address nav_, address admin_) ProbeMember(nav_, admin_) {}
 
     function _verifyPreviewPayload(bytes32, address, bytes calldata)
         internal
@@ -187,7 +187,10 @@ contract AttestedValueCacheTest is BalanceAdapterTestBase {
 
     function setUp() public override {
         super.setUp();
-        probe = new ProbeMember(address(balances));
+        probe = new ProbeMember(address(balances), admin);
+        bytes32 submitterRole = probe.SUBMITTER_ROLE();
+        vm.prank(admin);
+        probe.grantRole(submitterRole, address(this));
         tok = new Mock_ERC20("TOK", 18);
         balances.addSupportedAssetForTest(address(tok));
     }
@@ -291,7 +294,10 @@ contract AttestedValueCacheTest is BalanceAdapterTestBase {
     function test_overEmittingAsset_doesNotStarveAWellBehavedNeighbour() public {
         Mock_ERC20 honest = new Mock_ERC20("HONEST", 18);
         balances.addSupportedAssetForTest(address(honest));
-        SelectiveOverEmitter m = new SelectiveOverEmitter(address(balances), address(tok));
+        SelectiveOverEmitter m = new SelectiveOverEmitter(address(balances), admin, address(tok));
+        bytes32 submitterRole = m.SUBMITTER_ROLE();
+        vm.prank(admin);
+        m.grantRole(submitterRole, address(this));
         m.feed(alice, address(tok), 100 ether); // greedy, enumerated FIRST
         m.feed(alice, address(honest), 777 ether);
 
@@ -318,7 +324,7 @@ contract AttestedValueCacheTest is BalanceAdapterTestBase {
     ///         suite green, i.e. it was asserted by nothing.
     ///         THE DISCRIMINATING MUTATION: drop the `count + legs.length > tmp.length` revert and this passes.
     function test_previewUnderDeclaringMember_failsLoudRatherThanTruncating() public {
-        PreviewOverEmitter over = new PreviewOverEmitter(address(balances), address(tok));
+        PreviewOverEmitter over = new PreviewOverEmitter(address(balances), admin, address(tok));
         vm.expectRevert(InvalidArguments.selector);
         over.previewPositions(alice, abi.encode(uint256(1)));
     }
@@ -327,7 +333,7 @@ contract AttestedValueCacheTest is BalanceAdapterTestBase {
     /// @dev    Also asserted by nothing until now (Vigilo mutation-verified: deleting the guard left 98/98 green).
     ///         THE DISCRIMINATING MUTATION: drop the length check and this reverts with a bare Panic instead.
     function test_previewRaggedArrays_revertAttributably() public {
-        RaggedPreviewMember ragged = new RaggedPreviewMember(address(balances));
+        RaggedPreviewMember ragged = new RaggedPreviewMember(address(balances), admin);
         vm.expectRevert(InvalidArguments.selector);
         ragged.previewPositions(alice, abi.encode(uint256(1)));
     }
@@ -345,7 +351,10 @@ contract AttestedValueCacheTest is BalanceAdapterTestBase {
     ///         THE DISCRIMINATING MUTATION: delete the `if (count == tmp.length) break;` bound in `_collectLegs`
     ///         and this test reverts with Panic 0x32 instead of returning.
     function test_memberOverEmittingLegs_losesOnlyTheSurplus_notTheWholeRead() public {
-        OverEmittingMember over = new OverEmittingMember(address(balances));
+        OverEmittingMember over = new OverEmittingMember(address(balances), admin);
+        bytes32 submitterRole = over.SUBMITTER_ROLE();
+        vm.prank(admin);
+        over.grantRole(submitterRole, address(this));
         over.feed(alice, address(tok), 100 ether);
 
         INAVCalculator.PositionBalance[] memory positions = over.getAdapterPositions(alice, address(0));

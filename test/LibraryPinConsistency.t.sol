@@ -58,6 +58,7 @@ contract LibraryPinConsistencyTest is Test {
     string internal constant EXPECTED_COMPILER = "0.8.34+commit.80d5c536";
     string internal constant EXPECTED_EVM_VERSION = "cancun";
     uint256 internal constant EXPECTED_OPTIMIZER_RUNS = 200;
+    string internal constant EXPECTED_BYTECODE_HASH = "none";
 
     modifier onlyPinnedProfile() {
         bytes32 profile = keccak256(bytes(vm.envOr("FOUNDRY_PROFILE", string("default"))));
@@ -183,6 +184,15 @@ contract LibraryPinConsistencyTest is Test {
             vm.parseJsonUint(json, ".metadata.settings.optimizer.runs"),
             EXPECTED_OPTIMIZER_RUNS,
             string.concat(label, ": artifact was built with different optimizer runs")
+        );
+        // `bytecode_hash` is pin-affecting and foundry.toml says so explicitly: the default ("ipfs")
+        // appends a metadata hash of the whole import graph to the creation code, which moves the
+        // CREATE2 address. An artifact matching on every field above but built under a different
+        // metadata mode has different creation bytecode and would have passed this attestation.
+        assertEq(
+            vm.parseJsonString(json, ".metadata.settings.metadata.bytecodeHash"),
+            EXPECTED_BYTECODE_HASH,
+            string.concat(label, ": artifact was built with a different bytecode_hash mode")
         );
     }
 

@@ -185,7 +185,8 @@ jobs:
       # It is NOT strictly stronger, and an earlier revision of this comment said it was. Source
       # hashes attest the artifact at a PATH; `vm.getCode` resolves by bare NAME over an `out/` that
       # observably accumulates other branches' artifacts, and nothing binds the two reads to the same
-      # file — hence the explicit binding in `_assertArtifactBuiltFromTree`. A foreign artifact that
+      # file — hence the explicit binding in `_verifiedCode`, which is the helper that actually compares
+      # the two (`_assertArtifactBuiltFromTree` checks source and settings freshness only). A foreign artifact that
       # is ADDED rather than modified does not fail a freshness check at all.
       #
       # MEASURED before removing the clean build, because the whole change rests on it: `forge clean

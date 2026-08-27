@@ -14,6 +14,9 @@ import {IPositionDescribable} from "src/balances/IPositionDescribable.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol";
 import {Mock_ERC20} from "test/mocks/tokens.sol";
+// The NAV-version probe mocks are shared verbatim with the meta-adapter guard suite, so the two families are
+// pinned against exactly the same set of hostile NAVCalculator shapes.
+import {OldNav, NewNav, SilentFallbackNav, ShortReturnNav} from "test/balances/MetaAdapterNavVersionGuard.t.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
@@ -213,6 +216,45 @@ contract MerklRewardsAttestedBalanceAdapterTest is BalanceAdapterTestBase {
     function test_constructor_setsImmutableState() public view {
         assertEq(adapter.DISTRIBUTOR(), address(distributor));
         assertEq(address(adapter.NAV_CALCULATOR()), address(balances));
+    }
+
+    // ---- NAV-version probe -------------------------------------------------
+    //
+    // Both read paths resolve reward-token metadata through the O(1) `getRegisteredAsset(address)`, which is NEWER
+    // than this repo's older whole-registry `getRegisteredAssets()` getter. Pinned against a NAVCalculator that
+    // cannot serve it, the missing selector reverts INSIDE the adapter's own frame with a tiny `consumed`, so
+    // `GasStipendLib.exhausted` reads false, `PriceFeedLib._getAdapterPositions` fails OPEN, and the adapter
+    // reports ZERO legs forever — silently, on every account, with CI green. `MetaBalanceAdapter` already refuses
+    // to deploy against such a NAV for exactly this reason; these four tests hold this adapter to the same bar.
+
+    /// @dev A NAV serving only the OLD array getter — a proxy on an implementation predating `getRegisteredAsset`.
+    function test_constructor_revertsAgainstNavPredatingGetRegisteredAsset() public {
+        address old = address(new OldNav());
+        vm.expectRevert(abi.encodeWithSelector(MerklRewardsAttestedBalanceAdapter.NAVCalculatorTooOld.selector, old));
+        new MerklRewardsAttestedBalanceAdapter(address(distributor), old);
+    }
+
+    /// @dev Success with EMPTY returndata. Checking only the staticcall's success flag would accept this and pin it.
+    function test_constructor_revertsAgainstSilentFallbackNav() public {
+        address silent = address(new SilentFallbackNav());
+        vm.expectRevert(abi.encodeWithSelector(MerklRewardsAttestedBalanceAdapter.NAVCalculatorTooOld.selector, silent));
+        new MerklRewardsAttestedBalanceAdapter(address(distributor), silent);
+    }
+
+    /// @dev Success with 96 bytes — above a naive 64-byte floor but short of a real `(Asset, bool)` answer. This is
+    ///      what makes the specific 192-byte floor load-bearing rather than merely commented.
+    function test_constructor_revertsAgainstShortReturndata() public {
+        address short = address(new ShortReturnNav());
+        vm.expectRevert(abi.encodeWithSelector(MerklRewardsAttestedBalanceAdapter.NAVCalculatorTooOld.selector, short));
+        new MerklRewardsAttestedBalanceAdapter(address(distributor), short);
+    }
+
+    /// @dev The other direction — the guard must NOT fire on a capable NAV. Without this, deleting the probe body
+    ///      and reverting unconditionally would pass the three tests above.
+    function test_constructor_succeedsAgainstCapableNav() public {
+        MerklRewardsAttestedBalanceAdapter a =
+            new MerklRewardsAttestedBalanceAdapter(address(distributor), address(new NewNav()));
+        assertEq(a.DISTRIBUTOR(), address(distributor), "capable NAV is accepted, not rejected");
     }
 
     // ============================================
@@ -530,11 +572,13 @@ contract MerklRewardsAttestedBalanceAdapterTest is BalanceAdapterTestBase {
         adapter.submitProofs(alice, allocs);
     }
 
-    /// @notice Under UPSERT, a new submit with a lower cumulative than the cached one REVERTS `AmountRegression`
-    ///         (the prior entry is no longer cleared first). A legitimately lower value only arises after a root
-    ///         rotation, which makes the cached entry stale (reads 0) and clearable — so the keeper clears, then
-    ///         resubmits. This test proves both halves.
-    function test_submitProofs_lowerAmountAcrossSubmitsRevertsThenClearable() public {
+    /// @notice After a root rotation, a lower cumulative proven against the NEW live root lands directly — no
+    ///         `clearAllocation` first. The monotonicity guard only binds while the cached entry is still live.
+    /// @dev    This test previously asserted the opposite (`vm.expectRevert(AmountRegression)` followed by a manual
+    ///         clear). That behaviour was the wedge described below in
+    ///         {test_submitProofs_staleEntryAcceptsLowerAmountAndDoesNotBlockSiblings}: the guard compared against a
+    ///         cached value belonging to a root that was no longer live, i.e. an entry already reading 0.
+    function test_submitProofs_lowerAmountAfterRotationLandsDirectly() public {
         bytes32 leaf1 = _leaf(alice, address(arb), 100 ether);
         distributor.setRoot(leaf1);
         _submitOne(alice, address(arb), 100 ether, new bytes32[](0));
@@ -543,15 +587,70 @@ contract MerklRewardsAttestedBalanceAdapterTest is BalanceAdapterTestBase {
         bytes32 leaf2 = _leaf(alice, address(arb), 50 ether);
         distributor.setRoot(leaf2);
 
-        // Direct resubmit is rejected — 50 < cached 100.
-        vm.expectRevert(MerklRewardsAttestedBalanceAdapter.AmountRegression.selector);
-        _submitOne(alice, address(arb), 50 ether, new bytes32[](0));
-
-        // The cached entry is stale (cached root != live root) → reads 0 → clearable; then the lower value lands.
-        adapter.clearAllocation(alice, address(arb));
+        // The cached entry is stale (cached root != live root), so it cannot veto the newly attested figure.
         _submitOne(alice, address(arb), 50 ether, new bytes32[](0));
         (uint256 amt,,) = adapter.allocations(alice, address(arb));
         assertEq(amt, 50 ether);
+    }
+
+    /// @notice A STALE cached entry must not veto a lower, proof-verified figure under the new live root — and must
+    ///         not take the account's other tokens down with it.
+    /// @dev    RED BEFORE THE FIX. `_submitProof` compared `cumulativeAmount` against the cached value without first
+    ///         checking that the cached entry was still live, so this reverted `AmountRegression`. Because `_upsert`
+    ///         is atomic over the whole list, the OP refresh in the same call rolled back too — and since both cached
+    ///         roots were by then stale, the account's ENTIRE Merkl contribution read 0 until a human hand-ran
+    ///         `clearAllocation`. Every subsequent keeper cycle hit the same revert, so it did not self-heal.
+    ///
+    ///         THE DISCRIMINATING MUTATION: drop the `a.root == root &&` conjunct at the guard and this fails again
+    ///         with `AmountRegression`. Deleting the guard entirely instead fails
+    ///         {test_submitProofs_liveEntryStillRejectsLowerAmount}, so the pair pins both directions.
+    function test_submitProofs_staleEntryAcceptsLowerAmountAndDoesNotBlockSiblings() public {
+        // Root R1: ARB = 100, OP = 50 — both live.
+        _seedTwoTokens(alice, 100 ether, 50 ether);
+
+        // R2: ARB's cumulative is LOWER (revoked / clawed-back campaign); OP is unchanged.
+        bytes32[2] memory leaves;
+        leaves[0] = _leaf(alice, address(arb), 40 ether);
+        leaves[1] = _leaf(alice, address(op), 50 ether);
+        (bytes32 r2, bytes32[] memory p0) = _buildTree2(leaves, 0);
+        (, bytes32[] memory p1) = _buildTree2(leaves, 1);
+        distributor.setRoot(r2);
+
+        address[] memory tokens = new address[](2);
+        uint256[] memory amounts = new uint256[](2);
+        bytes32[][] memory proofs = new bytes32[][](2);
+        tokens[0] = address(arb);
+        amounts[0] = 40 ether;
+        proofs[0] = p0;
+        tokens[1] = address(op);
+        amounts[1] = 50 ether;
+        proofs[1] = p1;
+
+        _submitMany(alice, tokens, amounts, proofs);
+
+        (uint256 arbCached,,) = adapter.allocations(alice, address(arb));
+        assertEq(arbCached, 40 ether, "stale entry refreshed DOWN to the newly attested figure");
+        (uint256 opAmt,) = adapter.getAdapterBalanceForAsset(alice, address(op));
+        assertEq(opAmt, 50 ether, "the sibling token in the same atomic call was refreshed, not rolled back");
+    }
+
+    /// @notice The monotonicity guard STILL fires where it is meaningful: a lower cumulative offered while the cached
+    ///         entry is LIVE (proven under the root that is still current). Only the cross-rotation case was relaxed.
+    /// @dev    The fixture is a tree carrying two leaves for the same `(user, token)` — 100 and 50. Both verify
+    ///         against the same root, so it is the regression check, not the proof check, that must reject the
+    ///         second. That is precisely the malformed/hostile-tree shape the guard exists for.
+    function test_submitProofs_liveEntryStillRejectsLowerAmount() public {
+        bytes32[2] memory leaves;
+        leaves[0] = _leaf(alice, address(arb), 100 ether);
+        leaves[1] = _leaf(alice, address(arb), 50 ether);
+        (bytes32 r, bytes32[] memory pHigh) = _buildTree2(leaves, 0);
+        (, bytes32[] memory pLow) = _buildTree2(leaves, 1);
+        distributor.setRoot(r);
+
+        _submitOne(alice, address(arb), 100 ether, pHigh);
+
+        vm.expectRevert(MerklRewardsAttestedBalanceAdapter.AmountRegression.selector);
+        _submitOne(alice, address(arb), 50 ether, pLow);
     }
 
     // ============================================
@@ -1020,6 +1119,45 @@ contract MerklRewardsAttestedBalanceAdapterTest is BalanceAdapterTestBase {
         INAVCalculator.PositionBalance[] memory positions = adapter.getAdapterPositions(alice, address(0));
         assertEq(positions.length, 1, "leg returns after the revoke");
         assertEq(positions[0].amount, 100 ether, "and at the attested amount, not a stale or doubled one");
+    }
+
+    /// @notice CHARACTERIZATION — the reactivation the test above asserts is CONDITIONAL on nobody clearing the
+    ///         entry during the window where it is stale. `clearAllocation` is permissionless and gates only on the
+    ///         INSTANTANEOUS `_unclaimed == 0`, which is true for the whole R3 window, so the entry is clearable
+    ///         there. When the root returns to R2 the allocation is simply gone.
+    /// @dev    Not a hypothetical, and not primarily an attack: `docs/operations/merkl-proof-submitter.md` mandates
+    ///         an AUTOMATIC GC pass on the submit cadence, so the operator's own keeper performs this clear as
+    ///         routine steady-state behaviour. Merkl's `getMerkleRoot()` oscillates by design — it returns
+    ///         `lastTree.merkleRoot` during a dispute window — so R2 -> R3 -> R2 is a normal lifecycle, not a fault.
+    ///
+    ///         Direction is UNDER-report, and it self-heals: the cache is empty, so the keeper's `changed()`
+    ///         predicate fires on the next cycle and re-submits the still-valid R2 proof. The deliberate choice NOT
+    ///         to fix this in the contract is recorded on {clearAllocation} — retaining stale entries until a
+    ///         replacement root is final would make them un-clearable, which walks straight into the
+    ///         `TooManyTokens` slot-exhaustion outage that the stale-gated GC exists to prevent. That trade swaps a
+    ///         self-healing under-report for a wedged one.
+    function test_rootOscillation_clearDuringStaleWindowIsNotUndoneByRevoke() public {
+        _seedAllocation(alice, address(arb), 100 ether);
+        bytes32 r2 = _leaf(alice, address(arb), 100 ether);
+
+        // Merkl rotates to R3 -> the cached entry is stale and reads 0.
+        distributor.setRoot(keccak256("R3"));
+
+        // Stale => clearable, by ANYONE. This is what the runbook's automatic GC pass does every cycle.
+        vm.prank(stranger);
+        adapter.clearAllocation(alice, address(arb));
+
+        // R3 is disputed and revoked: the live root returns to R2. There is nothing left to reactivate.
+        distributor.setRoot(r2);
+        (uint256 amt,) = adapter.getAdapterBalanceForAsset(alice, address(arb));
+        assertEq(amt, 0, "cleared during the stale window => the revoke does NOT bring the allocation back");
+        assertEq(adapter.getAdapterPositions(alice, address(0)).length, 0, "and no leg is emitted");
+
+        // Repairable in one permissionless upsert — the R2 proof is still valid, which is why this is an
+        // under-report that self-heals rather than a suppression.
+        _submitOne(alice, address(arb), 100 ether, new bytes32[](0));
+        (amt,) = adapter.getAdapterBalanceForAsset(alice, address(arb));
+        assertEq(amt, 100 ether, "one resubmit restores it");
     }
 
     /// @notice Pins the FULL canonical position identity, not just `protocolId`.

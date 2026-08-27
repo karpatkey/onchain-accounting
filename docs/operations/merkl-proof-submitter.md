@@ -182,6 +182,46 @@ is real but **this keeper will never perform it**. Including `campaignsOf(accoun
 close it, at the cost of letting a griefer force a resubmit — and therefore keeper gas — at will. **Awaiting the
 user — this trades attribution correctness against a running operational bill.**
 
+**Gap 3 — per-token gas isolation does not cover the read's own prologue, so a large cache can make the whole
+account's `getAccountNav` revert.** `buildPositionsSelf` resolves `getRegisteredAsset` for every cached token, sums
+the leg `cap`, and allocates a `cap`-sized scratch buffer **before** the first `try … {gas: stipend}` frame. That
+prologue is therefore outside every per-token guard, and `getAdapterPositions` does not wrap the
+`this.buildPositionsSelf` self-call. If the stipend `PriceFeedLib` forwarded is consumed there, the out-of-gas
+bubbles, `GasStipendLib.exhausted` classifies it, and `AdapterGasExhausted` takes down the account's **entire** NAV
+read — every adapter's legs, not just Merkl's. Because a third party can inflate a real token's leg count using the
+account's public proofs (campaign ids are not proof-bound), the gas floor of a tracked account's NAV read is
+partly third-party-controlled. Two smaller variants sit alongside it: the per-token stipend divides by tokens
+remaining rather than **legs** remaining, so an 8-campaign token early in the list can be starved and dropped while
+most of the budget goes unspent; and when `gasleft()` is at or below `reserve` every stipend is 0, so all tokens
+drop and the read returns an empty array successfully. *(That last one changes nothing a caller can observe — a
+revert here makes `PriceFeedLib` fail open to the same empty result — so it is a budget-sizing and monitoring
+concern, not a correctness one.)*
+
+Direction is availability and under-report, never over-report, and none of it is reachable while the adapter ships
+`enabled: false`. **Before enablement, size the read budget with a measurement rather than an argument:** an
+end-to-end test that registers the adapter on a production-scale asset registry, seeds a worst-case cache
+(`MAX_TOKENS_PER_USER × MAX_CAMPAIGNS_PER_TOKEN` = 512 legs, griefer-shaped), and calls `getAccountNav` through the
+real `PriceFeedLib` path — pinning the budget at which it succeeds and asserting that below it the failure surfaces
+as `AdapterGasExhausted` rather than a silent zero. No test in the tree currently drives this adapter through
+`PriceFeedLib` at all; the isolation tests all call `getAdapterPositions` directly, so the classification behaviour
+is inferred from the sibling family rather than measured here.
+
+## Before flipping `enabled: true` — tripwires that fire on the config change, not on deploy
+
+Both are inert while the adapter is disabled and both turn a "one-line config change" PR red:
+
+- **Integration-harness dispatch.** `IntegrationFromConfigBase._deployBalanceAdapter` has no `MerklRewards` branch
+  and `test/integration/undispatched-adapters.json` has no declaration for it, so `UndispatchedAdapterGuard` will
+  revert `UndispatchedAdapterNotDeclared` the moment the key is enabled — taking the chain's integration fork tests
+  and `refresh-integration-snapshot.sh` step 2 with it. Add the dispatch branch (preferred) or the declaration.
+- **Position-labels probe coverage.** `PositionLabelsProbeCoverage._expectedNonMetaAdapters()` does not list
+  `MerklRewards`, and its config-time arm skips entries with `enabled: false` — so the guard fires at neither
+  config time nor deploy time today. Decide what `positionLabels("")` must answer for this adapter and pin it.
+- **NAV implementation vintage.** The adapter's constructor now probes for `getRegisteredAsset(address)` and
+  refuses to deploy against a NAVCalculator that cannot serve it, so a stale implementation fails loudly at deploy
+  rather than silently reporting zero legs forever. The probe binds the deploy, **not** the lifetime: a later UUPS
+  downgrade of the NAV implementation would not be caught.
+
 ## Operator-side bookkeeping
 
 Periodically (weekly is fine):

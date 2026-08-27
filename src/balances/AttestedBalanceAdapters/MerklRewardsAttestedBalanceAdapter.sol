@@ -272,6 +272,11 @@ contract MerklRewardsAttestedBalanceAdapter is IAttestedBalanceAdapter, IPositio
     /// @notice `clearAllocation` was called on a `(user, token)` with nothing cached.
     error NothingToClear();
 
+    /// @notice The NAVCalculator supplied at construction cannot serve `getRegisteredAsset(address)` — it predates
+    ///         that getter, or is not a NAVCalculator at all. Refused at deploy because the failure it would
+    ///         otherwise cause is SILENT (see the constructor).
+    error NAVCalculatorTooOld(address navCalculator);
+
     /// @notice The same reward token appears more than once in a {previewPositions} input. The cache
     ///         path upserts (last-writer-wins, no double count), but a stateless preview would emit a leg set per
     ///         occurrence — a double-count / over-report, the one direction this family forbids — so it is rejected
@@ -283,15 +288,47 @@ contract MerklRewardsAttestedBalanceAdapter is IAttestedBalanceAdapter, IPositio
     //
 
     /// @param distributor_     The Merkl Distributor address. Must be a contract.
-    /// @param navCalculator_   The NAVCalculator address. Must be a contract.
+    /// @param navCalculator_   The NAVCalculator address. Must be a contract that can serve
+    ///                         `getRegisteredAsset(address)` (see the probe below).
     /// @dev No admin/assistant roles: the adapter is permissionless (see contract NatSpec). Everything is immutable
     ///      except the proof-verified allocation cache.
+    ///
+    ///      **NAV-VERSION PROBE — why an adapter refuses to be born against a NAVCalculator that is too old.** Both
+    ///      read paths ({buildPositionsSelf}, {previewPositionsSelf}) resolve reward-token metadata through the O(1)
+    ///      `getRegisteredAsset(address)`, which is NEWER than the whole-registry `getRegisteredAssets()` most
+    ///      sibling adapters use via `RegisteredAssetLib`. That makes this adapter, alone among the standalone-
+    ///      deployed ones, sensitive to the NAV implementation's vintage. Pinned to a NAVCalculator that cannot
+    ///      serve the selector, the missing-function revert lands in this adapter's OWN frame with a tiny
+    ///      `consumed`, so `GasStipendLib.exhausted` reads false, `PriceFeedLib._getAdapterPositions` fails OPEN,
+    ///      and the adapter reports ZERO legs — for every account, forever, with no error and a green CI. Since the
+    ///      adapter is immutable, the only remedy would be a redeploy nobody has been told is needed.
+    ///
+    ///      Deliberately mirrors `MetaBalanceAdapter`'s constructor guard rather than sharing it: extracting a
+    ///      common helper would recompile `MetaBalanceAdapter` and move the bytecode of every deployed meta-adapter,
+    ///      which is not worth paying for one duplicated staticcall. Keep the two in sync.
+    ///
+    ///      **Success alone proves nothing, which is why the length is checked too.** A contract with a bare
+    ///      `fallback() external {}` answers any selector with success and EMPTY returndata; a guard testing only
+    ///      `ok` would accept it. The 192-byte floor is the minimum a real `(Asset, bool)` reply can occupy —
+    ///      `Asset` is `(address, string, uint8)`, so it is dynamic: 2 head words (offset-to-Asset, bool) + 3 words
+    ///      for Asset's head + 1 word for the empty string's length = 6 words. The `address(0)` argument elicits
+    ///      exactly that minimum, since `found == false` zeroes the struct.
+    ///
+    ///      **What it does NOT catch**, stated so the guarantee is not over-read: a UUPS *downgrade* of the NAV
+    ///      implementation AFTER this adapter is constructed leaves the guard long since passed (the adapter is
+    ///      immutable and cannot re-probe on the hot path); and pointing at a NAVCalculator implementation instead
+    ///      of its proxy passes, because the implementation serves the selector honestly and merely has empty
+    ///      storage. It binds the deploy, not the lifetime.
     constructor(address distributor_, address navCalculator_) {
         if (distributor_ == address(0) || navCalculator_ == address(0)) {
             revert InvalidArguments();
         }
         AddressCheckLib.requireContract(distributor_, "Distributor");
         AddressCheckLib.requireContract(navCalculator_, "NAVCalculator");
+
+        (bool ok, bytes memory ret) =
+            navCalculator_.staticcall(abi.encodeWithSelector(INAVCalculator.getRegisteredAsset.selector, address(0)));
+        if (!ok || ret.length < 192) revert NAVCalculatorTooOld(navCalculator_);
 
         DISTRIBUTOR = distributor_;
         NAV_CALCULATOR = INAVCalculator(navCalculator_);
@@ -349,6 +386,22 @@ contract MerklRewardsAttestedBalanceAdapter is IAttestedBalanceAdapter, IPositio
     ///         valuable token cannot be admitted until a root rotation makes them stale. Direction is
     ///         under-report (never over-report), and the remedy is an open design call — see "Known gaps" in
     ///         `docs/operations/merkl-proof-submitter.md`.
+    ///
+    ///         **"Stale" is not permanent, and this gate is instantaneous — so a clear here can outlive the
+    ///         staleness that licensed it.** Merkl's `getMerkleRoot()` oscillates by design (it returns
+    ///         `lastTree.merkleRoot` during a dispute window), so a root can go R2 -> R3 -> R2. While R3 is live an
+    ///         R2 entry reads 0 and is therefore clearable by anyone — including the operator's own GC pass, which
+    ///         the runbook mandates on every submit cycle. If R3 is then revoked, the entry that
+    ///         {test_rootOscillation_revokeBackReactivatesAtAttestedFigure} shows reactivating is simply gone.
+    ///         Pinned by `test_rootOscillation_clearDuringStaleWindowIsNotUndoneByRevoke`.
+    ///
+    ///         **Deliberately not fixed by retaining stale entries until a replacement root is final.** That was
+    ///         proposed and declined: it would make stale entries un-clearable for the whole dispute window, which
+    ///         is exactly the un-evictable-slot condition behind the `TooManyTokens` outage this stale-gated GC
+    ///         exists to prevent (Gap 1 in the runbook). It would trade an under-report that SELF-HEALS — the cache
+    ///         is empty, so the keeper's `changed()` predicate fires and re-submits the still-valid proof next
+    ///         cycle — for one that wedges until a human intervenes. Direction is under-report either way; only one
+    ///         of them recovers on its own.
     /// @dev Garbage-collects tokens whose proof no longer validates or that the user has fully claimed — keeps storage
     ///      and the per-user enumeration list bounded. Not required for correctness (such entries already read as 0).
     function clearAllocation(address user, address token) external {
@@ -824,13 +877,25 @@ contract MerklRewardsAttestedBalanceAdapter is IAttestedBalanceAdapter, IPositio
         // more than the proven total, so NAV is never inflated. An empty breakdown ⇒ one untagged position.
         _checkProofAndCampaigns(root, user, token, cumulativeAmount, proof, campaigns);
 
-        // Defense in depth: Merkl's tree generator guarantees per-(user, token) cumulative amounts are monotonic
-        // (lifetime-cumulative, non-decreasing across roots). A regression suggests stale or wrong data; reject
-        // loudly. A legitimately lower value can only arise after a root rotation, which makes the cached entry stale
-        // (reads 0) and thus clearable via `clearAllocation` before a fresh submit. Cache-only: the preview has no
-        // prior cached value to regress against.
+        // Defense in depth: within ONE root, Merkl's tree fixes a single cumulative per (user, token), so a lower
+        // proof-verified figure offered against the root the cached entry was proven under is evidence of a
+        // malformed or hostile tree — reject it loudly. Cache-only: the preview has no prior cached value to regress
+        // against.
+        //
+        // **GATED ON LIVENESS (`a.root == root`), and that conjunct is load-bearing.** Ungated, this compared the
+        // incoming figure against a cached value belonging to a root that is no longer live — an entry `_unclaimed`
+        // already reads as 0 and that contributes nothing to NAV. Merkl amounts DO legitimately decrease across a
+        // rotation (a disputed or clawed-back campaign, an API correction), so the keeper's next cycle would carry a
+        // lower cumulative and revert. `_upsert` is ATOMIC over the whole list, so that one entry rolled back the
+        // refresh of every OTHER token in the same call; their cached roots were by then stale too, so all of them
+        // read 0 and the account's ENTIRE Merkl contribution silently left NAV. It did not self-heal — every
+        // subsequent cycle hit the same revert — and recovery needed a human to hand-run `clearAllocation` first.
+        // Gating on liveness keeps the guard exactly where it carries meaning and removes it where it cannot: a
+        // stale entry has no authority to veto a figure the LIVE root attests. This cannot over-report — the
+        // incoming value was proof-verified against that live root by `_checkProofAndCampaigns` above, on both the
+        // gated and ungated paths alike.
         CachedAllocation storage a = allocations[user][token];
-        if (cumulativeAmount < a.cumulativeAmount) revert AmountRegression();
+        if (a.root == root && cumulativeAmount < a.cumulativeAmount) revert AmountRegression();
 
         // Re-read for the storage-write loop below (the shape + sum were validated by `_checkProofAndCampaigns`).
         uint256 nCampaigns = campaigns.length;
@@ -905,16 +970,34 @@ contract MerklRewardsAttestedBalanceAdapter is IAttestedBalanceAdapter, IPositio
     ///      on a plain revert, so this adapter's whole leg set drops out of NAV (an under-report, the safe direction,
     ///      but silent).
     ///
-    ///      **Do NOT generalise that to "a `Claim` reshape fails loudly" — the dangerous reshapes decode CLEANLY and
-    ///      over-report.** Only a reshape that makes the returndata undecodable reverts. A field *reorder* to
-    ///      `(uint48 timestamp, uint208 amount, bytes32 root)` puts the small timestamp where `amount` is read: it
-    ///      passes `uint208` range validation, decodes without error, and yields `unclaimed = cached − timestamp`.
-    ///      Measured on a mock: a fully-claimed account (`claimed == cumulative == 1000e18`) reported `0` before and
-    ///      `999999999999999998766` after — a silent OVER-report, the one direction this family forbids. A field
-    ///      *append* is likewise ignored by the decoder rather than reverting. This adds no new trust assumption
-    ///      (Angle already controls the root and can inflate any leaf — ADR 0007 accepts that explicitly), which is
-    ///      why it is documented rather than guarded; but anyone reasoning about hardening this read should start
-    ///      from "cleanly-decoding reshapes over-report", not from "a reshape reverts".
+    ///      **A `Claim` reshape can go either way, and WHICH way is decided by the reward token's DECIMALS.** An
+    ///      earlier version of this note claimed a field *reorder* to `(uint48 timestamp, uint208 amount, bytes32
+    ///      root)` always decodes cleanly and over-reports, citing a measurement of a fully-claimed 1000e18 account
+    ///      reporting `999999999999999998766`. **That measurement was wrong** and the claim with it: the reorder
+    ///      does not only move the timestamp into the `amount` slot, it also moves the real `amount` into the slot
+    ///      read as `uint48`, and the ABI decoder range-validates it. Re-measured against a mock that returns the
+    ///      reordered words raw (so the mock itself truncates nothing):
+    ///
+    ///        - `claimed = 1000e18`  → `1000e18 > 2**48-1` → **decode REVERTS** (no over-report; fails open instead)
+    ///        - `claimed = 2**48`    → **decode REVERTS**
+    ///        - `claimed = 2**48-1`  → decodes → over-reports `281474976709421`
+    ///        - `claimed = 2**40`    → decodes → over-reports `1099511626542`
+    ///        - field *append*       → decodes, extra word ignored, value UNCHANGED and correct
+    ///
+    ///      So the reorder over-report is gated on `real_claimed < 2**48` (281,474,976,710,655 raw units). For an
+    ///      18-decimal reward token that is 0.00028 tokens — effectively unreachable, so the read REVERTS, which on
+    ///      the NAV path fails open to an under-report. For a **6-decimal** token it is ~281.47M units, i.e. every
+    ///      realistic balance — and Merkl does run USDC/USDT campaigns, so that exposure is real rather than
+    ///      theoretical. The field-*append* half of the old note was correct and is kept.
+    ///
+    ///      This adds no new trust assumption (Angle already controls the root and can inflate any leaf — ADR 0007
+    ///      accepts that explicitly), which is why it stays documented rather than guarded. But anyone revisiting
+    ///      that decision should start from the accurate predicate above, not from "reshapes always over-report"
+    ///      (they do not) nor from "a reshape reverts" (it does not always). Note also that a cheap guard DOES
+    ///      exist, so "there is no cheap guard" is not a reason to decline one: binding the currently-discarded
+    ///      middle field as `(uint208 claimedAmt, uint48 claimedAt,)` and rejecting `claimedAt > block.timestamp`
+    ///      has no false positives on the honest layout (Merkl writes `uint48(block.timestamp)` on claim) and,
+    ///      under a reorder, fires exactly when the over-report would exceed `block.timestamp`.
     ///
     ///      It is deliberately NOT made fail-open-to-0, because `clearAllocation`/`clearAccount` gate on this value:
     ///      a `_unclaimed` that returned 0 on a failed read would let anyone clear another account's LIVE entries

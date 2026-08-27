@@ -17,7 +17,7 @@ import "src/errors.sol";
 ///      CREATE2). On a filled V3 relay the destination SpokePool transfers the tokens to this adapter and then
 ///      calls `handleV3AcrossMessage` directly on it. The adapter authenticates the SpokePool, cross-checks the
 ///      delivered token+amount against the invoice, verifies the source against `trustedRemoteAdapter`, then
-///      funds the escrow, which records the delivery into per-invoice custody (hold-then-claim, ADR 0024). Across exposes no source-sender on the
+///      funds the escrow, which records the delivery into per-invoice custody (hold-then-claim, ADR 0027). Across exposes no source-sender on the
 ///      fill, so source authentication binds the payload's `sourceChainId` to the configured trusted remote.
 /// @author KPK
 contract AcrossBridgeAdapter is BridgeAdapter, IAcrossBridgeAdapter {
@@ -154,7 +154,7 @@ contract AcrossBridgeAdapter is BridgeAdapter, IAcrossBridgeAdapter {
         address recipient = address(this);
 
         // The invoice tracks the exact bridged amount end to end: outputAmount == inputAmount so the full
-        // amount arrives intact for the destination custody record (hold-then-claim, ADR 0024).
+        // amount arrives intact for the destination custody record (hold-then-claim, ADR 0027).
         uint256 inputAmount = data.amount;
         uint256 outputAmount = data.amount;
 

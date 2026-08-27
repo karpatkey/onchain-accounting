@@ -1,4 +1,4 @@
-# 0024 — Bridge destination: hold-then-claim (escrow custody + explicit `claim`)
+# 0027 — Bridge destination: hold-then-claim (escrow custody + explicit `claim`)
 
 **Status:** accepted — implemented in PR #289 (supersedes the destination-release half of [ADR 0012](0012-bridge-provable-release-rearchitecture.md)). The parameters in "Open questions" below were **decided as part of this PR** (see the annotations there); only the cross-chain source-side interlock (item 4) remains a deliberate follow-up.
 

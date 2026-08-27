@@ -579,7 +579,7 @@
     ]
   },
   "RWIV": {
-    "address": "0xCafEaa466736ac01e0AC9CA72644BeF348694731",
+    "address": "0xcAFeAA466736ac01e0AC9Ca72644beF348694731",
     "$kindComment": "Nexus Mutual RWI Vault - ERC-4626 share, USDC underlying; priced USDC/USD x convertToAssets (per feed config).",
     "accrualKind": "Appreciating",
     "labels": [
@@ -779,7 +779,7 @@
     "$comment": "wNXM (wrapped NXM) priced at NXM book value via RAMM (1:1 unwrappable by a Nexus member). Held by the KPK DAO Safe."
   },
   "cbBTC": {
-    "address": "0xcbB7C0000aB88B473b1F5aFd9ef808440eED33Bf",
+    "address": "0xcbB7C0000aB88B473b1f5aFd9ef808440eed33Bf",
     "accrualKind": "None",
     "labels": [
       "Coinbase",
@@ -815,6 +815,33 @@
       {
         "type": "Custom",
         "feed": "wARS",
+        "heartbeat": 90000
+      }
+    ]
+  },
+  "XAUt": {
+    "address": "0x68749665FF8D2d112Fa859AA293F07A622782F38",
+    "accrualKind": "None",
+    "$kindComment": "Tether Gold, 6-dp, 1 XAUt = 1 troy oz gold. Not $1-pegged, so NO pegToleranceBps -> pegKind derives Floating. accrualKind None: the token does not rebase and its redemption ratio does not grow; its USD value moves only with the gold price.",
+    "labels": [
+      "Tether",
+      "Tether Gold"
+    ],
+    "$comment": "PRICED AS SPOT GOLD, NOT AS XAUt. The primary is the Chainlink XAU/USD feed 0x214eD9Da..., the SAME source Aave v3 Core uses for this reserve (AaveOracle.getSourceOfAsset(XAUt) == 0x214eD9Da..., verified on-chain), so the carry trade's collateral leg is valued consistently with the protocol it sits in.\n\nWHAT THE MONITOR DOES AND DOES NOT CATCH -- read this before trusting the divergence flag. PAXG/USD is an INDEPENDENT GOLD SOURCE, so divergence catches a bad or frozen XAU/USD print, and a PAXG depeg. It does NOT catch a XAUt depeg from gold: neither feed observes XAUt, so if Tether's redemption breaks, both feeds keep agreeing on the price of gold and nothing is flagged. That residual risk is unmonitored and accepted for iteration #1. There is no XAUt-specific PUSH feed on mainnet to close it -- Chainlink's Feed Registry reverts on getFeed(XAUt, USD), Pyth's XAUT/USD is pull-based (its mainnet contract was measured ~85 days stale), RedStone deploys per request, and DIA is not AggregatorV3-compatible. See issue #316.",
+    "divergenceToleranceBps": 100,
+    "priceFeeds": [
+      {
+        "type": "Chainlink",
+        "address": "0x214eD9Da11D2fbe465a6fc601a91E62EbEc1a0D6",
+        "$comment": "Chainlink XAU/USD, 8-dp. Declared heartbeat 86400, threshold 0.3%, marketHours Precious_Metals. REGISTERED AT 90000 (+1h), matching the 16 other declared-86400 feeds in this tree, and it is not cosmetic: gold markets close at the weekend, so the feed then publishes on heartbeat alone. Measured over 11 days the largest real gap was 86,436s -- PAST the declared 86,400 -- on three separate weekend intervals. Registering 86400 would mark XAUt stale every weekend.",
+        "heartbeat": 90000
+      }
+    ],
+    "monitorFeeds": [
+      {
+        "type": "Chainlink",
+        "address": "0x9944D86CEB9160aF5C5feB251FD671923323f8C3",
+        "$comment": "Chainlink PAXG/USD -- the PROXY. The address circulated in the thread, 0x6795D4A47c9c8F4117b409D966259CdCf6A9Eb6E, is the underlying AGGREGATOR (it reverts on aggregator(); the proxy returns it). Chainlink rotates aggregators behind a proxy, so pointing at the aggregator would freeze this feed silently at the next migration. Declared heartbeat 86400 -> registered 90000, same +1h margin as the primary.\nNOTE THE MARKET-HOURS ASYMMETRY: the primary is Precious_Metals (frozen at weekends) while PAXG is Crypto (24/7), so the two legitimately drift when gold spot is closed. Measured over the overlapping window, the largest divergence was 59.2 bps -- on a Saturday -- and 0 of 57 aligned samples exceeded 100 bps. divergenceToleranceBps 100 therefore sits ~1.7x above the observed maximum.",
         "heartbeat": 90000
       }
     ]

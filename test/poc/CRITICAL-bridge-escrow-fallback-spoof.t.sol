@@ -17,14 +17,14 @@ import "src/constants.sol";
 import {NotAuthorized, InvoiceNotFound} from "src/errors.sol";
 
 /// @notice REGRESSION (ADR 0012, C1 — UNAUTHENTICATED drain vector closed in this PR): the escrow no longer
-///         has a `fallback()` dispatcher, and `recordDelivery` (the destination custody writer, ADR 0024) is
+///         has a `fallback()` dispatcher, and `recordDelivery` (the destination custody writer, ADR 0027) is
 ///         callable only by an authorized adapter (never reachable through a public fallback). The original
 ///         exploit fabricated a valid messagePayload (the checksum is keccak256 of public data — no signing
 ///         key) and pushed it through escrow.fallback -> adapter.lzReceive -> escrow.releaseByInvoiceId (the
 ///         old pass-through) to drain the escrow with no real bridge delivery. This test asserts that exact
 ///         unauthenticated attack now FAILS: the raw call does not drain the escrow, balances are unchanged,
 ///         and the forged invoice is NOT marked completed.
-/// @dev    SCOPE: this closes the *permissionless* drain against the destination path. Under ADR 0024,
+/// @dev    SCOPE: this closes the *permissionless* drain against the destination path. Under ADR 0027,
 ///         `recordDelivery` only WRITES custody (it does not pay the account) and pulls the funds from the
 ///         calling adapter in the same call, and `claim` — the only payout — moves exactly the recorded amount
 ///         to the recorded account and is MANAGER-gated. So neither a forged fallback call nor stray funds sent
@@ -140,7 +140,7 @@ contract Poc_BridgeEscrowFallbackSpoof is Test {
         assertFalse(destEscrow.isInvoiceCompleted(invoiceHash), "forged invoice must NOT be marked completed");
     }
 
-    /// @notice ADR 0024: a forged `recordDelivery` from a NON-adapter reverts NotAuthorized, writes no custody
+    /// @notice ADR 0027: a forged `recordDelivery` from a NON-adapter reverts NotAuthorized, writes no custody
     ///         record, and leaves nothing claimable. The custody writer is adapter-gated; a fabricated payload
     ///         (public checksum, no key) does not help an attacker who is not an authorized adapter.
     function test_forgedRecordDeliveryFromNonAdapterIsUnreachable() public {
@@ -181,7 +181,7 @@ contract Poc_BridgeEscrowFallbackSpoof is Test {
         destEscrow.claim(invoiceHash);
     }
 
-    /// @notice ADR 0024 (I1/I6): stray funds transferred DIRECTLY to the escrow (bypassing recordDelivery) are
+    /// @notice ADR 0027 (I1/I6): stray funds transferred DIRECTLY to the escrow (bypassing recordDelivery) are
     ///         never counted as held custody and can never be claimed — there is no custody record keying them.
     function test_strayFundsTransferredToEscrowAreUnclaimable() public {
         uint256 stray = 250_000e6;

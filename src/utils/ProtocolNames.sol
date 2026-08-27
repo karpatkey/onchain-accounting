@@ -99,7 +99,7 @@ library ProtocolNames {
 
     /// @dev `ProtocolIds.NEXUS_MUTUAL`.
     string internal constant NEXUS_MUTUAL = "Nexus Mutual";
-    /// @dev `ProtocolIds.BRIDGE_ESCROW` — the destination bridge-escrow held-custody adapter (ADR 0024).
+    /// @dev `ProtocolIds.BRIDGE_ESCROW` — the destination bridge-escrow held-custody adapter (ADR 0027).
     string internal constant BRIDGE_ESCROW = "Bridge Escrow";
 
     // ─────────────────────────────────────────────────────────────────────────────────────────────────────────────

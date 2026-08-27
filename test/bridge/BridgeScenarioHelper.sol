@@ -21,7 +21,7 @@ import "test/bridge/mocks/MockBridgeProtocols.sol";
 ///    - We simulate by calling mock.fillDeposit() / mock.deliverMessage() so the callback comes from the mock.
 /// 4. Manager calls adapter.completeBridge(messagePayload, protocolData) (or the genuine auto-callback fires).
 ///    - Adapter hands the escrow the delivered tokens via escrow.recordDelivery(messagePayload), which HOLDS
-///      them in destination custody (ADR 0024). A subsequent MANAGER escrow.claim(invoiceHash) pays the account.
+///      them in destination custody (ADR 0027). A subsequent MANAGER escrow.claim(invoiceHash) pays the account.
 ///
 /// ## Realism rules
 /// - messagePayload MUST come from the source run (e.g. from the deposit created in step 1), not hand-built.

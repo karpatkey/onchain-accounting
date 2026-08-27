@@ -3,5 +3,13 @@
     "enabled": false,
     "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every PancakeSwap V2 pair (one Supply leg per token). The active pair set lives on NAVCalculator (addMetaInstances/removeMetaInstances, from instances below). Identity derived on-chain: positionId = pair address; name = sym0/sym1 LP. Supersedes the per-pair PancakeSwapV2_* adapters. Disabled for the same reason as below: COW has no Chainlink feed on BSC, so the COW leg would be silently dropped. Enable once COW is priced.",
     "constructor": {}
+  },
+  "MorphoMarketsMeta": {
+    "enabled": true,
+    "preProvisioned": true,
+    "$comment": "Pre-provisioned, DEPLOYED BUT NOT REGISTERED on the NAV. Enabled here so 04 deploys it at its CREATE2 address; deliberately ABSENT from nav-config/meta-balance-adapters/56.json, which is the file 06_Configure reads, so no registration happens until the funds actually hold Morpho positions on this chain. Registering it now would add an adapter that reports nothing to every NAV read. To activate: add it to nav-config with its instance set and run 06.",
+    "constructor": {
+      "morpho": "0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb"
+    }
   }
 }

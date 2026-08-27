@@ -20,7 +20,7 @@ import "src/constants.sol";
 
 /// @title BridgeEscrow
 /// @notice Tracks assets in transit across chains and maintains the invoice ledger.
-/// @dev See ADR 0012 and ADR 0024. There is no `fallback()` dispatcher — protocol callbacks are received and
+/// @dev See ADR 0012 and ADR 0027. There is no `fallback()` dispatcher — protocol callbacks are received and
 ///      authenticated by the adapters directly, and `recordDelivery` is callable only by an authorized adapter
 ///      (never a public fallback, never MANAGER directly), which closes the *unauthenticated* forged-payload
 ///      drain (C1's permissionless vector). Under the hold-then-claim model, `recordDelivery` writes a
@@ -99,7 +99,7 @@ contract BridgeEscrow is
     /// @dev Invariant: equals the sum of _inTransitBalances[account][asset] across all accounts
     mapping(address => uint256) private _inTransitBalancesAllAccounts;
 
-    /// @notice Destination-side custody records (ADR 0024), keyed by invoiceHash. Written by `recordDelivery`,
+    /// @notice Destination-side custody records (ADR 0027), keyed by invoiceHash. Written by `recordDelivery`,
     ///         drained by `claim`. The delivered funds are HELD here until claimed.
     mapping(bytes32 => DestinationCustody) public destinationCustody;
 
@@ -228,7 +228,7 @@ contract BridgeEscrow is
     }
 
     /// @inheritdoc IBridgeEscrow
-    /// @dev Destination-side delivery recorder (ADR 0024, supersedes the ADR-0012 pass-through here). Callable
+    /// @dev Destination-side delivery recorder (ADR 0027, supersedes the ADR-0012 pass-through here). Callable
     ///      ONLY by an authorized adapter — there is no `fallback()` dispatcher and MANAGER cannot call this
     ///      directly, so an attacker can never reach the custody path (C1). The adapter, having authenticated
     ///      the genuine inbound protocol message and source sender, hands over the funds in the SAME call: the
@@ -389,7 +389,7 @@ contract BridgeEscrow is
         // Refund only from the surplus over destination held custody: this single contract is both the source
         // escrow (this refund path) and the destination escrow (recordDelivery/claim), so their funds commingle
         // in one balance. Dipping into _heldClaimable here would drain funds backing a recorded delivery and
-        // break I1, stranding that delivery's claim (ADR 0024).
+        // break I1, stranding that delivery's claim (ADR 0027).
         uint256 balance = _isNativeToken(asset) ? address(this).balance : IERC20(asset).balanceOf(address(this));
         uint256 held = _heldClaimableFor(asset);
         uint256 available = balance > held ? balance - held : 0;
@@ -706,7 +706,7 @@ contract BridgeEscrow is
     ///      step. Revoke an account only once it has no in-flight bridge transfers.
     function revokeAccount(address safe) external onlyRole(DEFAULT_ADMIN_ROLE) {
         if (_activeInvoices[safe].length > 0) revert AccountHasActiveInvoices(safe);
-        // Also block revoke while the account still has outstanding destination held custody (ADR 0024): the
+        // Also block revoke while the account still has outstanding destination held custody (ADR 0027): the
         // funds remain claimable to this recorded account, so revoke it only after settlement, mirroring the
         // held-custody guards on register/unregisterAsset. (Held custody is an outstanding obligation like an
         // active invoice, hence the shared error.)
@@ -746,7 +746,7 @@ contract BridgeEscrow is
     /// @param asset The asset address to withdraw (address(0)/ERC-7528 for native)
     /// @param amount The amount to withdraw
     /// @param to The recipient — MUST be an authorized account (no arbitrary-address sweep)
-    /// @dev Recipient-restricted (ADR 0012, H10). **Capped to the surplus over destination custody (ADR 0024):**
+    /// @dev Recipient-restricted (ADR 0012, H10). **Capped to the surplus over destination custody (ADR 0027):**
     ///      the withdrawable amount is `balanceOf(asset) - _heldClaimableFor(asset)`, so a break-glass withdrawal
     ///      can only ever move stray/surplus funds — never the funds backing outstanding `destinationCustody`
     ///      records. This keeps I1 (`balanceOf >= _heldClaimable`) true through the emergency path, so held records
@@ -807,7 +807,7 @@ contract BridgeEscrow is
         return token == address(0) || token == NATIVE_ADDRESS_ERC7528;
     }
 
-    /// @notice Total destination custody currently held for `asset` (ADR 0024).
+    /// @notice Total destination custody currently held for `asset` (ADR 0027).
     /// @dev Sums both native representations (`address(0)` + the ERC-7528 sentinel) so native custody registered
     ///      under either key is covered. Used to keep source-side refunds (`cancelInvoice`) and break-glass
     ///      withdrawals (`emergencyWithdraw`) from dipping into funds that back recorded deliveries (invariant I1).
@@ -1009,7 +1009,7 @@ contract BridgeEscrow is
     /// @notice Authorizes upgrades to new implementations (DEFAULT_ADMIN_ROLE / security council)
     function _authorizeUpgrade(address newImplementation) internal override onlyRole(DEFAULT_ADMIN_ROLE) {}
 
-    /// @dev Storage gap for future upgrades. Layout was rewritten clean pre-launch (ADR 0012); the ADR-0024
+    /// @dev Storage gap for future upgrades. Layout was rewritten clean pre-launch (ADR 0012); the ADR-0027
     ///      destination-custody maps (destinationCustody, _heldClaimable, _heldByAccount) consumed 3 slots, and the
     ///      ADR-0025 held-invoice enumeration (_heldInvoices, _heldInvoicesSet) consumed 2 more (47 -> 45).
     ///      Normal append-only discipline applies from here.

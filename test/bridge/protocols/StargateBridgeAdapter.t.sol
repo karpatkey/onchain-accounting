@@ -182,7 +182,7 @@ contract StargateBridgeAdapterTest is BridgeScenarioHelper {
 
     /// @notice Full round-trip: deposit on source -> read composed payload from pool -> genuine endpoint
     ///         delivers tokens + lzCompose on the destination adapter -> escrow HOLDS custody -> MANAGER claim
-    ///         pays the account (ADR 0024).
+    ///         pays the account (ADR 0027).
     function test_realistic_fullRoundTrip_lzComposeRelease() public {
         uint256 amount = 1000 * 10 ** usdc.decimals();
 
@@ -214,7 +214,7 @@ contract StargateBridgeAdapterTest is BridgeScenarioHelper {
 
         bytes32 invoiceHash = bytes32(uint256(uint192(InvoiceDataLib.decode(messagePayload).checksum24)));
         assertTrue(destEscrow.isInvoiceCompleted(invoiceHash), "invoice completed on record");
-        // ADR 0024: delivery records custody and HOLDS the funds; the account is paid only on MANAGER claim.
+        // ADR 0027: delivery records custody and HOLDS the funds; the account is paid only on MANAGER claim.
         assertEq(usdc.balanceOf(account), portfolioBefore, "account NOT paid on delivery");
         assertEq(usdc.balanceOf(address(destEscrow)), amount, "escrow holds the delivered amount");
         assertEq(destEscrow.getHeldBalanceForAsset(address(usdc), account), amount, "held for account");
@@ -291,7 +291,7 @@ contract StargateBridgeAdapterTest is BridgeScenarioHelper {
 
         bytes32 invoiceHash = bytes32(uint256(uint192(InvoiceDataLib.decode(messagePayload).checksum24)));
         assertTrue(destEscrow.isInvoiceCompleted(invoiceHash), "invoice completed on record");
-        // ADR 0024: the escrow HOLDS the (post-fee) delivered amount until MANAGER claim.
+        // ADR 0027: the escrow HOLDS the (post-fee) delivered amount until MANAGER claim.
         assertEq(usdc.balanceOf(account), portfolioBefore, "account NOT paid on delivery");
         assertEq(destEscrow.getHeldBalanceForAsset(address(usdc), account), net, "held for account == post-fee amount");
         assertEq(usdc.balanceOf(address(destAdapter)), 0, "adapter forwarded everything to escrow");
@@ -304,7 +304,7 @@ contract StargateBridgeAdapterTest is BridgeScenarioHelper {
 
     /// @notice Reward path (PR #90 Copilot): Stargate can quote a reward (`amountReceivedLD > amountLD`); the
     ///         adapter must NOT block it. The payload carries the larger credited amount and the destination
-    ///         records it into custody (ADR 0024); a MANAGER claim then pays the account gross + reward.
+    ///         records it into custody (ADR 0027); a MANAGER claim then pays the account gross + reward.
     function test_realistic_rewardOutput_releasesGrossPlusReward() public {
         uint256 amount = 1000 * 10 ** usdc.decimals();
         uint256 reward = 3 * 10 ** usdc.decimals();
@@ -344,7 +344,7 @@ contract StargateBridgeAdapterTest is BridgeScenarioHelper {
 
         bytes32 invoiceHash = bytes32(uint256(uint192(InvoiceDataLib.decode(messagePayload).checksum24)));
         assertTrue(destEscrow.isInvoiceCompleted(invoiceHash), "invoice completed on record");
-        // ADR 0024: the escrow HOLDS the credited (gross+reward) amount until MANAGER claim.
+        // ADR 0027: the escrow HOLDS the credited (gross+reward) amount until MANAGER claim.
         assertEq(usdc.balanceOf(account), portfolioBefore, "account NOT paid on delivery");
         assertEq(destEscrow.getHeldBalanceForAsset(address(usdc), account), credited, "held == gross + reward");
 
@@ -564,7 +564,7 @@ contract StargateBridgeAdapterTest is BridgeScenarioHelper {
         uint256 portfolioBefore = usdc.balanceOf(account);
         bytes32 invoiceHash = bytes32(uint256(uint192(invoiceData.checksum24)));
 
-        // Step 1 (ADR 0024): completeBridge records the delivery — escrow HOLDS, no payout yet.
+        // Step 1 (ADR 0027): completeBridge records the delivery — escrow HOLDS, no payout yet.
         vm.prank(manager);
         destAdapter.completeBridge(messagePayload, protocolData);
 
@@ -573,7 +573,7 @@ contract StargateBridgeAdapterTest is BridgeScenarioHelper {
         assertEq(destEscrow.getHeldBalanceForAsset(address(usdc), account), amount, "held for account");
         assertTrue(destEscrow.isInvoiceCompleted(invoiceHash), "invoice completed on record");
 
-        // Step 2 (ADR 0024): MANAGER claim pays the account.
+        // Step 2 (ADR 0027): MANAGER claim pays the account.
         vm.prank(manager);
         destEscrow.claim(invoiceHash);
         assertEq(usdc.balanceOf(account) - portfolioBefore, amount, "account received tokens on claim");

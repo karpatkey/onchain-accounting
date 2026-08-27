@@ -70,7 +70,7 @@ Reconcile the adapter to the fault-proof portals and ground every fix in fork te
 - **Deploy gate:** the fault-proof finalize cannot be fully fork-e2e'd (it needs a real proven + dispute-resolved +
   air-gapped withdrawal to the adapter), so the Superchain lane stays do-not-deploy until a real L2→L1 finalize is
   exercised end-to-end on the throwaway. Augments [ADR 0021](0021-bridge-adapter-provenance-and-deploy-hardening.md)
-  and [ADR 0024](0024-bridge-destination-hold-then-claim.md); does not supersede them.
+  and [ADR 0027](0027-bridge-destination-hold-then-claim.md); does not supersede them.
 - **Known residual (deferred to that e2e):** the already-finalized (front-run) branch binds the ETH *amount* via
   `withdrawalTx.value` and rejects a *failed* relay via `successfulMessages`, but does **not** bind the withdrawal's
   inner **recipient** (nor the ERC20 amount) to this adapter — those live inside the relayMessage→`finalizeBridge{ETH,ERC20}`

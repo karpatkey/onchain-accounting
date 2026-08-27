@@ -307,6 +307,20 @@ jobs:
           python3 -m unittest test_deployer_balances -v
           python3 -O -m unittest test_deployer_balances
 
+      - name: KEEP invariant (reset_deployment_records)
+        # Added for #303. `KEEP` named the three bridge keys the redeploy reset must never touch, and was
+        # referenced NOWHERE — one occurrence in the whole repo, its own assignment. Those keys survived only
+        # because they happen to be absent from CLEAR_TOP/CLEAR_SECTIONS, which is coincidence, not
+        # enforcement, while the name told reviewers the case was handled. Adding `bridgeAdapters` to
+        # CLEAR_SECTIONS while extending the reset would have wiped the bridge record with nothing objecting.
+        #
+        # -O as well as plain, for the same reason as the job above: the invariant raises rather than asserts
+        # so that optimised runs cannot strip it, and running both ways is what keeps that true.
+        working-directory: script/deploy/preflight
+        run: |
+          python3 -m unittest test_reset_deployment_records -v
+          python3 -O -m unittest test_reset_deployment_records
+
       - name: Published addresses match the deployment records
         # Added after DEPLOYED_ADDRESSES.md was found publishing 66 addresses that appear in NO deployment
         # record — contracts from a superseded generation. Stale entries still have code, so an integrator
@@ -339,6 +353,24 @@ jobs:
         # per-chain config happened to still pass. It exits 1 on any failed arm (verified), so this step
         # fails the build the way the unittest above does.
         run: python3 script/deploy/preflight/preflight_config.py --self-test
+
+      - name: Vendored dependencies have not drifted from upstream
+        # ADR 0024 vendors single upstream files verbatim at a pinned rev. That promise was previously
+        # enforced by the submodule gitlink (you could not edit the file in-tree) plus `check-foundry-lock.sh`.
+        # Vendoring removes both, and the tests cannot replace them: the bridge mocks import the SAME vendored
+        # file, so a struct edit drifts test and production in lockstep and stays green. This is that guard.
+        #
+        # THREE checks, deliberately asymmetric. Coverage (every file carrying the vendored marker must have
+        # a manifest row) and the manifest hash are offline and ALWAYS hard-fail. The upstream
+        # re-fetch soft-skips on a transport failure but hard-fails on a mismatch — so a network blip can never
+        # be what turns this into a guard that validates nothing, which this repo has already been bitten by.
+        # Runs the guard both ways, like the sibling steps above: `--self-test` pins the normaliser
+        # (including that an empty `/**/` block comment cannot hide code from it — the defect that made
+        # the first version of this guard pass an ABI-changing struct edit), then the plain run checks
+        # the committed tree.
+        run: |
+          python3 script/ci/check_vendored.py --self-test
+          python3 script/ci/check_vendored.py
 
   # Format check
   lockfile:

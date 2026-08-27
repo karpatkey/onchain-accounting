@@ -19,7 +19,7 @@ import "src/errors.sol";
 ///      source (`amb.messageSender()` == the trusted source Omnibridge mediator `trustedMediator[srcChainId]` — NOT
 ///      the sibling adapter, `amb.messageSourceChainId()` == the expected source chain), verifies that the
 ///      delivered token+amount match the invoice, then records the delivery into escrow custody
-///      (hold-then-claim, ADR 0024). There is no escrow fallback dispatcher.
+///      (hold-then-claim, ADR 0027). There is no escrow fallback dispatcher.
 /// @author KPK
 contract GnosisBridgeAdapter is BridgeAdapter, IGnosisBridgeAdapter {
     using SafeERC20 for IERC20;
@@ -260,7 +260,7 @@ contract GnosisBridgeAdapter is BridgeAdapter, IGnosisBridgeAdapter {
 
     /// @dev Shared inbound-delivery handler for both mediator callbacks. Authenticates the AMB-reported source,
     ///      verifies the delivered token+amount against the invoice, records provenance, then records the delivery
-    ///      into escrow custody (hold-then-claim, ADR 0024) WITHOUT reverting the mediator callback — the OmniBridge
+    ///      into escrow custody (hold-then-claim, ADR 0027) WITHOUT reverting the mediator callback — the OmniBridge
     ///      swallows a receiver revert, which would strand the delivered tokens with no record; recording first lets
     ///      the MANAGER fallback (`completeBridge`) record a delivery the callback failed to record later.
     function _handleInboundDelivery(address deliveredToken, uint256 value, bytes calldata data) internal {

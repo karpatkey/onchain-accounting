@@ -1,10 +1,10 @@
 # 0025 — Operator state must be queryable, not reconstructable (held-invoice enumeration + stored withdrawal tx)
 
-**Status:** accepted — implemented in PR #154. Augments [ADR 0024](0024-bridge-destination-hold-then-claim.md) (hold-then-claim) and [ADR 0021](0021-bridge-adapter-provenance-and-deploy-hardening.md) (Superchain provenance/deploy); supersedes neither.
+**Status:** accepted — implemented in PR #154. Augments [ADR 0027](0027-bridge-destination-hold-then-claim.md) (hold-then-claim) and [ADR 0021](0021-bridge-adapter-provenance-and-deploy-hardening.md) (Superchain provenance/deploy); supersedes neither.
 
 ## Context
 
-Under hold-then-claim (ADR 0024) the off-chain settlement operator must, every cycle, answer two questions on
+Under hold-then-claim (ADR 0027) the off-chain settlement operator must, every cycle, answer two questions on
 the destination side:
 
 1. **Which delivered invoices are still unclaimed for an account?** — to build the `claim` batch.

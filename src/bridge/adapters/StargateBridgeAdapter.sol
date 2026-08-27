@@ -29,7 +29,7 @@ import "src/errors.sol";
 ///      Endpoint call `lzCompose` on it. Inbound: `lzCompose` authenticates `msg.sender == endpoint`, the
 ///      composing OApp (`_from == stargatePool`), the source eid and the source sibling adapter (`composeFrom
 ///      == trustedRemoteAdapter[srcChainId]`), verifies the delivered token+amount against the invoice, then
-///      funds the escrow, which records the delivery into custody (hold-then-claim, ADR 0024). There is no V1 `swap`/bare `lzReceive` path.
+///      funds the escrow, which records the delivery into custody (hold-then-claim, ADR 0027). There is no V1 `swap`/bare `lzReceive` path.
 /// @author KPK
 contract StargateBridgeAdapter is BridgeAdapter, IStargateBridgeAdapter {
     using SafeERC20 for IERC20;
@@ -255,7 +255,7 @@ contract StargateBridgeAdapter is BridgeAdapter, IStargateBridgeAdapter {
     /// @dev Auto completion path. Called by the genuine LayerZero V2 Endpoint on the destination chain after
     ///      Stargate delivered the tokens to this adapter. Authenticates the endpoint, the composing Stargate
     ///      pool, the source eid and the source sibling adapter, verifies the delivered token+amount matches
-    ///      the invoice, then funds the escrow, which records the delivery into custody (hold-then-claim, ADR 0024).
+    ///      the invoice, then funds the escrow, which records the delivery into custody (hold-then-claim, ADR 0027).
     function lzCompose(address _from, bytes32, bytes calldata _message, address, bytes calldata)
         external
         payable

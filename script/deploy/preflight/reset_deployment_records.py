@@ -87,7 +87,29 @@ CLEAR_TOP = [
 # to CLEAR_TOP breaks gate 1.1 everywhere.
 CREATE_IF_ABSENT = {"AssetKindRegistry"}
 CLEAR_SECTIONS = ["balanceAdapters", "customPriceFeeds"]
+# Keys this module must NEVER touch. The bridge stack is out of redeploy scope, and `verify_step`
+# restores `BridgeEscrow*` from the archive if it ever is touched — but that is a different file, so
+# on its own this set would be a comment wearing the costume of a mechanism.
+#
+# THE ASSERTION BELOW IS WHAT MAKES IT A MECHANISM. Until it existed, `KEEP` appeared exactly once in
+# the repo: this assignment. Nothing read it. The three keys survived only because they are absent
+# from `CLEAR_TOP` and `CLEAR_SECTIONS` — coincidence, not enforcement — while a reviewer seeing
+# `bridgeAdapters` named here had every reason to believe the case was handled. Adding
+# `bridgeAdapters` to `CLEAR_SECTIONS`, a one-line change someone would plausibly make while
+# extending the reset, would have wiped it with nothing objecting.
 KEEP = {"BridgeEscrowImplementation", "BridgeEscrowProxy", "bridgeAdapters"}
+
+# `raise`, NOT `assert`. CI runs this tree under `python3 -O` (foundry.yml, the preflight job), which
+# strips assert statements entirely — a guard that vanishes under the very flag CI uses is the same
+# defect as no guard at all, one level down.
+_PROTECTED_BUT_MUTATED = KEEP & (set(CLEAR_TOP) | set(CLEAR_SECTIONS) | CREATE_IF_ABSENT)
+if _PROTECTED_BUT_MUTATED:
+    raise RuntimeError(
+        "reset_deployment_records: KEEP claims to protect keys this module also mutates: "
+        f"{sorted(_PROTECTED_BUT_MUTATED)}. Either remove them from CLEAR_TOP/CLEAR_SECTIONS/"
+        "CREATE_IF_ABSENT, or drop them from KEEP and stop implying they are protected. "
+        "The bridge stack is out of redeploy scope; see verify_step.step_record_cleared."
+    )
 
 
 def plan_for(chain_id: int) -> tuple[dict, list[str]]:

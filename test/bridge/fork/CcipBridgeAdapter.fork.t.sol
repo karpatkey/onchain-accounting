@@ -136,7 +136,7 @@ contract CcipBridgeAdapterForkTest is BridgeTestBase {
 
     /// @notice The genuine CCIP Router delivers `ccipReceive` to the adapter: it authenticates the router, the
     ///         source selector + sender and the delivered token, then records the delivery into escrow custody
-    ///         (ADR 0024). A subsequent MANAGER claim pays the account.
+    ///         (ADR 0027). A subsequent MANAGER claim pays the account.
     function testFork_ccip_ccipReceive_authenticatesRouterAndReleases() public {
         uint256 amount = TEST_AMOUNT_USDC;
 
@@ -168,7 +168,7 @@ contract CcipBridgeAdapterForkTest is BridgeTestBase {
         vm.prank(CCIP_ROUTER_MAINNET);
         destAdapter.ccipReceive(message);
 
-        // ADR 0024: delivery records custody and HOLDS; the account is paid only on MANAGER claim.
+        // ADR 0027: delivery records custody and HOLDS; the account is paid only on MANAGER claim.
         assertEq(IERC20(MAINNET_USDC).balanceOf(account), portfolioBefore, "account NOT paid on delivery");
         assertEq(IERC20(MAINNET_USDC).balanceOf(address(destAdapter)), 0, "adapter forwarded all tokens to escrow");
         assertEq(IERC20(MAINNET_USDC).balanceOf(address(destEscrow)), amount, "escrow holds the delivery");

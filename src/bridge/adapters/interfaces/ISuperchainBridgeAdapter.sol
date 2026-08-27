@@ -3,7 +3,7 @@ pragma solidity ^0.8;
 
 import {IBridgeAdapter} from "../../IBridgeAdapter.sol";
 import {IL1StandardBridge, IL2StandardBridge, IOptimismPortal} from "./ISuperchainInterfaces.sol";
-import {Types} from "@optimism/libraries/Types.sol";
+import {Types} from "src/bridge/adapters/lib/OptimismTypes.sol";
 
 /// @title ISuperchainBridgeAdapter Interface
 /// @notice Interface for Superchain (Optimism Canonical Bridge) Adapter

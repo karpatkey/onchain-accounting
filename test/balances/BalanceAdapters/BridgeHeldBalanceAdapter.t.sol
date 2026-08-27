@@ -55,7 +55,7 @@ contract MockHeldEscrow {
 }
 
 /// @title BridgeHeldBalanceAdapterTest
-/// @notice Unit tests for the destination hold-then-claim NAV adapter (ADR 0024).
+/// @notice Unit tests for the destination hold-then-claim NAV adapter (ADR 0027).
 contract BridgeHeldBalanceAdapterTest is Test {
     Mock_NAVCalculator internal nav;
     MockHeldEscrow internal escrow;

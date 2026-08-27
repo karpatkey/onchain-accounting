@@ -91,12 +91,12 @@ contract BridgeEscrowTest is BridgeEscrowTestBase {
         assertEq(bridgeEscrow.getInTransitBalanceForAsset(address(0), account), amount, "In-transit native balance");
     }
 
-    // ============ recordDelivery + claim (destination hold-then-claim, ADR 0024) ============
+    // ============ recordDelivery + claim (destination hold-then-claim, ADR 0027) ============
 
     function test_recordDelivery_holdsFundsThenClaimPaysAccount() public {
         (BridgeEscrow destEscrow, bytes memory messagePayload, MockBridgeAdapter destMock) =
             _setupDestinationAndValidPayload(address(usdc), 1000e6);
-        // Step 1 (ADR 0024): an authorized adapter records the delivery, handing the escrow the funds it holds.
+        // Step 1 (ADR 0027): an authorized adapter records the delivery, handing the escrow the funds it holds.
         // The escrow pulls exactly `amount` from the calling adapter (which approves it) and HOLDS it — the
         // account is NOT paid here.
         usdc.mint(address(destMock), 1000e6);
@@ -121,7 +121,7 @@ contract BridgeEscrowTest is BridgeEscrowTestBase {
         assertEq(heldAfterRecord.length, 1, "getHeldInvoices has the invoice after record");
         assertEq(heldAfterRecord[0], invoiceHash, "getHeldInvoices element == invoiceHash");
 
-        // Step 2 (ADR 0024): MANAGER claims — funds move to the recorded account, custody drains.
+        // Step 2 (ADR 0027): MANAGER claims — funds move to the recorded account, custody drains.
         vm.prank(manager);
         destEscrow.claim(invoiceHash);
         assertEq(usdc.balanceOf(account), accountBefore + 1000e6, "account credited on claim");

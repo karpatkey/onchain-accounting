@@ -140,7 +140,7 @@ contract AcrossBridgeAdapterForkTest is BridgeTestBase {
     }
 
     /// @notice The genuine SpokePool delivers tokens + calls handleV3AcrossMessage: the adapter authenticates the
-    ///         SpokePool + source, then records the delivery into escrow custody (ADR 0024). A subsequent MANAGER
+    ///         SpokePool + source, then records the delivery into escrow custody (ADR 0027). A subsequent MANAGER
     ///         claim pays the account.
     function testFork_across_handleV3AcrossMessage_authenticatesSpokePoolAndReleases() public {
         // Source chain is Optimism for this delivery; the destination is this mainnet fork.
@@ -163,7 +163,7 @@ contract AcrossBridgeAdapterForkTest is BridgeTestBase {
         vm.prank(SPOKE_POOL_MAINNET);
         destAdapter.handleV3AcrossMessage(MAINNET_USDC, amount, makeAddr("relayer"), messagePayload);
 
-        // ADR 0024: delivery records custody and HOLDS; the account is paid only on MANAGER claim.
+        // ADR 0027: delivery records custody and HOLDS; the account is paid only on MANAGER claim.
         assertEq(usdc.balanceOf(account), portfolioBefore, "account NOT paid on delivery");
         assertEq(usdc.balanceOf(address(destAdapter)), 0, "adapter forwarded all tokens to escrow");
         assertEq(usdc.balanceOf(address(destEscrow)), amount, "escrow holds the delivery");

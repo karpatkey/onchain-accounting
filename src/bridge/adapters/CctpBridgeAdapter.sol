@@ -18,7 +18,7 @@ import {InvalidArguments} from "src/errors.sol";
 ///      USDC mints directly to this adapter (mintRecipient == destinationCaller == address(this));
 ///      _completeBridge then leaves the minted USDC on this adapter, and the base BridgeAdapter
 ///      pulls it into the escrow and records the delivery into custody via _fundAndRelease ->
-///      recordDelivery AFTER _completeBridge returns (ADR 0024); a MANAGER claim later pays the account.
+///      recordDelivery AFTER _completeBridge returns (ADR 0027); a MANAGER claim later pays the account.
 /// @author KPK
 contract CctpBridgeAdapter is BridgeAdapter, ICctpBridgeAdapter {
     using SafeERC20 for IERC20;
@@ -192,7 +192,7 @@ contract CctpBridgeAdapter is BridgeAdapter, ICctpBridgeAdapter {
     ///      mints USDC to THIS adapter and leaves it here — it does NOT forward the USDC to the escrow.
     ///      Does NOT call recordDelivery either — the base BridgeAdapter.completeBridge invokes
     ///      _fundAndRelease immediately after this returns, and the escrow pulls the minted balance and
-    ///      records the delivery into custody (ADR 0024); a MANAGER claim later pays the account.
+    ///      records the delivery into custody (ADR 0027); a MANAGER claim later pays the account.
     function _completeBridge(bytes calldata messagePayload, bytes calldata protocolData) internal override {
         // Decode protocol data: the raw CCTP message and Circle's attestation over it.
         (bytes memory cctpMessage, bytes memory attestation) = abi.decode(protocolData, (bytes, bytes));
@@ -242,7 +242,7 @@ contract CctpBridgeAdapter is BridgeAdapter, ICctpBridgeAdapter {
         }
 
         // The adapter now holds the freshly-minted USDC. The base BridgeAdapter.completeBridge calls
-        // _fundAndRelease after we return (hold-then-claim, ADR 0024): the escrow pulls exactly
+        // _fundAndRelease after we return (hold-then-claim, ADR 0027): the escrow pulls exactly
         // `amount` from this adapter and records it into destination custody (held until a MANAGER claim).
         // We do NOT push/release here.
         emit CctpBridgeCompleted(data.invoiceId, data.invoiceId, sourceDomain);

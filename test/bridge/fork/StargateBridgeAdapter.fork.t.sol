@@ -134,7 +134,7 @@ contract StargateBridgeAdapterForkTest is BridgeTestBase {
 
     /// @notice The genuine LayerZero V2 Endpoint calls lzCompose on the adapter (with the real Stargate pool as
     ///         the composing OApp): the adapter authenticates endpoint + pool + source, then records the
-    ///         delivery into escrow custody (ADR 0024). A subsequent MANAGER claim pays the account.
+    ///         delivery into escrow custody (ADR 0027). A subsequent MANAGER claim pays the account.
     function testFork_stargate_lzCompose_authenticatesEndpointAndReleases() public {
         uint64 srcChainId = OPTIMISM_CHAIN_ID;
         uint256 amount = TEST_AMOUNT_USDC;
@@ -158,7 +158,7 @@ contract StargateBridgeAdapterForkTest is BridgeTestBase {
         vm.prank(LZ_ENDPOINT_MAINNET);
         destAdapter.lzCompose(STARGATE_POOL_USDC_MAINNET, bytes32(0), composeMessage, address(0), bytes(""));
 
-        // ADR 0024: delivery records custody and HOLDS; the account is paid only on MANAGER claim.
+        // ADR 0027: delivery records custody and HOLDS; the account is paid only on MANAGER claim.
         assertEq(usdc.balanceOf(account), portfolioBefore, "account NOT paid on delivery");
         assertEq(usdc.balanceOf(address(destAdapter)), 0, "adapter forwarded all tokens to escrow");
         assertEq(usdc.balanceOf(address(destEscrow)), amount, "escrow holds the delivery");

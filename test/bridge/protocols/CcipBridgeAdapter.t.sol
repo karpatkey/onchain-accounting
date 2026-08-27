@@ -244,7 +244,7 @@ contract CcipBridgeAdapterTest is BridgeScenarioHelper {
             data: messagePayload,
             destTokenAmounts: new Client.EVMTokenAmount[](0)
         });
-        // Step 1 (ADR 0024): completeBridge records the delivery — escrow HOLDS, no payout yet.
+        // Step 1 (ADR 0027): completeBridge records the delivery — escrow HOLDS, no payout yet.
         vm.prank(manager);
         destAdapter.completeBridge(messagePayload, abi.encode(minimalMessage));
 
@@ -253,7 +253,7 @@ contract CcipBridgeAdapterTest is BridgeScenarioHelper {
         assertEq(destBridgeEscrow.getHeldBalanceForAsset(address(usdc), account), amount, "held for account");
         assertTrue(destBridgeEscrow.isInvoiceCompleted(invoiceHash), "invoice completed on record");
 
-        // Step 2 (ADR 0024): MANAGER claim pays the account.
+        // Step 2 (ADR 0027): MANAGER claim pays the account.
         vm.prank(manager);
         destBridgeEscrow.claim(invoiceHash);
         assertEq(usdc.balanceOf(account) - initialPortfolioBalance, amount, "account received tokens on claim");
@@ -400,7 +400,7 @@ contract CcipBridgeAdapterTest is BridgeScenarioHelper {
 
         bytes32 expectedInvoiceHash = bytes32(uint256(uint192(InvoiceDataLib.decode(messagePayload).checksum24)));
         assertTrue(destBridgeEscrow.isInvoiceCompleted(expectedInvoiceHash), "invoice completed on record");
-        // ADR 0024: completeBridge records custody and HOLDS; the account is paid only on MANAGER claim.
+        // ADR 0027: completeBridge records custody and HOLDS; the account is paid only on MANAGER claim.
         assertEq(usdc.balanceOf(account), portfolioBalanceBeforeRelease, "account NOT paid on record");
         assertEq(
             destBridgeEscrow.getHeldBalanceForAsset(address(usdc), account), amount, "escrow holds for the account"

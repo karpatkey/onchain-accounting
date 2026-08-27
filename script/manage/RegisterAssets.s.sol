@@ -23,7 +23,31 @@ import {console2} from "forge-std/console2.sol";
 ///     configured feeds is a no-op, while any new trailing feeds are topped up via addPriceFeed (ADR-0009
 ///     redundancy). A pre-registered asset with no feed (the NATIVE_ADDRESS sentinel from initialize) gets its
 ///     first feed via addPriceFeed too (registerAsset is used only for an unregistered asset's primary feed).
+///   - Idempotent on TOLERANCES too: `setDivergenceTolerance` / `setPegTolerance` are emitted only when the
+///     configured value differs from what the NAV already holds. Before that check existed, registering ONE asset
+///     planned 27 transactions — 24 of them rewriting tolerances that already equalled config. They changed no
+///     state, but they were 24 needless transactions against a live NAV, and under `--slow` (a receipt awaited per
+///     transaction) they turned a 3-transaction job into ~5 minutes.
 ///   - Requires --rpc-url so the script can check on-chain registration state.
+///
+///   - **RUN IT UNDER `FOUNDRY_PROFILE=slow` WHENEVER IT HAS REAL WORK TO DO.** Against mainnet's 44 assets the
+///     default profile dies with a bare `EvmError: MemoryOOG` — no message, nothing naming the cause. Only
+///     `profile.slow` raises `memory_limit` (and `gas_limit`) off forge's 32 MiB default; its own comment in
+///     `foundry.toml` documents the same failure for the integration harness, so this is the designed mechanism
+///     here rather than a workaround.
+///
+///     Measured, so the boundary is not guessed: a re-run with nothing to do plans 0 actions and completes fine on
+///     the default profile — which is why this went unnoticed — while **ONE** action is already enough to OOM.
+///     Confirmed at 1, 2, 4, 8, 12 and 17 actions, and against `origin/main`'s config with no XAUt in it, so this
+///     predates the XAUt entry and is not caused by it.
+///
+///     Because ONE action is enough, the cause is NOT the batch size. The scan itself already sits just under the
+///     32 MiB ceiling and any batch at all tips it over. The dominant cost is `ConfigReader`: field readers such as
+///     `_readUintOrZero` call `_readOrEmpty(vm, _navAssetsPath(...))`, so the ENTIRE per-chain JSON (~28 KiB, 44
+///     assets) is re-read and re-parsed for EVERY FIELD OF EVERY ASSET, and Solidity frees nothing. `SafeTxBuilder`
+///     compounds it — `writeSafeTx` and `encodeMultiSend` both accumulate via `x = abi.encodePacked(x, ...)` inside
+///     loops, which is quadratic in transaction count — but it is the straw, not the load. Fixing this properly
+///     means caching the parsed config per run, which touches every deploy script, so it belongs in its own PR.
 contract RegisterAssets is BaseDeployScript {
     using ConfigReader for *;
 
@@ -287,18 +311,31 @@ contract RegisterAssets is BaseDeployScript {
         // a duplicate, and removeMonitorFeed is swap-and-pop (reorders), so a positional "skip first N" check would
         // re-add a still-present feed after any out-of-band removal and abort the whole batch. Membership is robust.
         IPrices.PriceFeedConfig[] memory onChain;
+        // Current tolerances, so an unchanged one emits NOTHING. Without this the script re-sent every asset's
+        // tolerances on every run: registering ONE asset planned 27 transactions, 24 of them rewriting values that
+        // already equalled config. Harmless to state, but it is 24 needless transactions against a live NAV, and
+        // with `--slow` (a receipt awaited per transaction) it turned a 3-transaction job into ~5 minutes.
+        // Monitor feeds were already skipped when present; tolerances simply never learned the same trick.
+        IPrices.AssetPricing memory live;
         if (registered) {
             (bool okm, bytes memory md) =
                 navProxy.staticcall(abi.encodeWithSelector(IPrices.getMonitorFeeds.selector, asset));
             if (okm && md.length >= 64) onChain = abi.decode(md, (IPrices.PriceFeedConfig[]));
+
+            (bool okp, bytes memory pd) =
+                navProxy.staticcall(abi.encodeWithSelector(IPrices.getAssetPricing.selector, asset));
+            if (okp && pd.length >= 64) live = abi.decode(pd, (IPrices.AssetPricing));
         }
 
         bytes[] memory tmp = new bytes[](monCount + 2);
         uint256 n;
-        if (monCount > 0 && divTolBps > 0) {
+        // An UNREGISTERED asset leaves `live` zeroed, so its setters are still emitted — which is what a new asset
+        // needs. Note this only ever RAISES or CHANGES a tolerance to a non-zero config value: a config lowered to 0
+        // still clears nothing, because the `> 0` guards below predate this change and are left as they were.
+        if (monCount > 0 && divTolBps > 0 && live.divergenceToleranceBps != uint32(divTolBps)) {
             tmp[n++] = abi.encodeCall(NAVCalculator.setDivergenceTolerance, (asset, uint32(divTolBps)));
         }
-        if (pegTolBps > 0) {
+        if (pegTolBps > 0 && live.pegToleranceBps != uint32(pegTolBps)) {
             tmp[n++] = abi.encodeCall(NAVCalculator.setPegTolerance, (asset, uint32(pegTolBps)));
         }
 

@@ -16,7 +16,7 @@ import {
     MockOptimismPortalReal,
     MockL1WithdrawalRelay
 } from "test/bridge/mocks/SuperchainProvenanceMocks.sol";
-import {Types} from "@optimism/libraries/Types.sol";
+import {Types} from "src/bridge/adapters/lib/OptimismTypes.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/errors.sol";
 
@@ -270,7 +270,7 @@ contract SuperchainBridgeAdapterTest is BridgeScenarioHelper {
         );
 
         assertTrue(destEscrow.isInvoiceCompleted(invoiceHash), "invoice completed on record");
-        // ADR 0024: the relay records custody and HOLDS; the account is paid only on MANAGER claim.
+        // ADR 0027: the relay records custody and HOLDS; the account is paid only on MANAGER claim.
         assertEq(usdc.balanceOf(account), portfolioBefore, "account NOT paid on delivery");
         assertEq(usdc.balanceOf(address(destEscrow)), amount, "escrow holds the delivery");
         assertEq(destEscrow.getHeldBalanceForAsset(address(usdc), account), amount, "held for account");
@@ -434,7 +434,7 @@ contract SuperchainBridgeAdapterTest is BridgeScenarioHelper {
         uint256 portfolioBefore = account.balance;
 
         // Manager completes: adapter finalizes (portal delivers ETH to adapter), base records the delivery into
-        // escrow custody (ADR 0024). The escrow HOLDS the ETH; a subsequent MANAGER claim pays the account.
+        // escrow custody (ADR 0027). The escrow HOLDS the ETH; a subsequent MANAGER claim pays the account.
         vm.prank(manager);
         l1Ad.completeBridge(messagePayload, abi.encode(wtx));
 

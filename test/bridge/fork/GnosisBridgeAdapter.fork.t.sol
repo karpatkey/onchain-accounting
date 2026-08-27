@@ -150,7 +150,7 @@ contract GnosisBridgeAdapterForkTest is BridgeTestBase {
     }
 
     /// @notice The genuine Omnibridge mediator delivers tokens + calls onTokenTransfer: the adapter authenticates
-    ///         the mediator + AMB-reported source, then records the delivery into escrow custody (ADR 0024). A
+    ///         the mediator + AMB-reported source, then records the delivery into escrow custody (ADR 0027). A
     ///         subsequent MANAGER claim pays the account.
     function testFork_gnosis_onTokenTransfer_authenticatesMediatorAndReleases() public {
         uint64 srcChainId = GNOSIS_CHAIN_ID;
@@ -179,7 +179,7 @@ contract GnosisBridgeAdapterForkTest is BridgeTestBase {
 
         vm.clearMockedCalls();
 
-        // ADR 0024: delivery records custody and HOLDS; the account is paid only on MANAGER claim.
+        // ADR 0027: delivery records custody and HOLDS; the account is paid only on MANAGER claim.
         assertEq(usdc.balanceOf(account), portfolioBefore, "account NOT paid on delivery");
         assertEq(usdc.balanceOf(address(destAdapter)), 0, "adapter forwarded all tokens to escrow");
         assertEq(usdc.balanceOf(address(destEscrow)), amount, "escrow holds the delivery");

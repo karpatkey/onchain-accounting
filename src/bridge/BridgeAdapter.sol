@@ -15,7 +15,7 @@ import "src/constants.sol";
 
 /// @title BridgeAdapter
 /// @notice Abstract base for bridge adapters (non-upgradeable, single-initialize).
-/// @dev See ADR 0012 and ADR 0024. There is no escrow fallback dispatcher. A bridge is completed via the
+/// @dev See ADR 0012 and ADR 0027. There is no escrow fallback dispatcher. A bridge is completed via the
 ///      MANAGER-gated `completeBridge`, which runs the adapter's protocol-specific `_completeBridge` and then
 ///      funds the escrow per-invoice and calls `BridgeEscrow.recordDelivery` (re-validated by the escrow), which
 ///      records the delivery into escrow custody; a subsequent MANAGER `BridgeEscrow.claim` pays the account.
@@ -136,7 +136,7 @@ abstract contract BridgeAdapter is AccessControl, ReentrancyGuard, IBridgeAdapte
     /// @dev MANAGER-operated completion path. The adapter's `_completeBridge` performs protocol-specific
     ///      verification (e.g. CCTP attestation, OP withdrawal finalization) and ensures the adapter holds
     ///      the delivered `amount` of the asset; the base then funds the escrow's per-invoice custody record via
-    ///      `_fundAndRelease` → `recordDelivery` (ADR 0024 hold-then-claim). It does **not** pay the account here —
+    ///      `_fundAndRelease` → `recordDelivery` (ADR 0027 hold-then-claim). It does **not** pay the account here —
     ///      the escrow HOLDS the funds until a separate MANAGER `BridgeEscrow.claim(invoiceHash)`.
     function completeBridge(bytes calldata messagePayload, bytes calldata protocolData) external override nonReentrant {
         if (!hasRole(MANAGER_ROLE, msg.sender)) revert NotAuthorized();
@@ -148,7 +148,7 @@ abstract contract BridgeAdapter is AccessControl, ReentrancyGuard, IBridgeAdapte
         emit BridgeCompleted(data.invoiceId);
     }
 
-    /// @notice Hands the escrow exactly `amount` of `asset` and records the delivery into escrow custody (ADR 0024).
+    /// @notice Hands the escrow exactly `amount` of `asset` and records the delivery into escrow custody (ADR 0027).
     /// @dev The adapter must already hold `amount` of `asset` (delivered by the protocol). For ERC20 the escrow
     ///      pulls via transferFrom (exact approval, reset to 0 after); for native the value is forwarded with the
     ///      call. The escrow validates checksum/replay/account, MEASURES the received amount, and HOLDS the funds
@@ -188,7 +188,7 @@ abstract contract BridgeAdapter is AccessControl, ReentrancyGuard, IBridgeAdapte
 
     /// @notice Pushes `amount` of `asset` held by the adapter straight to the escrow and emits TokensTransferredToEscrow.
     /// @dev Legacy push-to-escrow helper, NOT on the shipped completion path. `completeBridge` instead calls
-    ///      `_fundAndRelease` (ADR 0024 hold-then-claim), which leaves the funds on the adapter for the escrow
+    ///      `_fundAndRelease` (ADR 0027 hold-then-claim), which leaves the funds on the adapter for the escrow
     ///      to pull on `recordDelivery`. No shipped adapter (CCTP included) calls this; it is retained for
     ///      derived adapters that would rather hand the escrow the tokens before recording. Reverts InsufficientBalance
     ///      if the adapter holds less than `amount`, or TransferFailed on a failed native send.

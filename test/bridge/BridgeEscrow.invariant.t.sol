@@ -13,7 +13,7 @@ import "test/mocks/tokens.sol";
 /// @title BridgeEscrow Invariant Tests
 /// @notice Critical invariants for BridgeEscrow accounting and state
 contract BridgeEscrowInvariantTest is BridgeEscrowTestBase {
-    // ============ Destination custody stateful invariant (ADR 0024) ============
+    // ============ Destination custody stateful invariant (ADR 0027) ============
 
     BridgeEscrow public destEscrow;
     MockBridgeAdapter public destMock;

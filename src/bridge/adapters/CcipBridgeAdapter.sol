@@ -19,7 +19,7 @@ import "src/errors.sol";
 /// @dev The destination recipient is the sibling adapter (this contract, same address across chains via
 ///      CREATE2). The CCIP Router calls `ccipReceive` directly on the adapter; the adapter authenticates the
 ///      router, the source chain selector and the source sender against `trustedRemoteAdapter`, then funds the
-///      escrow, which records the delivery into per-invoice custody (hold-then-claim, ADR 0024).
+///      escrow, which records the delivery into per-invoice custody (hold-then-claim, ADR 0027).
 /// @author KPK
 contract CcipBridgeAdapter is BridgeAdapter, ICcipBridgeAdapter {
     using SafeERC20 for IERC20;
@@ -241,7 +241,7 @@ contract CcipBridgeAdapter is BridgeAdapter, ICcipBridgeAdapter {
     /// @inheritdoc IAny2EVMMessageReceiver
     /// @dev Auto completion path. Called by the genuine CCIP Router on the destination chain. Authenticates
     ///      the router, the source chain selector and the source sender, verifies the delivered token matches
-    ///      the invoice, then funds the escrow, which records the delivery into custody (hold-then-claim, ADR 0024).
+    ///      the invoice, then funds the escrow, which records the delivery into custody (hold-then-claim, ADR 0027).
     function ccipReceive(Client.Any2EVMMessage calldata message) external override nonReentrant {
         if (msg.sender != address(router)) revert InvalidRouter();
         _authenticateSource(message.sourceChainSelector, message.sender);

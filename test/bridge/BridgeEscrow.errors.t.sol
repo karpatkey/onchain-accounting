@@ -80,7 +80,7 @@ contract BridgeEscrowErrorTest is BridgeEscrowTestBase {
         bridgeEscrow.depositAndBridge{value: 0.5 ether}(DEST_CHAIN_ID, WETH_SYMBOL, 1 ether, address(mockAdapter));
     }
 
-    // ============ recordDelivery reverts (ADR 0024) ============
+    // ============ recordDelivery reverts (ADR 0027) ============
 
     function test_RevertWhen_recordDelivery_callerNotAuthorizedAdapter() public {
         (BridgeEscrow destEscrow, bytes memory messagePayload,) =
@@ -91,7 +91,7 @@ contract BridgeEscrowErrorTest is BridgeEscrowTestBase {
         destEscrow.recordDelivery(messagePayload);
     }
 
-    /// @notice ADR 0024/0012 (H9): MANAGER can no longer record deliveries directly — only an authorized
+    /// @notice ADR 0027/0012 (H9): MANAGER can no longer record deliveries directly — only an authorized
     ///         adapter (after its provenance check) may. A MANAGER-direct call reverts NotAuthorized. Timing of
     ///         the payout to the account is what MANAGER controls, via {claim}, not the custody write.
     function test_RevertWhen_recordDelivery_callerIsManager() public {
@@ -206,7 +206,7 @@ contract BridgeEscrowErrorTest is BridgeEscrowTestBase {
         assertEq(amount, 0, "no custody record written");
     }
 
-    // ============ claim reverts (ADR 0024) ============
+    // ============ claim reverts (ADR 0027) ============
 
     function test_RevertWhen_claim_invoiceNotFound() public {
         (BridgeEscrow destEscrow,,) = _setupDestinationAndValidPayload(address(usdc), 1000e6);
@@ -606,7 +606,7 @@ contract BridgeEscrowErrorTest is BridgeEscrowTestBase {
         assertEq(destEscrow.getHeldBalanceForAsset(address(usdc), account), 0, "held cleared by claim");
     }
 
-    // ============ revokeAccount + held custody (ADR 0024) ============
+    // ============ revokeAccount + held custody (ADR 0027) ============
 
     /// @notice revokeAccount must be blocked while the account still has outstanding destination held custody,
     ///         and succeed once the custody is claimed. Mirrors the register/unregister held-custody guards.
@@ -632,7 +632,7 @@ contract BridgeEscrowErrorTest is BridgeEscrowTestBase {
         assertFalse(destEscrow.isAuthorizedAccount(account), "revoked after settlement");
     }
 
-    // ============ native + fee-on-transfer record/claim (ADR 0024) ============
+    // ============ native + fee-on-transfer record/claim (ADR 0027) ============
 
     /// @notice Native record → claim happy path: msg.value is held under address(0) and paid to the account.
     function test_recordAndClaim_native_happyPath() public {

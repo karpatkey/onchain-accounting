@@ -11,7 +11,7 @@ Onchain infrastructure for portfolio accounting: **balances** (across protocols)
 | **Balances** | Registry of balance adapters. Each adapter reports positions (balances) for an account in one or more protocols (e.g. Aave, Compound III, Morpho). Used by NAVCalculator to aggregate holdings. |
 | **Prices**   | Registry of **N price feeds per asset** (N ≥ 1). Feed types: `Chainlink`, `Redstone`, `API3`, `Custom`. On every read, `_selectFeed` picks the **freshest non-stale feed** (freshest-wins); stale is returned only when every feed fails. Handles heartbeat staleness, clock-skew normalisation, and L2 sequencer uptime checks. |
 | **NAV**      | Single contract that extends Prices + Balances. Registers assets with price feeds, registers balance adapters, and computes **NAV** for an account in a chosen quote currency (e.g. USD or a token). |
-| **Bridge**   | **BridgeEscrow** holds assets and tracks invoices; authorized accounts call `depositAndBridge` to bridge to another chain. **Adapters** (Across, CCIP, CCTP, Gnosis, Stargate, Superchain) implement protocol-specific logic. On the destination chain, an authenticated adapter records the delivery into escrow custody via `recordDelivery` (funds held), and a MANAGER `claim` releases them to the account (ADR 0024, hold-then-claim). |
+| **Bridge**   | **BridgeEscrow** holds assets and tracks invoices; authorized accounts call `depositAndBridge` to bridge to another chain. **Adapters** (Across, CCIP, CCTP, Gnosis, Stargate, Superchain) implement protocol-specific logic. On the destination chain, an authenticated adapter records the delivery into escrow custody via `recordDelivery` (funds held), and a MANAGER `claim` releases them to the account (ADR 0027, hold-then-claim). |
 
 There is no tokenized-share or subscription/redemption logic in this repo; that would sit in a separate layer that uses NAV and/or the bridge as primitives.
 
@@ -112,7 +112,7 @@ NAVCalculator is **UUPS upgradeable** and uses **AccessControl** (DEFAULT_ADMIN_
 
 ## Bridge
 
-- **BridgeEscrow**: Holds assets on each chain; authorized **accounts** call `depositAndBridge(destinationChainId, assetSymbol, amount, adapter)`. The escrow creates an **invoice** (BRIDGING), transfers tokens to the adapter (or approves it), and calls `adapter.bridge(messagePayload)`. On the **destination** chain, delivery is via `recordDelivery(messagePayload)` (checksum-validated); it is callable **only by an authorized adapter** — there is **no escrow `fallback()` dispatcher and MANAGER cannot call it directly** (ADR 0012, closing the forged-payload drain). The destination adapter authenticates the inbound protocol message (its MANAGER-operated `completeBridge` runs the protocol-specific verification) and then funds a per-invoice **custody record** in the same call: the escrow pulls exactly `amount` from the adapter (or requires `msg.value == amount` for native), **measures** it, and **holds** it. A separate MANAGER **`claim(invoiceHash)`** releases exactly the recorded amount to the recorded account (ADR 0024, hold-then-claim) — the uniform, timing-controlled release step for every bridge.
+- **BridgeEscrow**: Holds assets on each chain; authorized **accounts** call `depositAndBridge(destinationChainId, assetSymbol, amount, adapter)`. The escrow creates an **invoice** (BRIDGING), transfers tokens to the adapter (or approves it), and calls `adapter.bridge(messagePayload)`. On the **destination** chain, delivery is via `recordDelivery(messagePayload)` (checksum-validated); it is callable **only by an authorized adapter** — there is **no escrow `fallback()` dispatcher and MANAGER cannot call it directly** (ADR 0012, closing the forged-payload drain). The destination adapter authenticates the inbound protocol message (its MANAGER-operated `completeBridge` runs the protocol-specific verification) and then funds a per-invoice **custody record** in the same call: the escrow pulls exactly `amount` from the adapter (or requires `msg.value == amount` for native), **measures** it, and **holds** it. A separate MANAGER **`claim(invoiceHash)`** releases exactly the recorded amount to the recorded account (ADR 0027, hold-then-claim) — the uniform, timing-controlled release step for every bridge.
 - **Adapters**: Each implements `_bridge` (initiate transfer, recipient = sibling adapter) and `_completeBridge` (invoked by `completeBridge`, gated by the MANAGER role). `completeBridge` performs protocol-specific verification, ensures the adapter holds the delivered `amount`, then funds the escrow's custody record via `recordDelivery`.
 - **Invoice lifecycle**: Created on source as BRIDGING; on destination, `recordDelivery` records the delivery into custody (and a MANAGER `claim` releases it). On source, the MANAGER role calls **`markInvoiceCompleted(invoiceHashes)`** to set status to COMPLETED and update in-transit balances and active-invoice list.
 
@@ -169,7 +169,7 @@ FOUNDRY_PROFILE=slow forge test --match-path "test/**/fork/*.sol"
 ### Config
 
 - **foundry.toml**: `src = "src"`, optimizer, `via_ir = true`, coverage and invariant profiles.
-- **remappings.txt**: OpenZeppelin, Chainlink, Aave, Comet, Morpho, GMX, Optimism (`@optimism/`), etc.
+- **remappings.txt**: OpenZeppelin, Chainlink, Morpho, forge-std. Top-level submodules are `shallow = true`; their **nested** submodules are not, because those `.gitmodules` belong to upstream — so the single largest surviving history, `openzeppelin-contracts` under `openzeppelin-contracts-upgradeable`, is still cloned in full (see [ADR 0024](docs/decisions/0024-dependency-size-vendor-single-file-deps.md)).
 
 ---
 
@@ -180,12 +180,16 @@ FOUNDRY_PROFILE=slow forge test --match-path "test/**/fork/*.sol"
 | `@openzeppelin/*` | OpenZeppelin Contracts (upgradeable) |
 | `@chainlink/*` | Chainlink (CCIP, CCTP, price feed interfaces) |
 | `forge-std/` | Foundry standard library |
-| `@optimism/` | Optimism contracts-bedrock (Superchain adapter) |
-| `aave-v3-core/` | Aave V3 |
-| `comet-contracts/` | Compound III |
 | `morpho-blue/` | Morpho |
-| `gmx-contracts/` | GMX |
 | `openzeppelin-foundry-upgrades/` | UUPS deploy helpers |
+
+Third-party files vendored in-tree rather than carried as a submodule, each retaining its upstream
+MIT licence and recording its pinned upstream rev in a header comment — see
+[ADR 0024](docs/decisions/0024-dependency-size-vendor-single-file-deps.md):
+
+| File | Upstream |
+|------|----------|
+| `src/bridge/adapters/lib/OptimismTypes.sol` | Optimism `contracts-bedrock` — `src/libraries/Types.sol` |
 
 ---
 

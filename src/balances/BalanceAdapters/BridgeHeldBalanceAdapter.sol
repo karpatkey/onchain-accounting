@@ -14,10 +14,10 @@ import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 import {ProtocolNames} from "src/utils/ProtocolNames.sol";
 
-/// @title Bridge Escrow Held-Balance Adapter (ADR 0024)
+/// @title Bridge Escrow Held-Balance Adapter (ADR 0027)
 /// @author KPK
 /// @notice Reports the account's **delivered-but-unclaimed** funds sitting in the destination `BridgeEscrow`
-///         custody (ADR 0024 "hold-then-claim"). Between `recordDelivery` (funds arrive on the destination and are
+///         custody (ADR 0027 "hold-then-claim"). Between `recordDelivery` (funds arrive on the destination and are
 ///         held by the escrow) and `claim` (MANAGER moves them to the safe), the value is not yet in the safe's
 ///         wallet, so the ordinary ERC20 balance adapter would miss it. This adapter closes that gap by reading the
 ///         escrow's per-account custody so NAV counts held value continuously across the bridge hop. On the

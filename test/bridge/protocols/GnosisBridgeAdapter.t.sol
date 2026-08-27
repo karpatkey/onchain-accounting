@@ -26,7 +26,7 @@ import "src/errors.sol";
 /// @dev Destination recipient is the sibling adapter (address(this)). The Omnibridge mediator delivers tokens
 ///      to the adapter and calls onTokenTransfer; the adapter authenticates msg.sender == omnibridge plus the
 ///      AMB-reported source (messageSender == trustedRemoteAdapter, messageSourceChainId == source chain), then
-///      records the delivery into escrow custody (ADR 0024). A MANAGER claim later pays the account. The MANAGER
+///      records the delivery into escrow custody (ADR 0027). A MANAGER claim later pays the account. The MANAGER
 ///      completeBridge path verifies the same provenance.
 contract GnosisBridgeAdapterTest is BridgeScenarioHelper {
     GnosisBridgeAdapter public adapter;
@@ -211,7 +211,7 @@ contract GnosisBridgeAdapterTest is BridgeScenarioHelper {
         vm.prank(manager);
         destAdapter.completeBridge(messagePayload, "");
 
-        // ADR 0024: completeBridge records the delivery into custody — escrow HOLDS, no payout yet.
+        // ADR 0027: completeBridge records the delivery into custody — escrow HOLDS, no payout yet.
         assertEq(usdc.balanceOf(account), initialPortfolioBalance, "account NOT paid on record");
         assertEq(usdc.balanceOf(address(destAdapter)), 0, "adapter zero after funding escrow custody");
         assertEq(usdc.balanceOf(address(destEscrow)), amount, "escrow holds the delivery");
@@ -340,7 +340,7 @@ contract GnosisBridgeAdapterTest is BridgeScenarioHelper {
 
         bytes32 expectedInvoiceHash = bytes32(uint256(uint192(InvoiceDataLib.decode(messagePayload).checksum24)));
         assertTrue(destEscrow.isInvoiceCompleted(expectedInvoiceHash), "invoice completed on record");
-        // ADR 0024: auto delivery records custody and HOLDS; the account is paid only on MANAGER claim.
+        // ADR 0027: auto delivery records custody and HOLDS; the account is paid only on MANAGER claim.
         assertEq(usdc.balanceOf(account), portfolioBalanceBeforeRelease, "account NOT paid on delivery");
         assertEq(usdc.balanceOf(address(destEscrow)), amount, "escrow holds the delivery");
         assertEq(destEscrow.getHeldBalanceForAsset(address(usdc), account), amount, "held for account");
@@ -589,7 +589,7 @@ contract GnosisBridgeAdapterTest is BridgeScenarioHelper {
     }
 
     /// @notice Forward (ETH->GC): OmniBridge delivers legacy USDC; the adapter swaps it 1:1 to the registered
-    ///         USDC.e via the transmuter and records the USDC.e delivery into custody (ADR 0024); a MANAGER
+    ///         USDC.e via the transmuter and records the USDC.e delivery into custody (ADR 0027); a MANAGER
     ///         claim then pays the account.
     function test_transmuter_forwardSwap_deliversUsdcE() public {
         uint256 amount = 1000e6;
@@ -617,7 +617,7 @@ contract GnosisBridgeAdapterTest is BridgeScenarioHelper {
         destOmnibridge.deliverTokens(address(legacy), address(destAdapter), amount, payload);
 
         assertTrue(destEscrow.isInvoiceCompleted(invoiceHash), "invoice completed via legacy->USDC.e swap record");
-        // ADR 0024: the swapped USDC.e is recorded into custody and HELD; the account is paid only on claim.
+        // ADR 0027: the swapped USDC.e is recorded into custody and HELD; the account is paid only on claim.
         assertEq(usdce.balanceOf(account), acctBefore, "account NOT paid on delivery");
         assertEq(destEscrow.getHeldBalanceForAsset(address(usdce), account), amount, "held USDC.e for account");
         assertEq(legacy.balanceOf(address(destAdapter)), 0, "no legacy dust on adapter");
@@ -701,7 +701,7 @@ contract GnosisBridgeAdapterTest is BridgeScenarioHelper {
         destAdapter.completeBridge(payload, "");
 
         assertTrue(destEscrow.isInvoiceCompleted(invoiceHash), "completed by MANAGER fallback record after re-enable");
-        // ADR 0024: the fallback records custody and HOLDS; the account is paid only on claim.
+        // ADR 0027: the fallback records custody and HOLDS; the account is paid only on claim.
         assertEq(usdce.balanceOf(account), acctBefore, "account NOT paid on record");
         assertEq(destEscrow.getHeldBalanceForAsset(address(usdce), account), amount, "held USDC.e for account");
 

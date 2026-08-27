@@ -11,7 +11,7 @@ pragma solidity ^0.8;
 ///      - `completedInvoices[invoiceHash]` is true once a delivery has been recorded on the destination chain
 ///        (`recordDelivery`) or the invoice marked completed on the source chain (`markInvoiceCompleted`)
 ///      - All invoices in `_activeInvoices` have a corresponding entry in `invoices`
-///      - Destination custody (ADR 0024, supersedes the ADR-0012 funded pass-through on the destination): the
+///      - Destination custody (ADR 0027, supersedes the ADR-0012 funded pass-through on the destination): the
 ///        delivered funds are HELD by the escrow in a per-invoice `destinationCustody` record and released to the
 ///        account only by `claim`. Invariants:
 ///        (I1) for every asset, `balanceOf(asset) >= _heldClaimable[asset]`, and `_heldClaimable[asset]` equals
@@ -111,7 +111,7 @@ interface IBridgeEscrow {
         address adapter; // Adapter address used for this invoice
     }
 
-    /// @notice Destination-side custody record (ADR 0024). Written by `recordDelivery` when an authorized
+    /// @notice Destination-side custody record (ADR 0027). Written by `recordDelivery` when an authorized
     ///         adapter hands the escrow the delivered funds; the escrow HOLDS them until `claim`.
     struct DestinationCustody {
         address account; // Authenticated payee from the invoice — `claim` pays ONLY this
@@ -202,7 +202,7 @@ interface IBridgeEscrow {
         payable
         returns (bytes32 invoiceHash);
 
-    /// @notice Records a destination delivery and HOLDS the funds in escrow custody (ADR 0024).
+    /// @notice Records a destination delivery and HOLDS the funds in escrow custody (ADR 0027).
     /// @param messagePayload The message payload (invoiceId, amount, nonce, meta)
     /// @dev Callable ONLY by an authorized adapter (the adapter has already authenticated the genuine inbound
     ///      protocol message + source sender); there is no fallback dispatcher and MANAGER cannot call this

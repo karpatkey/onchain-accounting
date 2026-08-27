@@ -1,18 +1,9 @@
 {
-  "lib/aave-v3-core": {
-    "rev": "b74526a7bc67a3a117a1963fc871b3eb8cea8435"
-  },
   "lib/chainlink-brownie-contracts": {
     "rev": "67887b84d3add02a25ef4145fc014e2f549509da"
   },
-  "lib/comet": {
-    "rev": "ed6ebcd84ac00906e8e725716891d482f4bef8b9"
-  },
   "lib/forge-std": {
     "rev": "887e87251562513a7b5ab1ea517c039fe6ee0984"
-  },
-  "lib/gmx-contracts": {
-    "rev": "fe55c4ba8911ae2378b50bfb9bece5ee50cf2af8"
   },
   "lib/morpho-blue": {
     "rev": "48b2a62d9d911a27f886fb7909ad57e29f7dacc9"
@@ -22,8 +13,5 @@
   },
   "lib/openzeppelin-foundry-upgrades": {
     "rev": "cfd861bc18ef4737e82eae6ec75304e27af699ef"
-  },
-  "lib/optimism": {
-    "rev": "f707883038d527cbf1e9f8ea513fe33255deadbc"
   }
 }

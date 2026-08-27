@@ -1,0 +1,174 @@
+{
+  "$comment": "ACCEPTED bytecode drift: deployed addresses whose on-chain runtime code (immutables masked) is NOT reproduced by a clean build of this tree. Every entry needs a reason, because an exemption without one is not a decision. Enforced BOTH ways by bytecode_audit.py --baseline: an un-listed STALE address fails, AND a listed address that has become CURRENT fails so the file cannot rot into a rubber stamp. Delete an entry the moment its address is redeployed - do not leave it 'just in case', because it would then silently accept a FUTURE drift at that address. TWO DISTINCT THINGS ARE LISTED, and the difference matters more than the count. The 23 BridgeEscrowImplementation rows are OUT OF SCOPE by decision (2026-08-27) - accepted, not pursued, and undiagnosed. The single PolygonStakingMeta row is IN SCOPE: a real open item with a known cause, a known display-only impact, and a known fix (redeploy). Do not let the 23 bridge rows make the 24th look routine - check every entry's 'scope' field before appending to this file.",
+  "$howToAdd": "Run `forge clean && forge build` then `python3 script/deploy/preflight/bytecode_audit.py <chainId>`. Anything reported [STALE] is either something to redeploy or something to declare here. Prefer redeploying.",
+  "accepted": {
+    "1:0xe2237d9776041514b1ac66856407ed344b480de0": {
+      "key": "BridgeEscrowImplementation",
+      "reason": "OUT OF SCOPE BY DECISION (2026-08-27): the bridge contracts are not being worked on for now, so this drift is accepted rather than pursued. That is a SCOPE ruling, not a safety assessment - the drift is real and remains UNDIAGNOSED: the on-chain runtime code is simply not reproduced by a clean build of this tree, and nobody has established which commit it was built from or whether the difference is material. Do not read this entry as evidence it is harmless. DECLARED ON EVERY CHAIN THAT RECORDS IT: the implementation is CREATE2-deployed from fixed type(BridgeEscrow).creationCode (01_DeployImplementations.s.sol), so all 23 copies live at this one address and share the one mismatch. Entries are per-chain by design so a per-chain disappearance is still caught as a dangling entry.",
+      "recorded": "2026-08-27",
+      "action": "NONE while the bridge is out of scope. When bridge work resumes: diagnose which commit this was built from, decide whether the difference is material, then redeploy or re-justify. Delete ALL 23 entries together once it is fixed.",
+      "scope": "bridge - out of scope as of 2026-08-27"
+    },
+    "10:0xe2237d9776041514b1ac66856407ed344b480de0": {
+      "key": "BridgeEscrowImplementation",
+      "reason": "OUT OF SCOPE BY DECISION (2026-08-27): the bridge contracts are not being worked on for now, so this drift is accepted rather than pursued. That is a SCOPE ruling, not a safety assessment - the drift is real and remains UNDIAGNOSED: the on-chain runtime code is simply not reproduced by a clean build of this tree, and nobody has established which commit it was built from or whether the difference is material. Do not read this entry as evidence it is harmless. DECLARED ON EVERY CHAIN THAT RECORDS IT: the implementation is CREATE2-deployed from fixed type(BridgeEscrow).creationCode (01_DeployImplementations.s.sol), so all 23 copies live at this one address and share the one mismatch. Entries are per-chain by design so a per-chain disappearance is still caught as a dangling entry.",
+      "recorded": "2026-08-27",
+      "action": "NONE while the bridge is out of scope. When bridge work resumes: diagnose which commit this was built from, decide whether the difference is material, then redeploy or re-justify. Delete ALL 23 entries together once it is fixed.",
+      "scope": "bridge - out of scope as of 2026-08-27"
+    },
+    "56:0xe2237d9776041514b1ac66856407ed344b480de0": {
+      "key": "BridgeEscrowImplementation",
+      "reason": "OUT OF SCOPE BY DECISION (2026-08-27): the bridge contracts are not being worked on for now, so this drift is accepted rather than pursued. That is a SCOPE ruling, not a safety assessment - the drift is real and remains UNDIAGNOSED: the on-chain runtime code is simply not reproduced by a clean build of this tree, and nobody has established which commit it was built from or whether the difference is material. Do not read this entry as evidence it is harmless. DECLARED ON EVERY CHAIN THAT RECORDS IT: the implementation is CREATE2-deployed from fixed type(BridgeEscrow).creationCode (01_DeployImplementations.s.sol), so all 23 copies live at this one address and share the one mismatch. Entries are per-chain by design so a per-chain disappearance is still caught as a dangling entry.",
+      "recorded": "2026-08-27",
+      "action": "NONE while the bridge is out of scope. When bridge work resumes: diagnose which commit this was built from, decide whether the difference is material, then redeploy or re-justify. Delete ALL 23 entries together once it is fixed.",
+      "scope": "bridge - out of scope as of 2026-08-27"
+    },
+    "100:0xe2237d9776041514b1ac66856407ed344b480de0": {
+      "key": "BridgeEscrowImplementation",
+      "reason": "OUT OF SCOPE BY DECISION (2026-08-27): the bridge contracts are not being worked on for now, so this drift is accepted rather than pursued. That is a SCOPE ruling, not a safety assessment - the drift is real and remains UNDIAGNOSED: the on-chain runtime code is simply not reproduced by a clean build of this tree, and nobody has established which commit it was built from or whether the difference is material. Do not read this entry as evidence it is harmless. DECLARED ON EVERY CHAIN THAT RECORDS IT: the implementation is CREATE2-deployed from fixed type(BridgeEscrow).creationCode (01_DeployImplementations.s.sol), so all 23 copies live at this one address and share the one mismatch. Entries are per-chain by design so a per-chain disappearance is still caught as a dangling entry.",
+      "recorded": "2026-08-27",
+      "action": "NONE while the bridge is out of scope. When bridge work resumes: diagnose which commit this was built from, decide whether the difference is material, then redeploy or re-justify. Delete ALL 23 entries together once it is fixed.",
+      "scope": "bridge - out of scope as of 2026-08-27"
+    },
+    "130:0xe2237d9776041514b1ac66856407ed344b480de0": {
+      "key": "BridgeEscrowImplementation",
+      "reason": "OUT OF SCOPE BY DECISION (2026-08-27): the bridge contracts are not being worked on for now, so this drift is accepted rather than pursued. That is a SCOPE ruling, not a safety assessment - the drift is real and remains UNDIAGNOSED: the on-chain runtime code is simply not reproduced by a clean build of this tree, and nobody has established which commit it was built from or whether the difference is material. Do not read this entry as evidence it is harmless. DECLARED ON EVERY CHAIN THAT RECORDS IT: the implementation is CREATE2-deployed from fixed type(BridgeEscrow).creationCode (01_DeployImplementations.s.sol), so all 23 copies live at this one address and share the one mismatch. Entries are per-chain by design so a per-chain disappearance is still caught as a dangling entry.",
+      "recorded": "2026-08-27",
+      "action": "NONE while the bridge is out of scope. When bridge work resumes: diagnose which commit this was built from, decide whether the difference is material, then redeploy or re-justify. Delete ALL 23 entries together once it is fixed.",
+      "scope": "bridge - out of scope as of 2026-08-27"
+    },
+    "137:0xe2237d9776041514b1ac66856407ed344b480de0": {
+      "key": "BridgeEscrowImplementation",
+      "reason": "OUT OF SCOPE BY DECISION (2026-08-27): the bridge contracts are not being worked on for now, so this drift is accepted rather than pursued. That is a SCOPE ruling, not a safety assessment - the drift is real and remains UNDIAGNOSED: the on-chain runtime code is simply not reproduced by a clean build of this tree, and nobody has established which commit it was built from or whether the difference is material. Do not read this entry as evidence it is harmless. DECLARED ON EVERY CHAIN THAT RECORDS IT: the implementation is CREATE2-deployed from fixed type(BridgeEscrow).creationCode (01_DeployImplementations.s.sol), so all 23 copies live at this one address and share the one mismatch. Entries are per-chain by design so a per-chain disappearance is still caught as a dangling entry.",
+      "recorded": "2026-08-27",
+      "action": "NONE while the bridge is out of scope. When bridge work resumes: diagnose which commit this was built from, decide whether the difference is material, then redeploy or re-justify. Delete ALL 23 entries together once it is fixed.",
+      "scope": "bridge - out of scope as of 2026-08-27"
+    },
+    "143:0xe2237d9776041514b1ac66856407ed344b480de0": {
+      "key": "BridgeEscrowImplementation",
+      "reason": "OUT OF SCOPE BY DECISION (2026-08-27): the bridge contracts are not being worked on for now, so this drift is accepted rather than pursued. That is a SCOPE ruling, not a safety assessment - the drift is real and remains UNDIAGNOSED: the on-chain runtime code is simply not reproduced by a clean build of this tree, and nobody has established which commit it was built from or whether the difference is material. Do not read this entry as evidence it is harmless. DECLARED ON EVERY CHAIN THAT RECORDS IT: the implementation is CREATE2-deployed from fixed type(BridgeEscrow).creationCode (01_DeployImplementations.s.sol), so all 23 copies live at this one address and share the one mismatch. Entries are per-chain by design so a per-chain disappearance is still caught as a dangling entry.",
+      "recorded": "2026-08-27",
+      "action": "NONE while the bridge is out of scope. When bridge work resumes: diagnose which commit this was built from, decide whether the difference is material, then redeploy or re-justify. Delete ALL 23 entries together once it is fixed.",
+      "scope": "bridge - out of scope as of 2026-08-27"
+    },
+    "146:0xe2237d9776041514b1ac66856407ed344b480de0": {
+      "key": "BridgeEscrowImplementation",
+      "reason": "OUT OF SCOPE BY DECISION (2026-08-27): the bridge contracts are not being worked on for now, so this drift is accepted rather than pursued. That is a SCOPE ruling, not a safety assessment - the drift is real and remains UNDIAGNOSED: the on-chain runtime code is simply not reproduced by a clean build of this tree, and nobody has established which commit it was built from or whether the difference is material. Do not read this entry as evidence it is harmless. DECLARED ON EVERY CHAIN THAT RECORDS IT: the implementation is CREATE2-deployed from fixed type(BridgeEscrow).creationCode (01_DeployImplementations.s.sol), so all 23 copies live at this one address and share the one mismatch. Entries are per-chain by design so a per-chain disappearance is still caught as a dangling entry.",
+      "recorded": "2026-08-27",
+      "action": "NONE while the bridge is out of scope. When bridge work resumes: diagnose which commit this was built from, decide whether the difference is material, then redeploy or re-justify. Delete ALL 23 entries together once it is fixed.",
+      "scope": "bridge - out of scope as of 2026-08-27"
+    },
+    "196:0xe2237d9776041514b1ac66856407ed344b480de0": {
+      "key": "BridgeEscrowImplementation",
+      "reason": "OUT OF SCOPE BY DECISION (2026-08-27): the bridge contracts are not being worked on for now, so this drift is accepted rather than pursued. That is a SCOPE ruling, not a safety assessment - the drift is real and remains UNDIAGNOSED: the on-chain runtime code is simply not reproduced by a clean build of this tree, and nobody has established which commit it was built from or whether the difference is material. Do not read this entry as evidence it is harmless. DECLARED ON EVERY CHAIN THAT RECORDS IT: the implementation is CREATE2-deployed from fixed type(BridgeEscrow).creationCode (01_DeployImplementations.s.sol), so all 23 copies live at this one address and share the one mismatch. Entries are per-chain by design so a per-chain disappearance is still caught as a dangling entry.",
+      "recorded": "2026-08-27",
+      "action": "NONE while the bridge is out of scope. When bridge work resumes: diagnose which commit this was built from, decide whether the difference is material, then redeploy or re-justify. Delete ALL 23 entries together once it is fixed.",
+      "scope": "bridge - out of scope as of 2026-08-27"
+    },
+    "204:0xe2237d9776041514b1ac66856407ed344b480de0": {
+      "key": "BridgeEscrowImplementation",
+      "reason": "OUT OF SCOPE BY DECISION (2026-08-27): the bridge contracts are not being worked on for now, so this drift is accepted rather than pursued. That is a SCOPE ruling, not a safety assessment - the drift is real and remains UNDIAGNOSED: the on-chain runtime code is simply not reproduced by a clean build of this tree, and nobody has established which commit it was built from or whether the difference is material. Do not read this entry as evidence it is harmless. DECLARED ON EVERY CHAIN THAT RECORDS IT: the implementation is CREATE2-deployed from fixed type(BridgeEscrow).creationCode (01_DeployImplementations.s.sol), so all 23 copies live at this one address and share the one mismatch. Entries are per-chain by design so a per-chain disappearance is still caught as a dangling entry.",
+      "recorded": "2026-08-27",
+      "action": "NONE while the bridge is out of scope. When bridge work resumes: diagnose which commit this was built from, decide whether the difference is material, then redeploy or re-justify. Delete ALL 23 entries together once it is fixed.",
+      "scope": "bridge - out of scope as of 2026-08-27"
+    },
+    "480:0xe2237d9776041514b1ac66856407ed344b480de0": {
+      "key": "BridgeEscrowImplementation",
+      "reason": "OUT OF SCOPE BY DECISION (2026-08-27): the bridge contracts are not being worked on for now, so this drift is accepted rather than pursued. That is a SCOPE ruling, not a safety assessment - the drift is real and remains UNDIAGNOSED: the on-chain runtime code is simply not reproduced by a clean build of this tree, and nobody has established which commit it was built from or whether the difference is material. Do not read this entry as evidence it is harmless. DECLARED ON EVERY CHAIN THAT RECORDS IT: the implementation is CREATE2-deployed from fixed type(BridgeEscrow).creationCode (01_DeployImplementations.s.sol), so all 23 copies live at this one address and share the one mismatch. Entries are per-chain by design so a per-chain disappearance is still caught as a dangling entry.",
+      "recorded": "2026-08-27",
+      "action": "NONE while the bridge is out of scope. When bridge work resumes: diagnose which commit this was built from, decide whether the difference is material, then redeploy or re-justify. Delete ALL 23 entries together once it is fixed.",
+      "scope": "bridge - out of scope as of 2026-08-27"
+    },
+    "5000:0xe2237d9776041514b1ac66856407ed344b480de0": {
+      "key": "BridgeEscrowImplementation",
+      "reason": "OUT OF SCOPE BY DECISION (2026-08-27): the bridge contracts are not being worked on for now, so this drift is accepted rather than pursued. That is a SCOPE ruling, not a safety assessment - the drift is real and remains UNDIAGNOSED: the on-chain runtime code is simply not reproduced by a clean build of this tree, and nobody has established which commit it was built from or whether the difference is material. Do not read this entry as evidence it is harmless. DECLARED ON EVERY CHAIN THAT RECORDS IT: the implementation is CREATE2-deployed from fixed type(BridgeEscrow).creationCode (01_DeployImplementations.s.sol), so all 23 copies live at this one address and share the one mismatch. Entries are per-chain by design so a per-chain disappearance is still caught as a dangling entry.",
+      "recorded": "2026-08-27",
+      "action": "NONE while the bridge is out of scope. When bridge work resumes: diagnose which commit this was built from, decide whether the difference is material, then redeploy or re-justify. Delete ALL 23 entries together once it is fixed.",
+      "scope": "bridge - out of scope as of 2026-08-27"
+    },
+    "8453:0xe2237d9776041514b1ac66856407ed344b480de0": {
+      "key": "BridgeEscrowImplementation",
+      "reason": "OUT OF SCOPE BY DECISION (2026-08-27): the bridge contracts are not being worked on for now, so this drift is accepted rather than pursued. That is a SCOPE ruling, not a safety assessment - the drift is real and remains UNDIAGNOSED: the on-chain runtime code is simply not reproduced by a clean build of this tree, and nobody has established which commit it was built from or whether the difference is material. Do not read this entry as evidence it is harmless. DECLARED ON EVERY CHAIN THAT RECORDS IT: the implementation is CREATE2-deployed from fixed type(BridgeEscrow).creationCode (01_DeployImplementations.s.sol), so all 23 copies live at this one address and share the one mismatch. Entries are per-chain by design so a per-chain disappearance is still caught as a dangling entry.",
+      "recorded": "2026-08-27",
+      "action": "NONE while the bridge is out of scope. When bridge work resumes: diagnose which commit this was built from, decide whether the difference is material, then redeploy or re-justify. Delete ALL 23 entries together once it is fixed.",
+      "scope": "bridge - out of scope as of 2026-08-27"
+    },
+    "9745:0xe2237d9776041514b1ac66856407ed344b480de0": {
+      "key": "BridgeEscrowImplementation",
+      "reason": "OUT OF SCOPE BY DECISION (2026-08-27): the bridge contracts are not being worked on for now, so this drift is accepted rather than pursued. That is a SCOPE ruling, not a safety assessment - the drift is real and remains UNDIAGNOSED: the on-chain runtime code is simply not reproduced by a clean build of this tree, and nobody has established which commit it was built from or whether the difference is material. Do not read this entry as evidence it is harmless. DECLARED ON EVERY CHAIN THAT RECORDS IT: the implementation is CREATE2-deployed from fixed type(BridgeEscrow).creationCode (01_DeployImplementations.s.sol), so all 23 copies live at this one address and share the one mismatch. Entries are per-chain by design so a per-chain disappearance is still caught as a dangling entry.",
+      "recorded": "2026-08-27",
+      "action": "NONE while the bridge is out of scope. When bridge work resumes: diagnose which commit this was built from, decide whether the difference is material, then redeploy or re-justify. Delete ALL 23 entries together once it is fixed.",
+      "scope": "bridge - out of scope as of 2026-08-27"
+    },
+    "16661:0xe2237d9776041514b1ac66856407ed344b480de0": {
+      "key": "BridgeEscrowImplementation",
+      "reason": "OUT OF SCOPE BY DECISION (2026-08-27): the bridge contracts are not being worked on for now, so this drift is accepted rather than pursued. That is a SCOPE ruling, not a safety assessment - the drift is real and remains UNDIAGNOSED: the on-chain runtime code is simply not reproduced by a clean build of this tree, and nobody has established which commit it was built from or whether the difference is material. Do not read this entry as evidence it is harmless. DECLARED ON EVERY CHAIN THAT RECORDS IT: the implementation is CREATE2-deployed from fixed type(BridgeEscrow).creationCode (01_DeployImplementations.s.sol), so all 23 copies live at this one address and share the one mismatch. Entries are per-chain by design so a per-chain disappearance is still caught as a dangling entry.",
+      "recorded": "2026-08-27",
+      "action": "NONE while the bridge is out of scope. When bridge work resumes: diagnose which commit this was built from, decide whether the difference is material, then redeploy or re-justify. Delete ALL 23 entries together once it is fixed.",
+      "scope": "bridge - out of scope as of 2026-08-27"
+    },
+    "42161:0xe2237d9776041514b1ac66856407ed344b480de0": {
+      "key": "BridgeEscrowImplementation",
+      "reason": "OUT OF SCOPE BY DECISION (2026-08-27): the bridge contracts are not being worked on for now, so this drift is accepted rather than pursued. That is a SCOPE ruling, not a safety assessment - the drift is real and remains UNDIAGNOSED: the on-chain runtime code is simply not reproduced by a clean build of this tree, and nobody has established which commit it was built from or whether the difference is material. Do not read this entry as evidence it is harmless. DECLARED ON EVERY CHAIN THAT RECORDS IT: the implementation is CREATE2-deployed from fixed type(BridgeEscrow).creationCode (01_DeployImplementations.s.sol), so all 23 copies live at this one address and share the one mismatch. Entries are per-chain by design so a per-chain disappearance is still caught as a dangling entry.",
+      "recorded": "2026-08-27",
+      "action": "NONE while the bridge is out of scope. When bridge work resumes: diagnose which commit this was built from, decide whether the difference is material, then redeploy or re-justify. Delete ALL 23 entries together once it is fixed.",
+      "scope": "bridge - out of scope as of 2026-08-27"
+    },
+    "42220:0xe2237d9776041514b1ac66856407ed344b480de0": {
+      "key": "BridgeEscrowImplementation",
+      "reason": "OUT OF SCOPE BY DECISION (2026-08-27): the bridge contracts are not being worked on for now, so this drift is accepted rather than pursued. That is a SCOPE ruling, not a safety assessment - the drift is real and remains UNDIAGNOSED: the on-chain runtime code is simply not reproduced by a clean build of this tree, and nobody has established which commit it was built from or whether the difference is material. Do not read this entry as evidence it is harmless. DECLARED ON EVERY CHAIN THAT RECORDS IT: the implementation is CREATE2-deployed from fixed type(BridgeEscrow).creationCode (01_DeployImplementations.s.sol), so all 23 copies live at this one address and share the one mismatch. Entries are per-chain by design so a per-chain disappearance is still caught as a dangling entry.",
+      "recorded": "2026-08-27",
+      "action": "NONE while the bridge is out of scope. When bridge work resumes: diagnose which commit this was built from, decide whether the difference is material, then redeploy or re-justify. Delete ALL 23 entries together once it is fixed.",
+      "scope": "bridge - out of scope as of 2026-08-27"
+    },
+    "43111:0xe2237d9776041514b1ac66856407ed344b480de0": {
+      "key": "BridgeEscrowImplementation",
+      "reason": "OUT OF SCOPE BY DECISION (2026-08-27): the bridge contracts are not being worked on for now, so this drift is accepted rather than pursued. That is a SCOPE ruling, not a safety assessment - the drift is real and remains UNDIAGNOSED: the on-chain runtime code is simply not reproduced by a clean build of this tree, and nobody has established which commit it was built from or whether the difference is material. Do not read this entry as evidence it is harmless. DECLARED ON EVERY CHAIN THAT RECORDS IT: the implementation is CREATE2-deployed from fixed type(BridgeEscrow).creationCode (01_DeployImplementations.s.sol), so all 23 copies live at this one address and share the one mismatch. Entries are per-chain by design so a per-chain disappearance is still caught as a dangling entry.",
+      "recorded": "2026-08-27",
+      "action": "NONE while the bridge is out of scope. When bridge work resumes: diagnose which commit this was built from, decide whether the difference is material, then redeploy or re-justify. Delete ALL 23 entries together once it is fixed.",
+      "scope": "bridge - out of scope as of 2026-08-27"
+    },
+    "43114:0xe2237d9776041514b1ac66856407ed344b480de0": {
+      "key": "BridgeEscrowImplementation",
+      "reason": "OUT OF SCOPE BY DECISION (2026-08-27): the bridge contracts are not being worked on for now, so this drift is accepted rather than pursued. That is a SCOPE ruling, not a safety assessment - the drift is real and remains UNDIAGNOSED: the on-chain runtime code is simply not reproduced by a clean build of this tree, and nobody has established which commit it was built from or whether the difference is material. Do not read this entry as evidence it is harmless. DECLARED ON EVERY CHAIN THAT RECORDS IT: the implementation is CREATE2-deployed from fixed type(BridgeEscrow).creationCode (01_DeployImplementations.s.sol), so all 23 copies live at this one address and share the one mismatch. Entries are per-chain by design so a per-chain disappearance is still caught as a dangling entry.",
+      "recorded": "2026-08-27",
+      "action": "NONE while the bridge is out of scope. When bridge work resumes: diagnose which commit this was built from, decide whether the difference is material, then redeploy or re-justify. Delete ALL 23 entries together once it is fixed.",
+      "scope": "bridge - out of scope as of 2026-08-27"
+    },
+    "57073:0xe2237d9776041514b1ac66856407ed344b480de0": {
+      "key": "BridgeEscrowImplementation",
+      "reason": "OUT OF SCOPE BY DECISION (2026-08-27): the bridge contracts are not being worked on for now, so this drift is accepted rather than pursued. That is a SCOPE ruling, not a safety assessment - the drift is real and remains UNDIAGNOSED: the on-chain runtime code is simply not reproduced by a clean build of this tree, and nobody has established which commit it was built from or whether the difference is material. Do not read this entry as evidence it is harmless. DECLARED ON EVERY CHAIN THAT RECORDS IT: the implementation is CREATE2-deployed from fixed type(BridgeEscrow).creationCode (01_DeployImplementations.s.sol), so all 23 copies live at this one address and share the one mismatch. Entries are per-chain by design so a per-chain disappearance is still caught as a dangling entry.",
+      "recorded": "2026-08-27",
+      "action": "NONE while the bridge is out of scope. When bridge work resumes: diagnose which commit this was built from, decide whether the difference is material, then redeploy or re-justify. Delete ALL 23 entries together once it is fixed.",
+      "scope": "bridge - out of scope as of 2026-08-27"
+    },
+    "59144:0xe2237d9776041514b1ac66856407ed344b480de0": {
+      "key": "BridgeEscrowImplementation",
+      "reason": "OUT OF SCOPE BY DECISION (2026-08-27): the bridge contracts are not being worked on for now, so this drift is accepted rather than pursued. That is a SCOPE ruling, not a safety assessment - the drift is real and remains UNDIAGNOSED: the on-chain runtime code is simply not reproduced by a clean build of this tree, and nobody has established which commit it was built from or whether the difference is material. Do not read this entry as evidence it is harmless. DECLARED ON EVERY CHAIN THAT RECORDS IT: the implementation is CREATE2-deployed from fixed type(BridgeEscrow).creationCode (01_DeployImplementations.s.sol), so all 23 copies live at this one address and share the one mismatch. Entries are per-chain by design so a per-chain disappearance is still caught as a dangling entry.",
+      "recorded": "2026-08-27",
+      "action": "NONE while the bridge is out of scope. When bridge work resumes: diagnose which commit this was built from, decide whether the difference is material, then redeploy or re-justify. Delete ALL 23 entries together once it is fixed.",
+      "scope": "bridge - out of scope as of 2026-08-27"
+    },
+    "80094:0xe2237d9776041514b1ac66856407ed344b480de0": {
+      "key": "BridgeEscrowImplementation",
+      "reason": "OUT OF SCOPE BY DECISION (2026-08-27): the bridge contracts are not being worked on for now, so this drift is accepted rather than pursued. That is a SCOPE ruling, not a safety assessment - the drift is real and remains UNDIAGNOSED: the on-chain runtime code is simply not reproduced by a clean build of this tree, and nobody has established which commit it was built from or whether the difference is material. Do not read this entry as evidence it is harmless. DECLARED ON EVERY CHAIN THAT RECORDS IT: the implementation is CREATE2-deployed from fixed type(BridgeEscrow).creationCode (01_DeployImplementations.s.sol), so all 23 copies live at this one address and share the one mismatch. Entries are per-chain by design so a per-chain disappearance is still caught as a dangling entry.",
+      "recorded": "2026-08-27",
+      "action": "NONE while the bridge is out of scope. When bridge work resumes: diagnose which commit this was built from, decide whether the difference is material, then redeploy or re-justify. Delete ALL 23 entries together once it is fixed.",
+      "scope": "bridge - out of scope as of 2026-08-27"
+    },
+    "534352:0xe2237d9776041514b1ac66856407ed344b480de0": {
+      "key": "BridgeEscrowImplementation",
+      "reason": "OUT OF SCOPE BY DECISION (2026-08-27): the bridge contracts are not being worked on for now, so this drift is accepted rather than pursued. That is a SCOPE ruling, not a safety assessment - the drift is real and remains UNDIAGNOSED: the on-chain runtime code is simply not reproduced by a clean build of this tree, and nobody has established which commit it was built from or whether the difference is material. Do not read this entry as evidence it is harmless. DECLARED ON EVERY CHAIN THAT RECORDS IT: the implementation is CREATE2-deployed from fixed type(BridgeEscrow).creationCode (01_DeployImplementations.s.sol), so all 23 copies live at this one address and share the one mismatch. Entries are per-chain by design so a per-chain disappearance is still caught as a dangling entry.",
+      "recorded": "2026-08-27",
+      "action": "NONE while the bridge is out of scope. When bridge work resumes: diagnose which commit this was built from, decide whether the difference is material, then redeploy or re-justify. Delete ALL 23 entries together once it is fixed.",
+      "scope": "bridge - out of scope as of 2026-08-27"
+    },
+    "1:0x3feb6f1e0cd384be4440cfccd1aa90394a05b1a4": {
+      "key": "balanceAdapters.PolygonStakingMeta",
+      "scope": "in scope - a real open item, unlike the bridge entries",
+      "reason": "The deployed adapter PREDATES the `word == 0` guard in `_readValidatorId`. It was compiled at f2d14408; 8a3a527b added `if (word == 0) return (0, false);` afterwards. Measured twice, independently: the live runtime is 7460 bytes against 7466 for a clean build of this tree, and rebuilding HEAD with only that line removed reproduces the on-chain bytecode exactly once the two immutables are masked. IMPACT IS DISPLAY-ONLY: the live adapter renders 'Validator #0' for an instance that answers every selector with a zero word, where this source falls back to '<POL symbol> <address>'. `positionLabels` feeds no valuation, `_instancePositions` is byte-identical between the two builds, and no NAV figure differs. Declared rather than silently carried because the adapter is IMMUTABLE - closing it needs a redeploy plus another SwapMetaAdapter run against a live NAVCalculator, which is an operator decision.",
+      "recorded": "2026-08-27",
+      "action": "REDEPLOY at the next opportunity, then run SwapMetaAdapter and DELETE this entry. Unlike the bridge entries this is not descoped - it is a real open item with a known cause and a known fix."
+    }
+  }
+}

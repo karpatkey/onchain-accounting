@@ -12,7 +12,7 @@ import {BridgeScenarioHelper} from "test/bridge/BridgeScenarioHelper.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "test/bridge/mocks/MockBridgeProtocols.sol";
 import {MockCrossDomainMessenger, MockOptimismPortalReal} from "test/bridge/mocks/SuperchainProvenanceMocks.sol";
-import {Types} from "@optimism/libraries/Types.sol";
+import {Types} from "src/bridge/adapters/lib/OptimismTypes.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/errors.sol";
 

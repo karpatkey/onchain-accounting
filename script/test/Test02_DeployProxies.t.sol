@@ -145,18 +145,14 @@ contract Test02a_DeployProxies is TestEnvConfigurator {
             "Bridge proxy address disagrees with vm.computeCreate2Address"
         );
 
-        // Verify addresses are computed correctly and consistently
-        // (We don't actually deploy here since the goal is to test address computation)
-        assertTrue(computedNavProxy != address(0), "NAV proxy address should be non-zero");
-        assertTrue(computedBridgeProxy != address(0), "Bridge proxy address should be non-zero");
-        assertTrue(computedNavProxy != computedBridgeProxy, "NAV and Bridge proxies should have different addresses");
-
-        // Verify address computation is consistent (same inputs = same output)
-        address recomputedNavProxy = _computeCreate2Address(CANONICAL_CREATE2_DEPLOYER, saltNavProxy, navProxyBytecode);
-        address recomputedBridgeProxy =
-            _computeCreate2Address(CANONICAL_CREATE2_DEPLOYER, saltBridgeProxy, bridgeProxyBytecode);
-        assertEq(computedNavProxy, recomputedNavProxy, "NAV proxy address computation should be consistent");
-        assertEq(computedBridgeProxy, recomputedBridgeProxy, "Bridge proxy address computation should be consistent");
+        // The two proxies must not collide. This is the one distinctness check here that can
+        // actually fail: it fires if the salt derivation ever returns the same salt for both (a
+        // plausible copy-paste), whereas asserting either address is non-zero only restates that
+        // keccak output is not 2**-160-improbable, and re-invoking the pure `_computeCreate2Address`
+        // with identical arguments only restates that a pure function is deterministic. Both of
+        // those were asserted here and neither could ever fail, so they have been dropped rather
+        // than left to read as coverage.
+        assertTrue(computedNavProxy != computedBridgeProxy, "NAV and Bridge proxies must not collide");
     }
 
     /// @notice Test that proxy addresses are the same across all networks

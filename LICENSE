@@ -16,8 +16,10 @@ incorporates them is likewise governed by GPL-2.0-or-later.
 
 One file is vendored verbatim from upstream. It carries an upstream
 `SPDX-License-Identifier: MIT` header and is governed by MIT rather than by the
-license below. Optimism licenses its project MIT. The copyright and permission
-notices MIT requires to accompany copies are reproduced in
+license below. The copied subtree carries its own MIT grant at
+packages/contracts-bedrock/LICENSE, which is the notice that governs it (the
+monorepo root carries a separate, differently-worded MIT notice). The copyright
+and permission notices MIT requires to accompany copies are reproduced in
 THIRD-PARTY-NOTICES.md:
 
   - src/bridge/adapters/lib/OptimismTypes.sol

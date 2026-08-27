@@ -7,7 +7,7 @@ silently becomes a "maintained fork" and the header turns into a lie that nothin
 
 Three checks, deliberately asymmetric:
 
-  1. COVERAGE (hard, offline). Every file in the tree carrying a "Vendored VERBATIM" header must
+  1. COVERAGE (hard, offline). Every file in the WORKING TREE carrying a "Vendored VERBATIM" header must
      appear in MANIFEST. Deleting a manifest row must not silently drop a file from the guard.
   2. MANIFEST (hard, offline). The normalised body hash of each vendored file must equal the
      recorded hash. Catches a local edit with no network involved.
@@ -154,8 +154,40 @@ def body_hash(src: str) -> str:
     return hashlib.sha256(normalise(src).encode()).hexdigest()
 
 
+def header_provenance_problem(src: str, repo: str, upath: str) -> str | None:
+    """None when the header's repo/path agree with the manifest, else a description of the problem.
+
+    Split out of `verify` so `--self-test` can pin it without a network. Only the pinned REV used
+    to be tied to the manifest, and the body hash excludes comments, so nothing stopped the header
+    from naming a different repo/path than the one the fetch actually uses.
+    """
+    hdr_repo = re.search(r"Upstream repo:\s+(\S+)", src)
+    hdr_path = re.search(r"Upstream path:\s+(\S+)", src)
+    if not hdr_repo or not hdr_path:
+        return "header is missing a parseable 'Upstream repo:'/'Upstream path:' line"
+    # endswith, not equality: the header records a browsable URL while the manifest records the
+    # bare owner/name the raw API needs.
+    if not hdr_repo.group(1).rstrip("/").endswith(repo):
+        return f"header repo ({hdr_repo.group(1)}) disagrees with the manifest repo ({repo})"
+    if hdr_path.group(1) != upath:
+        return f"header path ({hdr_path.group(1)}) disagrees with the manifest path ({upath})"
+    return None
+
+
+def _spdx(text: str) -> str | None:
+    """The SPDX licence identifier, or None. Compared across local/upstream, never parsed for meaning."""
+    m = re.search(r"SPDX-License-Identifier:\s*(\S+)", text)
+    return m.group(1) if m else None
+
+
 def discover_vendored() -> set[str]:
-    """Every tracked .sol file carrying the vendored marker."""
+    """Every .sol file in the WORKING TREE carrying the vendored marker.
+
+    Deliberately the working tree and not `git ls-files`: an untracked local copy carrying the
+    marker and no manifest row should fail here, before it is ever committed. The cost is that
+    such a file fails locally in a way CI cannot reproduce — that is the safe direction, but it
+    is why this says working tree rather than "tracked", which an earlier revision claimed.
+    """
     found = set()
     # `test/**` is in scope too: the bridge mocks already import vendored code, so a vendored
     # test helper is plausible, and one carrying the marker but no manifest entry would otherwise
@@ -215,11 +247,45 @@ def fetch_upstream(repo: str, upath: str, rev: str) -> str | None:
         return None
 
 
-def do_update() -> int:
-    """Rewrite the recorded hashes in place, substituting whatever is currently there."""
+def do_update(allow_offline: bool = False) -> int:
+    """Re-record each hash from disk, but ONLY after confirming disk still matches upstream.
+
+    `--update` is the single command that can silence this guard, and it used to record whatever
+    was on disk with no validation at all — which is what turned a local edit into a permanently
+    green tree: edit the file, `--update`, and every offline check now agrees with the edit. It
+    now fetches the pinned upstream rev first and refuses when the normalised bodies differ, so
+    re-vendoring stays a deliberate act (bump the rev in the header AND the manifest, then update)
+    rather than a laundering step.
+
+    `--update --offline` remains for a genuine network outage. It is deliberately explicit: the
+    operator has to say they are recording an unverified hash.
+    """
     text = Path(__file__).read_text(encoding="utf-8")
     for rel, (_repo, _upath, _rev, old) in MANIFEST.items():
-        new = body_hash((ROOT / rel).read_text(encoding="utf-8"))
+        local = (ROOT / rel).read_text(encoding="utf-8")
+        new = body_hash(local)
+        if not allow_offline:
+            try:
+                upstream = fetch_upstream(_repo, _upath, _rev)
+            except ProvenanceError as exc:
+                print(f"FAIL  {rel} — {exc}")
+                return 1
+            if upstream is None:
+                print(
+                    f"FAIL  {rel} — could not reach upstream, so this hash cannot be validated.\n"
+                    f"      Re-run when the network is back, or pass --update --offline to record\n"
+                    f"      an UNVERIFIED hash deliberately."
+                )
+                return 1
+            if body_hash(upstream) != new:
+                print(
+                    f"FAIL  {rel} — refusing to record a hash that does not match upstream\n"
+                    f"      {_repo}@{_rev[:12]}:{_upath}\n"
+                    f"      --update re-records provenance; it is not a way to accept a local edit.\n"
+                    f"      To re-vendor at a NEW rev, change the rev in the file header AND the\n"
+                    f"      manifest first, then run --update."
+                )
+                return 1
         # Replace the 4th tuple element for this entry — matched by position, not by a one-shot
         # placeholder, so --update stays repeatable instead of silently no-opping after first use.
         text, count = _rewrite_entry(text, rel, new)
@@ -227,7 +293,7 @@ def do_update() -> int:
             print(f"FAIL  could not rewrite the hash row for {rel} (matched {count} times)")
             return 1
         print(f"updated {rel} -> {new}")
-    Path(__file__).write_text(text)
+    Path(__file__).write_text(text, encoding="utf-8")
     print("Manifest updated. Re-run without --update to verify.")
     return 0
 
@@ -289,6 +355,15 @@ def verify() -> int:
         # The header rev must agree with the manifest. `///` lines are stripped from the body hash,
         # so nothing else ties the two together. An unparseable header is a FAILURE, not a pass —
         # otherwise drifting the header wording silently disables this check.
+        # The header's repo and path must agree with the MANIFEST values the fetch actually uses.
+        # Without this only the REV was tied to the manifest, and the body hash excludes comments,
+        # so the header could name a different repo/path than the one being verified — the exact
+        # shape that lets a hand-edited `upstream_path` send the fetch somewhere harmless.
+        problem = header_provenance_problem(src, repo, upath)
+        if problem:
+            failures.append(f"FAIL  {rel} — {problem}")
+            continue
+
         m = re.search(r"Pinned rev:\s+([0-9a-f]{40})", src)
         if not m:
             failures.append(
@@ -320,6 +395,17 @@ def verify() -> int:
         if up_hash != actual:
             failures.append(
                 f"FAIL  {rel} — does NOT match upstream {repo}@{rev[:12]}:{upath}"
+            )
+            continue
+        # The SPDX tag is a COMMENT, so the body hash cannot see it. Relicensing a vendored file
+        # is exactly the kind of edit a repo-wide header sweep makes by accident: every other file
+        # under src/ carries BUSL-1.1, and flipping this one would put MIT-licensed upstream code
+        # under the wrong licence with the guard still reporting "verbatim". Compare it to
+        # upstream's own tag while we have the upstream bytes in hand.
+        if _spdx(src) != _spdx(upstream):
+            failures.append(
+                f"FAIL  {rel} — SPDX tag ({_spdx(src) or 'missing'}) does not match upstream's "
+                f"({_spdx(upstream) or 'missing'}). A vendored file keeps the UPSTREAM licence tag."
             )
             continue
         print(f"ok    {rel} — verbatim vs {repo}@{rev[:12]}")
@@ -367,14 +453,19 @@ def self_test() -> int:
     except DriftError:
         print("self-test ok    comment-only file raises")
 
-    # The guard must actually reject a real injected field in the real vendored file.
+    # The guard must actually reject a real injected field in each real vendored file.
+    #
+    # The mutation is APPENDED rather than spliced at a fixed anchor. An earlier revision spliced
+    # after the literal `uint256 nonce;`, which exists only in the Optimism file — so the second
+    # vendored file the ADR anticipates would have made this arm print "anchor missing" and exit 1
+    # on a clean tree, reddening the preflight step for every PR while nothing had drifted. The
+    # tempting fix under that pressure is to delete this arm, which would remove the only
+    # assertion proving the guard fires on an injected struct member. Appending needs no anchor,
+    # works for any vendored file, and still exercises the original defect: code hidden behind an
+    # empty block comment. Nothing here compiles the result — it is hashed, not parsed.
     for rel in MANIFEST:
         src = (ROOT / rel).read_text(encoding="utf-8")
-        mutated = src.replace("uint256 nonce;", "uint256 nonce;\n        /**/ uint256 injected;", 1)
-        if mutated == src:
-            print(f"SELF-TEST FAIL  could not mutate {rel} (anchor missing)")
-            failed += 1
-            continue
+        mutated = src + "\n/**/ uint256 injected;\n"
         if body_hash(mutated) == body_hash(src):
             print(f"SELF-TEST FAIL  injected field is invisible to the hash in {rel}")
             failed += 1
@@ -392,6 +483,23 @@ def self_test() -> int:
             failed += 1
         else:
             print("self-test ok    lone-CR line comment does NOT hide code")
+
+    # The header/manifest provenance agreement, offline. The repointed-path case is the shape of
+    # a real exploit: leave the rev untouched so the rev check still passes, and send the fetch at
+    # a path that 404s.
+    _REPO, _UPATH = "ethereum-optimism/optimism", "packages/contracts-bedrock/src/libraries/Types.sol"
+    _good = f"/// Upstream repo: https://github.com/{_REPO}\n/// Upstream path: {_UPATH}\n"
+    for name, hdr, want_problem in (
+        ("matching header accepted", _good, False),
+        ("repointed path rejected", _good.replace("/src/", "/contracts/"), True),
+        ("swapped repo rejected", _good.replace(_REPO, "attacker/optimism"), True),
+        ("missing header rejected", "/// no provenance here\n", True),
+    ):
+        if (header_provenance_problem(hdr, _REPO, _UPATH) is not None) != want_problem:
+            print(f"SELF-TEST FAIL  provenance: {name}")
+            failed += 1
+        else:
+            print(f"self-test ok    provenance: {name}")
 
     # The fetch-failure taxonomy, offline. A 404 means the pinned rev or upstream_path does not
     # resolve, so provenance is UNVERIFIABLE and must fail loudly; a 503 or a transport error is a
@@ -430,7 +538,7 @@ def self_test() -> int:
 def main() -> int:
     arg = sys.argv[1] if len(sys.argv) > 1 else ""
     if arg == "--update":
-        return do_update()
+        return do_update(allow_offline="--offline" in sys.argv[2:])
     if arg == "--self-test":
         return self_test()
     if arg:

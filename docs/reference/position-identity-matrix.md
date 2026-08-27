@@ -49,6 +49,8 @@ Identity is the tuple `(chainId, protocolSubId, positionId, balanceAsset.asset, 
 | | | `abi.encode(address stakeToken)` | claimable rewards | `Rewards` | false | bare reserve of reward |
 | StakeWiseV3VaultsMeta | `stakewise-v3-vaults` | `abi.encode(address vault)` | vault stake (shares → assets) | `Staking` | false | ETH (mainnet) / GNO (Gnosis) |
 | | | | minted osToken debt | `Borrowed` | true | same underlying |
+| PolygonStakingMeta | `polygon-staking` | `abi.encode(address validatorShare)` | delegated principal | `Staking` | false | POL |
+| PolygonStakingMeta | `polygon-staking` | `abi.encode(address validatorShare)` | unclaimed rewards | `Rewards` | false | POL |
 | UniswapV2PoolsMeta | `uniswap-v2` | `abi.encode(address pair)` | token0 pro-rata principal | `Supplied` | false | token0 |
 | | | | token1 pro-rata principal | `Supplied` | false | token1 |
 | PancakeSwapV2PoolsMeta | `pancakeswap-v2` | `abi.encode(address pair)` | same 2 legs as Uniswap V2 | `Supplied` | false | token0/token1 |

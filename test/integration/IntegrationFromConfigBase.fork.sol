@@ -64,6 +64,7 @@ import {KelpWithdrawalQueueBalanceAdapter} from "src/balances/BalanceAdapters/Ke
 import {
     StakeWiseV3VaultsMetaBalanceAdapter
 } from "src/balances/MetaBalanceAdapters/StakeWiseV3VaultsMetaBalanceAdapter.sol";
+import {PolygonStakingMetaBalanceAdapter} from "src/balances/MetaBalanceAdapters/PolygonStakingMetaBalanceAdapter.sol";
 import {
     UniswapV3PoolsMetaBalanceAdapter
 } from "src/balances/MetaBalanceAdapters/uniswap/UniswapV3PoolsMetaBalanceAdapter.sol";
@@ -664,6 +665,10 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         if (_equals(name, "StakeWiseV3VaultsMeta")) {
             return _deployStakeWiseV3VaultsMeta(name, navAddr);
         }
+
+        if (_equals(name, "PolygonStakingMeta")) {
+            return _deployPolygonStakingMeta(name, navAddr);
+        }
         if (_equals(name, "UniswapV3PoolsMeta")) {
             return _deployUniswapV3PoolsMeta(name, navAddr);
         }
@@ -825,6 +830,12 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
             ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "osTokenVaultController")
         );
         return address(new StakeWiseV3VaultsMetaBalanceAdapter(underlyingToken, osTokenVaultController, navAddr));
+    }
+
+    function _deployPolygonStakingMeta(string memory name, address navAddr) internal returns (address) {
+        address underlyingToken =
+            vm.parseAddress(ConfigReader.readAdapterParam(vm, _chainId, "balanceAdapters", name, "underlyingToken"));
+        return address(new PolygonStakingMetaBalanceAdapter(underlyingToken, navAddr));
     }
 
     function _deployUniswapV3PoolsMeta(string memory name, address navAddr) internal returns (address) {

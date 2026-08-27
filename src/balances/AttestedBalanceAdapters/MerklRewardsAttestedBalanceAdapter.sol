@@ -435,10 +435,6 @@ contract MerklRewardsAttestedBalanceAdapter is AttestedValueCache {
         return MAX_TOKENS_PER_USER;
     }
 
-    function _maxLegsPerAsset() internal pure override returns (uint256) {
-        return MAX_CAMPAIGNS_PER_TOKEN;
-    }
-
     function _completionReservePerLeg() internal pure override returns (uint256) {
         return _COMPLETION_RESERVE_PER_LEG;
     }

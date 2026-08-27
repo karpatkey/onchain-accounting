@@ -228,16 +228,6 @@ abstract contract AttestedValueCache is IAttestedBalanceAdapter, IPositionDescri
         return _assetList[account];
     }
 
-    /// @dev Internal accessor for members that need the enumeration (e.g. to build their own views).
-    function _cachedAssets(address account) internal view returns (address[] memory) {
-        return _assetList[account];
-    }
-
-    /// @dev True when `asset` is in `account`'s cache. O(1).
-    function _isCached(address account, address asset) internal view returns (bool) {
-        return _assetIdxPlus1[account][asset] != 0;
-    }
-
     /// @inheritdoc IERC165
     /// @dev Advertises the family marker plus the two adapter interfaces every member implements. A member adding a
     ///      further interface overrides and `super`s.
@@ -471,7 +461,7 @@ abstract contract AttestedValueCache is IAttestedBalanceAdapter, IPositionDescri
     ///      `GasStipendLib.exhausted`, and `AdapterGasExhausted` takes down the account's WHOLE `getAccountNav`.
     ///
     ///      This bounds per-item FAILURE. It does NOT bound aggregate SIZE — stipends partition cost, they do not
-    ///      shrink it — which is what {_maxAssetsPerAccount} × {_maxLegsPerAsset} is for. The two are not
+    ///      shrink it — which is what {_maxAssetsPerAccount} times the member's write-enforced per-asset leg cap is for. The two are not
     ///      substitutes: isolation alone still leaves a well-behaved read at the cap unaffordable, and the caps
     ///      alone still lose the whole set to one reverting asset.
     ///
@@ -644,12 +634,14 @@ abstract contract AttestedValueCache is IAttestedBalanceAdapter, IPositionDescri
     ///         been established as live, so it must not re-check staleness.
     function _liveValue(address account, address asset, uint256 attestedValue) internal view virtual returns (uint256);
 
-    /// @notice Per-account cache cap. Bounds the read fan-out together with {_maxLegsPerAsset}; it is their PRODUCT
-    ///         a read budget must be sized against, never either alone.
+    /// @notice Per-account cache cap — the only bound this base enforces.
+    /// @dev **It is NOT the read bound on its own.** The leg count is this cap times the member's per-asset leg
+    ///      fan-out, and it is that PRODUCT a read budget must be sized against. The base deliberately does not
+    ///      declare a `_maxLegsPerAsset` hook: the per-asset cap belongs on the WRITE path, enforced fail-loud by
+    ///      the member before the data exists (Merkl's `TooManyCampaigns`), because rejecting at write is what keeps
+    ///      the read bounded. A read-side hook would either duplicate that or silently truncate. The base needs only
+    ///      {_cachedLegCount}, the ACTUAL count, to size its scratch buffer.
     function _maxAssetsPerAccount() internal pure virtual returns (uint256);
-
-    /// @notice Upper bound on legs one asset may emit. See {_maxAssetsPerAccount}.
-    function _maxLegsPerAsset() internal pure virtual returns (uint256);
 
     /// @notice Legs this asset will emit from the CACHE, for scratch-buffer sizing. Default: one. A member that
     ///         splits an asset into sub-positions overrides it.

@@ -63,6 +63,12 @@ const PROTOCOL_ICONS: Record<string, React.ComponentType<{ className?: string }>
   spark: SparkCircleColor,
   gearbox: GearboxCircleColor,
   euler: EulerCircleColor,
+  // `protocolName()` returns "Polygon Staking" (the product, not the chain), and getProtocolKey
+  // strips whitespace -> "polygonstaking". Keying this `polygon` never matched and the icon
+  // silently fell through to the CDN fallback, which has no entry either. `polygon` is kept as a
+  // transitional alias: the predecessor adapter returned the bare name, so a client reading a
+  // cached or older NAV still resolves.
+  polygonstaking: PolygonCircleColor,
   polygon: PolygonCircleColor,
 }
 
@@ -91,6 +97,7 @@ const PROTOCOL_URLS: Record<string, string> = {
   'ether.fi': 'https://app.ether.fi/',
   stakewise: 'https://app.stakewise.io/',
   nexus: 'https://app.nexusmutual.io/',
+  polygonstaking: 'https://staking.polygon.technology/',
   polygon: 'https://staking.polygon.technology/',
 }
 

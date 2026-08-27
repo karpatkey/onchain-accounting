@@ -12,10 +12,26 @@ incorporate them (Uniswap V3 and, by inheritance, PancakeSwap V3). Those files
 carry their own `SPDX-License-Identifier: GPL-2.0-or-later` header and are
 governed by GPL-2.0-or-later, not by the license below; see
 docs/decisions/0008-uniswap-v3-math-libs-gpl-license.md. Any combined work that
-incorporates them is likewise governed by GPL-2.0-or-later. Dependencies under
-lib/ retain their own upstream licenses. The Business Source License below
-applies to the remainder of the Licensed Work (the files whose header reads
-`SPDX-License-Identifier: BUSL-1.1`).
+incorporates them is likewise governed by GPL-2.0-or-later.
+
+One file is vendored verbatim from upstream. It carries an upstream
+`SPDX-License-Identifier: MIT` header and is governed by MIT rather than by the
+license below. The copied subtree carries its own MIT grant at
+packages/contracts-bedrock/LICENSE, which is the notice that governs it (the
+monorepo root carries a separate, differently-worded MIT notice). The copyright
+and permission notices MIT requires to accompany copies are reproduced in
+THIRD-PARTY-NOTICES.md:
+
+  - src/bridge/adapters/lib/OptimismTypes.sol
+      from ethereum-optimism/optimism, packages/contracts-bedrock/src/libraries/Types.sol
+
+It retains the upstream MIT license identifier in its own header and records its
+pinned upstream revision there. See
+docs/decisions/0024-dependency-size-vendor-single-file-deps.md.
+
+Dependencies under lib/ retain their own upstream licenses. The Business Source
+License below applies to the remainder of the Licensed Work (the files whose
+header reads `SPDX-License-Identifier: BUSL-1.1`).
 
 =============================================================================
 

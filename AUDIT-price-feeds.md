@@ -1,5 +1,14 @@
 # Price-feed leaf audit — the 27 untouched per-asset feeds
 
+> **PROVENANCE — EVERY COUNT BELOW IS HISTORICAL (as of the audit date), NOT CURRENT.**
+> This document's census ("39 instances", "mainnet 24", "6 of the 39") was measured when it was
+> written and nothing re-derives it, so it went stale the first time feeds were added. Measured
+> 2026-08-27: `script/config/deployments/1.json` holds **30** non-empty `customPriceFeeds` on mainnet,
+> not 24. Treat the totals as a snapshot of the reasoning, not as present-day inventory — re-derive
+> from the deployment records before relying on any figure here. The individual FINDINGS still stand
+> except where a note says otherwise (see the sDAI supersession below).
+
+
 **Status:** findings report. Originally a report-only artefact; committed 2026-07-29 so the reasoning behind the fixes in PR #199 is auditable from the repo rather than living in one worktree.
 
 **Branch:** `audit/price-feed-leaf-sweep` @ `53b2d2eb` (origin/main).

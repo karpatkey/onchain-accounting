@@ -43,6 +43,22 @@ contract LibraryPinConsistencyTest is Test {
     ///      assertions trustworthy, so when they skip it has nothing left to underwrite. Gating it also
     ///      keeps it away from `lite`, whose `extra_output = []` / `ast = false` build is not a tree the
     ///      pins are ever derived from.
+    /// @dev The artifact files the pin assertions read. Named so the freshness check and the
+    ///      `vm.getCode` binding provably refer to the SAME file rather than to a path literal and
+    ///      a bare contract name that only look related.
+    string internal constant PRICE_FEED_LIB_ARTIFACT = "out/PriceFeedLib.sol/PriceFeedLib.json";
+    string internal constant NAV_REGISTRY_LIB_ARTIFACT = "out/NAVRegistryLib.sol/NAVRegistryLib.json";
+    string internal constant NAV_CALCULATOR_ARTIFACT = "out/NAVCalculator.sol/NAVCalculator.json";
+
+    /// @dev The pin-affecting build inputs, mirrored from `[profile.default]` in foundry.toml.
+    ///      Asserted against what each artifact RECORDS, because identical sources under a
+    ///      different compiler or optimizer setting produce different bytecode and would otherwise
+    ///      satisfy every source-hash check in this file. `onlyPinnedProfile` keeps these off
+    ///      `[profile.lite]`, which is deliberately not bytecode-compatible.
+    string internal constant EXPECTED_COMPILER = "0.8.34+commit.80d5c536";
+    string internal constant EXPECTED_EVM_VERSION = "cancun";
+    uint256 internal constant EXPECTED_OPTIMIZER_RUNS = 200;
+
     modifier onlyPinnedProfile() {
         bytes32 profile = keccak256(bytes(vm.envOr("FOUNDRY_PROFILE", string("default"))));
         bool pinBearing = profile == keccak256("default") || profile == keccak256("slow") || profile == keccak256("");
@@ -103,9 +119,9 @@ contract LibraryPinConsistencyTest is Test {
     ///      its creation code was embedded, and adding the read without adding it here would have opened the gap
     ///      this file's own header warns about.
     function test_pinnedLibraryArtifactsWereBuiltFromThisTree() public onlyPinnedProfile {
-        _assertArtifactBuiltFromTree("out/PriceFeedLib.sol/PriceFeedLib.json", "PriceFeedLib");
-        _assertArtifactBuiltFromTree("out/NAVRegistryLib.sol/NAVRegistryLib.json", "NAVRegistryLib");
-        _assertArtifactBuiltFromTree("out/NAVCalculator.sol/NAVCalculator.json", "NAVCalculator");
+        _assertArtifactBuiltFromTree(PRICE_FEED_LIB_ARTIFACT, "PriceFeedLib");
+        _assertArtifactBuiltFromTree(NAV_REGISTRY_LIB_ARTIFACT, "NAVRegistryLib");
+        _assertArtifactBuiltFromTree(NAV_CALCULATOR_ARTIFACT, "NAVCalculator");
     }
 
     /// @dev Re-hashes every source the artifact records, and requires at least one — an artifact with an empty or
@@ -138,19 +154,83 @@ contract LibraryPinConsistencyTest is Test {
                 )
             );
         }
+
+        // M4 — SOURCES ARE NOT ENOUGH. Bytecode is a function of the source closure AND the
+        // compiler build AND the pin-affecting settings. An artifact compiled from byte-identical
+        // sources under a different solc, evm_version, optimizer setting or `[libraries]` mapping
+        // passes every assertion above with different bytecode. The clean-build job used to pin
+        // all of these by construction (fresh checkout + this foundry.toml + FOUNDRY_VERSION);
+        // with it gone they must be asserted, and the artifact already records every one of them.
+        assertEq(
+            vm.parseJsonString(json, ".metadata.compiler.version"),
+            EXPECTED_COMPILER,
+            string.concat(label, ": artifact was built by a different solc than this tree pins")
+        );
+        assertTrue(
+            vm.parseJsonBool(json, ".metadata.settings.viaIR"),
+            string.concat(label, ": artifact was not built with via_ir")
+        );
+        assertEq(
+            vm.parseJsonString(json, ".metadata.settings.evmVersion"),
+            EXPECTED_EVM_VERSION,
+            string.concat(label, ": artifact was built for a different EVM version")
+        );
+        assertTrue(
+            vm.parseJsonBool(json, ".metadata.settings.optimizer.enabled"),
+            string.concat(label, ": artifact was built with the optimizer disabled")
+        );
+        assertEq(
+            vm.parseJsonUint(json, ".metadata.settings.optimizer.runs"),
+            EXPECTED_OPTIMIZER_RUNS,
+            string.concat(label, ": artifact was built with different optimizer runs")
+        );
+    }
+
+    /// @dev M5 — bind the NAME the pin assertions read to the PATH this freshness check attested.
+    ///      `vm.getCode("X")` resolves by bare contract name over an `out/` that observably
+    ///      accumulates other branches' artifacts, while `_assertArtifactBuiltFromTree` attests a
+    ///      specific file. Without this, a leaked artifact defining a same-named contract at a
+    ///      different source path could supply the bytes the pin is derived from while the
+    ///      freshness check passes on the canonical file. Returns the creation code, having proved
+    ///      it is the checked artifact's own.
+    ///
+    ///      HONEST STATUS: defence in depth against a scenario I could not reproduce. Planting
+    ///      `out/ZzLeaked.sol/PriceFeedLib.json` with different bytecode did NOT divert
+    ///      `vm.getCode("PriceFeedLib")` — forge still resolved the canonical artifact — so the
+    ///      leak path is not demonstrated to be reachable, and this assertion has never fired on a
+    ///      real leak. It is kept because the resolution rule for an ambiguous bare name is not
+    ///      contracted anywhere, `out/` demonstrably accumulates other branches' artifacts, and
+    ///      the cost is one keccak. The assertion itself is not vacuous: pointing it at a
+    ///      different artifact makes it fail loudly (verified).
+    function _verifiedCode(string memory name, string memory artifactPath) internal view returns (bytes memory) {
+        bytes memory byName = vm.getCode(name);
+        bytes memory byPath = vm.parseJsonBytes(vm.readFile(artifactPath), ".bytecode.object");
+        assertEq(
+            keccak256(byName),
+            keccak256(byPath),
+            string.concat(
+                name,
+                ": vm.getCode resolved to different bytes than the freshness-checked artifact at ",
+                artifactPath,
+                " - suspect a same-named artifact leaked into out/ from another branch"
+            )
+        );
+        return byName;
     }
 
     function test_priceFeedLib_pinMatchesCurrentBytecode() public onlyPinnedProfile {
         bytes32 salt = ConfigReader.computeSalt("PriceFeedLib", 1);
-        address computed =
-            vm.computeCreate2Address(salt, keccak256(vm.getCode("PriceFeedLib")), CANONICAL_CREATE2_DEPLOYER);
+        address computed = vm.computeCreate2Address(
+            salt, keccak256(_verifiedCode("PriceFeedLib", PRICE_FEED_LIB_ARTIFACT)), CANONICAL_CREATE2_DEPLOYER
+        );
         assertEq(computed, LibraryPins.PRICE_FEED_LIB, "PriceFeedLib pin drift: regenerate LibraryPins + foundry.toml");
     }
 
     function test_navRegistryLib_pinMatchesCurrentBytecode() public onlyPinnedProfile {
         bytes32 salt = ConfigReader.computeSalt("NavRegistryLib", 1);
-        address computed =
-            vm.computeCreate2Address(salt, keccak256(vm.getCode("NAVRegistryLib")), CANONICAL_CREATE2_DEPLOYER);
+        address computed = vm.computeCreate2Address(
+            salt, keccak256(_verifiedCode("NAVRegistryLib", NAV_REGISTRY_LIB_ARTIFACT)), CANONICAL_CREATE2_DEPLOYER
+        );
         assertEq(
             computed, LibraryPins.NAV_REGISTRY_LIB, "NAVRegistryLib pin drift: regenerate LibraryPins + foundry.toml"
         );
@@ -162,7 +242,7 @@ contract LibraryPinConsistencyTest is Test {
     ///         checks cannot, since they compare the computed address only against LibraryPins — and confirms
     ///         NAVCalculator is actually wired to the pinned libraries.
     function test_navCalculator_creationCodeLinkedAgainstPins() public onlyPinnedProfile {
-        bytes memory code = vm.getCode("NAVCalculator");
+        bytes memory code = _verifiedCode("NAVCalculator", NAV_CALCULATOR_ARTIFACT);
         assertTrue(
             LibraryPins.contains(code, LibraryPins.PRICE_FEED_LIB),
             "NAVCalculator not linked against pinned PriceFeedLib (foundry.toml `libraries` drift?)"

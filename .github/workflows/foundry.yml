@@ -116,37 +116,42 @@ jobs:
             cache/
           retention-days: 1
 
-  # Deterministic library-pin assertions, on a build from CLEAN. Deliberately its own job.
-  #
-  # WHY THIS CANNOT RIDE THE `build` JOB ABOVE — the whole reason the minutes are worth spending.
+  # HISTORY — why a separate clean-build `pins` job existed here until #323, and what would bring
+  # it back. Kept because the observation below is the only in-tree record of it, and because the
+  # reasoning is the argument anyone must defeat before trusting an artifact-derived pin.
   #
   # `build` mounts two Blacksmith sticky disks over `out/` and `cache/`, keyed on
-  # `${{ github.repository }}` and nothing else. They are therefore shared by every run of every
-  # branch, so `forge build` there is INCREMENTAL against whatever the previous run on that disk
-  # left behind — measured at "Compiling 15 files with Solc 0.8.34" against a ~540-file project.
-  # The dirty set is computed relative to the last branch that used the disk, NOT to the commit
-  # under test, which makes `build`'s compilation SCOPE nondeterministic across branches.
+  # `${{ github.repository }}` and nothing else. They are shared by every run of every branch, so
+  # `forge build` there is INCREMENTAL against whatever the previous run on that disk left behind
+  # — measured at "Compiling 15 files with Solc 0.8.34" against a ~540-file project. The dirty set
+  # is computed relative to the last branch that used the disk, NOT to the commit under test, so
+  # `build`'s compilation SCOPE is nondeterministic across branches. That is still true today, and
+  # it is not hypothetical: a sibling PR's adapter artifact was observed leaking into an unrelated
+  # PR's `out/` and failing a test that enumerates it.
   #
-  # That matters here and nowhere else in this workflow, because `type(X).creationCode` is a
-  # compile-time constant baked into the asserting test's own bytecode. Under an incremental
-  # invocation solc recompiles PriceFeedLib in a small scope in order to embed it, and emits
-  # different bytecode than a whole-program compile does — so the pin the test derives is a
-  # correct hash of the wrong compilation. Observed directly: with `out/PriceFeedLib.sol/
-  # PriceFeedLib.json` on disk implying the correct 0x8b7e4fA9…, the test simultaneously computed
-  # 0xeA694009…. Two compilations of one unchanged source, disagreeing inside a single `out/`.
+  # The pin assertions used to read `type(X).creationCode`, a compile-time constant baked into the
+  # asserting test's own bytecode. The recorded observation: with `out/PriceFeedLib.sol/
+  # PriceFeedLib.json` on disk implying 0x8b7e4fA9…, the test simultaneously computed 0xeA694009…
+  # — two compilations of one unchanged source disagreeing inside a single `out/`. No freshness
+  # check could see that, because the sources were unchanged and the standalone artifact was right.
+  # Hence a job that compiled the whole program from nothing.
   #
-  # This is NOT staleness, and that distinction is why the fix is a job and not a test change:
-  # the sources are unchanged and the standalone artifact is right, so no freshness check can see
-  # it (PR #210's content-hash tripwire passes on exactly the runs where the pin assertion fails).
-  # The only thing that restores meaning is compiling the whole program from nothing.
+  # WHAT CHANGED. The assertions now read `vm.getCode("X")` — the artifact itself — and
+  # `test_pinnedLibraryArtifactsWereBuiltFromThisTree` content-hashes every source all three
+  # artifacts record, plus the compiler version and the pin-affecting settings, against this tree.
+  # Measured on the PR head before deleting the job: `forge clean && forge build --force` produced
+  # creation code byte-identical to the incremental build for all three contracts, and the pin
+  # assertions passed from clean.
   #
-  # Hence: no stickydisk mounts, `cache: false`, and `--force`. Cost is one extra ~6-10 min
-  # compile, paid in PARALLEL with `build` (no `needs:`), so it does not extend the critical path.
-  #
-  # The pin values themselves are NOT owned by this job. They are `foundry.toml [libraries]` +
-  # `script/utils/LibraryPins.sol`, and the authoritative gate remains one clean local full build
-  # against the final tree immediately before deploying. A red run here means "regenerate the
-  # pins deliberately", never "edit the values until it goes green".
+  # WHAT WOULD BRING IT BACK. Any reading that is NOT of a freshness-checked artifact — in
+  # particular a `type(X).creationCode` embedded into an asserting test. Note that
+  # `script/test/UpgradeNAVCalculatorPins.t.sol` still embeds it and runs in `unit`; its
+  # `test_sourceMatch_tracksRealPinState` deliberately accepts BOTH match and drift, so its green
+  # is not evidence either way and must not be cited as such. The pin values themselves are NOT
+  # owned by CI: they are `foundry.toml [libraries]` + `script/utils/LibraryPins.sol`, and the
+  # authoritative gate remains one clean local full build against the final tree immediately
+  # before deploying. A red run here means "regenerate the pins deliberately", never "edit the
+  # values until it goes green".
   unit:
     name: Unit tests
     needs: build
@@ -173,16 +178,27 @@ jobs:
       #
       # The assertions now read `vm.getCode("X")` — the artifact this job downloaded — and
       # `test_pinnedLibraryArtifactsWereBuiltFromThisTree` content-hashes every source all three
-      # artifacts record against the checked-out tree. A downloaded `out/` from another branch fails
-      # that check by name before any pin is read, which is strictly stronger than what the embedded
-      # form gave: NAVCalculator's artifact was never freshness-checked at all while its creation code
-      # was compiled in.
+      # artifacts record, AND their compiler version and pin-affecting settings, against this tree.
+      # It gains one thing the embedded form never had: NAVCalculator's artifact was not
+      # freshness-checked at all while its creation code was compiled in.
       #
-      # MEASURED before removing the clean build, because the whole change rests on it: an incremental
-      # compile of 2 files produces byte-identical creation code to a full 575-file `--force` build for
-      # PriceFeedLib, NAVRegistryLib and NAVCalculator. The "via_ir scope sensitivity" the `pins` job
-      # existed to exclude was a symptom of a missing library self-link, fixed when the addresses were
-      # pinned in `foundry.toml [libraries]` — not a standing property of via_ir.
+      # It is NOT strictly stronger, and an earlier revision of this comment said it was. Source
+      # hashes attest the artifact at a PATH; `vm.getCode` resolves by bare NAME over an `out/` that
+      # observably accumulates other branches' artifacts, and nothing binds the two reads to the same
+      # file — hence the explicit binding in `_assertArtifactBuiltFromTree`. A foreign artifact that
+      # is ADDED rather than modified does not fail a freshness check at all.
+      #
+      # MEASURED before removing the clean build, because the whole change rests on it: `forge clean
+      # && forge build --force` on this head produced creation code byte-identical to the incremental
+      # build for all three contracts, and the pin assertions passed from clean. That is the claim
+      # this rests on, and it is reproducible with two commands.
+      #
+      # An earlier revision also asserted that the historical "via_ir scope sensitivity" was a
+      # symptom of a missing library self-link fixed by pinning `[libraries]`. That is NOT
+      # established: the creation bytecode of PriceFeedLib and NAVRegistryLib contains zero
+      # occurrences of either pinned address, so no self-link is present to have been missing, and
+      # the repo holds two other mutually inconsistent accounts of the same incident. The mechanism
+      # is unknown; the measurement above is what justifies the change, not the diagnosis.
       #
       # If anyone reintroduces an embedded `type(X).creationCode` in that file, this exclusion and the
       # clean-build job have to come back with it. They are one mechanism.

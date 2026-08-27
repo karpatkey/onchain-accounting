@@ -587,7 +587,25 @@ contract MetaBalanceAdapterAdvertisedShapeTest is PositionIdJoinAsserts {
         if (bytes(vm.parseJsonString(json, ".bytecode.object")).length <= 2) return false; // "0x" or empty
         if (!vm.keyExists(json, ".ast.absolutePath")) return true; // undeterminable: count it, do not hide it
         string memory sourcePath = vm.parseJsonString(json, ".ast.absolutePath");
+        // `vm.exists` REVERTS — it does not return false — on a path outside `fs_permissions`, and
+        // only `src`, `script`, `lib`, `out`, `safe-transactions` and `test/integration` are
+        // granted. The premise of this filter is an `out/` carrying artifacts from arbitrary other
+        // branches, so a branch with a matching source under, say, `test/mocks/` would blow up the
+        // census with an fs-permission revert instead of its own message. A production adapter
+        // always lives under `src/`, so anything else is foreign by construction: filter it rather
+        // than probing the filesystem for it.
+        if (!_startsWith(sourcePath, "src/")) return false;
         return vm.exists(string.concat(vm.projectRoot(), "/", sourcePath));
+    }
+
+    function _startsWith(string memory value, string memory prefix) internal pure returns (bool) {
+        bytes memory v = bytes(value);
+        bytes memory pfx = bytes(prefix);
+        if (v.length < pfx.length) return false;
+        for (uint256 i = 0; i < pfx.length; i++) {
+            if (v[i] != pfx[i]) return false;
+        }
+        return true;
     }
 
     function _endsWith(string memory value, string memory suffix) internal pure returns (bool) {

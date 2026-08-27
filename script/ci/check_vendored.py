@@ -13,9 +13,11 @@ Three checks, deliberately asymmetric:
      recorded hash. Catches a local edit with no network involved.
   3. UPSTREAM (fetches raw.githubusercontent.com at the pinned rev). Catches a manifest hash that
      was updated to match a local edit, and a header rev that does not correspond to the bytes.
-     Soft-skips ONLY on a genuine transport failure or a throttle (403/429/5xx), hard-fails on a
-     mismatch, and hard-fails on a 404/410 — a status code is a definitive answer that the pinned
-     rev/path does not resolve, which makes provenance unverifiable rather than verified.
+     Hard-fails on a mismatch, and hard-fails on 404/410 — those two are a definitive answer that
+     the pinned rev/path does not resolve, which makes provenance unverifiable rather than
+     verified. EVERY other HTTP status (403 and 429 throttles, 5xx, and also 401/451) soft-skips
+     along with genuine transport errors, because reddening CI on an unchanged manifest would make
+     upstream availability a build dependency.
 
 The asymmetry matters: this repo has already shipped one incident where a guard passed because its
 input was stale, so the offline checks are never allowed to be the thing that gets skipped.
@@ -45,7 +47,11 @@ Usage:
   script/ci/check_vendored.py             verify (this is what CI runs)
   script/ci/check_vendored.py --update    rewrite the recorded hashes; use ONLY when deliberately
                                           re-vendoring at a NEW upstream rev, never to silence a
-                                          failure
+                                          failure. FETCHES upstream and refuses to record a hash
+                                          that does not match it, so it needs network
+  script/ci/check_vendored.py --update --offline
+                                          same, but skip the upstream check and record an
+                                          UNVERIFIED hash. For a genuine outage only
   script/ci/check_vendored.py --self-test prove the normaliser and the guard actually fire
 """
 
@@ -165,13 +171,33 @@ def header_provenance_problem(src: str, repo: str, upath: str) -> str | None:
     hdr_path = re.search(r"Upstream path:\s+(\S+)", src)
     if not hdr_repo or not hdr_path:
         return "header is missing a parseable 'Upstream repo:'/'Upstream path:' line"
-    # endswith, not equality: the header records a browsable URL while the manifest records the
-    # bare owner/name the raw API needs.
-    if not hdr_repo.group(1).rstrip("/").endswith(repo):
+    # Exact equality against the canonical GitHub URL, NOT `endswith(repo)`. An earlier revision
+    # used endswith, which accepts `https://github.com/evil-ethereum-optimism/optimism` (a `-` is
+    # legal in an org name, so that is registerable) and `https://evil.example.com/<repo>`. Worse,
+    # the self-test's negative case used `attacker/optimism`, which endswith happens to reject —
+    # so the arm read as coverage it did not provide.
+    if hdr_repo.group(1).rstrip("/") != f"https://github.com/{repo}":
         return f"header repo ({hdr_repo.group(1)}) disagrees with the manifest repo ({repo})"
     if hdr_path.group(1) != upath:
         return f"header path ({hdr_path.group(1)}) disagrees with the manifest path ({upath})"
     return None
+
+
+def _read_source(path: Path) -> str:
+    """Read a source file the way the guard must read it.
+
+    TEXT MODE IS LOAD-BEARING, not incidental. It applies universal-newline translation, so a lone
+    `\r` becomes `\n` before the normaliser runs. solc treats a bare `\r` as a line-comment
+    terminator but `strip_comments` only terminates on `\n`, so `read_bytes().decode()` — a natural
+    move if someone later wants byte-exactness — would let `// pad\r  uint256 injected;` hash as
+    pure comment while solc compiles the injected struct member.
+
+    This exists as a function so `--self-test` exercises THE SAME read the guard uses. An earlier
+    revision inlined the read here and had the self-test call `read_text` itself; the comment
+    claimed the arm pinned the defence and it did not — the defence could be removed with all
+    self-test arms still green. Do not inline this again.
+    """
+    return path.read_text(encoding="utf-8")
 
 
 def _spdx(text: str) -> str | None:
@@ -262,8 +288,14 @@ def do_update(allow_offline: bool = False) -> int:
     """
     text = Path(__file__).read_text(encoding="utf-8")
     for rel, (_repo, _upath, _rev, old) in MANIFEST.items():
-        local = (ROOT / rel).read_text(encoding="utf-8")
-        new = body_hash(local)
+        local = _read_source(ROOT / rel)
+        try:
+            new = body_hash(local)
+        except DriftError as exc:
+            # Wrapped for the same reason both call sites in `verify` are: an unterminated comment
+            # should print a FAIL line, not a traceback.
+            print(f"FAIL  {rel} — {exc}")
+            return 1
         if not allow_offline:
             try:
                 upstream = fetch_upstream(_repo, _upath, _rev)
@@ -292,7 +324,7 @@ def do_update(allow_offline: bool = False) -> int:
         if count != 1:
             print(f"FAIL  could not rewrite the hash row for {rel} (matched {count} times)")
             return 1
-        print(f"updated {rel} -> {new}")
+        print(f"updated {rel} -> {new}" + ("  [UNVERIFIED — recorded offline]" if allow_offline else ""))
     Path(__file__).write_text(text, encoding="utf-8")
     print("Manifest updated. Re-run without --update to verify.")
     return 0
@@ -325,13 +357,7 @@ def verify() -> int:
             failures.append(f"FAIL  {rel} — vendored file is missing")
             continue
 
-        # `read_text` (text mode) is LOAD-BEARING, not incidental: it applies universal-newline
-        # translation, so a lone `\r` becomes `\n` before the normaliser runs. solc treats a bare
-        # `\r` as a line-comment terminator but `strip_comments` only terminates on `\n`, so
-        # switching this to `read_bytes().decode()` — a natural move if someone later wants
-        # byte-exactness — would let `// pad\r  uint256 injected;` hash as pure comment while solc
-        # compiles the injected field. Pinned by the CR case in `--self-test`.
-        src = path.read_text(encoding="utf-8")
+        src = _read_source(path)
         try:
             actual = body_hash(src)
         except DriftError as exc:
@@ -464,7 +490,7 @@ def self_test() -> int:
     # works for any vendored file, and still exercises the original defect: code hidden behind an
     # empty block comment. Nothing here compiles the result — it is hashed, not parsed.
     for rel in MANIFEST:
-        src = (ROOT / rel).read_text(encoding="utf-8")
+        src = _read_source(ROOT / rel)
         mutated = src + "\n/**/ uint256 injected;\n"
         if body_hash(mutated) == body_hash(src):
             print(f"SELF-TEST FAIL  injected field is invisible to the hash in {rel}")
@@ -472,13 +498,15 @@ def self_test() -> int:
         else:
             print(f"self-test ok    injected field changes the hash in {rel}")
 
-    # The lone-CR injection, exercised THROUGH THE READ PATH rather than against `normalise`
-    # directly — the defence lives in text-mode I/O, so a test that calls `normalise` on an
-    # in-memory string would pass even with the defence removed and assert nothing.
+    # The lone-CR injection, exercised through `_read_source` — THE SAME helper `verify` reads
+    # through. The defence lives in text-mode I/O, so an arm that called `read_text` itself would
+    # stay green with the defence removed and assert nothing. That was measured, not theorised:
+    # with the read swapped to `read_bytes().decode()`, every self-test arm passed while a real
+    # CR-hidden struct member verified as "verbatim".
     with tempfile.TemporaryDirectory() as tmp:
         probe = Path(tmp) / "cr.sol"
         probe.write_bytes(b"uint256 a;\n// pad\r        uint256 injected;\n")
-        if "injected" not in normalise(probe.read_text(encoding="utf-8")):
+        if "injected" not in normalise(_read_source(probe)):
             print("SELF-TEST FAIL  lone-CR line comment hides the code after it")
             failed += 1
         else:
@@ -493,6 +521,10 @@ def self_test() -> int:
         ("matching header accepted", _good, False),
         ("repointed path rejected", _good.replace("/src/", "/contracts/"), True),
         ("swapped repo rejected", _good.replace(_REPO, "attacker/optimism"), True),
+        # The cases an `endswith` check would WRONGLY accept. `-` is legal in a GitHub org name,
+        # so the first is registerable by anyone.
+        ("suffix-org repo rejected", _good.replace(_REPO, f"evil-{_REPO}"), True),
+        ("foreign host rejected", _good.replace("https://github.com/", "https://evil.example.com/"), True),
         ("missing header rejected", "/// no provenance here\n", True),
     ):
         if (header_provenance_problem(hdr, _REPO, _UPATH) is not None) != want_problem:

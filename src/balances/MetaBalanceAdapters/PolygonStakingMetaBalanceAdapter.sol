@@ -151,6 +151,23 @@ contract PolygonStakingMetaBalanceAdapter is MetaBalanceAdapter {
         return _labels("Validator", leaf);
     }
 
+    /// @notice **THE LIVE MAINNET ADAPTER PREDATES THE `word == 0` GUARD BELOW.**
+    /// @dev `0x3Feb6F1e0cd384BE4440cFCCd1aa90394A05b1a4` — the address `script/config/deployments/1.json` and
+    ///      `DEPLOYED_ADDRESSES.md` publish as `PolygonStakingMeta`, and the one registered on NAVCalculator —
+    ///      was compiled BEFORE that line was added in review. Measured 2026-08-27: its runtime is 7460 bytes
+    ///      against 7466 for this source, and building this tree with only the `word == 0` line removed
+    ///      reproduces the on-chain bytecode exactly once the two immutables are masked.
+    ///
+    ///      CONSEQUENCE, bounded: the live adapter renders `"Validator #0"` for an instance that answers every
+    ///      selector with a zero word, where this source returns the `"<POL symbol> <address>"` fallback. It is
+    ///      DISPLAY-ONLY — `positionLabels` feeds no valuation, both builds value positions identically, and
+    ///      `_instancePositions` is byte-identical between them. No NAV figure is affected.
+    ///
+    ///      This is recorded rather than quietly fixed because the adapter is IMMUTABLE: closing it needs a
+    ///      redeploy plus another `SwapMetaAdapter` run against a live NAVCalculator, which is an operator
+    ///      decision, not a code change. Nothing in this repo checks source-vs-bytecode drift for CREATE-deployed
+    ///      adapters (`verify_step.py` covers only the proxy), which is why this went unnoticed and why an
+    ///      earlier review round recorded the guard as shipped when it was not.
     /// @notice Fail-open, gas-capped `validatorId()` probe for the display label.
     /// @dev Returns `(0, false)` on every failure path: no code, revert, gas exhaustion, or a reply that is not
     ///      exactly one word. The `size != 32` check is the load-bearing one — a contract returning a longer or

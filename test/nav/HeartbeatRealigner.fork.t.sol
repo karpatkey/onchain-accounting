@@ -119,6 +119,56 @@ contract HeartbeatRealignerForkTest is Test, TestEnvConfigurator {
         return NAVCalculator(NAV).getPriceFeedAt(a, 0).chainlinkHeartbeat;
     }
 
+    /// @notice Monitor-feed heartbeats realign too, and pricing is untouched.
+    /// @dev `realignMonitors` had NO fork coverage until now — it was written, gated and given the
+    ///      self-renounce, but nothing ever called it, which is exactly why the monitor half of the ADR
+    ///      0025 config change sat unexecuted through all seven price-feed broadcasts. Monitor feeds do
+    ///      not price the asset, so the assertion is two-sided: the monitor heartbeat moves AND the
+    ///      asset's price and staleness verdict do not.
+    function test_realignsMonitorFeeds_withoutTouchingPricing() public {
+        address[] memory a = new address[](3);
+        address[] memory f = new address[](3);
+        uint256[] memory h = new uint256[](3);
+        a[0] = 0x68749665FF8D2d112Fa859AA293F07A622782F38; // XAUt
+        f[0] = 0x9944D86CEB9160aF5C5feB251FD671923323f8C3;
+        h[0] = 86_400;
+        a[1] = 0x9D39A5DE30e57443BfF2A8307A4256c8797A3497; // sUSDe
+        f[1] = 0xFF3BC18cCBd5999CE63E788A1c250a88626aD099;
+        h[1] = 86_400;
+        a[2] = 0xae7ab96520DE3A18E5e111B5EaAb095312D7fE84; // stETH
+        f[2] = 0xCfE54B5cD566aB89272946F602D76Ea879CAb4a8;
+        h[2] = 3600;
+
+        uint256[] memory priceBefore = new uint256[](3);
+        bool[] memory staleBefore = new bool[](3);
+        for (uint256 i; i < 3; ++i) {
+            INAVCalculator.PriceFeedData memory d = INAVCalculator(NAV).getPriceData(a[i]);
+            priceBefore[i] = uint256(d.price);
+            staleBefore[i] = d.stale;
+            assertGt(priceBefore[i], 0, "unpriced before");
+        }
+
+        vm.startPrank(ADMIN);
+        NAVCalculator(NAV).grantRole(MANAGER_ROLE, address(realigner));
+        realigner.realignMonitors(a, f, h);
+        vm.stopPrank();
+
+        for (uint256 i; i < 3; ++i) {
+            IPrices.PriceFeedConfig[] memory mons = NAVCalculator(NAV).getMonitorFeeds(a[i]);
+            bool found;
+            for (uint256 j; j < mons.length; ++j) {
+                if (mons[j].priceFeed != f[i]) continue;
+                found = true;
+                assertEq(mons[j].chainlinkHeartbeat, h[i], "monitor heartbeat not applied");
+            }
+            assertTrue(found, "monitor feed vanished from the array");
+            INAVCalculator.PriceFeedData memory d = INAVCalculator(NAV).getPriceData(a[i]);
+            assertEq(uint256(d.price), priceBefore[i], "PRICE MOVED via a monitor-only change");
+            assertEq(d.stale, staleBefore[i], "staleness verdict moved via a monitor-only change");
+        }
+        assertFalse(NAVCalculator(NAV).hasRole(MANAGER_ROLE, address(realigner)), "role must not survive");
+    }
+
     /// @notice Without the role the realigner is inert — revert-probe for the grant/revoke bracket.
     function test_isInertWithoutTheRole() public {
         assertFalse(NAVCalculator(NAV).hasRole(MANAGER_ROLE, address(realigner)));

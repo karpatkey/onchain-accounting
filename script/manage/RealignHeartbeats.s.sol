@@ -39,14 +39,20 @@ contract RealignHeartbeats is Script {
         if (NAV.code.length == 0) revert NoNavDeployed(chainId);
 
         (address[] memory assets, uint256[] memory heartbeats, string[] memory syms) = _plan(chainId);
+        (address[] memory mAssets, address[] memory mFeeds, uint256[] memory mHeartbeats, string[] memory mSyms) =
+            _planMonitors(chainId);
 
         console2.log("=== ADR 0025 heartbeat realignment ===");
         console2.log("chain      :", chainId);
         console2.log("nav        :", NAV);
         console2.log("assets     :", assets.length);
-        if (assets.length == 0) {
+        console2.log("monitors   :", mAssets.length);
+        if (assets.length == 0 && mAssets.length == 0) {
             console2.log("nothing to do -- every registered heartbeat already matches the config");
             return;
+        }
+        for (uint256 i; i < mAssets.length; ++i) {
+            console2.log(string.concat("  monitor ", mSyms[i], " -> ", vm.toString(mHeartbeats[i])));
         }
 
         address sender = msg.sender;
@@ -70,7 +76,14 @@ contract RealignHeartbeats is Script {
         // No trailing revokeRole: `realign` renounces the role itself, in the same transaction that uses
         // it. The trailing revoke is what failed on Polygon (out of gas), stranding the role on a
         // then-ungated contract for 107 blocks. One less transaction is one less thing to fail open.
-        realigner.realign(assets, heartbeats);
+        if (assets.length > 0) realigner.realign(assets, heartbeats);
+        if (mAssets.length > 0) {
+            // realign() renounces on completion, so the role must be re-granted for a second call.
+            if (!NAVCalculator(NAV).hasRole(MANAGER_ROLE, address(realigner))) {
+                NAVCalculator(NAV).grantRole(MANAGER_ROLE, address(realigner));
+            }
+            realigner.realignMonitors(mAssets, mFeeds, mHeartbeats);
+        }
         vm.stopBroadcast();
 
         console2.log("--- verification ---");
@@ -85,8 +98,83 @@ contract RealignHeartbeats is Script {
                 string.concat("  ok ", syms[i], "  hb=", vm.toString(c.chainlinkHeartbeat), d.stale ? "  [STALE]" : "")
             );
         }
+        for (uint256 i; i < mAssets.length; ++i) {
+            IPrices.PriceFeedConfig[] memory mons = NAVCalculator(NAV).getMonitorFeeds(mAssets[i]);
+            bool ok;
+            for (uint256 j; j < mons.length; ++j) {
+                if (mons[j].priceFeed == mFeeds[i] && mons[j].chainlinkHeartbeat == mHeartbeats[i]) ok = true;
+            }
+            require(ok, "monitor heartbeat not applied");
+            console2.log(string.concat("  ok monitor ", mSyms[i], "  hb=", vm.toString(mHeartbeats[i])));
+        }
         require(!NAVCalculator(NAV).hasRole(MANAGER_ROLE, address(realigner)), "role survived");
         console2.log("realigner (role revoked):", address(realigner));
+    }
+
+    /// @notice Builds the MONITOR work list: every monitor registration whose live heartbeat differs.
+    /// @dev Monitor feeds were missed on the first pass — the script realigned price feeds only, so the
+    ///      monitor half of the config change sat unexecuted across all seven broadcasts. They are
+    ///      planned separately because they need no mirror (no last-feed guard on that array) and because
+    ///      a wrong monitor heartbeat cannot zero an asset, only degrade its divergence check.
+    function _planMonitors(uint256 chainId)
+        internal
+        view
+        returns (address[] memory assets, address[] memory feeds, uint256[] memory heartbeats, string[] memory syms)
+    {
+        string memory json = vm.readFile(
+            string.concat("script/config/nav-config/assets-and-price-feeds/", vm.toString(chainId), ".json")
+        );
+        string[] memory keys = vm.parseJsonKeys(json, "$");
+
+        address[] memory aBuf = new address[](keys.length * 4);
+        address[] memory fBuf = new address[](keys.length * 4);
+        uint256[] memory hBuf = new uint256[](keys.length * 4);
+        string[] memory sBuf = new string[](keys.length * 4);
+        uint256 n;
+
+        for (uint256 i; i < keys.length; ++i) {
+            string memory base = string.concat("$.", keys[i]);
+            if (!vm.keyExistsJson(json, string.concat(base, ".monitorFeeds"))) continue;
+            if (!vm.keyExistsJson(json, string.concat(base, ".address"))) continue;
+            address asset = vm.parseJsonAddress(json, string.concat(base, ".address"));
+            if (!NAVCalculator(NAV).isAssetRegistered(asset)) continue;
+
+            IPrices.PriceFeedConfig[] memory live = NAVCalculator(NAV).getMonitorFeeds(asset);
+            for (uint256 j; j < live.length; ++j) {
+                string memory leg = string.concat(base, ".monitorFeeds[", vm.toString(j), "]");
+                if (!vm.keyExistsJson(json, string.concat(leg, ".heartbeat"))) continue;
+                // Match by ADDRESS, not index: getMonitorFeeds is swap-and-pop ordered, so live[j] is not
+                // necessarily config monitorFeeds[j].
+                bool matched;
+                uint256 want;
+                for (uint256 k; k < live.length; ++k) {
+                    string memory cand = string.concat(base, ".monitorFeeds[", vm.toString(k), "]");
+                    if (!vm.keyExistsJson(json, string.concat(cand, ".address"))) continue;
+                    if (vm.parseJsonAddress(json, string.concat(cand, ".address")) != live[j].priceFeed) continue;
+                    want = vm.parseJsonUint(json, string.concat(cand, ".heartbeat"));
+                    matched = true;
+                    break;
+                }
+                if (!matched || live[j].chainlinkHeartbeat == want) continue;
+
+                aBuf[n] = asset;
+                fBuf[n] = live[j].priceFeed;
+                hBuf[n] = want;
+                sBuf[n] = keys[i];
+                ++n;
+            }
+        }
+
+        assets = new address[](n);
+        feeds = new address[](n);
+        heartbeats = new uint256[](n);
+        syms = new string[](n);
+        for (uint256 i; i < n; ++i) {
+            assets[i] = aBuf[i];
+            feeds[i] = fBuf[i];
+            heartbeats[i] = hBuf[i];
+            syms[i] = sBuf[i];
+        }
     }
 
     /// @notice Builds the work list: every asset whose LIVE primary heartbeat differs from the config.

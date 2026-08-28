@@ -491,7 +491,12 @@ contract MerklRewardsAttestedBalanceAdapterTest is BalanceAdapterTestBase {
 
     /// @notice Permissionless does NOT weaken integrity: an arbitrary caller cannot fabricate an amount — a bad proof
     ///         still reverts InvalidProof regardless of who calls.
-    function test_submitProofs_permissionless_cannotFabricateAmount() public {
+    /// @notice Even an AUTHORIZED submitter cannot fabricate an amount — the proof, not the role, bounds it.
+    /// @dev This asserted the same property against a STRANGER until submits became role-gated, at which point it
+    ///      began failing on authorization before ever reaching the proof check — testing the gate rather than the
+    ///      guarantee. Running it as the granted submitter is the stronger statement: the role widens who may
+    ///      write, and changes nothing about WHAT can be written.
+    function test_submitProofs_grantedSubmitterStillCannotFabricateAmount() public {
         bytes32 leaf = _leaf(alice, address(arb), 100 ether);
         distributor.setRoot(leaf);
 
@@ -504,8 +509,7 @@ contract MerklRewardsAttestedBalanceAdapterTest is BalanceAdapterTestBase {
             campaigns: new MerklRewardsAttestedBalanceAdapter.CampaignShare[](0)
         });
         vm.expectRevert(MerklRewardsAttestedBalanceAdapter.InvalidProof.selector);
-        vm.prank(stranger);
-        adapter.submitProofs(alice, allocs);
+        adapter.submitProofs(alice, allocs); // this contract holds SUBMITTER_ROLE
     }
 
     // ============================================
@@ -631,8 +635,10 @@ contract MerklRewardsAttestedBalanceAdapterTest is BalanceAdapterTestBase {
         _submitOne(alice, address(arb), 100 ether, new bytes32[](0));
         assertEq(adapter.assetsOf(alice).length, 1);
 
-        // Attacker submits an EMPTY list for alice — a no-op, not a wipe.
-        vm.prank(makeAddr("attacker"));
+        // An EMPTY list is a no-op, not a wipe. Submitted by an AUTHORIZED caller, because since the role landed
+        // an outsider cannot submit at all — even an empty payload now reverts (pinned separately by
+        // `test_submitProofs_unauthorizedCallerRejected` and the kit's empty-payload test). The property under
+        // test here is the UPSERT semantics, not who may call: omitting a token must never drop it.
         adapter.submitProofs(alice, new MerklRewardsAttestedBalanceAdapter.Allocation[](0));
 
         assertEq(adapter.assetsOf(alice).length, 1, "empty submit must not drop live entries");

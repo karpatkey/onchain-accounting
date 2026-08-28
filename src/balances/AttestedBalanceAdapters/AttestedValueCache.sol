@@ -174,6 +174,10 @@ abstract contract AttestedValueCache is IAttestedBalanceAdapter, IPositionDescri
 
     /// @inheritdoc IAttestedBalanceAdapter
     function submitBatch(address[] calldata accounts, bytes[] calldata data) external override {
+        // Checked HERE as well as in `_submitPayload`, because an EMPTY `accounts` array never enters the loop —
+        // so without this a roleless caller gets a successful `submitBatch([], [])` having been authorized
+        // nowhere. State-safe, but it would make "the batch succeeded" useless as evidence the keeper is granted.
+        _checkRole(SUBMITTER_ROLE);
         if (accounts.length != data.length) revert InvalidArguments();
         for (uint256 i; i < accounts.length; ++i) {
             _submitPayload(accounts[i], data[i]);
@@ -188,6 +192,11 @@ abstract contract AttestedValueCache is IAttestedBalanceAdapter, IPositionDescri
     ///      an external self-call: `this.submit(...)` would rewrite `msg.sender` to the adapter itself and defeat
     ///      the role check at {_upsertAttestation}.
     function _submitPayload(address account, bytes memory data) internal {
+        // Authorize the CALL, not merely each element. `_upsertAttestation` also checks (defence in depth), but it
+        // only runs per element — so a zero-element payload used to return SUCCESS for an unauthorized caller,
+        // having checked nothing. Harmless to state, but it made "submit succeeded" useless as evidence that a
+        // keeper is actually granted, which is exactly the signal the role makes operators depend on.
+        _checkRole(SUBMITTER_ROLE);
         if (account == address(0)) revert InvalidArguments();
 
         bytes32 epoch = _liveEpoch();

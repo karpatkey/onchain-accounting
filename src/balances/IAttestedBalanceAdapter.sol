@@ -105,6 +105,14 @@ interface IAttestedBalanceAdapter is IAccessControl, IBalanceAdapter {
     ///      credit leg shrinks NAV (tolerated), a dropped debt leg inflates it (forbidden). Rather than trust a
     ///      member to honour that, the base checks it as it collects. A debt-attesting protocol wants a sibling
     ///      base and its own interface id — see the charter on this interface.
+    ///
+    ///      **Blast radius on the NAV path, so it is not over-read as a per-leg drop.** This reverts in the
+    ///      collecting frame, OUTSIDE the per-asset `try`, so it is not absorbed by the per-item isolation: it
+    ///      bubbles out of `getAdapterPositions`, and `PriceFeedLib` fails open on a plain revert, so the
+    ///      adapter's ENTIRE leg set leaves NAV for that account rather than just the offending asset. That is
+    ///      the intended severity — a member emitting debt has broken the family's central assumption, and the
+    ///      whole adapter should stop contributing rather than contribute something quietly wrong — but the
+    ///      direction is under-report, so it degrades NAV rather than inflating it.
     error DebtLegRejected(address asset);
 
     // ─── Reads ───

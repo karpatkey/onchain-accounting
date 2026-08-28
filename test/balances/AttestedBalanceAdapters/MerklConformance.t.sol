@@ -39,12 +39,22 @@ contract ConformanceDistributor is IMerklDistributor {
 contract MerklConformanceTest is AttestedAdapterConformance {
     ConformanceDistributor internal distributor;
     Mock_ERC20 internal rewardToken;
+    Mock_ERC20 internal secondToken;
 
     function _deployMember(address admin_) internal override returns (AttestedValueCache) {
         distributor = new ConformanceDistributor();
         rewardToken = new Mock_ERC20("REWARD", 18);
         balances.addSupportedAssetForTest(address(rewardToken));
+        secondToken = new Mock_ERC20("REWARD2", 18);
+        balances.addSupportedAssetForTest(address(secondToken));
         return new MerklRewardsAttestedBalanceAdapter(address(distributor), address(balances), admin_);
+    }
+
+    /// @dev Merkl's sorted-pair, `abi.encode` hashing — must match `_verifyMerklProof` exactly.
+    function _tree2(bytes32 a, bytes32 b, uint256 idx) internal pure returns (bytes32 root, bytes32[] memory proof) {
+        root = a < b ? keccak256(abi.encode(a, b)) : keccak256(abi.encode(b, a));
+        proof = new bytes32[](1);
+        proof[0] = idx == 0 ? b : a;
     }
 
     function _leaf(address user, address token, uint256 amount) internal pure returns (bytes32) {
@@ -70,13 +80,56 @@ contract MerklConformanceTest is AttestedAdapterConformance {
         override
         returns (bytes memory data, address[] memory assets, uint256[] memory values)
     {
-        // Single-leaf tree: the leaf IS the root, so the empty proof verifies.
-        distributor.setRoot(_leaf(account, address(rewardToken), 100 ether));
+        // TWO-leaf tree carrying both reward tokens, so the root that proves this payload also proves
+        // `_secondValidPayload` — otherwise submitting the second would rotate the root and make the first STALE,
+        // and the non-suppression test could not tell suppression apart from ordinary staleness.
+        bytes32 leafA = _leaf(account, address(rewardToken), 100 ether);
+        bytes32 leafB = _leaf(account, address(secondToken), 55 ether);
+        (bytes32 root, bytes32[] memory proofA) = _tree2(leafA, leafB, 0);
+        distributor.setRoot(root);
+
         assets = new address[](1);
         values = new uint256[](1);
         assets[0] = address(rewardToken);
         values[0] = 100 ether;
-        data = abi.encode(_allocs(address(rewardToken), 100 ether));
+
+        MerklRewardsAttestedBalanceAdapter.Allocation[] memory a =
+            new MerklRewardsAttestedBalanceAdapter.Allocation[](1);
+        a[0] = MerklRewardsAttestedBalanceAdapter.Allocation({
+            token: address(rewardToken),
+            cumulativeAmount: 100 ether,
+            proof: proofA,
+            campaigns: new MerklRewardsAttestedBalanceAdapter.CampaignShare[](0)
+        });
+        data = abi.encode(a);
+    }
+
+    function _secondValidPayload(address account)
+        internal
+        override
+        returns (bytes memory data, address[] memory assets, uint256[] memory values)
+    {
+        // A DIFFERENT reward token, in a two-leaf tree alongside the first, so both are provable under one root —
+        // which is what lets the non-suppression test submit the second while omitting the first.
+        bytes32 leafA = _leaf(account, address(rewardToken), 100 ether);
+        bytes32 leafB = _leaf(account, address(secondToken), 55 ether);
+        (bytes32 root, bytes32[] memory proofB) = _tree2(leafA, leafB, 1);
+        distributor.setRoot(root);
+
+        assets = new address[](1);
+        values = new uint256[](1);
+        assets[0] = address(secondToken);
+        values[0] = 55 ether;
+
+        MerklRewardsAttestedBalanceAdapter.Allocation[] memory a =
+            new MerklRewardsAttestedBalanceAdapter.Allocation[](1);
+        a[0] = MerklRewardsAttestedBalanceAdapter.Allocation({
+            token: address(secondToken),
+            cumulativeAmount: 55 ether,
+            proof: proofB,
+            campaigns: new MerklRewardsAttestedBalanceAdapter.CampaignShare[](0)
+        });
+        data = abi.encode(a);
     }
 
     function _tamperedPayload(address account) internal override returns (bytes memory data) {
@@ -84,6 +137,11 @@ contract MerklConformanceTest is AttestedAdapterConformance {
         // fails on VERIFICATION rather than on shape — which is the only way this fixture is worth anything.
         distributor.setRoot(_leaf(account, address(rewardToken), 100 ether));
         data = abi.encode(_allocs(address(rewardToken), 999 ether));
+    }
+
+    /// @dev Pinned: the tampered fixture must fail because the merkle proof rejects it, not for any other reason.
+    function _tamperedRevertSelector() internal pure override returns (bytes4) {
+        return MerklRewardsAttestedBalanceAdapter.InvalidProof.selector;
     }
 
     function _rotateValidity() internal override {

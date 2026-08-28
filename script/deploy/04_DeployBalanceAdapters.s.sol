@@ -197,7 +197,7 @@ contract DeployBalanceAdapters is BaseDeployScript {
         // --- StakeWise V3 exit-queue cache adapter (assisted; permissionless assistant-fed, ADR 0018) ---
         _deployIfEnabled("StakeWiseV3ExitQueueAssisted");
 
-        // Attested family (ADR 0022): permissionless, proof-verified cache — NO assistant contract.
+        // Attested family (ADR 0022): SUBMITTER_ROLE-gated, proof-verified cache — NO assistant contract.
         _deployIfEnabled("MerklRewards");
 
         // --- Uniswap V2 (meta-adapter: all pairs; pair set on NAV, ADR 0010) ---

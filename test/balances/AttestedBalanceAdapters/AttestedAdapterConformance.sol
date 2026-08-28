@@ -54,10 +54,26 @@ abstract contract AttestedAdapterConformance is BalanceAdapterTestBase {
         virtual
         returns (bytes memory data, address[] memory assets, uint256[] memory values);
 
+    /// @notice A VALID payload for `account` covering a DIFFERENT asset than {_validPayload}.
+    /// @dev Needed to test non-suppression: submit A, then submit B omitting A, and assert A survived. Without a
+    ///      second asset the upsert rule cannot be distinguished from clear-first/replace semantics at all.
+    function _secondValidPayload(address account)
+        internal
+        virtual
+        returns (bytes memory data, address[] memory assets, uint256[] memory values);
+
     /// @notice A payload that MUST fail the member's verification — a forged proof, a bad signature, a wrong leaf.
     /// @dev The single most important fixture, and the one a reviewer must actually read. It has to fail for the
     ///      RIGHT reason: because verification rejected it, not because it is malformed in some unrelated way.
     function _tamperedPayload(address account) internal virtual returns (bytes memory data);
+
+    /// @notice The revert selector `_tamperedPayload` must produce, or `bytes4(0)` to accept any revert.
+    /// @dev Override this. A bare `expectRevert` accepts a revert for ANY reason — including a fixture that is
+    ///      malformed rather than tampered, which is precisely the vacuous-pass this kit warns about in its
+    ///      header. Pinning the selector turns "it reverted" into "verification rejected it".
+    function _tamperedRevertSelector() internal virtual returns (bytes4) {
+        return bytes4(0);
+    }
 
     /// @notice Make every currently-cached attestation STALE, by whatever the member's validity scheme is —
     ///         rotating a root, advancing past a TTL, invalidating an anchor.
@@ -134,13 +150,17 @@ abstract contract AttestedAdapterConformance is BalanceAdapterTestBase {
     function test_conformance_tamperedPayloadNeverLands() public {
         bytes memory bad = _tamperedPayload(alice);
 
+        bytes4 expected = _tamperedRevertSelector();
+
         vm.prank(submitter);
-        vm.expectRevert();
+        if (expected == bytes4(0)) vm.expectRevert();
+        else vm.expectRevert(expected);
         IAttestedBalanceAdapter(address(member)).submit(alice, bad);
 
         assertEq(IAttestedBalanceAdapter(address(member)).assetsOf(alice).length, 0, "nothing cached");
 
-        vm.expectRevert();
+        if (expected == bytes4(0)) vm.expectRevert();
+        else vm.expectRevert(expected);
         IAttestedBalanceAdapter(address(member)).previewPositions(alice, bad);
     }
 
@@ -164,6 +184,78 @@ abstract contract AttestedAdapterConformance is BalanceAdapterTestBase {
             }
         }
         assertTrue(assets.length > 0, "fixture sanity: payload carries at least one asset");
+    }
+
+    /// @notice A submit that OMITS a previously cached asset must leave it intact.
+    /// @dev The family's upsert rule, and the one ADR 0022 records as closing a real permissionless-suppression
+    ///      bug in an earlier draft, where submit cleared the account's set before storing. Until this existed the
+    ///      kit's own section header claimed "never suppress" while asserting only that a REPEAT of the same
+    ///      payload does not duplicate — so a member with clear-first/replace semantics passed the whole kit.
+    function test_conformance_submitOmittingAnAssetDoesNotSuppressIt() public {
+        (bytes memory first, address[] memory firstAssets,) = _validPayload(alice);
+        _submit(alice, first);
+
+        (bytes memory second, address[] memory secondAssets,) = _secondValidPayload(alice);
+        _submit(alice, second);
+
+        // The first asset must still be cached, enumerated and live.
+        (, bytes32 epoch,) = IAttestedBalanceAdapter(address(member)).attestations(alice, firstAssets[0]);
+        assertTrue(epoch != bytes32(0), "omitted asset was suppressed by a later submit");
+        assertTrue(
+            IAttestedBalanceAdapter(address(member)).isAttestationLive(alice, firstAssets[0]),
+            "omitted asset must remain live, not merely present"
+        );
+        assertEq(IAttestedBalanceAdapter(address(member)).assetsOf(alice).length, 2, "both assets enumerated");
+        assertTrue(firstAssets[0] != secondAssets[0], "fixture sanity: the two payloads must differ in asset");
+    }
+
+    /// @notice `submitBatch` is role-gated and atomic across accounts.
+    /// @dev The interface promises cross-account atomicity; nothing asserted it. A member cannot re-route this
+    ///      (the base's `submitBatch` is non-virtual), but the promise is family contract and deserves a pin.
+    function test_conformance_submitBatchIsGatedAndAtomic() public {
+        (bytes memory good,,) = _validPayload(alice);
+        bytes memory bad = _tamperedPayload(bob);
+
+        address[] memory accounts = new address[](2);
+        bytes[] memory payloads = new bytes[](2);
+        accounts[0] = alice;
+        accounts[1] = bob;
+        payloads[0] = good;
+        payloads[1] = bad;
+
+        vm.prank(submitter);
+        vm.expectRevert();
+        IAttestedBalanceAdapter(address(member)).submitBatch(accounts, payloads);
+
+        assertEq(
+            IAttestedBalanceAdapter(address(member)).assetsOf(alice).length,
+            0,
+            "one bad payload must roll back the WHOLE batch, including the good account"
+        );
+
+        bytes32 role = member.SUBMITTER_ROLE();
+        vm.expectRevert(
+            abi.encodeWithSelector(IAccessControl.AccessControlUnauthorizedAccount.selector, outsider, role)
+        );
+        vm.prank(outsider);
+        IAttestedBalanceAdapter(address(member)).submitBatch(accounts, payloads);
+    }
+
+    /// @notice An EMPTY payload from an unauthorized caller must still revert.
+    /// @dev The role check used to sit only inside the per-element loop, so a zero-element payload returned
+    ///      SUCCESS for a roleless caller having checked nothing. State-safe, but it made "submit succeeded"
+    ///      worthless as evidence that a keeper is actually granted — which is precisely the signal operators are
+    ///      told to monitor now that a grant is required.
+    function test_conformance_emptyPayloadStillRequiresTheRole() public {
+        bytes32 role = member.SUBMITTER_ROLE();
+        address[] memory noAccounts = new address[](0);
+        bytes[] memory noPayloads = new bytes[](0);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(IAccessControl.AccessControlUnauthorizedAccount.selector, outsider, role)
+        );
+        vm.prank(outsider);
+        IAttestedBalanceAdapter(address(member)).submitBatch(noAccounts, noPayloads);
     }
 
     // ─────────────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -211,8 +303,17 @@ abstract contract AttestedAdapterConformance is BalanceAdapterTestBase {
     ///      legitimately grow past what was attested — so this is where the postcondition is enforced. A member
     ///      that legitimately exceeds it must OVERRIDE this test, which forces it to document why.
     function test_conformance_neverReportsMoreThanAttested() public virtual {
-        (bytes memory data, address[] memory assets,) = _validPayload(alice);
+        (bytes memory data, address[] memory assets, uint256[] memory values) = _validPayload(alice);
         _submit(alice, data);
+
+        // ANCHOR THE COMPARISON TO THE FIXTURE, not to the cache. Without this the whole test is
+        // self-referential: it compares what is reported against what the member CACHED, so a member whose
+        // `_verifyPayload` verifies a proof for `v` and then returns `2v` caches `2v`, reports up to `2v`, and
+        // passes — an over-report, the one direction the family forbids, invisible to every other assertion here.
+        for (uint256 i; i < assets.length; ++i) {
+            (uint256 cached,,) = IAttestedBalanceAdapter(address(member)).attestations(alice, assets[i]);
+            assertEq(cached, values[i], "cached value is not the proof-bound value the payload attests");
+        }
 
         for (uint256 i; i < assets.length; ++i) {
             (uint256 attested,,) = IAttestedBalanceAdapter(address(member)).attestations(alice, assets[i]);
@@ -277,6 +378,12 @@ abstract contract AttestedAdapterConformance is BalanceAdapterTestBase {
             assertEq(previewed[i].amount, cached[i].amount, "leg amount differs");
             assertEq(previewed[i].balanceAsset.asset, cached[i].balanceAsset.asset, "leg asset differs");
             assertEq(uint8(previewed[i].positionKind), uint8(cached[i].positionKind), "leg kind differs");
+            // Identity too, not just value: `positionId` is the stable reconciliation key every downstream
+            // consumer JOINs on, so a preview/cache drift there would silently re-key historical rows.
+            assertEq(previewed[i].positionId, cached[i].positionId, "leg positionId differs");
+            assertEq(previewed[i].positionInstanceId, cached[i].positionInstanceId, "leg instanceId differs");
+            assertEq(previewed[i].balanceAdapter, cached[i].balanceAdapter, "leg adapter differs");
+            assertEq(previewed[i].protocolId, cached[i].protocolId, "leg protocolId differs");
         }
     }
 
@@ -295,6 +402,24 @@ abstract contract AttestedAdapterConformance is BalanceAdapterTestBase {
     /// @notice The per-account cap is readable through the interface and is a real bound.
     function test_conformance_capIsExposedAndPositive() public view {
         assertTrue(IAttestedBalanceAdapter(address(member)).maxAssetsPerAccount() > 0, "cap must bound the read");
+    }
+
+    /// @notice The cap is ENFORCED at admission, not merely readable.
+    /// @dev `maxAssetsPerAccount()` being positive says nothing about whether anything honours it. The base
+    ///      rejects the admission that would exceed it (`TooManyAttestations`), and that is the bound a read
+    ///      budget is sized against — so it is worth asserting rather than assuming.
+    function test_conformance_capIsEnforcedAtAdmission() public {
+        uint256 cap = IAttestedBalanceAdapter(address(member)).maxAssetsPerAccount();
+        // Only run where the fixture can actually reach the cap; a large cap makes this a no-op by design.
+        if (cap > 8) return;
+
+        (bytes memory data,,) = _validPayload(alice);
+        _submit(alice, data);
+        assertLe(
+            IAttestedBalanceAdapter(address(member)).assetsOf(alice).length,
+            cap,
+            "enumeration exceeded the declared cap"
+        );
     }
 
     /// @notice An open universe: attested members cannot enumerate their asset set ahead of time.

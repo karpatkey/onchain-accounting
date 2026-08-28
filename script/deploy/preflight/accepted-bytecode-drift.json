@@ -162,13 +162,6 @@
       "recorded": "2026-08-27",
       "action": "NONE while the bridge is out of scope. When bridge work resumes: diagnose which commit this was built from, decide whether the difference is material, then redeploy or re-justify. Delete ALL 23 entries together once it is fixed.",
       "scope": "bridge - out of scope as of 2026-08-27"
-    },
-    "1:0x3feb6f1e0cd384be4440cfccd1aa90394a05b1a4": {
-      "key": "balanceAdapters.PolygonStakingMeta",
-      "scope": "in scope - a real open item, unlike the bridge entries",
-      "reason": "The deployed adapter PREDATES the `word == 0` guard in `_readValidatorId`. It was compiled at f2d14408; 8a3a527b added `if (word == 0) return (0, false);` afterwards. Measured twice, independently: the live runtime is 7460 bytes against 7466 for a clean build of this tree, and rebuilding HEAD with only that line removed reproduces the on-chain bytecode exactly once the two immutables are masked. IMPACT IS DISPLAY-ONLY: the live adapter renders 'Validator #0' for an instance that answers every selector with a zero word, where this source falls back to '<POL symbol> <address>'. `positionLabels` feeds no valuation, `_instancePositions` is byte-identical between the two builds, and no NAV figure differs. Declared rather than silently carried because the adapter is IMMUTABLE - closing it needs a redeploy plus another SwapMetaAdapter run against a live NAVCalculator, which is an operator decision.",
-      "recorded": "2026-08-27",
-      "action": "REDEPLOY at the next opportunity, then run SwapMetaAdapter and DELETE this entry. Unlike the bridge entries this is not descoped - it is a real open item with a known cause and a known fix."
     }
   }
 }

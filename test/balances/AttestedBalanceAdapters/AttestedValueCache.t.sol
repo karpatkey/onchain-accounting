@@ -172,6 +172,52 @@ contract PreviewOverEmitter is OverEmittingMember {
     }
 }
 
+/// @notice Over-emits for a REGISTERED asset while an UNREGISTERED one pads the account-wide buffer.
+/// @dev The shape that separates the preview's per-asset count bound from its aggregate one. `cap` sums
+///      `_previewLegCount` over EVERY entry, including entries the loop then skips (`!found`, or `live == 0`), so
+///      an aggregate-only bound let asset A silently borrow skipped asset B's budget and return more legs than it
+///      declared — while the SAME data through `getAdapterPositions` drops A entirely. The two paths then
+///      disagreed on identical inputs, which is the one outcome the shared `_assetLegs`/`_liveValue` tail exists
+///      to prevent.
+contract PreviewBudgetBorrower is ProbeMember {
+    address public asset;
+    address public unregistered;
+
+    constructor(address nav_, address admin_, address asset_, address unregistered_) ProbeMember(nav_, admin_) {
+        asset = asset_;
+        unregistered = unregistered_;
+    }
+
+    function _verifyPayload(bytes32, address, bytes memory)
+        internal
+        view
+        override
+        returns (address[] memory assets, uint256[] memory values, bytes[] memory ctxs)
+    {
+        assets = new address[](2);
+        values = new uint256[](2);
+        ctxs = new bytes[](2);
+        assets[0] = asset; // registered — over-emits below
+        values[0] = 100 ether;
+        assets[1] = unregistered; // skipped at `!found`, but its declared leg still sized the buffer
+        values[1] = 100 ether;
+    }
+
+    function _assetLegs(
+        address,
+        address,
+        INAVCalculator.Asset memory meta,
+        uint256 liveValue,
+        uint256,
+        bytes memory,
+        bool
+    ) internal view override returns (INAVCalculator.PositionBalance[] memory legs) {
+        legs = new INAVCalculator.PositionBalance[](2); // declares 1 via the inherited `_previewLegCount`
+        legs[0] = _row(meta, liveValue / 2, abi.encode(address(this)), bytes32(0));
+        legs[1] = _row(meta, liveValue - liveValue / 2, abi.encode(address(this)), keccak256("borrowed"));
+    }
+}
+
 /// @notice Returns arrays of mismatched length from the preview payload hook.
 contract RaggedPreviewMember is ProbeMember {
     constructor(address nav_, address admin_) ProbeMember(nav_, admin_) {}
@@ -450,18 +496,19 @@ contract AttestedValueCacheTest is BalanceAdapterTestBase {
     ///      legs that survived the copy.
     ///      THE DISCRIMINATING MUTATION: move `if (taken == legCaps[i]) break;` back above the `isDebt` check and
     ///      this goes green while the adapter silently over-reports.
-    function test_charter_debtLegBeyondTheCap_dropsTheWHOLEAsset_neverJustTheDebt() public {
+    function test_charter_debtLegBeyondTheCap_isInspectedBeforeTheAssetIsDropped() public {
         DebtBeyondCapMember m = new DebtBeyondCapMember(address(balances), admin);
         bytes32 submitterRole = m.SUBMITTER_ROLE();
         vm.prank(admin);
         m.grantRole(submitterRole, address(this));
         m.feed(alice, address(tok), 100 ether);
 
-        // Declares 1, emits 2 — over-emission, so the asset drops ENTIRELY. What must never happen is the
-        // partial outcome: keeping leg 0 (the credit) while discarding leg 1 (the debt), which reports a
-        // liability-free position that is not liability-free.
-        INAVCalculator.PositionBalance[] memory positions = m.getAdapterPositions(alice, address(0));
-        assertEq(positions.length, 0, "the whole asset drops; the credit leg must NOT survive without its debt");
+        // Declares 1, emits [credit, debt] — over-emission AND a charter violation. The over-emission must NOT
+        // short-circuit the charter check: dropping this asset silently would report 0 for a position whose true
+        // net is NEGATIVE, which is an over-report. Omitting a debt leg inflates NAV exactly as much as emitting
+        // a spurious credit does.
+        vm.expectRevert(abi.encodeWithSelector(IAttestedBalanceAdapter.DebtLegRejected.selector, address(tok)));
+        m.getAdapterPositions(alice, address(0));
     }
 
     /// @notice Legs that sum to MORE than the asset's live value are rejected — the magnitude bound.
@@ -503,13 +550,11 @@ contract AttestedValueCacheTest is BalanceAdapterTestBase {
         m.getAdapterPositions(alice, address(0));
     }
 
-    /// @notice A leg denominated in a DIFFERENT registered asset is rejected — the pricing key is pinned.
-    /// @dev THE FOURTH AXIS. Count, direction and magnitude were all bounded; the UNIT was not. `balanceAsset.asset`
-    ///      is what `PriceFeedLib` resolves a price feed from, so a member passing every other guard in the
-    ///      attested asset's raw units could denominate its legs in any other registered asset and inflate
-    ///      quote-NAV by the price ratio — unbounded, in the forbidden direction. Bounding amounts without
-    ///      pinning the unit compares numbers that are not in the same currency.
-    ///      THE DISCRIMINATING MUTATION: delete the `balanceAsset.asset != live[i]` check and this passes.
+    /// @notice `balanceAdapter == address(this)` is the repo-wide audit trail, and only `_row` was upholding it.
+    /// @dev `_assetLegs` is virtual and returns member-built structs, so nothing forced a member through `_row`.
+    ///      NAV only reads this field for a fail-open display staticcall, so a forged one is not an over-report —
+    ///      it breaks the reconciliation key every consumer of `PositionBalance` joins on.
+    ///      THE DISCRIMINATING MUTATION: delete the `balanceAdapter != address(this)` check and this passes.
     function test_charter_legAttributedToAnotherAdapterIsRejected() public {
         AdapterSpoofingMember m = new AdapterSpoofingMember(address(balances), admin);
         bytes32 role = m.SUBMITTER_ROLE();
@@ -521,8 +566,13 @@ contract AttestedValueCacheTest is BalanceAdapterTestBase {
         m.getAdapterPositions(alice, address(0));
     }
 
-    /// @notice `balanceAdapter == address(this)` is the repo-wide audit trail, and only `_row` was upholding it.
-    /// @dev THE DISCRIMINATING MUTATION: delete the `balanceAdapter != address(this)` check and this passes.
+    /// @notice A leg denominated in a DIFFERENT registered asset is rejected — the pricing key is pinned.
+    /// @dev THE FOURTH AXIS. Count, direction and magnitude were all bounded; the UNIT was not. `balanceAsset.asset`
+    ///      is what `PriceFeedLib` resolves a price feed from, so a member passing every other guard in the
+    ///      attested asset's raw units could denominate its legs in any other registered asset and inflate
+    ///      quote-NAV by the price ratio — unbounded, in the forbidden direction. Bounding amounts without
+    ///      pinning the unit compares numbers that are not in the same currency.
+    ///      THE DISCRIMINATING MUTATION: delete the `balanceAsset.asset != live[i]` check and this passes.
     function test_charter_legDenominatedInAnotherAssetIsRejected() public {
         Mock_ERC20 other = new Mock_ERC20("OTHER", 18);
         balances.addSupportedAssetForTest(address(other));
@@ -660,7 +710,7 @@ contract AttestedValueCacheTest is BalanceAdapterTestBase {
     ///         make NAV LARGER — the one direction forbidden here. Until now the licence was carried entirely in
     ///         prose; this pins the half that IS mechanical: `_row`, the base's only leg constructor, never sets
     ///         `isDebt` or `isLocked`. The other half stays a review rule, because nothing forces a member to
-    ///         build its legs through `_row` — a member that emits debt MUST override `_collectLegs` to raise.
+    ///         build its legs through `_row` — a member that emits debt is REJECTED by the base at runtime (`DebtLegRejected`).
     ///         THE DISCRIMINATING MUTATION: set `row.isDebt = true` in `_row` and this fails.
     function test_baseLegConstructor_neverEmitsDebt() public {
         probe.feed(alice, address(tok), 100 ether);
@@ -751,6 +801,19 @@ contract AttestedValueCacheTest is BalanceAdapterTestBase {
         balances.addSupportedAssetForTest(address(other));
         PreviewForgingMember m = new PreviewForgingMember(address(balances), admin, address(tok), address(other), mode);
         vm.expectRevert(abi.encodeWithSelector(expected, address(tok)));
+        m.previewPositions(alice, abi.encode(uint256(1)));
+    }
+
+    /// @notice The preview bounds the leg count PER ASSET, not only against the account-wide buffer.
+    /// @dev THE DISCRIMINATING MUTATION: delete the `legs.length > _previewLegCount(ctxs[i])` check and this
+    ///      passes — the aggregate bound cannot catch it, because the skipped asset's declared leg leaves exactly
+    ///      enough room. Without the per-asset bound the preview accepts a leg count the cache path rejects.
+    function test_previewCountBound_isPerAsset_notJustTheAccountWideBuffer() public {
+        Mock_ERC20 unregistered = new Mock_ERC20("UNREG", 18); // deliberately NOT registered on the NAV
+        PreviewBudgetBorrower m =
+            new PreviewBudgetBorrower(address(balances), admin, address(tok), address(unregistered));
+
+        vm.expectRevert(InvalidArguments.selector);
         m.previewPositions(alice, abi.encode(uint256(1)));
     }
 

@@ -100,7 +100,7 @@ Two properties of the split are load-bearing and a new member must not work arou
 2. **The base's per-asset read `catch` DROPS the failing asset.** That is licensed only because every attested
    member today emits credit legs exclusively, so a dropped leg can only shrink NAV. A member that can emit a
    **debt** leg is now REJECTED at runtime by the base on both read paths (`DebtLegRejected`) — there is nothing
-   to override, and `_collectLegs` is `private`. Silently dropping a debt leg makes NAV *larger*, the one
+   to override: `_collectLegs` is `internal` and NOT `virtual`. Silently dropping a debt leg makes NAV *larger*, the one
    direction this codebase forbids. `AssistedCoordCache` raises for exactly this reason. (This item read "must
    override `_collectLegs` and raise instead" until 2026-08-28, when the charter became a runtime check.)
 

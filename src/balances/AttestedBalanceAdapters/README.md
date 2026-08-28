@@ -40,7 +40,7 @@ duplicate-asset guard, the `IBalanceAdapter` reads, and `_row`.
 1. `_upsertAttestation` is the **single point where a number enters the cache**, and it does not inspect a proof —
    it cannot, since the scheme is per-protocol. **Verify before calling it.**
 2. The base's per-asset `catch` **drops** the failing asset. That is safe only for a **credit-only** member. A
-   member must never emit a **debt** leg at all: the base now REJECTS one at runtime on both read paths, so there is nothing to override (`_collectLegs` is `private`). This is the credit-only charter, and it exists because a silently dropped
+   member must never emit a **debt** leg at all: the base now REJECTS one at runtime on both read paths, so there is nothing to override (`_collectLegs` is `internal` and NOT `virtual`). This is the credit-only charter, and it exists because a silently dropped
    debt leg makes NAV *larger* — the one direction forbidden here.
 
 

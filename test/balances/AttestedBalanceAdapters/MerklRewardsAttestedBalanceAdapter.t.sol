@@ -97,7 +97,7 @@ contract MockMerklDistributor is IMerklDistributor {
 /// @notice Unit tests for MerklRewardsAttestedBalanceAdapter. Builds toy 1-, 2-, and 4-leaf merkle trees in-memory using the
 ///         same hashing rule as Merkl's Distributor (sorted-pair, `keccak256(abi.encode(a, b))`).
 /// @dev    Submits are `SUBMITTER_ROLE`-gated (the CLEARS stay permissionless and stale-gated).
-///         `submitProofs`/`submitProofsBatch` take no roles and are callable by anyone
+///         `submitProofs`/`submitProofsBatch` take an explicit `user` (submit-on-behalf-of) and require `SUBMITTER_ROLE`
 ///         (integrity comes from live-root proof verification). Submit is UPSERT semantics: each `(token, proof)`
 ///         entry adds/refreshes just that `(user, token)` and never drops a token it omits — so a third party can't
 ///         suppress a live entry (removal is only via the stale-gated `clearAttestation`/`clearAccount`). Across-submit

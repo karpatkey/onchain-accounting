@@ -641,25 +641,26 @@ abstract contract AttestedValueCache is IAttestedBalanceAdapter, IPositionDescri
                 // the `catch` takes and for the same reason:
                 //
                 //   * not a truncation. Truncating discarded the surplus WITHOUT inspecting it, and a discarded
-                //     DEBT leg is an over-report. The earlier `break`-at-the-cap terminated INSPECTION rather
-                //     than the copy: `[credit(v/2), credit(v/2), debt]` against a cap of 1 passed j=0 and j=1,
-                //     then broke — and never looked at the debt leg;
-                //   * not a revert either. That would take the well-behaved assets down with the greedy one,
-                //     undoing the per-asset confinement above;
-                //   * and it keeps the completion reserve SOUND. The reserve is sized `_completionReservePerLeg()
-                //     * cap`, off the DECLARED counts, so the loop below must not run a member-controlled
-                //     `legs.length` times. (The `try … returns` already `returndatacopy`s and ABI-decodes the
-                //     whole array into this frame, which dominates the per-leg compare — so the decode, not this
-                //     loop, is the binding gas constraint, and it pre-exists.)
+                // INSPECT EVERY LEG FIRST, THEN decide whether to keep the asset. The order is load-bearing, and
+                // this is the second time it has been got wrong in the same function.
                 //
-                // {_cachedLegCount} is documented as an UPPER BOUND, so emitting more legs than declared already
-                // violates that hook's contract. Dropping every leg of the asset is unambiguously an
-                // under-report, which this family licenses.
-                if (legs.length > legCaps[i]) continue;
+                // An earlier version `break`-ed at the cap, which terminated INSPECTION rather than the copy. The
+                // fix for that hoisted a whole-asset `continue` ABOVE this loop — reintroducing the same class of
+                // bug from the other side: a member emitting `[credit(10), debt(100)]` against a declared count
+                // of 1 had its asset dropped WITHOUT any leg being inspected, so the debt leg never raised
+                // {DebtLegRejected}. The asset's true net is -90 and NAV reported 0. **Omitting a debt leg is an
+                // OVER-report just as surely as emitting a spurious credit is** — and a set-containment argument
+                // over the legs actually emitted cannot see it, because the harm is in what was left OUT.
+                // Dropping is safe only while every leg is non-negative, which is exactly what the charter check
+                // below establishes and therefore cannot be assumed before it has run.
+                //
+                // Inspecting all `legs.length` costs nothing extra in practice: the `try … returns` above has
+                // already `returndatacopy`d and ABI-decoded the whole array into this frame, so the decode
+                // dominates the per-leg compare and is the binding constraint either way.
                 for (uint256 j; j < legs.length; ++j) {
-                    // FOUR axes, not three, and they are not independent. COUNT is bounded above — which is also
-                    // what bounds this loop. The rest, in the order a violation hurts:
-                    //   DIRECTION — a debt leg that never reaches NAV inflates it;
+                    // FOUR axes, not three, and they are not independent, in the order a violation hurts:
+                    //   DIRECTION — a debt leg that never reaches NAV inflates it, whether it was emitted and
+                    //               dropped or dropped along with its asset;
                     //   IDENTITY  — `balanceAsset.asset` is the PRICING KEY `PriceFeedLib` resolves a feed from.
                     //               Leaving it unpinned makes the magnitude bound below compare numbers that are
                     //               not in the same currency: a member could pass count, direction and
@@ -669,12 +670,16 @@ abstract contract AttestedValueCache is IAttestedBalanceAdapter, IPositionDescri
                     //   MAGNITUDE — legs must PARTITION the asset's value, not each carry all of it.
                     // `balanceAdapter` is checked too, but it is the audit-trail invariant rather than a pricing
                     // input — NAV reads it only for a fail-open display staticcall.
-                    if (legs[j].isDebt) revert DebtLegRejected(live[i]);
-                    if (legs[j].balanceAsset.asset != live[i]) revert LegAssetMismatch(live[i]);
-                    if (legs[j].balanceAdapter != address(this)) revert LegAdapterMismatch(live[i]);
-                    legSum += legs[j].amount;
-                    if (legSum > assetValue) revert LegSumExceedsValue(live[i]);
+                    legSum = _admitLeg(legs[j], live[i], legSum, assetValue);
+                }
 
+                // ONLY NOW is dropping safe: every leg is proven a credit denominated in this asset, so losing
+                // them can only shrink NAV. {_cachedLegCount} is documented as an UPPER BOUND, so a member
+                // emitting more than it declared violates that hook's contract. Dropping the asset WHOLE rather
+                // than truncating keeps the buffer bound provable — each asset contributes either 0 or
+                // `legs.length <= legCaps[i]` entries, so `count <= sum(legCaps) == tmp.length` by construction.
+                if (legs.length > legCaps[i]) continue;
+                for (uint256 j; j < legs.length; ++j) {
                     tmp[count++] = legs[j];
                 }
             } catch {
@@ -735,14 +740,16 @@ abstract contract AttestedValueCache is IAttestedBalanceAdapter, IPositionDescri
             // neither: it is the caller's own `eth_call`, documented fail-loud, and a member whose
             // {_previewLegCount} under-declares is a bug the caller should see rather than a truncated answer
             // that reads as complete.
+            // PER-ASSET first, then the aggregate. Bounding only the aggregate let one asset silently borrow the
+            // budget of an asset the loop had already skipped (`!found`, or `live == 0`) — `cap` above sums
+            // {_previewLegCount} over EVERY entry, including skipped ones. A member could then return more legs
+            // for asset A here than the cache path would accept for the same A, so the two paths disagreed on
+            // identical inputs — the one outcome the shared {_assetLegs}/{_liveValue} tail exists to prevent.
+            if (legs.length > _previewLegCount(ctxs[i])) revert InvalidArguments();
             if (count + legs.length > tmp.length) revert InvalidArguments();
             uint256 legSum;
             for (uint256 k; k < legs.length; ++k) {
-                if (legs[k].isDebt) revert DebtLegRejected(assets[i]); // charter, same as the cache path
-                if (legs[k].balanceAsset.asset != assets[i]) revert LegAssetMismatch(assets[i]); // identity, ditto
-                if (legs[k].balanceAdapter != address(this)) revert LegAdapterMismatch(assets[i]); // attribution
-                legSum += legs[k].amount;
-                if (legSum > live) revert LegSumExceedsValue(assets[i]); // magnitude, same as the cache path
+                legSum = _admitLeg(legs[k], assets[i], legSum, live);
                 tmp[count++] = legs[k];
             }
         }
@@ -751,6 +758,37 @@ abstract contract AttestedValueCache is IAttestedBalanceAdapter, IPositionDescri
         for (uint256 i; i < count; ++i) {
             positions[i] = tmp[i];
         }
+    }
+
+    /// @notice The leg-admission contract, in ONE place. Returns the running sum so the caller can carry it.
+    /// @dev **Deliberately shared by both read paths.** They previously each carried their own copy of these
+    ///      checks, and drifted twice: the preview's copy was live code asserted by no test at all, and it was
+    ///      later found to be missing the per-asset count bound the cache path had. A single checker makes that
+    ///      class of divergence impossible rather than merely unlikely — the two paths cannot disagree about what
+    ///      a valid leg is, because there is only one answer.
+    ///
+    ///      The four axes, in the order a violation hurts. All four are member-controlled: `_assetLegs` is
+    ///      necessarily `virtual` and returns member-built structs, so nothing forces a member through {_row}.
+    ///        1. DIRECTION — the credit-only charter. A debt leg that does not reach NAV inflates it, and that is
+    ///           true whether it was emitted and dropped or dropped along with its asset.
+    ///        2. IDENTITY — `balanceAsset.asset` is the PRICING KEY `PriceFeedLib` resolves a feed from. Without
+    ///           this pin the magnitude bound below compares numbers that are not in the same currency.
+    ///        3. ATTRIBUTION — `balanceAdapter == address(this)` is the repo-wide audit trail. Not a pricing
+    ///           input (NAV reads it only for a fail-open display staticcall), but it is the reconciliation key.
+    ///        4. MAGNITUDE — legs must PARTITION the asset's value, not each carry all of it.
+    /// @param value The asset's live value: `assetValue` on the cache path, `live` on the preview. Both are the
+    ///              same quantity — exactly what was handed to {_assetLegs} as `liveValue`, via {_liveValue}.
+    function _admitLeg(INAVCalculator.PositionBalance memory leg, address asset, uint256 legSum, uint256 value)
+        private
+        view
+        returns (uint256)
+    {
+        if (leg.isDebt) revert DebtLegRejected(asset);
+        if (leg.balanceAsset.asset != asset) revert LegAssetMismatch(asset);
+        if (leg.balanceAdapter != address(this)) revert LegAdapterMismatch(asset);
+        legSum += leg.amount;
+        if (legSum > value) revert LegSumExceedsValue(asset);
+        return legSum;
     }
 
     /// @dev Reverts {DuplicateAsset} if any asset appears twice. O(n²) over ≤ {_maxAssetsPerAccount} entries; the

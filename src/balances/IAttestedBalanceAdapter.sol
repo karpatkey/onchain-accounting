@@ -122,9 +122,12 @@ interface IAttestedBalanceAdapter is IAccessControl, IBalanceAdapter {
     ///      reported holding while passing every other guard. Direction: OVER-report, the one direction forbidden.
     ///
     ///      **BLAST RADIUS — the same one {DebtLegRejected} carries.** This is thrown from `_collectLegs`, which
-    ///      sits OUTSIDE the per-asset `try`, so it bubbles out of `getAdapterPositions`; `PriceFeedLib` fails
-    ///      OPEN on a plain revert, and the adapter's ENTIRE leg set silently leaves NAV for that account — not
-    ///      just the offending asset. The trigger can be tiny and the loss total: a member using CEILING-rounded
+    ///      sits OUTSIDE the per-asset `try`, so it bubbles out of `getAdapterPositions`. Through `PriceFeedLib`
+    ///      — the NAV path — a plain revert fails OPEN, so the adapter's ENTIRE leg set silently leaves NAV for
+    ///      that account, not just the offending asset. Two caveats: a DIRECT `getAdapterPositions` caller sees
+    ///      the revert normally, and if the frame is near-exhausted when this fires, `GasStipendLib.exhausted`
+    ///      can classify it as an OOG and re-raise `AdapterGasExhausted`, which kills the whole account's
+    ///      `getAccountNav` rather than failing open. The trigger can be tiny and the loss total: a member using CEILING-rounded
     ///      pro-rata splits is one wei over on one asset and loses the whole account's adapter contribution, with
     ///      no error anywhere. Split with a FLOOR (`Math.mulDiv` rounds down by default), as the README recipe
     ///      says and as the Merkl member does. Note the asymmetry with an over-emitted leg COUNT, which drops

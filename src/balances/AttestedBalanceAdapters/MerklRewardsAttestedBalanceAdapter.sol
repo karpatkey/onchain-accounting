@@ -224,7 +224,7 @@ contract MerklRewardsAttestedBalanceAdapter is AttestedValueCache {
         // Same reason the base's `submitBatch` checks here: an EMPTY `users` array never enters the loop, so
         // without this a roleless caller gets a successful `submitProofsBatch([], [])` authorized nowhere —
         // destroying "the batch succeeded" as evidence of a grant, which is what the runbook tells operators to
-        // rely on. The base's `_submitPayload` also checks, per element, as defence in depth.
+        // rely on. The base's `_submitPayload` also checks once per CALL, and `_upsertAttestation` per element, as defence in depth.
         _checkRole(SUBMITTER_ROLE);
         if (users.length != allocs.length) revert InvalidArguments();
         for (uint256 i; i < users.length; ++i) {

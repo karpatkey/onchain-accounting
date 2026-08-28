@@ -215,11 +215,17 @@ abstract contract AttestedAdapterConformance is BalanceAdapterTestBase {
     /// @dev The interface promises cross-account atomicity; nothing asserted it. A member cannot re-route this
     ///      (the base's `submitBatch` is non-virtual), but the promise is family contract and deserves a pin.
     function test_conformance_submitBatchIsGatedAndAtomic() public {
-        // ORDER IS LOad-BEARING. `_tamperedPayload` rotates the source of validity (Merkl rotates the merkle
-        // root), so a `good` captured BEFORE it is stale by the time the batch runs: the batch then reverts on
-        // element 0 and the rollback assertion below is unfalsifiable — it would pass against an implementation
-        // with no atomicity at all, because the good element never got the chance to write. Build the bad
-        // payload FIRST, then a good one under the rotated validity.
+        // ORDER IS LOAD-BEARING, and note precisely what element 1 is. Both fixtures rotate the source of
+        // validity (Merkl rotates the merkle root), so only the LAST one called leaves a root behind. With
+        // `good` captured first it was stale by the time the batch ran, the batch reverted on element 0, and the
+        // rollback assertion was unfalsifiable — it would have passed against an implementation with no
+        // atomicity whatsoever, because the good element never got the chance to write.
+        //
+        // Building `bad` first and `good` second fixes that, at the cost of what makes element 1 invalid: under
+        // the final root it fails because that root is now alice's, not because its amount was tampered with.
+        // That is fine for THIS test — atomicity only needs element 1 to fail verification and element 0 to be
+        // genuinely valid, and the snapshot below proves the latter. It is not a test of the tampering itself;
+        // `test_conformance_tamperedPayloadIsRejected` covers that, with the root left where the fixture set it.
         bytes memory bad = _tamperedPayload(bob);
         (bytes memory good,,) = _validPayload(alice);
 
@@ -429,26 +435,45 @@ abstract contract AttestedAdapterConformance is BalanceAdapterTestBase {
     function test_conformance_capIsEnforcedAtAdmission() public {
         uint256 cap = IAttestedBalanceAdapter(address(member)).maxAssetsPerAccount();
 
-        // This SKIPS VISIBLY rather than returning green. The previous version did `if (cap > 8) return;`, which
-        // short-circuited for the only member in the family (Merkl's cap is 64) and reported a pass — and even
-        // when it did run, `assertLe(1, cap)` was trivially true. A conformance kit that reports coverage it did
-        // not provide is worse than one with a gap, because the gap is invisible.
-        if (cap > 8) {
+        // TWICE-BURNED TEST. Version 1 did `if (cap > 8) return;`, which short-circuited for the only member in
+        // the family (Merkl's cap is 64) and reported a green pass. Version 2 made the skip VISIBLE — correct, and
+        // kept — but the loop it added to give the test teeth could not reach the cap for two independent reasons:
+        // the calls were UN-PRANKED (every other call in this kit goes through `_submit`, which pranks
+        // `submitter`), so all of them reverted on `SUBMITTER_ROLE` into a bare `catch {}`; and they resubmitted
+        // the SAME payload, whose single asset is already present, so `_upsertAttestation`'s `isNew` is false and
+        // the enumeration never grows. `assertLe(1, cap)` held for any implementation, including one with the
+        // `TooManyAttestations` check deleted — the exact property under test.
+        //
+        // Reaching a cap needs cap+1 DISTINCT assets, which no member-agnostic fixture in this kit can build.
+        // So it is an explicit opt-in hook, and a member that cannot supply it SKIPS VISIBLY rather than
+        // reporting coverage it did not provide. Merkl's own suite covers the cap concretely
+        // (`test_submit_revertsWhenTooManyAttestations`, `test_submit_atCapRefreshesExistingButRejectsNew`).
+        (bytes memory oversized, bool supported) = _payloadExceedingCap(alice);
+        if (!supported) {
             vm.skip(true);
             return;
         }
 
-        (bytes memory data,,) = _validPayload(alice);
-        _submit(alice, data);
-        for (uint256 i; i < cap + 1; ++i) {
-            // Drive admission past the cap. The base must refuse rather than grow the enumeration.
-            try IAttestedBalanceAdapter(address(member)).submit(alice, data) {} catch {}
-        }
+        // Admission must REFUSE rather than grow the enumeration past what `maxAssetsPerAccount()` advertises —
+        // that figure is what a read-gas budget is sized against, so a cap that does not bind is worse than none.
+        vm.prank(submitter);
+        vm.expectRevert(IAttestedBalanceAdapter.TooManyAttestations.selector);
+        IAttestedBalanceAdapter(address(member)).submit(alice, oversized);
+
         assertLe(
             IAttestedBalanceAdapter(address(member)).assetsOf(alice).length,
             cap,
             "enumeration exceeded the declared cap"
         );
+    }
+
+    /// @notice OPTIONAL fixture: a payload carrying `maxAssetsPerAccount() + 1` DISTINCT assets.
+    /// @dev Returns `supported = false` by default, which makes the cap test skip VISIBLY. Override it in a
+    ///      member's conformance test to actually exercise admission refusal. Deliberately not abstract: forcing
+    ///      every member to build an oversized proof would be a large fixture cost for a property most members
+    ///      already pin in their own suite, and a kit that is expensive to adopt gets adopted less.
+    function _payloadExceedingCap(address) internal virtual returns (bytes memory, bool) {
+        return ("", false);
     }
 
     /// @notice An open universe: attested members cannot enumerate their asset set ahead of time.

@@ -151,12 +151,16 @@ contract RealignHeartbeats is Script {
                 if (!vm.keyExistsJson(json, string.concat(leg, ".heartbeat"))) continue;
                 // Match by ADDRESS, not index: getMonitorFeeds is swap-and-pop ordered, so live[j] is not
                 // necessarily config monitorFeeds[j].
+                // Bounded by the CONFIG array, not by `live.length`. Those lengths are unrelated: a config
+                // listing [A, B, C] against a single live registration C would only ever examine config
+                // index 0, conclude C is unmatched, and silently drop it from the rollout.
                 bool matched;
                 uint256 want;
-                for (uint256 k; k < live.length; ++k) {
+                for (uint256 k;; ++k) {
                     string memory cand = string.concat(base, ".monitorFeeds[", vm.toString(k), "]");
-                    if (!vm.keyExistsJson(json, string.concat(cand, ".address"))) continue;
+                    if (!vm.keyExistsJson(json, string.concat(cand, ".address"))) break; // past the end
                     if (vm.parseJsonAddress(json, string.concat(cand, ".address")) != live[j].priceFeed) continue;
+                    if (!vm.keyExistsJson(json, string.concat(cand, ".heartbeat"))) break;
                     want = vm.parseJsonUint(json, string.concat(cand, ".heartbeat"));
                     matched = true;
                     break;

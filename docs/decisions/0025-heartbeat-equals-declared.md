@@ -98,11 +98,11 @@ what `irregular` / `divergenceBps` / `healthyFeedCount` exist for.
   equality cannot be evaluated for them either way. The immutability still matters — they are constructor
   args and change only on redeploy — but it is a constraint on FUTURE divergence, not a backlog item. The
   one constructor leg that is not at 86 400 is `wARS.usdToAssetChainlinkHeartbeat` (90 000) — and a
-  refreshed snapshot now resolves its USD/ARS feed, which **declares 86 400**. So this is a confirmed
-  ERROR, not an unknown: a +3 600 s window in which a dead USD/ARS feed still reads fresh. wARS is live on
-  chain 1 (asset `0x0DC4F928…`, custom feed `0x2e4fFfDB…`), and because the value is a constructor arg it
-  cannot be realigned — it needs a redeploy of the wARS feed plus re-registration. **Deferred, and
-  tracked here rather than silenced.**
+  refreshed snapshot now resolves its USD/ARS feed, which **declares 86 400** — a +3 600 s window in which
+  a dead USD/ARS feed still reads fresh. Because the value is a constructor arg it could not be realigned,
+  so **the feed was redeployed and the registration swapped**: new feed
+  `0xbAcb08665c68b5798D6C6138cA02471e7c704931` on chain 1, `FEED_HEARTBEAT` 86 400, NAV-side registration
+  also 86 400, price identical before and after (62 285). **Done, not deferred.**
 
 - **CI does not run this guard against the real config** — `foundry.yml` runs `--self-test` only. A real
   ADR 0025 violation therefore cannot fail CI, which is how both POL and the wARS leg survived. Wiring the

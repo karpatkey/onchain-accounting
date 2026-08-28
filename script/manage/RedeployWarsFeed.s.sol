@@ -7,6 +7,10 @@ import {NAVCalculator} from "src/nav/NAVCalculator.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IPrices} from "src/prices/IPrices.sol";
 import {InvertedChainlinkCustomPriceFeed} from "src/prices/protocols/InvertedChainlinkCustomPriceFeed.sol";
+
+interface IFeedHeartbeat {
+    function FEED_HEARTBEAT() external view returns (uint256);
+}
 import {ConfigReader} from "script/utils/ConfigReader.sol";
 
 /// @title RedeployWarsFeed
@@ -64,10 +68,19 @@ contract RedeployWarsFeed is Script {
         console2.log("price before   :", uint256(before_.price));
         require(!before_.stale, "wARS is stale BEFORE the swap - resolve that first");
 
+        // IDEMPOTENCE MUST BE DECIDED BEFORE DEPLOYING, NOT AFTER. The old guard compared the freshly
+        // deployed address against the incumbent, which can never match — plain CREATE always yields a new
+        // address — so re-running a COMPLETED migration would deploy a second identical feed, rotate wARS
+        // onto it, and leave the address committed in deployments/1.json stale again. The real question is
+        // whether the incumbent already carries the target heartbeat on BOTH axes: the NAV-side
+        // registration and the feed's own immutable FEED_HEARTBEAT.
+        uint256 incumbentCtorHb = IFeedHeartbeat(old.priceFeed).FEED_HEARTBEAT();
+        if (old.chainlinkHeartbeat == heartbeat && incumbentCtorHb == heartbeat) revert NothingToDo();
+        console2.log("incumbent ctor hb:", incumbentCtorHb);
+
         vm.startBroadcast();
         InvertedChainlinkCustomPriceFeed feed =
             new InvertedChainlinkCustomPriceFeed(underlying, usdToAssetFeed, heartbeat, minAnswer, maxAnswer);
-        if (address(feed) == old.priceFeed) revert NothingToDo();
 
         // Add BEFORE removing: the asset is never single-feed at the moment of removal, so the
         // CannotRemoveLastFeed guard is never reached and no mirror is required.

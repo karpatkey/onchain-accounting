@@ -58,14 +58,22 @@ def _fetch(path: str) -> dict:
         return json.loads(r.read().decode())
 
 
-def declared_map(chain: str, fetch=_fetch) -> dict[str, int]:
-    """address(lower) -> declared heartbeat seconds, merged across that chain's manifests."""
+def declared_map(chain: str, fetch=_fetch) -> tuple[dict[str, int], list[str]]:
+    """address(lower) -> declared heartbeat seconds, plus the manifests that could NOT be fetched.
+
+    THE FAILURES ARE RETURNED, NOT LOGGED AND SWALLOWED. This module is a BLOCKING CI gate, and an
+    unreachable manifest degrades every feed it covers into "no declared cadence" — which is a WARN, and
+    WARNs do not fail the build. A network outage would therefore turn the gate green while checking
+    nothing, which is the precise failure mode this guard exists to end.
+    """
     out: dict[str, int] = {}
+    failures: list[str] = []
     for path in MANIFESTS.get(chain, []):
         try:
             m = fetch(path)
         except Exception as e:  # noqa: BLE001 - a fetch failure must not read as "feed not found"
             print(f"  chain {chain}: FETCH FAILED {path} ({e})", file=sys.stderr)
+            failures.append(f"{path} ({e!r})")
             continue
         default = (m.get("updateTriggers") or {}).get("timeSinceLastUpdateInMilliseconds")
         for _, v in (m.get("priceFeeds") or {}).items():
@@ -75,7 +83,7 @@ def declared_map(chain: str, fetch=_fetch) -> dict[str, int]:
             ms = (v.get("updateTriggersOverrides") or {}).get("timeSinceLastUpdateInMilliseconds", default)
             if addr and isinstance(ms, (int, float)) and not isinstance(ms, bool):
                 out.setdefault(addr, int(ms) // 1000)
-    return out
+    return out, failures
 
 
 def registered_redstone(chain: str) -> list[dict]:
@@ -96,8 +104,14 @@ def registered_redstone(chain: str) -> list[dict]:
 
 
 def findings(chain: str, fetch=_fetch) -> list[tuple[str, str]]:
-    decl = declared_map(chain, fetch)
+    decl, fetch_failures = declared_map(chain, fetch)
     out: list[tuple[str, str]] = []
+    for f in fetch_failures:
+        # ERROR, not WARN: an unfetched manifest means this chain was NOT checked, and "not checked" must
+        # never be reported with the same severity as "checked and fine".
+        out.append((ERROR, f"chain {chain}: manifest {f} could NOT be fetched, so its feeds were not "
+                           f"verified against RedStone's declared cadences. Failing closed — re-run, or "
+                           f"snapshot the manifests if this endpoint is unreliable."))
     for r in registered_redstone(chain):
         addr = (r["address"] or "").lower()
         rh, dh = r["heartbeat"], decl.get(addr)

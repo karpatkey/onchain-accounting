@@ -13,7 +13,7 @@ import {HeartbeatRealigner} from "script/manage/HeartbeatRealigner.sol";
 /// @author KPK
 /// @notice End-to-end rehearsal of the ADR 0025 realignment against live mainnet state.
 /// @dev Exercises the real path: grant MANAGER_ROLE to the realigner from the account that actually holds
-///      DEFAULT_ADMIN_ROLE on the live proxy, realign all eight chain-1 assets in ONE transaction, revoke.
+///      DEFAULT_ADMIN_ROLE on the live proxy, realign all ten chain-1 assets in ONE transaction, revoke.
 ///      The assertion that matters is not that the heartbeats moved — it is that nothing else did.
 contract HeartbeatRealignerForkTest is Test, TestEnvConfigurator {
     uint256 constant FORK_BLOCK = 25_854_566;

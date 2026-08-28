@@ -104,9 +104,10 @@ what `irregular` / `divergenceBps` / `healthyFeedCount` exist for.
   `0xbAcb08665c68b5798D6C6138cA02471e7c704931` on chain 1, `FEED_HEARTBEAT` 86 400, NAV-side registration
   also 86 400, price identical before and after (62 285). **Done, not deferred.**
 
-- **CI does not run this guard against the real config** — `foundry.yml` runs `--self-test` only. A real
-  ADR 0025 violation therefore cannot fail CI, which is how both POL and the wARS leg survived. Wiring the
-  real-config run into CI is the durable fix and would go red on wARS until the redeploy lands.
+- **CI now runs both guards against the real config.** It previously ran `--self-test` only, so a real
+  ADR 0025 violation could not fail CI — which is how both POL and the wARS leg survived. `foundry.yml`
+  now runs `declared_heartbeat_guard.py` across all seven chains and `redstone_declared_heartbeats.py`,
+  both blocking. Neither is red: POL and wARS are fixed.
 - **Chains 56 and 137 have no cadence measurement** (RPC unavailable during the sweep). Their declared
   values are on record, which is all this rule needs; the unmeasured risk is that their landing jitter is
   larger than elsewhere, and that failure lands in the accepted direction (more false-stale).

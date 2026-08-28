@@ -38,7 +38,7 @@ contract AggregatorMirror {
     }
 }
 
-interface INav {
+interface INAV {
     function getPriceFeedCount(address asset) external view returns (uint256);
     function getPriceFeedAt(address asset, uint256 index) external view returns (IPrices.PriceFeedConfig memory);
     function getMonitorFeeds(address asset) external view returns (IPrices.PriceFeedConfig[] memory);
@@ -91,11 +91,12 @@ contract HeartbeatRealigner {
 
     bytes32 private constant MANAGER_ROLE = keccak256("MANAGER");
 
-    INav public immutable NAV;
+    INAV public immutable NAV;
 
     error NotOperator(address caller);
     error LengthMismatch(uint256 assets, uint256 heartbeats);
     error NothingToRealign(address asset);
+    error MultiFeedNotSupported(address asset, uint256 feedCount);
     error ZeroHeartbeat(address asset);
     error PostconditionFeedCount(address asset, uint256 count);
     error PostconditionFeedAddress(address asset, address got, address want);
@@ -108,7 +109,7 @@ contract HeartbeatRealigner {
     );
 
     constructor(address nav, address operator) {
-        NAV = INav(nav);
+        NAV = INAV(nav);
         OPERATOR = operator;
     }
 
@@ -183,19 +184,22 @@ contract HeartbeatRealigner {
             NAV.addPriceFeed(asset, f.priceFeed, f.priceType, heartbeat);
             NAV.removePriceFeed(asset, mirror);
         } else {
-            NAV.removePriceFeed(asset, f.priceFeed);
-            NAV.addPriceFeed(asset, f.priceFeed, f.priceType, heartbeat);
+            // REFUSED, not handled. remove+add on a multi-feed asset REORDERS it: removing index 0
+            // swap-pops the last feed into index 0, and the re-added incumbent lands at the end. Pricing
+            // selects the PRIMARY feed, so the asset would silently change price source — a different
+            // number, reported fresh, which is the failure ADR 0025 exists to prevent. Restoring the
+            // original ordering would need a full teardown and rebuild of the array, and no registered
+            // asset carries a second feed today, so the honest move is to refuse and make the operator
+            // decide rather than to guess at an ordering.
+            revert MultiFeedNotSupported(asset, countBefore);
         }
 
         // Assert the end state on-chain rather than trusting the sequence. `removePriceFeed` is
         // swap-with-last + pop, so the final ordering is a consequence of the step order; if that ever
         // changes the batch must revert, not silently leave the mirror registered as the primary feed.
-        // Assert against the ORIGINAL count, and locate the incumbent BY ADDRESS. `removeFeed` is
-        // swap-with-last + pop, so the incumbent does not reliably land back at index 0 once an asset
-        // carries more than one feed. Hardcoding `count == 1` and `index 0` made the multi-feed branch
-        // unable to satisfy its own postcondition — remove+add preserves the original count, so a
-        // two-feed asset always reverted. No registered asset carries a second feed today, so it never
-        // fired: latent, not benign.
+        // Assert against the ORIGINAL count and locate the incumbent BY ADDRESS rather than assuming
+        // index 0. `removeFeed` is swap-with-last + pop, so the final ordering is a consequence of the
+        // step order and must be checked, not assumed.
         uint256 count = NAV.getPriceFeedCount(asset);
         if (count != countBefore) revert PostconditionFeedCount(asset, count);
 

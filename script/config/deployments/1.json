@@ -34,7 +34,8 @@
     "CapStablecoin": "0x121583E21C671e9B1193FE478ec9dc9D73D73a3F",
     "CapSavings": "0xEc605FC2521792f2018dF92Bb5aDBf85EB417cb6",
     "SymbioticVaultsMeta": "0x599C72cbd3bDe6D992366130009962B4c2Ec5B23",
-    "PolygonStakingMeta": "0x5144b5855e753Fa6E2BBac95Cc880A73e1eec187"
+    "PolygonStakingMeta": "0x5144b5855e753Fa6E2BBac95Cc880A73e1eec187",
+    "MerklRewards": "0xFf2D5A8bf801191eD1292E6DD6792F5D03c5aFBF"
   },
   "NAVCalculatorProxy": "0x54EaD2A1dB7456cA917675Ea8908ec8A997c6214",
   "customPriceFeeds": {

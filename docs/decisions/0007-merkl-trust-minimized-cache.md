@@ -1,5 +1,15 @@
 # 0007 — Merkl rewards adapter: proof-verified, trust-minimized cache
 
+> **Amendment (2026-08-28) — SUBMITS ARE ROLE-GATED.** Everything below describing the write path as
+> *permissionless* is superseded. The adapter inherits OpenZeppelin `AccessControl`; `submitProofs` /
+> `submitProofsBatch` / the family-generic `submit` require **`SUBMITTER_ROLE`**, granted and revoked by
+> `DEFAULT_ADMIN_ROLE` (the security council, set at construction). The **clears remain permissionless and
+> stale-gated** — role-gating removal is what audit finding L-02 flagged.
+>
+> The trust argument in this ADR is otherwise unchanged, because the role does **not** protect the amount: the
+> per-write merkle proof did that and still does. The role closes the space the proof never covered — who may
+> occupy the per-account cache, and who may set the (unattested) campaign labels on a proven total.
+
 > **Naming note (2026-08-27):** the function, error and event names below are **PRE-REFACTOR**. The adapter now
 > extends the shared `AttestedValueCache` base (ADR 0022) and uses the family-generic surface —
 > `clearAttestation`, `assetsOf`, `attestations`, `UninitializedEpoch`, `TooManyAttestations`,

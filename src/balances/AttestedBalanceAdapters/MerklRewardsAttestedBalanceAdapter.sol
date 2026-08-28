@@ -33,12 +33,13 @@ import {ProtocolNames} from "src/utils/ProtocolNames.sol";
 ///
 ///      **Role-gated & submit-on-behalf-of.** `submitProofs(user, …)` takes an explicit `user` and requires
 ///      `SUBMITTER_ROLE`. Because every write is proof-verified, opening it to anyone adds no fabrication risk
-///      *in the amounts*. **That is not the same as "a griefer can do nothing".** The proof binds the per-token
-///      cumulative but NOT the campaign split — only the shares' SUM is checked — so a third party holding an
-///      account's (public) proof can re-submit it split into up to {MAX_CAMPAIGNS_PER_TOKEN} fabricated legs,
-///      inflating a real token's leg COUNT and putting attacker-chosen `campaignId`s on reported positions. It is
-///      bounded, never inflates NAV, and is repairable in one transaction — but it is a real fabrication of position
-///      *identity*, not nothing.
+///      *in the amounts*. **That is not the same as "the label is trustworthy".** The proof binds the per-token
+///      cumulative but NOT the campaign split — only the shares' SUM is checked — so ANY holder of
+///      `SUBMITTER_ROLE` can submit a real proof split into up to {MAX_CAMPAIGNS_PER_TOKEN} fabricated legs,
+///      inflating a real token's leg COUNT and putting chosen `campaignId`s on reported positions. Since the role
+///      landed this is no longer reachable by an arbitrary third party — it is a bound on how far a compromised or
+///      buggy KEEPER can mislead, not a public grief. It never inflates NAV and is repairable in one transaction,
+///      but campaign identity remains display-grade rather than attested.
 ///
 ///      Trust model: `docs/decisions/0007-merkl-trust-minimized-cache.md`. Family contract: ADR 0022.
 contract MerklRewardsAttestedBalanceAdapter is AttestedValueCache {

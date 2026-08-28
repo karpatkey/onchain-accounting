@@ -20,6 +20,7 @@ import {
   SparkCircleColor,
   GearboxCircleColor,
   EulerCircleColor,
+  PolygonCircleColor,
 } from '@karpatkey/design-system'
 
 // Per-request drill-down rows for withdrawal-queue adapters (Lido NFT ids / Stader & Kelp request ids).
@@ -62,6 +63,13 @@ const PROTOCOL_ICONS: Record<string, React.ComponentType<{ className?: string }>
   spark: SparkCircleColor,
   gearbox: GearboxCircleColor,
   euler: EulerCircleColor,
+  // `protocolName()` returns "Polygon Staking" (the product, not the chain), and getProtocolKey
+  // strips whitespace -> "polygonstaking". Keying this `polygon` never matched and the icon
+  // silently fell through to the CDN fallback, which has no entry either. `polygon` is kept as a
+  // transitional alias: the predecessor adapter returned the bare name, so a client reading a
+  // cached or older NAV still resolves.
+  polygonstaking: PolygonCircleColor,
+  polygon: PolygonCircleColor,
 }
 
 // Protocols without a design-system CircleColor icon fall back to a CDN image keyed the same way.
@@ -89,6 +97,8 @@ const PROTOCOL_URLS: Record<string, string> = {
   'ether.fi': 'https://app.ether.fi/',
   stakewise: 'https://app.stakewise.io/',
   nexus: 'https://app.nexusmutual.io/',
+  polygonstaking: 'https://staking.polygon.technology/',
+  polygon: 'https://staking.polygon.technology/',
 }
 
 function getProtocolKey(protocol: string): string {

@@ -1012,6 +1012,7 @@ schemas are in the next section and in the per-adapter table above.)
 | `pancakeswap-v3` | `PANCAKESWAP_V3` | `PancakeSwapV3PoolsMetaBalanceAdapter` — PancakeSwap V3 LP NFT liquidity + fees |
 | `pancakeswap-v2` | `PANCAKESWAP_V2` | `PancakeSwapV2PoolsMetaBalanceAdapter` — PancakeSwap V2 LP |
 | `stakewise-v3-vaults` | `STAKEWISE_V3_VAULTS` | `StakeWiseV3VaultsMetaBalanceAdapter` — StakeWise V3 vault stake + osToken debt |
+| `polygon-staking` | `POLYGON_STAKING` | `PolygonStakingMetaBalanceAdapter` — Polygon PoS delegation principal + unclaimed rewards (settles on Ethereum L1) |
 | `nexus-mutual-staking-pools` | `NEXUS_MUTUAL_STAKING_POOLS` | `NexusMutualStakingPoolsAssistedBalanceAdapter` — Nexus Mutual StakingNFT stake + rewards |
 | `cap` | `CAP` | `CapStablecoinBalanceAdapter` (held cUSD) + `CapSavingsBalanceAdapter` (staked stcUSD) — two adapters, one `protocolSubId`: both legs encode the same positionId shape |
 | `merkl` | `MERKL` | `MerklRewardsAttestedBalanceAdapter` (`attested` family, ADR 0022) — emits unclaimed (claimable) Merkl reward tokens, one leg per cached campaign share. Per-chain enablement/deploy is a separate follow-up |
@@ -1063,6 +1064,7 @@ rather than overloading an existing one.
 | `pancakeswap-v3` | `(address pool)` — NFT id in `positionInstanceId` |
 | `pancakeswap-v2` | `(address pair)` |
 | `stakewise-v3-vaults` | `(address vault)` |
+| `polygon-staking` | `(address validatorShare)` |
 | `cap` | `(address token)` — cUSD or stcUSD |
 | `erc4626` | `(address vault)` |
 | `merkl` | `(address distributor)` — reward token in balanceAsset |
@@ -1189,6 +1191,7 @@ decodes use `AbiCoder.defaultAbiCoder()` from ethers.js. Protocol ID constants c
 | `FluidVaultsMeta` | `fluid-vaults` | `Collateral`, `Borrowed` |
 | `CompoundV3CometsMeta` | `compound-v3-comets` | `Supplied`, `Borrowed`, `Collateral`, `Rewards` |
 | `StakeWiseV3VaultsMeta` | `stakewise-v3-vaults` | `Staking`, `Borrowed` |
+| `PolygonStakingMeta` | `polygon-staking` | `Staking`, `Rewards` |
 | `BalancerV3PoolsMeta` | `balancer-v3-pools` | `Supplied` |
 | `BalancerV3GaugesMeta` | `balancer-v3-gauges` | `Staking`, `Rewards` |
 | `BalancerV2PoolsMeta` | `balancer-v2-pools` | `Supplied` |
@@ -1334,6 +1337,17 @@ const [vault] = abi.decode(["address"], pos.positionId);
 // vault — StakeWise V3 ERC4626-like vault
 // Staking  → vault shares → underlying (ETH / GNO)
 // Borrowed → minted osToken debt → underlying equivalent
+```
+
+#### Polygon PoS — `polygon-staking`
+
+```typescript
+// One positionId per validator; the two legs are told apart by positionKind, not by id.
+const [validatorShare] = abi.decode(["address"], pos.positionId);
+// validatorShare — the validator's ValidatorShare contract on Ethereum L1
+// Staking → delegated principal (POL)
+// Rewards → unclaimed rewards  (POL)
+// Note: tokens in the unbonding queue are NOT reported — see BALANCE_ADAPTERS.md §7.1.
 ```
 
 #### Balancer V3 Pools — `balancer-v3-pools`
@@ -1588,6 +1602,7 @@ the same on every chain. Default `positionId` = base `_instancePositionId` (inst
 | `MorphoMarketsMetaBalanceAdapter` | `morpho-markets` | `"Morpho"` | `["Market", "<coll>/<loan>"]` (derived) | **override** `abi.encode(bytes32 marketId)` (raw) | Collateral / Supplied / Borrowed | `["Morpho","Market","wETH/USDC"]` |
 | `MorphoVaultsMetaBalanceAdapter` | `morpho-vaults` | `"Morpho"` | `["Vault", <vault.name()>]` (derived) | `abi.encode(address vault)` | Supplied | `["Morpho","Vault","Morpho DAI"]` |
 | `StakeWiseV3VaultsMetaBalanceAdapter` | `stakewise-v3-vaults` | `"StakeWise V3"` | `["Vault", <vault.name()>]`, falling back to `["Vault", "<underlying symbol> <vault address>"]` (derived; only the `…Erc20Vault` variants answer `name()`) | `abi.encode(address vault)` | Staking / Borrowed (osToken) | `["StakeWise V3","Vault","Stakers Union GNO"]` / `["StakeWise V3","Vault","GNO 0x4b4406ed…"]` |
+| `PolygonStakingMetaBalanceAdapter` | `polygon-staking` | `"Polygon Staking"` | `["Validator", "#<validatorId>"]`, falling back to `["Validator", "<POL symbol> <share address>"]` (derived; the share's own `name()` is opaque — "Delegated POL #c0" — so `validatorId()` is used instead) | `abi.encode(address validatorShare)` | Staking / Rewards | `["Polygon Staking","Validator","#192"]` |
 | `BalancerV2PoolsMetaBalanceAdapter` | `balancer-v2-pools` | `"Balancer V2"` | `["AMM Liquidity Pool", "<sym0>/<sym1>/…"]` (derived; pool tokens from the Vault, excluding the pool's own BPT) | **override** `abi.encode(bytes32 poolId)` (raw) | Supplied | `["Balancer V2","AMM Liquidity Pool","USDC/USDT/DAI"]` |
 | `BalancerV2GaugesMetaBalanceAdapter` | `balancer-v2-gauges` | `"Balancer V2"` | `["Staking Gauge", "<sym0>/<sym1>/…"]` (derived; staked pool's tokens via `lp_token`) | `abi.encode(address gauge)` | Staking / Rewards | `["Balancer V2","Staking Gauge","USDC/USDT/DAI"]` |
 | `BalancerV3PoolsMetaBalanceAdapter` | `balancer-v3-pools` | `"Balancer V3"` | `["AMM Liquidity Pool", "<sym0>/<sym1>/…"]` (derived; `poolTokens()`) | `abi.encode(address pool)` | Supplied | `["Balancer V3","AMM Liquidity Pool","WETH/wstETH"]` |

@@ -143,6 +143,7 @@ positions there.
 | Adapter | Address | Deployed on | Would reuse this address on | Because |
 | --- | --- | --- | --- | --- |
 | UniswapV3PoolsMeta ☆ | `0xACdC33b6a453F629d1ab10A14d3513817F492de7` | 1 | 10, 137, 42161 | those chains host the canonical NonfungiblePositionManager at `0xC36442…FE88` |
+| UniswapV3PoolsMeta ☆ | `0xA336f7171B9CE77de13451419B3254099beF2C24` | 100 | — | Gnosis hosts its OWN Uniswap V3: NPM `0xAE8fbE…9FA3`, factory `0xe32F7d…89B1`. A different constructor arg, so a different address — it is not part of the row above |
 | MorphoMarketsMeta ☆ | `0x5C951CF5C596BC4908A5fd846710070553830b06` | **1, 8453** | — | both host Morpho at `0xBBBB…FFCb`, so both already answer at this one address |
 | MorphoMarketsMeta ☆ | `0x1a33a8eAE2F927A05e3eaDC87a348323060Ab2a4` | 42161 | — | Arbitrum's Morpho is a separate deployment at `0x6c247b1F…8F5e` |
 | FluidVaultsMeta ☆ | `0x32E94eE2276a2eb4873a68676e1250212b3433fC` | 1 | 56, 137, 8453, 9745, 42161 | Fluid deploys its VaultResolver deterministically at `0xA5C3E165…95cC` on all six |
@@ -177,6 +178,7 @@ position manager is at a different address entirely.
 | MorphoMarketsMeta ☆ | `0x5C951CF5C596BC4908A5fd846710070553830b06` |
 | MorphoVaultsMeta ★ | `0x64e1ba8B12ee2bFdBDdFd4E0863EdfaaE824C86a` |
 | NexusMutualStakingPoolsAssisted | `0x25Be749999683381703c7346462503a5EFFFd184` |
+| PolygonStakingMeta | `0x3Feb6F1e0cd384BE4440cFCCd1aa90394A05b1a4` |
 | SparkLend | `0x9ad8dDaAD5166f2f0Fe4e883aFe78902f8BF0CAE` |
 | StaderWithdrawalQueue | `0xCB975897AfA295C8fAEB0C33B333C77B95195094` |
 | StakeWiseV3ExitQueueAssisted | `0x83375fDE808F6388c85fC0A1dA86a69492a20798` |
@@ -223,6 +225,7 @@ position manager is at a different address entirely.
 | AaveV3InstancesMeta ★ | `0x04Ba6789B4AD5D6CF63Ec9cc301c13F6a8A0210b` |
 | StakeWiseV3ExitQueueAssisted | `0xE1e163663961237C0955b665188864f0fD281020` |
 | StakeWiseV3VaultsMeta | `0x8cbAFEC5745AF6727b7be0829e507f58b3b3ce0d` |
+| UniswapV3PoolsMeta ☆ | `0xA336f7171B9CE77de13451419B3254099beF2C24` |
 
 ### Polygon (137)
 
@@ -282,11 +285,15 @@ addresses. Chains not listed have no custom feeds; their assets use direct feeds
 | rETH | `0x28998b0BE5Dc06525FB0d5585Dc7eD7cEa448DF7` |
 | rETHCrossRate | `0xd6ceD2c5B2F19Bb6781d1bf8bfB0978e199de2Be` |
 | rsETH | `0x39d4D331BbEd4c3Eca4c80f7F674e3268b93b6c3` |
+| sDAI | `0x84eDa44d3ab2982692804b153D4bE88A0AfD533C` |
 | sGHO | `0x6c258D6B0e7b934cA96e8eA0CF5543FEF045B8c2` |
 | sUSDS | `0x1581d5Cecb71fEca102C61572924CC33859714DA` |
 | sUSDe | `0x901cBc08fAc7296200cF69F27a904D1d218c8D90` |
 | stETHCrossRate | `0xa5Ea631C2100D1B38666aCDDE215bf37b1813B69` |
 | stETHFundamental | `0x1F707cA1Ffd99ae3215f223f6a41571e0d3a4F47` |
+| spETH | `0x93E408dF0A0BEb203e24163bE513e25ca6EF983B` |
+| spUSDC | `0x571cB9069eb2ad434d8A5bB4853602eb6D2a6d43` |
+| spUSDT | `0xA41107cb75012A399358482cC850630D9dD8672A` |
 | syrupUSDC | `0xB88B09725A2d8c3D05f77d0D4225b5DAE673Dfeb` |
 | wARS | `0x2e4fFfDB6e1508F3d9A8B9b9761076F14Ffdbceb` |
 | wNXM | `0x9e032A4536Bd09cF253ec1097d1c4D9540d4273A` |

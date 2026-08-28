@@ -33,7 +33,8 @@
     "UniswapV3PoolsMeta": "0xACdC33b6a453F629d1ab10A14d3513817F492de7",
     "CapStablecoin": "0x121583E21C671e9B1193FE478ec9dc9D73D73a3F",
     "CapSavings": "0xEc605FC2521792f2018dF92Bb5aDBf85EB417cb6",
-    "SymbioticVaultsMeta": "0x599C72cbd3bDe6D992366130009962B4c2Ec5B23"
+    "SymbioticVaultsMeta": "0x599C72cbd3bDe6D992366130009962B4c2Ec5B23",
+    "PolygonStakingMeta": "0x3Feb6F1e0cd384BE4440cFCCd1aa90394A05b1a4"
   },
   "NAVCalculatorProxy": "0x54EaD2A1dB7456cA917675Ea8908ec8A997c6214",
   "customPriceFeeds": {
@@ -63,7 +64,11 @@
     "stETHFundamental": "0x1F707cA1Ffd99ae3215f223f6a41571e0d3a4F47",
     "stETHCrossRate": "0xa5Ea631C2100D1B38666aCDDE215bf37b1813B69",
     "ezETHCrossRateMarket": "0xa52d9675F2d58858AC72f5889f13211CbEF37055",
-    "wARS": "0x2e4fFfDB6e1508F3d9A8B9b9761076F14Ffdbceb"
+    "wARS": "0x2e4fFfDB6e1508F3d9A8B9b9761076F14Ffdbceb",
+    "spUSDC": "0x571cB9069eb2ad434d8A5bB4853602eb6D2a6d43",
+    "spUSDT": "0xA41107cb75012A399358482cC850630D9dD8672A",
+    "spETH": "0x93E408dF0A0BEb203e24163bE513e25ca6EF983B",
+    "sDAI": "0x84eDa44d3ab2982692804b153D4bE88A0AfD533C"
   },
   "retiredCustomPriceFeeds": {
     "$comment": "Deployed feed contracts no longer configured as NAV price sources. A SIBLING of customPriceFeeds, not a member of it, and that is the whole point: reset_deployment_records.CLEAR_SECTIONS is [\"balanceAdapters\", \"customPriceFeeds\"] and its loop blanks EVERY non-empty value in a listed section, so a retirement note stored inside customPriceFeeds is destroyed by the very step-1.1 reset that makes the record worth annotating. Measured, not assumed: both the address and the note come back as \"\". This section is in neither CLEAR_TOP nor CLEAR_SECTIONS, so plan_for never touches it.",

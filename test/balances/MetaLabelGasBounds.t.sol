@@ -272,9 +272,18 @@ contract MetaLabelGasBoundsTest is Test {
     ///      let an earlier ceiling of 2M pass while bounding almost nothing.
     uint256 internal constant BOUNDED_CEILING = LEAF_GAS + 150_000;
 
-    /// @dev Mainnet's registered-asset count at the time of writing, from
-    ///      `script/config/nav-config/assets-and-price-feeds/1.json`. The Fluid leaf's cost is linear in this.
-    uint256 internal constant MAINNET_REGISTERED_ASSETS = 43;
+    /// @dev Mainnet's registered-asset count, read from
+    ///      `script/config/nav-config/assets-and-price-feeds/1.json` rather than hand-pinned.
+    ///
+    ///      It was a literal `43` and had drifted to 45 in config while this suite stayed green, because the
+    ///      fixture builds its own synthetic tokens — so the number silently stopped meaning "mainnet" and the
+    ///      Fluid leaf, whose cost is LINEAR in the registry size, was being measured against a registry smaller
+    ///      than the real one. A hand-copied mirror of a moving external quantity re-drifts by construction, so
+    ///      it is derived now: add an asset to mainnet config and this measurement follows it.
+    function _mainnetRegisteredAssets() internal view returns (uint256) {
+        string memory json = vm.readFile("script/config/nav-config/assets-and-price-feeds/1.json");
+        return vm.parseJsonKeys(json, "$").length;
+    }
 
     /// @dev A proxied token with its OWN implementation contract. Never share one across a fixture: EIP-2929
     ///      would then charge the cold 2,600 once and the warm 100 for every other token, understating a wide
@@ -311,7 +320,8 @@ contract MetaLabelGasBoundsTest is Test {
 
         // Fluid: the leaf fetches the WHOLE registered-asset array, so its cost is linear in the registry, not
         // in anything about Fluid. Pad the registry to mainnet's size so the measurement is the real one.
-        while (nav.getRegisteredAssets().length < MAINNET_REGISTERED_ASSETS) {
+        uint256 mainnetAssets = _mainnetRegisteredAssets();
+        while (nav.getRegisteredAssets().length < mainnetAssets) {
             nav.registerAsset(_proxiedToken("PADPAD"), 18, "PADPAD");
         }
         MockFluidVaultResolver resolver = new MockFluidVaultResolver();

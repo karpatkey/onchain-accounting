@@ -1184,7 +1184,7 @@ def base_report(chains) -> int:
     # The ERC-4626 family is the only one whose base is pinned by its own constructor
     # (`baseAsset == IERC4626(vault).asset()`, reverting BaseAssetMismatch). Everything else takes the
     # base on trust from config, which is what makes the wrong-base axis a config problem.
-    erc4626 = {"RWIV", "sGHO", "sUSDS", "sUSDe", "sXDAI", "syrupUSDC"}
+    erc4626 = {"RWIV", "sDAI", "sGHO", "sUSDS", "sUSDe", "sXDAI", "spETH", "spUSDC", "spUSDT", "syrupUSDC"}
     print(f"{'chain':>7}  {'asset':<12} {'feed':<24} {'base':<12} base primaries")
     for cid in chains:
         assets, feeds = cfg("assets-and-price-feeds", cid), dcfg("custom-price-feeds", cid)

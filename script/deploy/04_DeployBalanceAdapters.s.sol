@@ -58,6 +58,9 @@ import {
     StakeWiseV3VaultsMetaBalanceAdapter
 } from "../../src/balances/MetaBalanceAdapters/StakeWiseV3VaultsMetaBalanceAdapter.sol";
 import {
+    PolygonStakingMetaBalanceAdapter
+} from "../../src/balances/MetaBalanceAdapters/PolygonStakingMetaBalanceAdapter.sol";
+import {
     FluidFTokensMetaBalanceAdapter
 } from "../../src/balances/MetaBalanceAdapters/FluidFTokensMetaBalanceAdapter.sol";
 import {FluidVaultsMetaBalanceAdapter} from "../../src/balances/MetaBalanceAdapters/FluidVaultsMetaBalanceAdapter.sol";
@@ -191,6 +194,7 @@ contract DeployBalanceAdapters is BaseDeployScript {
 
         // --- StakeWise V3 (Mainnet) — Genesis Vault deposit (osETH itself is now a Custom-priced ERC20, not a balance adapter) ---
         _deployIfEnabled("StakeWiseV3VaultsMeta"); // Meta-adapter: all StakeWise V3 vaults; vault set on NAV (ADR 0010)
+        _deployIfEnabled("PolygonStakingMeta"); // Meta-adapter: all Polygon PoS ValidatorShares; validator set on NAV (ADR 0010)
 
         // --- ether.fi withdrawal-queue cache adapter (assisted; permissionless assistant-fed, ADR 0018) ---
         _deployIfEnabled("EtherFiWithdrawalQueueAssisted");
@@ -424,6 +428,11 @@ contract DeployBalanceAdapters is BaseDeployScript {
         // StakeWise V3 meta-adapter (per-instance adapters removed — superseded by StakeWiseV3VaultsMeta)
         if (_equals(adapterName, "StakeWiseV3VaultsMeta")) {
             return _deployStakeWiseV3VaultsMeta(adapterName, navCalculator);
+        }
+
+        // Polygon PoS staking meta-adapter (ValidatorShare instances; settled on Ethereum L1)
+        if (_equals(adapterName, "PolygonStakingMeta")) {
+            return _deployPolygonStakingMeta(adapterName, navCalculator);
         }
 
         // Fluid meta-adapters (one adapter for all fTokens / all T1 vaults; instance set on NAV — ADR 0010)
@@ -785,6 +794,19 @@ contract DeployBalanceAdapters is BaseDeployScript {
 
         StakeWiseV3VaultsMetaBalanceAdapter adapter =
             new StakeWiseV3VaultsMetaBalanceAdapter(underlyingToken, osTokenVaultController, navCalculator);
+        return address(adapter);
+    }
+
+    /// @notice Deploys the Polygon PoS staking meta-adapter. Constructor takes (underlyingToken, navCalculator);
+    ///         the ValidatorShare set is configured on NAVCalculator via addMetaInstances/removeMetaInstances in 06
+    ///         (ADR 0010). Plain CREATE, not CREATE2: the constructor takes a chain-specific token address, so the
+    ///         init code differs per chain and a single salt could not yield one fleet-wide address anyway.
+    function _deployPolygonStakingMeta(string memory adapterName, address navCalculator) internal returns (address) {
+        address underlyingToken = vm.parseAddress(
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "underlyingToken")
+        );
+
+        PolygonStakingMetaBalanceAdapter adapter = new PolygonStakingMetaBalanceAdapter(underlyingToken, navCalculator);
         return address(adapter);
     }
 

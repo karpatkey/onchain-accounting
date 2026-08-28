@@ -133,6 +133,13 @@ for _proto, _ids in NAV_PROTOCOL_TO_DEBANK_IDS.items():
 
 WALLET_SYMBOL_TO_DEBANK_IDS: dict[str, list[str]] = {
     "sUSDS": ["sky"],
+    # Spark Savings vault shares. NAV reports these as plain wallet ERC-20s (ERC20Default + an
+    # ERC-4626 custom feed); DeBank files them under the "spark" protocol as a Yield item, so
+    # without this mapping they would show as an unpaired Wallet brand -- the same shape as the
+    # sGho-vs-aave3 mismatch itemised in ACCOUNT_9's and ACCOUNT_11's notes.
+    "spUSDC": ["spark"],
+    "spUSDT": ["spark"],
+    "spETH": ["spark"],
     "sXDAI": ["gnosis"],
     "sDAI": ["gnosis", "spark"],
     "stETH": ["lido"],

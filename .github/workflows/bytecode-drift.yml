@@ -1,0 +1,137 @@
+name: Bytecode drift
+
+# Does every address in the deployment records actually run code this tree produces?
+#
+# WHY THIS IS NOT A PER-PR CHECK. It needs two expensive things: a CLEAN whole-program build (under
+# via_ir an incremental build yields stale artifacts, which would produce false STALE verdicts) and
+# live RPC to every deployed chain. Roughly 20 minutes and ~24 chains' worth of calls. Paying that on
+# every PR would buy almost nothing: drift appears when something is DEPLOYED, not when a PR is opened.
+#
+# WHY IT EXISTS AT ALL. `bytecode_audit.py` has been in the tree for a while and is documented as step
+# 2.2 of the redeploy runbook — but only as a manual runbook step. Anything deployed OUTSIDE a full
+# redeploy never reaches it. That is not hypothetical: `PolygonStakingMeta` was swapped in with
+# `script/manage/SwapMetaAdapter.s.sol`, never passed through the runbook, and ran code six bytes
+# short of its own source on mainnet through a complete review round without anything noticing. A
+# capability nobody runs is not a guard.
+on:
+  workflow_dispatch:
+    inputs:
+      chains:
+        description: "Space-separated chain ids to audit. Empty = every chain with a deployment record."
+        required: false
+        type: string
+        default: ""
+  schedule:
+    # Daily at 05:00 UTC, an hour before the snapshot refresh so the two do not contend for RPC.
+    # Daily rather than weekly because the window it bounds is "how long can production run code we
+    # cannot reproduce before anyone knows" — a week of that is what this is meant to prevent.
+    - cron: "0 5 * * *"
+  push:
+    branches: [main]
+    # Only when something that can change the answer lands: the deployment records themselves, the
+    # contracts, the compiler settings, or this guard and its baseline.
+    paths:
+      - "script/config/deployments/**"
+      - "script/deploy/preflight/bytecode_audit.py"
+      - "script/deploy/preflight/accepted-bytecode-drift.json"
+      - "src/**"
+      - "foundry.toml"
+      - ".github/workflows/bytecode-drift.yml"
+
+permissions:
+  contents: read
+
+env:
+  FOUNDRY_VERSION: v1.7.1
+  ALCHEMY_API_KEY: ${{ secrets.ALCHEMY_API_KEY }}
+
+jobs:
+  audit:
+    name: Deployed code matches this tree
+    runs-on: blacksmith-8vcpu-ubuntu-2404
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: foundry-rs/foundry-toolchain@v1
+        with:
+          # No cache. A restored Foundry cache reintroduces reusable compilation state, and the whole
+          # premise of this job is that the artifacts came from a clean compile of THIS tree.
+          version: ${{ env.FOUNDRY_VERSION }}
+          cache: false
+
+      # BEFORE the build, not after. `bytecode_audit.py` reaches two third-party packages at RUNTIME:
+      # `requests` (via `chainlib`) and `eth_utils` (via `_sel`, which imports it LAZILY inside the
+      # function). This repo has no requirements file, so — exactly as the `preflight` job in
+      # foundry.yml does for `requests` — the dependency is declared by name here.
+      #
+      # The first run of this workflow on main died with `ModuleNotFoundError: No module named
+      # 'eth_utils'` AFTER paying for the ~20-minute clean build, because the lazy import is not
+      # reached until the audit is already walking chains. Installing and then PROVING the import
+      # resolves costs seconds and moves that failure to the front of the job.
+      #
+      # This declares two known dependencies; it is not a dependency GATE. A future third-party
+      # import that the runner image happens to ship would still go green here and fail nowhere —
+      # the same limitation foundry.yml's preflight step documents. Closing that needs a
+      # requirements file plus an isolated interpreter, which this repo does not have.
+      - name: Install and prove the audit's dependencies
+        run: |
+          # `eth-hash[pycryptodome]` is NOT optional padding: `eth_utils.keccak` delegates to
+          # `eth_hash`, which ships NO hashing backend of its own and raises ImportError
+          # ("None of these hashing backends are installed") the first time it is called.
+          # Installing `eth_utils` alone therefore imports fine and fails on first use.
+          python3 -m pip install --no-cache-dir requests eth_utils "eth-hash[pycryptodome]"
+          python3 - <<'EOF'
+          import requests                    # chainlib
+          from eth_utils import keccak       # bytecode_audit._sel, imported lazily at call time
+          # Exercise keccak rather than just importing it: a real selector, so this fails if the
+          # package is present but broken, not only if it is absent. That distinction is not
+          # theoretical — it is exactly how the missing eth-hash backend was caught, in seconds at
+          # the front of the job, instead of after the ~20-minute build inside the audit.
+          sel = "0x" + keccak(text="NAV()")[:4].hex()
+          assert sel == "0x52fd856b", f"eth_utils.keccak produced {sel}, expected 0x52fd856b"
+          print("dependency check ok: requests +", "eth_utils (NAV() ->", sel + ")")
+          EOF
+
+      # See the long note on foundry.yml's `build` job. Same compile, same 7-9.7 GB peak, same silent
+      # SIGTERM (exit 143, no compiler error) when it does not fit.
+      - name: Add swap for the via_ir compile
+        run: |
+          sudo fallocate -l 8G /mnt/swapfile-ci
+          sudo chmod 600 /mnt/swapfile-ci
+          sudo mkswap /mnt/swapfile-ci
+          sudo swapon /mnt/swapfile-ci
+          free -h
+
+      # `--force` on an already-empty out/ states the requirement in the command rather than relying
+      # on the absence of a mount, so a cache added here later cannot silently reintroduce the
+      # incremental scope this job exists to exclude.
+      - name: Build from clean (whole program)
+        run: forge build --force
+
+      # Proves the comparator before trusting its verdict. Offline.
+      - name: Self-test the comparator
+        run: python3 script/deploy/preflight/bytecode_audit.py --self-test
+
+      - name: Audit deployed bytecode
+        # --require-current turns STALE into a non-zero exit; --baseline lets the DECLARED drift pass
+        # while ANY other one fails. One drift is declared today (BridgeEscrowImplementation, on the
+        # 23 chains that record it). PolygonStakingMeta is deliberately NOT declared — it is not in
+        # the deployment records until PR #328 lands, and this run will correctly go red on it then.
+        # The baseline is enforced in both
+        # directions, so an entry whose address has since been redeployed fails too and must be
+        # deleted — that is what stops the file becoming a blindfold.
+        run: |
+          python3 script/deploy/preflight/bytecode_audit.py ${{ inputs.chains }} \
+            --require-current \
+            --baseline script/deploy/preflight/accepted-bytecode-drift.json \
+            --json bytecode-drift.json
+
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bytecode-drift
+          path: bytecode-drift.json
+          retention-days: 14

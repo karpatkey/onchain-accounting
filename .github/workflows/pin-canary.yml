@@ -1,0 +1,87 @@
+name: Library pin canary
+
+# The clean-build half of the pin gate, recovered on a schedule after #323 deleted the per-PR
+# `pins` job.
+#
+# WHY THIS EXISTS. The `pins` job compiled the whole program from nothing and ran the pin
+# assertions against it, at ~993 s on the critical path of every PR. #323 removed it, and the
+# measurement that justified removing it is real: on the tree at that time, `forge clean && forge
+# build --force` produced creation code byte-identical to the incremental build for PriceFeedLib,
+# NAVRegistryLib and NAVCalculator, and the pin assertions passed from clean. So the job was
+# catching nothing.
+#
+# But "nothing today" is a measurement of ONE tree, and two things went with the job:
+#
+#   1. via_ir scope-independence is now ASSUMED for future trees rather than proven. This job is
+#      the standing falsifier for that assumption.
+#   2. It was the only place CI ever compiled from nothing. Without it, a tree that is broken
+#      from clean is discovered on deploy day.
+#
+# Weekly plus every push to main that can move a pin, instead of every PR: pins move when CODE or
+# COMPILER SETTINGS change and land, not when a PR is opened, so this is where the signal actually
+# is — at a fraction of the cost.
+#
+# WHAT A RED RUN MEANS. "Regenerate the pins deliberately", NEVER "edit the values until it goes
+# green". The pins are owned by `foundry.toml [libraries]` + `script/utils/LibraryPins.sol`, and
+# the authoritative gate remains one clean local full build against the final tree immediately
+# before deploying. If this job ever goes red on an unchanged source closure, that FALSIFIES the
+# premise of #323 and the correct reaction is to restore the per-PR job — not to repin.
+on:
+  workflow_dispatch:
+  schedule:
+    # Weekly, Mondays 04:00 UTC — an hour before the bytecode-drift audit so the two do not
+    # contend for a runner, and clear of the Monday 06:00 snapshot refresh.
+    - cron: "0 4 * * 1"
+  push:
+    branches: [main]
+    paths:
+      - "src/**"
+      - "foundry.toml"
+      - "script/utils/LibraryPins.sol"
+      - "test/LibraryPinConsistency.t.sol"
+      - ".github/workflows/pin-canary.yml"
+
+permissions:
+  contents: read
+
+env:
+  FOUNDRY_VERSION: v1.7.1
+
+jobs:
+  pins:
+    name: Library pins (clean build)
+    runs-on: blacksmith-8vcpu-ubuntu-2404
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: ${{ env.FOUNDRY_VERSION }}
+          # No cache, and no stickydisk mount anywhere in this job. A restored Foundry cache
+          # reintroduces reusable compilation state, and reuse is precisely what this job exists
+          # to exclude — it is the difference between this and the `build` job in foundry.yml.
+          cache: false
+
+      # See the long note on foundry.yml's `build` job. Same compile, same 7-9.7 GB peak, same
+      # silent SIGTERM (exit 143, no compiler error) when it does not fit.
+      - name: Add swap for the via_ir compile
+        run: |
+          sudo fallocate -l 8G /mnt/swapfile-ci
+          sudo chmod 600 /mnt/swapfile-ci
+          sudo mkswap /mnt/swapfile-ci
+          sudo swapon /mnt/swapfile-ci
+          free -h
+
+      # `--force` even though no disk is mounted and out/ starts empty: it states the requirement
+      # in the command rather than relying on the absence of a mount, so a cache added here later
+      # cannot silently reintroduce the incremental scope this job exists to exclude.
+      - name: Build from clean (whole program)
+        run: forge build --force
+
+      # Finds everything up to date and recompiles nothing, so it asserts against the artifacts
+      # the step above produced — a whole-program compile, which is the scope the pre-deploy local
+      # build and the real CREATE2 deployment use.
+      - name: Library pin assertions
+        run: forge test --match-path "test/LibraryPinConsistency.t.sol" -vv

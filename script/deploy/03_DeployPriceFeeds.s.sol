@@ -10,6 +10,10 @@ import {LDO_CustomPriceFeed} from "../../src/prices/protocols/LDO_CustomPriceFee
 import {sUSDS_CustomPriceFeed} from "../../src/prices/protocols/sUSDS_CustomPriceFeed.sol";
 import {sUSDe_CustomPriceFeed} from "../../src/prices/protocols/sUSDe_CustomPriceFeed.sol";
 import {syrupUSDC_CustomPriceFeed} from "../../src/prices/protocols/syrupUSDC_CustomPriceFeed.sol";
+import {spUSDC_CustomPriceFeed} from "../../src/prices/protocols/spUSDC_CustomPriceFeed.sol";
+import {spUSDT_CustomPriceFeed} from "../../src/prices/protocols/spUSDT_CustomPriceFeed.sol";
+import {spETH_CustomPriceFeed} from "../../src/prices/protocols/spETH_CustomPriceFeed.sol";
+import {sDAI_CustomPriceFeed} from "../../src/prices/protocols/sDAI_CustomPriceFeed.sol";
 import {RWIV_CustomPriceFeed} from "../../src/prices/protocols/RWIV_CustomPriceFeed.sol";
 import {sGHO_CustomPriceFeed} from "../../src/prices/protocols/sGHO_CustomPriceFeed.sol";
 import {wstETH_CustomPriceFeed} from "../../src/prices/protocols/wstETH_CustomPriceFeed.sol";
@@ -145,6 +149,26 @@ contract DeployPriceFeeds is BaseDeployScript {
         // Deploy syrupUSDC Price Oracle
         if (ConfigReader.isAdapterEnabled(vm, currentChainId, "priceFeeds", "syrupUSDC")) {
             _deploySyrupUsdc();
+        }
+
+        // Deploy spUSDC Price Oracle
+        if (ConfigReader.isAdapterEnabled(vm, currentChainId, "priceFeeds", "spUSDC")) {
+            _deploySpUsdc();
+        }
+
+        // Deploy spUSDT Price Oracle
+        if (ConfigReader.isAdapterEnabled(vm, currentChainId, "priceFeeds", "spUSDT")) {
+            _deploySpUsdt();
+        }
+
+        // Deploy spETH Price Oracle
+        if (ConfigReader.isAdapterEnabled(vm, currentChainId, "priceFeeds", "spETH")) {
+            _deploySpEth();
+        }
+
+        // Deploy sDAI Price Oracle
+        if (ConfigReader.isAdapterEnabled(vm, currentChainId, "priceFeeds", "sDAI")) {
+            _deploySDai();
         }
 
         // Deploy RWIV Price Oracle
@@ -365,6 +389,70 @@ contract DeployPriceFeeds is BaseDeployScript {
         syrupUSDC_CustomPriceFeed syrupUsdcAdapter = new syrupUSDC_CustomPriceFeed(syrupUsdc, nav, baseAsset);
         ConfigReader.writeAdapterAddress(vm, currentChainId, "priceFeeds", "syrupUSDC", address(syrupUsdcAdapter));
         console2.log("syrupUSDC_CustomPriceFeed deployed at:", address(syrupUsdcAdapter));
+    }
+
+    function _deploySpUsdc() internal {
+        address deployed = _readAdapterDeployed("priceFeeds", "spUSDC");
+        if (deployed != address(0)) {
+            console2.log("spUSDC_CustomPriceFeed already deployed at:", deployed);
+            return;
+        }
+
+        address spUsdc = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "spUSDC", "spUsdc"));
+        address baseAsset = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "spUSDC", "baseAsset"));
+        address nav = ConfigReader.readDeployedAddress(vm, currentChainId, "NAVCalculatorProxy");
+
+        spUSDC_CustomPriceFeed spUsdcAdapter = new spUSDC_CustomPriceFeed(spUsdc, nav, baseAsset);
+        ConfigReader.writeAdapterAddress(vm, currentChainId, "priceFeeds", "spUSDC", address(spUsdcAdapter));
+        console2.log("spUSDC_CustomPriceFeed deployed at:", address(spUsdcAdapter));
+    }
+
+    function _deploySpUsdt() internal {
+        address deployed = _readAdapterDeployed("priceFeeds", "spUSDT");
+        if (deployed != address(0)) {
+            console2.log("spUSDT_CustomPriceFeed already deployed at:", deployed);
+            return;
+        }
+
+        address spUsdt = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "spUSDT", "spUsdt"));
+        address baseAsset = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "spUSDT", "baseAsset"));
+        address nav = ConfigReader.readDeployedAddress(vm, currentChainId, "NAVCalculatorProxy");
+
+        spUSDT_CustomPriceFeed spUsdtAdapter = new spUSDT_CustomPriceFeed(spUsdt, nav, baseAsset);
+        ConfigReader.writeAdapterAddress(vm, currentChainId, "priceFeeds", "spUSDT", address(spUsdtAdapter));
+        console2.log("spUSDT_CustomPriceFeed deployed at:", address(spUsdtAdapter));
+    }
+
+    function _deploySpEth() internal {
+        address deployed = _readAdapterDeployed("priceFeeds", "spETH");
+        if (deployed != address(0)) {
+            console2.log("spETH_CustomPriceFeed already deployed at:", deployed);
+            return;
+        }
+
+        address spEth = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "spETH", "spEth"));
+        address baseAsset = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "spETH", "baseAsset"));
+        address nav = ConfigReader.readDeployedAddress(vm, currentChainId, "NAVCalculatorProxy");
+
+        spETH_CustomPriceFeed spEthAdapter = new spETH_CustomPriceFeed(spEth, nav, baseAsset);
+        ConfigReader.writeAdapterAddress(vm, currentChainId, "priceFeeds", "spETH", address(spEthAdapter));
+        console2.log("spETH_CustomPriceFeed deployed at:", address(spEthAdapter));
+    }
+
+    function _deploySDai() internal {
+        address deployed = _readAdapterDeployed("priceFeeds", "sDAI");
+        if (deployed != address(0)) {
+            console2.log("sDAI_CustomPriceFeed already deployed at:", deployed);
+            return;
+        }
+
+        address sDai = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "sDAI", "sDai"));
+        address baseAsset = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "sDAI", "baseAsset"));
+        address nav = ConfigReader.readDeployedAddress(vm, currentChainId, "NAVCalculatorProxy");
+
+        sDAI_CustomPriceFeed sDaiAdapter = new sDAI_CustomPriceFeed(sDai, nav, baseAsset);
+        ConfigReader.writeAdapterAddress(vm, currentChainId, "priceFeeds", "sDAI", address(sDaiAdapter));
+        console2.log("sDAI_CustomPriceFeed deployed at:", address(sDaiAdapter));
     }
 
     function _deployRwiv() internal {

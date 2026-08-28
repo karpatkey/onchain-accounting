@@ -24,6 +24,8 @@ pragma solidity ^0.8;
 ///        BALANCER_V3_GAUGES / V2_GAUGES                  → (address gauge)
 ///        CONVEX_CURVE_LP_STAKING                        → (address rewarder)
 ///        CURVE_POOLS                              → (address pool)
+///        POLYGON_STAKING                          → (address validatorShare) — ONE positionId, two legs
+///                                                    (Staking principal + Rewards) told apart by positionKind
 ///        CURVE_GAUGES                             → (address gauge)
 ///        BALANCER_V2_POOLS                → (bytes32 poolId)
 ///        UNISWAP_V3 / PANCAKESWAP_V3     → (address pool); NFT tokenId in positionInstanceId (bytes32(tokenId))
@@ -81,6 +83,7 @@ library ProtocolIds {
     bytes32 internal constant EULER = keccak256("euler");
     bytes32 internal constant SYMBIOTIC = keccak256("symbiotic");
     bytes32 internal constant LIDO = keccak256("lido");
+    bytes32 internal constant POLYGON = keccak256("polygon"); // Polygon ecosystem id; unversioned, so this is also the brand
     bytes32 internal constant KELP = keccak256("kelp");
     bytes32 internal constant STADER = keccak256("stader");
     bytes32 internal constant ETHERFI = keccak256("etherfi");
@@ -114,6 +117,9 @@ library ProtocolIds {
 
     // StakeWise
     bytes32 internal constant STAKEWISE_V3_VAULTS = keccak256("stakewise-v3-vaults");
+
+    // Polygon PoS staking (Ethereum L1 StakeManager / ValidatorShare)
+    bytes32 internal constant POLYGON_STAKING = keccak256("polygon-staking"); // delegation → (address validatorShare)
 
     // Nexus Mutual
     bytes32 internal constant NEXUS_MUTUAL_STAKING_POOLS = keccak256("nexus-mutual-staking-pools");

@@ -10,5 +10,8 @@
   },
   "CompoundV3_WETH": {
     "enabled": false
+  },
+  "MerklRewards": {
+    "enabled": true
   }
 }

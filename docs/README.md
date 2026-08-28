@@ -62,7 +62,7 @@ Numbered ADRs. Read when you want the *why* behind a design choice.
 | [`0004-morpho-projected-vs-stored-balances.md`](decisions/0004-morpho-projected-vs-stored-balances.md) | Morpho projected-share accounting vs stored values. |
 | [`0005-aave-safety-module-hardcoded-immutable.md`](decisions/0005-aave-safety-module-hardcoded-immutable.md) | Aave V3 SM adapter immutability (supersedes 0002). |
 | [`0006-aave-umbrella-balance-adapter.md`](decisions/0006-aave-umbrella-balance-adapter.md) | Aave Umbrella stake-token coverage. |
-| [`0007-merkl-trust-minimized-cache.md`](decisions/0007-merkl-trust-minimized-cache.md) | Merkl rewards adapter — the framework's documented mutable-adapter exception. (The adapter has since been removed from `src/`.) |
+| [`0007-merkl-trust-minimized-cache.md`](decisions/0007-merkl-trust-minimized-cache.md) | Merkl rewards adapter — a documented mutable-cache exception. Amended 2026-07: the v1 was removed in #141 and re-added as the `attested`-family `MerklRewardsAttestedBalanceAdapter`, whose SUBMITS are `SUBMITTER_ROLE`-gated while its stale-gated clears stay permissionless (see [ADR 0022](decisions/0022-attested-balance-adapter-family.md)). |
 | [`0008-uniswap-v3-math-libs-gpl-license.md`](decisions/0008-uniswap-v3-math-libs-gpl-license.md) | License rationale for Uni V3 math library inclusion. |
 | [`0009-multi-feed-price-redundancy.md`](decisions/0009-multi-feed-price-redundancy.md) | Multi-feed price redundancy / freshest-feed selection. |
 | [`0010-meta-balance-adapters.md`](decisions/0010-meta-balance-adapters.md) | Meta balance-adapters: one adapter per protocol, instances governed on NAVCalculator. |
@@ -86,7 +86,7 @@ Numbered ADRs. Read when you want the *why* behind a design choice.
 
 | Doc | When to use |
 |---|---|
-| [`operations/merkl-proof-submitter.md`](operations/merkl-proof-submitter.md) | Periodic operator loop that fetches Merkl proofs and pushes them to the `MerklRewardsAssistedBalanceAdapter` cache so unclaimed rewards stay valued in NAV. The adapter is not present in `src/` — the runbook is retained for if/when it returns. |
+| [`operations/merkl-proof-submitter.md`](operations/merkl-proof-submitter.md) | Periodic operator loop that fetches Merkl proofs and pushes them to the `MerklRewardsAttestedBalanceAdapter` cache so unclaimed rewards stay valued in NAV. |
 | [`operations/etherfi-withdrawals-submitter.md`](operations/etherfi-withdrawals-submitter.md) | Operator bot that discovers an account's ether.fi `WithdrawRequestNFT` tokenIds and submits them to the `EtherFiWithdrawalQueueAssistedBalanceAdapter` id cache (ids only — the adapter values them live). |
 | [`operations/stakewise-exit-submitter.md`](operations/stakewise-exit-submitter.md) | Operator bot that discovers an account's StakeWise V3 exit-queue positions (`(vault, positionTicket, timestamp)`) and submits them to the `StakeWiseV3ExitQueueAssistedBalanceAdapter` cache (coordinates only — the adapter values them live). |
 | [`operations/stader-withdrawal-queue-griefing.md`](operations/stader-withdrawal-queue-griefing.md) | Operator's note on the `StaderWithdrawalQueueBalanceAdapter` griefing/gas surface — anyone can plant self-funded, victim-claimable withdrawal requests up to Stader's per-account cap; why the absence of an adapter-level cap is acceptable. |

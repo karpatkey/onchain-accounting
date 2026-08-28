@@ -1,8 +1,74 @@
-# 0007 — Merkl rewards adapter: role-gated, proof-verified, trust-minimized cache
+# 0007 — Merkl rewards adapter: proof-verified, trust-minimized cache
 
-**Status:** accepted
+> **Amendment (2026-08-28) — SUBMITS ARE ROLE-GATED.** Everything below describing the write path as
+> *permissionless* is superseded. The adapter inherits OpenZeppelin `AccessControl`; `submitProofs` /
+> `submitProofsBatch` / the family-generic `submit` require **`SUBMITTER_ROLE`**, granted and revoked by
+> `DEFAULT_ADMIN_ROLE` (the security council, set at construction). The **clears remain permissionless and
+> stale-gated** — role-gating removal is what audit finding L-02 flagged.
+>
+> The trust argument in this ADR is otherwise unchanged, because the role does **not** protect the amount: the
+> per-write merkle proof did that and still does. The role closes the space the proof never covered — who may
+> occupy the per-account cache, and who may set the (unattested) campaign labels on a proven total.
 
-> **Added later (not part of the original decision):** the contract described below — `MerklRewardsAssistedBalanceAdapter` — and the role-gated agent-fed base it rode on are **no longer present in this repository**; they were removed pending a rewrite of the Merkl adapter and are retrievable from git history. Every `src/` and `test/` path named in the Reference section below therefore currently resolves to nothing, the `MerklRewardsAssisted` deploy-config entry is absent from every `script/config/contracts-deployment-config/balance-adapters/*.json` (the per-chain files themselves still exist, for the other adapters), and no contract in `src/` declares an `ASSISTANT_ROLE` — the assisted family that remains ([ADR 0015](0015-assisted-balance-adapter-family.md) / [ADR 0018](0018-assistant-fed-assisted-balance-adapters.md)) is permissionless and `msg.sender`-keyed. The decision below stands as recorded at the time it was taken; read it as history, not as a description of what ships today.
+> **Naming note (2026-08-27):** the function, error and event names below are **PRE-REFACTOR**. The adapter now
+> extends the shared `AttestedValueCache` base (ADR 0022) and uses the family-generic surface —
+> `clearAttestation`, `assetsOf`, `attestations`, `UninitializedEpoch`, `TooManyAttestations`,
+> `AttestationStillLive`, `DuplicateAsset`, `AttestationCached`. The reasoning in this ADR is unchanged; only the
+> names moved. The same applies to INTERNAL helpers named below (`_unclaimed`, `_unclaimedFrom`, `_buildTokenLegs`,
+> `_submitProof`'s cache handling): the shared proof/campaign validation is now `_checkProofAndCampaigns` on the
+> member, and valuation/leg-building moved to the base's `_liveValue` / `_assetLegs` hooks. For the live ABI see
+> `docs/operations/merkl-proof-submitter.md`.
+
+**Status:** accepted — **amended 2026-07 (permissionless refactor; see the amendment below).** The role-gated v1
+described in the body was removed in PR #141 (with the legacy `AssistantFedBalanceAdapter` base); the adapter is
+re-added in the permissionless shape this ADR itself anticipated (Alternatives #1). Read the amendment first; the
+body below is retained as the original context/rationale, with the role-gating superseded.
+
+## Amendment (2026-07) — permissionless, submit-on-behalf-of
+
+**What changed.** `submitProofs(user, Allocation[])` / `submitProofsBatch` are now **permissionless** (no
+`ASSISTANT_ROLE`, no `DEFAULT_ADMIN_ROLE`, no AccessControl, no `AssistantFedBalanceAdapter` base). Submission still
+takes an **explicit `user`** (submit-on-behalf-of — the intended feeder is a keeper EOA / cron job that periodically
+submits a tracked set of accounts), and every write is still proof-verified against the live `Distributor.getMerkleRoot()`.
+The constructor drops `admin_`/`assistant_` and is now `(distributor_, navCalculator_)`.
+
+**Why this is safe (the griefing objection in Alternatives #1 no longer holds).** Alternatives #1 rejected
+permissionless submission for v1 over "spam / storage griefing — any attacker can populate `(user, token)` entries for
+arbitrary users." Proof-verification defuses this: a submission for `user` only lands if its proof validates against
+Merkl's real root for that user's leaf, so a caller can only ever cache a user's **real, Merkl-attested** per-token AMOUNT —
+bounded to that user's *actual* reward footprint. Worst case a griefer pays gas to report a real balance (helpful, not
+harmful); they cannot fabricate or inflate the AMOUNT. **They can, however, fabricate campaign IDENTITY:** the proof
+binds the per-token cumulative but not the split, so a third party holding the (public) proof can re-submit it divided into up to `MAX_CAMPAIGNS_PER_TOKEN` attacker-chosen campaign legs. Bounded, never inflating NAV, and repairable by one upsert — but it is a real fabrication of position identity, so "cannot populate fake entries" was too strong and is withdrawn. So the completeness dependency on a *trusted*
+assistant is removed — anyone (a public keeper, or the account itself) can refresh — while the "cannot over-report"
+Iron Law is preserved by the same proof check.
+
+**`submitProofs` is upsert; `clearAllocation`/`clearAccount` are stale-gated (fixes L-02 and the permissionless-
+suppression follow-up).** `submitProofs` **upserts** each proven `(user, token)` — it adds or refreshes the entries it
+carries and never drops a token it omits — so a partial or empty submit can NOT suppress a live entry. Removal is only
+via `clearAllocation`/`clearAccount`, which revert `AllocationStillLive` while an entry still contributes to NAV
+(cached root == live root AND unclaimed > 0) and only delete stale (root-rotated) or fully-claimed entries. So a live
+allocation can be *refreshed* but never suppressed by any caller — both the old L-02 vector (an `ASSISTANT_ROLE`
+holder zeroing a valid allocation) and the clear-then-store wipe (`submitProofs(victim, [])` under the earlier
+"replace whole list" draft) are structurally gone.
+
+**A new "attested" family (`IAttestedBalanceAdapter`), NOT the coordinate-cache `IAssistedBalanceAdapter` — see
+[ADR 0022](0022-attested-balance-adapter-family.md).** Merkl does **not** implement the `IAssistedBalanceAdapter`
+marker ([ADR 0018](0018-assistant-fed-assisted-balance-adapters.md)): that family is `msg.sender`-keyed and caches
+*coordinates, never amounts*, valuing each read from live on-chain reads + per-read ownership re-verification, fed by a
+`delegatecall` assistant. Merkl is categorically different, so it gets its own marker **`IAttestedBalanceAdapter`**
+(`src/balances/IAttestedBalanceAdapter.sol`): externally-fed by a **permissionless keeper EOA** (no assistant
+contract) that **upserts** proven `(account, token)` allocations **on-behalf-of** (explicit `account`) — each write
+adds/refreshes, never drops an omitted entry — and caches a **proof-verified amount** (the allocation is off-chain and
+not derivable on-chain). Its "under-report only" guarantee rests on **proof-verification + stale-root→0** (return 0
+whenever the cached root ≠ the live root), not on `msg.sender`-keying or live ownership re-verification. The family's
+one universal mutator is a stale-gated `clearAccount(address)` (reverts while any element is live). Merkl
+(`MerklRewardsAttestedBalanceAdapter`, `src/balances/AttestedBalanceAdapters/`) is the first attested member — an
+`IAttestedBalanceAdapter` + `IPositionDescribable` adapter (the documented mutable exception), permissionless. The
+fully-on-chain alternative was researched and ruled out: Merkl commits only a root + IPFS pointer on-chain and computes
+allocations off-chain, so no `view` (and no on-chain recomputation) can produce an unclaimed amount without
+externally-supplied leaf data — the proof-fed cache is the trust-minimized optimum.
+
+> **Added later (not part of the original decision):** the contract described below — `MerklRewardsAssistedBalanceAdapter` — and the role-gated agent-fed base it rode on are **no longer present in this repository**; they were removed in #141 and are retrievable from git history. No contract in `src/` declares an `ASSISTANT_ROLE`, and the assisted family that remains ([ADR 0015](0015-assisted-balance-adapter-family.md) / [ADR 0018](0018-assistant-fed-assisted-balance-adapters.md)) is permissionless and `msg.sender`-keyed. **This note applies to the ASSISTED implementation only.** Merkl has since been re-added as the *attested*-family `MerklRewardsAttestedBalanceAdapter` (see the amendment above), so the Reference section below has been **rewritten to the current attested paths and they resolve** — do not read it as dead, and note in particular that the constructor schema recorded there deliberately has no `protocol`/`positionId` keys. Deploy-config entries under `script/config/contracts-deployment-config/balance-adapters/*.json` exist again, keyed `MerklRewards` (shipped `enabled: false`). The decision body below stands as recorded at the time it was taken; read it as history, not as a description of what ships today.
 
 ## Context
 
@@ -49,7 +115,29 @@ Ship `MerklRewardsAssistedBalanceAdapter` (`src/balances/AssistedBalanceAdapters
 - Storage growth is per-(user, token) pair the bot has ever cached. Each `submitProofs` call replaces a user's whole token set (dropping omitted tokens), and `clearAllocation` exists as an explicit cleanup primitive; expect the operator runbook to call it whenever a (user, token) reaches `cumulativeAmount == claimed`.
 - Merkl's `_verifyProof` uses `abi.encode` (32-byte padded) rather than `abi.encodePacked` like OpenZeppelin's `MerkleProof`. The adapter MUST replicate the exact sibling-combination rule. Unit tests build synthetic 1-, 2-, and 4-leaf trees with the same hashing convention and exhaustively cover the verification math; any future drift is caught at the unit-test layer.
 
+## Cache-free preview (added later)
+
+Unclaimed positions are also queryable **live without feeding the cache** via the family's universal read
+`previewPositions(address account, bytes calldata data)` (on `IAttestedBalanceAdapter`; ADR 0022). Merkl decodes
+`data` as `abi.encode(Allocation[])`, verifies each **caller-supplied** proof against the live Distributor root, and
+values it with the identical `cumulative − claimed` math the write path uses — shared via the
+`_checkProofAndCampaigns` + `_unclaimedFrom` + `_buildTokenLegs` helpers, so the preview's proof + campaign-shape
+checks and valuation are identical to the write path's. (Entry *acceptance* still differs by design: submit adds a
+cache-only monotonicity check, `AmountRegression`; the preview rejects duplicate tokens and a zero account.) The
+trust-minimized guarantee is unchanged — proof-verified, under-report-only — and it writes no
+storage and does not affect the NAV read (`getAdapterPositions`, which continues to read the agent-fed cache). It
+returns NAV-shaped legs and skips tokens not yet registered on NAVCalculator. This is an *extra* for a portal /
+frontend / third party that computes Merkl proofs off-chain; it does **not** reduce the agent's role: NAV coverage
+still depends on the keeper feeding the cache. The proof data is typed as opaque `bytes` on the interface so the same
+read serves any future attested adapter (Santi, 2026-08-26).
+
 ## Trust model summary
+
+> **Superseded — historical (original role-gated v1).** The table below and Alternatives #1 describe the original
+> `ASSISTANT_ROLE`/`DEFAULT_ADMIN_ROLE` design. The shipped adapter is **permissionless** (no roles): read
+> `ASSISTANT_ROLE` as "any caller" and `DEFAULT_ADMIN_ROLE` as "n/a" throughout — proof-verification, not a role, is
+> the integrity guarantee, and Alternatives #1 (permissionless submit) was adopted. See the **2026-07 amendment** at the
+> top of this ADR for the current model.
 
 | Capability | Who | Bound by |
 |---|---|---|
@@ -69,10 +157,13 @@ Ship `MerklRewardsAssistedBalanceAdapter` (`src/balances/AssistedBalanceAdapters
 
 ## Reference
 
-- Adapter: `src/balances/AssistedBalanceAdapters/MerklRewardsAssistedBalanceAdapter.sol`
-- Tests: `test/balances/AssistedBalanceAdapters/MerklRewardsAssistedBalanceAdapter.t.sol` (unit, including synthetic merkle trees), `test/balances/AssistedBalanceAdapters/fork/MerklRewardsAssistedBalanceAdapter.fork.t.sol` (Mainnet integration sanity)
+> The refs below are the **current** (post-amendment) locations — the `attested` family (see [ADR 0022](0022-attested-balance-adapter-family.md)). The original ship lived under `AssistedBalanceAdapters/` with an `admin`/`assistant` ctor; both are superseded (see the amendment at the top).
+
+- Adapter: `src/balances/AttestedBalanceAdapters/MerklRewardsAttestedBalanceAdapter.sol`
+- Tests: `test/balances/AttestedBalanceAdapters/MerklRewardsAttestedBalanceAdapter.t.sol` (unit, including synthetic merkle trees), `test/balances/AttestedBalanceAdapters/fork/MerklRewardsAttestedBalanceAdapter.fork.t.sol` (Mainnet integration sanity)
 - Merkl Distributor source (verified leaf encoding, `_verifyProof`, `getMerkleRoot`): https://github.com/AngleProtocol/merkl-contracts/blob/main/contracts/Distributor.sol
 - Merkl API (proof source for the bot): `https://api.merkl.xyz/v4/users/{address}/rewards?chainId={cid}`
-- Deploy schema: `script/config/contracts-deployment-config/balance-adapters/<id>.json` `MerklRewardsAssisted.constructor` (`distributor`, plus `protocol`/`positionId` identity metadata); `navCalculator`, `admin`, and `assistant` are supplied by the deploy script — `admin`/`assistant` default to `addresses.admin` (the OIV Safe) from `script/config/chains/<id>.json`.
+- Deploy schema: `script/config/contracts-deployment-config/balance-adapters/<id>.json` `MerklRewards.constructor` — exactly one key, `distributor`; `navCalculator` is supplied by the deploy script. There are **no** `protocol`/`positionId` config keys: position identity is derived on-chain (`protocolBrand`/`protocolId`/`protocolSubId` are `ProtocolIds.MERKL` constants and `positionId` is hardcoded `abi.encode(DISTRIBUTOR)`), so adding such keys to a new chain's config would configure nothing. **No `assistant` arg** (that was the superseded `ASSISTANT_ROLE` ship), but the constructor DOES take an `admin_` — see the 2026-08-28 amendment. `04_DeployBalanceAdapters.s.sol` supplies it from the chain config's security council.
 - Operator's guide for the proof-submission bot: [`docs/operations/merkl-proof-submitter.md`](../operations/merkl-proof-submitter.md)
-- Operational follow-ups (NOT in this PR): bot implementation, optional permissionless mode (see Alternative 1), price feeds for new reward tokens.
+- Operational follow-ups (NOT in this PR): bot implementation, per-chain enablement + deploy/registration, price feeds for new reward tokens. (**Permissionless mode is no longer a follow-up — it SHIPPED**, and is the central change this ADR's 2026-07 amendment records. Alternative 1's objection to it was withdrawn there. Do not provision an `ASSISTANT_ROLE` grant or Safe wiring for this adapter — that role does not exist here. **But this adapter DOES need a role grant, and it is enablement-blocking:** the constructor is `(distributor_, navCalculator_, admin_)`, it inherits `AccessControl`, and the keeper EOA must be granted `SUBMITTER_ROLE` by the admin before it can write. Deploying without an admin, or enabling without the grant, produces exactly the silent all-zero outage the operator runbook tells you to alert on.)
+- Open design calls raised by review and awaiting the user (documented under "Known gaps" in the operator runbook): cache-slot squatting / un-evictable live entries at `MAX_TOKENS_PER_USER`; and the keeper's "already current" skip being unable to see a fabricated campaign split.

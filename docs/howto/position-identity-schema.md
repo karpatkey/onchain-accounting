@@ -282,22 +282,34 @@ PositionBalance({
 })
 ```
 
-#### `MerklRewardsAssisted` — unclaimed Merkl allocation
+#### `MerklRewards` — unclaimed Merkl allocation
 
-> Note: no Merkl adapter is deployed on `main` today — the former `MerklRewardsAssistedBalanceAdapter` was removed and a re-add is pending. The schema below is retained for the returning adapter.
+> Note: the Merkl adapter is `MerklRewardsAttestedBalanceAdapter`, the `attested` family — [ADR 0022](../decisions/0022-attested-balance-adapter-family.md). Per-chain enablement and deployment are a separate follow-up; the schema below is what it emits.
 
 ```solidity
-// One leg per reward token; proof-cached balance (may lag until next proof update).
+// One leg per cached CAMPAIGN SHARE of a reward token (not one per token): the token's unclaimed total is split
+// pro-rata across its campaign shares, each leg tagged with its campaign coordinate in `positionInstanceId`.
+// A token submitted with an empty breakdown yields ONE untagged leg carrying the whole amount
+// (positionInstanceId = bytes32(0)). Proof-cached balance (may lag until the next proof update).
 PositionBalance({
     balanceAsset:  Asset({ asset: 0xD533…cd52, symbol: "CRV", decimals: 18 }),
-    balanceAdapter: 0x<MerklRewardsAssistedAdapter>,
-    amount:        250e18,                 // 250 CRV unclaimed
+    balanceAdapter: 0x<MerklRewardsAdapter>,
+    amount:        150e18,                 // this campaign's pro-rata share of 250 CRV unclaimed
     isDebt:        false,
     protocolSubId: keccak256("merkl"),
     positionId:    abi.encode(0x3Ef3…D9Ae),  // Merkl Distributor (reward token is in balanceAsset)
-    positionKind:  PositionKind.Rewards
+    positionKind:  PositionKind.Rewards,
+    positionInstanceId: keccak256(abi.encode(campaignId, subCampaignId))  // ephemeral, NOT in the stable key
 })
 ```
+
+> **Consumers: SUM Merkl legs, do not dedupe them.** Because `positionInstanceId` is excluded from the stable
+> reconciliation key, every campaign leg of one reward token shares an *identical* key while carrying a different
+> amount — up to 8 rows per token (`MAX_CAMPAIGNS_PER_TOKEN`). A consumer that treats a repeated key as duplicate data and keeps one row will
+> under-report that token's rewards by up to 8x. Worse, campaign coordinates are **not** proof-bound (the merkle
+> proof commits only to the per-token total, and the contract only checks that the shares sum to it), so a submitter
+> can supply duplicate or fabricated `campaignId`s: campaign attribution is display-grade, not audit-grade. The
+> per-token total — the sum of a token's legs — is the proof-backed figure.
 
 #### `StaderWithdrawalQueue` — ETHx → ETH queue
 
@@ -720,9 +732,9 @@ ERC721 request id in the typed `positionInstanceId`.
 | ETH   | 1.0    | +2 500      | `Supplied`   | false    | `54321`            | `"Lido"`     | `["Withdrawal Queue", "stETH"]` |
 | ETH   | 0.5    | +1 250      | `Supplied`   | true     | `54322`            | `"Lido"`     | `["Withdrawal Queue", "stETH"]` |
 
-#### `MerklRewardsAssisted` — unclaimed rewards
+#### `MerklRewards` — unclaimed rewards
 
-Scenario: 250 CRV unclaimed in Merkl distributor. (Schema shown for the pending re-add — no Merkl adapter is live on `main` today.)
+Scenario: 250 CRV unclaimed in Merkl distributor. (Per-chain enablement and deployment are a separate follow-up.)
 
 | asset | amount | value (USD) | positionKind | protocolName | labels |
 |-------|--------|-------------|--------------|--------------|---------------|
@@ -1003,7 +1015,7 @@ schemas are in the next section and in the per-adapter table above.)
 | `polygon-staking` | `POLYGON_STAKING` | `PolygonStakingMetaBalanceAdapter` — Polygon PoS delegation principal + unclaimed rewards (settles on Ethereum L1) |
 | `nexus-mutual-staking-pools` | `NEXUS_MUTUAL_STAKING_POOLS` | `NexusMutualStakingPoolsAssistedBalanceAdapter` — Nexus Mutual StakingNFT stake + rewards |
 | `cap` | `CAP` | `CapStablecoinBalanceAdapter` (held cUSD) + `CapSavingsBalanceAdapter` (staked stcUSD) — two adapters, one `protocolSubId`: both legs encode the same positionId shape |
-| `merkl` | `MERKL` | Reserved Merkl-rewards slug — no live adapter on `main` (the former `MerklRewardsAssistedBalanceAdapter` was removed; re-add pending). Would emit unclaimed (claimable) Merkl reward tokens |
+| `merkl` | `MERKL` | `MerklRewardsAttestedBalanceAdapter` (`attested` family, ADR 0022) — emits unclaimed (claimable) Merkl reward tokens, one leg per cached campaign share. Per-chain enablement/deploy is a separate follow-up |
 | `lido-withdrawal` | `LIDO_WITHDRAWAL` | `LidoWithdrawalQueueBalanceAdapter` — ETH owed from the Lido stETH withdrawal queue |
 | `stader-withdrawal` | `STADER_WITHDRAWAL` | `StaderWithdrawalQueueBalanceAdapter` — ETH owed from the Stader ETHx withdrawal queue |
 | `kelp-withdrawal` | `KELP_WITHDRAWAL` | `KelpWithdrawalQueueBalanceAdapter` — assets owed from the Kelp rsETH exit queue |
@@ -1610,7 +1622,17 @@ the same on every chain. Default `positionId` = base `_instancePositionId` (inst
 | `StakeWiseV3ExitQueueAssistedBalanceAdapter` | `stakewise-v3-exit` | `"StakeWise V3"` (const) | `["Exit Queue", <receiptSymbol>]` (gov — constructor arg; bare `["Exit Queue"]` when empty) | `abi.encode(address vault)` (per vault) | Supplied — **per request (ticket)** with the `positionTicket` in `positionInstanceId`, up to two legs (claimable + still-queued) sharing the per-vault positionId | `["StakeWise V3","Exit Queue","osETH"]` |
 | `NexusMutualStakingPoolsAssistedBalanceAdapter` | `nexus-mutual-staking-pools` | `"Nexus Mutual"` (const) | `["Staking Pools", "Pool #<id>"]` (derived) | `abi.encode(address stakingPool)` | Staking / Rewards | `["Nexus Mutual","Staking Pools","Pool #5"]` |
 
-(`MerklRewardsAssistedBalanceAdapter` was removed from `main` and is not listed here; the `merkl` slug is reserved for its pending re-add — see the note in the `protocolSubId` table above.)
+#### Attested adapters (`src/balances/AttestedBalanceAdapters/`)
+
+| Adapter | `protocolSubId` | `protocolName()` | `positionLabels()` → (source) | `positionId` schema | `PositionKind` legs | Example breadcrumb |
+|---|---|---|---|---|---|---|
+| `MerklRewardsAttestedBalanceAdapter` | `merkl` | `"Merkl"` (const) | `["Claimable Rewards"]` (const) | `abi.encode(address distributor)` (static — the reward token rides in `balanceAsset`) | Rewards — one leg **per cached campaign share**, `keccak256(abi.encode(campaignId, subCampaignId))` in `positionInstanceId` (or `bytes32(0)` when submitted untagged), all sharing the one positionId | `["Merkl","Claimable Rewards"]` |
+
+> **Campaign legs: SUM, do not dedupe** — and treat their attribution as display-grade. Every campaign leg of one
+> reward token shares an identical stable key (`positionInstanceId` is excluded from it), so a consumer that drops
+> repeated keys under-reports that token by up to 8x. The campaign coordinates are **not** proof-bound and are
+> submitter-controlled, so duplicate or fabricated `campaignId`s are possible; the proof-backed figure is the
+> per-token total, i.e. the sum of a token's legs. See the worked example above.
 
 #### What each `positionId` value is
 

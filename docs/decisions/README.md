@@ -36,6 +36,7 @@ Short, numbered records of *why* the codebase looks the way it does. Read these 
 | 0018 | [Permissionless assistant-fed assisted balance-adapter family](0018-assistant-fed-assisted-balance-adapters.md) | accepted |
 | 0019 | [Custom price feeds source their base/USD from the NAV (one price source per base asset)](0019-nav-sourced-base-price.md) | accepted |
 | 0020 | [Custom-feed `getPriceData` reports the *governing leg*'s freshness](0020-custom-feed-governing-leg-freshness.md) | accepted |
+| 0022 | [Attested balance-adapter family (proof-verified, agent-fed cache)](0022-attested-balance-adapter-family.md) | accepted |
 | 0023 | [Asset classification on two orthogonal axes (`PegKind` × `AccrualKind`), surfaced by a standalone `AssetKindRegistry`](0023-asset-classification-two-axes.md) | accepted |
 | 0024 | [Drop oversized submodules; vendor single-file dependencies](0024-dependency-size-vendor-single-file-deps.md) | accepted |
 | 0025 | [A registered heartbeat MUST equal the provider's declared heartbeat](0025-heartbeat-equals-declared.md) | accepted |

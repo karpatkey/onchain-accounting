@@ -57,7 +57,7 @@
       {
         "type": "Redstone",
         "address": "0xe4aE88743c3834d0c492eAbC47384c84BcADC6a6",
-        "heartbeat": 86400
+        "heartbeat": 21600
       },
       {
         "type": "Chainlink",

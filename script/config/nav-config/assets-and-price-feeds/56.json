@@ -14,7 +14,7 @@
       {
         "type": "Redstone",
         "address": "0x29d2fEC890B037B2d34f061F9a50f76F85ddBcAE",
-        "heartbeat": 86400
+        "heartbeat": 60
       }
     ]
   },
@@ -33,7 +33,7 @@
       {
         "type": "Redstone",
         "address": "0x29d2fEC890B037B2d34f061F9a50f76F85ddBcAE",
-        "heartbeat": 86400
+        "heartbeat": 60
       }
     ]
   },
@@ -57,7 +57,7 @@
       {
         "type": "Redstone",
         "address": "0xeA2511205b959548459A01e358E0A30424dc0B70",
-        "heartbeat": 86400
+        "heartbeat": 21600
       }
     ]
   },
@@ -81,7 +81,7 @@
       {
         "type": "Redstone",
         "address": "0xf57bA29437C130e155Ca4b65128630777638F05D",
-        "heartbeat": 86400
+        "heartbeat": 21600
       }
     ]
   },
@@ -101,7 +101,7 @@
       {
         "type": "Redstone",
         "address": "0x9cF19D284862A66378c304ACAcB0E857EBc3F856",
-        "heartbeat": 86400
+        "heartbeat": 21600
       }
     ]
   },
@@ -124,7 +124,7 @@
       {
         "type": "Redstone",
         "address": "0x1102D8C7A6021e45cCddEC4912dc998Bc5ebD8e5",
-        "heartbeat": 86400
+        "heartbeat": 21600
       }
     ]
   }

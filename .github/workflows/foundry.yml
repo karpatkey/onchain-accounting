@@ -339,6 +339,19 @@ jobs:
         # job that does not compile. It belongs with a build, not with the config gates.
         run: python3 script/deploy/preflight/declared_heartbeat_guard.py --self-test
 
+      - name: RedStone declared heartbeats match ADR 0025 (real config, not a self-test)
+        # WIRED AS A REAL-CONFIG RUN ON PURPOSE. `declared_heartbeat_guard` resolves CHAINLINK feeds only,
+        # so every RedStone registration came back "has NO declared heartbeat recorded" — which that guard
+        # correctly calls unknown, and which was being read as verified. It was not: 31 RedStone monitor
+        # registrations were unchecked, and SEVEN of them were wrong (chain 1 wstETH and chain 56
+        # ETH/USDC/USDT/CAKE at 86400 vs a declared 21600; chain 56 BNB/WBNB at 86400 vs a declared 60 — a
+        # 86,340 s window in which a dead feed still read fresh).
+        #
+        # This step hits the network (RedStone's manifests in redstone-oracles-monorepo). If that becomes
+        # flaky, snapshot the manifests the way chainlink_declared_heartbeats.json is snapshotted — do NOT
+        # make it non-blocking, because a guard that cannot fail is the state this step exists to end.
+        run: python3 script/deploy/preflight/redstone_declared_heartbeats.py
+
       - name: Config-guard self-test (preflight_config --self-test)
         # WIRED HERE BECAUSE ITS ABSENCE COST US ONE. `preflight_config.py --self-test` is the command the
         # module docstring tells an operator to run before a mainnet deploy to "prove the guards themselves",

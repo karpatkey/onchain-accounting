@@ -115,6 +115,13 @@ interface IAttestedBalanceAdapter is IAccessControl, IBalanceAdapter {
     ///      direction is under-report, so it degrades NAV rather than inflating it.
     error DebtLegRejected(address asset);
 
+    /// @notice A member's legs for one asset summed to MORE than that asset's live value.
+    /// @dev The third structural bound on member-built legs, alongside the count cap and the credit-only check.
+    ///      The family's whole point is that the attestation BOUNDS the reported figure, and legs are supposed to
+    ///      partition that figure — so a member emitting two legs each carrying the full value doubles the account's
+    ///      reported holding while passing every other guard. Direction: OVER-report, the one direction forbidden.
+    error LegSumExceedsValue(address asset);
+
     // ─── Reads ───
 
     /// @notice The cached attestation for `(account, asset)`.

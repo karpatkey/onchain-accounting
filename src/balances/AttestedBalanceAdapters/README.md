@@ -23,7 +23,7 @@ implements hooks, not machinery:
 ```
 _liveEpoch()               -> bytes32   what the attestation epoch is (Merkl: getMerkleRoot())
 _liveValue(...)            -> uint256   cached figure -> today's amount (Merkl: cumulative - claimed)
-_verifyPreviewPayload(...)             decode + verify caller-supplied proofs (the proof scheme)
+_verifyPayload(...)             decode + verify caller-supplied proofs (the proof scheme)
 _assetLegs(...)            -> legs      one asset's value -> PositionBalance[]
 _maxAssetsPerAccount()                 the per-account cache cap
 _cachedLegCount / _previewLegCount      legs per asset (UPPER BOUND) for scratch-buffer sizing
@@ -75,18 +75,18 @@ A protocol needing that needs per-element epochs, which is a different cache —
 - **Role-gated submit, on-behalf-of.** The submit mutator takes an explicit `account` and requires
   **`SUBMITTER_ROLE`** (granted/revoked by `DEFAULT_ADMIN_ROLE`), enforced by the base at `_upsertAttestation` so a
   member cannot omit it. The **clears stay permissionless and stale-gated** — role-gating removal was audit finding
-  L-02. The role does not protect the amount (the proof does); it protects cache admission and label integrity. (one
-  agent feeds many accounts). No roles, no `AccessControl`, no `delegatecall` assistant.
+  L-02. The role does not protect the amount (the proof does); it protects cache admission and label integrity. (one agent feeds many accounts).
 - **Proof-verified.** A write lands only if its proof validates against the protocol's live root → a faulty/malicious
   feeder can only cache an account's **real proof-bound VALUE**: **under-report, never over-report** on the number.
   The guarantee stops at what the proof commits to — auxiliary metadata cached alongside it (Merkl's campaign ids
   and split, only their SUM checked) is NOT attested and must be documented by the member.
 - **Upsert, never suppress.** A submit adds/refreshes the elements it carries and **never drops** an omitted one;
   removal is only via the **stale-gated** `clearAccount` / a per-element clear (which revert while any entry is live).
-  So a third party can neither inflate an account's balance nor suppress an entry **already in the cache**. It
-  does NOT mean an entry can always get in: admission is capped and fails loud, so a third party holding the
-  account's public proofs can squat the cap with low-value elements and keep a valuable one out (Gap 1 in the
-  operator runbook) — under-report only, and an open design call rather than a closed guarantee.
+  So a third party can neither inflate an account's balance nor suppress an entry already in the cache.
+  **Cap-squatting by a third party is CLOSED** — since submits require `SUBMITTER_ROLE`, an outsider cannot
+  occupy slots at all (the runbook keeps the original analysis struck through, because it explains what the role
+  is actually protecting). The cap still binds for the *keeper's own* accumulated entries, which is why the
+  garbage-collection pass remains mandatory.
 - **Stale reads → 0.** A cached entry whose root ≠ the live root reads 0 (no extrapolation across a root rotation).
 
 These adapters are documented exceptions to the immutability rule (cf.

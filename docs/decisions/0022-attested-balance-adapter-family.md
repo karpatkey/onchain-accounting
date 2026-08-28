@@ -39,11 +39,11 @@ Introduce a fourth balance-adapter family, peer to plain `BalanceAdapter`s, meta
 1. **Permissionless, submit-on-behalf-of.** The submit mutator takes an explicit `account` and is callable by anyone — no roles, no `AccessControl`, no `delegatecall` assistant. One off-chain agent feeds many tracked accounts.
 2. **Proof-verified — of the proof-bound VALUE, and only that.** A write only lands if its proof validates against the protocol's live root (e.g. Merkl `Distributor.getMerkleRoot()`), so a faulty or malicious feeder can only ever cache an account's **real** figure — **under-report, never over-report** on the number. **The attestation does not extend to auxiliary metadata a member caches beside that value.** Merkl's `campaignId`/`subCampaignId` and the per-campaign split are submitter-controlled: the proof binds the per-token cumulative and the contract checks only that the shares SUM to it, so position *identity* is not attested even though the *amount* is. **Rule for new members: state explicitly which cached fields the proof commits to, and treat every other cached field as attacker-controlled.**
 3. **Per-element upsert — never suppress.** A submit **adds or refreshes** the elements it carries and **leaves omitted elements untouched**; it can never drop a live entry. Removal is only via the **stale-gated** `clearAccount` / a per-protocol per-element clear (which revert while any entry is still live). Together these mean a third party can neither inflate an account's balance nor suppress an entry that is **already
-in the cache**. **That is the precise claim, and it is narrower than "cannot suppress".** It says nothing about
-whether an entry can GET in: admission is capped and fails loud, so a third party holding the account's public
-proofs can occupy the cap with genuinely-earned but low-value elements and keep a valuable one out — value missing
-from NAV by a different mechanism. That is Gap 1 in `docs/operations/merkl-proof-submitter.md`, it is under-report
-only, and it is an open design call rather than a closed guarantee. *(This upsert rule is load-bearing: an earlier "clear-then-store whole list" draft let anyone wipe a victim's live rewards with an empty submit — see ADR 0007's amendment. Upsert closes that.)*
+in the cache**. **That is the precise claim, and it is narrower than "cannot suppress".** It says nothing about whether an entry
+can GET in — admission is capped and fails loud. **A third party can no longer exhaust that cap**, because submits
+require `SUBMITTER_ROLE` (see the amendment at the top); what remains is the keeper's OWN accumulation against the
+cap, which the operator runbook's mandatory GC pass exists to manage. The original squatting analysis is kept,
+struck through, in that runbook because it explains what the role is protecting. *(This upsert rule is load-bearing: an earlier "clear-then-store whole list" draft let anyone wipe a victim's live rewards with an empty submit — see ADR 0007's amendment. Upsert closes that.)*
 4. **Stale reads → 0.** Whenever a cached entry's root ≠ the protocol's live root, the read returns 0 (conservative), rather than extrapolating across a root rotation.
 
 These adapters are documented exceptions to the immutability rule (like the assisted family; cf. ADR 0005) — narrowly-scoped mutable cache state, no admin-injected amounts, no upgrade path.
@@ -71,7 +71,7 @@ attested adapter that is not protocol-specific**, so a new member is a small fil
 |---|---|
 | the `(value, epoch)` cache, its per-account asset enumeration and index map | `_liveEpoch()` — what the attestation epoch is |
 | stale handling (`epoch != live` ⇒ reads **0**, never extrapolated) | `_liveValue(...)` — how a cached figure becomes today's amount |
-| the stale-gated `clearAttestation` / `clearAccount` | `_verifyPreviewPayload(...)` — the proof scheme |
+| the stale-gated `clearAttestation` / `clearAccount` | `_verifyPayload(...)` — the proof scheme |
 | the NAV-version constructor probe | `_assetLegs(...)` — how one asset's value becomes legs |
 | the whole gas-isolated read fan-out and its shared-budget stipend | `_maxAssetsPerAccount()`, `_cachedLegCount` / `_previewLegCount` |
 | the `previewPositions` skeleton, duplicate-asset guard and cap | the typed-identity hooks |

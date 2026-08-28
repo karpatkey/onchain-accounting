@@ -566,7 +566,9 @@ abstract contract AttestedValueCache is IAttestedBalanceAdapter, IPositionDescri
     ///      SMALLER, which is the direction this family already guarantees. `AssistedCoordCache` raises
     ///      `CoordinateGasExhausted` instead precisely because a future member of THAT family could emit a debt leg,
     ///      and silently dropping a debt leg makes NAV LARGER — the one direction this codebase forbids.
-    ///      **A member that can emit a debt leg MUST override this and raise instead of dropping.**
+    ///      **A member that can emit a debt leg cannot use this family at all.** `_collectLegs` is NOT virtual and
+    ///      the charter forbids debt legs outright — an attested-liability protocol needs a sibling base and its
+    ///      own interface id, not an override here.
     ///
     ///      All-or-nothing per asset, mirroring `NAVCalculator._MAX_LABEL_ELEMENTS`: an asset that half-computed
     ///      before exhausting its stipend has its legs discarded as a unit, because a truncated answer reads as a
@@ -618,8 +620,9 @@ abstract contract AttestedValueCache is IAttestedBalanceAdapter, IPositionDescri
             uint256 budget = available > reserve ? available - reserve : 0;
             uint256 stipend = GasStipendLib.stipendFrom(budget) / (liveCount - i);
             try this.assetLegsSelf{gas: stipend}(account, live[i], metas[i]) returns (
-                INAVCalculator.PositionBalance[] memory legs
+                INAVCalculator.PositionBalance[] memory legs, uint256 assetValue
             ) {
+                uint256 legSum;
                 // BOUND AGAINST THIS ASSET'S OWN SLICE, not against the shared buffer. {_cachedLegCount} is a
                 // member hook and the legs come from the unrelated {_assetLegs}; the monolith derived both from
                 // one expression so they could not disagree, but here they can, and writing past `tmp` raises
@@ -633,18 +636,27 @@ abstract contract AttestedValueCache is IAttestedBalanceAdapter, IPositionDescri
                 // "drops only the surplus" was false, and a single-asset test could not see it. Capping each
                 // asset at what it declared confines the loss to that asset's own surplus.
                 //
-                // **This is the SECOND silent-drop site in this function**, and a debt-emitting member must treat
-                // it exactly like the `catch` arm below: dropping a DEBT leg makes NAV LARGER. Overriding
-                // {_collectLegs} to raise on `catch` while leaving this bound intact would re-open the over-report
-                // direction through the quieter of the two doors.
+                // **This is the SECOND silent-drop site in this function.** Both are safe only because the
+                // charter check above runs on EVERY returned leg first, so neither door can discard a debt leg.
                 uint256 taken;
                 for (uint256 j; j < legs.length; ++j) {
-                    if (taken == legCaps[i]) break;
-                    // CHARTER, enforced rather than trusted. `_assetLegs` is virtual and returns member-built
-                    // structs, so nothing forces a member through `_row` — this is what makes the interface's
-                    // credit-only claim true instead of aspirational, and it is what licenses the silent drops
-                    // above and below: a dropped CREDIT leg shrinks NAV, a dropped DEBT leg would inflate it.
+                    // CHARTER CHECK FIRST, BEFORE the slice bound — the ordering is the whole point. Checking
+                    // after the `break` inspected only the legs that FIT, so a member declaring one leg and
+                    // returning [credit, debt] had its debt leg silently dropped by the bound without ever being
+                    // tested: NAV larger, the forbidden direction, at exactly the site the comment below claims
+                    // to cover. Every leg the member returns is inspected; only the surplus is then discarded.
                     if (legs[j].isDebt) revert DebtLegRejected(live[i]);
+                    // MAGNITUDE, the third structural bound. Count and direction were already enforced; without
+                    // this a member with an HONEST leg count whose legs each carry the full value doubles the
+                    // account's reported holding while passing every other guard. Checked across ALL returned
+                    // legs, before the cap bound, for the same reason the debt check is: a leg the cap will drop
+                    // must still be inspected.
+                    legSum += legs[j].amount;
+                    if (legSum > assetValue) revert LegSumExceedsValue(live[i]);
+                    if (taken == legCaps[i]) break;
+                    // `_assetLegs` is virtual and returns member-built structs, so nothing forces a member
+                    // through `_row` — the check above is what makes the interface's credit-only claim true
+                    // rather than aspirational, and it is what licenses the two silent drops here.
                     tmp[count++] = legs[j];
                     ++taken;
                 }
@@ -662,16 +674,20 @@ abstract contract AttestedValueCache is IAttestedBalanceAdapter, IPositionDescri
     /// @notice External self-call entrypoint for one asset's legs, enabling the per-asset isolation in
     ///         {_collectLegs}. `msg.sender`-guarded to `address(this)`. `view`, so the self-call is a staticcall.
     ///         Mirrors `AssistedCoordCache.valueCoordSelf`.
+    /// @dev Returns the value alongside the legs so {_collectLegs} can bound their SUM in its own frame. The bound
+    ///      cannot live here: this function is reached through a `try`, so a revert would be caught and silently
+    ///      demoted to "drop this asset" — turning a charter violation into exactly the quiet under-report the
+    ///      isolation exists to produce for honest failures.
     function assetLegsSelf(address account, address asset, INAVCalculator.Asset memory meta)
         external
         view
-        returns (INAVCalculator.PositionBalance[] memory)
+        returns (INAVCalculator.PositionBalance[] memory, uint256)
     {
         if (msg.sender != address(this)) revert NotAuthorized();
         uint256 value = _valueOf(account, asset);
         // Early return before the member touches its own storage when there is nothing to value (the common case).
-        if (value == 0) return new INAVCalculator.PositionBalance[](0);
-        return _assetLegs(account, asset, meta, value, _attestations[account][asset].value, "", true);
+        if (value == 0) return (new INAVCalculator.PositionBalance[](0), 0);
+        return (_assetLegs(account, asset, meta, value, _attestations[account][asset].value, "", true), value);
     }
 
     /// @dev Shared tail of the preview: skip assets NAVCalculator does not price, value each through the SAME
@@ -703,8 +719,11 @@ abstract contract AttestedValueCache is IAttestedBalanceAdapter, IPositionDescri
             // {_previewLegCount} under-declares is a bug the caller should see rather than a truncated answer
             // that reads as complete.
             if (count + legs.length > tmp.length) revert InvalidArguments();
+            uint256 legSum;
             for (uint256 k; k < legs.length; ++k) {
                 if (legs[k].isDebt) revert DebtLegRejected(assets[i]); // charter, same as the cache path
+                legSum += legs[k].amount;
+                if (legSum > live) revert LegSumExceedsValue(assets[i]); // magnitude, same as the cache path
                 tmp[count++] = legs[k];
             }
         }
@@ -875,7 +894,8 @@ abstract contract AttestedValueCache is IAttestedBalanceAdapter, IPositionDescri
     function _protocolId() internal pure virtual returns (bytes32);
     function _protocolSubId() internal pure virtual returns (bytes32);
 
-    /// @notice The `PositionKind` every leg carries. **If a member returns a kind that can be a DEBT leg, it must
-    ///         also override {_collectLegs} to raise rather than drop** — see that function's docstring.
+    /// @notice The `PositionKind` every leg carries. A member may NOT return a kind that implies a debt leg: the
+    ///         family charter is credit-only and the base rejects any leg with `isDebt` set. A debt-attesting
+    ///         protocol wants a sibling base, not an override here.
     function _positionKind() internal pure virtual returns (PositionKind);
 }

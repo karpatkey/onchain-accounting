@@ -114,9 +114,11 @@ contract OverEmittingMember is ProbeMember {
         bytes memory,
         bool
     ) internal view override returns (INAVCalculator.PositionBalance[] memory legs) {
+        // Over-declares COUNT only: the two legs PARTITION the value, so the magnitude bound is untouched and
+        // this fixture isolates the leg-count property it exists to test.
         legs = new INAVCalculator.PositionBalance[](2); // declares 1 (inherited default), emits 2
-        legs[0] = _row(meta, liveValue, abi.encode(address(this)), bytes32(0));
-        legs[1] = _row(meta, liveValue, abi.encode(address(this)), keccak256("second"));
+        legs[0] = _row(meta, liveValue / 2, abi.encode(address(this)), bytes32(0));
+        legs[1] = _row(meta, liveValue - liveValue / 2, abi.encode(address(this)), keccak256("second"));
     }
 }
 
@@ -139,10 +141,11 @@ contract SelectiveOverEmitter is ProbeMember {
         bool fromCache
     ) internal view override returns (INAVCalculator.PositionBalance[] memory legs) {
         if (asset != greedy) return super._assetLegs(a, asset, meta, liveValue, v, c, fromCache);
+        // Three legs that PARTITION the value: over-declares count, respects magnitude.
         legs = new INAVCalculator.PositionBalance[](3); // declares 1, emits 3
-        for (uint256 i; i < 3; ++i) {
-            legs[i] = _row(meta, liveValue, abi.encode(address(this)), bytes32(i));
-        }
+        legs[0] = _row(meta, liveValue / 3, abi.encode(address(this)), bytes32(uint256(0)));
+        legs[1] = _row(meta, liveValue / 3, abi.encode(address(this)), bytes32(uint256(1)));
+        legs[2] = _row(meta, liveValue - 2 * (liveValue / 3), abi.encode(address(this)), bytes32(uint256(2)));
     }
 }
 
@@ -208,6 +211,54 @@ contract DebtEmittingMember is ProbeMember {
     }
 }
 
+/// @notice Declares ONE leg but returns [credit, debt] — the debt leg sits BEYOND the declared cap.
+/// @dev The shape that slipped past the charter check while the slice bound was evaluated first: the bound broke
+///      the loop before `legs[1]` was ever inspected, so the debt leg was dropped rather than rejected.
+contract DebtBeyondCapMember is ProbeMember {
+    constructor(address nav_, address admin_) ProbeMember(nav_, admin_) {}
+
+    function _assetLegs(
+        address,
+        address,
+        INAVCalculator.Asset memory meta,
+        uint256 liveValue,
+        uint256,
+        bytes memory,
+        bool
+    ) internal view override returns (INAVCalculator.PositionBalance[] memory legs) {
+        legs = new INAVCalculator.PositionBalance[](2); // declares 1 (inherited default)
+        legs[0] = _row(meta, liveValue, abi.encode(address(this)), bytes32(0)); // fits
+        legs[1].balanceAsset = meta; // beyond the cap, and a DEBT leg
+        legs[1].balanceAdapter = address(this);
+        legs[1].amount = liveValue;
+        legs[1].isDebt = true;
+    }
+}
+
+/// @notice Honest leg COUNT, honest direction — but each leg carries the FULL value, doubling the total.
+/// @dev Passes the count cap and the credit-only check; the only thing that catches it is the magnitude bound.
+contract DoubleCountingMember is ProbeMember {
+    constructor(address nav_, address admin_) ProbeMember(nav_, admin_) {}
+
+    function _cachedLegCount(address, address) internal pure override returns (uint256) {
+        return 2; // honest: it really does emit two
+    }
+
+    function _assetLegs(
+        address,
+        address,
+        INAVCalculator.Asset memory meta,
+        uint256 liveValue,
+        uint256,
+        bytes memory,
+        bool
+    ) internal view override returns (INAVCalculator.PositionBalance[] memory legs) {
+        legs = new INAVCalculator.PositionBalance[](2);
+        legs[0] = _row(meta, liveValue, abi.encode(address(this)), bytes32(0));
+        legs[1] = _row(meta, liveValue, abi.encode(address(this)), keccak256("two")); // full value AGAIN
+    }
+}
+
 /// @notice Family-level tests for {AttestedValueCache}, exercised through a SECOND member rather than through
 ///         Merkl. The base exists to be inherited, so the properties that matter are the ones a future member
 ///         could break — and those are invisible in a suite that only ever instantiates the first member.
@@ -259,6 +310,47 @@ contract AttestedValueCacheTest is BalanceAdapterTestBase {
     ///      It matters because the base's TWO silent drops are licensed only by credit-only: a dropped credit leg
     ///      shrinks NAV, a dropped debt leg inflates it — the one forbidden direction.
     ///      THE DISCRIMINATING MUTATION: remove the `legs[j].isDebt` check in `_collectLegs` and this passes.
+    /// @notice A DEBT leg BEYOND the declared leg count must be REJECTED, not silently dropped.
+    /// @dev THE OVER-REPORT THIS CLOSES, and the subtler of the two charter holes. The runtime check and the
+    ///      per-asset slice bound share a loop, and while the bound ran FIRST it inspected only the legs that
+    ///      fit: a member declaring one leg and returning [credit, debt] had its debt leg dropped by the bound
+    ///      without ever being tested. NAV then reports the credit alone — LARGER than reality, the one direction
+    ///      forbidden — with no revert and a green suite, because every other charter assertion examines only the
+    ///      legs that survived the copy.
+    ///      THE DISCRIMINATING MUTATION: move `if (taken == legCaps[i]) break;` back above the `isDebt` check and
+    ///      this goes green while the adapter silently over-reports.
+    function test_charter_debtLegBeyondTheCapIsRejectedNotDropped() public {
+        DebtBeyondCapMember m = new DebtBeyondCapMember(address(balances), admin);
+        bytes32 submitterRole = m.SUBMITTER_ROLE();
+        vm.prank(admin);
+        m.grantRole(submitterRole, address(this));
+        m.feed(alice, address(tok), 100 ether);
+
+        vm.expectRevert(abi.encodeWithSelector(IAttestedBalanceAdapter.DebtLegRejected.selector, address(tok)));
+        m.getAdapterPositions(alice, address(0));
+    }
+
+    /// @notice Legs that sum to MORE than the asset's live value are rejected — the magnitude bound.
+    /// @dev THE THIRD CHARTER HOLE, and the worst of them. Count and direction were both structurally enforced;
+    ///      magnitude was not. A member with an HONEST leg count (declares two, emits two), building both legs
+    ///      through `_row` so they are credits attributed to itself, could give each leg the FULL value and double
+    ///      the account's reported holding — passing every other guard, unbounded rather than 2x-bounded, in the
+    ///      one direction the family forbids. The family always intended legs to PARTITION the value (the README
+    ///      recipe says to floor the split so they sum to at most the total); that obligation was documented and
+    ///      unenforced.
+    ///      THE DISCRIMINATING MUTATION: delete the `legSum > assetValue` check and this passes while
+    ///      `getAdapterPositions` reports 2x what `getAdapterBalanceForAsset` does for the same account.
+    function test_charter_legsSummingAboveTheValueAreRejected() public {
+        DoubleCountingMember m = new DoubleCountingMember(address(balances), admin);
+        bytes32 submitterRole = m.SUBMITTER_ROLE();
+        vm.prank(admin);
+        m.grantRole(submitterRole, address(this));
+        m.feed(alice, address(tok), 100 ether);
+
+        vm.expectRevert(abi.encodeWithSelector(IAttestedBalanceAdapter.LegSumExceedsValue.selector, address(tok)));
+        m.getAdapterPositions(alice, address(0));
+    }
+
     function test_charter_handBuiltDebtLegIsRejectedAtRuntime() public {
         DebtEmittingMember m = new DebtEmittingMember(address(balances), admin);
         bytes32 submitterRole = m.SUBMITTER_ROLE();
@@ -474,6 +566,6 @@ contract AttestedValueCacheTest is BalanceAdapterTestBase {
         INAVCalculator.PositionBalance[] memory positions = over.getAdapterPositions(alice, address(0));
 
         assertEq(positions.length, 1, "bounded to the declared cap rather than panicking");
-        assertEq(positions[0].amount, 100 ether, "and the leg that did fit is intact");
+        assertEq(positions[0].amount, 50 ether, "the leg that fit is intact (the fixture partitions the value)");
     }
 }

@@ -79,11 +79,13 @@ abstract contract AttestedAdapterConformance is BalanceAdapterTestBase {
     ///         rotating a root, advancing past a TTL, invalidating an anchor.
     function _rotateValidity() internal virtual;
 
-    /// @notice Submit through the member's own TYPED entrypoint, if it has one; otherwise call the generic
-    ///         `submit`. Exists so a typed convenience cannot quietly bypass the role gate the kit checks.
-    function _submitViaTypedEntrypoint(address account, bytes memory data) internal virtual {
-        IAttestedBalanceAdapter(address(member)).submit(account, data);
-    }
+    /// @notice Submit through the member's own TYPED entrypoint. A member with none forwards to `submit`.
+    /// @dev **ABSTRACT deliberately, with no default.** A default body calling `submit` would make this the only
+    ///      opt-in fixture in the kit, and a member that adds a convenience `submitX(...)` and forgets to override
+    ///      would get a green "typed entrypoint is gated" assertion that had merely tested `submit` twice — the
+    ///      exact silent back door the assertion claims to catch. Forcing the author to write one line, even if it
+    ///      is just a forward, is the point of a floor.
+    function _submitViaTypedEntrypoint(address account, bytes memory data) internal virtual;
 
     function setUp() public virtual override {
         super.setUp();

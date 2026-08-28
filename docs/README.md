@@ -76,6 +76,8 @@ Numbered ADRs. Read when you want the *why* behind a design choice.
 | [`0019-nav-sourced-base-price.md`](decisions/0019-nav-sourced-base-price.md) | Custom price feeds source their base/USD from the NAV (one price source per base asset). |
 | [`0020-custom-feed-governing-leg-freshness.md`](decisions/0020-custom-feed-governing-leg-freshness.md) | Custom-feed `getPriceData` reports the *governing leg*'s freshness. |
 | [`0023-asset-classification-two-axes.md`](decisions/0023-asset-classification-two-axes.md) | Asset classification on two orthogonal axes (`PegKind` × `AccrualKind`), surfaced by a standalone `AssetKindRegistry`. |
+| [`0024-dependency-size-vendor-single-file-deps.md`](decisions/0024-dependency-size-vendor-single-file-deps.md) | Drop oversized submodules; vendor single-file deps verbatim with a drift guard. |
+| [`0025-heartbeat-equals-declared.md`](decisions/0025-heartbeat-equals-declared.md) | A registered heartbeat MUST equal the provider's declared value — no margin. Every second above declared is a window in which a dead feed reads fresh. Supersedes the `declared + 1 h` convention. |
 | [`decisions/README.md`](decisions/README.md) | ADR index + template. |
 
 ---

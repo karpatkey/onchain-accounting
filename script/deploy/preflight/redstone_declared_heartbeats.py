@@ -52,6 +52,25 @@ MANIFESTS: dict[str, list[str]] = {
 
 ERROR, WARN = "ERROR", "WARN"
 
+# Feeds knowingly exempt from the "must resolve to a declared cadence" rule. An entry here is a RECORDED
+# DECISION, not a silence: without it an unresolved address is an ERROR and fails the build.
+#
+# The alternative — reporting "UNCHECKED" as a WARN — is what this guard exists to end. WARNs do not fail
+# CI, so an uncatalogued feed would be reported as unverified and permitted in the same breath, which is
+# indistinguishable from not checking at all. That is precisely how 31 RedStone registrations sat
+# unverified while seven of them were wrong.
+UNCATALOGUED_EXCEPTIONS: dict[tuple[str, str], str] = {
+    ("1", "0xddb6f90ffb4d3257dd666b69178e5b3c5bf41136"): (
+        "weETH monitor feed. Live and answering (age ~3 h when checked 2026-08-28, description "
+        "'Redstone Price Feed'), but present in NONE of the 116 manifests under "
+        "relayer-remote-config/main — searched exhaustively, not just the chain's primary manifest. "
+        "So its declared cadence is genuinely unknown rather than merely unlooked-for. It is a MONITOR "
+        "feed, so a wrong heartbeat degrades the divergence check and cannot zero an asset. "
+        "TO CLOSE: ask RedStone which manifest publishes it, add that manifest to MANIFESTS, and delete "
+        "this entry."
+    ),
+}
+
 
 def _fetch(path: str) -> dict:
     with urllib.request.urlopen(f"{BASE}/{path}", timeout=60) as r:  # noqa: S310
@@ -116,10 +135,16 @@ def findings(chain: str, fetch=_fetch) -> list[tuple[str, str]]:
         addr = (r["address"] or "").lower()
         rh, dh = r["heartbeat"], decl.get(addr)
         if dh is None:
-            out.append((WARN, f"asset '{r['asset']}' {r['role']} {r['address']} is a RedStone feed with "
-                              f"NO declared cadence found in any manifest for chain {chain}. That is "
-                              f"UNCHECKED, not verified — add the product manifest that carries it to "
-                              f"MANIFESTS, or confirm the feed is retired."))
+            note = UNCATALOGUED_EXCEPTIONS.get((chain, addr))
+            if note:
+                out.append((WARN, f"asset '{r['asset']}' {r['role']} {r['address']} has no declared "
+                                  f"cadence and is a RECORDED EXCEPTION: {note}"))
+                continue
+            out.append((ERROR, f"asset '{r['asset']}' {r['role']} {r['address']} is a RedStone feed with "
+                               f"NO declared cadence found in any manifest for chain {chain}. That is "
+                               f"UNCHECKED, not verified, and unchecked must not pass — add the product "
+                               f"manifest that carries it to MANIFESTS, or record it in "
+                               f"UNCATALOGUED_EXCEPTIONS with the evidence."))
             continue
         if not isinstance(rh, int) or rh != dh:
             out.append((ERROR, f"declared-heartbeat MISMATCH: asset '{r['asset']}' {r['role']} "

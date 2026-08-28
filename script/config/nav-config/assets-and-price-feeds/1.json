@@ -900,7 +900,7 @@
       {
         "type": "Custom",
         "feed": "wARS",
-        "heartbeat": 90000
+        "heartbeat": 86400
       }
     ]
   },

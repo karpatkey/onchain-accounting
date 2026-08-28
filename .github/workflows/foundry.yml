@@ -339,6 +339,20 @@ jobs:
         # job that does not compile. It belongs with a build, not with the config gates.
         run: python3 script/deploy/preflight/declared_heartbeat_guard.py --self-test
 
+      - name: Chainlink declared heartbeats match ADR 0025 (real config, all chains)
+        # THE SELF-TEST WAS NEVER ENOUGH, AND THAT GAP HAD A COST. Until now CI ran only
+        # `declared_heartbeat_guard.py --self-test`, which proves the guard's LOGIC and says nothing about
+        # the actual config, so a real ADR 0025 violation could not fail CI. Two lived in that gap:
+        # POL on chain 1 at 90000 against a declared 86400 (config and chain agreed, so the realignment
+        # script also saw nothing to do), and wARS's constructor leg at 90000 against a declared 86400.
+        # Both are fixed; this step is what stops the next one.
+        #
+        # Runs offline against the committed snapshot, so it needs no network and no build.
+        run: |
+          for c in 1 10 56 100 137 8453 42161; do
+            python3 script/deploy/preflight/declared_heartbeat_guard.py "$c" || exit 1
+          done
+
       - name: RedStone declared heartbeats match ADR 0025 (real config, not a self-test)
         # WIRED AS A REAL-CONFIG RUN ON PURPOSE. `declared_heartbeat_guard` resolves CHAINLINK feeds only,
         # so every RedStone registration came back "has NO declared heartbeat recorded" — which that guard

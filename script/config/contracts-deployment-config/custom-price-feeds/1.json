@@ -313,7 +313,7 @@
     "constructor": {
       "underlyingAsset": "0x0DC4F92879B7670e5f4e4e6e3c801D229129D90D",
       "usdToAssetChainlinkAddress": "0xBb65fa58BDb7d33e4a3D1A40a7A9BD99E746367b",
-      "usdToAssetChainlinkHeartbeat": "90000",
+      "usdToAssetChainlinkHeartbeat": "86400",
       "baseAsset": "0x0000000000000000000000000000000000000000",
       "minAnswer": "10000000000",
       "maxAnswer": "10000000000000"

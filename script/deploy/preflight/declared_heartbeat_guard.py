@@ -660,13 +660,18 @@ def coverage_census(chain_id: str) -> dict:
 
 
 def findings(chain_id: str, snapshot: dict | None = None) -> list[tuple[str, str]]:
-    """(level, message) for one chain — the per-feed declared-margin verdicts.
+    """(level, message) for one chain — the per-feed declared-heartbeat verdicts.
 
-    Severity follows the three-state ladder in the module docstring: SILENT for positive margin or an
-    evidenced allowlist entry, WARN for an UNMEASURED at-or-below-margin feed (a to-measure queue, not a
-    blocker), and ERROR only for an evidence CONTRADICTION — an allowlist entry recording breaches, or one
-    measured against a heartbeat the config has since changed. It deliberately does NOT error on an
-    unmeasured feed; the module docstring explains why that split is load-bearing.
+    Severity under ADR 0025 (EQUALITY): SILENT when registered == declared, or for an evidenced allowlist
+    entry that is itself at declared. ERROR for a mismatch in EITHER direction — above declared is an
+    unearned false-fresh window, below it manufactures staleness, and under an equality rule neither is a
+    "candidate" state. WARN is reserved for the cases where the rule cannot be evaluated or the exemption
+    needs a human look: no declared value recorded, a declared value of 0, an allowlist entry with stale or
+    missing evidence, and an exemption carrying a registration that is not equal to declared.
+
+    THIS REPLACED A THREE-STATE MARGIN LADDER (silent above declared, WARN at-or-below-and-unmeasured,
+    ERROR only on a contradicted exemption). If you are reading that model anywhere in this module, it is
+    stale — the module docstring keeps its MEASUREMENTS as history, not its severities.
 
     Snapshot-LEVEL findings (staleness) are deliberately NOT returned here, because they are not
     per-chain. Every caller must ALSO call `snapshot_findings_once` — both entry points in this repo do.

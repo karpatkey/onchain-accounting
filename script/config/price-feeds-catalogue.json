@@ -158,7 +158,7 @@
         },
         "spUSDT": {
           "address": "0xe2e7a17dFf93280dec073C995595155283e3C372",
-          "note": "No direct Chainlink feed — use Custom adapter (spUSDT_CustomPriceFeed). Registered at heartbeat 90000 to match USDT/USD's own 90000, not the 86400 its USDC-based siblings use. Live 6-decimal generation."
+          "note": "No direct Chainlink feed — use Custom adapter (spUSDT_CustomPriceFeed). Registered at heartbeat 90000. This originally matched USDT/USD's own 90000; under ADR 0025 USDT/USD moved to 86400, so spUSDT is now deliberately looser than its base (safe for a derived feed - it cannot manufacture a stale verdict). Live 6-decimal generation."
         },
         "spETH": {
           "address": "0xfE6eb3b609a7C8352A241f7F3A21CEA4e9209B8f",

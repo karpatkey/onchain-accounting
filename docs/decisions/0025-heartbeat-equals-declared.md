@@ -90,11 +90,15 @@ what `irregular` / `divergenceBps` / `healthyFeedCount` exist for.
 ## Not covered by this ADR
 
 - **36 registrations have no declared value on record** (mostly `Custom` primaries). Left unchanged.
-- **8 custom-feed constructor legs** (`yToXHeartbeat` on the cross-rate feeds: `stETHCrossRate`, `lsETH`,
-  `ETHxCrossRate`, `rETHCrossRate` on chain 1; `weETHCrossRate` on 8453; `weETHCrossRate`,
-  `ezETHCrossRate`, `rsETHCrossRate` on 42161) each need 86 400 → 86 400 alignment but are **constructor
-  args and therefore immutable** — they change only on redeploy, and are deferred to the next natural
-  redeploy of those feeds rather than forcing eight redeploys for a 300 s delta on a 24-hour window.
+- **Custom-feed constructor legs are immutable, but none of them is currently misaligned.** An earlier
+  draft of this ADR listed eight `yToXHeartbeat` legs as "deferred", describing an 86 400 → 86 400 change
+  and a 300 s delta — two claims that cannot both be true, and neither of which was right. Measured: every
+  `yToXHeartbeat` leg is already at 86 400, so there is nothing to align. Most of these rate legs have **no
+  declared value on record at all** (the guard reports them as `has NO declared heartbeat recorded`), so
+  equality cannot be evaluated for them either way. The immutability still matters — they are constructor
+  args and change only on redeploy — but it is a constraint on FUTURE divergence, not a backlog item. The
+  one constructor leg that is not at 86 400 is `wARS.usdToAssetChainlinkHeartbeat` (90 000), likewise with
+  no declared value recorded.
 - **Chains 56 and 137 have no cadence measurement** (RPC unavailable during the sweep). Their declared
   values are on record, which is all this rule needs; the unmeasured risk is that their landing jitter is
   larger than elsewhere, and that failure lands in the accepted direction (more false-stale).

@@ -176,8 +176,13 @@ contract HeartbeatRealignerForkTest is Test, TestEnvConfigurator {
     }
 
     /// @notice Without the role the realigner is inert — revert-probe for the grant/revoke bracket.
+    /// @dev Pranked as the OPERATOR deliberately. Called from the test contract this reverts at
+    ///      `onlyOperator` and never reaches the role check, so it would pass without testing anything
+    ///      about MANAGER_ROLE at all — the non-operator path is covered separately by
+    ///      test_strandedRole_isInertToNonOperators.
     function test_isInertWithoutTheRole() public {
         assertFalse(NAVCalculator(NAV).hasRole(MANAGER_ROLE, address(realigner)));
+        vm.prank(ADMIN);
         vm.expectRevert();
         realigner.realign(assets, heartbeats);
     }

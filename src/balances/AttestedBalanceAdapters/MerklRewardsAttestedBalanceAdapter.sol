@@ -83,10 +83,12 @@ contract MerklRewardsAttestedBalanceAdapter is AttestedValueCache {
     //
 
     /// @notice Hard cap on campaign shares cached per (user, token). This is the *tight* cap because it is the one
-    ///         ATTACKER-CONTROLLED amplifier: the merkle proof binds only the per-token cumulative, NOT the
-    ///         individual `campaignId`s, so anyone holding a user's public proof can split that proven total into up
-    ///         to this many fabricated legs. It can never add tokens the user does not hold — the token set stays
-    ///         proof-bounded — so this is the only multiplier a third party can move.
+    ///         KEEPER-CONTROLLED amplifier: the merkle proof binds only the per-token cumulative, NOT the
+    ///         individual `campaignId`s, so a `SUBMITTER_ROLE` holder can split that proven total into up to this
+    ///         many fabricated legs. It can never add tokens the user does not hold — the token set stays
+    ///         proof-bounded — so this is the only multiplier the keeper can move. Since the role landed this is
+    ///         no longer reachable by an arbitrary third party: it bounds how far a compromised or buggy KEEPER
+    ///         can mislead, not a public grief.
     /// @dev    **These caps bound the READ COST, not the arithmetic.** There is no overflow or wrong-figure path:
     ///         amounts are proof-bounded, the share sum is *checked*, and `Math.mulDiv` floors, so a token's legs
     ///         always sum to at most its unclaimed total. What an over-large leg count produces is not a wrong
@@ -219,6 +221,11 @@ contract MerklRewardsAttestedBalanceAdapter is AttestedValueCache {
     /// @notice Typed batch convenience. **Atomic across accounts by design** — one invalid entry reverts the whole
     ///         batch, so a multi-account feeder should pre-filter or fall back to the per-account entrypoint.
     function submitProofsBatch(address[] calldata users, Allocation[][] calldata allocs) external {
+        // Same reason the base's `submitBatch` checks here: an EMPTY `users` array never enters the loop, so
+        // without this a roleless caller gets a successful `submitProofsBatch([], [])` authorized nowhere —
+        // destroying "the batch succeeded" as evidence of a grant, which is what the runbook tells operators to
+        // rely on. The base's `_submitPayload` also checks, per element, as defence in depth.
+        _checkRole(SUBMITTER_ROLE);
         if (users.length != allocs.length) revert InvalidArguments();
         for (uint256 i; i < users.length; ++i) {
             _submitPayload(users[i], abi.encode(allocs[i]));

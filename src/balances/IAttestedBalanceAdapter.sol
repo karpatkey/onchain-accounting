@@ -120,7 +120,51 @@ interface IAttestedBalanceAdapter is IAccessControl, IBalanceAdapter {
     ///      The family's whole point is that the attestation BOUNDS the reported figure, and legs are supposed to
     ///      partition that figure — so a member emitting two legs each carrying the full value doubles the account's
     ///      reported holding while passing every other guard. Direction: OVER-report, the one direction forbidden.
+    ///
+    ///      **BLAST RADIUS — the same one {DebtLegRejected} carries.** This is thrown from `_collectLegs`, which
+    ///      sits OUTSIDE the per-asset `try`, so it bubbles out of `getAdapterPositions`; `PriceFeedLib` fails
+    ///      OPEN on a plain revert, and the adapter's ENTIRE leg set silently leaves NAV for that account — not
+    ///      just the offending asset. The trigger can be tiny and the loss total: a member using CEILING-rounded
+    ///      pro-rata splits is one wei over on one asset and loses the whole account's adapter contribution, with
+    ///      no error anywhere. Split with a FLOOR (`Math.mulDiv` rounds down by default), as the README recipe
+    ///      says and as the Merkl member does. Note the asymmetry with an over-emitted leg COUNT, which drops
+    ///      only its own asset — confining these four the same way is a live option, deliberately not taken in
+    ///      the same sitting that wrote them.
     error LegSumExceedsValue(address asset);
+
+    /// @notice A member returned a leg denominated in a DIFFERENT asset than the one being valued.
+    /// @dev The fourth axis, and the one that makes the magnitude bound dimensionally sound. `balanceAsset.asset`
+    ///      is the PRICING KEY — `PriceFeedLib` resolves a feed from exactly this field and converts `amount`
+    ///      through it. Without this pin a member could pass the count, direction and magnitude bounds in the
+    ///      attested asset's raw units while denominating its legs in some other REGISTERED asset, inflating
+    ///      quote-NAV by the price ratio: unbounded, and in the direction the family forbids. Bounding amounts
+    ///      without pinning the unit compares numbers that are not in the same currency.
+    ///
+    ///      **BLAST RADIUS — the same one {DebtLegRejected} carries.** This is thrown from `_collectLegs`, which
+    ///      sits OUTSIDE the per-asset `try`, so it bubbles out of `getAdapterPositions`; `PriceFeedLib` fails
+    ///      OPEN on a plain revert, and the adapter's ENTIRE leg set silently leaves NAV for that account — not
+    ///      just the offending asset. The trigger can be tiny and the loss total: a member using CEILING-rounded
+    ///      pro-rata splits is one wei over on one asset and loses the whole account's adapter contribution, with
+    ///      no error anywhere. Split with a FLOOR (`Math.mulDiv` rounds down by default), as the README recipe
+    ///      says and as the Merkl member does. Note the asymmetry with an over-emitted leg COUNT, which drops
+    ///      only its own asset — confining these four the same way is a live option, deliberately not taken in
+    ///      the same sitting that wrote them.
+    error LegAssetMismatch(address expected);
+
+    /// @notice A member returned a leg attributed to an adapter other than itself.
+    /// @dev `balanceAdapter == address(this)` is a repo-wide invariant and the audit trail every reconciliation
+    ///      keys on. Nothing but the shared `_row` helper was upholding it, and `_assetLegs` is virtual.
+    ///
+    ///      **BLAST RADIUS — the same one {DebtLegRejected} carries.** This is thrown from `_collectLegs`, which
+    ///      sits OUTSIDE the per-asset `try`, so it bubbles out of `getAdapterPositions`; `PriceFeedLib` fails
+    ///      OPEN on a plain revert, and the adapter's ENTIRE leg set silently leaves NAV for that account — not
+    ///      just the offending asset. The trigger can be tiny and the loss total: a member using CEILING-rounded
+    ///      pro-rata splits is one wei over on one asset and loses the whole account's adapter contribution, with
+    ///      no error anywhere. Split with a FLOOR (`Math.mulDiv` rounds down by default), as the README recipe
+    ///      says and as the Merkl member does. Note the asymmetry with an over-emitted leg COUNT, which drops
+    ///      only its own asset — confining these four the same way is a live option, deliberately not taken in
+    ///      the same sitting that wrote them.
+    error LegAdapterMismatch(address asset);
 
     // ─── Reads ───
 

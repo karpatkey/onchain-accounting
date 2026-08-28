@@ -215,8 +215,24 @@ abstract contract AttestedAdapterConformance is BalanceAdapterTestBase {
     /// @dev The interface promises cross-account atomicity; nothing asserted it. A member cannot re-route this
     ///      (the base's `submitBatch` is non-virtual), but the promise is family contract and deserves a pin.
     function test_conformance_submitBatchIsGatedAndAtomic() public {
-        (bytes memory good,,) = _validPayload(alice);
+        // ORDER IS LOad-BEARING. `_tamperedPayload` rotates the source of validity (Merkl rotates the merkle
+        // root), so a `good` captured BEFORE it is stale by the time the batch runs: the batch then reverts on
+        // element 0 and the rollback assertion below is unfalsifiable — it would pass against an implementation
+        // with no atomicity at all, because the good element never got the chance to write. Build the bad
+        // payload FIRST, then a good one under the rotated validity.
         bytes memory bad = _tamperedPayload(bob);
+        (bytes memory good,,) = _validPayload(alice);
+
+        // And prove element 0 really would have written on its own, so the assertion has something to roll back.
+        uint256 snap = vm.snapshotState();
+        vm.prank(submitter);
+        IAttestedBalanceAdapter(address(member)).submit(alice, good);
+        assertGt(
+            IAttestedBalanceAdapter(address(member)).assetsOf(alice).length,
+            0,
+            "fixture sanity: the good element must be valid on its own, else atomicity is untested"
+        );
+        vm.revertToState(snap);
 
         address[] memory accounts = new address[](2);
         bytes[] memory payloads = new bytes[](2);
@@ -412,11 +428,22 @@ abstract contract AttestedAdapterConformance is BalanceAdapterTestBase {
     ///      budget is sized against — so it is worth asserting rather than assuming.
     function test_conformance_capIsEnforcedAtAdmission() public {
         uint256 cap = IAttestedBalanceAdapter(address(member)).maxAssetsPerAccount();
-        // Only run where the fixture can actually reach the cap; a large cap makes this a no-op by design.
-        if (cap > 8) return;
+
+        // This SKIPS VISIBLY rather than returning green. The previous version did `if (cap > 8) return;`, which
+        // short-circuited for the only member in the family (Merkl's cap is 64) and reported a pass — and even
+        // when it did run, `assertLe(1, cap)` was trivially true. A conformance kit that reports coverage it did
+        // not provide is worse than one with a gap, because the gap is invisible.
+        if (cap > 8) {
+            vm.skip(true);
+            return;
+        }
 
         (bytes memory data,,) = _validPayload(alice);
         _submit(alice, data);
+        for (uint256 i; i < cap + 1; ++i) {
+            // Drive admission past the cap. The base must refuse rather than grow the enumeration.
+            try IAttestedBalanceAdapter(address(member)).submit(alice, data) {} catch {}
+        }
         assertLe(
             IAttestedBalanceAdapter(address(member)).assetsOf(alice).length,
             cap,

@@ -881,6 +881,19 @@ contract MerklRewardsAttestedBalanceAdapterTest is BalanceAdapterTestBase {
         assertEq(adapter.assetsOf(bob).length, 2);
     }
 
+    /// @notice The TYPED batch is role-gated too, including on an empty payload.
+    /// @dev The base's `submitBatch` got this check because an empty `users` array never enters the loop; the
+    ///      member's typed twin has the identical structure and was missed. A successful empty batch from a
+    ///      roleless caller would destroy "the batch succeeded" as evidence of a grant.
+    function test_submitProofsBatch_emptyBatchStillRequiresTheRole() public {
+        bytes32 role = adapter.SUBMITTER_ROLE();
+        vm.expectRevert(
+            abi.encodeWithSelector(IAccessControl.AccessControlUnauthorizedAccount.selector, stranger, role)
+        );
+        vm.prank(stranger);
+        adapter.submitProofsBatch(new address[](0), new MerklRewardsAttestedBalanceAdapter.Allocation[][](0));
+    }
+
     function test_submitProofsBatch_revertsOnLengthMismatch() public {
         address[] memory users = new address[](2);
         MerklRewardsAttestedBalanceAdapter.Allocation[][] memory allocs =

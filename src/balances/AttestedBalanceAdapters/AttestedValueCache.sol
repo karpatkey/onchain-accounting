@@ -636,29 +636,46 @@ abstract contract AttestedValueCache is IAttestedBalanceAdapter, IPositionDescri
                 // "drops only the surplus" was false, and a single-asset test could not see it. Capping each
                 // asset at what it declared confines the loss to that asset's own surplus.
                 //
-                // **This is the SECOND silent-drop site in this function.** Both are safe only because the
-                // charter check above runs on EVERY returned leg first, so neither door can discard a debt leg.
-                uint256 taken;
+                // **The surviving drop here is WHOLE-ASSET, never partial** — and that is what lets every
+                // guard below be honest. An over-emitting member has ITS ASSET dropped entirely, the same arm
+                // the `catch` takes and for the same reason:
+                //
+                //   * not a truncation. Truncating discarded the surplus WITHOUT inspecting it, and a discarded
+                //     DEBT leg is an over-report. The earlier `break`-at-the-cap terminated INSPECTION rather
+                //     than the copy: `[credit(v/2), credit(v/2), debt]` against a cap of 1 passed j=0 and j=1,
+                //     then broke — and never looked at the debt leg;
+                //   * not a revert either. That would take the well-behaved assets down with the greedy one,
+                //     undoing the per-asset confinement above;
+                //   * and it keeps the completion reserve SOUND. The reserve is sized `_completionReservePerLeg()
+                //     * cap`, off the DECLARED counts, so the loop below must not run a member-controlled
+                //     `legs.length` times. (The `try … returns` already `returndatacopy`s and ABI-decodes the
+                //     whole array into this frame, which dominates the per-leg compare — so the decode, not this
+                //     loop, is the binding gas constraint, and it pre-exists.)
+                //
+                // {_cachedLegCount} is documented as an UPPER BOUND, so emitting more legs than declared already
+                // violates that hook's contract. Dropping every leg of the asset is unambiguously an
+                // under-report, which this family licenses.
+                if (legs.length > legCaps[i]) continue;
                 for (uint256 j; j < legs.length; ++j) {
-                    // CHARTER CHECK FIRST, BEFORE the slice bound — the ordering is the whole point. Checking
-                    // after the `break` inspected only the legs that FIT, so a member declaring one leg and
-                    // returning [credit, debt] had its debt leg silently dropped by the bound without ever being
-                    // tested: NAV larger, the forbidden direction, at exactly the site the comment below claims
-                    // to cover. Every leg the member returns is inspected; only the surplus is then discarded.
+                    // FOUR axes, not three, and they are not independent. COUNT is bounded above — which is also
+                    // what bounds this loop. The rest, in the order a violation hurts:
+                    //   DIRECTION — a debt leg that never reaches NAV inflates it;
+                    //   IDENTITY  — `balanceAsset.asset` is the PRICING KEY `PriceFeedLib` resolves a feed from.
+                    //               Leaving it unpinned makes the magnitude bound below compare numbers that are
+                    //               not in the same currency: a member could pass count, direction and
+                    //               `legSum == assetValue` in the attested asset's raw units while denominating
+                    //               its legs in a different registered asset, inflating quote-NAV by the price
+                    //               ratio. Unbounded, in the one direction the family forbids;
+                    //   MAGNITUDE — legs must PARTITION the asset's value, not each carry all of it.
+                    // `balanceAdapter` is checked too, but it is the audit-trail invariant rather than a pricing
+                    // input — NAV reads it only for a fail-open display staticcall.
                     if (legs[j].isDebt) revert DebtLegRejected(live[i]);
-                    // MAGNITUDE, the third structural bound. Count and direction were already enforced; without
-                    // this a member with an HONEST leg count whose legs each carry the full value doubles the
-                    // account's reported holding while passing every other guard. Checked across ALL returned
-                    // legs, before the cap bound, for the same reason the debt check is: a leg the cap will drop
-                    // must still be inspected.
+                    if (legs[j].balanceAsset.asset != live[i]) revert LegAssetMismatch(live[i]);
+                    if (legs[j].balanceAdapter != address(this)) revert LegAdapterMismatch(live[i]);
                     legSum += legs[j].amount;
                     if (legSum > assetValue) revert LegSumExceedsValue(live[i]);
-                    if (taken == legCaps[i]) break;
-                    // `_assetLegs` is virtual and returns member-built structs, so nothing forces a member
-                    // through `_row` — the check above is what makes the interface's credit-only claim true
-                    // rather than aspirational, and it is what licenses the two silent drops here.
+
                     tmp[count++] = legs[j];
-                    ++taken;
                 }
             } catch {
                 // Drop this asset entirely — never revert, and never emit a partial set for it. See the docstring.
@@ -722,6 +739,8 @@ abstract contract AttestedValueCache is IAttestedBalanceAdapter, IPositionDescri
             uint256 legSum;
             for (uint256 k; k < legs.length; ++k) {
                 if (legs[k].isDebt) revert DebtLegRejected(assets[i]); // charter, same as the cache path
+                if (legs[k].balanceAsset.asset != assets[i]) revert LegAssetMismatch(assets[i]); // identity, ditto
+                if (legs[k].balanceAdapter != address(this)) revert LegAdapterMismatch(assets[i]); // attribution
                 legSum += legs[k].amount;
                 if (legSum > live) revert LegSumExceedsValue(assets[i]); // magnitude, same as the cache path
                 tmp[count++] = legs[k];

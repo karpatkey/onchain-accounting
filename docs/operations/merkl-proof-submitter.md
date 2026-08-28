@@ -137,7 +137,7 @@ Three properties hold by construction; the bot does not need to be trusted to ma
 2. **The bot cannot suppress amounts past Merkl's own cycle.** If the bot stops running, the cache becomes stale on the next root rotation (~8h) and the adapter reports 0 for every cached entry. NAV under-counts; it never over-counts. Recovery is "start the bot again; cache reads correctly within one cycle."
 3. **Anyone can audit.** Given the on-chain root, the adapter's cached `(cumulativeAmount, root)`, and `Distributor.claimed(account, token).amount`, anyone can verify the reported balance is exactly `cumulativeAmount - claimed` and verify the cached `cumulativeAmount` against the published merkle tree.
 
-The bot's only privileged capability is *availability* — keeping the cache fresh. It cannot deceive a reader about the **amount**. It *can* mis-attribute that amount across campaigns (see property 1), and so can any third party holding the account's public proof — campaign attribution is **display-grade, not audit-grade**. The per-token total, i.e. the sum of a token's legs, is the proof-backed figure.
+The bot's only privileged capability is *availability* — keeping the cache fresh. It cannot deceive a reader about the **amount**. It *can* mis-attribute that amount across campaigns (see property 1), — campaign attribution is **display-grade, not audit-grade**. Since submits became `SUBMITTER_ROLE`-gated this is a bound on the KEEPER, not something an arbitrary third party can do. The per-token total, i.e. the sum of a token's legs, is the proof-backed figure.
 
 ## Cadence and root rotation
 
@@ -234,9 +234,10 @@ the leg `cap`, and allocates a `cap`-sized scratch buffer **before** the first `
 prologue is therefore outside every per-token guard, and `getAdapterPositions` does not wrap the
 `this.buildPositionsSelf` self-call. If the stipend `PriceFeedLib` forwarded is consumed there, the out-of-gas
 bubbles, `GasStipendLib.exhausted` classifies it, and `AdapterGasExhausted` takes down the account's **entire** NAV
-read — every adapter's legs, not just Merkl's. Because a third party can inflate a real token's leg count using the
-account's public proofs (campaign ids are not proof-bound), the gas floor of a tracked account's NAV read is
-partly third-party-controlled. Two smaller variants sit alongside it: the per-token stipend divides by tokens
+read — every adapter's legs, not just Merkl's. Because a `SUBMITTER_ROLE` holder can inflate a real token's leg count (campaign
+ids are not proof-bound), the gas floor of a tracked account's NAV read is partly keeper-controlled. **This gap's
+severity was written down before submits were role-gated and rested on "third-party-controlled"; that is now
+false, and the risk is correspondingly lower** — it takes a compromised or buggy keeper, not a passer-by. Two smaller variants sit alongside it: the per-token stipend divides by tokens
 remaining rather than **legs** remaining, so an 8-campaign token early in the list can be starved and dropped while
 most of the budget goes unspent; and when `gasleft()` is at or below `reserve` every stipend is 0, so all tokens
 drop and the read returns an empty array successfully. *(That last one changes nothing a caller can observe — a

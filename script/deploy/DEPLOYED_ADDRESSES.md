@@ -147,6 +147,7 @@ positions there.
 | MorphoMarketsMeta ☆ | `0x5C951CF5C596BC4908A5fd846710070553830b06` | **1, 8453** | — | both host Morpho at `0xBBBB…FFCb`, so both already answer at this one address |
 | MorphoMarketsMeta ☆ | `0x1a33a8eAE2F927A05e3eaDC87a348323060Ab2a4` | 42161 | — | Arbitrum's Morpho is a separate deployment at `0x6c247b1F…8F5e` |
 | FluidVaultsMeta ☆ | `0x32E94eE2276a2eb4873a68676e1250212b3433fC` | 1 | 56, 137, 8453, 9745, 42161 | Fluid deploys its VaultResolver deterministically at `0xA5C3E165…95cC` on all six |
+| MerklRewards ☆ | `0xFf2D5A8bf801191eD1292E6DD6792F5D03c5aFBF` | **1, 10, 56, 100, 137, 8453, 42161** | — | Merkl deploys its Distributor deterministically at `0x3Ef3D8bA…D9Ae` on all seven, so all three constructor args (distributor, NAV, admin) are fleet-identical and one salt yields one address. **The admin is a constructor arg**, so changing it would move this address on every chain at once — hand admin over with `grantRole`/`renounceRole`, never by redeploying |
 
 Membership of the Uniswap V3 list is decided by **calling** `name()`/`factory()` on the candidate chain, never
 by checking that the address has code: several chains carry unrelated code at `0xC36442…FE88`, and Base's real
@@ -175,6 +176,7 @@ position manager is at a different address entirely.
 | GearboxV3MarketsMeta ★ | `0x160017c8d50D44A8fA3667419a89BA1183daaF38` |
 | KelpWithdrawalQueue | `0x136439b0CA2Ff5e9Ec8dC472222248E3A57CeF43` |
 | LidoWithdrawalQueue | `0xD32d7db9c94E0A08ef354D73d618B86b8215A2cF` |
+| MerklRewards ☆ | `0xFf2D5A8bf801191eD1292E6DD6792F5D03c5aFBF` |
 | MorphoMarketsMeta ☆ | `0x5C951CF5C596BC4908A5fd846710070553830b06` |
 | MorphoVaultsMeta ★ | `0x64e1ba8B12ee2bFdBDdFd4E0863EdfaaE824C86a` |
 | NexusMutualStakingPoolsAssisted | `0x25Be749999683381703c7346462503a5EFFFd184` |
@@ -192,6 +194,7 @@ position manager is at a different address entirely.
 | --- | --- |
 | AaveV3InstancesMeta ★ | `0x04Ba6789B4AD5D6CF63Ec9cc301c13F6a8A0210b` |
 | CompoundV3CometsMeta | `0xEDDbc540eD724aB3cC95B1C419c6f9D6348a373b` |
+| MerklRewards ☆ | `0xFf2D5A8bf801191eD1292E6DD6792F5D03c5aFBF` |
 | UniswapV3PoolsMeta ☆ † | `0xACdC33b6a453F629d1ab10A14d3513817F492de7` |
 
 ### Arbitrum (42161)
@@ -203,6 +206,7 @@ position manager is at a different address entirely.
 | BalancerV3PoolsMeta ★ | `0xbF1785E519067f0471eb5C50A634A7eeE0140A21` |
 | CompoundV3CometsMeta | `0xFB12e2105287604013dAdee87597F8b80390fc82` |
 | FluidFTokensMeta ★ | `0x0c312178e10ad15a9DC847d664786146f2C88dcf` |
+| MerklRewards ☆ | `0xFf2D5A8bf801191eD1292E6DD6792F5D03c5aFBF` |
 | MorphoMarketsMeta ☆ | `0x1a33a8eAE2F927A05e3eaDC87a348323060Ab2a4` |
 | MorphoVaultsMeta ★ | `0x64e1ba8B12ee2bFdBDdFd4E0863EdfaaE824C86a` |
 | UniswapV3PoolsMeta ☆ † | `0xACdC33b6a453F629d1ab10A14d3513817F492de7` |
@@ -216,6 +220,7 @@ position manager is at a different address entirely.
 | BalancerV3PoolsMeta ★ | `0xbF1785E519067f0471eb5C50A634A7eeE0140A21` |
 | CompoundV3CometsMeta | `0xc43D890F5af60E4010266A0AF95b39C31e5c5Abe` |
 | FluidFTokensMeta ★ | `0x0c312178e10ad15a9DC847d664786146f2C88dcf` |
+| MerklRewards ☆ | `0xFf2D5A8bf801191eD1292E6DD6792F5D03c5aFBF` |
 | MorphoMarketsMeta ☆ | `0x5C951CF5C596BC4908A5fd846710070553830b06` |
 
 ### Gnosis (100)
@@ -223,6 +228,7 @@ position manager is at a different address entirely.
 | Adapter | Address |
 | --- | --- |
 | AaveV3InstancesMeta ★ | `0x04Ba6789B4AD5D6CF63Ec9cc301c13F6a8A0210b` |
+| MerklRewards ☆ | `0xFf2D5A8bf801191eD1292E6DD6792F5D03c5aFBF` |
 | StakeWiseV3ExitQueueAssisted | `0xE1e163663961237C0955b665188864f0fD281020` |
 | StakeWiseV3VaultsMeta | `0x8cbAFEC5745AF6727b7be0829e507f58b3b3ce0d` |
 | UniswapV3PoolsMeta ☆ | `0xA336f7171B9CE77de13451419B3254099beF2C24` |
@@ -232,12 +238,14 @@ position manager is at a different address entirely.
 | Adapter | Address |
 | --- | --- |
 | FluidFTokensMeta ★ | `0x0c312178e10ad15a9DC847d664786146f2C88dcf` |
+| MerklRewards ☆ | `0xFf2D5A8bf801191eD1292E6DD6792F5D03c5aFBF` |
 | UniswapV3PoolsMeta ☆ † | `0xACdC33b6a453F629d1ab10A14d3513817F492de7` |
 
 ### BNB Chain (56)
 
 | Adapter | Address |
 | --- | --- |
+| MerklRewards ☆ | `0xFf2D5A8bf801191eD1292E6DD6792F5D03c5aFBF` |
 | MorphoMarketsMeta ☆ † | `0x5C951CF5C596BC4908A5fd846710070553830b06` |
 
 ## Assisted-adapter assistants (per chain, plain CREATE)

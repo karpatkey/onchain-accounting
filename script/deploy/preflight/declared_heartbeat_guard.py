@@ -122,6 +122,31 @@ DIRECTORY_FILES = {
 DIRECTORY_BASE = "https://reference-data-directory.vercel.app/"
 
 # ---------------------------------------------------------------------------------------------------
+# PROXY ALIASES. Chainlink sometimes publishes a feed in its reference directory under a DIFFERENT proxy
+# than the one a config points at, while both proxies wrap the SAME aggregator. The address is then
+# absent from the catalogue and `refresh` records no declared value for it — the feed becomes
+# unverifiable, which is precisely the blind spot that let POL sit at 90000 against a declared 86400
+# through an entire rollout without the guard being able to raise an ERROR.
+#
+# An alias maps OUR address to the catalogued one so the declared value can still be resolved. It is NOT
+# a licence to substitute a convenient feed: each entry records the on-chain evidence that the two
+# proxies are the same feed, and that evidence is what a reviewer should re-check before trusting it.
+# Verification is `aggregator()`, `decimals()` and `version()` on both proxies — matching prices alone is
+# not sufficient, since two independent ETH/USD feeds agree to several decimal places most of the time.
+PROXY_ALIASES: dict[tuple[str, str], dict] = {
+    ("8453", "0x71041dddad3595f9ced3dccfbe3d1f4b0a16bb70"): {
+        "catalogued": "0x50015f8b17fb2c290dde41fdc246ed0dcee93a8b",
+        "name": "ETH / USD (Base)",
+        "evidence": "Both proxies return aggregator() == 0x05c84a58FE042275b37db038bAAcD15F410c7bB0, "
+                    "decimals() == 8, version() == 6; verified 2026-08-28. Our proxy is live and fresh "
+                    "(age 176 s at the time of checking) and reports the same answer as the catalogued "
+                    "one. Chainlink dropped OUR proxy from feeds-ethereum-mainnet-base-1.json while "
+                    "continuing to list the alias, so this is a catalogue-key change, not a delisting.",
+        "used_by": "ETH and WETH on chain 8453",
+    },
+}
+
+# ---------------------------------------------------------------------------------------------------
 # THE ALLOWLIST. A feed here is exempt from the margin rule because it was MEASURED to be
 # deviation-active: its publish cadence sits far below its heartbeat, so the heartbeat never binds.
 #
@@ -856,6 +881,12 @@ def refresh(allow_shrink: bool = False, fetch=None) -> int:
         ent = {}
         for a in sorted(refs):
             rec = idx.get(a)
+            if rec is None:
+                # Fall back to a recorded alias before concluding "not a Chainlink feed". Without this a
+                # catalogue-key change silently converts a checkable feed into an unverifiable one.
+                al = PROXY_ALIASES.get((chain_id, a))
+                if al:
+                    rec = idx.get(al["catalogued"])
             hb = rec.get("heartbeat") if rec else None
             # 0 is RECORDED, not dropped. A deviation-only feed genuinely declares no heartbeat cadence,
             # and `rh > 0` then makes the margin rule silent for it — the correct outcome. Dropping it

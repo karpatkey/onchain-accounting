@@ -38,6 +38,12 @@ contract HeartbeatRealignerForkTest is Test, TestEnvConfigurator {
         _t("USDT", 0xdAC17F958D2ee523a2206206994597C13D831ec7, 86_400);
         _t("USDe", 0x4c9EDD5852cd905f086C759E8383e09bff1E68B3, 82_800);
         _t("crvUSD", 0xf939E0A03FB07F59A73314E73794Be0E57ac1b4E, 86_400);
+        // XAUt and POL were both missing from this rehearsal while the rollout changed them. XAUt was
+        // pre-existing drift (registered 90000 against a config that already said 86400); POL was worse —
+        // config AND chain agreed at 90000, so the script saw nothing to do and the guard is blind to that
+        // feed, which is how a declared-86400 feed kept a +1h margin through the whole ADR 0025 rollout.
+        _t("XAUt", 0x68749665FF8D2d112Fa859AA293F07A622782F38, 86_400);
+        _t("POL", 0x455e53CBB86018Ac2B8092FdCd39d8444aFFC3F6, 86_400);
     }
 
     function _t(string memory s, address a, uint256 h) private {

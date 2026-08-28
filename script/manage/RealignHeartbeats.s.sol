@@ -7,6 +7,7 @@ import {NAVCalculator} from "src/nav/NAVCalculator.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IPrices} from "src/prices/IPrices.sol";
 import {HeartbeatRealigner} from "script/manage/HeartbeatRealigner.sol";
+import {ConfigReader} from "script/utils/ConfigReader.sol";
 
 /// @title RealignHeartbeats
 /// @author KPK
@@ -55,7 +56,12 @@ contract RealignHeartbeats is Script {
             console2.log(string.concat("  monitor ", mSyms[i], " -> ", vm.toString(mHeartbeats[i])));
         }
 
-        address sender = msg.sender;
+        // The address that will actually SIGN, not `msg.sender`. Under `forge script` the two need not be
+        // equal, so checking msg.sender can fail a valid run before broadcasting — or pass one whose real
+        // signer lacks the role, leaving the revert to land mid-sequence. `10_MigrateAdaptersToCreate2.s.sol`
+        // pins the intended broadcaster the same way. It is also the OPERATOR the realigner is bound to, so
+        // getting it wrong here would make every realign call revert NotOperator.
+        address sender = ConfigReader.readChainConfig(vm, chainId).admin;
         if (!NAVCalculator(NAV).hasRole(0x00, sender)) revert NotAdmin(sender);
 
         // Snapshot before, so the post-broadcast report is measured rather than assumed.

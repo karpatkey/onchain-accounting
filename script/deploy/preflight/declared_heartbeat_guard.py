@@ -1,5 +1,13 @@
 #!/usr/bin/env python3
-"""The DECLARED-heartbeat margin guard: registered heartbeat must EXCEED the provider's declared heartbeat.
+"""The DECLARED-heartbeat guard: a registered heartbeat must EQUAL the provider's declared heartbeat.
+
+SUPERSEDED RULE, KEPT AS HISTORY. This guard previously required registered > declared and treated
+equality as a WARN candidate. ADR 0025 inverted it to strict equality — margin above declared is a
+window in which a DEAD feed still reads FRESH, which is the one error this system treats as critical,
+and consumers already gate on `stale`, so a false-stale is a loud halt rather than a wrong number. The
+measured reasoning for the OLD rule is preserved below because it is still true as far as it goes: zero
+margin does make heartbeat-driven feeds go stale each cycle. ADR 0025 accepts that cost knowingly.
+See docs/decisions/0025-heartbeat-equals-declared.md.
 
 This is a SECOND, independent axis from `preflight_config.heartbeat_findings`, which checks the
 *derived-vs-base* pairing (ADR 0019 / finding #8). Both are heartbeat guards; neither subsumes the other:
@@ -565,6 +573,16 @@ def _row_findings(chain_id: str, r: dict, declared: dict) -> list[tuple[str, str
                            f"old (>{MEASUREMENT_STALE_DAYS}). Publisher cadence drifts, so an old "
                            f"measurement ages exactly like the snapshot does. Re-measure the "
                            f"AnswerUpdated gaps and update `measured`, or drop the exemption.{off}")]
+        # ADR 0025: the exemption may not silently carry a registration that is NOT equal to declared.
+        # The allowlist predates the equality rule — it exempted deviation-active feeds from the old
+        # margin requirement — and it returns on `registered == rh` without ever comparing rh to dh. All
+        # six current entries happen to sit exactly at declared, so this is inert today; it is guarded so
+        # a future entry cannot reintroduce a false-fresh window behind a measurement.
+        if dh and rh != dh:
+            return [(WARN, f"asset '{r['asset']}' {r['role']} is exempt by measurement but registered at "
+                           f"{rh} against a declared {dh} ({rh - dh:+d}s). The exemption covers the "
+                           f"CADENCE argument, not the ADR 0025 equality rule — re-confirm the exemption "
+                           f"is still wanted, or set the heartbeat to {dh}.{off}")]
         return []
     # ADR 0025 INVERTED THIS CHECK. The rule is now EQUALITY: a registered heartbeat must equal the
     # provider's declared value exactly. Margin ABOVE declared is a window in which a dead feed reads

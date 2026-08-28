@@ -149,15 +149,20 @@ contract HeartbeatRealigner {
         if (assets.length != feeds.length) revert LengthMismatch(assets.length, feeds.length);
         for (uint256 i; i < assets.length; ++i) {
             IPrices.PriceFeedConfig[] memory mons = NAV.getMonitorFeeds(assets[i]);
+            bool matched;
             for (uint256 j; j < mons.length; ++j) {
                 if (mons[j].priceFeed != feeds[i]) continue;
+                matched = true;
                 if (mons[j].chainlinkHeartbeat == heartbeats[i]) revert NothingToRealign(assets[i]);
                 NAV.removeMonitorFeed(assets[i], feeds[i]);
                 NAV.addMonitorFeed(assets[i], feeds[i], mons[j].priceType, heartbeats[i]);
                 emit MonitorRealigned(assets[i], feeds[i], mons[j].chainlinkHeartbeat, heartbeats[i]);
                 break;
             }
-            if (mons.length == 0) revert MonitorFeedNotFound(assets[i]);
+            // Keyed on whether the REQUESTED feed was found, not on the list being non-empty. A non-empty
+            // list that simply does not contain feeds[i] used to fall straight through, so the batch
+            // reported success while leaving that heartbeat untouched.
+            if (!matched) revert MonitorFeedNotFound(assets[i]);
         }
         _renounce();
     }
@@ -167,10 +172,11 @@ contract HeartbeatRealigner {
 
         IPrices.PriceFeedConfig memory f = NAV.getPriceFeedAt(asset, 0);
         if (f.chainlinkHeartbeat == heartbeat) revert NothingToRealign(asset);
+        uint256 countBefore = NAV.getPriceFeedCount(asset);
 
         // A mirror is only needed to escape the last-feed guard. An asset already carrying a second feed
         // can be realigned by a plain remove/add, and minting a mirror for it would be pure risk.
-        if (NAV.getPriceFeedCount(asset) == 1) {
+        if (countBefore == 1) {
             address mirror = address(new AggregatorMirror(f.priceFeed));
             NAV.addPriceFeed(asset, mirror, f.priceType, heartbeat);
             NAV.removePriceFeed(asset, f.priceFeed);
@@ -184,13 +190,26 @@ contract HeartbeatRealigner {
         // Assert the end state on-chain rather than trusting the sequence. `removePriceFeed` is
         // swap-with-last + pop, so the final ordering is a consequence of the step order; if that ever
         // changes the batch must revert, not silently leave the mirror registered as the primary feed.
+        // Assert against the ORIGINAL count, and locate the incumbent BY ADDRESS. `removeFeed` is
+        // swap-with-last + pop, so the incumbent does not reliably land back at index 0 once an asset
+        // carries more than one feed. Hardcoding `count == 1` and `index 0` made the multi-feed branch
+        // unable to satisfy its own postcondition — remove+add preserves the original count, so a
+        // two-feed asset always reverted. No registered asset carries a second feed today, so it never
+        // fired: latent, not benign.
         uint256 count = NAV.getPriceFeedCount(asset);
-        if (count != 1) revert PostconditionFeedCount(asset, count);
-        IPrices.PriceFeedConfig memory end = NAV.getPriceFeedAt(asset, 0);
-        if (end.priceFeed != f.priceFeed) revert PostconditionFeedAddress(asset, end.priceFeed, f.priceFeed);
-        if (end.chainlinkHeartbeat != heartbeat) {
-            revert PostconditionHeartbeat(asset, end.chainlinkHeartbeat, heartbeat);
+        if (count != countBefore) revert PostconditionFeedCount(asset, count);
+
+        bool found;
+        for (uint256 i; i < count; ++i) {
+            IPrices.PriceFeedConfig memory end = NAV.getPriceFeedAt(asset, i);
+            if (end.priceFeed != f.priceFeed) continue;
+            found = true;
+            if (end.chainlinkHeartbeat != heartbeat) {
+                revert PostconditionHeartbeat(asset, end.chainlinkHeartbeat, heartbeat);
+            }
+            break;
         }
+        if (!found) revert PostconditionFeedAddress(asset, address(0), f.priceFeed);
 
         emit Realigned(asset, f.priceFeed, f.chainlinkHeartbeat, heartbeat);
     }

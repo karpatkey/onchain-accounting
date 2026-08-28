@@ -221,9 +221,12 @@ def _fix_hint(chain_id: str, name: str, declared: int, where: str = "", hb_key: 
         f"{suggested}. Edit `{hb_key or 'heartbeat'}` in {where or nav_file}. Do not add margin — see "
         f"docs/decisions/0025-heartbeat-equals-declared.md for why, including the measured cost.\n"
         f"{two_gates}"
-        f"        (2) EXEMPT it WITH A MEASUREMENT, if the feed is deviation-active. Measure the "
-        f"aggregator's AnswerUpdated gaps over >= 14 days and add an ALLOWLIST entry in "
-        f"declared_heartbeat_guard.py recording intervals/breaches/max_gap_s/measured. `breaches` must be 0.\n"
+        f"        THERE IS NO SECOND EXIT. An ALLOWLIST entry does NOT resolve this finding: the "
+        f"exemption answers whether the heartbeat ever BINDS (a deviation-active feed publishes long "
+        f"before it), and ADR 0025's rule is about the VALUE, which the exemption does not waive. An "
+        f"allowlisted feed registered away from declared is still an ERROR — see the allowlist branch in "
+        f"`_declared_findings`. Add the entry if the cadence argument is worth recording, but set the "
+        f"heartbeat to the declared value either way.\n"
         f"        Do NOT simply widen the heartbeat to silence this without checking the derived-vs-base "
         f"pairing too: raising a BASE asset's heartbeat can leave its DERIVED feed tighter than its base, "
         f"which is the separate invariant preflight_config.heartbeat_findings enforces."
@@ -604,10 +607,15 @@ def _row_findings(chain_id: str, r: dict, declared: dict) -> list[tuple[str, str
         # six current entries happen to sit exactly at declared, so this is inert today; it is guarded so
         # a future entry cannot reintroduce a false-fresh window behind a measurement.
         if dh and rh != dh:
-            return [(WARN, f"asset '{r['asset']}' {r['role']} is exempt by measurement but registered at "
-                           f"{rh} against a declared {dh} ({rh - dh:+d}s). The exemption covers the "
-                           f"CADENCE argument, not the ADR 0025 equality rule — re-confirm the exemption "
-                           f"is still wanted, or set the heartbeat to {dh}.{off}")]
+            # ERROR, matching the non-allowlisted path. The comment above already says the exemption
+            # covers the CADENCE argument and not the equality rule; leaving this a WARN said the
+            # opposite in the only place that binds, since WARNs do not fail the build. An allowlisted
+            # feed would then carry a false-fresh window through the very gate meant to block it.
+            return [(ERROR, f"declared-heartbeat MISMATCH: asset '{r['asset']}' {r['role']} is exempt by "
+                            f"measurement but registered at {rh} against a declared {dh} ({rh - dh:+d}s). "
+                            f"The measured exemption answers the CADENCE question — whether the heartbeat "
+                            f"ever binds — and does NOT waive ADR 0025's equality rule. Set the heartbeat "
+                            f"to {dh}; the exemption can stay.{off}")]
         return []
     # ADR 0025 INVERTED THIS CHECK. The rule is now EQUALITY: a registered heartbeat must equal the
     # provider's declared value exactly. Margin ABOVE declared is a window in which a dead feed reads
@@ -1031,9 +1039,12 @@ def self_test() -> int:
     case("BELOW declared is an ERROR (manufactured staleness)", "1", snap,
          [{"asset": "T", "role": "priceFeeds[0]", "address": A, "heartbeat": 3600, "where": "x"}],
          ERROR, "BELOW declared")
-    case("finding names BOTH exits", "1", snap,
+    # The hint used to advertise an allowlist entry as a second way to satisfy this finding. It is not:
+    # an exemption answers the cadence question and does not waive equality, and the allowlist branch
+    # ERRORs on a non-equal registration. The hint must say so rather than point at the silencing edit.
+    case("the fix hint offers no exemption escape", "1", snap,
          [{"asset": "T", "role": "priceFeeds[0]", "address": A, "heartbeat": 90000, "where": "x"}],
-         ERROR, "EXEMPT it WITH A MEASUREMENT")
+         ERROR, "THERE IS NO SECOND EXIT")
     # unknown address -> WARN, not silent pass
     case("unrecorded address warns", "1", snap,
          [{"asset": "Z", "role": "priceFeeds[0]", "address": "0xdead00000000000000000000000000000000beef",

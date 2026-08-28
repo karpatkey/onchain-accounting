@@ -28,7 +28,7 @@ contract HeartbeatRealignerForkTest is Test, TestEnvConfigurator {
 
     function setUp() public {
         createSelectForkWithCadence(getAlchemyUrl("eth-mainnet"), FORK_BLOCK);
-        realigner = new HeartbeatRealigner(NAV);
+        realigner = new HeartbeatRealigner(NAV, ADMIN);
 
         _t("AAVE", 0x7Fc66500c84A76Ad7e9c93437bFc5Ac33E2DDaE9, 3600);
         _t("GHO", 0x40D16FC0246aD3160Ccc09B8D0D3A2cD28aE6C2f, 86_400);
@@ -64,7 +64,6 @@ contract HeartbeatRealignerForkTest is Test, TestEnvConfigurator {
         vm.startPrank(ADMIN);
         NAVCalculator(NAV).grantRole(MANAGER_ROLE, address(realigner));
         realigner.realign(assets, heartbeats);
-        NAVCalculator(NAV).revokeRole(MANAGER_ROLE, address(realigner));
         vm.stopPrank();
 
         for (uint256 i; i < n; ++i) {
@@ -80,6 +79,44 @@ contract HeartbeatRealignerForkTest is Test, TestEnvConfigurator {
             );
         }
         assertFalse(NAVCalculator(NAV).hasRole(MANAGER_ROLE, address(realigner)), "role must not survive");
+    }
+
+    /// @notice A stranded MANAGER_ROLE on this contract is INERT to everyone but the operator.
+    /// @dev The defect this guards. On the Polygon rollout the trailing revoke ran out of gas and the
+    ///      contract held MANAGER_ROLE for 107 blocks while `realign` had no caller check — anyone could
+    ///      have rewritten the chain's pricing config. Revert-probed: with the `onlyOperator` modifier
+    ///      removed, this test fails because the call succeeds.
+    function test_strandedRole_isInertToNonOperators() public {
+        vm.prank(ADMIN);
+        NAVCalculator(NAV).grantRole(MANAGER_ROLE, address(realigner));
+        assertTrue(NAVCalculator(NAV).hasRole(MANAGER_ROLE, address(realigner)), "precondition: role stranded");
+
+        address attacker = address(0xBAD);
+        vm.prank(attacker);
+        vm.expectRevert(abi.encodeWithSelector(HeartbeatRealigner.NotOperator.selector, attacker));
+        realigner.realign(assets, heartbeats);
+
+        // ...and the config is untouched.
+        assertEq(
+            NAVCalculator(NAV).getPriceFeedAt(assets[0], 0).chainlinkHeartbeat,
+            hbOf(assets[0]),
+            "attacker mutated the registry"
+        );
+    }
+
+    /// @notice The role does not outlive the transaction that used it — no trailing revoke required.
+    /// @dev The second half of the fix. The operator never sends a revoke; `realign` renounces. That
+    ///      removes the transaction that failed on Polygon.
+    function test_roleIsRenouncedByRealignItself() public {
+        vm.startPrank(ADMIN);
+        NAVCalculator(NAV).grantRole(MANAGER_ROLE, address(realigner));
+        realigner.realign(assets, heartbeats);
+        vm.stopPrank();
+        assertFalse(NAVCalculator(NAV).hasRole(MANAGER_ROLE, address(realigner)), "realign did not renounce the role");
+    }
+
+    function hbOf(address a) internal view returns (uint256) {
+        return NAVCalculator(NAV).getPriceFeedAt(a, 0).chainlinkHeartbeat;
     }
 
     /// @notice Without the role the realigner is inert — revert-probe for the grant/revoke bracket.

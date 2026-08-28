@@ -46,6 +46,8 @@ interface INav {
     function removePriceFeed(address asset, address priceFeed) external;
     function addMonitorFeed(address asset, address priceFeed, IPrices.PriceType priceType, uint256 heartbeat) external;
     function removeMonitorFeed(address asset, address priceFeed) external;
+    function renounceRole(bytes32 role, address callerConfirmation) external;
+    function hasRole(bytes32 role, address account) external view returns (bool);
 }
 
 /// @title HeartbeatRealigner
@@ -79,8 +81,19 @@ interface INav {
 ///      ADR 0025 exists to prevent. `_realignOne` therefore reads the incumbent feed itself and never
 ///      accepts a feed address from the caller.
 contract HeartbeatRealigner {
+    /// @notice The only address permitted to drive this contract.
+    /// @dev Pinned at construction. Without it, `realign` is a permissionless function on a contract that
+    ///      holds MANAGER_ROLE — anyone could rewrite the chain's pricing configuration, setting a
+    ///      heartbeat to decades (a dead feed reads fresh forever) or to seconds (every asset prices 0).
+    ///      That is not hypothetical: on the Polygon rollout the trailing `revokeRole` transaction ran out
+    ///      of gas, and this contract sat holding MANAGER_ROLE, ungated, for 107 blocks.
+    address public immutable OPERATOR;
+
+    bytes32 private constant MANAGER_ROLE = keccak256("MANAGER");
+
     INav public immutable NAV;
 
+    error NotOperator(address caller);
     error LengthMismatch(uint256 assets, uint256 heartbeats);
     error NothingToRealign(address asset);
     error ZeroHeartbeat(address asset);
@@ -94,24 +107,43 @@ contract HeartbeatRealigner {
         address indexed asset, address indexed priceFeed, uint256 oldHeartbeat, uint256 newHeartbeat
     );
 
-    constructor(address nav) {
+    constructor(address nav, address operator) {
         NAV = INav(nav);
+        OPERATOR = operator;
+    }
+
+    /// @dev Gates every state-changing entry point. The grant of MANAGER_ROLE happens in a SEPARATE
+    ///      transaction from the call that uses it, so the role can be live on this contract before and
+    ///      after — this is what makes that window harmless rather than exploitable.
+    modifier onlyOperator() {
+        if (msg.sender != OPERATOR) revert NotOperator(msg.sender);
+        _;
+    }
+
+    /// @notice Hands MANAGER_ROLE back at the end of the work, in the same transaction that used it.
+    /// @dev `renounceRole` is callable by the role holder itself, so this needs no admin. It means the
+    ///      privilege cannot outlive the transaction that needed it, and removes the trailing revoke
+    ///      transaction that failed on Polygon. Guarded on `hasRole` so a second call is not a revert.
+    function _renounce() private {
+        if (NAV.hasRole(MANAGER_ROLE, address(this))) NAV.renounceRole(MANAGER_ROLE, address(this));
     }
 
     /// @notice Realigns the primary price-feed heartbeat for each asset. Atomic across the whole batch.
     /// @dev Reverts the entire batch if any single asset fails its postconditions, so a partial rollout is
     ///      not representable. Callers batch per chain.
-    function realign(address[] calldata assets, uint256[] calldata heartbeats) external {
+    function realign(address[] calldata assets, uint256[] calldata heartbeats) external onlyOperator {
         if (assets.length != heartbeats.length) revert LengthMismatch(assets.length, heartbeats.length);
         for (uint256 i; i < assets.length; ++i) {
             _realignOne(assets[i], heartbeats[i]);
         }
+        _renounce();
     }
 
     /// @notice Realigns monitor-feed heartbeats. Separate because monitor feeds have no last-feed guard,
     ///         so they need no mirror — a plain remove/add suffices.
     function realignMonitors(address[] calldata assets, address[] calldata feeds, uint256[] calldata heartbeats)
         external
+        onlyOperator
     {
         if (assets.length != heartbeats.length) revert LengthMismatch(assets.length, heartbeats.length);
         if (assets.length != feeds.length) revert LengthMismatch(assets.length, feeds.length);
@@ -127,6 +159,7 @@ contract HeartbeatRealigner {
             }
             if (mons.length == 0) revert MonitorFeedNotFound(assets[i]);
         }
+        _renounce();
     }
 
     function _realignOne(address asset, uint256 heartbeat) private {

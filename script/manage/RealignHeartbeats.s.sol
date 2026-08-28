@@ -20,8 +20,10 @@ import {HeartbeatRealigner} from "script/manage/HeartbeatRealigner.sol";
 ///      through the NAVCalculator API — see that contract for why, and why the swap must be atomic.
 ///      This script only: deploys the realigner, grants it MANAGER_ROLE, calls it, and revokes.
 ///
-///      Grant and revoke bracket the call inside a single broadcast, so the role does not outlive the
-///      transaction batch. Run with `--broadcast` from the account holding DEFAULT_ADMIN_ROLE.
+///      The role is granted in one transaction and RENOUNCED BY THE REALIGNER ITSELF at the end of the
+///      call that uses it, so it cannot outlive that transaction. The realigner is additionally pinned to
+///      this script's sender, so even the gap between the grant and the call is inert to anyone else.
+///      Run with `--broadcast` from the account holding DEFAULT_ADMIN_ROLE.
 ///
 ///      Dry-run first — it prints the exact plan and asserts every postcondition without `--broadcast`:
 ///        forge script script/manage/RealignHeartbeats.s.sol --rpc-url <rpc>
@@ -63,10 +65,12 @@ contract RealignHeartbeats is Script {
         }
 
         vm.startBroadcast();
-        HeartbeatRealigner realigner = new HeartbeatRealigner(NAV);
+        HeartbeatRealigner realigner = new HeartbeatRealigner(NAV, sender);
         NAVCalculator(NAV).grantRole(MANAGER_ROLE, address(realigner));
+        // No trailing revokeRole: `realign` renounces the role itself, in the same transaction that uses
+        // it. The trailing revoke is what failed on Polygon (out of gas), stranding the role on a
+        // then-ungated contract for 107 blocks. One less transaction is one less thing to fail open.
         realigner.realign(assets, heartbeats);
-        NAVCalculator(NAV).revokeRole(MANAGER_ROLE, address(realigner));
         vm.stopBroadcast();
 
         console2.log("--- verification ---");

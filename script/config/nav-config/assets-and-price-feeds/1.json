@@ -255,7 +255,7 @@
       {
         "type": "Chainlink",
         "address": "0x8fFfFfd4AfB6115b954Bd326cbe7B4BA576818f6",
-        "heartbeat": 86400
+        "heartbeat": 82800
       }
     ],
     "monitorFeeds": [
@@ -338,7 +338,7 @@
       {
         "type": "Chainlink",
         "address": "0xCfE54B5cD566aB89272946F602D76Ea879CAb4a8",
-        "heartbeat": 86400
+        "heartbeat": 3600
       }
     ]
   },
@@ -400,7 +400,7 @@
       {
         "type": "Chainlink",
         "address": "0xfF30586cD0F29eD462364C7e81375FC0C71219b1",
-        "heartbeat": 86400
+        "heartbeat": 82800
       }
     ]
   },
@@ -417,7 +417,7 @@
       {
         "type": "Chainlink",
         "address": "0x3E7d1eAB13ad0104d2750B8863b489D65364e32D",
-        "heartbeat": 90000
+        "heartbeat": 86400
       }
     ],
     "monitorFeeds": [
@@ -456,7 +456,7 @@
       {
         "type": "Chainlink",
         "address": "0x3f12643D3f6f874d39C2a4c9f2Cd6f2DbAC877FC",
-        "heartbeat": 90000
+        "heartbeat": 86400
       }
     ]
   },
@@ -473,7 +473,7 @@
       {
         "type": "Chainlink",
         "address": "0xa569d910839Ae8865Da8F8e70FfFb0cBA869F961",
-        "heartbeat": 86400
+        "heartbeat": 82800
       }
     ],
     "monitorFeeds": [
@@ -504,7 +504,7 @@
       {
         "type": "Chainlink",
         "address": "0xFF3BC18cCBd5999CE63E788A1c250a88626aD099",
-        "heartbeat": 90000
+        "heartbeat": 86400
       },
       {
         "type": "Redstone",
@@ -558,7 +558,7 @@
       {
         "type": "Chainlink",
         "address": "0xEEf0C605546958c1f899b6fB336C20671f9cD49F",
-        "heartbeat": 90000
+        "heartbeat": 86400
       }
     ]
   },
@@ -706,7 +706,7 @@
       {
         "type": "Chainlink",
         "address": "0x547a514d5e3769680Ce22B2361c10Ea13619e8a9",
-        "heartbeat": 86400
+        "heartbeat": 3600
       }
     ]
   },
@@ -721,7 +721,7 @@
       {
         "type": "Chainlink",
         "address": "0x553303d460EE0afB37EdFf9bE42922D8FF63220e",
-        "heartbeat": 86400
+        "heartbeat": 3600
       }
     ]
   },
@@ -919,7 +919,7 @@
         "type": "Chainlink",
         "address": "0x214eD9Da11D2fbe465a6fc601a91E62EbEc1a0D6",
         "$comment": "Chainlink XAU/USD, 8-dp. Declared heartbeat 86400, threshold 0.3%, marketHours Precious_Metals. REGISTERED AT 90000 (+1h), matching the 16 other declared-86400 feeds in this tree, and it is not cosmetic: gold markets close at the weekend, so the feed then publishes on heartbeat alone. Measured over 11 days the largest real gap was 86,436s -- PAST the declared 86,400 -- on three separate weekend intervals. Registering 86400 would mark XAUt stale every weekend.",
-        "heartbeat": 90000
+        "heartbeat": 86400
       }
     ],
     "monitorFeeds": [
@@ -927,7 +927,7 @@
         "type": "Chainlink",
         "address": "0x9944D86CEB9160aF5C5feB251FD671923323f8C3",
         "$comment": "Chainlink PAXG/USD -- the PROXY. The address circulated in the thread, 0x6795D4A47c9c8F4117b409D966259CdCf6A9Eb6E, is the underlying AGGREGATOR (it reverts on aggregator(); the proxy returns it). Chainlink rotates aggregators behind a proxy, so pointing at the aggregator would freeze this feed silently at the next migration. Declared heartbeat 86400 -> registered 90000, same +1h margin as the primary.\nNOTE THE MARKET-HOURS ASYMMETRY: the primary is Precious_Metals (frozen at weekends) while PAXG is Crypto (24/7), so the two legitimately drift when gold spot is closed. Measured over the overlapping window, the largest divergence was 59.2 bps -- on a Saturday -- and 0 of 57 aligned samples exceeded 100 bps. divergenceToleranceBps 100 therefore sits ~1.7x above the observed maximum.",
-        "heartbeat": 90000
+        "heartbeat": 86400
       }
     ]
   }

@@ -66,7 +66,7 @@
       {
         "type": "Chainlink",
         "address": "0x16a9FA2FDa030272Ce99B29CF780dFA30361E0f3",
-        "heartbeat": 90000
+        "heartbeat": 86400
       }
     ],
     "monitorFeeds": [
@@ -90,7 +90,7 @@
       {
         "type": "Chainlink",
         "address": "0xECef79E109e997bCA29c1c0897ec9d7b03647F5E",
-        "heartbeat": 90000
+        "heartbeat": 86400
       }
     ],
     "monitorFeeds": [

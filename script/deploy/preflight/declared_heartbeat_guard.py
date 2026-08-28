@@ -164,7 +164,7 @@ ALLOWLIST: dict[tuple[str, str], dict] = {
 
 def _fix_hint(chain_id: str, name: str, declared: int, where: str = "", hb_key: str = "") -> str:
     """Name BOTH legitimate exits. A guard that fires without saying how to satisfy it gets bypassed."""
-    suggested = ((declared + 3600) // 3600) * 3600
+    suggested = declared          # ADR 0025: exactly declared, no margin
     nav_file = f"nav-config/assets-and-price-feeds/{chain_id}.json"
     # THE HINT MUST NOT PRESCRIBE THE SILENCING EDIT. A custom feed is gated on TWO independently
     # registered heartbeats against the same provider cadence: the constructor key this axis checks, and
@@ -183,10 +183,10 @@ def _fix_hint(chain_id: str, name: str, declared: int, where: str = "", hb_key: 
             f"asset. Editing only the constructor key SILENCES this warning without fixing anything — "
             f"this guard cannot tell you when that has happened. PR #236 raised both, for OETH.\n")
     return (
-        f"FIX — pick one:\n"
-        f"        (1) RAISE the registered heartbeat above the declared value, with real margin. For "
-        f"'{name}' declared {declared}, use >= {suggested} (declared + 1 h). Edit "
-        f"`{hb_key or 'heartbeat'}` in {where or nav_file}.\n"
+        f"FIX:\n"
+        f"        SET the registered heartbeat to EXACTLY the declared value. For '{name}' that is "
+        f"{suggested}. Edit `{hb_key or 'heartbeat'}` in {where or nav_file}. Do not add margin — see "
+        f"docs/decisions/0025-heartbeat-equals-declared.md for why, including the measured cost.\n"
         f"{two_gates}"
         f"        (2) EXEMPT it WITH A MEASUREMENT, if the feed is deviation-active. Measure the "
         f"aggregator's AnswerUpdated gaps over >= 14 days and add an ALLOWLIST entry in "
@@ -529,8 +529,11 @@ def _row_findings(chain_id: str, r: dict, declared: dict) -> list[tuple[str, str
                        f"rule does not apply. Reported rather than passed silently: silence here would "
                        f"read exactly like a checked-and-fine positive margin. Its freshness depends "
                        f"entirely on the deviation threshold, which this axis does not model.{off}")]
-    if rh > dh:
-        return []
+    # ADR 0025 REMOVED THIS EARLY RETURN. It used to read `if rh > dh: return []` — margin above
+    # declared was the PASS state. Under the equality rule it is the critical failure: every second
+    # above declared is a window in which a dead feed reads fresh. Leaving it in place made the
+    # inverted check below unreachable for exactly the registrations it exists to catch, which a
+    # revert-probe caught (DAI set to 7200 against a declared 3600 produced zero findings).
     allow = ALLOWLIST.get((str(chain_id), key))
     if allow:
         if _strict_int(allow.get("breaches")) != 0:
@@ -563,20 +566,30 @@ def _row_findings(chain_id: str, r: dict, declared: dict) -> list[tuple[str, str
                            f"measurement ages exactly like the snapshot does. Re-measure the "
                            f"AnswerUpdated gaps and update `measured`, or drop the exemption.{off}")]
         return []
-    # SEVERITY: WARN, not ERROR, and the distinction is load-bearing. At-or-below margin is a
-    # *candidate*, not a defect — it only bites HEARTBEAT-DRIVEN feeds, and ~30 references on the
-    # configured chains are deviation-active and genuinely fine. Erroring on all of them would block
-    # every deploy on feeds nobody has shown to be broken, and a guard that cries wolf gets bypassed
-    # rather than satisfied. So: unmeasured at-or-below margin is a WARN naming both exits (a
-    # to-measure queue), and ERROR is reserved for an evidence CONTRADICTION — an allowlist entry
-    # that records breaches, or one measured against a heartbeat the config has since changed.
-    return [(WARN,
-             f"declared-heartbeat margin UNMEASURED: asset '{r['asset']}' {r['role']} ({rec.get('name')}) is "
-             f"registered at {rh} but the provider declares {dh} — margin {rh - dh:+d}. A provider "
-             f"publishes tens of seconds PAST its declared heartbeat, so at-or-below margin means the "
-             f"feed goes stale at the end of essentially every "
-             f"publish cycle.{_consequence(r['role'])} Measured precedents: sUSDS 59/61 cycles (#211), "
-             f"OETH 29/29 (#236).{off}\n"
+    # ADR 0025 INVERTED THIS CHECK. The rule is now EQUALITY: a registered heartbeat must equal the
+    # provider's declared value exactly. Margin ABOVE declared is a window in which a dead feed reads
+    # fresh — the one error this system treats as critical — and margin BELOW declared manufactures
+    # staleness in quiet markets, where provider silence is legitimate.
+    #
+    # This file previously required margin ABOVE declared and treated zero margin as a WARN-level
+    # candidate. That reasoning is preserved in the module docstring as history: it correctly
+    # identified that at-or-below margin makes heartbeat-driven feeds go stale each cycle (sUSDS
+    # 59/61, OETH 29/29), and `f047d350` acted on it. ADR 0025 accepts that cost deliberately — the
+    # landing delay is +2..+96s, so the staleness share is 0.0-0.03% of reads for most feeds and at
+    # worst 5.6% (Arbitrum USDC) — in exchange for closing false-fresh windows that reached ~24 h.
+    #
+    # ERROR, not WARN: under an equality rule there is no "candidate" state. A mismatch is either
+    # unearned false-fresh exposure or manufactured staleness, and both are defects.
+    if rh == dh:
+        return []
+    direction = ("ABOVE declared — every second of this is a window in which a DEAD feed still reads "
+                 "FRESH, the critical error under ADR 0025") if rh > dh else \
+                ("BELOW declared — the provider is entitled to stay silent this long, so this "
+                 "manufactures staleness in a quiet market")
+    return [(ERROR,
+             f"declared-heartbeat MISMATCH: asset '{r['asset']}' {r['role']} ({rec.get('name')}) is "
+             f"registered at {rh} but the provider declares {dh} — {rh - dh:+d}s {direction}."
+             f"{_consequence(r['role'])}{off}\n"
              f"        {_fix_hint(str(chain_id), rec.get('name') or '?', dh, r.get('where', ''), _hb_key(r))}")]
 
 

@@ -38,3 +38,4 @@ Short, numbered records of *why* the codebase looks the way it does. Read these 
 | 0020 | [Custom-feed `getPriceData` reports the *governing leg*'s freshness](0020-custom-feed-governing-leg-freshness.md) | accepted |
 | 0023 | [Asset classification on two orthogonal axes (`PegKind` × `AccrualKind`), surfaced by a standalone `AssetKindRegistry`](0023-asset-classification-two-axes.md) | accepted |
 | 0024 | [Drop oversized submodules; vendor single-file dependencies](0024-dependency-size-vendor-single-file-deps.md) | accepted |
+| 0025 | [A registered heartbeat MUST equal the provider's declared heartbeat](0025-heartbeat-equals-declared.md) | accepted |

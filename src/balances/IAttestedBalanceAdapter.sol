@@ -103,6 +103,31 @@ interface IAttestedBalanceAdapter is IAccessControl, IBalanceAdapter {
 
     // ─── Mutators ───
 
+    // ─── Mutators — the write surface ───
+
+    /// @notice Submit attestations for `account`. Requires {SUBMITTER_ROLE}.
+    /// @dev **`data` is opaque at the family level**, exactly as on {previewPositions} — each member `abi.decode`s
+    ///      it into its own element/proof shape, so ONE signature serves every attested adapter. The two take the
+    ///      SAME payload by design and share the member's single decode-and-verify hook, which is what stops the
+    ///      write path and the preview from ever disagreeing about what a valid attestation is.
+    ///
+    ///      Semantics are **upsert**: each element in `data` adds or refreshes its own `(account, asset)` and
+    ///      elements omitted from `data` are left untouched, so a submit can never suppress a live entry. Removal is
+    ///      only via the stale-gated clears. **Atomic** — any invalid element reverts the whole call, leaving the
+    ///      prior set intact.
+    ///
+    ///      A member MAY additionally expose a typed convenience entrypoint (Merkl's `submitProofs`) for ABI
+    ///      ergonomics, but this generic one is the family contract and every member has it.
+    /// @param account The account the attestations are for.
+    /// @param data    ABI-encoded, protocol-specific attestation data (Merkl: `abi.encode(Allocation[])`).
+    function submit(address account, bytes calldata data) external;
+
+    /// @notice Batch variant — one payload per account. Requires {SUBMITTER_ROLE}.
+    /// @dev **Atomic across accounts:** any single invalid element reverts the ENTIRE batch, so no account in the
+    ///      call is updated. Deliberate fail-loud handling, but it means a multi-account feeder should pre-filter
+    ///      bad data (or fall back to {submit}) so one account cannot block every other account's refresh.
+    function submitBatch(address[] calldata accounts, bytes[] calldata data) external;
+
     /// @notice Drop ONE cached element — permissionless, **stale-gated** garbage collection.
     /// @dev Universal, not per-protocol: implemented once for the whole family. Reverts {AttestationStillLive}
     ///      while the element still contributes to NAV, so a live entry can only be *refreshed*, never suppressed.

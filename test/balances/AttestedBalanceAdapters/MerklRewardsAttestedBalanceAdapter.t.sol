@@ -320,6 +320,95 @@ contract MerklRewardsAttestedBalanceAdapterTest is BalanceAdapterTestBase {
     // ============================================
 
     /// @notice Anyone can submit — no role required. An arbitrary caller submits a real (proof-verified) allocation.
+    /// @notice The FAMILY-GENERIC `submit(account, bytes)` reaches the same cache as the typed `submitProofs`.
+    /// @dev    This is the point of putting the write surface on the interface: a keeper or portal integrating ANY
+    ///         attested adapter can feed it without knowing the member type, exactly as `previewPositions` already
+    ///         let it read without knowing. The typed entrypoint is now a convenience that funnels into the same
+    ///         `_submitPayload`, so the two cannot diverge.
+    ///         THE DISCRIMINATING MUTATION: point `submitProofs` at its own private loop again and this still
+    ///         passes, but `test_submit_genericAndTypedAgree` below fails.
+    function test_submit_genericEntrypointWritesTheCache() public {
+        bytes32 leaf = _leaf(alice, address(arb), 100 ether);
+        distributor.setRoot(leaf);
+
+        MerklRewardsAttestedBalanceAdapter.Allocation[] memory allocs =
+            new MerklRewardsAttestedBalanceAdapter.Allocation[](1);
+        allocs[0] = MerklRewardsAttestedBalanceAdapter.Allocation({
+            token: address(arb),
+            cumulativeAmount: 100 ether,
+            proof: new bytes32[](0),
+            campaigns: new MerklRewardsAttestedBalanceAdapter.CampaignShare[](0)
+        });
+
+        // Called through IAttestedBalanceAdapter, i.e. knowing nothing about Merkl.
+        IAttestedBalanceAdapter(address(adapter)).submit(alice, abi.encode(allocs));
+
+        (uint256 amt,,) = adapter.attestations(alice, address(arb));
+        assertEq(amt, 100 ether, "generic submit reached the cache");
+        assertEq(adapter.assetsOf(alice).length, 1, "and enumerated it");
+    }
+
+    /// @notice The generic and typed entrypoints produce byte-identical cache state.
+    /// @dev    Pins that `submitProofs` really is a convenience over the shared path rather than a second
+    ///         implementation. Both are also role-gated identically — neither is a back door around the other.
+    function test_submit_genericAndTypedAgree() public {
+        // The leaf binds the ACCOUNT, so alice and bob need their own leaves in one tree.
+        bytes32[2] memory leaves;
+        leaves[0] = _leaf(alice, address(arb), 100 ether);
+        leaves[1] = _leaf(bob, address(arb), 100 ether);
+        (bytes32 root, bytes32[] memory pA) = _buildTree2(leaves, 0);
+        (, bytes32[] memory pB) = _buildTree2(leaves, 1);
+        distributor.setRoot(root);
+
+        MerklRewardsAttestedBalanceAdapter.Allocation[] memory a =
+            new MerklRewardsAttestedBalanceAdapter.Allocation[](1);
+        a[0] = MerklRewardsAttestedBalanceAdapter.Allocation({
+            token: address(arb),
+            cumulativeAmount: 100 ether,
+            proof: pA,
+            campaigns: new MerklRewardsAttestedBalanceAdapter.CampaignShare[](0)
+        });
+        MerklRewardsAttestedBalanceAdapter.Allocation[] memory b =
+            new MerklRewardsAttestedBalanceAdapter.Allocation[](1);
+        b[0] = MerklRewardsAttestedBalanceAdapter.Allocation({
+            token: address(arb),
+            cumulativeAmount: 100 ether,
+            proof: pB,
+            campaigns: new MerklRewardsAttestedBalanceAdapter.CampaignShare[](0)
+        });
+
+        IAttestedBalanceAdapter(address(adapter)).submit(alice, abi.encode(a));
+        (uint256 viaGeneric, bytes32 epochGeneric,) = adapter.attestations(alice, address(arb));
+
+        adapter.submitProofs(bob, b);
+        (uint256 viaTyped, bytes32 epochTyped,) = adapter.attestations(bob, address(arb));
+
+        assertEq(viaGeneric, viaTyped, "same value");
+        assertEq(epochGeneric, epochTyped, "same epoch");
+        assertEq(adapter.assetsOf(alice).length, adapter.assetsOf(bob).length, "same enumeration shape");
+    }
+
+    /// @notice The generic entrypoint is role-gated too — it is not a way around `SUBMITTER_ROLE`.
+    function test_submit_genericEntrypointIsAlsoRoleGated() public {
+        bytes32 leaf = _leaf(alice, address(arb), 100 ether);
+        distributor.setRoot(leaf);
+        MerklRewardsAttestedBalanceAdapter.Allocation[] memory allocs =
+            new MerklRewardsAttestedBalanceAdapter.Allocation[](1);
+        allocs[0] = MerklRewardsAttestedBalanceAdapter.Allocation({
+            token: address(arb),
+            cumulativeAmount: 100 ether,
+            proof: new bytes32[](0),
+            campaigns: new MerklRewardsAttestedBalanceAdapter.CampaignShare[](0)
+        });
+
+        bytes32 role = adapter.SUBMITTER_ROLE();
+        vm.expectRevert(
+            abi.encodeWithSelector(IAccessControl.AccessControlUnauthorizedAccount.selector, stranger, role)
+        );
+        vm.prank(stranger);
+        IAttestedBalanceAdapter(address(adapter)).submit(alice, abi.encode(allocs));
+    }
+
     /// @notice A caller WITHOUT `SUBMITTER_ROLE` cannot write, however valid its proof.
     /// @dev    This test asserted the OPPOSITE until the role landed: it pinned that any stranger could submit, and
     ///         that was the deliberate design — the merkle proof, not the caller, guaranteed the amount. The role

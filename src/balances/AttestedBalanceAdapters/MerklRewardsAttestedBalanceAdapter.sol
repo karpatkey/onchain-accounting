@@ -191,73 +191,43 @@ contract MerklRewardsAttestedBalanceAdapter is AttestedValueCache {
     ///      integrity guarantee for the AMOUNT; the role governs who may occupy the cache and set labels. **Reverts** `InvalidArguments`, `UninitializedEpoch`, `InvalidProof`,
     ///      `TooManyCampaigns`, `CampaignSumMismatch`, `TooManyAttestations`, or `AmountRegression` — fail-loud and
     ///      atomic, so a bad entry reverts the whole call and leaves the prior set intact.
+    /// @notice Typed convenience over {IAttestedBalanceAdapter.submit}, kept for keeper ABI ergonomics.
+    /// @dev Requires `SUBMITTER_ROLE` (enforced by the base at `_upsertAttestation`). Funnels through
+    ///      `_submitPayload` — the family's single write path — rather than duplicating it, so this and the generic
+    ///      `submit(account, bytes)` cannot diverge. Fail-loud and atomic over the whole list.
     function submitProofs(address user, Allocation[] calldata allocs) external {
-        if (user == address(0)) revert InvalidArguments();
-        _upsertAll(user, allocs);
+        _submitPayload(user, abi.encode(allocs));
     }
 
-    /// @notice Batch variant: each user's list is upserted into that user's cache.
-    /// @dev **Atomic across accounts (by design):** any single entry that reverts reverts the ENTIRE batch, so no
-    ///      account in the call is updated. Deliberate fail-loud handling, but it means a multi-account feeder
-    ///      should pre-filter bad entries (or fall back to per-account `submitProofs`) so one account's bad data
-    ///      cannot block every other account's fresh proofs.
+    /// @notice Typed batch convenience. **Atomic across accounts by design** — one invalid entry reverts the whole
+    ///         batch, so a multi-account feeder should pre-filter or fall back to the per-account entrypoint.
     function submitProofsBatch(address[] calldata users, Allocation[][] calldata allocs) external {
         if (users.length != allocs.length) revert InvalidArguments();
         for (uint256 i; i < users.length; ++i) {
-            if (users[i] == address(0)) revert InvalidArguments();
-            _upsertAll(users[i], allocs[i]);
+            _submitPayload(users[i], abi.encode(allocs[i]));
         }
     }
 
-    function _upsertAll(address user, Allocation[] calldata allocs) private {
-        for (uint256 i; i < allocs.length; ++i) {
-            _submitProof(user, allocs[i].token, allocs[i].cumulativeAmount, allocs[i].proof, allocs[i].campaigns);
-        }
+    /// @inheritdoc AttestedValueCache
+    /// @dev Merkl's cache-only monotonicity guard, **gated on liveness**. Within ONE root Merkl's tree fixes a
+    ///      single cumulative per (user, token), so a lower proof-verified figure offered against the root the
+    ///      cached entry was proven under is evidence of a malformed or hostile tree. Ungated, this compared
+    ///      against a cached value from a root no longer live — an entry already reading 0 — and since a submit is
+    ///      atomic, that one entry rolled back the refresh of every OTHER token in the call, silently removing the
+    ///      account's whole Merkl contribution from NAV. It cannot over-report: the value was proof-verified
+    ///      against the live root by {_verifyPayload} before this runs.
+    function _beforeAdmit(address account, address asset, uint256 value, bytes32 epoch) internal view override {
+        Attestation memory a = _attestationOf(account, asset);
+        if (a.epoch == epoch && value < a.value) revert AmountRegression();
     }
 
-    /// @dev Verify one leaf against the live root, then hand the proven figure to the base's single admission point.
-    function _submitProof(
-        address user,
-        address token,
-        uint256 cumulativeAmount,
-        bytes32[] memory proof,
-        CampaignShare[] memory campaigns
-    ) private {
-        if (user == address(0) || token == address(0)) revert InvalidArguments();
-
-        bytes32 root = _liveEpoch();
-        if (root == bytes32(0)) revert UninitializedEpoch();
-
-        // Verify the leaf + bound the (submitter-supplied) breakdown to the proof-verified per-token total. Shared
-        // verbatim with the preview via `_checkProofAndCampaigns`, so the write path and the preview share ONE
-        // definition of validity. The Σ-shares == cumulative rule is the safety hinge: a submitter can mis-split
-        // value across campaigns but can never make the shares sum to more than the proven total.
-        _checkProofAndCampaigns(root, user, token, cumulativeAmount, proof, campaigns);
-
-        // Defense in depth: within ONE root, Merkl's tree fixes a single cumulative per (user, token), so a lower
-        // proof-verified figure offered against the root the cached entry was proven under is evidence of a
-        // malformed or hostile tree — reject it loudly.
-        //
-        // **GATED ON LIVENESS (`epoch == root`), and that conjunct is load-bearing.** Ungated, this compared against
-        // a cached value belonging to a root that is no longer live — an entry that already reads 0 and contributes
-        // nothing to NAV. Merkl amounts DO legitimately decrease across a rotation (a disputed or clawed-back
-        // campaign, an API correction), so the keeper's next cycle would carry a lower cumulative and revert. A
-        // submit is ATOMIC over its whole list, so that one entry rolled back the refresh of every OTHER token in
-        // the same call; their cached roots were by then stale too, so all of them read 0 and the account's ENTIRE
-        // Merkl contribution silently left NAV. It did not self-heal — every subsequent cycle hit the same revert —
-        // and recovery needed a human to hand-run a clear. Gating on liveness keeps the guard exactly where it
-        // carries meaning: a stale entry has no authority to veto a figure the LIVE root attests. This cannot
-        // over-report — `cumulativeAmount` was proof-verified against that live root immediately above.
-        Attestation memory a = _attestationOf(user, token);
-        if (a.epoch == root && cumulativeAmount < a.value) revert AmountRegression();
-
-        _upsertAttestation(user, token, cumulativeAmount, root);
-
-        // Replace this token's campaign shares wholesale — a re-submit of the same (user, token) overwrites its
-        // prior breakdown cleanly.
-        delete _campaigns[user][token];
-        for (uint256 i; i < campaigns.length; ++i) {
-            _campaigns[user][token].push(campaigns[i]);
+    /// @inheritdoc AttestedValueCache
+    /// @dev Replaces this token's campaign shares wholesale, so a re-submit overwrites the prior breakdown cleanly.
+    function _storeMemberState(address account, address asset, bytes memory ctx) internal override {
+        CampaignShare[] memory shares = abi.decode(ctx, (CampaignShare[]));
+        delete _campaigns[account][asset];
+        for (uint256 i; i < shares.length; ++i) {
+            _campaigns[account][asset].push(shares[i]);
         }
     }
 
@@ -296,7 +266,7 @@ contract MerklRewardsAttestedBalanceAdapter is AttestedValueCache {
     ///      **Campaign identity is submitter-supplied, not proof-bound.** The proof commits only the per-token
     ///      cumulative, so a consumer must treat the per-campaign `positionInstanceId` on returned legs as
     ///      display-grade — the per-token *amount* is the proof-backed figure.
-    function _verifyPreviewPayload(bytes32 epoch, address account, bytes calldata data)
+    function _verifyPayload(bytes32 epoch, address account, bytes memory data)
         internal
         view
         override

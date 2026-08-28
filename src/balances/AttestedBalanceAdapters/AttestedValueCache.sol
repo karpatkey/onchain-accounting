@@ -164,6 +164,47 @@ abstract contract AttestedValueCache is IAttestedBalanceAdapter, IPositionDescri
     }
 
     //
+    // Mutators — the write surface (role-gated at the admission point)
+    //
+
+    /// @inheritdoc IAttestedBalanceAdapter
+    function submit(address account, bytes calldata data) external override {
+        _submitPayload(account, data);
+    }
+
+    /// @inheritdoc IAttestedBalanceAdapter
+    function submitBatch(address[] calldata accounts, bytes[] calldata data) external override {
+        if (accounts.length != data.length) revert InvalidArguments();
+        for (uint256 i; i < accounts.length; ++i) {
+            _submitPayload(accounts[i], data[i]);
+        }
+    }
+
+    /// @dev The family's ONE write path. Fetches the epoch once, hands the payload to the member's single
+    ///      decode-and-verify hook — **the same hook {previewPositions} uses**, which is what makes the two paths
+    ///      structurally incapable of disagreeing about validity — then admits each verified element.
+    ///
+    ///      `internal` rather than `private` so a member's typed convenience entrypoint can funnel into it WITHOUT
+    ///      an external self-call: `this.submit(...)` would rewrite `msg.sender` to the adapter itself and defeat
+    ///      the role check at {_upsertAttestation}.
+    function _submitPayload(address account, bytes memory data) internal {
+        if (account == address(0)) revert InvalidArguments();
+
+        bytes32 epoch = _liveEpoch();
+        if (epoch == bytes32(0)) revert UninitializedEpoch();
+
+        (address[] memory assets, uint256[] memory values, bytes[] memory ctxs) = _verifyPayload(epoch, account, data);
+        if (values.length != assets.length || ctxs.length != assets.length) revert InvalidArguments();
+
+        for (uint256 i; i < assets.length; ++i) {
+            // The member's own extra acceptance rule, applied BEFORE admission so a rejection leaves nothing behind.
+            _beforeAdmit(account, assets[i], values[i], epoch);
+            _upsertAttestation(account, assets[i], values[i], epoch);
+            _storeMemberState(account, assets[i], ctxs[i]);
+        }
+    }
+
+    //
     // Mutators — clearing (permissionless, stale-gated)
     //
 
@@ -339,7 +380,7 @@ abstract contract AttestedValueCache is IAttestedBalanceAdapter, IPositionDescri
 
     /// @inheritdoc IAttestedBalanceAdapter
     /// @dev The generic half of the preview: guards and the self-call frame. The member owns
-    ///      {_verifyPreviewPayload}, which is where its proof scheme lives.
+    ///      {_verifyPayload}, which is where its proof scheme lives.
     function previewPositions(address account, bytes calldata data)
         external
         view
@@ -365,8 +406,7 @@ abstract contract AttestedValueCache is IAttestedBalanceAdapter, IPositionDescri
         bytes32 epoch = _liveEpoch();
         if (epoch == bytes32(0)) revert UninitializedEpoch();
 
-        (address[] memory assets, uint256[] memory values, bytes[] memory ctxs) =
-            _verifyPreviewPayload(epoch, account, data);
+        (address[] memory assets, uint256[] memory values, bytes[] memory ctxs) = _verifyPayload(epoch, account, data);
         // The three are indexed in lockstep below. A member returning ragged arrays would otherwise surface as a
         // bare Panic 0x32; fail loud with an attributable error instead.
         if (values.length != assets.length || ctxs.length != assets.length) revert InvalidArguments();
@@ -737,7 +777,7 @@ abstract contract AttestedValueCache is IAttestedBalanceAdapter, IPositionDescri
     ///                       decide "read my own storage" vs "use the caller's payload". That convention is
     ///                       load-bearing and easy to break from the preview side: `abi.encode` of an EMPTY array
     ///                       is 64 bytes, not 0, so an empty breakdown still arrives as non-empty `ctx` — but a
-    ///                       member that returns a literal `bytes("")` from {_verifyPreviewPayload} for a
+    ///                       member that returns a literal `bytes("")` from {_verifyPayload} for a
     ///                       breakdown-less entry would silently fall through to CACHED state while valuing a
     ///                       caller-supplied amount, mixing the two paths. Never return an empty `ctx` from the
     ///                       preview; encode the empty collection instead.
@@ -754,11 +794,30 @@ abstract contract AttestedValueCache is IAttestedBalanceAdapter, IPositionDescri
     ///         member's proof scheme lives, and it MUST be the same verification the write path uses** — otherwise
     ///         the preview and the cache can disagree, which is the one thing the shared valuation tail exists to
     ///         prevent. Fail-loud: an invalid proof MUST revert, not be skipped.
-    function _verifyPreviewPayload(bytes32 epoch, address account, bytes calldata data)
+    function _verifyPayload(bytes32 epoch, address account, bytes memory data)
         internal
         view
         virtual
         returns (address[] memory assets, uint256[] memory values, bytes[] memory ctxs);
+
+    /// @notice A member's EXTRA acceptance rule on the write path, applied per element before admission. Default:
+    ///         nothing. Merkl uses it for its cache-only monotonicity guard.
+    /// @dev Write-path only — the preview has no cached prior value to compare against, which is precisely the
+    ///      asymmetry this hook exists to express. MUST revert to reject.
+    function _beforeAdmit(address account, address asset, uint256 value, bytes32 epoch) internal view virtual {
+        account;
+        asset;
+        value;
+        epoch;
+    }
+
+    /// @notice Persist the member's own per-element state alongside the attestation (Merkl's campaign breakdown).
+    ///         Default: nothing. The counterpart of {_deleteMemberState}.
+    function _storeMemberState(address account, address asset, bytes memory ctx) internal virtual {
+        account;
+        asset;
+        ctx;
+    }
 
     /// @notice Gas withheld from the per-asset stipends, per leg, so the read can complete after the last asset
     ///         consumes everything it was given. Overridable; the default is the value the first member measured.

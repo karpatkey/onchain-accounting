@@ -47,7 +47,7 @@ contract ProbeMember is AttestedValueCache {
         delete memberState[account][asset];
     }
 
-    function _verifyPreviewPayload(bytes32, address, bytes calldata)
+    function _verifyPayload(bytes32, address, bytes memory)
         internal
         view
         virtual
@@ -147,7 +147,7 @@ contract PreviewOverEmitter is OverEmittingMember {
         asset = asset_;
     }
 
-    function _verifyPreviewPayload(bytes32, address, bytes calldata)
+    function _verifyPayload(bytes32, address, bytes memory)
         internal
         view
         override
@@ -166,7 +166,7 @@ contract PreviewOverEmitter is OverEmittingMember {
 contract RaggedPreviewMember is ProbeMember {
     constructor(address nav_, address admin_) ProbeMember(nav_, admin_) {}
 
-    function _verifyPreviewPayload(bytes32, address, bytes calldata)
+    function _verifyPayload(bytes32, address, bytes memory)
         internal
         view
         override
@@ -329,7 +329,7 @@ contract AttestedValueCacheTest is BalanceAdapterTestBase {
         over.previewPositions(alice, abi.encode(uint256(1)));
     }
 
-    /// @notice Ragged arrays out of `_verifyPreviewPayload` must fail loud and attributably.
+    /// @notice Ragged arrays out of `_verifyPayload` must fail loud and attributably.
     /// @dev    Also asserted by nothing until now (Vigilo mutation-verified: deleting the guard left 98/98 green).
     ///         THE DISCRIMINATING MUTATION: drop the length check and this reverts with a bare Panic instead.
     function test_previewRaggedArrays_revertAttributably() public {

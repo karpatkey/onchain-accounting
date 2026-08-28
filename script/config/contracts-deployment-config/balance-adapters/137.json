@@ -26,5 +26,11 @@
       "fToken": "0x41b8B33A413681CB7d869D287E99C30c6DF775b9",
       "positionId": "0x41b8B33A413681CB7d869D287E99C30c6DF775b9"
     }
+  },
+  "MerklRewards": {
+    "enabled": true,
+    "constructor": {
+      "distributor": "0x3Ef3D8bA38EBe18DB133cEc108f4D14CE00Dd9Ae"
+    }
   }
 }

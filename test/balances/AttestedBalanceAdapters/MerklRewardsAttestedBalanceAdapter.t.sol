@@ -291,6 +291,27 @@ contract MerklRewardsAttestedBalanceAdapterTest is BalanceAdapterTestBase {
     // ERC165 + interface
     // ============================================
 
+    /// @notice The empty probe returns the adapter's CONSTANT shape, because Merkl's labels never vary.
+    /// @dev Required by `PositionLabelsProbeCoverage`, which makes every enabled non-meta adapter state
+    ///      explicitly what `positionLabels("")` answers rather than leaving it to chance.
+    ///
+    ///      Merkl's decision is the easy one: `positionLabels` ignores its argument, so the empty probe and a
+    ///      real `positionId` give the same answer. That is correct here rather than lazy — the positionId is
+    ///      the hardcoded `abi.encode(DISTRIBUTOR)`, identical for every position this adapter reports, so there
+    ///      is nothing account- or position-specific for a label to vary on. The reward token rides in
+    ///      `balanceAsset` and the campaign coordinate in `positionInstanceId`; neither is a label.
+    function test_positionLabels_emptyProbe_returnsTheConstantShape() public view {
+        string[] memory probe = adapter.positionLabels("");
+        assertEq(probe.length, 1, "one label");
+        assertEq(probe[0], "Claimable Rewards");
+
+        // The probe must agree with a REAL positionId — that agreement is what makes a constant answer honest
+        // rather than merely convenient.
+        string[] memory real = adapter.positionLabels(abi.encode(address(distributor)));
+        assertEq(real.length, probe.length, "probe shape matches a real positionId");
+        assertEq(real[0], probe[0], "probe content matches a real positionId");
+    }
+
     function test_supportsInterface() public view {
         assertTrue(adapter.supportsInterface(type(IBalanceAdapter).interfaceId));
         assertTrue(adapter.supportsInterface(type(IAttestedBalanceAdapter).interfaceId));

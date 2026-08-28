@@ -109,6 +109,11 @@ import {
 /// @notice Deploys balance adapters based on per-chain configuration
 /// @dev Reads enabled adapters from script/config/contracts-deployment-config/{balance-adapters,meta-balance-adapters}/{chainId}.json and deploys them
 contract DeployBalanceAdapters is BaseDeployScript {
+    /// @notice `DEPLOYER_EOA` resolved to the zero address when deploying the Merkl attested adapter.
+    /// @dev Fail loud rather than deploy an adapter with no admin: `SUBMITTER_ROLE` could then never be granted,
+    ///      and because the address is deterministic, the salt would be permanently burned on that chain.
+    error MerklAdminUnset();
+
     function run() public override {
         setUp();
 
@@ -821,20 +826,42 @@ contract DeployBalanceAdapters is BaseDeployScript {
         return address(adapter);
     }
 
-    /// @notice Deploys the Merkl rewards adapter (attested family, ADR 0022). Constructor takes
-    ///         (distributor, navCalculator, admin). Proof-verified; NO assistant contract. The Merkl Distributor is
-    ///         the same address on every supported EVM chain (0x3Ef3D8bA…), read from config.
-    /// @dev The admin is the **security council**, matching where `07_TransferAdminToSecurityCouncil` puts
-    ///      `DEFAULT_ADMIN_ROLE` on the NAVCalculator — so the same body that governs NAV also governs who may feed
-    ///      this adapter. It holds `DEFAULT_ADMIN_ROLE` only; `SUBMITTER_ROLE` is granted to the keeper EOA
-    ///      post-deploy, deliberately NOT here, so the deployer EOA never holds a live submit right.
+    /// @notice Deploys the Merkl rewards adapter (attested family, ADR 0022) via CREATE2, so it takes the SAME
+    ///         address on every chain. Constructor takes (distributor, navCalculator, admin). Proof-verified; NO
+    ///         assistant contract.
+    /// @dev **Why this protocol-arg adapter CAN be fleet-wide, when most cannot.** The rule elsewhere in this file
+    ///      is that an adapter taking a chain-specific protocol address stays on plain CREATE, because its init
+    ///      code genuinely differs per chain. Merkl is the exception: it deploys its Distributor
+    ///      deterministically, so `0x3Ef3D8bA…` is the same address everywhere (verified by `eth_getCode` on all
+    ///      25 chains in this repo — present on 24, absent only on opBNB). With the NAV proxy also
+    ///      CREATE2-identical and the admin an EOA, all three constructor args are fleet-identical and the init
+    ///      code hash is too.
+    ///
+    ///      **The admin is the DEPLOYER EOA, deliberately, and this is temporary.** It is NOT the security
+    ///      council, which is what this function used before. Two consequences worth being explicit about:
+    ///        * the EOA holds `DEFAULT_ADMIN_ROLE`, so it can grant `SUBMITTER_ROLE` to the keeper without a Safe
+    ///          transaction — which is the whole point, since the keeper cannot write until that grant lands;
+    ///        * it is a live admin key. Hand `DEFAULT_ADMIN_ROLE` to the security council once the keeper is
+    ///          running, by `grantRole` then `renounceRole` — NOT by changing this constructor argument, which
+    ///          would move the adapter's address on every chain (see {DeploySalts.MERKL_REWARDS}).
+    ///
+    ///      `SUBMITTER_ROLE` is still granted post-deploy and deliberately not here, so a deploy alone never
+    ///      creates a live submit right.
     function _deployMerklRewards(string memory adapterName, address navCalculator) internal returns (address) {
         address distributor = vm.parseAddress(
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "distributor")
         );
-        MerklRewardsAttestedBalanceAdapter adapter =
-            new MerklRewardsAttestedBalanceAdapter(distributor, navCalculator, chainConfig.securityCouncil);
-        return address(adapter);
+        // Fail loud if unset: a zero admin would deploy an adapter nobody can ever grant SUBMITTER_ROLE on, at a
+        // deterministic address that is then permanently burned for this salt.
+        address admin = vm.envAddress("DEPLOYER_EOA");
+        if (admin == address(0)) revert MerklAdminUnset();
+
+        return _create2WithArgs(
+            type(MerklRewardsAttestedBalanceAdapter).creationCode,
+            abi.encode(distributor, navCalculator, admin),
+            "MerklRewardsAttestedBalanceAdapter",
+            DeploySalts.MERKL_REWARDS
+        );
     }
 
     function _deployEthenaCooldown(string memory adapterName, address navCalculator) internal returns (address) {

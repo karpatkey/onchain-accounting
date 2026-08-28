@@ -50,7 +50,7 @@ contract PositionLabelsProbeCoverageTest is Test {
     ///      just the first — which is why `Cap` and its two successors all appear here at once during the split.
     ///      Keep sorted by family, then alphabetically, so a diff to this list is easy to read in review.
     function _expectedNonMetaAdapters() internal pure returns (string[] memory names) {
-        names = new string[](14);
+        names = new string[](15);
         // Plain (src/balances/BalanceAdapters/)
         names[0] = "AaveUmbrella";
         names[1] = "AaveV3SafetyModule";
@@ -67,6 +67,8 @@ contract PositionLabelsProbeCoverageTest is Test {
         names[11] = "EtherFiWithdrawalQueueAssisted";
         names[12] = "NexusMutualStakingPoolsAssisted";
         names[13] = "StakeWiseV3ExitQueueAssisted";
+        // Attested (src/balances/AttestedBalanceAdapters/)
+        names[14] = "MerklRewards";
     }
 
     /// @notice Adapter keys that are ENABLED in the per-chain deploy config — what `04` is configured to deploy next.

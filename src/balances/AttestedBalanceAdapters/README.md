@@ -13,7 +13,11 @@ off-chain** (so there is no coordinate to cache and value live — that's the as
 **off-chain agent** feeds the adapter, and **every write carries an on-chain-verified proof** (an *attestation*).
 
 Marker: **`IAttestedBalanceAdapter`** (`is IBalanceAdapter`, `src/balances/IAttestedBalanceAdapter.sol`) — advertises
-the family via ERC-165 and the one universal mutator, the stale-gated `clearAccount(address)`.
+the family via ERC-165 and the full family surface: the `SUBMITTER_ROLE`-gated writes `submit(address,bytes)` /
+`submitBatch(address[],bytes[])` (payload opaque at this level, decoded per member), the stale-gated permissionless
+clears `clearAttestation(address,address)` / `clearAccount(address)`, the cache-free read
+`previewPositions(address,bytes)`, and the getters `attestations` / `assetsOf` / `isAttestationLive` /
+`maxAssetsPerAccount`. It extends `IAccessControl`, so the role is discoverable through the marker itself.
 
 ## The shared base — `AttestedValueCache`
 

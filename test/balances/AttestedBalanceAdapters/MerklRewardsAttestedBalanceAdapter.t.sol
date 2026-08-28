@@ -1694,8 +1694,11 @@ contract MerklRewardsAttestedBalanceAdapterTest is BalanceAdapterTestBase {
         adapter.submitProofs(alice, allocs);
     }
 
-    /// @dev The campaign cap is the one attacker-controlled read-fan-out amplifier (campaign ids are not proof-bound),
-    ///      so it must be enforced fail-loud. `MAX_CAMPAIGNS_PER_TOKEN + 1` shares for one token reverts.
+    /// @dev The campaign cap is the one KEEPER-controlled read-fan-out amplifier (campaign ids are not
+    ///      proof-bound, only their sum is), so it must be enforced fail-loud. Since submits require
+    ///      `SUBMITTER_ROLE` this bounds how far a compromised or buggy keeper can push read cost — it is no
+    ///      longer reachable by an arbitrary third party. `MAX_CAMPAIGNS_PER_TOKEN + 1` shares for one token
+    ///      reverts.
     function test_submit_revertsWhenTooManyCampaigns() public {
         uint256 over = adapter.MAX_CAMPAIGNS_PER_TOKEN() + 1;
         bytes32 leaf = _leaf(alice, address(arb), 100 ether);

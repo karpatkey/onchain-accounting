@@ -55,10 +55,13 @@ most one of them:
     is the only primary the asset is stale and valued $0). NOT CHECKED here. It is gated against the same
     provider cadence because a custom feed propagates its rate leg's timestamp, `min(rate, base)`.
 
-Concretely, of the 41 named-custom nav entries across the configured chains:
-  * 21 have a Chainlink rate leg -> their CONSTRUCTOR heartbeat is checked, their NAV-SIDE heartbeat is NOT.
-  * 20 have no Chainlink rate leg at all (they read an on-chain exchange rate) -> NOT CHECKED on this axis
-    at all. That set includes sUSDS, the feed whose 59/61-cycle staleness is cited above as this module's
+Concretely, the named-custom nav entries across the configured chains split two ways:
+  * those with a Chainlink rate leg -> their CONSTRUCTOR heartbeat is checked, their NAV-SIDE heartbeat is NOT.
+  * those with no Chainlink rate leg at all (they read an on-chain exchange rate) -> NOT CHECKED on this axis
+    at all. (This split was once written here as exact counts. Nothing asserted them, they drifted the
+    first time feeds were added, and a stale census reads as a measurement -- so the numbers are gone
+    deliberately. Run this module to get the current split.) That set includes sUSDS, and now the four
+    Spark/Sky savings feeds, the class whose 59/61-cycle staleness is cited above as this module's
     motivating defect. Reaching it means following `baseAsset` into the NAV-sourced chain, which is the
     derived-vs-base axis's territory (ADR 0019); it is deliberately out of scope here.
 

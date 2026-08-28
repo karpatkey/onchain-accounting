@@ -39,6 +39,16 @@ import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 ///      mutator (`clearAccount`), and one universal **read** (`previewPositions(account, bytes)`): the read's proof
 ///      data is opaque `bytes` at the family level (each member `abi.decode`s it into its own shape), so a single
 ///      signature serves every attested adapter, present and future, with the `bytes` being whatever that protocol needs.
+/// @dev **CHARTER: this family reports CREDITS ONLY.** Every leg an adapter advertising THIS interface id emits
+///      has `isDebt == false`, and the base enforces it rather than asking members to remember: the read surface
+///      is non-virtual and the only leg constructor cannot set the flag. The scope is deliberate — an
+///      attested-LIABILITY protocol is conceivable, but under this base it would need the reads, the leg builder,
+///      the per-item failure policy and the drop licence all overridden in concert, which is maximally easy to
+///      get wrong. Such a protocol wants a sibling base and its own interface id, not an override of this one.
+///
+///      This is what licenses the base's per-item **drop** on a failed read: a dropped CREDIT leg can only make
+///      NAV smaller, the direction the family already tolerates. Dropping a DEBT leg would make NAV larger — the
+///      one direction forbidden — so the licence and the charter stand or fall together.
 interface IAttestedBalanceAdapter is IAccessControl, IBalanceAdapter {
     /// @notice Role required to SUBMIT attestations. Granted and revoked by `DEFAULT_ADMIN_ROLE`.
     /// @dev **Gates the write surface only.** The family's clears stay permissionless and stale-gated on purpose:
@@ -95,6 +105,29 @@ interface IAttestedBalanceAdapter is IAccessControl, IBalanceAdapter {
         external
         view
         returns (uint256 value, bytes32 epoch, uint64 attestedAt);
+
+    /// @notice The per-account cache cap: the most distinct assets this adapter will hold for one account.
+    /// @dev Family-level because the base enforces it (`TooManyAttestations` on admission) and because a
+    ///      protocol-agnostic consumer needs it without knowing the member: comparing `assetsOf(account).length`
+    ///      against this is how you detect an account approaching the cap, whether through ordinary accumulation
+    ///      or through a third party occupying slots. Constant per deployment — no admin can loosen it.
+    function maxAssetsPerAccount() external view returns (uint256);
+
+    /// @notice Whether `account`'s cached attestation for `asset` is still valid under this member's scheme.
+    /// @dev **Disambiguates the three states that all read as a balance of 0**, which a consumer otherwise cannot
+    ///      tell apart and which need three different responses: nothing cached (`attestations().epoch == 0`);
+    ///      cached but no longer current, i.e. the feeder is behind (false here — page the feeder); and cached,
+    ///      current, but fully consumed (true here, balance 0 — garbage-collect it).
+    ///
+    ///      Deliberately a PREDICATE rather than an exposed epoch. What "still valid" means is per-protocol — a
+    ///      merkle root matching, a signature inside its TTL, a per-asset anchor — and publishing one global epoch
+    ///      would freeze the first member's scheme into the family contract forever. Every member can answer this
+    ///      question; not every member has a single global anchor to publish.
+    ///
+    ///      Two honest caveats. **It can flap**: a protocol whose anchor is non-monotonic (Merkl's dispute window
+    ///      rolls the root back) can return false and then true again for the same entry. And **live is not the
+    ///      same as counted** — a live but fully-consumed entry reads 0 and is clearable.
+    function isAttestationLive(address account, address asset) external view returns (bool);
 
     /// @notice The assets currently cached for `account`, stale ones included.
     /// @dev The family cannot enumerate its universe ahead of time, so `underlyingAssetsSupported()` is empty and

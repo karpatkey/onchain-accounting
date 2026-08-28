@@ -361,10 +361,14 @@ contract MerklRewardsAttestedBalanceAdapter is AttestedValueCache {
         INAVCalculator.Asset memory meta,
         uint256 liveValue,
         uint256 attestedValue,
-        bytes memory ctx
+        bytes memory ctx,
+        bool fromCache
     ) internal view override returns (INAVCalculator.PositionBalance[] memory legs) {
-        CampaignShare[] memory shares =
-            ctx.length == 0 ? _campaigns[account][asset] : abi.decode(ctx, (CampaignShare[]));
+        // Branch on the EXPLICIT discriminant, not on `ctx.length`. The old convention ("empty ctx means read
+        // storage") worked only because `abi.encode` of an empty array is 64 bytes rather than 0 — a member that
+        // returned a literal `bytes("")` for a breakdown-less preview entry would have silently fallen through to
+        // CACHED shares while valuing a caller-supplied amount. The discriminant makes that unrepresentable.
+        CampaignShare[] memory shares = fromCache ? _campaigns[account][asset] : abi.decode(ctx, (CampaignShare[]));
 
         bytes memory pid = abi.encode(DISTRIBUTOR); // identical for every leg of every token
         if (shares.length == 0) {

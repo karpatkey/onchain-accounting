@@ -3,6 +3,7 @@ pragma solidity ^0.8;
 
 import {BalanceAdapterTestBase} from "test/balances/BalanceAdapterTestBase.sol";
 import {AttestedValueCache} from "src/balances/AttestedBalanceAdapters/AttestedValueCache.sol";
+import {IAttestedBalanceAdapter} from "src/balances/IAttestedBalanceAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {Mock_ERC20} from "test/mocks/tokens.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
@@ -57,13 +58,15 @@ contract ProbeMember is AttestedValueCache {
         return (new address[](0), new uint256[](0), new bytes[](0));
     }
 
-    function _assetLegs(address, address, INAVCalculator.Asset memory meta, uint256 liveValue, uint256, bytes memory)
-        internal
-        view
-        virtual
-        override
-        returns (INAVCalculator.PositionBalance[] memory legs)
-    {
+    function _assetLegs(
+        address,
+        address,
+        INAVCalculator.Asset memory meta,
+        uint256 liveValue,
+        uint256,
+        bytes memory,
+        bool
+    ) internal view virtual override returns (INAVCalculator.PositionBalance[] memory legs) {
         legs = new INAVCalculator.PositionBalance[](1);
         legs[0] = _row(meta, liveValue, abi.encode(address(this)), bytes32(0));
     }
@@ -102,12 +105,15 @@ contract ProbeMember is AttestedValueCache {
 contract OverEmittingMember is ProbeMember {
     constructor(address nav_, address admin_) ProbeMember(nav_, admin_) {}
 
-    function _assetLegs(address, address, INAVCalculator.Asset memory meta, uint256 liveValue, uint256, bytes memory)
-        internal
-        view
-        override
-        returns (INAVCalculator.PositionBalance[] memory legs)
-    {
+    function _assetLegs(
+        address,
+        address,
+        INAVCalculator.Asset memory meta,
+        uint256 liveValue,
+        uint256,
+        bytes memory,
+        bool
+    ) internal view override returns (INAVCalculator.PositionBalance[] memory legs) {
         legs = new INAVCalculator.PositionBalance[](2); // declares 1 (inherited default), emits 2
         legs[0] = _row(meta, liveValue, abi.encode(address(this)), bytes32(0));
         legs[1] = _row(meta, liveValue, abi.encode(address(this)), keccak256("second"));
@@ -129,9 +135,10 @@ contract SelectiveOverEmitter is ProbeMember {
         INAVCalculator.Asset memory meta,
         uint256 liveValue,
         uint256 v,
-        bytes memory c
+        bytes memory c,
+        bool fromCache
     ) internal view override returns (INAVCalculator.PositionBalance[] memory legs) {
-        if (asset != greedy) return super._assetLegs(a, asset, meta, liveValue, v, c);
+        if (asset != greedy) return super._assetLegs(a, asset, meta, liveValue, v, c, fromCache);
         legs = new INAVCalculator.PositionBalance[](3); // declares 1, emits 3
         for (uint256 i; i < 3; ++i) {
             legs[i] = _row(meta, liveValue, abi.encode(address(this)), bytes32(i));
@@ -193,6 +200,71 @@ contract AttestedValueCacheTest is BalanceAdapterTestBase {
         probe.grantRole(submitterRole, address(this));
         tok = new Mock_ERC20("TOK", 18);
         balances.addSupportedAssetForTest(address(tok));
+    }
+
+    /// @notice FREEZE TRIPWIRE. `type(IAttestedBalanceAdapter).interfaceId` is the XOR of the interface's own
+    ///         declared FUNCTION selectors, and every member bakes it into `supportsInterface` at compile time. So
+    ///         it is frozen the moment any member deploys: adding a function afterwards strands deployed members
+    ///         on the old id, and a consumer probing the family gets `false` from contracts that are, in every
+    ///         other sense, members.
+    /// @dev    Before the first deploy this test documents intent and makes the change deliberate. After it, this
+    ///         is the difference between a silent consumer break and a red build. Errors and events do NOT enter
+    ///         the id, so those remain freely extensible — which is why the family declares them on the interface
+    ///         rather than splitting them out.
+    ///
+    ///         If this fails: you added, removed or re-signed an interface FUNCTION. If nothing is deployed yet,
+    ///         update the constant deliberately. If anything is deployed, do not — add a v2 interface instead.
+    function test_interfaceId_isFrozen() public pure {
+        assertEq(
+            type(IAttestedBalanceAdapter).interfaceId,
+            bytes4(0xcd2e993b),
+            "IAttestedBalanceAdapter function surface changed"
+        );
+    }
+
+    /// @notice The family CHARTER is credit-only, and the base enforces it rather than documenting it.
+    /// @dev The per-item DROP in `_collectLegs` is licensed only because a dropped leg can just shrink NAV. That
+    ///      licence used to rest on member authors not overriding the reads; the read surface is now non-virtual
+    ///      and `_row` cannot set `isDebt`, so the charter is compiler-enforced.
+    ///      THE DISCRIMINATING MUTATION: re-add `virtual` to `getAdapterBalances` and have a probe member return
+    ///      a debt leg — this test is what should stop that landing.
+    function test_charter_readSurfaceReportsCreditOnly() public {
+        probe.feed(alice, address(tok), 100 ether);
+
+        (, bool isDebtSingle) = probe.getAdapterBalanceForAsset(alice, address(tok));
+        assertFalse(isDebtSingle, "per-asset read is credit-only");
+
+        (,, bool[] memory isDebtMany) = probe.getAdapterBalances(alice);
+        assertEq(isDebtMany.length, 1, "one entry");
+        assertFalse(isDebtMany[0], "enumerated read is credit-only");
+
+        INAVCalculator.PositionBalance[] memory positions = probe.getAdapterPositions(alice, address(0));
+        assertFalse(positions[0].isDebt, "legs are credit-only");
+    }
+
+    /// @notice `isAttestationLive` separates the three states that all report a balance of zero.
+    /// @dev Absent / stale / live-but-consumed need three different operational responses, and before this the
+    ///      external surface could not tell them apart.
+    function test_isAttestationLive_disambiguatesTheThreeZeroStates() public {
+        // 1. Absent.
+        assertFalse(probe.isAttestationLive(alice, address(tok)), "nothing cached");
+
+        // 2. Live.
+        probe.feed(alice, address(tok), 100 ether);
+        assertTrue(probe.isAttestationLive(alice, address(tok)), "cached and current");
+
+        // 3. Stale — reads zero, but the record is still there and still distinguishable from absent.
+        probe.setEpoch(keccak256("rotated"));
+        (uint256 amt,) = probe.getAdapterBalanceForAsset(alice, address(tok));
+        assertEq(amt, 0, "stale reads zero");
+        assertFalse(probe.isAttestationLive(alice, address(tok)), "and is reported stale, not absent");
+        (, bytes32 epoch,) = probe.attestations(alice, address(tok));
+        assertTrue(epoch != bytes32(0), "still cached, so a consumer can tell stale from absent");
+    }
+
+    /// @notice The cap is readable through the family interface, without knowing the member.
+    function test_maxAssetsPerAccount_isExposedOnTheInterface() public view {
+        assertEq(IAttestedBalanceAdapter(address(probe)).maxAssetsPerAccount(), 4, "probe cap");
     }
 
     /// @notice A member that deletes ONLY its own state on a clear must NOT be able to leave the base's record

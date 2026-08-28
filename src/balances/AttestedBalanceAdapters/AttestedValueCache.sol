@@ -261,6 +261,17 @@ abstract contract AttestedValueCache is IAttestedBalanceAdapter, IPositionDescri
     /// @notice Assets currently cached for `account`.
     /// @dev Returned regardless of staleness. Filter at the call site on `attestations(account, asset).epoch`.
     /// @inheritdoc IAttestedBalanceAdapter
+    function maxAssetsPerAccount() external view override returns (uint256) {
+        return _maxAssetsPerAccount();
+    }
+
+    /// @inheritdoc IAttestedBalanceAdapter
+    function isAttestationLive(address account, address asset) external view override returns (bool) {
+        Attestation memory a = _attestations[account][asset];
+        return a.epoch != bytes32(0) && _isLive(a, asset);
+    }
+
+    /// @inheritdoc IAttestedBalanceAdapter
     function assetsOf(address account) external view override returns (address[] memory) {
         return _assetList[account];
     }
@@ -289,7 +300,6 @@ abstract contract AttestedValueCache is IAttestedBalanceAdapter, IPositionDescri
     function getAdapterBalanceForAsset(address account, address asset)
         external
         view
-        virtual
         override
         returns (uint256 amount, bool isDebt)
     {
@@ -301,7 +311,6 @@ abstract contract AttestedValueCache is IAttestedBalanceAdapter, IPositionDescri
     function getAdapterBalances(address account)
         external
         view
-        virtual
         override
         returns (address[] memory assets, uint256[] memory amounts, bool[] memory isDebt)
     {
@@ -338,7 +347,6 @@ abstract contract AttestedValueCache is IAttestedBalanceAdapter, IPositionDescri
     function getAdapterPositions(address account, address assetFilter)
         external
         view
-        virtual
         override
         returns (INAVCalculator.PositionBalance[] memory positions)
     {
@@ -384,7 +392,6 @@ abstract contract AttestedValueCache is IAttestedBalanceAdapter, IPositionDescri
     function previewPositions(address account, bytes calldata data)
         external
         view
-        virtual
         override
         returns (INAVCalculator.PositionBalance[] memory positions)
     {
@@ -517,8 +524,11 @@ abstract contract AttestedValueCache is IAttestedBalanceAdapter, IPositionDescri
     ///      **Stale ⇒ 0, never extrapolated** — a new epoch requires a fresh attestation.
     function _valueOf(address account, address asset) internal view returns (uint256) {
         Attestation memory a = _attestations[account][asset];
+        // The ABSENCE check stays here, ahead of the validity predicate and deliberately not overridable: it is
+        // what {_upsertAttestation}'s anti-duplicate branch keys on, so an override that could resurrect an absent
+        // entry would reopen the double-count.
         if (a.epoch == bytes32(0)) return 0;
-        if (a.epoch != _liveEpoch()) return 0;
+        if (!_isLive(a, asset)) return 0;
         return _liveValue(account, asset, a.value);
     }
 
@@ -555,7 +565,6 @@ abstract contract AttestedValueCache is IAttestedBalanceAdapter, IPositionDescri
     function _collectLegs(address account, address[] memory assets)
         internal
         view
-        virtual
         returns (INAVCalculator.PositionBalance[] memory positions)
     {
         // PRE-FILTER to the assets that will actually be VALUED. This is not tidy-up: the stipend denominator below
@@ -648,7 +657,7 @@ abstract contract AttestedValueCache is IAttestedBalanceAdapter, IPositionDescri
         uint256 value = _valueOf(account, asset);
         // Early return before the member touches its own storage when there is nothing to value (the common case).
         if (value == 0) return new INAVCalculator.PositionBalance[](0);
-        return _assetLegs(account, asset, meta, value, _attestations[account][asset].value, "");
+        return _assetLegs(account, asset, meta, value, _attestations[account][asset].value, "", true);
     }
 
     /// @dev Shared tail of the preview: skip assets NAVCalculator does not price, value each through the SAME
@@ -673,7 +682,7 @@ abstract contract AttestedValueCache is IAttestedBalanceAdapter, IPositionDescri
             uint256 live = _liveValue(account, assets[i], values[i]);
             if (live == 0) continue;
             INAVCalculator.PositionBalance[] memory legs =
-                _assetLegs(account, assets[i], meta, live, values[i], ctxs[i]);
+                _assetLegs(account, assets[i], meta, live, values[i], ctxs[i], false);
             // FAIL LOUD here, unlike the cache path. The silent drop in {_collectLegs} is licensed by the NAV
             // read's fail-open behaviour — losing a leg beats losing the account's whole NAV. This path has
             // neither: it is the caller's own `eth_call`, documented fail-loud, and a member whose
@@ -723,6 +732,23 @@ abstract contract AttestedValueCache is IAttestedBalanceAdapter, IPositionDescri
     //
     // Hooks — the member's protocol
     //
+
+    /// @notice Is this cached attestation still valid? Default: its epoch equals the current one.
+    /// @dev The family invariant is "an entry that is no longer provably current reads **0**"; epoch EQUALITY is
+    ///      one instantiation of it, not the definition. Override for a scheme where validity is not an equality
+    ///      check — a signature with a TTL (`a.attestedAt + TTL >= block.timestamp`), a per-asset anchor, or a
+    ///      grace window accepting the previous anchor too.
+    ///
+    ///      Equality rather than ordering is deliberate for the default and must stay that way for any
+    ///      anchor-comparing member: an anchor can be NON-MONOTONIC (Merkl's dispute window rolls the root back),
+    ///      so "newer than cached" is not a safe generalisation of "current".
+    ///
+    ///      Governs BOTH the reported value and the stale-gated clears, since both route through {_valueOf} —
+    ///      one predicate, not two policies that could drift apart.
+    function _isLive(Attestation memory a, address asset) internal view virtual returns (bool) {
+        asset;
+        return a.epoch == _liveEpoch();
+    }
 
     /// @notice The current attestation epoch (Merkl: `Distributor.getMerkleRoot()`). MUST be cheap: it is read on
     ///         every valuation. Returning zero means "uninitialized" and is rejected fail-loud on writes.
@@ -787,7 +813,8 @@ abstract contract AttestedValueCache is IAttestedBalanceAdapter, IPositionDescri
         INAVCalculator.Asset memory meta,
         uint256 liveValue,
         uint256 attestedValue,
-        bytes memory ctx
+        bytes memory ctx,
+        bool fromCache
     ) internal view virtual returns (INAVCalculator.PositionBalance[] memory);
 
     /// @notice Decode and VERIFY a preview payload against `epoch`, returning parallel arrays. **This is where the

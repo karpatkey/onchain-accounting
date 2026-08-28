@@ -96,7 +96,8 @@ contract MockMerklDistributor is IMerklDistributor {
 /// @title MerklRewardsAttestedBalanceAdapterTest
 /// @notice Unit tests for MerklRewardsAttestedBalanceAdapter. Builds toy 1-, 2-, and 4-leaf merkle trees in-memory using the
 ///         same hashing rule as Merkl's Distributor (sorted-pair, `keccak256(abi.encode(a, b))`).
-/// @dev    The adapter is PERMISSIONLESS: `submitProofs`/`submitProofsBatch` take no roles and are callable by anyone
+/// @dev    Submits are `SUBMITTER_ROLE`-gated (the CLEARS stay permissionless and stale-gated).
+///         `submitProofs`/`submitProofsBatch` take no roles and are callable by anyone
 ///         (integrity comes from live-root proof verification). Submit is UPSERT semantics: each `(token, proof)`
 ///         entry adds/refreshes just that `(user, token)` and never drops a token it omits — so a third party can't
 ///         suppress a live entry (removal is only via the stale-gated `clearAttestation`/`clearAccount`). Across-submit
@@ -120,7 +121,7 @@ contract MerklRewardsAttestedBalanceAdapterTest is BalanceAdapterTestBase {
         op = _createAndRegisterToken("OP", 18);
         morpho = _createAndRegisterToken("MORPHO", 18);
 
-        // Permissionless: no admin/assistant roles.
+        // No assistant contract; the admin is the security council, which grants the keeper SUBMITTER_ROLE.
         adapter = new MerklRewardsAttestedBalanceAdapter(address(distributor), address(balances), admin);
         // Submits are role-gated (ADR 0022): the admin grants the test contract the keeper's role.
         bytes32 submitterRole = adapter.SUBMITTER_ROLE();
@@ -316,10 +317,10 @@ contract MerklRewardsAttestedBalanceAdapterTest is BalanceAdapterTestBase {
     }
 
     // ============================================
-    // submitProofs — permissionless
+    // submitProofs — SUBMITTER_ROLE-gated
     // ============================================
 
-    /// @notice Anyone can submit — no role required. An arbitrary caller submits a real (proof-verified) allocation.
+    /// @notice A ROLE HOLDER submits on behalf of any account. An arbitrary caller submits a real (proof-verified) allocation.
     /// @notice The FAMILY-GENERIC `submit(account, bytes)` reaches the same cache as the typed `submitProofs`.
     /// @dev    This is the point of putting the write surface on the interface: a keeper or portal integrating ANY
     ///         attested adapter can feed it without knowing the member type, exactly as `previewPositions` already
@@ -489,7 +490,7 @@ contract MerklRewardsAttestedBalanceAdapterTest is BalanceAdapterTestBase {
         assertEq(adapter.assetsOf(alice).length, 0, "a roleless caller can still GC a dead entry");
     }
 
-    /// @notice Permissionless does NOT weaken integrity: an arbitrary caller cannot fabricate an amount — a bad proof
+    /// @notice Submit-on-behalf-of does NOT weaken integrity: even a role holder cannot fabricate an amount — a bad proof
     ///         still reverts InvalidProof regardless of who calls.
     /// @notice Even an AUTHORIZED submitter cannot fabricate an amount — the proof, not the role, bounds it.
     /// @dev This asserted the same property against a STRANGER until submits became role-gated, at which point it

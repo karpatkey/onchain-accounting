@@ -963,17 +963,23 @@ def self_test() -> int:
             ok = False
         print(f"  [{status}] {label}" + ("" if not got else f" (unexpected: {got})"))
 
-    case_silent("positive margin is SILENT", "1", snap,
-                [{"asset": "T", "role": "priceFeeds[0]", "address": A, "heartbeat": 90000, "where": "x"}])
-    case("zero margin warns (candidate, not blocker)", "1", snap,
-         [{"asset": "T", "role": "priceFeeds[0]", "address": A, "heartbeat": 86400, "where": "x"}],
-         WARN, "declared-heartbeat margin UNMEASURED")
-    case("negative margin warns", "1", snap,
+    # ADR 0025 INVERTED THESE FOUR. Under the old margin rule, above-declared was silent and equal was a
+    # WARN candidate; under equality it is exactly the other way round. They are kept rather than deleted
+    # because the inversion is the whole point of the rule change, and a rule with no test that it points
+    # the RIGHT WAY is how the guard silently stopped enforcing anything (it did: an early `if rh > dh:
+    # return []` made the equality check unreachable, and DAI at 7200 against a declared 3600 produced
+    # zero findings until it was removed).
+    case_silent("equality is SILENT", "1", snap,
+                [{"asset": "T", "role": "priceFeeds[0]", "address": A, "heartbeat": 86400, "where": "x"}])
+    case("ABOVE declared is an ERROR (the false-fresh window)", "1", snap,
+         [{"asset": "T", "role": "priceFeeds[0]", "address": A, "heartbeat": 90000, "where": "x"}],
+         ERROR, "ABOVE declared")
+    case("BELOW declared is an ERROR (manufactured staleness)", "1", snap,
          [{"asset": "T", "role": "priceFeeds[0]", "address": A, "heartbeat": 3600, "where": "x"}],
-         WARN, "declared-heartbeat margin UNMEASURED")
+         ERROR, "BELOW declared")
     case("finding names BOTH exits", "1", snap,
-         [{"asset": "T", "role": "priceFeeds[0]", "address": A, "heartbeat": 86400, "where": "x"}],
-         WARN, "EXEMPT it WITH A MEASUREMENT")
+         [{"asset": "T", "role": "priceFeeds[0]", "address": A, "heartbeat": 90000, "where": "x"}],
+         ERROR, "EXEMPT it WITH A MEASUREMENT")
     # unknown address -> WARN, not silent pass
     case("unrecorded address warns", "1", snap,
          [{"asset": "Z", "role": "priceFeeds[0]", "address": "0xdead00000000000000000000000000000000beef",
@@ -1244,10 +1250,12 @@ def self_test() -> int:
          WARN, "deviation-only feed with no heartbeat cadence")
 
     # A monitor feed does not price the asset, so it must not be told it will be valued $0.
+    # The heartbeat must DIFFER from declared for a finding to exist at all under the equality rule;
+    # at 86400 == declared this row is silent and the assertion would pass vacuously.
     _mon = case("a monitorFeeds row states the MONITOR consequence, not the $0 one", "1", _snap2,
-                [{"asset": "T", "role": "monitorFeeds[0]", "address": _A2, "heartbeat": 86400,
+                [{"asset": "T", "role": "monitorFeeds[0]", "address": _A2, "heartbeat": 90000,
                   "where": "x"}],
-                WARN, "does not zero the valuation")
+                ERROR, "does not zero the valuation")
     print(f"  [{'PASS' if not [m for lvl, m in _mon if 'valued $0' in m] else 'FAIL'}] "
           f"...and does NOT claim the asset is valued $0")
     ok = ok and not [m for lvl, m in _mon if "valued $0" in m]

@@ -1,6 +1,6 @@
 # Position-identity matrix — every leg every balance adapter can emit
 
-Verified against `src/balances/` emission code on 2026-07-10 (includes the Nexus, Ethena cooldown, ether.fi and StakeWise V3 exit-queue adapters and the Gearbox V3 credit-accounts adapter; Aura, the ERC-4626 wrap adapter, and the Merkl rewards adapter removed; reflects the 3-level `protocolBrand`/`protocolId`/`protocolSubId` taxonomy and the typed `positionInstanceId` field that replaced inline labels). Companion to [`docs/howto/position-identity-schema.md`](../howto/position-identity-schema.md), which defines the schema; this file enumerates the **actual value space** each adapter populates.
+Verified against `src/balances/` emission code on 2026-07-10 (includes the Nexus, Ethena cooldown, ether.fi and StakeWise V3 exit-queue adapters and the Gearbox V3 credit-accounts adapter; Aura and the ERC-4626 wrap adapter removed; the Merkl rewards adapter RE-ADDED as the attested family, row below; reflects the 3-level `protocolBrand`/`protocolId`/`protocolSubId` taxonomy and the typed `positionInstanceId` field that replaced inline labels). Companion to [`docs/howto/position-identity-schema.md`](../howto/position-identity-schema.md), which defines the schema; this file enumerates the **actual value space** each adapter populates.
 
 ## How a position is identified
 
@@ -83,6 +83,7 @@ Identity is the tuple `(chainId, protocolSubId, positionId, balanceAsset.asset, 
 | EthenaCooldownBalanceAdapter | `ethena-cooldown` | `abi.encode(address sUSDe)` (static, single leg) | USDe cooling — `isLocked=true` until cooldown elapsed, then `false` | `Supplied` | false | USDe |
 | NexusMutualStakingPoolsAssisted | `nexus-mutual-staking-pools` | `abi.encode(address stakingPool)` (NFT id in `positionInstanceId`) | active + expired staked NXM (per StakingNFT) | `Staking` | false | NXM |
 | | | | claimable rewards (per StakingNFT) | `Rewards` | false | NXM |
+| MerklRewardsAttested | `merkl` | `abi.encode(address DISTRIBUTOR)` (static — the claim target, NOT the reward token; reward token is in `balanceAsset`) | **one leg per cached campaign share** — unclaimed = proof-verified cumulative minus on-chain `claimed`; `keccak256(abi.encode(campaignId, subCampaignId))` in `positionInstanceId`, or `bytes32(0)` when submitted untagged; stale root reads 0 | `Rewards` | false | each reward token |
 
 ## PositionKind usage census
 

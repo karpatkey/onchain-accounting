@@ -36,7 +36,7 @@ The family is fed by an on-chain **assistant** contract the owner **delegatecall
 - Cache base: **`AssistedCoordCache`** (§4). Submit shape: incremental `submit`/`remove`, atomic with the protocol deposit/claim.
 - Members: **Nexus, StakeWise, ether.fi** (§6).
 
-> **Historical note.** An earlier **agent-fed** variant existed — an off-chain agent holding `ASSISTANT_ROLE` fed a role-gated base (`AssistantFedBalanceAdapter`) with full-set `submitTokenIds`; its only member was Merkl. That variant (base + marker + Merkl adapter) has been **removed pending a rewrite** of the Merkl adapter — retrievable from git history. Until it returns, the assisted family is exactly the permissionless assistant-fed variant described here.
+> **Historical note.** An earlier **agent-fed** variant existed — an off-chain agent holding `ASSISTANT_ROLE` fed a role-gated base (`AssistantFedBalanceAdapter`) with full-set `submitTokenIds`; its only member was Merkl. That variant (base + marker + Merkl adapter) was **removed in #141**. Merkl was then re-added as its **own separate `attested` family** — `MerklRewardsAttestedBalanceAdapter` in `../AttestedBalanceAdapters/`, [ADR 0022](../../../docs/decisions/0022-attested-balance-adapter-family.md) — because it caches a proof-verified *amount* (not coordinates valued live), so it is NOT part of this assisted family. This assisted family is exactly the permissionless assistant-fed coordinate-cache variant described here.
 
 ---
 

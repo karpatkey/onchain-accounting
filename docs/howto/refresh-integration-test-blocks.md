@@ -27,8 +27,9 @@ The single source of truth is [`test/integration/accounts.json`](../../test/inte
 │    consumes the fixture today — see the note below.                  │
 ├──────────────────────────────────────────────────────────────────────┤
 │ 2. forge build once (warm cache) → forge test per chain (PARALLEL)   │
-│    → deploys the NAV stack at the new fork block, reads NAV per      │
-│    enabled account, emits SNAPSHOT|... lines applied via jq          │
+│    → deploys NAV stack at the new fork, reads NAV per enabled        │
+│    account, emits SNAPSHOT|... lines applied via jq                  │
+│    (NOT MerklRewards — see the note below)                           │
 ├──────────────────────────────────────────────────────────────────────┤
 │ 3. (optional) /v1/user/all_complex_protocol_list (1×/account) +      │
 │    /v1/user/token_list (1× per chain×account), filtered to NAV's     │
@@ -40,7 +41,25 @@ The single source of truth is [`test/integration/accounts.json`](../../test/inte
 
 > **Why a separate Merkl-proof step.** Merkl's API only serves proofs against the *currently published* root. Forge tests pinned at a historical block can only verify a proof if that block's `Distributor.getMerkleRoot()` matches the API's current root — true right after a bump (when `forkBlock = cast block-number`), false a few hours later (Merkl rotates roots ~every 8h). Capturing proofs at bump time is the only window where this alignment holds reliably. **The Merkl API is not queried during test runs, and you do not need to re-fetch proofs when re-running tests against the same pinned fork block.** The proofs remain valid for a given fork block forever, because `Distributor.getMerkleRoot()` is frozen at that block.
 >
-> **Nothing consumes the fixture today.** The Merkl balance adapter and the test-side proof seeding were both removed from the repo: nothing under `src/balances/` covers Merkl, no `.sol` file reads `merkl-proofs.json`, and no proof is replayed into a cache during a test run. Step 1.5 still runs on every bump and still rewrites the fixture — treat the file (and the `expectedRoot` it records per chain) as a captured diagnostic, not as test input. The script's own inline comment at `script/test/refresh-integration-snapshot.sh:190-192` still claims the test consumes it; that comment is stale.
+> **⚠️ Merkl is NOT seeded into the JSON-driven integration harness — but the fixture is NOT unused.** Keep the two
+> apart, because they pull in opposite directions:
+>
+> - **The integration harness does not seed Merkl.** `_seedMerklProofs` was removed together with the old Merkl
+>   adapter in #141 and has not been restored: `test/integration/IntegrationFromConfigBase.fork.sol` contains no
+>   Merkl code, and the Merkl adapter ships `enabled:false` in every chain's deploy config. So the committed
+>   integration baselines (`nav-positions-<chainId>.json`, expected NAVs) contain no Merkl positions, and the
+>   JSON-driven integration tests assert nothing about Merkl while reporting green. **Do not read a green
+>   integration run as coverage of this adapter.** Re-wiring is a tracked follow-up, coupled to per-chain enablement.
+> - **The dedicated fork test DOES consume `merkl-proofs.json`.**
+>   `MerklRewardsAttestedBalanceAdapterRealProofForkTest._setupFork` reads it with `vm.readFile` and replays a real
+>   captured proof against the live Distributor root — the only test that pins Merkl's leaf encoding against
+>   reality. So step 1.5, the fixture, and its `expectedRoot` field must all be kept: deleting any of them silently
+>   removes that coverage.
+>
+> **Root-mismatch detection (applies once seeding is re-wired).** The fixture stores `expectedRoot` — the root captured
+> from the Distributor at the fork block. The seeding step is meant to compare this against the live root at test time;
+> if they differ, every `submitProofs` call fails (Merkl rewards silently zero). The fix is always the same: re-run
+> `refresh-integration-snapshot.sh` to re-capture proofs against the current root.
 
 Step 2 is the bottleneck (deploying a full NAV stack on a fork takes ~1–3 min per chain). Running all five chains in parallel reduces wall time from `sum(chains)` to `max(chains)` — typically Mainnet, since it has the most adapters. A single `forge build` runs before the parallel forge invocations so they share a warm cache without racing on `out/`. Each chain's stdout is captured to a per-chain log file in a temp directory; SNAPSHOT lines are applied to `accounts.json` in chain-id order after all forks finish, so output is deterministic and there's no jq-write race.
 

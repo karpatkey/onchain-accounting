@@ -40,8 +40,13 @@ import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 ///      data is opaque `bytes` at the family level (each member `abi.decode`s it into its own shape), so a single
 ///      signature serves every attested adapter, present and future, with the `bytes` being whatever that protocol needs.
 /// @dev **CHARTER: this family reports CREDITS ONLY.** Every leg an adapter advertising THIS interface id emits
-///      has `isDebt == false`, and the base enforces it rather than asking members to remember: the read surface
-///      is non-virtual and the only leg constructor cannot set the flag. The scope is deliberate — an
+///      has `isDebt == false`, and the base ENFORCES it rather than asking members to remember. The enforcement
+///      stack, stated precisely because an earlier version of this text over-claimed it: the scalar reads and the
+///      per-item failure policy are non-virtual, so the compiler blocks them; `_row`, the base's leg constructor,
+///      cannot set the flag; and — because `_assetLegs` is necessarily virtual and returns member-built structs,
+///      so nothing forces a member through `_row` — the base also REJECTS a debt leg at runtime as it collects,
+///      reverting {DebtLegRejected}. The conformance kit asserts the same property at test time. The scope is
+///      deliberate — an
 ///      attested-LIABILITY protocol is conceivable, but under this base it would need the reads, the leg builder,
 ///      the per-item failure policy and the drop licence all overridden in concert, which is maximally easy to
 ///      get wrong. Such a protocol wants a sibling base and its own interface id, not an override of this one.
@@ -94,6 +99,13 @@ interface IAttestedBalanceAdapter is IAccessControl, IBalanceAdapter {
     error NothingToClear();
     /// @notice The same asset appeared twice in a {previewPositions} payload — a double-count, rejected fail-loud.
     error DuplicateAsset(address asset);
+
+    /// @notice A member returned a leg with `isDebt == true`, which this family's charter forbids.
+    /// @dev The base's per-item DROP on a failed read is licensed ONLY because every leg is a credit: a dropped
+    ///      credit leg shrinks NAV (tolerated), a dropped debt leg inflates it (forbidden). Rather than trust a
+    ///      member to honour that, the base checks it as it collects. A debt-attesting protocol wants a sibling
+    ///      base and its own interface id — see the charter on this interface.
+    error DebtLegRejected(address asset);
 
     // ─── Reads ───
 

@@ -631,6 +631,11 @@ abstract contract AttestedValueCache is IAttestedBalanceAdapter, IPositionDescri
                 uint256 taken;
                 for (uint256 j; j < legs.length; ++j) {
                     if (taken == legCaps[i]) break;
+                    // CHARTER, enforced rather than trusted. `_assetLegs` is virtual and returns member-built
+                    // structs, so nothing forces a member through `_row` — this is what makes the interface's
+                    // credit-only claim true instead of aspirational, and it is what licenses the silent drops
+                    // above and below: a dropped CREDIT leg shrinks NAV, a dropped DEBT leg would inflate it.
+                    if (legs[j].isDebt) revert DebtLegRejected(live[i]);
                     tmp[count++] = legs[j];
                     ++taken;
                 }
@@ -690,6 +695,7 @@ abstract contract AttestedValueCache is IAttestedBalanceAdapter, IPositionDescri
             // that reads as complete.
             if (count + legs.length > tmp.length) revert InvalidArguments();
             for (uint256 k; k < legs.length; ++k) {
+                if (legs[k].isDebt) revert DebtLegRejected(assets[i]); // charter, same as the cache path
                 tmp[count++] = legs[k];
             }
         }

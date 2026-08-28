@@ -153,6 +153,22 @@ contract MerklRewardsAttestedBalanceAdapter is AttestedValueCache {
     /// @notice Submitted cumulative amount is strictly less than the cached value for the SAME live root. Merkl
     ///         fixes one cumulative per (user, token) per root, so a lower figure against the root the cached entry
     ///         was proven under indicates a malformed or hostile tree.
+    /// @dev **This is a TRIPWIRE, not a protection, and the difference matters.** For a well-formed Merkl tree it
+    ///      is UNREACHABLE: the amount is committed inside the leaf, so under one root exactly one value verifies
+    ///      per `(user, token)`. It cannot prevent an over-report either — `_verifyPayload` checks the proof
+    ///      against the live root BEFORE this runs, so any figure it sees is already root-attested — and its
+    ///      detection is order-contingent (a malformed tree whose LOWER leaf lands first passes silently).
+    ///
+    ///      What it does still do, and why it is kept: it is the WRITE path's only within-list duplicate check
+    ///      (`_revertOnDuplicateAsset` runs on the preview path only), so it rejects a decreasing duplicate token
+    ///      inside one submission that would otherwise land last-writer-wins. And a named revert beats a silent
+    ///      value flap if Merkl's tree engine ever misbehaves. Its base rate should be ZERO — alert on any
+    ///      occurrence rather than retrying.
+    ///
+    ///      **Do not "generalise" it back to the ungated form.** The liveness conjunct restores the guard's
+    ///      ORIGINAL within-list scope: it was written under clear-first (replace) semantics where it could not
+    ///      reach across calls, and the later move to upsert silently widened it into a cross-rotation guard it
+    ///      was never designed to be — which is what wedged accounts on a legitimate post-rotation decrease.
     error AmountRegression();
 
     /// @notice The submitted campaign breakdown does not sum to the proof-verified per-token cumulative.

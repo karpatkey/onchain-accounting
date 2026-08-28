@@ -185,6 +185,29 @@ contract RaggedPreviewMember is ProbeMember {
     }
 }
 
+/// @notice Hand-builds a DEBT leg, bypassing `_row` entirely — the route the charter's compiler half cannot close.
+/// @dev `_assetLegs` is necessarily virtual and returns member-constructed structs, so a member is never forced
+///      through `_row`. This is the member the runtime charter check exists for.
+contract DebtEmittingMember is ProbeMember {
+    constructor(address nav_, address admin_) ProbeMember(nav_, admin_) {}
+
+    function _assetLegs(
+        address,
+        address,
+        INAVCalculator.Asset memory meta,
+        uint256 liveValue,
+        uint256,
+        bytes memory,
+        bool
+    ) internal view override returns (INAVCalculator.PositionBalance[] memory legs) {
+        legs = new INAVCalculator.PositionBalance[](1);
+        legs[0].balanceAsset = meta;
+        legs[0].balanceAdapter = address(this);
+        legs[0].amount = liveValue;
+        legs[0].isDebt = true; // hand-built, never touched `_row`
+    }
+}
+
 /// @notice Family-level tests for {AttestedValueCache}, exercised through a SECOND member rather than through
 ///         Merkl. The base exists to be inherited, so the properties that matter are the ones a future member
 ///         could break — and those are invisible in a suite that only ever instantiates the first member.
@@ -228,6 +251,25 @@ contract AttestedValueCacheTest is BalanceAdapterTestBase {
     ///      and `_row` cannot set `isDebt`, so the charter is compiler-enforced.
     ///      THE DISCRIMINATING MUTATION: re-add `virtual` to `getAdapterBalances` and have a probe member return
     ///      a debt leg — this test is what should stop that landing.
+    /// @notice A member that hand-builds a DEBT leg is rejected at RUNTIME, not merely discouraged.
+    /// @dev THE HOLE THIS CLOSES. The charter's compiler half — non-virtual reads, and `_row` being unable to set
+    ///      `isDebt` — does NOT cover `_assetLegs`, which is necessarily virtual and returns member-built structs,
+    ///      so nothing forces a member through `_row`. Until this check existed the interface claimed "the base
+    ///      enforces it" while a member bypassing `_row` flowed a debt leg straight through `getAdapterPositions`.
+    ///      It matters because the base's TWO silent drops are licensed only by credit-only: a dropped credit leg
+    ///      shrinks NAV, a dropped debt leg inflates it — the one forbidden direction.
+    ///      THE DISCRIMINATING MUTATION: remove the `legs[j].isDebt` check in `_collectLegs` and this passes.
+    function test_charter_handBuiltDebtLegIsRejectedAtRuntime() public {
+        DebtEmittingMember m = new DebtEmittingMember(address(balances), admin);
+        bytes32 submitterRole = m.SUBMITTER_ROLE();
+        vm.prank(admin);
+        m.grantRole(submitterRole, address(this));
+        m.feed(alice, address(tok), 100 ether);
+
+        vm.expectRevert(abi.encodeWithSelector(IAttestedBalanceAdapter.DebtLegRejected.selector, address(tok)));
+        m.getAdapterPositions(alice, address(0));
+    }
+
     function test_charter_readSurfaceReportsCreditOnly() public {
         probe.feed(alice, address(tok), 100 ether);
 

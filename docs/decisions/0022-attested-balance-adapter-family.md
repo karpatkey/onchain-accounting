@@ -48,7 +48,7 @@ only, and it is an open design call rather than a closed guarantee. *(This upser
 
 These adapters are documented exceptions to the immutability rule (like the assisted family; cf. ADR 0005) — narrowly-scoped mutable cache state, no admin-injected amounts, no upgrade path.
 
-**First member:** `MerklRewardsAttestedBalanceAdapter` (`src/balances/AttestedBalanceAdapters/`), constructor `(distributor, navCalculator)`, permissionless `submitProofs(user, Allocation[])` / `submitProofsBatch`. See ADR 0007.
+**First member:** `MerklRewardsAttestedBalanceAdapter` (`src/balances/AttestedBalanceAdapters/`), constructor `(distributor, navCalculator, admin)`; `SUBMITTER_ROLE`-gated `submitProofs(user, Allocation[])` / `submitProofsBatch`, which are typed conveniences over the family-generic `submit(account, bytes)`. See ADR 0007.
 
 ## Attested vs assisted (why they are separate families)
 
@@ -56,7 +56,7 @@ These adapters are documented exceptions to the immutability rule (like the assi
 |---|---|---|
 | Caches | coordinates only, **never amounts** | a **proof-verified amount** |
 | Valued | **live on-chain** each read | the cached (proven) amount, minus on-chain `claimed`; 0 if stale |
-| Fed by | the **owner**, via a `msg.sender`-keyed delegatecall assistant | an independent **agent**, submit-**on-behalf-of** (explicit `account`), permissionless |
+| Fed by | the **owner**, via a `msg.sender`-keyed delegatecall assistant | an independent **agent** holding `SUBMITTER_ROLE`, submit-**on-behalf-of** (explicit `account`) |
 | Integrity from | `msg.sender`-keying + live ownership re-verification | the **on-chain proof** carried by every write |
 | Suppression-safe via | per-element `msg.sender`-keyed removal | per-element **upsert** (never drops omitted) + stale-gated clear |
 | Under-report-only via | value-live + re-verify | proof-verification + stale-root→0 |

@@ -13,7 +13,7 @@ import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 import {ProtocolNames} from "src/utils/ProtocolNames.sol";
 
-/// @title Merkl Rewards Balance Adapter (permissionless, proof-verified cache)
+/// @title Merkl Rewards Balance Adapter (role-gated submit, proof-verified cache)
 /// @author KPK
 /// @notice Reports a user's *unclaimed* Merkl reward balances. Merkl distributes rewards via off-chain merkle trees;
 ///         the on-chain Distributor stores only cumulative *claimed* amounts + the current root (the tree lives
@@ -182,7 +182,7 @@ contract MerklRewardsAttestedBalanceAdapter is AttestedValueCache {
     }
 
     //
-    // Mutators (permissionless — every write is proof-verified against the live Distributor root)
+    // Mutators (SUBMITTER_ROLE-gated; every write is also proof-verified against the live Distributor root)
     //
 
     /// @notice Submit Merkl allocations for `user` — each entry **upserts** its `(user, token)` cache; tokens

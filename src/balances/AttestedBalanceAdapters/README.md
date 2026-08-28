@@ -44,6 +44,32 @@ duplicate-asset guard, the `IBalanceAdapter` reads, and `_row`.
    debt leg makes NAV *larger* — the one direction forbidden here.
 
 
+## Recipe: my protocol has SUB-ELEMENTS per asset
+
+The cache holds **one attested value per `(account, asset)`**. If your protocol attests several things for the
+same asset — several campaigns, several vesting streams, several positions — do not reach for a second cache. The
+family's answer, proven by the first member:
+
+1. **Attest the AGGREGATE.** The proof binds one number per asset; that number is the sum.
+2. **Keep the breakdown as MEMBER state**, in your own mapping on the same `(account, asset)` key, written in
+   `_storeMemberState` and dropped in `_deleteMemberState` so it can never outlive the attestation.
+3. **Fan out in `_assetLegs`**, splitting the live value pro-rata across the breakdown. Use the LIVE value as the
+   numerator and floor the division, so the legs always sum to at most the attested total.
+4. **Declare the leg count** via `_cachedLegCount` / `_previewLegCount`, which must be UPPER BOUNDS on what
+   `_assetLegs` emits.
+5. **Cap the fan-out at WRITE time**, fail-loud, in your `_verifyPayload`. The read is bounded by the PRODUCT of
+   that cap and `_maxAssetsPerAccount()`, never by either alone.
+
+Merkl does exactly this with campaigns (`MerklRewardsAttestedBalanceAdapter.sol`): `Allocation.cumulativeAmount`
+is the proof-bound total, `CampaignShare[]` is the breakdown, and the contract enforces only that the shares SUM
+to the proven total.
+
+**Know what this does NOT cover.** The breakdown is *not* attested — only its sum is checked — so per-sub-element
+identity is display-grade, and a caller who can submit may relabel it. And staleness is per-`(account, asset)`, so
+this shape cannot express sub-elements with **heterogeneous validity** (one stream stale while another is live).
+A protocol needing that needs per-element epochs, which is a different cache — talk about it before building.
+
+
 ## Invariant (what makes it safe)
 
 - **Role-gated submit, on-behalf-of.** The submit mutator takes an explicit `account` and requires

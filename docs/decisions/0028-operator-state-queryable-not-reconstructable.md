@@ -1,4 +1,4 @@
-# 0025 — Operator state must be queryable, not reconstructable (held-invoice enumeration + stored withdrawal tx)
+# 0028 — Operator state must be queryable, not reconstructable (held-invoice enumeration + stored withdrawal tx)
 
 **Status:** accepted — implemented in PR #154. Augments [ADR 0027](0027-bridge-destination-hold-then-claim.md) (hold-then-claim) and [ADR 0021](0021-bridge-adapter-provenance-and-deploy-hardening.md) (Superchain provenance/deploy); supersedes neither.
 

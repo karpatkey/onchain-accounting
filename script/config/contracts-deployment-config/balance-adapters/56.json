@@ -6,5 +6,11 @@
       "pair": "0x74D4Ee4CA29Ca2FB69B31E9cbd4523b707e64662",
       "positionId": "0x74D4Ee4CA29Ca2FB69B31E9cbd4523b707e64662"
     }
+  },
+  "MerklRewards": {
+    "enabled": true,
+    "constructor": {
+      "distributor": "0x3Ef3D8bA38EBe18DB133cEc108f4D14CE00Dd9Ae"
+    }
   }
 }

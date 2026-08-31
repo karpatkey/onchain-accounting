@@ -110,7 +110,7 @@ contract BridgeEscrowInvariantTest is BridgeEscrowTestBase {
         }
     }
 
-    /// @notice ADR 0025: for each account, every hash in `getHeldInvoices` maps to a genuine unclaimed custody
+    /// @notice ADR 0028: for each account, every hash in `getHeldInvoices` maps to a genuine unclaimed custody
     ///         record (right account, amount > 0, not claimed), with no duplicates — so the operator never receives
     ///         a stale or already-claimed hash. (Value-completeness of the held set is covered by I1 above.)
     function invariant_heldSet_matchesUnclaimedCustody() public view {
@@ -129,7 +129,7 @@ contract BridgeEscrowInvariantTest is BridgeEscrowTestBase {
         }
     }
 
-    /// @notice ADR 0025 completeness (the reverse direction): every recorded delivery that is still live
+    /// @notice ADR 0028 completeness (the reverse direction): every recorded delivery that is still live
     ///         (custody amount > 0 && !claimed) appears in its account's `getHeldInvoices` set — so the keeper never
     ///         misses a claimable invoice. Guards against a future custody-writing path that forgets the add hook.
     function invariant_heldSet_isComplete() public view {

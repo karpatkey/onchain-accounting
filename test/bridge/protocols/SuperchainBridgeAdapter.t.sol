@@ -554,7 +554,7 @@ contract SuperchainBridgeAdapterTest is BridgeScenarioHelper {
         assertFalse(l1Ad.canFinalizeWithdrawal(L2_CHAIN_ID, realHash), "after settle: not finalizable");
     }
 
-    /// @notice ADR 0025: `proveWithdrawal` stores the full `WithdrawalTransaction`, readable back for finalize
+    /// @notice ADR 0028: `proveWithdrawal` stores the full `WithdrawalTransaction`, readable back for finalize
     ///         without an L2 log re-read. Round-trips every field (esp. the dynamic `data` — the reason the getter
     ///         is explicit rather than a `public` auto-getter, which would silently drop it).
     function test_getWithdrawalTransaction_roundTripAfterProve() public {
@@ -601,7 +601,7 @@ contract SuperchainBridgeAdapterTest is BridgeScenarioHelper {
         assertEq(got.data, wtx.data, "dynamic data round-trips (why the getter is explicit, not auto)");
     }
 
-    /// @notice ADR 0025 regression: two SAME-LANE withdrawals (same route invoiceId, distinct per-op invoice
+    /// @notice ADR 0028 regression: two SAME-LANE withdrawals (same route invoiceId, distinct per-op invoice
     ///         hashes) both proven in the window must each keep their OWN stored WithdrawalTransaction. Keying the
     ///         store by invoiceId (the bug Copilot caught) would let the second prove overwrite the first's tx.
     function test_getWithdrawalTransaction_sameLaneWithdrawalsDoNotCollide() public {
@@ -695,7 +695,7 @@ contract SuperchainBridgeAdapterTest is BridgeScenarioHelper {
     }
 
     /// @notice proveWithdrawal rejects zero invoice keys atomically (Copilot): a zero invoiceHash would prove on the
-    ///         portal but store no WithdrawalTransaction, defeating the ADR 0025 queryable flow and only surfacing as
+    ///         portal but store no WithdrawalTransaction, defeating the ADR 0028 queryable flow and only surfacing as
     ///         WithdrawalNotProven at completion. Fail fast at prove instead.
     /// @notice proveWithdrawal now DERIVES both invoice keys on-chain from the payload (Copilot), so an operator can't
     ///         supply a mismatched/typo'd key that overwrites another op's stored tx. An empty payload reverts

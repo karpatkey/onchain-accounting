@@ -1,5 +1,13 @@
 #!/usr/bin/env python3
-"""The DECLARED-heartbeat margin guard: registered heartbeat must EXCEED the provider's declared heartbeat.
+"""The DECLARED-heartbeat guard: a registered heartbeat must EQUAL the provider's declared heartbeat.
+
+SUPERSEDED RULE, KEPT AS HISTORY. This guard previously required registered > declared and treated
+equality as a WARN candidate. ADR 0025 inverted it to strict equality — margin above declared is a
+window in which a DEAD feed still reads FRESH, which is the one error this system treats as critical,
+and consumers already gate on `stale`, so a false-stale is a loud halt rather than a wrong number. The
+measured reasoning for the OLD rule is preserved below because it is still true as far as it goes: zero
+margin does make heartbeat-driven feeds go stale each cycle. ADR 0025 accepts that cost knowingly.
+See docs/decisions/0025-heartbeat-equals-declared.md.
 
 This is a SECOND, independent axis from `preflight_config.heartbeat_findings`, which checks the
 *derived-vs-base* pairing (ADR 0019 / finding #8). Both are heartbeat guards; neither subsumes the other:
@@ -55,10 +63,13 @@ most one of them:
     is the only primary the asset is stale and valued $0). NOT CHECKED here. It is gated against the same
     provider cadence because a custom feed propagates its rate leg's timestamp, `min(rate, base)`.
 
-Concretely, of the 41 named-custom nav entries across the configured chains:
-  * 21 have a Chainlink rate leg -> their CONSTRUCTOR heartbeat is checked, their NAV-SIDE heartbeat is NOT.
-  * 20 have no Chainlink rate leg at all (they read an on-chain exchange rate) -> NOT CHECKED on this axis
-    at all. That set includes sUSDS, the feed whose 59/61-cycle staleness is cited above as this module's
+Concretely, the named-custom nav entries across the configured chains split two ways:
+  * those with a Chainlink rate leg -> their CONSTRUCTOR heartbeat is checked, their NAV-SIDE heartbeat is NOT.
+  * those with no Chainlink rate leg at all (they read an on-chain exchange rate) -> NOT CHECKED on this axis
+    at all. (This split was once written here as exact counts. Nothing asserted them, they drifted the
+    first time feeds were added, and a stale census reads as a measurement -- so the numbers are gone
+    deliberately. Run this module to get the current split.) That set includes sUSDS, and now the four
+    Spark/Sky savings feeds, the class whose 59/61-cycle staleness is cited above as this module's
     motivating defect. Reaching it means following `baseAsset` into the NAV-sourced chain, which is the
     derived-vs-base axis's territory (ADR 0019); it is deliberately out of scope here.
 
@@ -111,6 +122,31 @@ DIRECTORY_FILES = {
 DIRECTORY_BASE = "https://reference-data-directory.vercel.app/"
 
 # ---------------------------------------------------------------------------------------------------
+# PROXY ALIASES. Chainlink sometimes publishes a feed in its reference directory under a DIFFERENT proxy
+# than the one a config points at, while both proxies wrap the SAME aggregator. The address is then
+# absent from the catalogue and `refresh` records no declared value for it — the feed becomes
+# unverifiable, which is precisely the blind spot that let POL sit at 90000 against a declared 86400
+# through an entire rollout without the guard being able to raise an ERROR.
+#
+# An alias maps OUR address to the catalogued one so the declared value can still be resolved. It is NOT
+# a licence to substitute a convenient feed: each entry records the on-chain evidence that the two
+# proxies are the same feed, and that evidence is what a reviewer should re-check before trusting it.
+# Verification is `aggregator()`, `decimals()` and `version()` on both proxies — matching prices alone is
+# not sufficient, since two independent ETH/USD feeds agree to several decimal places most of the time.
+PROXY_ALIASES: dict[tuple[str, str], dict] = {
+    ("8453", "0x71041dddad3595f9ced3dccfbe3d1f4b0a16bb70"): {
+        "catalogued": "0x50015f8b17fb2c290dde41fdc246ed0dcee93a8b",
+        "name": "ETH / USD (Base)",
+        "evidence": "Both proxies return aggregator() == 0x05c84a58FE042275b37db038bAAcD15F410c7bB0, "
+                    "decimals() == 8, version() == 6; verified 2026-08-28. Our proxy is live and fresh "
+                    "(age 176 s at the time of checking) and reports the same answer as the catalogued "
+                    "one. Chainlink dropped OUR proxy from feeds-ethereum-mainnet-base-1.json while "
+                    "continuing to list the alias, so this is a catalogue-key change, not a delisting.",
+        "used_by": "ETH and WETH on chain 8453",
+    },
+}
+
+# ---------------------------------------------------------------------------------------------------
 # THE ALLOWLIST. A feed here is exempt from the margin rule because it was MEASURED to be
 # deviation-active: its publish cadence sits far below its heartbeat, so the heartbeat never binds.
 #
@@ -161,7 +197,7 @@ ALLOWLIST: dict[tuple[str, str], dict] = {
 
 def _fix_hint(chain_id: str, name: str, declared: int, where: str = "", hb_key: str = "") -> str:
     """Name BOTH legitimate exits. A guard that fires without saying how to satisfy it gets bypassed."""
-    suggested = ((declared + 3600) // 3600) * 3600
+    suggested = declared          # ADR 0025: exactly declared, no margin
     nav_file = f"nav-config/assets-and-price-feeds/{chain_id}.json"
     # THE HINT MUST NOT PRESCRIBE THE SILENCING EDIT. A custom feed is gated on TWO independently
     # registered heartbeats against the same provider cadence: the constructor key this axis checks, and
@@ -180,14 +216,17 @@ def _fix_hint(chain_id: str, name: str, declared: int, where: str = "", hb_key: 
             f"asset. Editing only the constructor key SILENCES this warning without fixing anything — "
             f"this guard cannot tell you when that has happened. PR #236 raised both, for OETH.\n")
     return (
-        f"FIX — pick one:\n"
-        f"        (1) RAISE the registered heartbeat above the declared value, with real margin. For "
-        f"'{name}' declared {declared}, use >= {suggested} (declared + 1 h). Edit "
-        f"`{hb_key or 'heartbeat'}` in {where or nav_file}.\n"
+        f"FIX:\n"
+        f"        SET the registered heartbeat to EXACTLY the declared value. For '{name}' that is "
+        f"{suggested}. Edit `{hb_key or 'heartbeat'}` in {where or nav_file}. Do not add margin — see "
+        f"docs/decisions/0025-heartbeat-equals-declared.md for why, including the measured cost.\n"
         f"{two_gates}"
-        f"        (2) EXEMPT it WITH A MEASUREMENT, if the feed is deviation-active. Measure the "
-        f"aggregator's AnswerUpdated gaps over >= 14 days and add an ALLOWLIST entry in "
-        f"declared_heartbeat_guard.py recording intervals/breaches/max_gap_s/measured. `breaches` must be 0.\n"
+        f"        THERE IS NO SECOND EXIT. An ALLOWLIST entry does NOT resolve this finding: the "
+        f"exemption answers whether the heartbeat ever BINDS (a deviation-active feed publishes long "
+        f"before it), and ADR 0025's rule is about the VALUE, which the exemption does not waive. An "
+        f"allowlisted feed registered away from declared is still an ERROR — see the allowlist branch in "
+        f"`_declared_findings`. Add the entry if the cadence argument is worth recording, but set the "
+        f"heartbeat to the declared value either way.\n"
         f"        Do NOT simply widen the heartbeat to silence this without checking the derived-vs-base "
         f"pairing too: raising a BASE asset's heartbeat can leave its DERIVED feed tighter than its base, "
         f"which is the separate invariant preflight_config.heartbeat_findings enforces."
@@ -526,8 +565,11 @@ def _row_findings(chain_id: str, r: dict, declared: dict) -> list[tuple[str, str
                        f"rule does not apply. Reported rather than passed silently: silence here would "
                        f"read exactly like a checked-and-fine positive margin. Its freshness depends "
                        f"entirely on the deviation threshold, which this axis does not model.{off}")]
-    if rh > dh:
-        return []
+    # ADR 0025 REMOVED THIS EARLY RETURN. It used to read `if rh > dh: return []` — margin above
+    # declared was the PASS state. Under the equality rule it is the critical failure: every second
+    # above declared is a window in which a dead feed reads fresh. Leaving it in place made the
+    # inverted check below unreachable for exactly the registrations it exists to catch, which a
+    # revert-probe caught (DAI set to 7200 against a declared 3600 produced zero findings).
     allow = ALLOWLIST.get((str(chain_id), key))
     if allow:
         if _strict_int(allow.get("breaches")) != 0:
@@ -559,21 +601,46 @@ def _row_findings(chain_id: str, r: dict, declared: dict) -> list[tuple[str, str
                            f"old (>{MEASUREMENT_STALE_DAYS}). Publisher cadence drifts, so an old "
                            f"measurement ages exactly like the snapshot does. Re-measure the "
                            f"AnswerUpdated gaps and update `measured`, or drop the exemption.{off}")]
+        # ADR 0025: the exemption may not silently carry a registration that is NOT equal to declared.
+        # The allowlist predates the equality rule — it exempted deviation-active feeds from the old
+        # margin requirement — and it returns on `registered == rh` without ever comparing rh to dh. All
+        # six current entries happen to sit exactly at declared, so this is inert today; it is guarded so
+        # a future entry cannot reintroduce a false-fresh window behind a measurement.
+        if dh and rh != dh:
+            # ERROR, matching the non-allowlisted path. The comment above already says the exemption
+            # covers the CADENCE argument and not the equality rule; leaving this a WARN said the
+            # opposite in the only place that binds, since WARNs do not fail the build. An allowlisted
+            # feed would then carry a false-fresh window through the very gate meant to block it.
+            return [(ERROR, f"declared-heartbeat MISMATCH: asset '{r['asset']}' {r['role']} is exempt by "
+                            f"measurement but registered at {rh} against a declared {dh} ({rh - dh:+d}s). "
+                            f"The measured exemption answers the CADENCE question — whether the heartbeat "
+                            f"ever binds — and does NOT waive ADR 0025's equality rule. Set the heartbeat "
+                            f"to {dh}; the exemption can stay.{off}")]
         return []
-    # SEVERITY: WARN, not ERROR, and the distinction is load-bearing. At-or-below margin is a
-    # *candidate*, not a defect — it only bites HEARTBEAT-DRIVEN feeds, and ~30 references on the
-    # configured chains are deviation-active and genuinely fine. Erroring on all of them would block
-    # every deploy on feeds nobody has shown to be broken, and a guard that cries wolf gets bypassed
-    # rather than satisfied. So: unmeasured at-or-below margin is a WARN naming both exits (a
-    # to-measure queue), and ERROR is reserved for an evidence CONTRADICTION — an allowlist entry
-    # that records breaches, or one measured against a heartbeat the config has since changed.
-    return [(WARN,
-             f"declared-heartbeat margin UNMEASURED: asset '{r['asset']}' {r['role']} ({rec.get('name')}) is "
-             f"registered at {rh} but the provider declares {dh} — margin {rh - dh:+d}. A provider "
-             f"publishes tens of seconds PAST its declared heartbeat, so at-or-below margin means the "
-             f"feed goes stale at the end of essentially every "
-             f"publish cycle.{_consequence(r['role'])} Measured precedents: sUSDS 59/61 cycles (#211), "
-             f"OETH 29/29 (#236).{off}\n"
+    # ADR 0025 INVERTED THIS CHECK. The rule is now EQUALITY: a registered heartbeat must equal the
+    # provider's declared value exactly. Margin ABOVE declared is a window in which a dead feed reads
+    # fresh — the one error this system treats as critical — and margin BELOW declared manufactures
+    # staleness in quiet markets, where provider silence is legitimate.
+    #
+    # This file previously required margin ABOVE declared and treated zero margin as a WARN-level
+    # candidate. That reasoning is preserved in the module docstring as history: it correctly
+    # identified that at-or-below margin makes heartbeat-driven feeds go stale each cycle (sUSDS
+    # 59/61, OETH 29/29), and `f047d350` acted on it. ADR 0025 accepts that cost deliberately — the
+    # landing delay is +2..+96s, so the staleness share is 0.0-0.03% of reads for most feeds and at
+    # worst 5.6% (Arbitrum USDC) — in exchange for closing false-fresh windows that reached ~24 h.
+    #
+    # ERROR, not WARN: under an equality rule there is no "candidate" state. A mismatch is either
+    # unearned false-fresh exposure or manufactured staleness, and both are defects.
+    if rh == dh:
+        return []
+    direction = ("ABOVE declared — every second of this is a window in which a DEAD feed still reads "
+                 "FRESH, the critical error under ADR 0025") if rh > dh else \
+                ("BELOW declared — the provider is entitled to stay silent this long, so this "
+                 "manufactures staleness in a quiet market")
+    return [(ERROR,
+             f"declared-heartbeat MISMATCH: asset '{r['asset']}' {r['role']} ({rec.get('name')}) is "
+             f"registered at {rh} but the provider declares {dh} — {rh - dh:+d}s {direction}."
+             f"{_consequence(r['role'])}{off}\n"
              f"        {_fix_hint(str(chain_id), rec.get('name') or '?', dh, r.get('where', ''), _hb_key(r))}")]
 
 
@@ -626,13 +693,18 @@ def coverage_census(chain_id: str) -> dict:
 
 
 def findings(chain_id: str, snapshot: dict | None = None) -> list[tuple[str, str]]:
-    """(level, message) for one chain — the per-feed declared-margin verdicts.
+    """(level, message) for one chain — the per-feed declared-heartbeat verdicts.
 
-    Severity follows the three-state ladder in the module docstring: SILENT for positive margin or an
-    evidenced allowlist entry, WARN for an UNMEASURED at-or-below-margin feed (a to-measure queue, not a
-    blocker), and ERROR only for an evidence CONTRADICTION — an allowlist entry recording breaches, or one
-    measured against a heartbeat the config has since changed. It deliberately does NOT error on an
-    unmeasured feed; the module docstring explains why that split is load-bearing.
+    Severity under ADR 0025 (EQUALITY): SILENT when registered == declared, or for an evidenced allowlist
+    entry that is itself at declared. ERROR for a mismatch in EITHER direction — above declared is an
+    unearned false-fresh window, below it manufactures staleness, and under an equality rule neither is a
+    "candidate" state. WARN is reserved for the cases where the rule cannot be evaluated or the exemption
+    needs a human look: no declared value recorded, a declared value of 0, an allowlist entry with stale or
+    missing evidence, and an exemption carrying a registration that is not equal to declared.
+
+    THIS REPLACED A THREE-STATE MARGIN LADDER (silent above declared, WARN at-or-below-and-unmeasured,
+    ERROR only on a contradicted exemption). If you are reading that model anywhere in this module, it is
+    stale — the module docstring keeps its MEASUREMENTS as history, not its severities.
 
     Snapshot-LEVEL findings (staleness) are deliberately NOT returned here, because they are not
     per-chain. Every caller must ALSO call `snapshot_findings_once` — both entry points in this repo do.
@@ -817,6 +889,12 @@ def refresh(allow_shrink: bool = False, fetch=None) -> int:
         ent = {}
         for a in sorted(refs):
             rec = idx.get(a)
+            if rec is None:
+                # Fall back to a recorded alias before concluding "not a Chainlink feed". Without this a
+                # catalogue-key change silently converts a checkable feed into an unverifiable one.
+                al = PROXY_ALIASES.get((chain_id, a))
+                if al:
+                    rec = idx.get(al["catalogued"])
             hb = rec.get("heartbeat") if rec else None
             # 0 is RECORDED, not dropped. A deviation-only feed genuinely declares no heartbeat cadence,
             # and `rh > 0` then makes the margin rule silent for it — the correct outcome. Dropping it
@@ -947,17 +1025,26 @@ def self_test() -> int:
             ok = False
         print(f"  [{status}] {label}" + ("" if not got else f" (unexpected: {got})"))
 
-    case_silent("positive margin is SILENT", "1", snap,
-                [{"asset": "T", "role": "priceFeeds[0]", "address": A, "heartbeat": 90000, "where": "x"}])
-    case("zero margin warns (candidate, not blocker)", "1", snap,
-         [{"asset": "T", "role": "priceFeeds[0]", "address": A, "heartbeat": 86400, "where": "x"}],
-         WARN, "declared-heartbeat margin UNMEASURED")
-    case("negative margin warns", "1", snap,
+    # ADR 0025 INVERTED THESE FOUR. Under the old margin rule, above-declared was silent and equal was a
+    # WARN candidate; under equality it is exactly the other way round. They are kept rather than deleted
+    # because the inversion is the whole point of the rule change, and a rule with no test that it points
+    # the RIGHT WAY is how the guard silently stopped enforcing anything (it did: an early `if rh > dh:
+    # return []` made the equality check unreachable, and DAI at 7200 against a declared 3600 produced
+    # zero findings until it was removed).
+    case_silent("equality is SILENT", "1", snap,
+                [{"asset": "T", "role": "priceFeeds[0]", "address": A, "heartbeat": 86400, "where": "x"}])
+    case("ABOVE declared is an ERROR (the false-fresh window)", "1", snap,
+         [{"asset": "T", "role": "priceFeeds[0]", "address": A, "heartbeat": 90000, "where": "x"}],
+         ERROR, "ABOVE declared")
+    case("BELOW declared is an ERROR (manufactured staleness)", "1", snap,
          [{"asset": "T", "role": "priceFeeds[0]", "address": A, "heartbeat": 3600, "where": "x"}],
-         WARN, "declared-heartbeat margin UNMEASURED")
-    case("finding names BOTH exits", "1", snap,
-         [{"asset": "T", "role": "priceFeeds[0]", "address": A, "heartbeat": 86400, "where": "x"}],
-         WARN, "EXEMPT it WITH A MEASUREMENT")
+         ERROR, "BELOW declared")
+    # The hint used to advertise an allowlist entry as a second way to satisfy this finding. It is not:
+    # an exemption answers the cadence question and does not waive equality, and the allowlist branch
+    # ERRORs on a non-equal registration. The hint must say so rather than point at the silencing edit.
+    case("the fix hint offers no exemption escape", "1", snap,
+         [{"asset": "T", "role": "priceFeeds[0]", "address": A, "heartbeat": 90000, "where": "x"}],
+         ERROR, "THERE IS NO SECOND EXIT")
     # unknown address -> WARN, not silent pass
     case("unrecorded address warns", "1", snap,
          [{"asset": "Z", "role": "priceFeeds[0]", "address": "0xdead00000000000000000000000000000000beef",
@@ -1228,10 +1315,12 @@ def self_test() -> int:
          WARN, "deviation-only feed with no heartbeat cadence")
 
     # A monitor feed does not price the asset, so it must not be told it will be valued $0.
+    # The heartbeat must DIFFER from declared for a finding to exist at all under the equality rule;
+    # at 86400 == declared this row is silent and the assertion would pass vacuously.
     _mon = case("a monitorFeeds row states the MONITOR consequence, not the $0 one", "1", _snap2,
-                [{"asset": "T", "role": "monitorFeeds[0]", "address": _A2, "heartbeat": 86400,
+                [{"asset": "T", "role": "monitorFeeds[0]", "address": _A2, "heartbeat": 90000,
                   "where": "x"}],
-                WARN, "does not zero the valuation")
+                ERROR, "does not zero the valuation")
     print(f"  [{'PASS' if not [m for lvl, m in _mon if 'valued $0' in m] else 'FAIL'}] "
           f"...and does NOT claim the asset is valued $0")
     ok = ok and not [m for lvl, m in _mon if "valued $0" in m]

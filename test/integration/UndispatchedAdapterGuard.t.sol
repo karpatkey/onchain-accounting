@@ -31,15 +31,17 @@ contract GuardHarness {
 contract UndispatchedAdapterGuardTest is Test {
     GuardHarness internal harness;
 
-    /// @dev The six chain-1 names, verified against `origin/main`'s deploy config and dispatch chain on
-    ///      2026-07-30 rather than transcribed: every adapter `enabled: true` in
+    /// @dev The seven chain-1 names, verified against the deploy config and dispatch chain rather than
+    ///      transcribed: every adapter `enabled: true` in
     ///      contracts-deployment-config/{balance-adapters,meta-balance-adapters}/1.json that no
-    ///      `_equals`/`_startsWith` branch in `_deployBalanceAdapter` resolves.
+    ///      `_equals`/`_startsWith` branch in `_deployBalanceAdapter` resolves. Six as of 2026-07-30;
+    ///      `MerklRewards` joined on 2026-08-28 when the attested adapter was enabled fleet-wide.
     string[] internal CHAIN_1_SKIPPED = [
         "EthenaCooldown",
         "EtherFiWithdrawalQueueAssisted",
         "EulerVaultsMeta",
         "LidoWithdrawalQueue",
+        "MerklRewards",
         "NexusMutualStakingPoolsAssisted",
         "StakeWiseV3ExitQueueAssisted"
     ];
@@ -110,14 +112,21 @@ contract UndispatchedAdapterGuardTest is Test {
     }
 
     function test_realDeclaration_acceptsChain100SkippedSet() public view {
-        harness.checkRealFile(vm, 100, _arr("StakeWiseV3ExitQueueAssisted"));
+        string[] memory chain100 = new string[](2);
+        chain100[0] = "MerklRewards";
+        chain100[1] = "StakeWiseV3ExitQueueAssisted";
+        harness.checkRealFile(vm, 100, chain100);
     }
 
-    /// @notice Chains that dispatch everything must declare nothing.
-    function test_realDeclaration_chainsWithNoSkipsDeclareNothing() public view {
-        harness.checkRealFile(vm, 10, new string[](0));
-        harness.checkRealFile(vm, 8453, new string[](0));
-        harness.checkRealFile(vm, 42161, new string[](0));
+    /// @notice The three chains whose ONLY undispatched adapter is the attested one.
+    /// @dev These asserted `new string[](0)` — dispatch everything, declare nothing — until `MerklRewards` was
+    ///      enabled on 2026-08-28. It is undispatched on every chain it is enabled on, so all three moved from
+    ///      "declares nothing" to "declares exactly one". Chains 56 and 137 also enable it but have no
+    ///      integration suite, so nothing checks them and they are deliberately absent from the declaration.
+    function test_realDeclaration_chainsWithOnlyTheAttestedAdapterSkipped() public view {
+        harness.checkRealFile(vm, 10, _arr("MerklRewards"));
+        harness.checkRealFile(vm, 8453, _arr("MerklRewards"));
+        harness.checkRealFile(vm, 42161, _arr("MerklRewards"));
     }
 
     /// @notice PROOF IT BITES, against the real file rather than a synthetic one: a newly added adapter that

@@ -10,5 +10,9 @@
   },
   "Fluid_fToken_WPOL": {
     "enabled": false
+  },
+  "MerklRewards": {
+    "enabled": true,
+    "$comment": "Attested family (ADR 0022). Deployed via CREATE2, so it has ONE address on every chain. Contributes 0 to NAV until the keeper EOA is granted SUBMITTER_ROLE by the adapter admin and starts submitting proofs \u2014 see docs/operations/merkl-proof-submitter.md."
   }
 }

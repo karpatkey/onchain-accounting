@@ -120,6 +120,25 @@ library DeploySalts {
     uint256 internal constant FLUID_VAULTS_META = 2;
 
     //
+    // Attested balance adapters (ADR 0022) — CREATE2 same-address across chains
+    //
+    // `MerklRewardsAttestedBalanceAdapter` takes (distributor, navCalculator, admin), and all three are
+    // fleet-identical, which is what makes ONE address possible for a protocol-arg adapter:
+    //   * distributor — Merkl deploys its Distributor deterministically at
+    //     `0x3Ef3D8bA38EBe18DB133cEc108f4D14CE00Dd9Ae`. VERIFIED by `eth_getCode` on every chain in this repo:
+    //     present on 24 of 25 (absent only on opBNB/204, which therefore cannot carry this adapter).
+    //   * navCalculator — the NAV proxy is CREATE2-identical at `0x54EaD2A1…` on 24 of 25 (absent on
+    //     polygon-zkevm/1101, which has no deployment at all).
+    //   * admin — the deployer EOA, read from `DEPLOYER_EOA`, identical across chains.
+    // The canonical CREATE2 deployer was likewise verified present on all 23 chains in the intersection.
+    //
+    // ⚠️ The admin is a CONSTRUCTOR ARG, so it is part of the init code and therefore part of the address.
+    // Deploying from a different `DEPLOYER_EOA`, or handing admin to the security council at construction
+    // instead, yields a DIFFERENT address on that chain. Hand over the admin ROLE post-deploy
+    // (`grantRole`/`renounceRole`) rather than by changing this argument.
+    uint256 internal constant MERKL_REWARDS = 1;
+
+    //
     // Bridge adapters (ADR 0012, D7 — CREATE2 same-address across chains)
     //
     // Each bridge adapter is a plain (non-proxied) AccessControl contract deployed via the canonical CREATE2

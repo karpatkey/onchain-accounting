@@ -111,7 +111,7 @@ contract BridgeEscrow is
     /// @notice Held-but-unclaimed custody per account and asset (for per-account NAV attribution)
     mapping(address => mapping(address => uint256)) private _heldByAccount;
 
-    /// @notice Enumerable set of held (delivered-but-unclaimed) invoice hashes per account (ADR 0025).
+    /// @notice Enumerable set of held (delivered-but-unclaimed) invoice hashes per account (ADR 0028).
     /// @dev Lets the settlement operator discover claimable invoices in ONE call (`getHeldInvoices`) instead of
     ///      reconstructing them from `DeliveryRecorded` logs over a bounded block window. Mirrors the source-side
     ///      `_activeInvoices`/`_activeInvoicesSet` machinery: a hash is added on `recordDelivery` and removed on
@@ -951,7 +951,7 @@ contract BridgeEscrow is
         }
     }
 
-    /// @notice Add a held (delivered-but-unclaimed) invoice hash to `account`'s enumerable set (ADR 0025).
+    /// @notice Add a held (delivered-but-unclaimed) invoice hash to `account`'s enumerable set (ADR 0028).
     /// @dev Idempotent: `recordDelivery`'s replay guard already prevents a second add for the same hash; the
     ///      membership check keeps it safe regardless. Removal happens only in `_claim`.
     function _addHeldInvoice(address account, bytes32 invoiceHash) internal {

@@ -8,10 +8,22 @@
       "EtherFiWithdrawalQueueAssisted": "Assisted family — see $assisted_family_note. Same revisit-before-refresh condition once fed.",
       "EulerVaultsMeta": "Not dispatched, and it is a meta-adapter, so _configureMetaInstances never reaches it and its governed instance set is never applied — nothing reverts. `euler2` IS in chains.1.supportedDeBankProtocols, so a fixture holding Euler would show up as NAV-side drift rather than as silence. No current fixture does: the one cached euler2 item (~$135.8K) is on chain 1 for an account whose enabledChains is [42161] only, so chain 1 is never evaluated for it.",
       "EthenaCooldown": "Not dispatched. No current fixture holds a cooldown position — ACCOUNT_1's cached `ethena` item is wallet sUSDe, which is a registered priced asset reported by ERC20DefaultBalanceAdapter, not a cooldown.",
-      "LidoWithdrawalQueue": "Not dispatched. Every cached `lido` item across the fixtures is wallet stETH (a registered priced asset), not a withdrawal request, so no fixture exercises the queue today."
+      "LidoWithdrawalQueue": "Not dispatched. Every cached `lido` item across the fixtures is wallet stETH (a registered priced asset), not a withdrawal request, so no fixture exercises the queue today.",
+      "MerklRewards": "Attested family — see $attested_family_note. Enabled in deploy config as of the CREATE2 rollout; the cache is empty until the keeper holds SUBMITTER_ROLE, so it contributes 0 on any fork. Same revisit-before-refresh condition once fed."
     },
     "100": {
-      "StakeWiseV3ExitQueueAssisted": "Assisted family — see $assisted_family_note. Enabled on Gnosis as well as mainnet; same revisit-before-refresh condition once fed."
+      "StakeWiseV3ExitQueueAssisted": "Assisted family — see $assisted_family_note. Enabled on Gnosis as well as mainnet; same revisit-before-refresh condition once fed.",
+      "MerklRewards": "Attested family — see $attested_family_note. Enabled in deploy config as of the CREATE2 rollout; the cache is empty until the keeper holds SUBMITTER_ROLE, so it contributes 0 on any fork. Same revisit-before-refresh condition once fed."
+    },
+    "10": {
+      "MerklRewards": "Attested family — see $attested_family_note. Enabled in deploy config as of the CREATE2 rollout; the cache is empty until the keeper holds SUBMITTER_ROLE, so it contributes 0 on any fork. Same revisit-before-refresh condition once fed."
+    },
+    "8453": {
+      "MerklRewards": "Attested family — see $attested_family_note. Enabled in deploy config as of the CREATE2 rollout; the cache is empty until the keeper holds SUBMITTER_ROLE, so it contributes 0 on any fork. Same revisit-before-refresh condition once fed."
+    },
+    "42161": {
+      "MerklRewards": "Attested family — see $attested_family_note. Enabled in deploy config as of the CREATE2 rollout; the cache is empty until the keeper holds SUBMITTER_ROLE, so it contributes 0 on any fork. Same revisit-before-refresh condition once fed."
     }
-  }
+  },
+  "$attested_family_note": "The `MerklRewards` entries share one rationale, kept here rather than repeated per chain. It is the attested balance-adapter family (ADR 0022): a per-(account, token) cache of a MERKLE-PROOF-VERIFIED amount, which reads 0 whenever the cached root differs from the live Distributor root, so — like the assisted family — it can only ever under-report. A non-zero balance in the harness therefore requires the cache to be fed first, and unlike the assisted family that is NOT trivial to fake: submits are gated on SUBMITTER_ROLE, and the payload must carry a merkle proof that verifies against the live root at the fork block. A harness that granted itself the role and submitted a proof it constructed would assert the VALUATION path while leaving the proof-verification path — where this family's integrity actually lives — tested only where it already is, in the adapter's own fork tests against the real Distributor root. That is why this is a declared skip rather than a dispatch entry. NOTE THE ASYMMETRY WITH PRODUCTION: on-chain the cache is fed by an off-chain keeper holding SUBMITTER_ROLE, so until that keeper is deployed and granted the role, the LIVE adapter also reports 0 — the harness and production agree today, and both under-report by exactly the unclaimed Merkl rewards. REVISIT BEFORE THE NEXT SNAPSHOT REFRESH once the keeper is running: while the adapter reports 0 the omission is invisible, and a refresh run in that state would pin the under-report as the expected NAV. No fixture exercises this today — `merkl` appears nowhere in test/integration/accounts.json, neither as a cached DeBank item nor in any chain's supportedDeBankProtocols — so there is no known omitted value at present, only a latent one."
 }

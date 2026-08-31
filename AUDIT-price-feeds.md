@@ -1,5 +1,14 @@
 # Price-feed leaf audit — the 27 untouched per-asset feeds
 
+> **PROVENANCE — EVERY COUNT BELOW IS HISTORICAL (as of the audit date), NOT CURRENT.**
+> This document's census ("39 instances", "mainnet 24", "6 of the 39") was measured when it was
+> written and nothing re-derives it, so it went stale the first time feeds were added. Measured
+> 2026-08-27: `script/config/deployments/1.json` holds **30** non-empty `customPriceFeeds` on mainnet,
+> not 24. Treat the totals as a snapshot of the reasoning, not as present-day inventory — re-derive
+> from the deployment records before relying on any figure here. The individual FINDINGS still stand
+> except where a note says otherwise (see the sDAI supersession below).
+
+
 **Status:** findings report. Originally a report-only artefact; committed 2026-07-29 so the reasoning behind the fixes in PR #199 is auditable from the repo rather than living in one worktree.
 
 **Branch:** `audit/price-feed-leaf-sweep` @ `53b2d2eb` (origin/main).
@@ -69,6 +78,15 @@ The absence applies to every non-4626 feed (all `BaseCustomPriceFeed` and `TwoFe
 > source, and therefore pin-neutral and outside this cycle's source scope.
 
 ### B. `cbETH_CustomPriceFeed`, `ETHPlus_CustomPriceFeed` — and `sDAI_CustomPriceFeed` — are deployed on no chain. Three, not two.
+
+> **SUPERSEDED FOR `sDAI` (2026-08-27).** This finding was accurate when written and is now wrong on
+> sDAI specifically. `sDAI_CustomPriceFeed` was revived as an `ERC4626VaultRatePriceFeed` subclass,
+> deployed to mainnet at `0x84eDa44d3ab2982692804b153D4bE88A0AfD533C`, and sDAI IS a registered
+> mainnet asset — so every claim below about sDAI having "no config entry on any chain", being
+> "genuinely dead", and mainnet sDAI "not being a registered asset" no longer holds, and the
+> suggestion to drop the contract must not be acted on. The contract is also no longer the chi-based
+> implementation this document describes. `cbETH` and `ETHPlus` are unaffected and the finding stands
+> for them. Left in place rather than rewritten so the reasoning stays legible.
 
 Confirmed from **both** independent sources, which agree:
 

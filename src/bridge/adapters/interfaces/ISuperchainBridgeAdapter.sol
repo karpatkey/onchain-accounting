@@ -235,7 +235,7 @@ interface ISuperchainBridgeAdapter is IBridgeAdapter {
     /// @return The message payload, or empty bytes if not found
     function getMessagePayload(bytes32 invoiceHash) external view returns (bytes memory);
 
-    /// @notice Gets the full `WithdrawalTransaction` stored at prove time for an invoice (ADR 0025)
+    /// @notice Gets the full `WithdrawalTransaction` stored at prove time for an invoice (ADR 0028)
     /// @dev Lets the settlement keeper finalize an already-proven L2->L1 withdrawal without re-deriving the
     ///      transaction from the source L2 `MessagePassed` log. Keyed by the per-operation invoice HASH (not the
     ///      reusable route `invoiceId`). Returns a zero-valued struct if not proven.

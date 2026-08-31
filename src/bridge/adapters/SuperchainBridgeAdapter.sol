@@ -98,7 +98,7 @@ contract SuperchainBridgeAdapter is BridgeAdapter, ISuperchainBridgeAdapter {
     /// @dev Used to track which withdrawal hash was used for each invoice
     mapping(bytes32 => bytes32) public invoiceToWithdrawalHash;
 
-    /// @notice Full `WithdrawalTransaction` stored at prove time, keyed by the PER-OPERATION invoice HASH (ADR 0025).
+    /// @notice Full `WithdrawalTransaction` stored at prove time, keyed by the PER-OPERATION invoice HASH (ADR 0028).
     /// @dev Lets the settlement keeper read back the exact struct needed to FINALIZE an already-proven L2->L1
     ///      withdrawal via `getWithdrawalTransaction`, instead of re-deriving it from the source L2 `MessagePassed`
     ///      log over a >7-day window. Keyed by the invoice HASH (the checksum, unique per operation), NOT the route
@@ -424,7 +424,7 @@ contract SuperchainBridgeAdapter is BridgeAdapter, ISuperchainBridgeAdapter {
 
         if (chainId == l1ChainId) {
             // L2 → L1 withdrawal: finalize via the portal (proof-gated). Bind the withdrawal to THIS invoice by
-            // reading the tx stored at prove time under the per-operation invoice hash (ADR 0025), rather than
+            // reading the tx stored at prove time under the per-operation invoice hash (ADR 0028), rather than
             // trusting the operator-supplied protocolData — the route invoiceId is reused per lane and cannot
             // distinguish concurrent same-lane withdrawals, so an unbound protocolData could settle invoice B with
             // invoice A's withdrawal. `protocolData` is now ignored (kept for ABI parity).
@@ -586,7 +586,7 @@ contract SuperchainBridgeAdapter is BridgeAdapter, ISuperchainBridgeAdapter {
     /// @param outputRootProof The output root proof
     /// @param withdrawalProof The withdrawal proof
     /// @param messagePayload The encoded invoice payload (the same bytes used at deposit/completion). BOTH keys — the
-    ///        route `invoiceId` and the per-operation `invoiceHash` (ADR 0025) — are DERIVED from it on-chain, exactly
+    ///        route `invoiceId` and the per-operation `invoiceHash` (ADR 0028) — are DERIVED from it on-chain, exactly
     ///        as `_completeBridge` derives them, so an operator can never supply a mismatched/typo'd key that overwrites
     ///        another operation's stored tx or files the tx under a key completion never looks up.
     /// @dev MANAGER-driven on L1 after the withdrawal is initiated on L2. Computes the REAL OP withdrawal
@@ -645,7 +645,7 @@ contract SuperchainBridgeAdapter is BridgeAdapter, ISuperchainBridgeAdapter {
         invoiceToWithdrawalHash[invoiceId] = withdrawalHash;
         emit SuperchainWithdrawalProven(invoiceId, withdrawalHash);
 
-        // Store the tx under the PER-OPERATION invoice hash (ADR 0025) so the keeper can finalize without an L2 log
+        // Store the tx under the PER-OPERATION invoice hash (ADR 0028) so the keeper can finalize without an L2 log
         // re-read. The hash is derived on-chain above (from the payload), so it is exactly the key completion looks up
         // — no operator mismatch and no cross-operation overwrite is possible.
         _withdrawalTxByInvoiceHash[invoiceHash] = withdrawalTx;

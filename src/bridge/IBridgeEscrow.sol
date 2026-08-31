@@ -266,7 +266,7 @@ interface IBridgeEscrow {
 
     /// @notice Held (delivered-but-unclaimed) invoice hashes for `account` — the destination-side enumeration the
     ///         settlement operator uses to discover claimable invoices in ONE call, instead of reconstructing them
-    ///         from `DeliveryRecorded` logs over a bounded window (ADR 0025). A hash appears after `recordDelivery`
+    ///         from `DeliveryRecorded` logs over a bounded window (ADR 0028). A hash appears after `recordDelivery`
     ///         and is removed on `claim`. Returns the raw hashes; pair each with `destinationCustody(hash)`.
     function getHeldInvoices(address account) external view returns (bytes32[] memory);
 

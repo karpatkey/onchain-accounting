@@ -6,7 +6,8 @@
   "balanceAdapters": {
     "ERC20Default": "0x4Bc39Dce61245F5A63189d1FA03E6D76646f1EE6",
     "FluidFTokensMeta": "0x0c312178e10ad15a9DC847d664786146f2C88dcf",
-    "UniswapV3PoolsMeta": "0xACdC33b6a453F629d1ab10A14d3513817F492de7"
+    "UniswapV3PoolsMeta": "0xACdC33b6a453F629d1ab10A14d3513817F492de7",
+    "MerklRewards": "0xFf2D5A8bf801191eD1292E6DD6792F5D03c5aFBF"
   },
   "NAVCalculatorProxy": "0x54EaD2A1dB7456cA917675Ea8908ec8A997c6214",
   "customPriceFeeds": {},

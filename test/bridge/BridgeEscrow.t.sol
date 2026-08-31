@@ -116,7 +116,7 @@ contract BridgeEscrowTest is BridgeEscrowTestBase {
         assertTrue(destEscrow.isInvoiceCompleted(invoiceHash), "Invoice should be completed on record");
         (,,,,, bool claimedAfterRecord) = destEscrow.destinationCustody(invoiceHash);
         assertFalse(claimedAfterRecord, "custody not claimed yet");
-        // ADR 0025: the held-invoice enumeration reflects the delivery.
+        // ADR 0028: the held-invoice enumeration reflects the delivery.
         bytes32[] memory heldAfterRecord = destEscrow.getHeldInvoices(account);
         assertEq(heldAfterRecord.length, 1, "getHeldInvoices has the invoice after record");
         assertEq(heldAfterRecord[0], invoiceHash, "getHeldInvoices element == invoiceHash");
@@ -133,7 +133,7 @@ contract BridgeEscrowTest is BridgeEscrowTestBase {
         assertEq(destEscrow.getHeldInvoices(account).length, 0, "getHeldInvoices empty after claim");
     }
 
-    // ============ getHeldInvoices (ADR 0025) ============
+    // ============ getHeldInvoices (ADR 0028) ============
 
     function test_getHeldInvoices_emptyForFreshAccount() public {
         (BridgeEscrow destEscrow,,) = _setupDestinationAndValidPayload(address(usdc), 1000e6);

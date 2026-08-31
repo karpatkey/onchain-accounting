@@ -109,6 +109,13 @@ library ProtocolNames {
     string internal constant BRIDGE_ESCROW = "Bridge Escrow";
 
     // ─────────────────────────────────────────────────────────────────────────────────────────────────────────────
+    // Rewards
+    // ─────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+    /// @dev `ProtocolIds.MERKL` — the attested Merkl rewards adapter (`MerklRewardsAttestedBalanceAdapter`).
+    string internal constant MERKL = "Merkl";
+
+    // ─────────────────────────────────────────────────────────────────────────────────────────────────────────────
     // protocolId → display name
     // ─────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -158,6 +165,7 @@ library ProtocolNames {
         if (protocolId == ProtocolIds.NEXUS_MUTUAL) return NEXUS_MUTUAL;
 
         if (protocolId == ProtocolIds.BRIDGE_ESCROW) return BRIDGE_ESCROW;
+        if (protocolId == ProtocolIds.MERKL) return MERKL;
 
         if (protocolId == ProtocolIds.WALLET) return WALLET;
 

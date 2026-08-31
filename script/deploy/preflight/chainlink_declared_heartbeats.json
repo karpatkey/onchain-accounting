@@ -1,7 +1,7 @@
 {
   "$comment": "Snapshot of each oracle's PROVIDER-DECLARED heartbeat, for the declared-heartbeat-margin guard in declared_heartbeat_guard.py. Committed on purpose: preflight must be DETERMINISTIC and must not depend on a third-party endpoint at deploy time \u2014 a network failure should not block a deploy, and a silently-changed remote should not change the verdict. Regenerate with: python3 declared_heartbeat_guard.py --refresh. Source: Chainlink reference-data-directory. Only addresses referenced by config are recorded; an unrecorded address is reported by the guard as actionable (run --refresh) rather than silently passing.",
   "source": "https://reference-data-directory.vercel.app/",
-  "fetched": "2026-07-31",
+  "fetched": "2026-08-28",
   "chains": {
     "1": {
       "0x04f84020fdf10d9ee64d1dcc2986edf2f556da11": {
@@ -52,6 +52,12 @@
         "threshold": 2,
         "feedCategory": "medium"
       },
+      "0x4e844125952d32acdf339be976c98e22f6f318db": {
+        "name": "LDO / ETH",
+        "declaredHeartbeat": 86400,
+        "threshold": 2,
+        "feedCategory": "medium"
+      },
       "0x536218f9e9eb48863970252233c8f271f554c2d0": {
         "name": "RETH / ETH",
         "declaredHeartbeat": 86400,
@@ -88,8 +94,8 @@
         "threshold": 0.5,
         "feedCategory": "custom"
       },
-      "0x703118c4cbcccbf2ab31913e0f8075fbbb15f563": {
-        "name": "OETH / ETH",
+      "0x7bac85a8a13a4bcd8abb3eb7d6b4d632c5a57676": {
+        "name": "MATIC / USD",
         "declaredHeartbeat": 86400,
         "threshold": 1,
         "feedCategory": "high"
@@ -122,6 +128,12 @@
         "name": "DAI / USD",
         "declaredHeartbeat": 3600,
         "threshold": 0.25,
+        "feedCategory": "low"
+      },
+      "0xbb65fa58bdb7d33e4a3d1a40a7a9bd99e746367b": {
+        "name": "USD / ARS",
+        "declaredHeartbeat": 86400,
+        "threshold": 0.5,
         "feedCategory": "low"
       },
       "0xc5f8c4ab091be1a899214c0c3636ca33dca0c547": {
@@ -262,6 +274,12 @@
       }
     },
     "100": {
+      "0x0064ac007ff665cf8d0d3af5e0ad1c26a3f853ea": {
+        "name": "wstETH-ETH Exchange Rate",
+        "declaredHeartbeat": 86400,
+        "threshold": 0.5,
+        "feedCategory": "custom"
+      },
       "0x22441d81416430a54336ab28765abd31a792ad37": {
         "name": "GNO / USD",
         "declaredHeartbeat": 86400,
@@ -338,10 +356,22 @@
         "threshold": 0.3,
         "feedCategory": "low"
       },
+      "0x35e9d7001819ea3b39da906ae6b06a62cfe2c181": {
+        "name": "weETH / eETH Exchange Rate",
+        "declaredHeartbeat": 86400,
+        "threshold": 0.5,
+        "feedCategory": "custom"
+      },
       "0x42868efcee13c0e71af89c04ff7d96f5bec479b0": {
         "name": "GHO / USD",
         "declaredHeartbeat": 86400,
         "threshold": 0.25,
+        "feedCategory": "medium"
+      },
+      "0x43a5c292a453a3bf3606fa856197f09d7b74251a": {
+        "name": "WSTETH / ETH",
+        "declaredHeartbeat": 86400,
+        "threshold": 0.5,
         "feedCategory": "medium"
       },
       "0x71041dddad3595f9ced3dccfbe3d1f4b0a16bb70": {
@@ -355,6 +385,12 @@
         "declaredHeartbeat": 86400,
         "threshold": 0.3,
         "feedCategory": "low"
+      },
+      "0x806b4ac04501c29769051e42783cf04dce41440b": {
+        "name": "CBETH / ETH",
+        "declaredHeartbeat": 86400,
+        "threshold": 0.5,
+        "feedCategory": "medium"
       },
       "0x9dda783de64a9d1a60c49ca761ebe528c35ba428": {
         "name": "COMP / USD",
@@ -394,6 +430,18 @@
         "threshold": 0.5,
         "feedCategory": "high"
       },
+      "0x20bae7e1de9c596f5f7615aeaa1342ba99294e12": {
+        "name": "weETH / eETH Exchange Rate",
+        "declaredHeartbeat": 86400,
+        "threshold": 0.5,
+        "feedCategory": "custom"
+      },
+      "0x3a917e6b5732dfcc4a45257e3930979fae6a3737": {
+        "name": "rsETH / ETH Exchange Rate",
+        "declaredHeartbeat": 86400,
+        "threshold": 0.05,
+        "feedCategory": "custom"
+      },
       "0x3c786e934f23375ca345c9b8d5ad54838796e8e7": {
         "name": "GHO / USD",
         "declaredHeartbeat": 86400,
@@ -424,6 +472,12 @@
         "threshold": 0.5,
         "feedCategory": "high"
       },
+      "0xb523ae262d20a936bc152e6023996e46fdc2a95d": {
+        "name": "WSTETH / ETH",
+        "declaredHeartbeat": 86400,
+        "threshold": 0.5,
+        "feedCategory": "medium"
+      },
       "0xe141425bc1594b8039de6390db1cdaf4397ea22b": {
         "name": "weETH / ETH",
         "declaredHeartbeat": 86400,
@@ -435,6 +489,12 @@
         "declaredHeartbeat": 3600,
         "threshold": 0.5,
         "feedCategory": "low"
+      },
+      "0xf8722c901675c4f2f7824e256b8a6477b2c105fb": {
+        "name": "syrupUSDC / USDC Exchange Rate",
+        "declaredHeartbeat": 86400,
+        "threshold": 0.05,
+        "feedCategory": "custom"
       }
     }
   }

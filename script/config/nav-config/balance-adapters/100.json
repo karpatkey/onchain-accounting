@@ -5,5 +5,8 @@
   "StakeWiseV3ExitQueueAssisted": {
     "enabled": true,
     "$comment": "StakeWise V3 exit-queue cache adapter on Gnosis (ADR 0014). Registered via addBalanceAdapters; reports 0 until the kpk-agents submitter feeds (vault, positionTicket, timestamp) tuples. GNO-denominated; was missing from the previous Gnosis deploy."
+  },
+  "MerklRewards": {
+    "enabled": true
   }
 }

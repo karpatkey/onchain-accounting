@@ -57,13 +57,19 @@ jobs:
           # recompile, so their cache cannot affect a pin value.
           cache: false
 
-      # DO NOT REMOVE — this is not cruft, the build does not fit in the runner without it.
+      # KEPT AS HEADROOM, but the premise below is no longer what it says — corrected rather than deleted,
+      # because the reasoning about WHY memory matters here is still the useful part.
       #
       # A whole-program `via_ir` compile of this repo peaks at 7-8 GB RSS (measured locally with
       # `/usr/bin/time -v forge build --sizes` after `forge clean`; one run on a larger box reported 9.7 GB).
-      # This repo is INTERNAL, so `ubuntu-latest` is a standard GitHub-hosted runner: 2 vCPU / 7 GB RAM.
-      # The compile therefore needs more memory than the runner has, and every green Build on this repo has
-      # been solc landing just under a line it structurally exceeds. A branch that adds even ~1 KB of
+      # This comment used to claim `ubuntu-latest`, 2 vCPU / 7 GB, and that the build "does not fit in the
+      # runner without it". That was true when written; this job now runs on a Blacksmith runner reporting
+      # ~30 GiB RAM with ~11 GiB of swap already active before this step adds 8 more. Against a 7-9.7 GB peak
+      # the step is no longer load-bearing — it is margin, and cheap enough to keep while the peak sits this
+      # close to a structural ceiling. Do not cite it as a hard requirement, and do not remove it on the
+      # grounds that the old justification was wrong; measure the peak on the runner first.
+      #
+      # A branch that adds even ~1 KB of
       # contract code in the wrong shape tips it, and the failure mode is silent and confusing: the log ends
       # at "Compiling NNN files with Solc 0.8.34" and the step exits 143 (SIGTERM, i.e. the kernel killed
       # solc) with no compiler error at all.
@@ -110,82 +116,50 @@ jobs:
             cache/
           retention-days: 1
 
-  # Deterministic library-pin assertions, on a build from CLEAN. Deliberately its own job.
+  # HISTORY — why a separate clean-build `pins` job existed here until #323, what replaced it, and
+  # what would bring it back. Kept because the observation below is the only in-tree record of it,
+  # and because the reasoning is the argument anyone must defeat before trusting an artifact-derived
+  # pin.
   #
-  # WHY THIS CANNOT RIDE THE `build` JOB ABOVE — the whole reason the minutes are worth spending.
+  # IT WAS NOT SIMPLY DELETED. `.github/workflows/pin-canary.yml` does the same clean whole-program
+  # build and runs the same assertions, weekly and on every push to main that can move a pin. What
+  # changed is the CADENCE, not the check: pins move when code or compiler settings LAND, not when a
+  # PR is opened, so per-PR was paying ~993 s on the critical path for a signal that was not there.
+  # If that canary ever goes red on an unchanged source closure it FALSIFIES the premise of #323,
+  # and the correct reaction is to restore this job — never to repin.
   #
   # `build` mounts two Blacksmith sticky disks over `out/` and `cache/`, keyed on
-  # `${{ github.repository }}` and nothing else. They are therefore shared by every run of every
-  # branch, so `forge build` there is INCREMENTAL against whatever the previous run on that disk
-  # left behind — measured at "Compiling 15 files with Solc 0.8.34" against a ~540-file project.
-  # The dirty set is computed relative to the last branch that used the disk, NOT to the commit
-  # under test, which makes `build`'s compilation SCOPE nondeterministic across branches.
+  # `${{ github.repository }}` and nothing else. They are shared by every run of every branch, so
+  # `forge build` there is INCREMENTAL against whatever the previous run on that disk left behind
+  # — measured at "Compiling 15 files with Solc 0.8.34" against a ~540-file project. The dirty set
+  # is computed relative to the last branch that used the disk, NOT to the commit under test, so
+  # `build`'s compilation SCOPE is nondeterministic across branches. That is still true today, and
+  # it is not hypothetical: a sibling PR's adapter artifact was observed leaking into an unrelated
+  # PR's `out/` and failing a test that enumerates it.
   #
-  # That matters here and nowhere else in this workflow, because `type(X).creationCode` is a
-  # compile-time constant baked into the asserting test's own bytecode. Under an incremental
-  # invocation solc recompiles PriceFeedLib in a small scope in order to embed it, and emits
-  # different bytecode than a whole-program compile does — so the pin the test derives is a
-  # correct hash of the wrong compilation. Observed directly: with `out/PriceFeedLib.sol/
-  # PriceFeedLib.json` on disk implying the correct 0x8b7e4fA9…, the test simultaneously computed
-  # 0xeA694009…. Two compilations of one unchanged source, disagreeing inside a single `out/`.
+  # The pin assertions used to read `type(X).creationCode`, a compile-time constant baked into the
+  # asserting test's own bytecode. The recorded observation: with `out/PriceFeedLib.sol/
+  # PriceFeedLib.json` on disk implying 0x8b7e4fA9…, the test simultaneously computed 0xeA694009…
+  # — two compilations of one unchanged source disagreeing inside a single `out/`. No freshness
+  # check could see that, because the sources were unchanged and the standalone artifact was right.
+  # Hence a job that compiled the whole program from nothing.
   #
-  # This is NOT staleness, and that distinction is why the fix is a job and not a test change:
-  # the sources are unchanged and the standalone artifact is right, so no freshness check can see
-  # it (PR #210's content-hash tripwire passes on exactly the runs where the pin assertion fails).
-  # The only thing that restores meaning is compiling the whole program from nothing.
+  # WHAT CHANGED. The assertions now read `vm.getCode("X")` — the artifact itself — and
+  # `test_pinnedLibraryArtifactsWereBuiltFromThisTree` content-hashes every source all three
+  # artifacts record, plus the compiler version and the pin-affecting settings, against this tree.
+  # Measured on the PR head before deleting the job: `forge clean && forge build --force` produced
+  # creation code byte-identical to the incremental build for all three contracts, and the pin
+  # assertions passed from clean.
   #
-  # Hence: no stickydisk mounts, `cache: false`, and `--force`. Cost is one extra ~6-10 min
-  # compile, paid in PARALLEL with `build` (no `needs:`), so it does not extend the critical path.
-  #
-  # The pin values themselves are NOT owned by this job. They are `foundry.toml [libraries]` +
-  # `script/utils/LibraryPins.sol`, and the authoritative gate remains one clean local full build
-  # against the final tree immediately before deploying. A red run here means "regenerate the
-  # pins deliberately", never "edit the values until it goes green".
-  pins:
-    name: Library pins (clean build)
-    runs-on: blacksmith-8vcpu-ubuntu-2404
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          submodules: recursive
-
-      - uses: foundry-rs/foundry-toolchain@v1
-        with:
-          version: ${{ env.FOUNDRY_VERSION }}
-          # Same reasoning as the `build` job: a restored Foundry cache reintroduces reusable
-          # compilation state, and reuse is precisely what this job exists to avoid.
-          cache: false
-
-      # See the long note on `build`'s copy of this step. Same compile, same ~7-11 GB peak, same
-      # need — a whole-program `via_ir` compile does not fit in the runner's RAM unaided, and the
-      # failure mode is a silent SIGTERM (exit 143) with no compiler error.
-      - name: Add swap for the via_ir compile
-        run: |
-          sudo fallocate -l 8G /mnt/swapfile-ci
-          sudo chmod 600 /mnt/swapfile-ci
-          sudo mkswap /mnt/swapfile-ci
-          sudo swapon /mnt/swapfile-ci
-          free -h
-          swapon --show
-
-      # `--force` even though no sticky disk is mounted and `out/` starts empty: it states the
-      # requirement in the command rather than relying on the absence of a mount, so a future
-      # cache/mount added to this job cannot silently reintroduce the incremental scope this job
-      # exists to exclude. It costs nothing on an empty `out/`.
-      #
-      # Building the WHOLE program here (rather than letting `forge test` compile just what the
-      # matched tests need) is load-bearing, not tidiness: the authoritative pin is the one a
-      # whole-program compile produces, because that is the scope the pre-deploy local build and
-      # the real CREATE2 deployment used. A narrower scope would reproduce the very bug above.
-      - name: Build from clean (whole program)
-        run: forge build --force
-
-      # Finds everything up to date and recompiles nothing, so it asserts against the artifacts
-      # the step above produced.
-      - name: Library pin assertions
-        run: forge test --match-path "test/LibraryPinConsistency.t.sol" -vv
-
-  # Unit tests (mock-only, no RPC). Default profile.
+  # WHAT WOULD BRING IT BACK. Any reading that is NOT of a freshness-checked artifact — in
+  # particular a `type(X).creationCode` embedded into an asserting test. Note that
+  # `script/test/UpgradeNAVCalculatorPins.t.sol` still embeds it and runs in `unit`; its
+  # `test_sourceMatch_tracksRealPinState` deliberately accepts BOTH match and drift, so its green
+  # is not evidence either way and must not be cited as such. The pin values themselves are NOT
+  # owned by CI: they are `foundry.toml [libraries]` + `script/utils/LibraryPins.sol`, and the
+  # authoritative gate remains one clean local full build against the final tree immediately
+  # before deploying. A red run here means "regenerate the pins deliberately", never "edit the
+  # values until it goes green".
   unit:
     name: Unit tests
     needs: build
@@ -204,23 +178,43 @@ jobs:
         with:
           name: forge-build
 
-      # `--no-match-contract LibraryPinConsistencyTest` is NOT hiding a failing test — it is moving
-      # an assertion to the only job that can evaluate it. This job does not compile: it downloads
-      # `build`'s artifacts, and `build` compiles incrementally against a branch-shared sticky disk
-      # (full reasoning on the `pins` job above). So the pin value reachable HERE is a correct hash
-      # of an arbitrary compilation scope, and this job has produced repeated false reds on trees
-      # whose pins were provably correct — `0x8b7e4fA9…` has landed in a real CREATE2 deployment.
+      # LibraryPinConsistencyTest runs HERE again, and the exclusion that used to sit on this line is
+      # gone along with the 993 s `pins` job it fed. Both existed for one reason: the assertions read
+      # `type(X).creationCode`, embedded at COMPILE time, so under this job's downloaded `out/` they
+      # hashed whatever scope the cache had served — the false reds that put `0x8b7e4fA9…` into a real
+      # CREATE2 deployment, and that taught the fleet to merge past a red pin check.
       #
-      # Leaving it here was actively harmful: a check that cries wolf on correct trees taught the
-      # fleet to merge past it, which is exactly the state in which a REAL pin drift would sail
-      # through unnoticed. The assertion now runs in `pins`, from clean, where it means something.
+      # The assertions now read `vm.getCode("X")` — the artifact this job downloaded — and
+      # `test_pinnedLibraryArtifactsWereBuiltFromThisTree` content-hashes every source all three
+      # artifacts record, AND their compiler version and pin-affecting settings, against this tree.
+      # It gains one thing the embedded form never had: NAVCalculator's artifact was not
+      # freshness-checked at all while its creation code was compiled in.
       #
-      # The remaining LibraryPinConsistency tests move with it — including the freshness tripwire,
-      # which is sound but pointless in a job whose artifacts are downloaded by construction.
+      # It is NOT strictly stronger, and an earlier revision of this comment said it was. Source
+      # hashes attest the artifact at a PATH; `vm.getCode` resolves by bare NAME over an `out/` that
+      # observably accumulates other branches' artifacts, and nothing binds the two reads to the same
+      # file — hence the explicit binding in `_verifiedCode`, which is the helper that actually compares
+      # the two (`_assertArtifactBuiltFromTree` checks source and settings freshness only). A foreign artifact that
+      # is ADDED rather than modified does not fail a freshness check at all.
+      #
+      # MEASURED before removing the clean build, because the whole change rests on it: `forge clean
+      # && forge build --force` on this head produced creation code byte-identical to the incremental
+      # build for all three contracts, and the pin assertions passed from clean. That is the claim
+      # this rests on, and it is reproducible with two commands.
+      #
+      # An earlier revision also asserted that the historical "via_ir scope sensitivity" was a
+      # symptom of a missing library self-link fixed by pinning `[libraries]`. That is NOT
+      # established: the creation bytecode of PriceFeedLib and NAVRegistryLib contains zero
+      # occurrences of either pinned address, so no self-link is present to have been missing, and
+      # the repo holds two other mutually inconsistent accounts of the same incident. The mechanism
+      # is unknown; the measurement above is what justifies the change, not the diagnosis.
+      #
+      # If anyone reintroduces an embedded `type(X).creationCode` in that file, this exclusion and the
+      # clean-build job have to come back with it. They are one mechanism.
       - name: Unit tests
         env:
           ALCHEMY_API_KEY: ${{ secrets.ALCHEMY_API_KEY }}
-        run: forge test --no-match-path "*fork*" --no-match-contract LibraryPinConsistencyTest -vvv
+        run: forge test --no-match-path "*fork*" -vvv
 
   # Per-protocol fork tests (slow profile, RPC). Excludes the NAV integration harness.
   fork:
@@ -344,6 +338,33 @@ jobs:
         # `bytecode_audit.py --self-test` is deliberately NOT here: it indexes `out/`, so it exits 2 in a
         # job that does not compile. It belongs with a build, not with the config gates.
         run: python3 script/deploy/preflight/declared_heartbeat_guard.py --self-test
+
+      - name: Chainlink declared heartbeats match ADR 0025 (real config, all chains)
+        # THE SELF-TEST WAS NEVER ENOUGH, AND THAT GAP HAD A COST. Until now CI ran only
+        # `declared_heartbeat_guard.py --self-test`, which proves the guard's LOGIC and says nothing about
+        # the actual config, so a real ADR 0025 violation could not fail CI. Two lived in that gap:
+        # POL on chain 1 at 90000 against a declared 86400 (config and chain agreed, so the realignment
+        # script also saw nothing to do), and wARS's constructor leg at 90000 against a declared 86400.
+        # Both are fixed; this step is what stops the next one.
+        #
+        # Runs offline against the committed snapshot, so it needs no network and no build.
+        run: |
+          for c in 1 10 56 100 137 8453 42161; do
+            python3 script/deploy/preflight/declared_heartbeat_guard.py "$c" || exit 1
+          done
+
+      - name: RedStone declared heartbeats match ADR 0025 (real config, not a self-test)
+        # WIRED AS A REAL-CONFIG RUN ON PURPOSE. `declared_heartbeat_guard` resolves CHAINLINK feeds only,
+        # so every RedStone registration came back "has NO declared heartbeat recorded" — which that guard
+        # correctly calls unknown, and which was being read as verified. It was not: 31 RedStone monitor
+        # registrations were unchecked, and SEVEN of them were wrong (chain 1 wstETH and chain 56
+        # ETH/USDC/USDT/CAKE at 86400 vs a declared 21600; chain 56 BNB/WBNB at 86400 vs a declared 60 — a
+        # 86,340 s window in which a dead feed still read fresh).
+        #
+        # This step hits the network (RedStone's manifests in redstone-oracles-monorepo). If that becomes
+        # flaky, snapshot the manifests the way chainlink_declared_heartbeats.json is snapshotted — do NOT
+        # make it non-blocking, because a guard that cannot fail is the state this step exists to end.
+        run: python3 script/deploy/preflight/redstone_declared_heartbeats.py
 
       - name: Config-guard self-test (preflight_config --self-test)
         # WIRED HERE BECAUSE ITS ABSENCE COST US ONE. `preflight_config.py --self-test` is the command the

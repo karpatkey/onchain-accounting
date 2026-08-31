@@ -450,6 +450,110 @@ contract SuperchainBridgeAdapterTest is BridgeScenarioHelper {
         assertEq(l1Escrow.getHeldBalanceForAsset(address(0), account), 0, "held cleared after claim");
     }
 
+    /// @notice `canFinalizeWithdrawal` must gate on the portal's finalization predicate (`checkWithdrawal`), NOT
+    ///         merely on proven-ness. A proven-but-immature withdrawal (before the proof-maturity + dispute-game
+    ///         air-gap) is NOT finalizable → false; once the portal's gate opens → true; once finalized → false
+    ///         again. This is the regression for the "proven ⇏ finalizable" over-report (canFinalizeWithdrawal was
+    ///         byte-identical to isWithdrawalProven, so it reported finalizable the instant the proof landed).
+    function test_canFinalizeWithdrawal_gatesOnPortalCheckWithdrawal() public {
+        vm.chainId(SOURCE_CHAIN_ID);
+        uint256 amount = 1 ether;
+        vm.prank(admin);
+        bridgeEscrow.registerAsset(WETH_SYMBOL, address(0));
+        SuperchainBridgeAdapter l1Ad = _deployL1WithdrawalAdapter(bridgeEscrow);
+
+        InvoiceDataLib.InvoiceData memory invoiceData =
+            _createInvoiceData(L2_CHAIN_ID, SOURCE_CHAIN_ID, account, WETH_SYMBOL_BYTES6, amount);
+        MockL1WithdrawalRelay relay = new MockL1WithdrawalRelay();
+        relay.setRecipient(payable(address(l1Ad)));
+        vm.prank(admin);
+        l1Ad.setL1MessengerForL2(L2_CHAIN_ID, address(relay));
+        Types.WithdrawalTransaction memory wtx = Types.WithdrawalTransaction({
+            nonce: 1, sender: address(l2Bridge), target: address(relay), value: amount, gasLimit: 200000, data: ""
+        });
+        bytes32 realHash = l1Ad.hashWithdrawal(wtx);
+
+        // Not proven yet → not finalizable.
+        assertFalse(l1Ad.canFinalizeWithdrawal(L2_CHAIN_ID, realHash), "unproven: not finalizable");
+
+        // Prove it. Proven ✓, but the maturity/air-gap gate has NOT opened → still NOT finalizable (the fix).
+        vm.prank(manager);
+        l1Ad.proveWithdrawal(
+            L2_CHAIN_ID,
+            wtx,
+            0,
+            Types.OutputRootProof(bytes32(0), bytes32(0), bytes32(0), bytes32(0)),
+            new bytes[](0),
+            InvoiceDataLib.encode(invoiceData)
+        );
+        assertTrue(l1Ad.isWithdrawalProven(L2_CHAIN_ID, realHash), "proven");
+        assertFalse(l1Ad.canFinalizeWithdrawal(L2_CHAIN_ID, realHash), "proven but immature: NOT finalizable");
+
+        // Portal's gate opens (proof matured, game resolved DEFENDER_WINS, air-gap elapsed) → finalizable.
+        optimismPortal.setFinalizable(realHash, true);
+        assertTrue(l1Ad.canFinalizeWithdrawal(L2_CHAIN_ID, realHash), "gate open: finalizable");
+
+        // Once finalized, a fresh finalize would revert → report not-finalizable so the caller settles instead.
+        vm.prank(manager);
+        l1Ad.completeBridge(InvoiceDataLib.encode(invoiceData), abi.encode(wtx));
+        assertFalse(l1Ad.canFinalizeWithdrawal(L2_CHAIN_ID, realHash), "already finalized: not finalizable");
+    }
+
+    /// @notice RE11-M-01: a permissionless portal front-run may finalize a withdrawal on the portal before the
+    ///         adapter settles it. completeBridge's skip branch still settles such a withdrawal, so
+    ///         `canFinalizeWithdrawal` MUST report true for it — gating it out on `!finalizedWithdrawals` would
+    ///         strand exactly the withdrawal RE3-H-01's skip branch exists to settle (RE3-H-01 at the tooling
+    ///         layer). It flips to false only once the adapter has settled it (one-shot `_settledWithdrawals`).
+    function test_canFinalizeWithdrawal_trueWhenFrontRunFinalizedButNotYetSettled() public {
+        vm.chainId(SOURCE_CHAIN_ID);
+        uint256 amount = 1 ether;
+        BridgeEscrow l1Escrow = bridgeEscrow;
+        vm.prank(admin);
+        l1Escrow.registerAsset(WETH_SYMBOL, address(0));
+        SuperchainBridgeAdapter l1Ad = _deployL1WithdrawalAdapter(l1Escrow);
+
+        InvoiceDataLib.InvoiceData memory invoiceData =
+            _createInvoiceData(L2_CHAIN_ID, SOURCE_CHAIN_ID, account, WETH_SYMBOL_BYTES6, amount);
+        bytes memory messagePayload = InvoiceDataLib.encode(invoiceData);
+        MockL1WithdrawalRelay relay = new MockL1WithdrawalRelay();
+        relay.setRecipient(payable(address(l1Ad)));
+        vm.prank(admin);
+        l1Ad.setL1MessengerForL2(L2_CHAIN_ID, address(relay));
+        Types.WithdrawalTransaction memory wtx = Types.WithdrawalTransaction({
+            nonce: 1, sender: address(l2Bridge), target: address(relay), value: amount, gasLimit: 200000, data: ""
+        });
+        Types.OutputRootProof memory emptyProof = Types.OutputRootProof(bytes32(0), bytes32(0), bytes32(0), bytes32(0));
+        bytes32 realHash = l1Ad.hashWithdrawal(wtx);
+
+        // Adapter proves (it is the proof submitter that completeBridge's finalize checks).
+        vm.prank(manager);
+        l1Ad.proveWithdrawal(L2_CHAIN_ID, wtx, 0, emptyProof, new bytes[](0), messagePayload);
+
+        // A third party front-runs the permissionless portal finalize: the portal is marked finalized, but the
+        // adapter has NOT settled the invoice yet.
+        address griefer = makeAddr("griefer");
+        vm.startPrank(griefer);
+        optimismPortal.proveWithdrawalTransaction(wtx, 0, emptyProof, new bytes[](0));
+        optimismPortal.finalizeWithdrawalTransaction(wtx);
+        vm.stopPrank();
+        assertTrue(optimismPortal.finalizedWithdrawals(realHash), "portal finalized by front-run");
+        vm.deal(address(l1Ad), amount); // the finalized relay delivered the ETH to the adapter
+        // forge-lint: disable-next-line(asm-keccak256)
+        relay.setSuccessfulMessage(keccak256(wtx.data), true);
+
+        // THE REGRESSION GUARD: canFinalizeWithdrawal must STILL be true — completeBridge's skip branch can settle
+        // it. The buggy gate (`if (finalizedWithdrawals) return false`) returns false here → the settler strands it.
+        assertTrue(
+            l1Ad.canFinalizeWithdrawal(L2_CHAIN_ID, realHash),
+            "front-run-finalized but unsettled: still settleable (must NOT strand)"
+        );
+
+        // Settle it via completeBridge's skip branch; afterwards it flips to false (one-shot `_settledWithdrawals`).
+        vm.prank(manager);
+        l1Ad.completeBridge(messagePayload, abi.encode(wtx));
+        assertFalse(l1Ad.canFinalizeWithdrawal(L2_CHAIN_ID, realHash), "after settle: not finalizable");
+    }
+
     /// @notice ADR 0025: `proveWithdrawal` stores the full `WithdrawalTransaction`, readable back for finalize
     ///         without an L2 log re-read. Round-trips every field (esp. the dynamic `data` — the reason the getter
     ///         is explicit rather than a `public` auto-getter, which would silently drop it).

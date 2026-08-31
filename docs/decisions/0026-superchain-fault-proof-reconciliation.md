@@ -28,7 +28,17 @@ Reconcile the adapter to the fault-proof portals and ground every fix in fork te
 - **Proven check** = `provenWithdrawals(hash, address(this)).disputeGameProxy != 0` (the adapter is the proof
   submitter). `proveWithdrawal`'s second argument is the dispute-game index. Finalize defers maturity /
   resolution / air-gap to the portal; the adapter keeps only proven-check → idempotent finalize → delivered-amount
-  binding.
+  binding. `isWithdrawalProven` reports exactly this proven-only signal. The separate `canFinalizeWithdrawal`
+  view answers a different, settlement-aware question — *would a `completeBridge` make progress now?* — so it
+  returns true in TWO cases: the not-yet-finalized withdrawal that clears the portal's own
+  `checkWithdrawal(hash, address(this))` predicate (proof-maturity delay, dispute-game resolution in the
+  defender's favour, the finality air-gap, blacklist, respected game type), AND the already-finalized (e.g. a
+  permissionless front-run) withdrawal that the skip branch can still settle — and false once the adapter has
+  settled it (`_settledWithdrawals`). Delegating to the portal's own predicate rather than a local
+  reimplementation is deliberate: proven ⇏ finalizable, and a local copy would silently over-report the instant
+  the proof landed. Returning true for the front-run-finalized case (rather than gating on
+  `!finalizedWithdrawals`) is equally deliberate: gating it out would strand exactly the withdrawal RE3-H-01's
+  skip branch exists to settle.
 - **Per-L2 messengers.** `l1MessengerForL2[l2ChainId]` (+ setter) routes the authenticated `completeDeposit` message
   through the *destination* L2's L1CrossDomainMessenger; the single `l1Messenger` stays only as the inbound L2 identity
   for `_authenticateMessengerSource`. A dedicated `completeDepositGasLimit` (500k) sizes that relay.

@@ -184,4 +184,17 @@ interface IOptimismPortal {
     /// @param _withdrawalHash Hash of the withdrawal transaction
     /// @return True if already finalized, false otherwise
     function finalizedWithdrawals(bytes32 _withdrawalHash) external view returns (bool);
+
+    /// @notice Reverts unless the withdrawal is finalizable RIGHT NOW (fault-proof OP2): proven, past the
+    ///         proof-maturity delay, its dispute game resolved in the defender's favour and past the
+    ///         dispute-game finality air-gap, not blacklisted, and of the respected game type. Returns (no
+    ///         value) when finalizable.
+    /// @dev This is exactly the gate `finalizeWithdrawalTransaction` enforces internally, exposed as a view.
+    ///      Keyed by BOTH the hash and the proof submitter (this adapter, which called
+    ///      `proveWithdrawalTransaction`). It REVERTS (does not return false) when any check fails, so callers
+    ///      must wrap it in try/catch. Present on the live per-submitter fault-proof portals (OP/Base); the
+    ///      legacy single-key portal exposed only `checkWithdrawal(bytes32)`.
+    /// @param _withdrawalHash Hash of the withdrawal transaction
+    /// @param _proofSubmitter The address that proved the withdrawal (this adapter)
+    function checkWithdrawal(bytes32 _withdrawalHash, address _proofSubmitter) external view;
 }

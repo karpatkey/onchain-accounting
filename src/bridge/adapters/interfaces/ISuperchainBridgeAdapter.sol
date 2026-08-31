@@ -258,9 +258,18 @@ interface ISuperchainBridgeAdapter is IBridgeAdapter {
     /// @return True if proven, false otherwise
     function isWithdrawalProven(uint256 l2ChainId, bytes32 withdrawalHash) external view returns (bool);
 
-    /// @notice Reports whether a withdrawal has been proven (a prerequisite for finalization)
-    /// @dev Does not check the challenge period; the Optimism Portal enforces that at finalize time
+    /// @notice Reports whether a `completeBridge` call would make progress settling this withdrawal's invoice
+    ///         RIGHT NOW: true when the withdrawal is finalizable via the portal (proven, past the proof-maturity
+    ///         delay and the dispute-game finality air-gap, its game resolved in the defender's favour and of the
+    ///         respected type, not blacklisted) OR when a permissionless front-run has ALREADY finalized it on the
+    ///         portal (completeBridge's skip branch settles it) — and false once the adapter has settled it.
+    /// @dev For the not-yet-finalized case it delegates the maturity/air-gap/resolution gate to the portal's own
+    ///      `checkWithdrawal` view, so it can never drift from what the portal enforces at finalize. An
+    ///      already-finalized-but-unsettled withdrawal reports true so a settler does not strand it (the skip/settle
+    ///      path still applies). A paused portal is not reflected (a rare, transient emergency the finalize call
+    ///      itself would surface).
+    /// @param l2ChainId The source L2 chain id whose portal proved the withdrawal
     /// @param withdrawalHash The withdrawal transaction hash
-    /// @return True if the withdrawal has been proven, false otherwise
+    /// @return True iff the withdrawal is finalizable now, false otherwise
     function canFinalizeWithdrawal(uint256 l2ChainId, bytes32 withdrawalHash) external view returns (bool);
 }

@@ -497,6 +497,30 @@ contract SuperchainBridgeAdapterForkTest is BridgeTestBase {
         );
         assertFalse(ad.isWithdrawalProven(BASE_CHAIN_ID, arbitraryHash), "Base: decodes not-proven (no revert)");
         assertFalse(ad.canFinalizeWithdrawal(BASE_CHAIN_ID, arbitraryHash), "Base: decodes not-finalizable (no revert)");
+
+        // Ground `canFinalizeWithdrawal`'s finalization-gate delegation against the LIVE portal ABI: the
+        // per-submitter fault-proof portals expose `checkWithdrawal(bytes32,address)` and REVERT (non-empty) for an
+        // unproven hash — proving the gate function exists and is two-arg. A missing/mismatched selector would revert
+        // with EMPTY returndata, which the adapter's try/catch swallows as "not finalizable" — so assert the revert
+        // SHAPE here (returndata length > 0), otherwise an ABI drift would pass silently as a false negative.
+        _assertCheckWithdrawalIsTwoArg(OPTIMISM_PORTAL, arbitraryHash, address(ad), "OP");
+        _assertCheckWithdrawalIsTwoArg(BASE_OPTIMISM_PORTAL, arbitraryHash, address(ad), "Base");
+    }
+
+    function _assertCheckWithdrawalIsTwoArg(address portal, bytes32 hash, address submitter, string memory tag)
+        internal
+        view
+    {
+        (bool ok, bytes memory ret) =
+            portal.staticcall(abi.encodeWithSignature("checkWithdrawal(bytes32,address)", hash, submitter));
+        assertFalse(ok, string.concat(tag, ": checkWithdrawal(bytes32,address) reverts for an unproven hash"));
+        // A NON-EMPTY revert proves the two-arg selector exists and its body ran the proven-check: a
+        // missing/renamed selector would revert with EMPTY returndata (no matching function, no fallback), which
+        // the adapter's try/catch swallows as a silent "not finalizable" false-negative — so the length check is
+        // the real ABI-drift tripwire. We deliberately do NOT pin the exact error selector: the proven-check reason
+        // varies across portal versions/blocks (a custom `OptimismPortal_Unproven()` on the current portals, an
+        // `Error(string)` on older ones), so a specific-selector assertion would be brittle, not stronger.
+        assertGt(ret.length, 0, string.concat(tag, ": checkWithdrawal(bytes32,address) exists (non-empty revert)"));
     }
 
     /// @notice The L1→L2 deposit path must send the authenticated `completeDeposit` message through the REAL

@@ -686,11 +686,28 @@ contract SuperchainBridgeAdapter is BridgeAdapter, ISuperchainBridgeAdapter {
 
     /// @inheritdoc ISuperchainBridgeAdapter
     function canFinalizeWithdrawal(uint256 l2ChainId, bytes32 withdrawalHash) external view returns (bool) {
-        // The portal enforces the actual proof-maturity + dispute-game air-gap at finalize; this reports proven-ness.
         IOptimismPortal portal = optimismPortalForL2[l2ChainId];
         if (address(portal) == address(0)) return false;
-        (address disputeGameProxy,) = portal.provenWithdrawals(withdrawalHash, address(this));
-        return disputeGameProxy != address(0);
+        // Codeless / misconfigured portal ⟹ report not-finalizable rather than reverting the whole view (the
+        // high-level portal reads below would otherwise revert on a non-contract address).
+        if (address(portal).code.length == 0) return false;
+        // Already settled from the adapter's side ⟹ completeBridge is one-shot (reverts on a second settle);
+        // there is nothing left to do, so report not-finalizable.
+        if (_settledWithdrawals[withdrawalHash]) return false;
+        // A permissionless front-run may have ALREADY finalized the withdrawal on the portal. completeBridge's
+        // skip branch still settles such a withdrawal (delivery is re-verified there), so report finalizable —
+        // NOT false — otherwise a settler following this view would strand exactly the withdrawal the skip branch
+        // (RE3-H-01) exists to settle.
+        if (portal.finalizedWithdrawals(withdrawalHash)) return true;
+        // Not yet finalized: delegate the full finalization gate to the portal's OWN predicate — proof-maturity
+        // delay, dispute game resolved in the defender's favour, the finality air-gap, not blacklisted, and the
+        // respected game type — so this view can never drift from what `finalizeWithdrawalTransaction` enforces.
+        // `checkWithdrawal` reverts (rather than returning false) when any check fails, hence the try/catch.
+        try portal.checkWithdrawal(withdrawalHash, address(this)) {
+            return true;
+        } catch {
+            return false;
+        }
     }
 
     /// @notice Computes the canonical OP Stack withdrawal hash for a withdrawal transaction.

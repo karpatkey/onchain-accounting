@@ -122,6 +122,23 @@ contract MockOptimismPortalReal is IOptimismPortal {
         return _finalizedWithdrawals[_withdrawalHash];
     }
 
+    // Test-controlled maturity/air-gap gate. The real portal's `checkWithdrawal` reverts until the proof matures,
+    // the dispute game resolves in the defender's favour, and the finality air-gap elapses; tests toggle this flag
+    // to model that transition (default false → proven-but-not-yet-finalizable).
+    mapping(bytes32 => bool) private _finalizable;
+
+    function setFinalizable(bytes32 _withdrawalHash, bool ok) external {
+        _finalizable[_withdrawalHash] = ok;
+    }
+
+    /// @notice Faithful to the live per-submitter fault-proof portal: reverts (does not return false) unless the
+    ///         withdrawal is finalizable now — proven, not already finalized, and past the maturity/air-gap gate.
+    function checkWithdrawal(bytes32 _withdrawalHash, address _proofSubmitter) external view override {
+        require(_disputeGameProxy[_withdrawalHash][_proofSubmitter] != address(0), "OptimismPortal: not proven");
+        require(!_finalizedWithdrawals[_withdrawalHash], "OptimismPortal: already finalized");
+        require(_finalizable[_withdrawalHash], "OptimismPortal: not matured / in air-gap");
+    }
+
     receive() external payable {}
 }
 

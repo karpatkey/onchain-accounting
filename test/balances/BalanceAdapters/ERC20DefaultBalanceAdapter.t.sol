@@ -64,7 +64,9 @@ contract ERC20DefaultBalanceAdapterTest is Test {
 
         // Register assets in NAVCalculator (native is pre-registered in initialize)
         vm.startPrank(manager);
-        navCalculator.addPriceFeed(NATIVE_ADDRESS, address(ethAdapter), IPrices.PriceType.Custom, type(uint256).max);
+        navCalculator.addOrModifyPriceFeed(
+            NATIVE_ADDRESS, address(ethAdapter), IPrices.PriceType.Custom, type(uint256).max
+        );
         navCalculator.registerAsset(address(usdc), address(usdcAdapter), IPrices.PriceType.Custom, type(uint256).max);
         navCalculator.registerAsset(address(dai), address(daiAdapter), IPrices.PriceType.Custom, type(uint256).max);
         navCalculator.registerAsset(address(weth), address(wethAdapter), IPrices.PriceType.Custom, type(uint256).max);

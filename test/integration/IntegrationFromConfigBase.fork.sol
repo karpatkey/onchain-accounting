@@ -914,7 +914,7 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
                     console2.logBytes(err);
                 }
             } else {
-                try nav.addPriceFeed(asset, adapter, pt, hb) {
+                try nav.addOrModifyPriceFeed(asset, adapter, pt, hb) {
                     console2.log("[asset/addFeed]", symbol, asset);
                 } catch (bytes memory err) {
                     console2.log("[asset/addFeed]", symbol, "FAILED");

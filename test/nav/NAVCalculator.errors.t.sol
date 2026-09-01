@@ -415,7 +415,7 @@ contract NAVCalculatorErrorTest is SuperTest {
 
         vm.prank(navCalculatorManager);
         vm.expectRevert(abi.encodeWithSelector(NotAContract.selector, "priceFeed"));
-        nav.addPriceFeed(address(usdc), codelessFeed, IPrices.PriceType.Chainlink, 86_400);
+        nav.addOrModifyPriceFeed(address(usdc), codelessFeed, IPrices.PriceType.Chainlink, 86_400);
 
         vm.prank(navCalculatorManager);
         vm.expectRevert(abi.encodeWithSelector(NotAContract.selector, "priceFeed"));

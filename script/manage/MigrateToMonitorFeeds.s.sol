@@ -17,7 +17,7 @@ import {console2} from "forge-std/console2.sol";
 ///         in `deployments/<id>.json`.
 /// @dev Per asset, reconciled to the config target and emitted as ONE atomic batch in two global passes so no asset
 ///      is ever left without a valid pricing feed:
-///        Pass A (adds/sets): addPriceFeed(target primary, if absent on-chain); setDivergenceTolerance;
+///        Pass A (adds/sets): addOrModifyPriceFeed(target primary, if absent on-chain); setDivergenceTolerance;
 ///                            setPegTolerance; addMonitorFeed(each target monitor not already present).
 ///        Pass B (removes):   removePriceFeed(each on-chain PRICING feed whose address != the target primary) —
 ///                            i.e. the old (swapped-out) primary and every redundancy feed now living in monitorFeeds;
@@ -295,7 +295,7 @@ contract MigrateToMonitorFeeds is BaseDeployScript {
                     navProxy,
                     0,
                     abi.encodeCall(
-                        NAVCalculator.addPriceFeed, (p.asset, p.addPrimary, p.addPrimaryType, p.addPrimaryHb)
+                        NAVCalculator.addOrModifyPriceFeed, (p.asset, p.addPrimary, p.addPrimaryType, p.addPrimaryHb)
                     )
                 );
             }

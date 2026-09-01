@@ -57,7 +57,7 @@ contract MorphoMarketsMetaBalanceAdapterForkTest is BalanceAdapterTestBase {
 
         // Native ETH is pre-registered at init without a feed; add one so getAccountNav can price the user's ETH.
         vm.startPrank(manager);
-        nav.addPriceFeed(
+        nav.addOrModifyPriceFeed(
             nav.NATIVE_ADDRESS(),
             address(new Mock_CustomPriceFeed("ETH", nav.NATIVE_ADDRESS(), 3000e8, 8)),
             IPrices.PriceType.Custom,

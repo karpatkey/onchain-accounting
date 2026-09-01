@@ -228,7 +228,7 @@ contract NAVCalculatorGasTest is SuperTest {
         // Add stale adapter then remove the original so only staleAdapter remains.
         // Use heartbeat of 1 second so it becomes stale quickly.
         address originalFeed = nav.getPriceFeedAt(testAsset, 0).priceFeed;
-        nav.addPriceFeed(testAsset, address(staleAdapter), IPrices.PriceType.Chainlink, 1);
+        nav.addOrModifyPriceFeed(testAsset, address(staleAdapter), IPrices.PriceType.Chainlink, 1);
         nav.removePriceFeed(testAsset, originalFeed);
         vm.stopPrank();
 

@@ -171,7 +171,7 @@ abstract contract TestSetupHelpers is Test {
             // Check if price feed already exists, add if not
             if (nav.getPriceFeedCount(asset) == 0) {
                 vm.prank(manager);
-                nav.addPriceFeed(asset, priceOracle, priceType, heartbeat);
+                nav.addOrModifyPriceFeed(asset, priceOracle, priceType, heartbeat);
             }
         }
     }

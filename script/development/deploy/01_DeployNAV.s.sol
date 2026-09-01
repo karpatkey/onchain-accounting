@@ -60,7 +60,7 @@ contract DeployNAV is Script {
         nav.grantRole(MANAGER, admin);
 
         // initialize() already pre-registers NATIVE_ADDRESS (feedless); attach its Chainlink feed via addPriceFeed.
-        nav.addPriceFeed(NATIVE_ADDRESS, nativeFeed, IPrices.PriceType.Chainlink, nativeHeartbeat);
+        nav.addOrModifyPriceFeed(NATIVE_ADDRESS, nativeFeed, IPrices.PriceType.Chainlink, nativeHeartbeat);
 
         vm.stopBroadcast();
 

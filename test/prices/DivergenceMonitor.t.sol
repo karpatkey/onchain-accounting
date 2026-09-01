@@ -238,7 +238,7 @@ contract DivergenceMonitorTest is SuperTest {
             new Mock_CustomPriceFeedStaled("weth-stale-primary", address(weth), 324_057_000_000, 8);
         Mock_CustomPriceFeed monitor = new Mock_CustomPriceFeed("weth-mon", address(weth), 340_000_000_000, 8);
         vm.startPrank(navCalculatorManager);
-        nav.addPriceFeed(address(weth), address(stalePrimary), IPrices.PriceType.Custom, type(uint256).max);
+        nav.addOrModifyPriceFeed(address(weth), address(stalePrimary), IPrices.PriceType.Custom, type(uint256).max);
         nav.removePriceFeed(address(weth), address(wethAdapter));
         nav.setDivergenceTolerance(address(weth), 250);
         // Out of band ($3400 vs $3240.57 ~492 bps) — would flag irregular against a healthy primary.

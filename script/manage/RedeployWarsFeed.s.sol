@@ -84,7 +84,7 @@ contract RedeployWarsFeed is Script {
 
         // Add BEFORE removing: the asset is never single-feed at the moment of removal, so the
         // CannotRemoveLastFeed guard is never reached and no mirror is required.
-        NAVCalculator(NAV).addPriceFeed(underlying, address(feed), IPrices.PriceType.Custom, heartbeat);
+        NAVCalculator(NAV).addOrModifyPriceFeed(underlying, address(feed), IPrices.PriceType.Custom, heartbeat);
         NAVCalculator(NAV).removePriceFeed(underlying, old.priceFeed);
         vm.stopBroadcast();
 

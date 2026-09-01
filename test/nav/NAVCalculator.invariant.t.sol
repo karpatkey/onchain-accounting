@@ -191,7 +191,7 @@ contract NAVCalculatorInvariantTest is SuperTest {
         Mock_PriceOracleChainlink staleAdapter = new Mock_PriceOracleChainlink("Stale", 1, 8);
 
         vm.startPrank(navCalculatorManager);
-        nav.addPriceFeed(address(usdc), address(staleAdapter), IPrices.PriceType.Chainlink, 1); // 1 second heartbeat
+        nav.addOrModifyPriceFeed(address(usdc), address(staleAdapter), IPrices.PriceType.Chainlink, 1); // 1 second heartbeat
         nav.removePriceFeed(address(usdc), address(usdcAdapter)); // remove original so only staleAdapter remains
         vm.stopPrank();
 

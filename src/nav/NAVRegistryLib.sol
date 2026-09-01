@@ -4,6 +4,7 @@ pragma solidity ^0.8;
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {ERC165Checker} from "@openzeppelin/contracts/utils/introspection/ERC165Checker.sol";
 import {INAVCalculator} from "./INAVCalculator.sol";
+import {IPrices} from "../prices/IPrices.sol";
 import {IBalances} from "src/balances/IBalances.sol";
 import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
 import {IMetaBalanceAdapter} from "src/balances/IMetaBalanceAdapter.sol";
@@ -175,9 +176,10 @@ library NAVRegistryLib {
         mapping(address => bool) storage isAdapterRegistered,
         address[] storage globalAdapters,
         mapping(address => IBalances.AdapterType) storage adapterTypes,
+        mapping(address => bytes32[]) storage metaInstances,
         address adapter,
         address erc20DefaultBalanceAdapter
-    ) external {
+    ) external returns (uint256 clearedInstances) {
         if (adapter == erc20DefaultBalanceAdapter) {
             revert InvalidArguments(); // Cannot remove ERC20DefaultBalanceAdapter
         }
@@ -192,6 +194,20 @@ library NAVRegistryLib {
                 globalAdapters.pop();
                 break;
             }
+        }
+
+        // REMOVAL CLEARS THE META-INSTANCE SET. Leaving it populated was the defect behind issue #335: a
+        // deregistered adapter kept advertising its coordinates, and `addMetaBalanceAdapter` APPENDS and
+        // accepts an empty list — so one re-registration of a superseded address revived the whole set
+        // alongside the live successor and NAV summed both (+$11,375.92 measured on ACCOUNT_11, with no
+        // health flag because both readings are well-formed). The residue was also unreachable without
+        // first re-registering the adapter, which is the very act that double-counts; that circularity is
+        // what forced a five-transaction cleanup dance. Clearing here removes the state at the only moment
+        // it is both reachable and safe to touch, and the caller subtracts the count so the running total
+        // stays honest.
+        clearedInstances = metaInstances[adapter].length;
+        if (clearedInstances != 0) {
+            delete metaInstances[adapter];
         }
 
         delete isAdapterRegistered[adapter];
@@ -235,9 +251,10 @@ library NAVRegistryLib {
         mapping(address => bool) storage isAdapterRegistered,
         address[] storage globalAdapters,
         mapping(address => IBalances.AdapterType) storage adapterTypes,
+        mapping(address => bytes32[]) storage metaInstances,
         address erc20DefaultBalanceAdapter,
         address[] calldata adapters
-    ) external returns (uint256 count) {
+    ) external returns (uint256 count, uint256 clearedInstances) {
         count = adapters.length;
         if (count == 0) revert InvalidArguments();
         for (uint256 i = 0; i < count; i++) {
@@ -254,6 +271,14 @@ library NAVRegistryLib {
             }
             delete isAdapterRegistered[adapter];
             delete adapterTypes[adapter];
+            // Clear the meta-instance set here too (issue #335). This is the path 06_Configure and
+            // SwapMetaAdapter actually take, so a fix that only covered the singular variant would have
+            // left the real deregistration route still leaking dormant coordinates.
+            uint256 n = metaInstances[adapter].length;
+            if (n != 0) {
+                delete metaInstances[adapter];
+                clearedInstances += n;
+            }
             emit IBalances.BalanceAdapterRemoved(address(0), adapter);
         }
     }

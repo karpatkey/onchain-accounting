@@ -42,6 +42,15 @@ interface IPrices {
         uint256 chainlinkHeartbeat;
     }
 
+    /// @notice Emitted when an already-registered price feed's staleness heartbeat is changed in place.
+    /// @param underlyingAsset The asset whose registration was updated.
+    /// @param priceFeed The registered feed the heartbeat applies to.
+    /// @param oldHeartbeat The previous heartbeat, in seconds.
+    /// @param newHeartbeat The new heartbeat, in seconds.
+    event PriceFeedHeartbeatUpdated(
+        address indexed underlyingAsset, address indexed priceFeed, uint256 oldHeartbeat, uint256 newHeartbeat
+    );
+
     /// @notice Emitted when a price feed is added for a token.
     /// @param underlyingAsset The address of the token.
     /// @param priceFeed The address of the price feed.

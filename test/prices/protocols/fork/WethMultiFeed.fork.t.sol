@@ -47,7 +47,7 @@ contract WethMultiFeedForkTest is NAVCalculatorForkHarness {
 
     function setupRegisterAssets() internal override {
         nav.registerAsset(WETH, CHAINLINK_ETH_USD, IPrices.PriceType.Chainlink, CHAINLINK_HEARTBEAT);
-        nav.addPriceFeed(WETH, API3_ETH_USD, IPrices.PriceType.API3, API3_HEARTBEAT);
+        nav.addOrModifyPriceFeed(WETH, API3_ETH_USD, IPrices.PriceType.API3, API3_HEARTBEAT);
     }
 
     function setupBalanceAdapter() internal override {}
@@ -156,7 +156,7 @@ contract WethMultiFeedForkTest is NAVCalculatorForkHarness {
     function test_cannotAddDuplicateFeed() public {
         vm.prank(admin);
         vm.expectRevert();
-        nav.addPriceFeed(WETH, CHAINLINK_ETH_USD, IPrices.PriceType.Chainlink, CHAINLINK_HEARTBEAT);
+        nav.addOrModifyPriceFeed(WETH, CHAINLINK_ETH_USD, IPrices.PriceType.Chainlink, CHAINLINK_HEARTBEAT);
     }
 
     function test_cannotRemoveLastFeed() public {

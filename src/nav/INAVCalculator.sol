@@ -558,8 +558,12 @@ interface INAVCalculator is IBalances {
     /// @param priceFeed Price feed address (cannot be zero).
     /// @param priceType Chainlink, Custom, Redstone, or API3.
     /// @param chainlinkHeartbeat Staleness window in seconds (must be non-zero for all types).
-    function addPriceFeed(address asset, address priceFeed, IPrices.PriceType priceType, uint256 chainlinkHeartbeat)
-        external;
+    function addOrModifyPriceFeed(
+        address asset,
+        address priceFeed,
+        IPrices.PriceType priceType,
+        uint256 chainlinkHeartbeat
+    ) external;
 
     /// @notice Adds a monitor (divergence-only) feed for an asset. Monitor feeds NEVER price the NAV; they are read
     ///         only to detect divergence between the primary price and the worst-case (furthest) healthy monitor price.

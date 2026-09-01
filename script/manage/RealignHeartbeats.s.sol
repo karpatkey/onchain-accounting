@@ -6,7 +6,6 @@ import {console2} from "forge-std/console2.sol";
 import {NAVCalculator} from "src/nav/NAVCalculator.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IPrices} from "src/prices/IPrices.sol";
-import {HeartbeatRealigner} from "script/manage/HeartbeatRealigner.sol";
 import {ConfigReader} from "script/utils/ConfigReader.sol";
 
 /// @title RealignHeartbeats
@@ -17,14 +16,13 @@ import {ConfigReader} from "script/utils/ConfigReader.sol";
 ///      arguments.** The config is the source of truth the guard checks and the next registration reads,
 ///      so driving the broadcast from anything else would let the chain and the repo disagree.
 ///
-///      The work happens inside `HeartbeatRealigner` because a registered heartbeat cannot be changed
-///      through the NAVCalculator API — see that contract for why, and why the swap must be atomic.
-///      This script only: deploys the realigner, grants it MANAGER_ROLE, calls it, and revokes.
+///      Both axes are now plain MANAGER calls. `addOrModifyPriceFeed` UPDATES the heartbeat of an
+///      already-registered feed in place, so the helper contract this script used to deploy — plus its
+///      MANAGER_ROLE grant, its self-renounce, and the four-transaction mirror swap it performed per
+///      asset — are all gone. Monitor feeds never needed the dance: their array has no last-feed guard,
+///      so a remove/add works directly.
 ///
-///      The role is granted in one transaction and RENOUNCED BY THE REALIGNER ITSELF at the end of the
-///      call that uses it, so it cannot outlive that transaction. The realigner is additionally pinned to
-///      this script's sender, so even the gap between the grant and the call is inert to anyone else.
-///      Run with `--broadcast` from the account holding DEFAULT_ADMIN_ROLE.
+///      Run with `--broadcast` from the account holding MANAGER_ROLE.
 ///
 ///      Dry-run first — it prints the exact plan and asserts every postcondition without `--broadcast`:
 ///        forge script script/manage/RealignHeartbeats.s.sol --rpc-url <rpc>
@@ -59,8 +57,7 @@ contract RealignHeartbeats is Script {
         // The address that will actually SIGN, not `msg.sender`. Under `forge script` the two need not be
         // equal, so checking msg.sender can fail a valid run before broadcasting — or pass one whose real
         // signer lacks the role, leaving the revert to land mid-sequence. `10_MigrateAdaptersToCreate2.s.sol`
-        // pins the intended broadcaster the same way. It is also the OPERATOR the realigner is bound to, so
-        // getting it wrong here would make every realign call revert NotOperator.
+        // pins the intended broadcaster the same way.
         address sender = ConfigReader.readChainConfig(vm, chainId).admin;
         if (!NAVCalculator(NAV).hasRole(0x00, sender)) revert NotAdmin(sender);
 
@@ -77,18 +74,20 @@ contract RealignHeartbeats is Script {
         }
 
         vm.startBroadcast();
-        HeartbeatRealigner realigner = new HeartbeatRealigner(NAV, sender);
-        NAVCalculator(NAV).grantRole(MANAGER_ROLE, address(realigner));
-        // No trailing revokeRole: `realign` renounces the role itself, in the same transaction that uses
-        // it. The trailing revoke is what failed on Polygon (out of gas), stranding the role on a
-        // then-ungated contract for 107 blocks. One less transaction is one less thing to fail open.
-        if (assets.length > 0) realigner.realign(assets, heartbeats);
-        if (mAssets.length > 0) {
-            // realign() renounces on completion, so the role must be re-granted for a second call.
-            if (!NAVCalculator(NAV).hasRole(MANAGER_ROLE, address(realigner))) {
-                NAVCalculator(NAV).grantRole(MANAGER_ROLE, address(realigner));
+        for (uint256 i; i < assets.length; ++i) {
+            IPrices.PriceFeedConfig memory c = NAVCalculator(NAV).getPriceFeedAt(assets[i], 0);
+            // Same feed, same type — only the heartbeat moves. No helper contract, no role grant, and no
+            // window in which an unaudited pass-through prices the asset.
+            NAVCalculator(NAV).addOrModifyPriceFeed(assets[i], c.priceFeed, c.priceType, heartbeats[i]);
+        }
+        for (uint256 i; i < mAssets.length; ++i) {
+            IPrices.PriceFeedConfig[] memory mons = NAVCalculator(NAV).getMonitorFeeds(mAssets[i]);
+            for (uint256 j; j < mons.length; ++j) {
+                if (mons[j].priceFeed != mFeeds[i]) continue;
+                NAVCalculator(NAV).removeMonitorFeed(mAssets[i], mFeeds[i]);
+                NAVCalculator(NAV).addMonitorFeed(mAssets[i], mFeeds[i], mons[j].priceType, mHeartbeats[i]);
+                break;
             }
-            realigner.realignMonitors(mAssets, mFeeds, mHeartbeats);
         }
         vm.stopBroadcast();
 
@@ -113,8 +112,7 @@ contract RealignHeartbeats is Script {
             require(ok, "monitor heartbeat not applied");
             console2.log(string.concat("  ok monitor ", mSyms[i], "  hb=", vm.toString(mHeartbeats[i])));
         }
-        require(!NAVCalculator(NAV).hasRole(MANAGER_ROLE, address(realigner)), "role survived");
-        console2.log("realigner (role revoked):", address(realigner));
+        console2.log("done: heartbeats realigned via addOrModifyPriceFeed, no helper contract involved");
     }
 
     /// @notice Builds the MONITOR work list: every monitor registration whose live heartbeat differs.

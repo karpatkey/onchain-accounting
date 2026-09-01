@@ -1664,7 +1664,25 @@ library PriceFeedLib {
         IPrices.PriceFeedConfig[] storage configs = priceOracles[asset];
         uint256 len = configs.length;
         for (uint256 i; i < len; ++i) {
-            if (configs[i].priceFeed == priceFeed) revert IPrices.PriceFeedAlreadyRegistered(asset, priceFeed);
+            if (configs[i].priceFeed != priceFeed) continue;
+            // ALREADY REGISTERED -> UPDATE THE HEARTBEAT IN PLACE, do not revert.
+            //
+            // The heartbeat is registration CONFIGURATION and has to be changeable. Until now it was
+            // effectively immutable: `removeFeed` refuses an asset's LAST feed and this function refused a
+            // feed address the asset already carried, and every registered asset holds exactly one feed — so
+            // both orderings were closed. Changing one number meant registering a MIRROR of the incumbent
+            // feed to escape the last-feed guard, swapping through it, then removing it: four transactions
+            // per asset, with an unaudited pass-through contract transiently in the pricing path.
+            //
+            // Only the heartbeat moves. The feed address, priceType, decimals and array position are all
+            // untouched, so this cannot change WHICH oracle prices the asset — only when its answer is
+            // considered stale. `priceType`/decimals are deliberately NOT re-applied: a caller trying to
+            // change those is changing the feed's identity and must remove and re-add it explicitly.
+            uint256 oldHeartbeat = configs[i].chainlinkHeartbeat;
+            if (oldHeartbeat == heartbeat) revert IPrices.PriceFeedAlreadyRegistered(asset, priceFeed);
+            configs[i].chainlinkHeartbeat = heartbeat;
+            emit IPrices.PriceFeedHeartbeatUpdated(asset, priceFeed, oldHeartbeat, heartbeat);
+            return;
         }
 
         uint8 dec = _resolveFeedDecimals(priceFeed, priceType);

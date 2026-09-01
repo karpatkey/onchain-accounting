@@ -250,7 +250,7 @@ contract RegisterAssets is BaseDeployScript {
                 // Already present on-chain (added in a prior run) — skip to avoid a duplicate addPriceFeed.
             } else {
                 uint256 hb = vm.parseUint(ConfigReader.readAssetFeedHeartbeat(vm, currentChainId, symbol, i));
-                tmp[n++] = abi.encodeCall(NAVCalculator.addPriceFeed, (asset, feed, pt, hb));
+                tmp[n++] = abi.encodeCall(NAVCalculator.addOrModifyPriceFeed, (asset, feed, pt, hb));
             }
             resolvableIdx++;
         }

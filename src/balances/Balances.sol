@@ -182,15 +182,20 @@ abstract contract Balances is IBalances, Initializable {
     /// @param adapter The address of the adapter.
     function _removeBalanceAdapter(address adapter) internal {
         // Storage mutation + guards delegated to NAVRegistryLib (see _addBalanceAdapter); count + event stay inline.
+        // Removal CLEARS the adapter's meta-instance set (issue #335). It used to be left dormant, and this
+        // comment used to explain why that was survivable — it was not: `addMetaBalanceAdapter` APPENDS and
+        // accepts an empty list, so one re-registration of a superseded adapter revived the whole set
+        // alongside its live successor and NAV summed both (+$11,375.92 measured on ACCOUNT_11, with no
+        // health flag, because both readings are well-formed).
+        //
+        // The cleared count is deliberately NOT subtracted from `_metaInstanceTotal`. That total only SIZES
+        // READ BUFFERS, where an overestimate is harmless — and it was ALREADY an overestimate for exactly
+        // these coordinates before this change, so nothing regresses. Subtracting it costs bytecode in a
+        // contract with single-digit EIP-170 margin and buys an accuracy nothing reads.
         NAVRegistryLib.removeBalanceAdapter(
-            _isAdapterRegistered, _globalAdapters, _adapterTypes, adapter, erc20DefaultBalanceAdapter
+            _isAdapterRegistered, _globalAdapters, _adapterTypes, _metaInstances, adapter, erc20DefaultBalanceAdapter
         );
         balanceAdapterTotalCount--;
-
-        // Note: a removed adapter's configured meta-instance set (if any) is left dormant — it is no longer
-        // queried since the adapter is out of the registry. _metaInstanceTotal only sizes read buffers (an
-        // overestimate is harmless); the stale set persists, so re-registering an adapter then removing the
-        // leftover coordinates (removeMetaInstances) is the way to reset it.
 
         // Emit event with address(0) for underlyingAsset since adapters are global
         emit BalanceAdapterRemoved(address(0), adapter);
@@ -209,9 +214,10 @@ abstract contract Balances is IBalances, Initializable {
     /// @notice Batch-removes balance adapters. Loop + guards + per-adapter event delegated to NAVRegistryLib.
     /// @param adapters The adapters to remove.
     function _removeBalanceAdapters(address[] calldata adapters) internal {
-        balanceAdapterTotalCount -= NAVRegistryLib.removeBalanceAdapters(
-            _isAdapterRegistered, _globalAdapters, _adapterTypes, erc20DefaultBalanceAdapter, adapters
+        (uint256 removedCount,) = NAVRegistryLib.removeBalanceAdapters(
+            _isAdapterRegistered, _globalAdapters, _adapterTypes, _metaInstances, erc20DefaultBalanceAdapter, adapters
         );
+        balanceAdapterTotalCount -= removedCount;
     }
 
     //

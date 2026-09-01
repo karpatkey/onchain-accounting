@@ -461,7 +461,9 @@ Each chain has its own `priceFeed` deployment. L2 variants use `*_L2_Price` so t
 
 ### 9.3 Updating a feed / adding redundancy
 
-Custom feeds are immutable. To change inputs (e.g., new Chainlink feed address), redeploy the adapter, add it with `NAVCalculator.addPriceFeed(asset, newFeed, priceType, heartbeat)` (MANAGER), and remove the old one with `NAVCalculator.removePriceFeed(asset, oldFeed)`. Removal reverts if it would leave the asset with no feeds — add first, then remove.
+Custom feeds are immutable. To change inputs (e.g., new Chainlink feed address), redeploy the adapter, add it with `NAVCalculator.addOrModifyPriceFeed(asset, newFeed, priceType, heartbeat)` (MANAGER), and remove the old one with `NAVCalculator.removePriceFeed(asset, oldFeed)`. Removal reverts if it would leave the asset with no feeds — add first, then remove.
+
+> **To change only the HEARTBEAT, do not swap feeds.** Call `addOrModifyPriceFeed` with the SAME feed address and the new heartbeat: it updates the registration in place, touching neither the feed address, nor `priceType`, nor decimals, nor array position. Re-registering with an unchanged heartbeat still reverts `PriceFeedAlreadyRegistered`, so the double-registration guard survives. Before this existed the heartbeat was effectively immutable — `removePriceFeed` refuses an asset's last feed and registration refused a duplicate address — and changing one number took a four-transaction mirror swap that briefly put an unaudited pass-through contract in the pricing path.
 
 To add a second (or third) feed for redundancy without removing the existing one, just call `addPriceFeed`. Both feeds participate in the freshest-wins selection from that point on.
 

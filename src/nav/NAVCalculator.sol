@@ -179,9 +179,12 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
     }
 
     /// @inheritdoc INAVCalculator
-    function addPriceFeed(address asset, address priceFeed, IPrices.PriceType priceType, uint256 chainlinkHeartbeat)
-        external
-    {
+    function addOrModifyPriceFeed(
+        address asset,
+        address priceFeed,
+        IPrices.PriceType priceType,
+        uint256 chainlinkHeartbeat
+    ) external {
         _requireManager();
         if (priceFeed == address(0)) {
             revert InvalidArguments();

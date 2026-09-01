@@ -215,7 +215,7 @@ contract Mock_NAVCalculator is INAVCalculator {
         revert("Not implemented in mock");
     }
 
-    function addPriceFeed(address, address, IPrices.PriceType, uint256) external pure override {
+    function addOrModifyPriceFeed(address, address, IPrices.PriceType, uint256) external pure override {
         revert("Not implemented in mock");
     }
 

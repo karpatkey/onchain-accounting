@@ -75,7 +75,7 @@ contract SwapCustomPriceFeeds is BaseDeployScript {
                     navProxy,
                     0,
                     abi.encodeCall(
-                        NAVCalculator.addPriceFeed,
+                        NAVCalculator.addOrModifyPriceFeed,
                         (plans[i].asset, plans[i].addFeeds[k], IPrices.PriceType.Custom, plans[i].addHeartbeats[k])
                     )
                 );

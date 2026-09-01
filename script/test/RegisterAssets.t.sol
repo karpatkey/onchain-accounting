@@ -324,7 +324,7 @@ contract RegisterAssetsTest is SuperTest {
         );
         assertEq(
             bytes32(_selectorOf(vm.parseJsonBytes(batchJson, ".transactions[1].data"))),
-            bytes32(NAVCalculator.addPriceFeed.selector),
+            bytes32(NAVCalculator.addOrModifyPriceFeed.selector),
             "index 1 must be addPriceFeed"
         );
         assertEq(

@@ -107,7 +107,7 @@ abstract contract SuperTest is Test {
         vm.startPrank(navCalculatorManager);
 
         // Native is pre-registered in initialize; set price feed only
-        nav.addPriceFeed(
+        nav.addOrModifyPriceFeed(
             address(nav.NATIVE_ADDRESS()), address(ethAdapter), IPrices.PriceType.Chainlink, type(uint256).max
         );
         // Note: The native address balance adapter is handled by ERC20DefaultBalanceAdapter which is set up in initialize()

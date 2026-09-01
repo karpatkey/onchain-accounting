@@ -24,7 +24,7 @@ abstract contract BridgeEscrowTestBase is BridgeTestBase {
     }
 
     function _deployMockAdapter() internal {
-        address impl = address(new MockBridgeAdapter());
+        address impl = address(new MockBridgeAdapter(address(0)));
         address payable proxy = payable(address(
                 UnsafeUpgrades.deployUUPSProxy(
                     impl, abi.encodeCall(MockBridgeAdapter.initialize, (admin, address(bridgeEscrow), "Mock", "1.0.0"))
@@ -34,7 +34,7 @@ abstract contract BridgeEscrowTestBase is BridgeTestBase {
         vm.label(address(mockAdapter), "MockBridgeAdapter");
     }
 
-    /// @notice Destination chain + valid payload for releaseByInvoiceId tests
+    /// @notice Destination chain + valid payload for recordDelivery / claim tests
     function _setupDestinationAndValidPayload(
         address,
         /* asset */
@@ -56,7 +56,7 @@ abstract contract BridgeEscrowTestBase is BridgeTestBase {
     }
 
     function _deployMockAdapterForEscrow(BridgeEscrow escrow) internal returns (MockBridgeAdapter destMock) {
-        address impl = address(new MockBridgeAdapter());
+        address impl = address(new MockBridgeAdapter(address(0)));
         address payable proxy = payable(address(
                 UnsafeUpgrades.deployUUPSProxy(
                     impl, abi.encodeCall(MockBridgeAdapter.initialize, (admin, address(escrow), "Mock", "1.0.0"))

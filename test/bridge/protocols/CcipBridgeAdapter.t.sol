@@ -38,14 +38,14 @@ contract CcipBridgeAdapterTest is BridgeScenarioHelper {
         link.mint(address(this), 1000 ether);
 
         // Deploy CCIP adapter
-        address adapterImpl = address(new CcipBridgeAdapter());
+        address adapterImpl = address(new CcipBridgeAdapter(address(0)));
         address adapterProxy = UnsafeUpgrades.deployUUPSProxy(
             adapterImpl,
             abi.encodeCall(
                 CcipBridgeAdapter.initialize, (admin, address(bridgeEscrow), address(router), address(link), "1.0.0")
             )
         );
-        adapter = CcipBridgeAdapter(adapterProxy);
+        adapter = CcipBridgeAdapter(payable(adapterProxy));
 
         // Configure adapter (chain selectors for 1 and 10 are pre-configured in initialize)
         vm.startPrank(admin);
@@ -208,7 +208,7 @@ contract CcipBridgeAdapterTest is BridgeScenarioHelper {
             _setupDestinationChainForCompletion(invoiceData, address(usdc));
 
         // Set up adapter on destination chain
-        address destAdapterImpl = address(new CcipBridgeAdapter());
+        address destAdapterImpl = address(new CcipBridgeAdapter(address(0)));
         address destAdapterProxy = UnsafeUpgrades.deployUUPSProxy(
             destAdapterImpl,
             abi.encodeCall(
@@ -216,7 +216,7 @@ contract CcipBridgeAdapterTest is BridgeScenarioHelper {
                 (admin, address(destBridgeEscrow), address(router), address(link), "1.0.0")
             )
         );
-        CcipBridgeAdapter destAdapter = CcipBridgeAdapter(destAdapterProxy);
+        CcipBridgeAdapter destAdapter = CcipBridgeAdapter(payable(destAdapterProxy));
 
         vm.startPrank(admin);
         // SOURCE_CHAIN_ID and DEST_CHAIN_ID selectors are pre-configured in initialize
@@ -244,12 +244,21 @@ contract CcipBridgeAdapterTest is BridgeScenarioHelper {
             data: messagePayload,
             destTokenAmounts: new Client.EVMTokenAmount[](0)
         });
+        // Step 1 (ADR 0027): completeBridge records the delivery — escrow HOLDS, no payout yet.
         vm.prank(manager);
         destAdapter.completeBridge(messagePayload, abi.encode(minimalMessage));
 
-        assertEq(usdc.balanceOf(account) - initialPortfolioBalance, amount, "Account should receive tokens");
-        assertEq(usdc.balanceOf(address(destBridgeEscrow)), 0, "Escrow should have zero balance after release");
-        assertTrue(destBridgeEscrow.isInvoiceCompleted(invoiceHash), "Invoice should be marked as completed");
+        assertEq(usdc.balanceOf(account), initialPortfolioBalance, "account NOT paid on record");
+        assertEq(usdc.balanceOf(address(destBridgeEscrow)), amount, "escrow holds the delivery");
+        assertEq(destBridgeEscrow.getHeldBalanceForAsset(address(usdc), account), amount, "held for account");
+        assertTrue(destBridgeEscrow.isInvoiceCompleted(invoiceHash), "invoice completed on record");
+
+        // Step 2 (ADR 0027): MANAGER claim pays the account.
+        vm.prank(manager);
+        destBridgeEscrow.claim(invoiceHash);
+        assertEq(usdc.balanceOf(account) - initialPortfolioBalance, amount, "account received tokens on claim");
+        assertEq(usdc.balanceOf(address(destBridgeEscrow)), 0, "escrow drained after claim");
+        assertEq(destBridgeEscrow.getHeldBalanceForAsset(address(usdc), account), 0, "held cleared after claim");
     }
 
     function test_completeBridge_validatesChecksum() public {
@@ -261,7 +270,7 @@ contract CcipBridgeAdapterTest is BridgeScenarioHelper {
         (BridgeEscrow destBridgeEscrow,) = _setupDestinationChainForCompletion(invoiceData, address(usdc));
 
         // Set up adapter on destination chain
-        address destAdapterImpl = address(new CcipBridgeAdapter());
+        address destAdapterImpl = address(new CcipBridgeAdapter(address(0)));
         address destAdapterProxy = UnsafeUpgrades.deployUUPSProxy(
             destAdapterImpl,
             abi.encodeCall(
@@ -269,7 +278,7 @@ contract CcipBridgeAdapterTest is BridgeScenarioHelper {
                 (admin, address(destBridgeEscrow), address(router), address(link), "1.0.0")
             )
         );
-        CcipBridgeAdapter destAdapter = CcipBridgeAdapter(destAdapterProxy);
+        CcipBridgeAdapter destAdapter = CcipBridgeAdapter(payable(destAdapterProxy));
 
         vm.startPrank(admin);
         destAdapter.grantRole(MANAGER, manager);
@@ -308,7 +317,7 @@ contract CcipBridgeAdapterTest is BridgeScenarioHelper {
             _setupDestinationChainForCompletion(invoiceData, address(usdc));
 
         // Set up adapter on destination chain
-        address destAdapterImpl = address(new CcipBridgeAdapter());
+        address destAdapterImpl = address(new CcipBridgeAdapter(address(0)));
         address destAdapterProxy = UnsafeUpgrades.deployUUPSProxy(
             destAdapterImpl,
             abi.encodeCall(
@@ -316,7 +325,7 @@ contract CcipBridgeAdapterTest is BridgeScenarioHelper {
                 (admin, address(destBridgeEscrow), address(router), address(link), "1.0.0")
             )
         );
-        CcipBridgeAdapter destAdapter = CcipBridgeAdapter(destAdapterProxy);
+        CcipBridgeAdapter destAdapter = CcipBridgeAdapter(payable(destAdapterProxy));
 
         vm.startPrank(admin);
         destBridgeEscrow.authorizeAdapter(address(destAdapter));
@@ -357,7 +366,7 @@ contract CcipBridgeAdapterTest is BridgeScenarioHelper {
         MockCcipRouter destRouter = new MockCcipRouter();
         Mock_ERC20 destLink = new Mock_ERC20("LINK", 18);
 
-        address destAdapterImpl = address(new CcipBridgeAdapter());
+        address destAdapterImpl = address(new CcipBridgeAdapter(address(0)));
         address destAdapterProxy = UnsafeUpgrades.deployUUPSProxy(
             destAdapterImpl,
             abi.encodeCall(
@@ -365,7 +374,7 @@ contract CcipBridgeAdapterTest is BridgeScenarioHelper {
                 (admin, address(destBridgeEscrow), address(destRouter), address(destLink), "1.0.0")
             )
         );
-        CcipBridgeAdapter destAdapter = CcipBridgeAdapter(destAdapterProxy);
+        CcipBridgeAdapter destAdapter = CcipBridgeAdapter(payable(destAdapterProxy));
 
         vm.startPrank(admin);
         // SOURCE_CHAIN_ID and DEST_CHAIN_ID selectors are pre-configured in initialize
@@ -390,9 +399,17 @@ contract CcipBridgeAdapterTest is BridgeScenarioHelper {
         destAdapter.completeBridge(messagePayload, abi.encode(ccipMessage));
 
         bytes32 expectedInvoiceHash = bytes32(uint256(uint192(InvoiceDataLib.decode(messagePayload).checksum24)));
-        assertTrue(destBridgeEscrow.isInvoiceCompleted(expectedInvoiceHash), "invoice completed");
+        assertTrue(destBridgeEscrow.isInvoiceCompleted(expectedInvoiceHash), "invoice completed on record");
+        // ADR 0027: completeBridge records custody and HOLDS; the account is paid only on MANAGER claim.
+        assertEq(usdc.balanceOf(account), portfolioBalanceBeforeRelease, "account NOT paid on record");
+        assertEq(
+            destBridgeEscrow.getHeldBalanceForAsset(address(usdc), account), amount, "escrow holds for the account"
+        );
+
+        vm.prank(manager);
+        destBridgeEscrow.claim(expectedInvoiceHash);
         assertEq(usdc.balanceOf(account) - portfolioBalanceBeforeRelease, amount, "account received bridged amount");
-        assertEq(usdc.balanceOf(address(destBridgeEscrow)), 0, "escrow balance zero after release");
+        assertEq(usdc.balanceOf(address(destBridgeEscrow)), 0, "escrow balance zero after claim");
     }
 
     /// @notice Manager completion path stores the message payload on the adapter
@@ -407,13 +424,13 @@ contract CcipBridgeAdapterTest is BridgeScenarioHelper {
         MockCcipRouter destRouter = new MockCcipRouter();
         Mock_ERC20 destLink = new Mock_ERC20("LINK", 18);
         address destAdapterProxy = UnsafeUpgrades.deployUUPSProxy(
-            address(new CcipBridgeAdapter()),
+            address(new CcipBridgeAdapter(address(0))),
             abi.encodeCall(
                 CcipBridgeAdapter.initialize,
                 (admin, address(destEscrow), address(destRouter), address(destLink), "1.0.0")
             )
         );
-        CcipBridgeAdapter destAdapter = CcipBridgeAdapter(destAdapterProxy);
+        CcipBridgeAdapter destAdapter = CcipBridgeAdapter(payable(destAdapterProxy));
         vm.startPrank(admin);
         // SOURCE_CHAIN_ID and DEST_CHAIN_ID selectors are pre-configured in initialize
         // Trust the sibling source adapter (CREATE2 same-address): provenance source-sender allowlist.
@@ -529,6 +546,18 @@ contract CcipBridgeAdapterTest is BridgeScenarioHelper {
         adapter.setFeeToken(address(0));
     }
 
+    /// @notice The adapter must accept native via a REAL transfer (not vm.deal), so the native-fee path
+    ///         (feeToken == address(0) → ccipSend{value: fee}) can be pre-funded operationally. A plain `send`
+    ///         exercises `receive()` — the funding route `vm.deal` bypasses. Guards the gap the mainnet canary found.
+    function test_receive_acceptsNativeViaRealTransfer() public {
+        address funder = makeAddr("feeFunder");
+        vm.deal(funder, 1 ether);
+        vm.prank(funder);
+        (bool ok,) = payable(address(adapter)).call{value: 0.01 ether}("");
+        assertTrue(ok, "adapter must accept native (receive) to fund the native CCIP fee");
+        assertEq(address(adapter).balance, 0.01 ether, "adapter should hold the native fee balance");
+    }
+
     function test_setChainExtraArgs_updatesExtraArgs() public {
         uint64 selector = DEST_CHAIN_SELECTOR;
         bytes memory extraArgs = abi.encode(uint256(100000)); // Gas limit
@@ -568,13 +597,13 @@ contract CcipBridgeAdapterTest is BridgeScenarioHelper {
         MockCcipRouter destRouter = new MockCcipRouter();
         Mock_ERC20 destLink = new Mock_ERC20("LINK", 18);
         address destAdapterProxy = UnsafeUpgrades.deployUUPSProxy(
-            address(new CcipBridgeAdapter()),
+            address(new CcipBridgeAdapter(address(0))),
             abi.encodeCall(
                 CcipBridgeAdapter.initialize,
                 (admin, address(destEscrow), address(destRouter), address(destLink), "1.0.0")
             )
         );
-        CcipBridgeAdapter destAdapter = CcipBridgeAdapter(destAdapterProxy);
+        CcipBridgeAdapter destAdapter = CcipBridgeAdapter(payable(destAdapterProxy));
         vm.startPrank(admin);
         // SOURCE_CHAIN_ID and DEST_CHAIN_ID selectors are pre-configured in initialize
         // Trust the sibling source adapter (CREATE2 same-address): provenance source-sender allowlist.

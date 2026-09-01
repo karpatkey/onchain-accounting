@@ -46,7 +46,7 @@ contract StargateBridgeAdapterForkTest is BridgeTestBase {
 
     function _setupStargateAdapter() internal {
         // Deploy Stargate V2 adapter
-        address adapterImpl = address(new StargateBridgeAdapter());
+        address adapterImpl = address(new StargateBridgeAdapter(address(0)));
         address adapterProxy = UnsafeUpgrades.deployUUPSProxy(
             adapterImpl,
             abi.encodeCall(
@@ -117,7 +117,7 @@ contract StargateBridgeAdapterForkTest is BridgeTestBase {
         destEscrow = _deployDestinationEscrow(MAINNET_CHAIN_ID);
 
         address payable destAdapterProxy = payable(UnsafeUpgrades.deployUUPSProxy(
-                address(new StargateBridgeAdapter()),
+                address(new StargateBridgeAdapter(address(0))),
                 abi.encodeCall(
                     StargateBridgeAdapter.initialize, (admin, address(destEscrow), LZ_ENDPOINT_MAINNET, "1.0.0")
                 )
@@ -133,7 +133,8 @@ contract StargateBridgeAdapterForkTest is BridgeTestBase {
     }
 
     /// @notice The genuine LayerZero V2 Endpoint calls lzCompose on the adapter (with the real Stargate pool as
-    ///         the composing OApp): the adapter authenticates endpoint + pool + source, then funds + releases.
+    ///         the composing OApp): the adapter authenticates endpoint + pool + source, then records the
+    ///         delivery into escrow custody (ADR 0027). A subsequent MANAGER claim pays the account.
     function testFork_stargate_lzCompose_authenticatesEndpointAndReleases() public {
         uint64 srcChainId = OPTIMISM_CHAIN_ID;
         uint256 amount = TEST_AMOUNT_USDC;
@@ -157,10 +158,18 @@ contract StargateBridgeAdapterForkTest is BridgeTestBase {
         vm.prank(LZ_ENDPOINT_MAINNET);
         destAdapter.lzCompose(STARGATE_POOL_USDC_MAINNET, bytes32(0), composeMessage, address(0), bytes(""));
 
-        assertEq(usdc.balanceOf(account) - portfolioBefore, amount, "account received bridged USDC");
-        assertEq(usdc.balanceOf(address(destAdapter)), 0, "adapter forwarded all tokens");
-        assertEq(usdc.balanceOf(address(destEscrow)), 0, "escrow holds no standing balance");
-        assertTrue(destEscrow.isInvoiceCompleted(invoiceHash), "invoice marked completed");
+        // ADR 0027: delivery records custody and HOLDS; the account is paid only on MANAGER claim.
+        assertEq(usdc.balanceOf(account), portfolioBefore, "account NOT paid on delivery");
+        assertEq(usdc.balanceOf(address(destAdapter)), 0, "adapter forwarded all tokens to escrow");
+        assertEq(usdc.balanceOf(address(destEscrow)), amount, "escrow holds the delivery");
+        assertEq(destEscrow.getHeldBalanceForAsset(address(usdc), account), amount, "held for account");
+        assertTrue(destEscrow.isInvoiceCompleted(invoiceHash), "invoice marked completed on record");
+
+        vm.prank(manager);
+        destEscrow.claim(invoiceHash);
+        assertEq(usdc.balanceOf(account) - portfolioBefore, amount, "account received bridged USDC on claim");
+        assertEq(usdc.balanceOf(address(destEscrow)), 0, "escrow drained after claim");
+        assertEq(destEscrow.getHeldBalanceForAsset(address(usdc), account), 0, "held cleared after claim");
     }
 
     /// @notice lzCompose reverts when not called by the genuine Endpoint.

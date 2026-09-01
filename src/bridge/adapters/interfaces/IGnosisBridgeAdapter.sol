@@ -2,7 +2,7 @@
 pragma solidity ^0.8;
 
 import {IBridgeAdapter} from "../../IBridgeAdapter.sol";
-import {IOmnibridge, IAMB} from "./IGnosisInterfaces.sol";
+import {IOmnibridge, IAMB, IUSDCTransmuter} from "./IGnosisInterfaces.sol";
 
 /// @title IGnosisBridgeAdapter Interface
 /// @notice Interface for Gnosis Bridge Adapter
@@ -30,6 +30,16 @@ interface IGnosisBridgeAdapter is IBridgeAdapter {
     /// @param transactionHash The AMB transaction hash - indexed
     event GnosisBridgeCompleted(bytes32 indexed invoiceId, uint64 sourceChainId, bytes32 indexed transactionHash);
 
+    /// @notice Emitted when the trusted source Omnibridge mediator for a source chain is set.
+    event TrustedMediatorSet(uint64 indexed srcChainId, address mediator);
+
+    /// @notice Emitted when the USDC transmuter address is set (or cleared to address(0)).
+    event UsdcTransmuterSet(address indexed usdcTransmuter);
+
+    /// @notice Emitted when an inbound transfer was authenticated but its release did not complete in the
+    ///         same callback; a MANAGER completeBridge can finish it against the recorded provenance.
+    event GnosisBridgeAuthenticatedPendingRelease(bytes32 indexed invoiceId, uint64 sourceChainId);
+
     //
     // Errors
     //
@@ -52,6 +62,11 @@ interface IGnosisBridgeAdapter is IBridgeAdapter {
     /// @notice Thrown when bridge data is invalid
     error InvalidBridgeData();
 
+    /// @notice Thrown when the token the mediator delivered does not match the invoice's registered asset
+    /// @param expected The invoice's registered asset on this chain
+    /// @param delivered The token address the mediator reported delivering
+    error InvalidDeliveredToken(address expected, address delivered);
+
     /// @notice Thrown when attempting to bridge to an unsupported chain
     /// @param chainId The unsupported chain ID
     error UnsupportedChain(uint64 chainId);
@@ -73,6 +88,9 @@ interface IGnosisBridgeAdapter is IBridgeAdapter {
     /// @notice AMB contract address (for message verification)
     /// @return The AMB contract instance
     function amb() external view returns (IAMB);
+
+    /// @notice The Gnosis USDCTransmuter (USDC.e<->legacy 1:1 swap), or address(0) where none applies (Ethereum side).
+    function usdcTransmuter() external view returns (IUSDCTransmuter);
 
     /// @notice Gets the stored message payload for an invoice
     /// @param invoiceId The invoice ID (32 bytes)
@@ -117,6 +135,15 @@ interface IGnosisBridgeAdapter is IBridgeAdapter {
     /// @dev Only callable by admin role
     function setAmb(address amb_) external;
 
+    /// @notice Sets (or clears with address(0)) the Gnosis USDCTransmuter used to swap the OmniBridge's legacy USDC
+    ///         to/from the escrow-registered USDC.e. DEFAULT_ADMIN_ROLE. Only affects USDC routes on the Gnosis side.
+    function setUsdcTransmuter(address usdcTransmuter_) external;
+
+    /// @notice Sets the trusted source Omnibridge mediator for a source chain id (admin only).
+    /// @dev This is the address `amb.messageSender()` reports for inbound transfers from `srcChainId` — the
+    ///      source Omnibridge mediator, not the sibling adapter.
+    function setTrustedMediator(uint64 srcChainId, address mediator) external;
+
     //
     // View Functions
     //
@@ -148,20 +175,27 @@ interface IGnosisBridgeAdapter is IBridgeAdapter {
     // Receiver Functions
     //
 
-    /// @notice Receives tokens from the Omnibridge mediator via ERC677 onTokenTransfer
+    /// @notice Primary receiver callback: the OmniBridge multi-token mediator's `IERC20Receiver.onTokenBridged`,
+    ///         invoked on the destination after `relayTokensAndCall` delivers the bridged tokens to this adapter.
+    /// @param token The bridged token delivered to the adapter
+    /// @param value The amount of tokens delivered
+    /// @param data The message payload (invoiceId + amount + nonce + meta)
+    /// @dev Auto completion path. Authenticates the mediator (`msg.sender == omnibridge`) and the AMB-reported
+    ///      source (`amb.messageSender()` == the trusted source Omnibridge mediator `trustedMediator[srcChainId]`,
+    ///      `amb.messageSourceChainId()` == the expected source chain), verifies the delivered token+amount match
+    ///      the invoice, then funds the escrow and releases. Calling it from any other address reverts.
+    function onTokenBridged(address token, uint256 value, bytes calldata data) external;
+
+    /// @notice ERC677 `onTokenTransfer` receiver callback — kept alongside `onTokenBridged` for any mediator/token
+    ///         that uses the ERC677 convention. Same authentication + release path.
     /// @param from The sender on the mediator side
     /// @param value The amount of tokens delivered to the adapter
     /// @param data The message payload (contains invoiceId + amount + nonce + meta)
     /// @return success Whether the transfer was successful
-    /// @dev Auto completion path: the genuine Omnibridge mediator delivers the bridged tokens to this adapter
-    ///      and then calls this. The adapter authenticates the mediator (`msg.sender == omnibridge`) and the
-    ///      AMB-reported source (`amb.messageSender()` == the trusted remote adapter, `amb.messageSourceChainId()`
-    ///      == the expected source chain), verifies the delivered token+amount match the invoice, then funds the
-    ///      escrow and releases. Calling it from any other address reverts.
     function onTokenTransfer(address from, uint256 value, bytes calldata data) external returns (bool);
 
     /// @notice Accepts native value sent to the adapter
     /// @dev Native tokens (ETH/xDAI) are not bridged by this adapter (see `NativeTokenNotSupported`). This is kept
-    ///      payable only as a safety net so the funded pass-through native branch in the base cannot strand value.
+    ///      payable only as a safety net so the native custody-funding branch in the base cannot strand value.
     receive() external payable;
 }

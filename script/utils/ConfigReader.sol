@@ -166,8 +166,20 @@ library ConfigReader {
         config.chainlinkSequencerFeed = json.readAddress(".chainlinkSequencerFeed");
         config.nativeTokenSymbol = json.readString(".nativeTokenSymbol");
         config.securityCouncil = json.readAddress(".addresses.securityCouncil");
-        config.admin = json.readAddress(".addresses.admin");
-        config.manager = json.readAddress(".addresses.manager");
+        // The deploy-phase `admin`/`manager` (the deployer EOA; the security council becomes end-state admin via 07)
+        // may be overridden at runtime via DEPLOY_ADMIN / DEPLOY_MANAGER — this sets ONLY the post-init role args
+        // (the granted DEFAULT_ADMIN_ROLE / MANAGER), letting a deploy be broadcast without rewriting the committed
+        // chain config. It does NOT affect the bridge adapters' CREATE2 `expectedInitializer`: `05` bakes the fixed,
+        // cross-chain-identical `DeploySalts.BRIDGE_ADAPTER_INITIALIZER` and hard-reverts unless the broadcaster equals
+        // it (so a role override can never diverge adapter addresses across chains — same-address invariant). When the
+        // env vars are unset, the committed JSON values are used unchanged (no behavior change for normal runs).
+        config.admin = _resolveRoleOverride(vm, "DEPLOY_ADMIN", json.readAddress(".addresses.admin"));
+        config.manager = _resolveRoleOverride(vm, "DEPLOY_MANAGER", json.readAddress(".addresses.manager"));
+    }
+
+    /// @dev Returns the address in env var `envName` if set to a valid address, otherwise `fallbackAddr`.
+    function _resolveRoleOverride(Vm vm, string memory envName, address fallbackAddr) private view returns (address) {
+        return vm.envOr(envName, fallbackAddr);
     }
 
     // -------------------------------------------------------------------------
@@ -431,6 +443,21 @@ library ConfigReader {
         p = string(abi.encodePacked(base, ".initialize.", paramName));
         if (vm.keyExists(json, p)) return json.readString(p);
         return "";
+    }
+
+    /// @notice Reads an address from a nested `<adapterName>.<mapName>.<key>` object (e.g. the Stargate adapter's
+    ///         `pools.<symbol>`). Zero if absent or a placeholder.
+    function readAdapterMappingAddress(
+        Vm vm,
+        uint256 chainId,
+        string memory adapterType,
+        string memory adapterName,
+        string memory mapName,
+        string memory key
+    ) internal view returns (address) {
+        (string memory json, string memory prefix) = _resolveAdapterFile(vm, chainId, adapterType, adapterName);
+        string memory p = string(abi.encodePacked(prefix, ".", adapterName, ".", mapName, ".", key));
+        return _readAddrOrZero(vm, json, p);
     }
 
     /// @notice Reads an address-array adapter param (e.g. a meta-adapter's `instances`). Empty if absent.

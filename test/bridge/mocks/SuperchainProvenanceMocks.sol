@@ -19,6 +19,17 @@ contract MockCrossDomainMessenger is ICrossDomainMessenger {
     ///      trusted sibling adapter and a spoofed/unknown sender.
     address public sender;
 
+    /// @dev Captured by `sendMessage` so a deposit test can inspect + relay the outbound completion message.
+    address public lastMessageTarget;
+    bytes public lastMessage;
+
+    /// @dev Records whether a relayed cross-domain message was delivered (keyed by the versioned message hash).
+    mapping(bytes32 => bool) public successfulMessages;
+
+    function setSuccessfulMessage(bytes32 messageHash, bool ok) external {
+        successfulMessages[messageHash] = ok;
+    }
+
     function setXDomainMessageSender(address sender_) external {
         sender = sender_;
     }
@@ -26,6 +37,13 @@ contract MockCrossDomainMessenger is ICrossDomainMessenger {
     // forge-lint: disable-next-line(mixed-case-function)
     function xDomainMessageSender() external view override returns (address) {
         return sender;
+    }
+
+    /// @notice Captures an outbound cross-domain message (mirrors the L1CrossDomainMessenger enqueuing a deposit
+    ///         message). The test then delivers it with `relayMessage` to the L2 sibling. Payable for parity.
+    function sendMessage(address _target, bytes calldata _message, uint32) external payable override {
+        lastMessageTarget = _target;
+        lastMessage = _message;
     }
 
     /// @notice Relays `data` to `target` as `msg.sender == this messenger` (the genuine relayer), after
@@ -51,10 +69,18 @@ contract MockCrossDomainMessenger is ICrossDomainMessenger {
     }
 }
 
-/// @notice Mock OptimismPortal that keys proven/finalize on the REAL OP withdrawal hash (abi.encode).
+/// @notice Mock fault-proof OptimismPortal (OP2) that keys proven withdrawals by (real OP withdrawal hash, proof
+///         submitter) and finalized withdrawals globally by hash — matching the live mainnet portals (OP v5.6.1,
+///         Base v5.2.0): `provenWithdrawals(bytes32,address) -> (address disputeGameProxy, uint64 timestamp)`
+///         (proven ⟺ disputeGameProxy != 0), `finalizedWithdrawals(bytes32) -> bool`, and a finalize that uses
+///         `msg.sender` as the proof submitter and reverts on a second call for the same hash.
 contract MockOptimismPortalReal is IOptimismPortal {
-    mapping(bytes32 => bool) private _provenWithdrawals;
-    uint256 public minimumWithdrawalDelay = 0;
+    // (withdrawal hash => proof submitter => dispute game proxy) — nonzero means proven by that submitter.
+    mapping(bytes32 => mapping(address => address)) private _disputeGameProxy;
+    mapping(bytes32 => bool) private _finalizedWithdrawals;
+
+    // A nonzero sentinel dispute game — the real portal records the game the withdrawal was proven against.
+    address internal constant SENTINEL_GAME = address(uint160(0xDEAD));
 
     function _hash(Types.WithdrawalTransaction memory _tx) internal pure returns (bytes32) {
         return keccak256(abi.encode(_tx.nonce, _tx.sender, _tx.target, _tx.value, _tx.gasLimit, _tx.data));
@@ -66,20 +92,81 @@ contract MockOptimismPortalReal is IOptimismPortal {
         Types.OutputRootProof memory,
         bytes[] calldata
     ) external override {
-        _provenWithdrawals[_hash(_tx)] = true;
+        // Fault-proof portal keys the proof by the submitter (msg.sender = the proving adapter).
+        _disputeGameProxy[_hash(_tx)][msg.sender] = SENTINEL_GAME;
     }
 
     function finalizeWithdrawalTransaction(Types.WithdrawalTransaction memory _tx) external override {
-        require(_provenWithdrawals[_hash(_tx)], "withdrawal not proven");
+        bytes32 h = _hash(_tx);
+        // Fault-proof portal uses msg.sender as the proof submitter: the finalizer must have proven it.
+        require(_disputeGameProxy[h][msg.sender] != address(0), "withdrawal not proven");
+        // Faithful to the real permissionless portal: reverts on a second finalize for the same hash.
+        require(!_finalizedWithdrawals[h], "OptimismPortal: withdrawal has already been finalized");
+        _finalizedWithdrawals[h] = true;
         if (_tx.value > 0) {
             (bool ok,) = _tx.target.call{value: _tx.value}("");
             require(ok, "ETH transfer failed");
         }
     }
 
-    function provenWithdrawals(bytes32 _withdrawalHash) external view override returns (bool) {
-        return _provenWithdrawals[_withdrawalHash];
+    function provenWithdrawals(bytes32 _withdrawalHash, address _proofSubmitter)
+        external
+        view
+        override
+        returns (address disputeGameProxy, uint64 timestamp)
+    {
+        return (_disputeGameProxy[_withdrawalHash][_proofSubmitter], 0);
+    }
+
+    function finalizedWithdrawals(bytes32 _withdrawalHash) external view override returns (bool) {
+        return _finalizedWithdrawals[_withdrawalHash];
+    }
+
+    // Test-controlled maturity/air-gap gate. The real portal's `checkWithdrawal` reverts until the proof matures,
+    // the dispute game resolves in the defender's favour, and the finality air-gap elapses; tests toggle this flag
+    // to model that transition (default false → proven-but-not-yet-finalizable).
+    mapping(bytes32 => bool) private _finalizable;
+
+    function setFinalizable(bytes32 _withdrawalHash, bool ok) external {
+        _finalizable[_withdrawalHash] = ok;
+    }
+
+    /// @notice Faithful to the live per-submitter fault-proof portal: reverts (does not return false) unless the
+    ///         withdrawal is finalizable now — proven, not already finalized, and past the maturity/air-gap gate.
+    function checkWithdrawal(bytes32 _withdrawalHash, address _proofSubmitter) external view override {
+        require(_disputeGameProxy[_withdrawalHash][_proofSubmitter] != address(0), "OptimismPortal: not proven");
+        require(!_finalizedWithdrawals[_withdrawalHash], "OptimismPortal: already finalized");
+        require(_finalizable[_withdrawalHash], "OptimismPortal: not matured / in air-gap");
     }
 
     receive() external payable {}
+}
+
+/// @notice Models the L1CrossDomainMessenger → L1StandardBridge relay for an ETH withdrawal: the portal delivers
+///         `value` to the withdrawal `target` (this contract), which forwards it to the real recipient (the sibling
+///         adapter, the `withdrawTo` receiver). Lets tests exercise the REALISTIC OP withdrawal shape where the
+///         portal `target` is NOT the adapter — the shape a `L2StandardBridge.withdrawTo` withdrawal actually
+///         produces. `setRecipient(address(0))` (or forwarding less) models a withdrawal that does not fund the
+///         adapter, so finalize's balance-delta guard must reject it.
+contract MockL1WithdrawalRelay {
+    address payable public recipient;
+
+    /// @dev Stands in for the L1CrossDomainMessenger's `successfulMessages` — the adapter's finalize skip-branch
+    ///      (RE4-M-01) casts the withdrawal `target` to `ICrossDomainMessenger` and reads this to confirm delivery.
+    mapping(bytes32 => bool) public successfulMessages;
+
+    function setRecipient(address payable r) external {
+        recipient = r;
+    }
+
+    function setSuccessfulMessage(bytes32 messageHash, bool ok) external {
+        successfulMessages[messageHash] = ok;
+    }
+
+    receive() external payable {
+        if (recipient != address(0) && msg.value > 0) {
+            (bool ok,) = recipient.call{value: msg.value}("");
+            require(ok, "relay forward failed");
+        }
+    }
 }

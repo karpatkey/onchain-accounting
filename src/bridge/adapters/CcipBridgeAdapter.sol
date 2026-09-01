@@ -19,7 +19,7 @@ import "src/errors.sol";
 /// @dev The destination recipient is the sibling adapter (this contract, same address across chains via
 ///      CREATE2). The CCIP Router calls `ccipReceive` directly on the adapter; the adapter authenticates the
 ///      router, the source chain selector and the source sender against `trustedRemoteAdapter`, then funds the
-///      escrow and releases (funded pass-through, ADR 0012).
+///      escrow, which records the delivery into per-invoice custody (hold-then-claim, ADR 0027).
 /// @author KPK
 contract CcipBridgeAdapter is BridgeAdapter, ICcipBridgeAdapter {
     using SafeERC20 for IERC20;
@@ -27,6 +27,10 @@ contract CcipBridgeAdapter is BridgeAdapter, ICcipBridgeAdapter {
     //
     // State Variables
     //
+
+    /// @notice Default destination gas limit used when no per-lane extraArgs are configured
+    /// @dev Covers ccipReceive -> _fundAndRelease (token transfer + escrow release) with headroom.
+    uint256 private constant DEFAULT_CCIP_GAS_LIMIT = 500_000;
 
     /// @notice CCIP Router contract address
     IRouterClient public router;
@@ -62,6 +66,9 @@ contract CcipBridgeAdapter is BridgeAdapter, ICcipBridgeAdapter {
         chainIdToSelector[chainId] = chainSelector;
         selectorToChainId[chainSelector] = chainId;
     }
+
+    /// @param expectedInitializer_ Address permitted to call initialize (address(0) allows anyone).
+    constructor(address expectedInitializer_) BridgeAdapter(expectedInitializer_) {}
 
     /// @inheritdoc ICcipBridgeAdapter
     function initialize(
@@ -176,10 +183,13 @@ contract CcipBridgeAdapter is BridgeAdapter, ICcipBridgeAdapter {
         // The destination CCIP Router calls ccipReceive on it; it authenticates and funds the release.
         bytes memory receiver = abi.encode(address(this));
 
-        // Get extraArgs for this chain (use configured or empty for default)
+        // extraArgs: use the per-lane configured value, or a non-empty default. Some CCIP lanes reject
+        // empty extraArgs, so default to EVMExtraArgsV1 with a gas limit covering the destination
+        // ccipReceive -> release. V1 is accepted on all lanes; lanes that *enforce* out-of-order execution
+        // require EVMExtraArgsV2{allowOutOfOrderExecution: true} and must set it per-lane via setChainExtraArgs.
         bytes memory extraArgsToUse = chainExtraArgs[destinationChainSelector];
         if (extraArgsToUse.length == 0) {
-            extraArgsToUse = bytes("");
+            extraArgsToUse = Client._argsToBytes(Client.EVMExtraArgsV1({gasLimit: DEFAULT_CCIP_GAS_LIMIT}));
         }
 
         // Build CCIP message
@@ -231,7 +241,7 @@ contract CcipBridgeAdapter is BridgeAdapter, ICcipBridgeAdapter {
     /// @inheritdoc IAny2EVMMessageReceiver
     /// @dev Auto completion path. Called by the genuine CCIP Router on the destination chain. Authenticates
     ///      the router, the source chain selector and the source sender, verifies the delivered token matches
-    ///      the invoice, then funds the escrow and releases (funded pass-through).
+    ///      the invoice, then funds the escrow, which records the delivery into custody (hold-then-claim, ADR 0027).
     function ccipReceive(Client.Any2EVMMessage calldata message) external override nonReentrant {
         if (msg.sender != address(router)) revert InvalidRouter();
         _authenticateSource(message.sourceChainSelector, message.sender);
@@ -309,4 +319,10 @@ contract CcipBridgeAdapter is BridgeAdapter, ICcipBridgeAdapter {
         return interfaceId == type(IAny2EVMMessageReceiver).interfaceId || interfaceId == type(IERC165).interfaceId
             || super.supportsInterface(interfaceId);
     }
+
+    /// @notice Accepts native token so the adapter can be pre-funded to pay CCIP fees when `feeToken == address(0)`
+    ///         (native). `_bridge` calls `router.ccipSend{value: fee}` from this balance; without a payable
+    ///         receiver the adapter could not hold native and the native-fee path would be unfundable. Recover any
+    ///         surplus via `recoverStuckAssets` (MANAGER).
+    receive() external payable {}
 }

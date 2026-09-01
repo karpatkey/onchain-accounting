@@ -58,11 +58,16 @@ contract DeployImplementations is BaseDeployScript {
     function _guardedDeploy(ImplPlan memory plan) internal virtual {
         _assertPinnedLibrariesUsable(plan);
 
-        // EOA deploy: broadcast the four CREATE2 deploys (PriceFeedLib, NAVRegistryLib, NAVCalculator impl,
-        // BridgeEscrow impl) directly via the deployer private key. Same deterministic addresses on every chain.
-        // Run once (e.g. on mainnet), then run 02 per chain for proxies + init.
+        // Bridge-only mode: for a clean bridge redeploy on a chain where NAV is already LIVE, deploy + persist ONLY
+        // the (freshly re-addressed) BridgeEscrow impl. The NAV impl + libraries are left untouched — neither
+        // re-deployed nor re-saved — so this branch's differing NAV/lib bytecode can't overwrite the live NAV
+        // implementation/library addresses recorded in deployments/<chainId>.json.
+        bool bridgeOnly = vm.envOr("BRIDGE_ONLY_IMPL", false);
+
+        // EOA deploy: broadcast the CREATE2 deploys directly via the deployer private key. Same deterministic
+        // addresses on every chain. Run once (e.g. on mainnet), then run 02 per chain for proxies + init.
         vm.startBroadcast();
-        _deployIfNeeded(plan);
+        _deployIfNeeded(plan, bridgeOnly);
         vm.stopBroadcast();
     }
 
@@ -74,7 +79,9 @@ contract DeployImplementations is BaseDeployScript {
 
         _guardedDeploy(plan);
 
-        _saveAndLog(plan);
+        // Bridge-only mode governs BOTH what _guardedDeploy deploys and what _saveAndLog persists; read the
+        // same flag here (idempotent) since _guardedDeploy is a 1-arg seam the pin tests override.
+        _saveAndLog(plan, vm.envOr("BRIDGE_ONLY_IMPL", false));
     }
 
     /// @notice Refuses to broadcast implementations that are not usable on this chain.
@@ -164,31 +171,36 @@ contract DeployImplementations is BaseDeployScript {
             computeCreate2Address(CANONICAL_CREATE2_DEPLOYER, plan.saltBridgeImpl, plan.bridgeImplBytecode);
     }
 
-    function _deployIfNeeded(ImplPlan memory plan) internal {
-        if (plan.priceFeedLib.code.length == 0) {
-            (bool ok,) =
-                CANONICAL_CREATE2_DEPLOYER.call(abi.encodePacked(plan.saltPriceFeedLib, plan.priceFeedLibBytecode));
-            require(ok, "PriceFeedLib deploy failed");
-            console2.log("[OK] PriceFeedLib deployed at:", plan.priceFeedLib);
-        } else {
-            console2.log("[SKIP] PriceFeedLib already at:", plan.priceFeedLib);
-        }
+    function _deployIfNeeded(ImplPlan memory plan, bool bridgeOnly) internal {
+        if (!bridgeOnly) {
+            if (plan.priceFeedLib.code.length == 0) {
+                (bool ok,) =
+                    CANONICAL_CREATE2_DEPLOYER.call(abi.encodePacked(plan.saltPriceFeedLib, plan.priceFeedLibBytecode));
+                require(ok, "PriceFeedLib deploy failed");
+                console2.log("[OK] PriceFeedLib deployed at:", plan.priceFeedLib);
+            } else {
+                console2.log("[SKIP] PriceFeedLib already at:", plan.priceFeedLib);
+            }
 
-        if (plan.navRegistryLib.code.length == 0) {
-            (bool ok,) =
-                CANONICAL_CREATE2_DEPLOYER.call(abi.encodePacked(plan.saltNavRegistryLib, plan.navRegistryLibBytecode));
-            require(ok, "NAVRegistryLib deploy failed");
-            console2.log("[OK] NAVRegistryLib deployed at:", plan.navRegistryLib);
-        } else {
-            console2.log("[SKIP] NAVRegistryLib already at:", plan.navRegistryLib);
-        }
+            if (plan.navRegistryLib.code.length == 0) {
+                (bool ok,) = CANONICAL_CREATE2_DEPLOYER.call(
+                    abi.encodePacked(plan.saltNavRegistryLib, plan.navRegistryLibBytecode)
+                );
+                require(ok, "NAVRegistryLib deploy failed");
+                console2.log("[OK] NAVRegistryLib deployed at:", plan.navRegistryLib);
+            } else {
+                console2.log("[SKIP] NAVRegistryLib already at:", plan.navRegistryLib);
+            }
 
-        if (plan.navImpl.code.length == 0) {
-            (bool ok,) = CANONICAL_CREATE2_DEPLOYER.call(abi.encodePacked(plan.saltNavImpl, plan.navImplBytecode));
-            require(ok, "NAV impl deploy failed");
-            console2.log("[OK] NAV implementation deployed at:", plan.navImpl);
+            if (plan.navImpl.code.length == 0) {
+                (bool ok,) = CANONICAL_CREATE2_DEPLOYER.call(abi.encodePacked(plan.saltNavImpl, plan.navImplBytecode));
+                require(ok, "NAV impl deploy failed");
+                console2.log("[OK] NAV implementation deployed at:", plan.navImpl);
+            } else {
+                console2.log("[SKIP] NAV implementation already at:", plan.navImpl);
+            }
         } else {
-            console2.log("[SKIP] NAV implementation already at:", plan.navImpl);
+            console2.log("[BRIDGE-ONLY] Skipping PriceFeedLib / NAVRegistryLib / NAV impl (NAV untouched)");
         }
 
         if (plan.bridgeImpl.code.length == 0) {
@@ -200,18 +212,24 @@ contract DeployImplementations is BaseDeployScript {
         }
     }
 
-    /// @dev Saves implementation addresses to config and logs the deployment summary.
-    function _saveAndLog(ImplPlan memory plan) internal virtual {
-        saveDeployedAddress("PriceFeedLib", plan.priceFeedLib);
-        saveDeployedAddress("NavRegistryLib", plan.navRegistryLib);
-        saveDeployedAddress("NAVCalculatorImplementation", plan.navImpl);
+    /// @dev Saves implementation addresses to config and logs the deployment summary. In bridge-only mode, ONLY the
+    ///      BridgeEscrow impl address is persisted — the NAV impl + library addresses recorded for a live NAV
+    ///      deployment are left as-is (this branch's differing bytecode must not overwrite them).
+    function _saveAndLog(ImplPlan memory plan, bool bridgeOnly) internal virtual {
+        if (!bridgeOnly) {
+            saveDeployedAddress("PriceFeedLib", plan.priceFeedLib);
+            saveDeployedAddress("NavRegistryLib", plan.navRegistryLib);
+            saveDeployedAddress("NAVCalculatorImplementation", plan.navImpl);
+        }
         saveDeployedAddress("BridgeEscrowImplementation", plan.bridgeImpl);
 
         console2.log("\n=== Implementation Deployment ===");
         console2.log("Chain ID:", currentChainId);
-        console2.log("  PriceFeedLib:", plan.priceFeedLib);
-        console2.log("  NAVRegistryLib:", plan.navRegistryLib);
-        console2.log("  NAV Implementation:", plan.navImpl);
+        if (!bridgeOnly) {
+            console2.log("  PriceFeedLib:", plan.priceFeedLib);
+            console2.log("  NAVRegistryLib:", plan.navRegistryLib);
+            console2.log("  NAV Implementation:", plan.navImpl);
+        }
         console2.log("  Bridge Implementation:", plan.bridgeImpl);
         console2.log("Addresses saved to config. Run 02_DeployProxies.s.sol per chain.");
     }

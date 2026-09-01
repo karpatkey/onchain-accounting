@@ -39,7 +39,7 @@ contract AcrossBridgeAdapterTest is BridgeScenarioHelper {
         spokePool = new MockSpokePoolV3();
 
         // Deploy Across adapter
-        address adapterImpl = address(new AcrossBridgeAdapter());
+        address adapterImpl = address(new AcrossBridgeAdapter(address(0)));
         address payable adapterProxy = payable(UnsafeUpgrades.deployUUPSProxy(
                 adapterImpl,
                 abi.encodeCall(
@@ -57,6 +57,12 @@ contract AcrossBridgeAdapterTest is BridgeScenarioHelper {
         // Authorize adapter in BridgeEscrow
         _authorizeAdapter(address(adapter));
 
+        // Across V3 requires a non-zero destination output token per ERC20 lane. The mock SpokePool does not
+        // validate it, so any non-zero value lets the ERC20 `_bridge` tests proceed; production dest tokens are
+        // wired by 06 at deploy time. (Native-asset tests use address(0)/EEE, which skip the output-token lookup.)
+        vm.prank(admin);
+        adapter.setOutputToken(DEST_CHAIN_ID, address(usdc), address(usdc));
+
         // Setup labels
         vm.label(address(adapter), "AcrossBridgeAdapter");
         vm.label(address(spokePool), "MockSpokePoolV3");
@@ -70,7 +76,7 @@ contract AcrossBridgeAdapterTest is BridgeScenarioHelper {
         internal
         returns (AcrossBridgeAdapter destAdapter)
     {
-        address destAdapterImpl = address(new AcrossBridgeAdapter());
+        address destAdapterImpl = address(new AcrossBridgeAdapter(address(0)));
         address payable destAdapterProxy = payable(UnsafeUpgrades.deployUUPSProxy(
                 destAdapterImpl,
                 abi.encodeCall(
@@ -118,8 +124,34 @@ contract AcrossBridgeAdapterTest is BridgeScenarioHelper {
 
         // Verify a V3 deposit was created with this adapter as the destination recipient
         assertEq(spokePool.depositId(), 1, "one V3 deposit created");
-        (, address recipient,,,,,,) = spokePool.deposits(1);
+        (, address recipient,,,,,,,,) = spokePool.deposits(1);
         assertEq(recipient, address(adapter), "recipient must be the sibling adapter, not the escrow");
+    }
+
+    function test_bridge_forwardsExclusiveRelayerWhenSet() public {
+        address relayer = makeAddr("kpkRelayer");
+        uint32 period = 1800;
+        vm.prank(admin);
+        adapter.setExclusiveRelayer(relayer, period);
+
+        uint256 amount = 1000 * 10 ** usdc.decimals();
+        _approveToken(address(usdc), address(bridgeEscrow), amount);
+        InvoiceDataLib.InvoiceData memory invoiceData =
+            _createInvoiceData(SOURCE_CHAIN_ID, DEST_CHAIN_ID, account, USDC_SYMBOL_BYTES6, amount);
+        vm.prank(account);
+        require(usdc.transfer(address(bridgeEscrow), amount), "transfer failed");
+        vm.prank(address(bridgeEscrow));
+        usdc.approve(address(adapter), amount);
+        vm.prank(address(bridgeEscrow));
+        adapter.bridge(InvoiceDataLib.encode(invoiceData));
+
+        // The configured exclusive relayer + a non-zero exclusivity deadline are forwarded to depositV3;
+        // outputAmount stays == inputAmount so the funded pass-through still receives the full amount.
+        (,,,, uint256 inputAmount, uint256 outputAmount,, address exclRelayer, uint32 exclDeadline,) =
+            spokePool.deposits(1);
+        assertEq(exclRelayer, relayer, "exclusive relayer must be forwarded");
+        assertGt(exclDeadline, 0, "exclusivity deadline must be set when a relayer is configured");
+        assertEq(outputAmount, inputAmount, "outputAmount must equal inputAmount (funded pass-through)");
     }
 
     function test_bridge_initiatesNativeTokenDeposit() public {
@@ -211,13 +243,22 @@ contract AcrossBridgeAdapterTest is BridgeScenarioHelper {
 
         bytes memory protocolData = abi.encode(uint32(123), uint256(SOURCE_CHAIN_ID));
 
+        // Step 1 (ADR 0027): completeBridge records the delivery — escrow HOLDS, no payout yet.
         vm.prank(manager);
         destAdapter.completeBridge(messagePayload, protocolData);
 
-        assertEq(usdc.balanceOf(account) - initialPortfolioBalance, amount, "Account should receive tokens");
-        assertEq(usdc.balanceOf(address(destAdapter)), 0, "Adapter should have zero balance after release");
-        assertEq(usdc.balanceOf(address(destBridgeEscrow)), 0, "Escrow holds no standing balance");
-        assertTrue(destBridgeEscrow.isInvoiceCompleted(invoiceHash), "Invoice should be marked as completed");
+        assertEq(usdc.balanceOf(account), initialPortfolioBalance, "account NOT paid on record");
+        assertEq(usdc.balanceOf(address(destAdapter)), 0, "adapter forwarded delivered tokens to escrow");
+        assertEq(usdc.balanceOf(address(destBridgeEscrow)), amount, "escrow holds the delivery");
+        assertEq(destBridgeEscrow.getHeldBalanceForAsset(address(usdc), account), amount, "held for account");
+        assertTrue(destBridgeEscrow.isInvoiceCompleted(invoiceHash), "invoice completed on record");
+
+        // Step 2 (ADR 0027): MANAGER claim pays the account.
+        vm.prank(manager);
+        destBridgeEscrow.claim(invoiceHash);
+        assertEq(usdc.balanceOf(account) - initialPortfolioBalance, amount, "account received tokens on claim");
+        assertEq(usdc.balanceOf(address(destBridgeEscrow)), 0, "escrow drained after claim");
+        assertEq(destBridgeEscrow.getHeldBalanceForAsset(address(usdc), account), 0, "held cleared after claim");
     }
 
     /// @notice MANAGER completion reverts when the source chain is not a configured trusted remote.
@@ -248,7 +289,8 @@ contract AcrossBridgeAdapterTest is BridgeScenarioHelper {
     // ============ Realistic round-trip (source payload + delivery via genuine SpokePool fill) ============
 
     /// @notice Full round-trip: depositAndBridge on source → payload from deposit → fill on destination
-    ///         SpokePool which delivers tokens to the adapter and calls handleV3AcrossMessage directly.
+    ///         SpokePool which delivers tokens to the adapter and calls handleV3AcrossMessage directly,
+    ///         recording custody (ADR 0027); a MANAGER claim then pays the account.
     function test_realistic_fullRoundTrip_sourcePayloadAndDeliveryViaFillDeposit() public {
         uint256 amount = 1000 * 10 ** usdc.decimals();
 
@@ -278,10 +320,18 @@ contract AcrossBridgeAdapterTest is BridgeScenarioHelper {
         destSpokePool.fillDeposit(relayDepositId, address(usdc), amount);
 
         bytes32 expectedInvoiceHash = bytes32(uint256(uint192(InvoiceDataLib.decode(messagePayload).checksum24)));
-        assertTrue(destBridgeEscrow.isInvoiceCompleted(expectedInvoiceHash), "invoice completed");
+        assertTrue(destBridgeEscrow.isInvoiceCompleted(expectedInvoiceHash), "invoice completed on record");
+        // ADR 0027: delivery records custody; the account is paid only on MANAGER claim.
+        assertEq(usdc.balanceOf(account), portfolioBalanceBeforeRelease, "account NOT paid on delivery");
+        assertEq(usdc.balanceOf(address(destAdapter)), 0, "adapter forwarded everything to escrow");
+        assertEq(usdc.balanceOf(address(destBridgeEscrow)), amount, "escrow holds the delivery");
+        assertEq(destBridgeEscrow.getHeldBalanceForAsset(address(usdc), account), amount, "held for account");
+
+        vm.prank(manager);
+        destBridgeEscrow.claim(expectedInvoiceHash);
         assertEq(usdc.balanceOf(account) - portfolioBalanceBeforeRelease, amount, "account received bridged amount");
-        assertEq(usdc.balanceOf(address(destAdapter)), 0, "adapter balance zero after release");
-        assertEq(usdc.balanceOf(address(destBridgeEscrow)), 0, "escrow holds no standing balance");
+        assertEq(usdc.balanceOf(address(destBridgeEscrow)), 0, "escrow drained after claim");
+        assertEq(destBridgeEscrow.getHeldBalanceForAsset(address(usdc), account), 0, "held cleared after claim");
     }
 
     function test_completeBridge_validatesChecksum() public {
@@ -308,7 +358,7 @@ contract AcrossBridgeAdapterTest is BridgeScenarioHelper {
         bytes memory protocolData = abi.encode(uint32(123), uint256(SOURCE_CHAIN_ID));
 
         vm.prank(manager);
-        vm.expectRevert(); // Should revert because checksum is invalid (in releaseByInvoiceId)
+        vm.expectRevert(); // Should revert because checksum is invalid (in recordDelivery)
         destAdapter.completeBridge(corruptedPayload, protocolData);
     }
 
@@ -333,8 +383,9 @@ contract AcrossBridgeAdapterTest is BridgeScenarioHelper {
     // ============ Across V3 Receiver Tests (adapter is the direct protocol receiver) ============
 
     /// @notice Auto path: the genuine SpokePool delivers tokens to the adapter and calls handleV3AcrossMessage,
-    ///         which authenticates and releases. The payload is stored and retrievable.
-    function test_handleV3AcrossMessage_releasesAndStoresPayload() public {
+    ///         which authenticates and records the delivery into escrow custody (ADR 0027). A MANAGER claim then
+    ///         pays the account. The payload is stored and retrievable.
+    function test_handleV3AcrossMessage_recordsCustodyThenClaimPaysAndStoresPayload() public {
         uint256 amount = 1000 * 10 ** usdc.decimals();
         InvoiceDataLib.InvoiceData memory invoiceData =
             _createInvoiceData(SOURCE_CHAIN_ID, DEST_CHAIN_ID, account, USDC_SYMBOL_BYTES6, amount);
@@ -351,9 +402,17 @@ contract AcrossBridgeAdapterTest is BridgeScenarioHelper {
         uint256 before = usdc.balanceOf(account);
         destSpokePool.fillDeposit(relayDepositId, address(usdc), amount);
 
-        assertEq(usdc.balanceOf(account) - before, amount, "account received bridged amount");
+        // ADR 0027: delivery records custody and HOLDS; account not paid until claim.
+        bytes32 invoiceHash = bytes32(uint256(uint192(invoiceData.checksum24)));
+        assertEq(usdc.balanceOf(account), before, "account NOT paid on delivery");
+        assertEq(destEscrow.getHeldBalanceForAsset(address(usdc), account), amount, "held for account");
         bytes memory storedPayload = destAdapter.getMessagePayload(invoiceData.invoiceId);
         assertEq(storedPayload.length, messagePayload.length, "MessagePayload should be stored via callback");
+
+        vm.prank(manager);
+        destEscrow.claim(invoiceHash);
+        assertEq(usdc.balanceOf(account) - before, amount, "account received bridged amount on claim");
+        assertEq(destEscrow.getHeldBalanceForAsset(address(usdc), account), 0, "held cleared after claim");
     }
 
     /// @notice handleV3AcrossMessage reverts when not called by the SpokePool (only the genuine protocol path).
@@ -447,6 +506,43 @@ contract AcrossBridgeAdapterTest is BridgeScenarioHelper {
         vm.prank(unauthorized);
         vm.expectRevert(); // Should revert because caller is not admin
         adapter.setSpokePool(address(0));
+    }
+
+    function test_setOutputToken_setsAndReadsBack() public {
+        address dstToken = makeAddr("optimismUSDC");
+        vm.prank(admin);
+        adapter.setOutputToken(DEST_CHAIN_ID, address(usdc), dstToken);
+        assertEq(adapter.outputTokenFor(DEST_CHAIN_ID, address(usdc)), dstToken, "output token should be set");
+    }
+
+    function test_setOutputToken_revertsIfNotAdmin() public {
+        vm.prank(unauthorized);
+        vm.expectRevert(); // not DEFAULT_ADMIN_ROLE
+        adapter.setOutputToken(DEST_CHAIN_ID, address(usdc), makeAddr("x"));
+    }
+
+    function test_bridge_revertsWhenOutputTokenUnset() public {
+        // Clear the setUp-configured route → the ERC20 _bridge must revert OutputTokenNotSet.
+        vm.prank(admin);
+        adapter.setOutputToken(DEST_CHAIN_ID, address(usdc), address(0));
+
+        uint256 amount = 1000 * 10 ** usdc.decimals();
+        InvoiceDataLib.InvoiceData memory invoiceData =
+            _createInvoiceData(SOURCE_CHAIN_ID, DEST_CHAIN_ID, account, USDC_SYMBOL_BYTES6, amount);
+        bytes memory messagePayload = InvoiceDataLib.encode(invoiceData);
+
+        vm.prank(account);
+        require(usdc.transfer(address(bridgeEscrow), amount), "transfer failed");
+        vm.prank(address(bridgeEscrow));
+        usdc.approve(address(adapter), amount);
+
+        vm.prank(address(bridgeEscrow));
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IAcrossBridgeAdapter.OutputTokenNotSet.selector, uint256(DEST_CHAIN_ID), address(usdc)
+            )
+        );
+        adapter.bridge(messagePayload);
     }
 
     function test_setDefaultRelayerFeePct_updatesFee() public {

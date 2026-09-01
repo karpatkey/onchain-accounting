@@ -15,11 +15,12 @@ import "src/constants.sol";
 
 /// @title BridgeAdapter
 /// @notice Abstract base for bridge adapters (non-upgradeable, single-initialize).
-/// @dev See ADR 0012. There is no escrow fallback dispatcher. A bridge is completed via the
+/// @dev See ADR 0012 and ADR 0027. There is no escrow fallback dispatcher. A bridge is completed via the
 ///      MANAGER-gated `completeBridge`, which runs the adapter's protocol-specific `_completeBridge` and then
-///      funds the escrow per-invoice and calls `BridgeEscrow.releaseByInvoiceId` (re-validated by the escrow).
+///      funds the escrow per-invoice and calls `BridgeEscrow.recordDelivery` (re-validated by the escrow), which
+///      records the delivery into escrow custody; a subsequent MANAGER `BridgeEscrow.claim` pays the account.
 ///      Each adapter is the direct on-chain recipient; its authenticated completion path verifies the real
-///      protocol message + source sender (against `trustedRemoteAdapter`) before releasing.
+///      protocol message + source sender (against `trustedRemoteAdapter`) before recording.
 /// @author KPK
 abstract contract BridgeAdapter is AccessControl, ReentrancyGuard, IBridgeAdapter {
     using SafeERC20 for IERC20;
@@ -55,8 +56,22 @@ abstract contract BridgeAdapter is AccessControl, ReentrancyGuard, IBridgeAdapte
 
     bool private _initialized;
 
+    /// @notice The only address permitted to call initialize, or address(0) to allow anyone.
+    /// @dev Set at CREATE2 time (baked into the adapter's creationCode identically on every chain, so the
+    ///      deterministic address is preserved). The adapter address is precomputable and initialize grants
+    ///      DEFAULT_ADMIN_ROLE, so an unrestricted initializer can be front-run: a bot deploys the identical
+    ///      bytecode at the deterministic address and initializes it first. Pinning the initializer closes
+    ///      that window — a bot cannot initialize even after pre-deploying. A zero value disables the guard
+    ///      (used in tests); production bakes the deployer EOA.
+    address public immutable expectedInitializer;
+
     /// @notice Emitted when a trusted remote adapter is set/updated for a source key
     event TrustedRemoteAdapterSet(uint64 indexed sourceKey, bytes32 remoteAdapter);
+
+    /// @param expectedInitializer_ The address permitted to call initialize (address(0) allows anyone).
+    constructor(address expectedInitializer_) {
+        expectedInitializer = expectedInitializer_;
+    }
 
     /// @notice One-time initializer for the BridgeAdapter (internal; only for use by derived adapters)
     /// @dev Derived adapters expose their own initialize() and call this via super._initializeBridgeAdapter().
@@ -66,6 +81,9 @@ abstract contract BridgeAdapter is AccessControl, ReentrancyGuard, IBridgeAdapte
         string memory providerName_,
         string memory version_
     ) internal {
+        if (expectedInitializer != address(0) && msg.sender != expectedInitializer) {
+            revert NotAuthorized();
+        }
         if (_initialized) revert AlreadyInitialized();
         if (admin_ == address(0) || bridgeEscrow_ == address(0)) revert InvalidArguments();
         _initialized = true;
@@ -117,8 +135,9 @@ abstract contract BridgeAdapter is AccessControl, ReentrancyGuard, IBridgeAdapte
     /// @inheritdoc IBridgeAdapter
     /// @dev MANAGER-operated completion path. The adapter's `_completeBridge` performs protocol-specific
     ///      verification (e.g. CCTP attestation, OP withdrawal finalization) and ensures the adapter holds
-    ///      the delivered `amount` of the asset; the base then funds the escrow and releases atomically
-    ///      (funded pass-through, ADR 0012).
+    ///      the delivered `amount` of the asset; the base then funds the escrow's per-invoice custody record via
+    ///      `_fundAndRelease` → `recordDelivery` (ADR 0027 hold-then-claim). It does **not** pay the account here —
+    ///      the escrow HOLDS the funds until a separate MANAGER `BridgeEscrow.claim(invoiceHash)`.
     function completeBridge(bytes calldata messagePayload, bytes calldata protocolData) external override nonReentrant {
         if (!hasRole(MANAGER_ROLE, msg.sender)) revert NotAuthorized();
         if (messagePayload.length == 0) revert InvalidCompletionData();
@@ -129,20 +148,23 @@ abstract contract BridgeAdapter is AccessControl, ReentrancyGuard, IBridgeAdapte
         emit BridgeCompleted(data.invoiceId);
     }
 
-    /// @notice Hands the escrow exactly `amount` of `asset` and triggers the funded pass-through release.
-    /// @dev The adapter must already hold `amount` of `asset` (delivered by the protocol). For ERC20 the
-    ///      escrow pulls via transferFrom (exact approval, reset to 0 after); for native the value is
-    ///      forwarded with the call. The escrow validates checksum/replay/account and forwards to the account.
+    /// @notice Hands the escrow exactly `amount` of `asset` and records the delivery into escrow custody (ADR 0027).
+    /// @dev The adapter must already hold `amount` of `asset` (delivered by the protocol). For ERC20 the escrow
+    ///      pulls via transferFrom (exact approval, reset to 0 after); for native the value is forwarded with the
+    ///      call. The escrow validates checksum/replay/account, MEASURES the received amount, and HOLDS the funds
+    ///      under the invoice until `claim` — it no longer forwards to the account here. Name kept for a minimal
+    ///      diff: every adapter completion path (auto callbacks + the MANAGER `completeBridge`) funnels through
+    ///      this one helper, so this single retarget converts all six adapters to the hold-then-claim model.
     function _fundAndRelease(bytes memory messagePayload, address asset, uint256 amount) internal {
         if (_isNativeToken(asset)) {
             uint256 bal = address(this).balance;
             if (bal < amount) revert InsufficientBalance(asset, amount, bal);
-            IBridgeEscrow(bridgeEscrow).releaseByInvoiceId{value: amount}(messagePayload);
+            IBridgeEscrow(bridgeEscrow).recordDelivery{value: amount}(messagePayload);
         } else {
             uint256 bal = IERC20(asset).balanceOf(address(this));
             if (bal < amount) revert InsufficientBalance(asset, amount, bal);
             IERC20(asset).forceApprove(bridgeEscrow, amount);
-            IBridgeEscrow(bridgeEscrow).releaseByInvoiceId(messagePayload);
+            IBridgeEscrow(bridgeEscrow).recordDelivery(messagePayload);
             IERC20(asset).forceApprove(bridgeEscrow, 0);
         }
     }
@@ -166,9 +188,9 @@ abstract contract BridgeAdapter is AccessControl, ReentrancyGuard, IBridgeAdapte
 
     /// @notice Pushes `amount` of `asset` held by the adapter straight to the escrow and emits TokensTransferredToEscrow.
     /// @dev Legacy push-to-escrow helper, NOT on the shipped completion path. `completeBridge` instead calls
-    ///      `_fundAndRelease` (funded pass-through, ADR 0012), which leaves the funds on the adapter for the escrow
-    ///      to pull on `releaseByInvoiceId`. No shipped adapter (CCTP included) calls this; it is retained for
-    ///      derived adapters that would rather hand the escrow the tokens before release. Reverts InsufficientBalance
+    ///      `_fundAndRelease` (ADR 0027 hold-then-claim), which leaves the funds on the adapter for the escrow
+    ///      to pull on `recordDelivery`. No shipped adapter (CCTP included) calls this; it is retained for
+    ///      derived adapters that would rather hand the escrow the tokens before recording. Reverts InsufficientBalance
     ///      if the adapter holds less than `amount`, or TransferFailed on a failed native send.
     function _transferTokensToEscrow(bytes32 invoiceId, address asset, uint256 amount) internal {
         if (_isNativeToken(asset)) {

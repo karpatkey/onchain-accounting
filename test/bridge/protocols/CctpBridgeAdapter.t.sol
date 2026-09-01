@@ -23,8 +23,8 @@ import "test/mocks/tokens.sol";
 /// @notice Test suite for the re-architected CCTP Bridge Adapter (attestation-provenance model).
 /// @dev On the destination chain the adapter mints USDC to ITSELF (mintRecipient ==
 ///      destinationCaller == adapter), verifies the attested CCTP message body against the invoice,
-///      dedups by nonce, forwards the minted USDC to the escrow, and the base BridgeAdapter releases
-///      it to the account via releaseByInvoiceId.
+///      dedups by nonce, forwards the minted USDC to the escrow, and the base BridgeAdapter records the
+///      delivery into escrow custody (ADR 0027). A subsequent MANAGER `claim` pays the account.
 contract CctpBridgeAdapterTest is BridgeScenarioHelper {
     CctpBridgeAdapter public adapter;
     MockProvenanceTokenMessenger public tokenMessenger;
@@ -41,7 +41,7 @@ contract CctpBridgeAdapterTest is BridgeScenarioHelper {
         tokenMessenger = new MockProvenanceTokenMessenger();
 
         // Deploy CCTP adapter
-        address adapterImpl = address(new CctpBridgeAdapter());
+        address adapterImpl = address(new CctpBridgeAdapter(address(0)));
         address adapterProxy = UnsafeUpgrades.deployUUPSProxy(
             adapterImpl,
             abi.encodeCall(
@@ -139,7 +139,7 @@ contract CctpBridgeAdapterTest is BridgeScenarioHelper {
         MockProvenanceTokenMessenger srcTokenMessenger = new MockProvenanceTokenMessenger();
 
         address srcAdapterProxy = UnsafeUpgrades.deployUUPSProxy(
-            address(new CctpBridgeAdapter()),
+            address(new CctpBridgeAdapter(address(0))),
             abi.encodeCall(
                 CctpBridgeAdapter.initialize,
                 (admin, address(srcEscrow), address(srcTokenMessenger), address(srcTransmitter), "1.0.0")
@@ -201,17 +201,29 @@ contract CctpBridgeAdapterTest is BridgeScenarioHelper {
         uint256 initialPortfolioBalance = usdc.balanceOf(account);
         assertEq(usdc.balanceOf(address(destBridgeEscrow)), 0, "escrow starts empty (CCTP mints)");
 
+        // Step 1 (ADR 0027): completeBridge records the delivery — the escrow HOLDS the funds, no payout yet.
         vm.prank(manager);
         destAdapter.completeBridge(messagePayload, protocolData);
 
-        // Account received the bridged USDC; escrow and adapter hold none afterwards.
-        assertEq(usdc.balanceOf(account) - initialPortfolioBalance, amount, "account received minted USDC");
-        assertEq(usdc.balanceOf(address(destBridgeEscrow)), 0, "escrow empty after release");
-        assertEq(usdc.balanceOf(address(destAdapter)), 0, "adapter empty after forwarding");
-        assertTrue(destBridgeEscrow.isInvoiceCompleted(invoiceHash), "invoice completed");
+        assertEq(usdc.balanceOf(account), initialPortfolioBalance, "account NOT paid on record");
+        assertEq(usdc.balanceOf(address(destBridgeEscrow)), amount, "escrow holds the delivered USDC");
+        assertEq(usdc.balanceOf(address(destAdapter)), 0, "adapter empty after forwarding to escrow");
+        assertEq(destBridgeEscrow.getHeldBalanceForAsset(address(usdc), account), amount, "held for account");
+        assertTrue(destBridgeEscrow.isInvoiceCompleted(invoiceHash), "invoice completed on record");
+        (,,,,, bool claimedAfterRecord) = destBridgeEscrow.destinationCustody(invoiceHash);
+        assertFalse(claimedAfterRecord, "custody not claimed yet");
 
         // Nonce recorded for replay protection.
         assertTrue(destAdapter.usedNonces(SOURCE_DOMAIN, nonce), "nonce marked used");
+
+        // Step 2 (ADR 0027): MANAGER claims — funds move to the account, escrow drains.
+        vm.prank(manager);
+        destBridgeEscrow.claim(invoiceHash);
+        assertEq(usdc.balanceOf(account) - initialPortfolioBalance, amount, "account received minted USDC on claim");
+        assertEq(usdc.balanceOf(address(destBridgeEscrow)), 0, "escrow empty after claim");
+        assertEq(destBridgeEscrow.getHeldBalanceForAsset(address(usdc), account), 0, "held cleared after claim");
+        (,,,,, bool claimedAfter) = destBridgeEscrow.destinationCustody(invoiceHash);
+        assertTrue(claimedAfter, "custody marked claimed");
     }
 
     function test_completeBridge_revertsOnReplayedNonce() public {
@@ -245,7 +257,14 @@ contract CctpBridgeAdapterTest is BridgeScenarioHelper {
         // CCTP message mints a different amount than the invoice — must revert.
         bytes32 nonce = bytes32(uint256(5));
         bytes memory cctpMessage = CctpProvenanceMessage.build(
-            SOURCE_DOMAIN, DEST_DOMAIN, nonce, address(usdc), address(destAdapter), address(destAdapter), amount + 1
+            SOURCE_DOMAIN,
+            DEST_DOMAIN,
+            nonce,
+            address(usdc),
+            address(destAdapter.tokenMessenger()),
+            address(destAdapter),
+            address(destAdapter),
+            amount + 1
         );
         bytes memory protocolData = abi.encode(cctpMessage, "mock_attestation");
 
@@ -265,7 +284,14 @@ contract CctpBridgeAdapterTest is BridgeScenarioHelper {
         // Mint recipient is the escrow (NOT the adapter) — provenance check must reject it.
         bytes32 nonce = bytes32(uint256(9));
         bytes memory cctpMessage = CctpProvenanceMessage.build(
-            SOURCE_DOMAIN, DEST_DOMAIN, nonce, address(usdc), address(destBridgeEscrow), address(destAdapter), amount
+            SOURCE_DOMAIN,
+            DEST_DOMAIN,
+            nonce,
+            address(usdc),
+            address(destAdapter.tokenMessenger()),
+            address(destBridgeEscrow),
+            address(destAdapter),
+            amount
         );
         bytes memory protocolData = abi.encode(cctpMessage, "mock_attestation");
 
@@ -274,7 +300,7 @@ contract CctpBridgeAdapterTest is BridgeScenarioHelper {
         destAdapter.completeBridge(messagePayload, protocolData);
     }
 
-    function test_completeBridge_revertsOnBurnTokenMismatch() public {
+    function test_completeBridge_revertsOnWrongHeaderRecipient() public {
         uint256 amount = 1000 * 10 ** usdc.decimals();
         InvoiceDataLib.InvoiceData memory invoiceData =
             _createInvoiceData(SOURCE_CHAIN_ID, DEST_CHAIN_ID, account, USDC_SYMBOL_BYTES6, amount);
@@ -282,10 +308,52 @@ contract CctpBridgeAdapterTest is BridgeScenarioHelper {
         (, CctpBridgeAdapter destAdapter) = _setupDestinationChainForCctpTest();
         bytes memory messagePayload = InvoiceDataLib.encode(invoiceData);
 
-        // burnToken is DAI, not the invoice asset (USDC) — must revert.
+        // Header recipient (bytes 76-108) is the adapter, NOT the TokenMessenger — the value a buggy
+        // check would expect. Body mintRecipient is the correct adapter, so this isolates the header
+        // check: a real Circle message always carries the TokenMessenger here, so a non-TokenMessenger
+        // header must revert InvalidMessage.
+        bytes32 nonce = bytes32(uint256(21));
+        bytes memory cctpMessage = CctpProvenanceMessage.build(
+            SOURCE_DOMAIN,
+            DEST_DOMAIN,
+            nonce,
+            address(usdc),
+            address(destAdapter), // wrong header recipient (not the TokenMessenger)
+            address(destAdapter),
+            address(destAdapter),
+            amount
+        );
+        bytes memory protocolData = abi.encode(cctpMessage, "mock_attestation");
+
+        vm.prank(manager);
+        vm.expectRevert(ICctpBridgeAdapter.InvalidMessage.selector);
+        destAdapter.completeBridge(messagePayload, protocolData);
+    }
+
+    function test_completeBridge_revertsWhenDestinationAssetNotMinted() public {
+        uint256 amount = 1000 * 10 ** usdc.decimals();
+        InvoiceDataLib.InvoiceData memory invoiceData =
+            _createInvoiceData(SOURCE_CHAIN_ID, DEST_CHAIN_ID, account, USDC_SYMBOL_BYTES6, amount);
+
+        (, CctpBridgeAdapter destAdapter) = _setupDestinationChainForCctpTest();
+        bytes memory messagePayload = InvoiceDataLib.encode(invoiceData);
+
+        // The source burnToken legitimately differs from the destination asset, so it is NOT compared.
+        // The guard is that the DESTINATION asset (usdc) must actually be minted in the invoice amount.
+        // Force the transmitter to mint DAI instead of USDC: the adapter's usdc balance does not rise, so
+        // the balance-delta check reverts BurnTokenMismatch.
+        MockProvenanceMessageTransmitter(address(destAdapter.messageTransmitter())).setMintTokenOverride(address(dai));
+
         bytes32 nonce = bytes32(uint256(11));
         bytes memory cctpMessage = CctpProvenanceMessage.build(
-            SOURCE_DOMAIN, DEST_DOMAIN, nonce, address(dai), address(destAdapter), address(destAdapter), amount
+            SOURCE_DOMAIN,
+            DEST_DOMAIN,
+            nonce,
+            address(dai), // source burnToken (not compared)
+            address(destAdapter.tokenMessenger()),
+            address(destAdapter),
+            address(destAdapter),
+            amount
         );
         bytes memory protocolData = abi.encode(cctpMessage, "mock_attestation");
 
@@ -306,7 +374,14 @@ contract CctpBridgeAdapterTest is BridgeScenarioHelper {
         // sourceChainId (1). Must revert.
         bytes32 nonce = bytes32(uint256(13));
         bytes memory cctpMessage = CctpProvenanceMessage.build(
-            DEST_DOMAIN, DEST_DOMAIN, nonce, address(usdc), address(destAdapter), address(destAdapter), amount
+            DEST_DOMAIN,
+            DEST_DOMAIN,
+            nonce,
+            address(usdc),
+            address(destAdapter.tokenMessenger()),
+            address(destAdapter),
+            address(destAdapter),
+            amount
         );
         bytes memory protocolData = abi.encode(cctpMessage, "mock_attestation");
 
@@ -316,7 +391,7 @@ contract CctpBridgeAdapterTest is BridgeScenarioHelper {
     }
 
     /// @notice Full round-trip: depositAndBridge on source -> payload from invoice -> deliver via
-    ///         attested receiveMessage -> completeBridge releases to account.
+    ///         attested receiveMessage -> completeBridge records custody -> MANAGER claim pays the account.
     function test_realistic_fullRoundTrip() public {
         uint256 amount = 1000 * 10 ** usdc.decimals();
 
@@ -339,8 +414,17 @@ contract CctpBridgeAdapterTest is BridgeScenarioHelper {
         destAdapter.completeBridge(messagePayload, protocolData);
 
         bytes32 expectedInvoiceHash = bytes32(uint256(uint192(InvoiceDataLib.decode(messagePayload).checksum24)));
-        assertTrue(destBridgeEscrow.isInvoiceCompleted(expectedInvoiceHash), "invoice completed");
+        assertTrue(destBridgeEscrow.isInvoiceCompleted(expectedInvoiceHash), "invoice completed on record");
+        // Record holds the funds; the account is paid only after MANAGER claim (ADR 0027).
+        assertEq(usdc.balanceOf(account), portfolioBalanceBeforeRelease, "account not paid on record");
+        assertEq(
+            destBridgeEscrow.getHeldBalanceForAsset(address(usdc), account), amount, "escrow holds for the account"
+        );
+
+        vm.prank(manager);
+        destBridgeEscrow.claim(expectedInvoiceHash);
         assertEq(usdc.balanceOf(account) - portfolioBalanceBeforeRelease, amount, "account received bridged amount");
+        assertEq(destBridgeEscrow.getHeldBalanceForAsset(address(usdc), account), 0, "held cleared after claim");
     }
 
     function test_completeBridge_validatesChecksum() public {
@@ -353,7 +437,7 @@ contract CctpBridgeAdapterTest is BridgeScenarioHelper {
         bytes32 nonce = bytes32(uint256(123));
         bytes memory protocolData = _prepareCctpProtocolData(nonce, amount, address(destAdapter));
 
-        // Corrupt messagePayload (invalid checksum) — releaseByInvoiceId in the base reverts.
+        // Corrupt messagePayload (invalid checksum) — recordDelivery in the base reverts.
         bytes memory corruptedPayload = abi.encode(
             invoiceData.invoiceId,
             invoiceData.amount,
@@ -418,7 +502,7 @@ contract CctpBridgeAdapterTest is BridgeScenarioHelper {
         MockProvenanceTokenMessenger destTokenMessenger = new MockProvenanceTokenMessenger();
 
         address destAdapterProxy = UnsafeUpgrades.deployUUPSProxy(
-            address(new CctpBridgeAdapter()),
+            address(new CctpBridgeAdapter(address(0))),
             abi.encodeCall(
                 CctpBridgeAdapter.initialize,
                 (admin, address(destBridgeEscrow), address(destTokenMessenger), address(destTransmitter), "1.0.0")
@@ -434,13 +518,25 @@ contract CctpBridgeAdapterTest is BridgeScenarioHelper {
     }
 
     /// @notice Build protocolData (CCTP message + attestation) for a completion that mints to the adapter.
+    /// @dev The message's `burnToken` is the SOURCE-chain token (here `dai`, standing in for e.g. Base USDC),
+    ///      which legitimately DIFFERS from the destination asset (`usdc`, e.g. Arbitrum USDC). The mock
+    ///      transmitter still mints the destination `usdc` to the adapter — modelling Circle's TokenMinter.
+    ///      Using a distinct source token here is deliberate: a prior adapter compared `burnToken` to the
+    ///      destination asset and reverted every real cross-chain transfer.
     function _prepareCctpProtocolData(bytes32 nonce, uint256 amount, address destAdapter)
         internal
         view
         returns (bytes memory)
     {
         bytes memory cctpMessage = CctpProvenanceMessage.build(
-            SOURCE_DOMAIN, DEST_DOMAIN, nonce, address(usdc), destAdapter, destAdapter, amount
+            SOURCE_DOMAIN,
+            DEST_DOMAIN,
+            nonce,
+            address(dai), // source burnToken != destination asset (usdc)
+            address(CctpBridgeAdapter(destAdapter).tokenMessenger()),
+            destAdapter,
+            destAdapter,
+            amount
         );
         return abi.encode(cctpMessage, "mock_attestation");
     }

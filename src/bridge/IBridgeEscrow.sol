@@ -8,14 +8,19 @@ pragma solidity ^0.8;
 ///      - `_inTransitBalances[safe][asset]` equals the sum of amounts from all BRIDGING invoices for that safe and asset
 ///      - `_inTransitBalancesAllAccounts[asset]` equals the sum of `_inTransitBalances[safe][asset]` across all safes
 ///      - `_activeInvoices[safe]` only contains invoice hashes with status BRIDGING
-///      - `completedInvoices[invoiceHash]` is only true for valid invoice hashes that have been released on the
-///        destination chain (`releaseByInvoiceId`) or marked completed on the source chain (`markInvoiceCompleted`)
+///      - `completedInvoices[invoiceHash]` is true once a delivery has been recorded on the destination chain
+///        (`recordDelivery`) or the invoice marked completed on the source chain (`markInvoiceCompleted`)
 ///      - All invoices in `_activeInvoices` have a corresponding entry in `invoices`
-///      - Destination-side release (`releaseByInvoiceId`) is callable only by an authorized adapter — there is
-///        no `fallback()` dispatcher and MANAGER cannot call it directly, so the release path is unreachable to
-///        an attacker (ADR 0012, C1). Release is a per-invoice *funded pass-through*: the escrow pulls the
-///        amount from the calling adapter (or requires `msg.value == amount` for native) and forwards it to the
-///        account, never paying from a standing balance.
+///      - Destination custody (ADR 0027, supersedes the ADR-0012 funded pass-through on the destination): the
+///        delivered funds are HELD by the escrow in a per-invoice `destinationCustody` record and released to the
+///        account only by `claim`. Invariants:
+///        (I1) for every asset, `balanceOf(asset) >= _heldClaimable[asset]`, and `_heldClaimable[asset]` equals
+///        both the sum of unclaimed `destinationCustody` amounts and `Σ _heldByAccount[*][asset]`;
+///        (I2) a custody record is writable only via `recordDelivery`, callable only by an authorized adapter
+///        (no `fallback()`; MANAGER cannot record) — provenance stays in the adapter, the checksum is
+///        integrity/replay only; (I3) `claimed` flips once; (I4) `claim` pays only the recorded account exactly
+///        the recorded amount; (I6) funds not recorded via `recordDelivery` are never claimable; (I7) the
+///        recorded amount is the measured balance-delta received (≤ requested).
 interface IBridgeEscrow {
     //
     // Errors
@@ -79,6 +84,9 @@ interface IBridgeEscrow {
     ///         release/deposit amount for native assets, and must be zero for ERC20 assets
     error InvalidValue();
 
+    /// @notice Thrown when attempting to claim a destination custody record that has already been claimed
+    error AlreadyClaimed();
+
     //
     // Types
     //
@@ -101,6 +109,17 @@ interface IBridgeEscrow {
         uint256 timestamp; // Block timestamp when invoice created
         InvoiceStatus status; // Current status of the invoice
         address adapter; // Adapter address used for this invoice
+    }
+
+    /// @notice Destination-side custody record (ADR 0027). Written by `recordDelivery` when an authorized
+    ///         adapter hands the escrow the delivered funds; the escrow HOLDS them until `claim`.
+    struct DestinationCustody {
+        address account; // Authenticated payee from the invoice — `claim` pays ONLY this
+        address asset; // Resolved destination asset (address(0)/ERC7528 = native)
+        uint256 amount; // MEASURED balance-delta actually received (fee-on-transfer / post-fee safe)
+        address adapter; // msg.sender at recordDelivery — provenance stamp
+        uint64 deliveredAt; // Block timestamp of recordDelivery
+        bool claimed; // false = held in escrow; true = moved to the safe (terminal)
     }
 
     //
@@ -149,8 +168,21 @@ interface IBridgeEscrow {
     /// @notice Event emitted when invoice completion attempts fail during batch operation
     event InvoiceCompletionFailed(bytes32[] invoiceIds);
 
-    /// @notice Event emitted when an invoice is completed (before assets are released)
+    /// @notice Event emitted when an invoice is completed (destination delivery recorded, or source marked)
     event InvoiceCompleted(bytes32 indexed invoiceHash, bytes32 indexed invoiceId);
+
+    /// @notice Event emitted when a destination delivery is recorded and the funds held in escrow custody
+    event DeliveryRecorded(
+        bytes32 indexed invoiceId,
+        bytes32 indexed invoiceHash,
+        address indexed asset,
+        uint256 amount,
+        address account,
+        address adapter
+    );
+
+    /// @notice Event emitted when held funds are claimed from escrow custody to the recorded account (the safe)
+    event AssetsClaimed(bytes32 indexed invoiceHash, address indexed asset, uint256 amount, address indexed account);
 
     /// @notice Event emitted when emergency withdrawal is performed
     event EmergencyWithdrawal(address indexed asset, uint256 amount, address indexed to);
@@ -170,17 +202,34 @@ interface IBridgeEscrow {
         payable
         returns (bytes32 invoiceHash);
 
-    /// @notice Releases funds to the account named by the invoice, funded by the calling adapter.
+    /// @notice Records a destination delivery and HOLDS the funds in escrow custody (ADR 0027).
     /// @param messagePayload The message payload (invoiceId, amount, nonce, meta)
-    /// @dev Destination-side funded pass-through (ADR 0012). Callable only by an authorized adapter; there is
-    ///      no fallback dispatcher and MANAGER cannot call this directly (C1). The escrow pulls `amount` of
-    ///      the asset from the caller (or requires `msg.value == amount` for native) and forwards it to the
-    ///      account, after validating checksum (incl. nonce), destination chain, authorized account and replay.
-    ///      It never pays from a standing balance (H2/H9).
-    function releaseByInvoiceId(bytes calldata messagePayload) external payable;
+    /// @dev Callable ONLY by an authorized adapter (the adapter has already authenticated the genuine inbound
+    ///      protocol message + source sender); there is no fallback dispatcher and MANAGER cannot call this
+    ///      directly (C1). The escrow pulls `amount` of the asset from the caller (or requires `msg.value ==
+    ///      amount` for native), MEASURES the balance-delta actually received, writes a `destinationCustody`
+    ///      record, and holds the funds. It does NOT pay the account — release happens only via `claim`.
+    ///      Validates checksum (incl. nonce), destination chain, authorized account, and replay.
+    function recordDelivery(bytes calldata messagePayload) external payable;
+
+    /// @notice Releases a held destination delivery from escrow custody to the recorded account (the safe).
+    /// @param invoiceHash The destination custody key (checksum-derived invoice hash)
+    /// @dev MANAGER-gated. Because it can only ever pay the account recorded at `recordDelivery` (and exactly
+    ///      the recorded amount), the gate controls only the TIMING of when funds enter the safe (NAV
+    ///      sequencing), never the destination. Reverts if no record exists or it was already claimed.
+    function claim(bytes32 invoiceHash) external;
+
+    /// @notice Batch form of {claim} for keeper gas efficiency.
+    /// @param invoiceHashes The destination custody keys to claim
+    function claim(bytes32[] calldata invoiceHashes) external;
 
     /// @notice Cancels an invoice and returns assets (source chain, bridge-failure recovery)
     /// @param invoiceHash The hashed invoice ID (checksum) to cancel
+    /// @dev Refunds only from the surplus over destination held custody (never touches funds backing a recorded
+    ///      delivery, I1). There is NO on-chain source↔destination interlock, so this MUST only be called once the
+    ///      destination has provably not delivered and will not: cancelling a still-live invoice while the escrow
+    ///      holds unrelated surplus (e.g. stray funds) could refund the source AND let the destination later
+    ///      deliver, double-paying from that surplus. Enforced by MANAGER / settlement-keeper discipline.
     function cancelInvoice(bytes32 invoiceHash) external;
 
     /// @notice Marks invoices as completed for bookkeeping purposes (source chain only)
@@ -215,6 +264,12 @@ interface IBridgeEscrow {
     /// @notice Gets all active invoices for an account
     function getActiveInvoices(address account) external view returns (Invoice[] memory);
 
+    /// @notice Held (delivered-but-unclaimed) invoice hashes for `account` — the destination-side enumeration the
+    ///         settlement operator uses to discover claimable invoices in ONE call, instead of reconstructing them
+    ///         from `DeliveryRecorded` logs over a bounded window (ADR 0028). A hash appears after `recordDelivery`
+    ///         and is removed on `claim`. Returns the raw hashes; pair each with `destinationCustody(hash)`.
+    function getHeldInvoices(address account) external view returns (bytes32[] memory);
+
     /// @notice Total in-transit balance for an asset (optionally filtered by account; address(0) = all)
     function getInTransitBalanceForAsset(address asset, address account) external view returns (uint256);
 
@@ -247,4 +302,20 @@ interface IBridgeEscrow {
 
     /// @notice Returns all authorized adapters
     function getAuthorizedAdapters() external view returns (address[] memory adapters);
+
+    /// @notice Held-but-unclaimed destination custody for an asset (optionally filtered by account;
+    ///         address(0) = all accounts). Mirrors {getInTransitBalanceForAsset} for the destination side so a
+    ///         balance adapter can count delivered-but-not-yet-claimed value in NAV.
+    /// @dev Native dual-key: the aggregate (account == address(0)) path sums BOTH native representations
+    ///      (`address(0)` + the ERC-7528 sentinel); the per-account path returns the single exact key.
+    ///      `BridgeHeldBalanceAdapter` sums both native keys itself per account (so NAV is unaffected) — but a
+    ///      direct caller reading a specific account's native custody should query both keys (or use the adapter),
+    ///      otherwise it under-reports native held under the "other" key.
+    function getHeldBalanceForAsset(address asset, address account) external view returns (uint256);
+
+    /// @notice Returns all assets held-but-unclaimed for a specific account with their amounts (destination).
+    function getHeldBalancesForAccount(address account)
+        external
+        view
+        returns (address[] memory assets, uint256[] memory amounts);
 }

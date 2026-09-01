@@ -1,11 +1,13 @@
 {
   "Gnosis": {
+    "$comment": "USD + WETH for Gnosis. WETH bridges natively (canonical GC WETH 0x6A02…). USDC uses the USDCTransmuter (0x0392a2f5…) so the adapter lands the escrow-registered USDC.e (0x2a22f9c3): the OmniBridge delivers the legacy 'USD//C on xDai' (0xDDAfbb50), and the adapter swaps it 1:1 to USDC.e inbound (transmuter deposit) / USDC.e->legacy outbound (transmuter withdraw). Requires the salt-5 GnosisBridgeAdapter (transmuter-swap); `usdcTransmuter` is set ONLY on this chain (Gnosis) — the Ethereum-side adapter leaves it address(0) and bridges native USDC. Stargate remains available for USD<->Gnosis too; the operator chooses per transfer.",
     "enabled": true,
     "initialize": {
       "admin": "",
       "bridgeEscrow": "",
       "omnibridge": "0xf6A78083ca3e2a662D6dd1703c939c8aCE2e268d",
       "amb": "0x75Df5AF045d91108662D8080fD1FEFAd6aA0bb59",
+      "usdcTransmuter": "0x0392a2f5ac47388945d8c84212469f545fae52b2",
       "version": "1.0.0"
     },
     "remoteChains": [
@@ -20,6 +22,9 @@
       "endpoint": "0x1a44076050125825900e736c501f859c50fE728c",
       "version": "1.0.0"
     },
+    "pools": {
+      "USDC": "0xB1EeAD6959cb5bB9B20417d6689922523B2B86C3"
+    },
     "remoteChains": [
       1,
       10,
@@ -30,12 +35,13 @@
     ]
   },
   "CCIP": {
-    "enabled": true,
+    "$comment": "Disabled on Gnosis: CCIP has no token pool for the registered assets (USDC/WETH) on this chain, so the router reverts UnsupportedToken. Bridge Gnosis via Stargate for USD (delivers USDC.e) and the native omnibridge for WETH.",
+    "enabled": false,
     "initialize": {
       "admin": "",
       "bridgeEscrow": "",
       "router": "0x4aAD6071085df840abD9Baf1697d5D5992bDadce",
-      "feeToken": "0xE2e73A1c69ecF83F464EFCE6A5be353a37cA09b2",
+      "feeToken": "0x0000000000000000000000000000000000000000",
       "version": "1.0.0"
     },
     "remoteChains": [

@@ -11,7 +11,11 @@ import "src/bridge/InvoiceDataLib.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/constants.sol";
 import {BridgeScenarioHelper} from "test/bridge/BridgeScenarioHelper.sol";
-import {MockProvenanceOmnibridge, MockProvenanceAMB} from "test/bridge/mocks/GnosisProvenanceMocks.sol";
+import {
+    MockProvenanceOmnibridge,
+    MockProvenanceAMB,
+    MockUSDCTransmuter
+} from "test/bridge/mocks/GnosisProvenanceMocks.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "test/mocks/tokens.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
@@ -22,7 +26,8 @@ import "src/errors.sol";
 /// @dev Destination recipient is the sibling adapter (address(this)). The Omnibridge mediator delivers tokens
 ///      to the adapter and calls onTokenTransfer; the adapter authenticates msg.sender == omnibridge plus the
 ///      AMB-reported source (messageSender == trustedRemoteAdapter, messageSourceChainId == source chain), then
-///      funds the escrow and releases. The MANAGER completeBridge path verifies the same provenance.
+///      records the delivery into escrow custody (ADR 0027). A MANAGER claim later pays the account. The MANAGER
+///      completeBridge path verifies the same provenance.
 contract GnosisBridgeAdapterTest is BridgeScenarioHelper {
     GnosisBridgeAdapter public adapter;
     MockProvenanceOmnibridge public omnibridge;
@@ -33,6 +38,8 @@ contract GnosisBridgeAdapterTest is BridgeScenarioHelper {
     // The trusted sibling adapter living on the source chain (Ethereum). On real deployments this matches the
     // destination adapter's own address (CREATE2 same-address); for unit tests any fixed address works.
     address public remoteAdapter = makeAddr("remoteAdapter");
+    /// @dev The source Omnibridge mediator address the AMB reports as messageSender() for inbound transfers.
+    address public sourceMediator = makeAddr("sourceMediator");
 
     function setUp() public override {
         super.setUp();
@@ -61,7 +68,7 @@ contract GnosisBridgeAdapterTest is BridgeScenarioHelper {
         internal
         returns (GnosisBridgeAdapter)
     {
-        address adapterImpl = address(new GnosisBridgeAdapter());
+        address adapterImpl = address(new GnosisBridgeAdapter(address(0)));
         address payable adapterProxy = payable(UnsafeUpgrades.deployUUPSProxy(
                 adapterImpl,
                 abi.encodeCall(GnosisBridgeAdapter.initialize, (admin, escrow_, omnibridge_, amb_, "1.0.0"))
@@ -81,12 +88,12 @@ contract GnosisBridgeAdapterTest is BridgeScenarioHelper {
 
         vm.startPrank(admin);
         destAdapter.grantRole(MANAGER, manager);
-        destAdapter.setTrustedRemoteAdapter(SOURCE_CHAIN_ID, bytes32(uint256(uint160(remoteAdapter))));
+        destAdapter.setTrustedMediator(SOURCE_CHAIN_ID, sourceMediator);
         destEscrow.authorizeAdapter(address(destAdapter));
         vm.stopPrank();
 
-        // Authentic AMB provenance: message came from the trusted sibling on the source chain.
-        destAmb.setMessageSender(remoteAdapter);
+        // Authentic AMB provenance: the AMB reports the SOURCE Omnibridge mediator as messageSender.
+        destAmb.setMessageSender(sourceMediator);
         destAmb.setMessageSourceChainId(bytes32(uint256(SOURCE_CHAIN_ID)));
     }
 
@@ -171,36 +178,85 @@ contract GnosisBridgeAdapterTest is BridgeScenarioHelper {
 
     // ============ Bridge Completion Tests (MANAGER fallback path) ============
 
-    function test_completeBridge_releasesTokensOnDestinationChain() public {
+    function test_managerFallback_completesAfterDeferredRelease() public {
         uint256 amount = 1000 * 10 ** usdc.decimals();
         InvoiceDataLib.InvoiceData memory invoiceData =
             _createInvoiceData(SOURCE_CHAIN_ID, GNOSIS_CHAIN_ID, account, USDC_SYMBOL_BYTES6, amount);
+        bytes memory messagePayload = InvoiceDataLib.encode(invoiceData);
 
         vm.chainId(uint256(GNOSIS_CHAIN_ID));
         MockProvenanceOmnibridge destOmnibridge = new MockProvenanceOmnibridge();
         MockProvenanceAMB destAmb = new MockProvenanceAMB();
         (BridgeEscrow destEscrow, GnosisBridgeAdapter destAdapter) = _setupDestination(destOmnibridge, destAmb);
 
-        bytes memory messagePayload = InvoiceDataLib.encode(invoiceData);
-
-        // Funded pass-through: the adapter holds the delivered tokens; the base pulls exactly `amount` to the escrow.
-        usdc.mint(address(destAdapter), amount);
-
         bytes32 invoiceHash = bytes32(uint256(uint192(invoiceData.checksum24)));
-        assertFalse(destEscrow.isInvoiceCompleted(invoiceHash), "Invoice should not be completed before completion");
 
+        // Auto delivery while the escrow is PAUSED: onTokenTransfer authenticates (mediator) and records
+        // provenance, but the release reverts (whenNotPaused) and is caught — tokens stay on the adapter,
+        // the invoice is NOT completed, but it is now marked authenticated.
+        vm.prank(admin);
+        destEscrow.pause();
+        usdc.mint(address(destOmnibridge), amount);
+        destOmnibridge.deliverTokens(address(usdc), address(destAdapter), amount, messagePayload);
+
+        assertTrue(destAdapter.authenticatedInvoice(invoiceHash), "invoice authenticated at delivery");
+        assertFalse(destEscrow.isInvoiceCompleted(invoiceHash), "invoice not completed while release deferred");
+        assertEq(usdc.balanceOf(address(destAdapter)), amount, "adapter holds the delivered tokens");
+
+        // Unpause and complete via the MANAGER fallback against the recorded provenance.
+        vm.prank(admin);
+        destEscrow.unpause();
         uint256 initialPortfolioBalance = usdc.balanceOf(account);
 
         vm.prank(manager);
         destAdapter.completeBridge(messagePayload, "");
 
-        assertEq(usdc.balanceOf(account) - initialPortfolioBalance, amount, "Account should receive tokens");
-        assertEq(usdc.balanceOf(address(destEscrow)), 0, "Escrow should have zero balance after release");
-        assertEq(usdc.balanceOf(address(destAdapter)), 0, "Adapter should have zero balance after funding release");
-        assertTrue(destEscrow.isInvoiceCompleted(invoiceHash), "Invoice should be marked as completed");
+        // ADR 0027: completeBridge records the delivery into custody — escrow HOLDS, no payout yet.
+        assertEq(usdc.balanceOf(account), initialPortfolioBalance, "account NOT paid on record");
+        assertEq(usdc.balanceOf(address(destAdapter)), 0, "adapter zero after funding escrow custody");
+        assertEq(usdc.balanceOf(address(destEscrow)), amount, "escrow holds the delivery");
+        assertEq(destEscrow.getHeldBalanceForAsset(address(usdc), account), amount, "held for account");
+        assertTrue(destEscrow.isInvoiceCompleted(invoiceHash), "invoice completed via fallback record");
+
+        // MANAGER claim pays the account.
+        vm.prank(manager);
+        destEscrow.claim(invoiceHash);
+        assertEq(usdc.balanceOf(account) - initialPortfolioBalance, amount, "account receives tokens on claim");
+        assertEq(destEscrow.getHeldBalanceForAsset(address(usdc), account), 0, "held cleared after claim");
     }
 
-    function test_completeBridge_revertsWhenSourceNotTrusted() public {
+    /// @notice `authenticatedInvoice` is keyed by the per-operation invoice HASH, not the reusable lane
+    ///         `invoiceId`. Authenticating one transfer must NOT let the MANAGER fallback complete a different
+    ///         same-lane transfer (same src/dst/account/asset → same invoiceId, different nonce → different hash).
+    function test_managerFallback_perHash_notPerLane() public {
+        uint256 amount = 1000 * 10 ** usdc.decimals();
+        // Two transfers on the SAME lane (share invoiceId), different nonce → different invoiceHash.
+        InvoiceDataLib.InvoiceData memory invA =
+            _createInvoiceData(SOURCE_CHAIN_ID, GNOSIS_CHAIN_ID, account, USDC_SYMBOL_BYTES6, amount, 0);
+        InvoiceDataLib.InvoiceData memory invB =
+            _createInvoiceData(SOURCE_CHAIN_ID, GNOSIS_CHAIN_ID, account, USDC_SYMBOL_BYTES6, amount, 1);
+        assertEq(invA.invoiceId, invB.invoiceId, "same lane => same invoiceId");
+        assertTrue(invA.checksum24 != invB.checksum24, "different nonce => different hash");
+
+        vm.chainId(uint256(GNOSIS_CHAIN_ID));
+        MockProvenanceOmnibridge destOmnibridge = new MockProvenanceOmnibridge();
+        MockProvenanceAMB destAmb = new MockProvenanceAMB();
+        (, GnosisBridgeAdapter destAdapter) = _setupDestination(destOmnibridge, destAmb);
+
+        // Deliver + authenticate ONLY transfer A.
+        usdc.mint(address(destOmnibridge), amount);
+        destOmnibridge.deliverTokens(address(usdc), address(destAdapter), amount, InvoiceDataLib.encode(invA));
+        assertTrue(destAdapter.authenticatedInvoice(bytes32(uint256(uint192(invA.checksum24)))), "A authenticated");
+        assertFalse(destAdapter.authenticatedInvoice(bytes32(uint256(uint192(invB.checksum24)))), "B NOT authenticated");
+
+        // MANAGER fallback for B (same lane, unauthenticated hash) must revert — even with funds present.
+        usdc.mint(address(destAdapter), amount);
+        vm.prank(manager);
+        vm.expectRevert(abi.encodeWithSelector(IGnosisBridgeAdapter.InvalidBridgeData.selector));
+        destAdapter.completeBridge(InvoiceDataLib.encode(invB), "");
+    }
+
+    function test_managerFallback_revertsWithoutPriorAuthentication() public {
         uint256 amount = 1000 * 10 ** usdc.decimals();
         InvoiceDataLib.InvoiceData memory invoiceData =
             _createInvoiceData(SOURCE_CHAIN_ID, GNOSIS_CHAIN_ID, account, USDC_SYMBOL_BYTES6, amount);
@@ -210,9 +266,8 @@ contract GnosisBridgeAdapterTest is BridgeScenarioHelper {
         MockProvenanceAMB destAmb = new MockProvenanceAMB();
         (, GnosisBridgeAdapter destAdapter) = _setupDestination(destOmnibridge, destAmb);
 
-        // AMB reports an impostor sender — provenance must fail even with funds present.
-        destAmb.setMessageSender(makeAddr("impostor"));
-
+        // No genuine delivery happened, so no provenance was recorded — the fallback cannot complete even
+        // with funds present (the AMB cannot be re-read out of message context).
         bytes memory messagePayload = InvoiceDataLib.encode(invoiceData);
         usdc.mint(address(destAdapter), amount);
 
@@ -221,29 +276,24 @@ contract GnosisBridgeAdapterTest is BridgeScenarioHelper {
         destAdapter.completeBridge(messagePayload, "");
     }
 
-    function test_completeBridge_validatesChecksum() public {
+    function test_onTokenTransfer_revertsForUntrustedMediator() public {
         uint256 amount = 1000 * 10 ** usdc.decimals();
         InvoiceDataLib.InvoiceData memory invoiceData =
             _createInvoiceData(SOURCE_CHAIN_ID, GNOSIS_CHAIN_ID, account, USDC_SYMBOL_BYTES6, amount);
+        bytes memory messagePayload = InvoiceDataLib.encode(invoiceData);
 
         vm.chainId(uint256(GNOSIS_CHAIN_ID));
         MockProvenanceOmnibridge destOmnibridge = new MockProvenanceOmnibridge();
         MockProvenanceAMB destAmb = new MockProvenanceAMB();
         (, GnosisBridgeAdapter destAdapter) = _setupDestination(destOmnibridge, destAmb);
 
-        // Provenance authentic + funds present, but the payload checksum is corrupted: escrow must reject.
-        usdc.mint(address(destAdapter), amount);
+        // AMB reports an impostor mediator (not the configured source mediator) — auth must fail, and the
+        // mediator mock forwards the onTokenTransfer revert.
+        destAmb.setMessageSender(makeAddr("impostor"));
+        usdc.mint(address(destOmnibridge), amount);
 
-        bytes memory corruptedPayload = abi.encode(
-            invoiceData.invoiceId,
-            invoiceData.amount,
-            invoiceData.nonce,
-            bytes32(uint256(invoiceData.timestamp) << 192 | uint256(uint192(invoiceData.checksum24)) ^ 1)
-        );
-
-        vm.prank(manager);
-        vm.expectRevert(); // InvalidChecksum from BridgeEscrow.releaseByInvoiceId
-        destAdapter.completeBridge(corruptedPayload, "");
+        vm.expectRevert(abi.encodeWithSelector(IGnosisBridgeAdapter.InvalidBridgeData.selector));
+        destOmnibridge.deliverTokens(address(usdc), address(destAdapter), amount, messagePayload);
     }
 
     function test_completeBridge_revertsIfNotManager() public {
@@ -289,10 +339,18 @@ contract GnosisBridgeAdapterTest is BridgeScenarioHelper {
         destOmnibridge.deliverTokens(address(usdc), address(destAdapter), amount, messagePayload);
 
         bytes32 expectedInvoiceHash = bytes32(uint256(uint192(InvoiceDataLib.decode(messagePayload).checksum24)));
-        assertTrue(destEscrow.isInvoiceCompleted(expectedInvoiceHash), "invoice completed");
+        assertTrue(destEscrow.isInvoiceCompleted(expectedInvoiceHash), "invoice completed on record");
+        // ADR 0027: auto delivery records custody and HOLDS; the account is paid only on MANAGER claim.
+        assertEq(usdc.balanceOf(account), portfolioBalanceBeforeRelease, "account NOT paid on delivery");
+        assertEq(usdc.balanceOf(address(destEscrow)), amount, "escrow holds the delivery");
+        assertEq(destEscrow.getHeldBalanceForAsset(address(usdc), account), amount, "held for account");
+        assertEq(usdc.balanceOf(address(destAdapter)), 0, "adapter balance zero after funding escrow custody");
+
+        vm.prank(manager);
+        destEscrow.claim(expectedInvoiceHash);
         assertEq(usdc.balanceOf(account) - portfolioBalanceBeforeRelease, amount, "account received bridged amount");
-        assertEq(usdc.balanceOf(address(destEscrow)), 0, "escrow balance zero after release");
-        assertEq(usdc.balanceOf(address(destAdapter)), 0, "adapter balance zero after funding release");
+        assertEq(usdc.balanceOf(address(destEscrow)), 0, "escrow drained after claim");
+        assertEq(destEscrow.getHeldBalanceForAsset(address(usdc), account), 0, "held cleared after claim");
     }
 
     // ============ onTokenTransfer (auto provenance path) Tests ============
@@ -395,6 +453,35 @@ contract GnosisBridgeAdapterTest is BridgeScenarioHelper {
         destOmnibridge.deliverTokens(address(usdc), address(destAdapter), short, messagePayload);
     }
 
+    /// @notice onTokenBridged reverts if the mediator delivers a DIFFERENT token than the invoice asset, even when
+    ///         the adapter already holds a stale balance of the real invoice asset (defense-in-depth: the balance
+    ///         check alone would otherwise pass and false-release the invoice asset).
+    function test_onTokenBridged_revertsWhenDeliveredTokenMismatch() public {
+        uint256 amount = 1000 * 10 ** usdc.decimals();
+        InvoiceDataLib.InvoiceData memory invoiceData =
+            _createInvoiceData(SOURCE_CHAIN_ID, GNOSIS_CHAIN_ID, account, USDC_SYMBOL_BYTES6, amount);
+        bytes memory messagePayload = InvoiceDataLib.encode(invoiceData);
+
+        vm.chainId(uint256(GNOSIS_CHAIN_ID));
+        MockProvenanceOmnibridge destOmnibridge = new MockProvenanceOmnibridge();
+        MockProvenanceAMB destAmb = new MockProvenanceAMB();
+        (, GnosisBridgeAdapter destAdapter) = _setupDestination(destOmnibridge, destAmb);
+
+        // Stale balance of the real invoice asset: the balance check alone would pass.
+        usdc.mint(address(destAdapter), amount);
+
+        // The mediator delivers a DIFFERENT token — must revert on the delivered-token guard.
+        Mock_ERC20 wrongToken = new Mock_ERC20("WRONG", uint8(usdc.decimals()));
+        wrongToken.mint(address(destOmnibridge), amount);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IGnosisBridgeAdapter.InvalidDeliveredToken.selector, address(usdc), address(wrongToken)
+            )
+        );
+        destOmnibridge.deliverTokens(address(wrongToken), address(destAdapter), amount, messagePayload);
+    }
+
     // ============ Configuration Tests ============
 
     function test_setOmnibridge_updatesOmnibridge() public {
@@ -490,5 +577,137 @@ contract GnosisBridgeAdapterTest is BridgeScenarioHelper {
 
         // bridge() pulled the tokens out; do not mint more.
         assertFalse(adapter.areTokensAvailable(invoiceData.invoiceId, address(usdc)), "Tokens should not be available");
+    }
+
+    // ============ USDC Transmuter Swap (fee-free OmniBridge USDC<->USDC.e) ============
+
+    /// @dev Fresh legacy + USDC.e mocks + a transmuter over them (mirrors the Gnosis USDCTransmuter 1:1 swap).
+    function _deployTransmuterTokens() internal returns (Mock_ERC20 legacy, Mock_ERC20 usdce, MockUSDCTransmuter tm) {
+        legacy = new Mock_ERC20("USDC", 6); // legacy "USD//C on xDai"
+        usdce = new Mock_ERC20("USDC.e", 6); // Circle Bridged USDC.e
+        tm = new MockUSDCTransmuter(address(legacy), address(usdce));
+    }
+
+    /// @notice Forward (ETH->GC): OmniBridge delivers legacy USDC; the adapter swaps it 1:1 to the registered
+    ///         USDC.e via the transmuter and records the USDC.e delivery into custody (ADR 0027); a MANAGER
+    ///         claim then pays the account.
+    function test_transmuter_forwardSwap_deliversUsdcE() public {
+        uint256 amount = 1000e6;
+        (Mock_ERC20 legacy, Mock_ERC20 usdce, MockUSDCTransmuter tm) = _deployTransmuterTokens();
+
+        vm.chainId(uint256(GNOSIS_CHAIN_ID));
+        MockProvenanceOmnibridge destOmnibridge = new MockProvenanceOmnibridge();
+        MockProvenanceAMB destAmb = new MockProvenanceAMB();
+        (BridgeEscrow destEscrow, GnosisBridgeAdapter destAdapter) = _setupDestination(destOmnibridge, destAmb);
+
+        // GC registers USDC.e under the logical "USDC" symbol; wire the transmuter on the adapter.
+        vm.startPrank(admin);
+        destEscrow.registerAsset(USDC_SYMBOL, address(usdce));
+        destAdapter.setUsdcTransmuter(address(tm));
+        vm.stopPrank();
+
+        InvoiceDataLib.InvoiceData memory inv =
+            _createInvoiceData(SOURCE_CHAIN_ID, GNOSIS_CHAIN_ID, account, USDC_SYMBOL_BYTES6, amount);
+        bytes memory payload = InvoiceDataLib.encode(inv);
+        bytes32 invoiceHash = bytes32(uint256(uint192(inv.checksum24)));
+
+        // OmniBridge delivers the LEGACY token to the adapter and fires onTokenBridged.
+        legacy.mint(address(destOmnibridge), amount);
+        uint256 acctBefore = usdce.balanceOf(account);
+        destOmnibridge.deliverTokens(address(legacy), address(destAdapter), amount, payload);
+
+        assertTrue(destEscrow.isInvoiceCompleted(invoiceHash), "invoice completed via legacy->USDC.e swap record");
+        // ADR 0027: the swapped USDC.e is recorded into custody and HELD; the account is paid only on claim.
+        assertEq(usdce.balanceOf(account), acctBefore, "account NOT paid on delivery");
+        assertEq(destEscrow.getHeldBalanceForAsset(address(usdce), account), amount, "held USDC.e for account");
+        assertEq(legacy.balanceOf(address(destAdapter)), 0, "no legacy dust on adapter");
+        assertEq(usdce.balanceOf(address(destAdapter)), 0, "no USDC.e dust on adapter (forwarded to escrow)");
+
+        vm.prank(manager);
+        destEscrow.claim(invoiceHash);
+        assertEq(usdce.balanceOf(account) - acctBefore, amount, "account receives USDC.e on claim");
+        assertEq(destEscrow.getHeldBalanceForAsset(address(usdce), account), 0, "held cleared after claim");
+    }
+
+    /// @notice Reverse (GC->ETH): the adapter swaps the registered USDC.e to legacy 1:1 via the transmuter, then
+    ///         bridges the legacy token over the OmniBridge.
+    function test_transmuter_reverseSwap_bridgesLegacy() public {
+        uint256 amount = 1000e6;
+        (Mock_ERC20 legacy, Mock_ERC20 usdce, MockUSDCTransmuter tm) = _deployTransmuterTokens();
+
+        vm.chainId(uint256(GNOSIS_CHAIN_ID)); // source = Gnosis, destination = Ethereum (1)
+
+        // Re-point the source escrow's "USDC" to USDC.e, wire the transmuter, and seed its legacy reserve.
+        vm.startPrank(admin);
+        bridgeEscrow.registerAsset(USDC_SYMBOL, address(usdce));
+        adapter.setUsdcTransmuter(address(tm));
+        vm.stopPrank();
+        legacy.mint(address(tm), amount); // withdraw pays legacy from the transmuter's reserve
+
+        InvoiceDataLib.InvoiceData memory inv =
+            _createInvoiceData(GNOSIS_CHAIN_ID, SOURCE_CHAIN_ID, account, USDC_SYMBOL_BYTES6, amount);
+        bytes memory payload = InvoiceDataLib.encode(inv);
+
+        // Escrow holds USDC.e and approves the adapter (as depositAndBridge would).
+        usdce.mint(address(bridgeEscrow), amount);
+        vm.prank(address(bridgeEscrow));
+        usdce.approve(address(adapter), amount);
+
+        vm.prank(address(bridgeEscrow));
+        adapter.bridge(payload);
+
+        // The adapter swapped USDC.e->legacy and bridged the LEGACY token to the sibling adapter.
+        assertEq(omnibridge.lastRelayToken(), address(legacy), "bridged the legacy USDC token");
+        assertEq(omnibridge.lastRelayReceiver(), address(adapter), "receiver is the sibling adapter");
+        assertEq(legacy.balanceOf(address(omnibridge)), amount, "omnibridge received the legacy amount");
+        assertEq(usdce.balanceOf(address(adapter)), 0, "adapter swapped out all USDC.e");
+    }
+
+    /// @notice Fail-safe: if the transmuter is disabled at delivery, the auto swap reverts but the invoice is
+    ///         recorded (authenticated) and the legacy delivery stays on the adapter; the MANAGER fallback
+    ///         completes it (swapping) once the transmuter is re-enabled.
+    function test_transmuter_forwardSwap_failsafe_managerFallbackCompletes() public {
+        uint256 amount = 1000e6;
+        (Mock_ERC20 legacy, Mock_ERC20 usdce, MockUSDCTransmuter tm) = _deployTransmuterTokens();
+
+        vm.chainId(uint256(GNOSIS_CHAIN_ID));
+        MockProvenanceOmnibridge destOmnibridge = new MockProvenanceOmnibridge();
+        MockProvenanceAMB destAmb = new MockProvenanceAMB();
+        (BridgeEscrow destEscrow, GnosisBridgeAdapter destAdapter) = _setupDestination(destOmnibridge, destAmb);
+
+        vm.startPrank(admin);
+        destEscrow.registerAsset(USDC_SYMBOL, address(usdce));
+        destAdapter.setUsdcTransmuter(address(tm));
+        vm.stopPrank();
+
+        InvoiceDataLib.InvoiceData memory inv =
+            _createInvoiceData(SOURCE_CHAIN_ID, GNOSIS_CHAIN_ID, account, USDC_SYMBOL_BYTES6, amount);
+        bytes memory payload = InvoiceDataLib.encode(inv);
+        bytes32 invoiceHash = bytes32(uint256(uint192(inv.checksum24)));
+
+        // Transmuter disabled at delivery: onTokenBridged records provenance; swap+release revert and are caught.
+        tm.setEnabled(false);
+        legacy.mint(address(destOmnibridge), amount);
+        destOmnibridge.deliverTokens(address(legacy), address(destAdapter), amount, payload);
+
+        assertTrue(destAdapter.authenticatedInvoice(invoiceHash), "invoice authenticated despite deferred swap");
+        assertFalse(destEscrow.isInvoiceCompleted(invoiceHash), "not completed while transmuter disabled");
+        assertEq(legacy.balanceOf(address(destAdapter)), amount, "legacy delivery held on adapter");
+
+        // Re-enable + complete via the MANAGER fallback (which swaps then releases).
+        tm.setEnabled(true);
+        uint256 acctBefore = usdce.balanceOf(account);
+        vm.prank(manager);
+        destAdapter.completeBridge(payload, "");
+
+        assertTrue(destEscrow.isInvoiceCompleted(invoiceHash), "completed by MANAGER fallback record after re-enable");
+        // ADR 0027: the fallback records custody and HOLDS; the account is paid only on claim.
+        assertEq(usdce.balanceOf(account), acctBefore, "account NOT paid on record");
+        assertEq(destEscrow.getHeldBalanceForAsset(address(usdce), account), amount, "held USDC.e for account");
+
+        vm.prank(manager);
+        destEscrow.claim(invoiceHash);
+        assertEq(usdce.balanceOf(account) - acctBefore, amount, "account receives USDC.e via fallback swap on claim");
+        assertEq(destEscrow.getHeldBalanceForAsset(address(usdce), account), 0, "held cleared after claim");
     }
 }

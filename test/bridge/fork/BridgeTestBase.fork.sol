@@ -196,8 +196,8 @@ abstract contract BridgeTestBase is TestEnvConfigurator {
 
     /// @notice Deploys a fresh BridgeEscrow proxy on the current fork pinned to `chainIdForEscrow`, grants
     ///         MANAGER to admin+manager, authorizes `account` as a safe, and registers the standard assets so
-    ///         destination-side completion tests can release to the account. Mirrors the production escrow
-    ///         (UUPS proxy), so `releaseByInvoiceId` validates checksum/replay/account exactly as on-chain.
+    ///         destination-side completion tests can record+claim to the account. Mirrors the production escrow
+    ///         (UUPS proxy), so `recordDelivery` validates checksum/replay/account exactly as on-chain.
     /// @dev `account` is registered as an initial safe via `initialize`. Use `vm.chainId(chainIdForEscrow)`
     ///      before completion so the escrow's `block.chainid` checks line up with the destination.
     function _deployDestinationEscrow(uint64 chainIdForEscrow) internal returns (BridgeEscrow destEscrow) {

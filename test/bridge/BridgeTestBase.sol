@@ -292,14 +292,14 @@ abstract contract BridgeTestBase is Test {
 
         // Note: Invoice is NOT created on destination chain - it only exists on source chain for bookkeeping
         // On destination chain, we only need:
-        // 1. Checksum validation (done in releaseByInvoiceId)
-        // 2. completedInvoices check (prevents double-spending)
-        // 3. Sufficient contract balance to release assets
+        // 1. Checksum validation (done in recordDelivery)
+        // 2. completedInvoices / destinationCustody replay check (prevents double-spending)
+        // 3. The adapter to hold the delivered assets so recordDelivery can pull them into custody
 
         // Note: Tokens are NOT automatically transferred to BridgeEscrow here
         // Each bridge adapter test should set up tokens according to how that bridge delivers tokens:
         // - For bridges with callbacks (Across, Stargate, Gnosis, CCIP): tokens arrive at adapter
-        // - For bridges without callbacks (CCTP): tokens are minted directly to BridgeEscrow
-        // Tokens will be transferred to BridgeEscrow in _completeBridge before releaseByInvoiceId
+        // - For bridges without callbacks (CCTP): tokens are minted directly to the adapter
+        // Tokens are pulled into escrow custody by recordDelivery (via _fundAndRelease), then paid on claim
     }
 }

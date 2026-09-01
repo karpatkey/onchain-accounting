@@ -43,7 +43,7 @@ contract AcrossBridgeAdapterForkTest is BridgeTestBase {
     }
 
     function _setupAcrossAdapter() internal {
-        address adapterImpl = address(new AcrossBridgeAdapter());
+        address adapterImpl = address(new AcrossBridgeAdapter(address(0)));
         address payable adapterProxy = payable(UnsafeUpgrades.deployUUPSProxy(
                 adapterImpl,
                 abi.encodeCall(
@@ -58,6 +58,11 @@ contract AcrossBridgeAdapterForkTest is BridgeTestBase {
         vm.stopPrank();
 
         _authorizeAdapter(address(adapter));
+
+        // Across V3's SpokePool rejects a zero output token; wire the Optimism-USDC output token for the ETH->OP
+        // USDC lane this suite exercises (mirrors what 06 does on deploy via setOutputToken).
+        vm.prank(admin);
+        adapter.setOutputToken(OPTIMISM_CHAIN_ID, MAINNET_USDC, OPTIMISM_USDC);
 
         usdc = IERC20(MAINNET_USDC);
         vm.label(address(adapter), "AcrossBridgeAdapter");
@@ -117,7 +122,7 @@ contract AcrossBridgeAdapterForkTest is BridgeTestBase {
         destEscrow = _deployDestinationEscrow(MAINNET_CHAIN_ID);
 
         address payable destAdapterProxy = payable(UnsafeUpgrades.deployUUPSProxy(
-                address(new AcrossBridgeAdapter()),
+                address(new AcrossBridgeAdapter(address(0))),
                 abi.encodeCall(
                     AcrossBridgeAdapter.initialize,
                     (admin, address(destEscrow), SPOKE_POOL_MAINNET, DEFAULT_RELAYER_FEE_PCT, "1.0.0")
@@ -135,7 +140,8 @@ contract AcrossBridgeAdapterForkTest is BridgeTestBase {
     }
 
     /// @notice The genuine SpokePool delivers tokens + calls handleV3AcrossMessage: the adapter authenticates the
-    ///         SpokePool + source, then funds the escrow and releases to the account (funded pass-through).
+    ///         SpokePool + source, then records the delivery into escrow custody (ADR 0027). A subsequent MANAGER
+    ///         claim pays the account.
     function testFork_across_handleV3AcrossMessage_authenticatesSpokePoolAndReleases() public {
         // Source chain is Optimism for this delivery; the destination is this mainnet fork.
         uint64 srcChainId = OPTIMISM_CHAIN_ID;
@@ -157,10 +163,18 @@ contract AcrossBridgeAdapterForkTest is BridgeTestBase {
         vm.prank(SPOKE_POOL_MAINNET);
         destAdapter.handleV3AcrossMessage(MAINNET_USDC, amount, makeAddr("relayer"), messagePayload);
 
-        assertEq(usdc.balanceOf(account) - portfolioBefore, amount, "account received bridged USDC");
-        assertEq(usdc.balanceOf(address(destAdapter)), 0, "adapter forwarded all tokens");
-        assertEq(usdc.balanceOf(address(destEscrow)), 0, "escrow holds no standing balance");
-        assertTrue(destEscrow.isInvoiceCompleted(invoiceHash), "invoice marked completed");
+        // ADR 0027: delivery records custody and HOLDS; the account is paid only on MANAGER claim.
+        assertEq(usdc.balanceOf(account), portfolioBefore, "account NOT paid on delivery");
+        assertEq(usdc.balanceOf(address(destAdapter)), 0, "adapter forwarded all tokens to escrow");
+        assertEq(usdc.balanceOf(address(destEscrow)), amount, "escrow holds the delivery");
+        assertEq(destEscrow.getHeldBalanceForAsset(address(usdc), account), amount, "held for account");
+        assertTrue(destEscrow.isInvoiceCompleted(invoiceHash), "invoice marked completed on record");
+
+        vm.prank(manager);
+        destEscrow.claim(invoiceHash);
+        assertEq(usdc.balanceOf(account) - portfolioBefore, amount, "account received bridged USDC on claim");
+        assertEq(usdc.balanceOf(address(destEscrow)), 0, "escrow drained after claim");
+        assertEq(destEscrow.getHeldBalanceForAsset(address(usdc), account), 0, "held cleared after claim");
 
         bytes memory stored = destAdapter.getMessagePayload(invoiceData.invoiceId);
         assertEq(stored.length, messagePayload.length, "payload stored on completion");

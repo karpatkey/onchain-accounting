@@ -48,6 +48,18 @@ contract DeployBridgeAdapters is BaseDeployScript {
         // Every adapter is enable-gated in config; deploy each enabled one deterministically. The set is identical
         // across chains, so the per-chain branching of the old flow is gone — config `enabled` is the only gate.
         vm.startBroadcast();
+
+        // Each adapter's initialize is pinned to expectedInitializer (= DeploySalts.BRIDGE_ADAPTER_INITIALIZER, a
+        // committed cross-chain-identical constant, baked into the creationCode by _adapterInitCode). The broadcaster
+        // MUST equal it: otherwise every initialize() would revert NotAuthorized mid-deploy AND — the reason it is
+        // pinned to a constant, not chainConfig.admin — the CREATE2 addresses would diverge from the canonical fleet.
+        // DEPLOY_ADMIN still overrides the post-init admin ROLE, but not this pin, so it can't diverge the address.
+        (, address broadcaster,) = vm.readCallers();
+        require(
+            broadcaster == _expectedInitializer(),
+            "05: broadcaster must equal DeploySalts.BRIDGE_ADAPTER_INITIALIZER (the pinned CREATE2 initializer)"
+        );
+
         _deployCcipIfConfigured(bridgeProxy);
         _deployAcrossIfConfigured(bridgeProxy);
         _deployStargateIfConfigured(bridgeProxy);
@@ -91,6 +103,21 @@ contract DeployBridgeAdapters is BaseDeployScript {
         freshlyDeployed = true;
     }
 
+    /// @notice The address permitted to call each adapter's initialize, baked into the adapter's creationCode so the
+    ///         deploy->initialize window cannot be front-run (see BridgeAdapter.expectedInitializer). It is the
+    ///         committed, cross-chain-IDENTICAL `DeploySalts.BRIDGE_ADAPTER_INITIALIZER` — NOT `chainConfig.admin` /
+    ///         `DEPLOY_ADMIN`, which could diverge the CREATE2 address per chain and break the same-address guarantee.
+    ///         The broadcaster MUST equal it (asserted in run()), so initialize is not front-runnable.
+    function _expectedInitializer() internal pure returns (address) {
+        return DeploySalts.BRIDGE_ADAPTER_INITIALIZER;
+    }
+
+    /// @notice Appends the expectedInitializer constructor arg to an adapter's creationCode (mirrors the
+    ///         BridgeAdapter constructor). Identical across chains so the deterministic address is preserved.
+    function _adapterInitCode(bytes memory creationCode) internal view returns (bytes memory) {
+        return abi.encodePacked(creationCode, abi.encode(_expectedInitializer()));
+    }
+
     function _parseAddr(string memory adapterName, string memory paramName, address fallback_)
         internal
         view
@@ -117,14 +144,14 @@ contract DeployBridgeAdapters is BaseDeployScript {
         (address adapter, bool fresh) = _create2Deploy(
             "CcipBridgeAdapter",
             _salt("CcipBridgeAdapter", DeploySalts.CCIP_ADAPTER),
-            type(CcipBridgeAdapter).creationCode
+            _adapterInitCode(type(CcipBridgeAdapter).creationCode)
         );
-        if (fresh) {
+        if (fresh || CcipBridgeAdapter(payable(adapter)).bridgeEscrow() == address(0)) {
             address router = vm.parseAddress(routerStr);
             string memory feeTokenStr =
                 ConfigReader.readAdapterParam(vm, currentChainId, "bridgeAdapters", "CCIP", "feeToken");
             address feeToken = bytes(feeTokenStr).length > 0 ? vm.parseAddress(feeTokenStr) : address(0);
-            CcipBridgeAdapter(adapter)
+            CcipBridgeAdapter(payable(adapter))
                 .initialize(chainConfig.admin, bridgeProxy, router, feeToken, _adapterVersion("CCIP"));
         }
         ConfigReader.writeAdapterAddress(vm, currentChainId, "bridgeAdapters", "CCIP", adapter);
@@ -139,9 +166,9 @@ contract DeployBridgeAdapters is BaseDeployScript {
         (address adapter, bool fresh) = _create2Deploy(
             "AcrossBridgeAdapter",
             _salt("AcrossBridgeAdapter", DeploySalts.ACROSS_ADAPTER),
-            type(AcrossBridgeAdapter).creationCode
+            _adapterInitCode(type(AcrossBridgeAdapter).creationCode)
         );
-        if (fresh) {
+        if (fresh || AcrossBridgeAdapter(payable(adapter)).bridgeEscrow() == address(0)) {
             address spokePool = vm.parseAddress(spokePoolStr);
             string memory feePctStr =
                 ConfigReader.readAdapterParam(vm, currentChainId, "bridgeAdapters", "Across", "defaultRelayerFeePct");
@@ -162,9 +189,9 @@ contract DeployBridgeAdapters is BaseDeployScript {
         (address adapter, bool fresh) = _create2Deploy(
             "StargateBridgeAdapter",
             _salt("StargateBridgeAdapter", DeploySalts.STARGATE_ADAPTER),
-            type(StargateBridgeAdapter).creationCode
+            _adapterInitCode(type(StargateBridgeAdapter).creationCode)
         );
-        if (fresh) {
+        if (fresh || StargateBridgeAdapter(payable(adapter)).bridgeEscrow() == address(0)) {
             address endpoint = vm.parseAddress(endpointStr);
             StargateBridgeAdapter(payable(adapter))
                 .initialize(chainConfig.admin, bridgeProxy, endpoint, _adapterVersion("Stargate"));
@@ -181,13 +208,24 @@ contract DeployBridgeAdapters is BaseDeployScript {
         (address adapter, bool fresh) = _create2Deploy(
             "GnosisBridgeAdapter",
             _salt("GnosisBridgeAdapter", DeploySalts.GNOSIS_ADAPTER),
-            type(GnosisBridgeAdapter).creationCode
+            _adapterInitCode(type(GnosisBridgeAdapter).creationCode)
         );
-        if (fresh) {
+        if (fresh || GnosisBridgeAdapter(payable(adapter)).bridgeEscrow() == address(0)) {
             address omnibridge = vm.parseAddress(omnibridgeStr);
             address amb = _parseAddr("Gnosis", "amb", address(0));
             GnosisBridgeAdapter(payable(adapter))
                 .initialize(chainConfig.admin, bridgeProxy, omnibridge, amb, _adapterVersion("Gnosis"));
+        }
+        // Optional: wire the USDC transmuter (Gnosis side only — the config carries it on chain 100, not on
+        // Ethereum). Absent/empty → leave unset (address(0)), so the Ethereum-side adapter bridges USDC natively.
+        // Idempotent: only set when the deployed value differs from config, so re-runs are no-ops.
+        string memory transmuterStr =
+            ConfigReader.readAdapterParam(vm, currentChainId, "bridgeAdapters", "Gnosis", "usdcTransmuter");
+        if (bytes(transmuterStr).length != 0) {
+            address transmuter = vm.parseAddress(transmuterStr);
+            if (address(GnosisBridgeAdapter(payable(adapter)).usdcTransmuter()) != transmuter) {
+                GnosisBridgeAdapter(payable(adapter)).setUsdcTransmuter(transmuter);
+            }
         }
         ConfigReader.writeAdapterAddress(vm, currentChainId, "bridgeAdapters", "Gnosis", adapter);
     }
@@ -201,9 +239,9 @@ contract DeployBridgeAdapters is BaseDeployScript {
         (address adapter, bool fresh) = _create2Deploy(
             "CctpBridgeAdapter",
             _salt("CctpBridgeAdapter", DeploySalts.CCTP_ADAPTER),
-            type(CctpBridgeAdapter).creationCode
+            _adapterInitCode(type(CctpBridgeAdapter).creationCode)
         );
-        if (fresh) {
+        if (fresh || CctpBridgeAdapter(adapter).bridgeEscrow() == address(0)) {
             address tokenMessenger = vm.parseAddress(tokenMessengerStr);
             address messageTransmitter = _parseAddr("CCTP", "messageTransmitter", address(0));
             CctpBridgeAdapter(adapter)
@@ -216,35 +254,74 @@ contract DeployBridgeAdapters is BaseDeployScript {
         if (!_isEnabled("Superchain")) return;
         string memory l2BridgeStr =
             ConfigReader.readAdapterParam(vm, currentChainId, "bridgeAdapters", "Superchain", "l2Bridge");
-        // Superchain config carries l1Bridge on L1 and l2Bridge on L2; require at least one bridge endpoint.
-        string memory l1BridgeStr =
-            ConfigReader.readAdapterParam(vm, currentChainId, "bridgeAdapters", "Superchain", "l1Bridge");
-        if (bytes(l2BridgeStr).length == 0 && bytes(l1BridgeStr).length == 0) return;
+        // L2 side carries l2Bridge; L1 side carries the per-L2 arrays (l2ChainIds/l1Bridges/optimismPortals).
+        uint256[] memory l2ChainIds =
+            ConfigReader.readAdapterUintArray(vm, currentChainId, "bridgeAdapters", "Superchain", "l2ChainIds");
+        if (bytes(l2BridgeStr).length == 0 && l2ChainIds.length == 0) return;
 
         (address adapter, bool fresh) = _create2Deploy(
             "SuperchainBridgeAdapter",
             _salt("SuperchainBridgeAdapter", DeploySalts.SUPERCHAIN_ADAPTER),
-            type(SuperchainBridgeAdapter).creationCode
+            _adapterInitCode(type(SuperchainBridgeAdapter).creationCode)
         );
-        if (fresh) {
-            address admin_ = _parseAddr("Superchain", "admin", chainConfig.admin);
-            address bridgeEscrow_ = _parseAddr("Superchain", "bridgeEscrow", bridgeProxy);
-            address l1Bridge_ = _parseAddr("Superchain", "l1Bridge", address(0));
+        // The Superchain L1 chain id (mainnet = 1). The adapter plays the L1 role when block.chainid equals it; the
+        // SAME value is passed on both the L1 and L2 deployments (so the CREATE2 address is unaffected — it is an
+        // init arg, not a constructor arg). Hardcoded to mainnet here; make it config-driven for a non-mainnet L1.
+        // Hoisted out of the init-only branch below because the per-L2 reconciliation (also below) needs it too.
+        uint256 l1ChainId_ = 1;
+        if (fresh || SuperchainBridgeAdapter(payable(adapter)).bridgeEscrow() == address(0)) {
+            // Admin + escrow always come from the deploy context (like every other adapter here), NEVER from the
+            // adapter config: the config `admin`/`bridgeEscrow` fields are deploy-populated placeholders and may
+            // carry stale values from a prior deploy, which would grant admin to / point the escrow at the wrong
+            // address. Only the true protocol addresses (l2Bridge / messengers) are read from config.
+            address admin_ = chainConfig.admin;
+            address bridgeEscrow_ = bridgeProxy;
             address l2Bridge_ = _parseAddr("Superchain", "l2Bridge", address(0));
             address l1Messenger_ = _parseAddr("Superchain", "l1Messenger", address(0));
             address l2Messenger_ = _parseAddr("Superchain", "l2Messenger", address(0));
-            address optimismPortal_ = _parseAddr("Superchain", "optimismPortal", address(0));
             SuperchainBridgeAdapter(payable(adapter))
                 .initialize(
                     admin_,
                     bridgeEscrow_,
-                    l1Bridge_,
                     l2Bridge_,
                     l1Messenger_,
                     l2Messenger_,
-                    optimismPortal_,
+                    l1ChainId_,
                     _adapterVersion("Superchain")
                 );
+        }
+
+        // On L1, reconcile the per-L2 standard bridges + portals + L1 messengers from parallel config arrays.
+        // OUTSIDE the init-only branch, and idempotent (skip a setter when the on-chain value already matches), so a
+        // rerun can add a newly configured L2 or repair a run interrupted after init but before the setters ran —
+        // these mappings are configured nowhere else (06 does not touch them). Mirrors the Gnosis transmuter
+        // reconciliation above.
+        if (currentChainId == l1ChainId_ && l2ChainIds.length > 0) {
+            address[] memory l1Bridges =
+                ConfigReader.readAdapterAddressArray(vm, currentChainId, "bridgeAdapters", "Superchain", "l1Bridges");
+            address[] memory portals = ConfigReader.readAdapterAddressArray(
+                vm, currentChainId, "bridgeAdapters", "Superchain", "optimismPortals"
+            );
+            address[] memory l1Messengers = ConfigReader.readAdapterAddressArray(
+                vm, currentChainId, "bridgeAdapters", "Superchain", "l1Messengers"
+            );
+            require(
+                l1Bridges.length == l2ChainIds.length && portals.length == l2ChainIds.length
+                    && l1Messengers.length == l2ChainIds.length,
+                "Superchain: l2ChainIds/l1Bridges/optimismPortals/l1Messengers length mismatch"
+            );
+            SuperchainBridgeAdapter sc = SuperchainBridgeAdapter(payable(adapter));
+            for (uint256 i = 0; i < l2ChainIds.length; i++) {
+                if (address(sc.l1BridgeForL2(l2ChainIds[i])) != l1Bridges[i]) {
+                    sc.setL1BridgeForL2(l2ChainIds[i], l1Bridges[i]);
+                }
+                if (address(sc.optimismPortalForL2(l2ChainIds[i])) != portals[i]) {
+                    sc.setOptimismPortalForL2(l2ChainIds[i], portals[i]);
+                }
+                if (sc.l1MessengerForL2(l2ChainIds[i]) != l1Messengers[i]) {
+                    sc.setL1MessengerForL2(l2ChainIds[i], l1Messengers[i]);
+                }
+            }
         }
         ConfigReader.writeAdapterAddress(vm, currentChainId, "bridgeAdapters", "Superchain", adapter);
     }

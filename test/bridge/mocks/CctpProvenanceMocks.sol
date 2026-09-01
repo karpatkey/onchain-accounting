@@ -35,7 +35,10 @@ library CctpProvenanceMessage {
     /// @param destDomain Destination CCTP domain
     /// @param nonce CCTP V2 message nonce (bytes32, Circle-assigned)
     /// @param burnToken The token burned on source / minted on destination (USDC)
-    /// @param mintRecipient The mint recipient (the destination adapter)
+    /// @param headerRecipient The V2 header recipient (bytes 76-108) — in a real token burn message this
+    ///        is the destination TokenMessenger (the on-chain handler MessageTransmitter dispatches to),
+    ///        NOT the mint recipient
+    /// @param mintRecipient The V2 body mintRecipient (bytes 184-216) — the destination adapter
     /// @param destinationCaller The authorized destination caller (the destination adapter)
     /// @param amount The amount minted
     /// @return message The encoded CCTP V2 message (248 bytes: 148 header + 100 body through amount)
@@ -44,6 +47,7 @@ library CctpProvenanceMessage {
         uint32 destDomain,
         bytes32 nonce,
         address burnToken,
+        address headerRecipient,
         address mintRecipient,
         address destinationCaller,
         uint256 amount
@@ -51,6 +55,7 @@ library CctpProvenanceMessage {
         // 148 (V2 header) + 4 (body version) + 32 (burnToken) + 32 (mintRecipient) + 32 (amount) = 248 bytes.
         message = new bytes(248);
 
+        bytes32 headerRecipientWord = bytes32(uint256(uint160(headerRecipient)));
         bytes32 recipientWord = bytes32(uint256(uint160(mintRecipient)));
         bytes32 callerWord = bytes32(uint256(uint160(destinationCaller)));
         bytes32 burnTokenWord = bytes32(uint256(uint160(burnToken)));
@@ -68,8 +73,9 @@ library CctpProvenanceMessage {
             // nonce @12 (bytes32, Circle-assigned)
             mstore(add(base, 12), nonce)
             // sender @44 (bytes32) — left as zero
-            // recipient @76 (bytes32) — transmitter-level mint recipient (the adapter)
-            mstore(add(base, 76), recipientWord)
+            // recipient @76 (bytes32) — the destination TokenMessenger (the on-chain handler that
+            // MessageTransmitter dispatches to), NOT the mint recipient
+            mstore(add(base, 76), headerRecipientWord)
             // destinationCaller @108 (bytes32)
             mstore(add(base, 108), callerWord)
             // minFinalityThreshold @140 / finalityThresholdExecuted @144 / body version @148 — left zero
@@ -91,6 +97,10 @@ contract MockProvenanceMessageTransmitter is IMessageTransmitter {
     uint32 private immutable _LOCAL_DOMAIN;
     uint32 public constant VERSION = 0;
     IERC20 public usdc;
+    /// @dev Test hook: when set, receiveMessage mints THIS token instead of `usdc`, modelling Circle's
+    ///      TokenMinter minting a token that is NOT the invoice's destination asset (so the adapter's
+    ///      destination-asset balance-delta guard must revert). Zero = mint the real destination `usdc`.
+    address public mintTokenOverride;
     mapping(bytes32 => bool) public receivedMessages;
 
     event MessageReceived(bytes32 messageHash, uint32 sourceDomain, bytes32 nonce);
@@ -100,8 +110,15 @@ contract MockProvenanceMessageTransmitter is IMessageTransmitter {
         usdc = IERC20(usdc_);
     }
 
+    /// @notice Test hook: force receiveMessage to mint `token` instead of the destination `usdc`.
+    function setMintTokenOverride(address token) external {
+        mintTokenOverride = token;
+    }
+
     /// @inheritdoc IMessageTransmitter
-    /// @dev Parses the V2 recipient field (bytes 76-108) and mints `amount` (body bytes 216-248) to it.
+    /// @dev Parses the V2 *body* mintRecipient (bytes 184-216) and mints `amount` (body bytes 216-248) to
+    ///      it — matching real CCTP, where the transmitter dispatches to the header recipient (the
+    ///      TokenMessenger) which mints via the TokenMinter to the body mintRecipient (the adapter).
     ///      Reverts on replay — modelling Circle's nonce-tracking transmitter. A real transmitter
     ///      additionally verifies `attestation`; here a non-empty attestation is required by the
     ///      adapter before this is ever called.
@@ -121,11 +138,14 @@ contract MockProvenanceMessageTransmitter is IMessageTransmitter {
 
         uint32 sourceDomain = uint32(bytes4(message[4:8]));
         bytes32 nonce = bytes32(message[12:44]);
-        address recipient = address(uint160(uint256(bytes32(message[76:108]))));
+        address recipient = address(uint160(uint256(bytes32(message[184:216]))));
         uint256 amount = uint256(bytes32(message[216:248]));
 
-        // Mint USDC to the recipient (the adapter, in the new provenance model).
-        IMintableERC20(address(usdc)).mint(recipient, amount);
+        // Mint to the body mintRecipient (the adapter, in the provenance model). Real CCTP mints the
+        // canonical local token for the (sourceDomain, burnToken) pair; the override models a token that
+        // is NOT the invoice's destination asset, which the adapter's balance-delta guard must reject.
+        address tokenToMint = mintTokenOverride == address(0) ? address(usdc) : mintTokenOverride;
+        IMintableERC20(tokenToMint).mint(recipient, amount);
 
         emit MessageReceived(messageHash, sourceDomain, nonce);
         return true;

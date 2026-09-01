@@ -36,6 +36,10 @@ contract GnosisBridgeAdapterForkTest is BridgeTestBase {
 
     // Ethereum mainnet (foreign) Omnibridge mediator + AMB. Source: docs.gnosischain.com (Omnibridge key contracts).
     address public constant OMNIBRIDGE_MAINNET = 0x88ad09518695c6c3712AC10a214bE5109a655671;
+
+    /// @notice Gnosis Chain (home) Omnibridge mediator — the source mediator the AMB reports as
+    ///         messageSender() for a Gnosis(100) -> Ethereum inbound transfer.
+    address public constant GNOSIS_HOME_MEDIATOR = 0xf6A78083ca3e2a662D6dd1703c939c8aCE2e268d;
     address public constant AMB_MAINNET = 0x4C36d2919e407f0Cc2Ee3c993ccF8ac26d9CE64e;
 
     function setUp() public override {
@@ -46,7 +50,7 @@ contract GnosisBridgeAdapterForkTest is BridgeTestBase {
     }
 
     function _setupGnosisAdapter() internal {
-        address adapterImpl = address(new GnosisBridgeAdapter());
+        address adapterImpl = address(new GnosisBridgeAdapter(address(0)));
         address payable adapterProxy = payable(UnsafeUpgrades.deployUUPSProxy(
                 adapterImpl,
                 abi.encodeCall(
@@ -117,7 +121,7 @@ contract GnosisBridgeAdapterForkTest is BridgeTestBase {
         destEscrow = _deployDestinationEscrow(MAINNET_CHAIN_ID);
 
         address payable destAdapterProxy = payable(UnsafeUpgrades.deployUUPSProxy(
-                address(new GnosisBridgeAdapter()),
+                address(new GnosisBridgeAdapter(address(0))),
                 abi.encodeCall(
                     GnosisBridgeAdapter.initialize,
                     (admin, address(destEscrow), OMNIBRIDGE_MAINNET, AMB_MAINNET, "1.0.0")
@@ -127,7 +131,10 @@ contract GnosisBridgeAdapterForkTest is BridgeTestBase {
 
         vm.startPrank(admin);
         destAdapter.grantRole(MANAGER, manager);
-        destAdapter.setTrustedRemoteAdapter(srcChainId, _siblingIdentity(remoteSibling));
+        // Gnosis authenticates against the SOURCE Omnibridge mediator (what amb.messageSender() reports),
+        // not the sibling adapter. remoteSibling is unused (retained for signature compatibility).
+        remoteSibling;
+        destAdapter.setTrustedMediator(srcChainId, GNOSIS_HOME_MEDIATOR);
         destEscrow.authorizeAdapter(address(destAdapter));
         vm.stopPrank();
     }
@@ -143,16 +150,14 @@ contract GnosisBridgeAdapterForkTest is BridgeTestBase {
     }
 
     /// @notice The genuine Omnibridge mediator delivers tokens + calls onTokenTransfer: the adapter authenticates
-    ///         the mediator + AMB-reported source, then funds the escrow and releases to the account.
+    ///         the mediator + AMB-reported source, then records the delivery into escrow custody (ADR 0027). A
+    ///         subsequent MANAGER claim pays the account.
     function testFork_gnosis_onTokenTransfer_authenticatesMediatorAndReleases() public {
         uint64 srcChainId = GNOSIS_CHAIN_ID;
         uint256 amount = TEST_AMOUNT_USDC;
 
         // The trusted source sibling is the CREATE2 same-address adapter.
         (BridgeEscrow destEscrow, GnosisBridgeAdapter destAdapter) = _deployDestination(srcChainId, address(0));
-        // Re-point the trusted remote to the dest adapter's own identity (CREATE2 sibling).
-        vm.prank(admin);
-        destAdapter.setTrustedRemoteAdapter(srcChainId, _siblingIdentity(address(destAdapter)));
 
         InvoiceDataLib.InvoiceData memory invoiceData =
             _createInvoiceData(srcChainId, MAINNET_CHAIN_ID, account, USDC_SYMBOL_BYTES6, amount);
@@ -161,8 +166,8 @@ contract GnosisBridgeAdapterForkTest is BridgeTestBase {
         // Omnibridge delivers the tokens to the adapter (the recipient) before the callback.
         _fundAccountWithToken(MAINNET_USDC, address(destAdapter), amount);
 
-        // AMB reports the relay as coming from the trusted sibling on the source chain.
-        _mockAmbProvenance(address(destAdapter), srcChainId);
+        // AMB reports the relay as coming from the trusted SOURCE Omnibridge mediator.
+        _mockAmbProvenance(GNOSIS_HOME_MEDIATOR, srcChainId);
 
         bytes32 invoiceHash = bytes32(uint256(uint192(invoiceData.checksum24)));
         uint256 portfolioBefore = usdc.balanceOf(account);
@@ -174,10 +179,18 @@ contract GnosisBridgeAdapterForkTest is BridgeTestBase {
 
         vm.clearMockedCalls();
 
-        assertEq(usdc.balanceOf(account) - portfolioBefore, amount, "account received bridged USDC");
-        assertEq(usdc.balanceOf(address(destAdapter)), 0, "adapter forwarded all tokens");
-        assertEq(usdc.balanceOf(address(destEscrow)), 0, "escrow holds no standing balance");
-        assertTrue(destEscrow.isInvoiceCompleted(invoiceHash), "invoice marked completed");
+        // ADR 0027: delivery records custody and HOLDS; the account is paid only on MANAGER claim.
+        assertEq(usdc.balanceOf(account), portfolioBefore, "account NOT paid on delivery");
+        assertEq(usdc.balanceOf(address(destAdapter)), 0, "adapter forwarded all tokens to escrow");
+        assertEq(usdc.balanceOf(address(destEscrow)), amount, "escrow holds the delivery");
+        assertEq(destEscrow.getHeldBalanceForAsset(address(usdc), account), amount, "held for account");
+        assertTrue(destEscrow.isInvoiceCompleted(invoiceHash), "invoice marked completed on record");
+
+        vm.prank(manager);
+        destEscrow.claim(invoiceHash);
+        assertEq(usdc.balanceOf(account) - portfolioBefore, amount, "account received bridged USDC on claim");
+        assertEq(usdc.balanceOf(address(destEscrow)), 0, "escrow drained after claim");
+        assertEq(destEscrow.getHeldBalanceForAsset(address(usdc), account), 0, "held cleared after claim");
     }
 
     /// @notice onTokenTransfer reverts when not called by the genuine Omnibridge mediator.

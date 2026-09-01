@@ -21,16 +21,33 @@ import {console2} from "forge-std/console2.sol";
 ///      registered to the same address, so it can be re-run safely.
 ///      Run with: forge script script/deploy/06_Configure.s.sol --rpc-url $RPC_URL --account $DEPLOYER_NAME --broadcast
 contract Configure is BaseDeployScript {
+    /// @dev lzCompose executor gas budget baked into each Stargate destination's `composeOptions`. The destination
+    ///      `lzCompose` decodes the invoice, reads the asset registry, checks the delivered balance and does one
+    ///      funded pass-through release (an ERC20 transfer into the escrow + transfer out to the account); ~250k gas
+    ///      observed on mainnet, so 500k carries a safe margin. Tunable post-deploy via the adapter's
+    ///      `setComposeOptions(dstEid, options)` (DEFAULT_ADMIN_ROLE) without a redeploy.
+    uint128 internal constant STARGATE_COMPOSE_GAS_LIMIT = 500_000;
+
     function run() public override {
         setUp();
         validateAddresses();
 
         console2.log("\n=== Post-Deployment Configuration (EOA broadcast) ===");
 
-        address navProxy = readDeployedAddress("NAVCalculatorProxy");
+        // Bridge-only mode (clean bridge redeploy on a live-NAV chain): configure ONLY the BridgeEscrow. The NAV
+        // proxy is already live and admin/manager on it are held by the security council — NOT the deploy EOA — so
+        // any NAV role grant (`_ensureManager`) or meta-instance reconcile would revert. Skip the NAV branch entirely.
+        // Pairs with 01's BRIDGE_ONLY_IMPL and 02's BRIDGE_ONLY_ATOMIC.
+        bool bridgeOnly = vm.envOr("BRIDGE_ONLY_CONFIG", false);
+
+        address navProxy = bridgeOnly ? address(0) : readDeployedAddress("NAVCalculatorProxy");
         address bridgeProxy = readDeployedAddress("BridgeEscrowProxy");
 
-        if (navProxy == address(0)) {
+        if (bridgeOnly) {
+            console2.log("[BRIDGE-ONLY] Configuring ONLY the BridgeEscrow (NAV untouched)");
+        }
+
+        if (navProxy == address(0) && !bridgeOnly) {
             console2.log("WARNING: NAVCalculator not deployed, skipping NAV configuration");
         }
         if (bridgeProxy == address(0)) {
@@ -45,6 +62,10 @@ contract Configure is BaseDeployScript {
         }
         if (bridgeProxy != address(0)) {
             require(bridgeProxy.code.length > 0, "No code at BridgeEscrow proxy. Provide --rpc-url.");
+            // Fail fast (before any broadcast) on an over-declared bridge route: an asset the source adapter
+            // carries whose logical symbol is not registered on the destination escrow config would produce an
+            // invoice that can never complete (funds strand on the destination adapter). See _validateBridgeRoutes.
+            _validateBridgeRoutes();
         }
 
         vm.startBroadcast();
@@ -74,6 +95,93 @@ contract Configure is BaseDeployScript {
             IAccessControl(proxy).grantRole(MANAGER, manager);
             console2.log("[OK] Granted MANAGER to:", manager);
         }
+    }
+
+    /// @notice Idempotently grants MANAGER on a bridge ADAPTER to `chainConfig.manager`. The adapter's `initialize`
+    ///         grants only DEFAULT_ADMIN; the MANAGER-gated completion/recovery paths (CCTP + Superchain-L1->L2
+    ///         `completeBridge`, Superchain-L2->L1 finalize, `recoverStuckAssets`) need MANAGER held. `07` grants the
+    ///         security council adapter MANAGER for the post-handoff steady state, but that leaves the PRE-handoff
+    ///         window (a canary / validation run before `07`) unable to exercise those completions — the deploy EOA
+    ///         (== `chainConfig.manager` in the EOA flow) holds DEFAULT_ADMIN but not adapter MANAGER. This grant
+    ///         closes that window; `07` then revokes the deployer + grants the council, so the two compose cleanly.
+    ///         Requires the caller to hold DEFAULT_ADMIN on the adapter, which `05` set via `expectedInitializer`.
+    function _ensureAdapterManager(string memory adapterName, address adapter) internal {
+        address manager = chainConfig.manager;
+        if (manager == address(0)) return;
+        if (!IAccessControl(adapter).hasRole(MANAGER, manager)) {
+            IAccessControl(adapter).grantRole(MANAGER, manager);
+            console2.log("[OK] Granted MANAGER on adapter:", adapterName, manager);
+        }
+    }
+
+    /// @notice Deploy-time route-consistency preflight. The cross-chain invoice carries the SOURCE chain's logical
+    ///         asset symbol unchanged; the destination escrow resolves that SAME symbol to its own local token. So a
+    ///         route is completable only if the destination registers the symbol. This checks every asset the source
+    ///         adapter is configured to carry (Stargate: a `pools` entry for the symbol; CCTP: USDC) against every
+    ///         `remoteChains` destination and reverts (naming adapter/dst/symbol) if that destination's
+    ///         `bridge-escrow/<dst>.json` does not register the symbol — the config over-declaration that otherwise
+    ///         strands funds on arrival. Pure config read (all chains' JSONs exist at deploy time). Destinations with
+    ///         no bridge-escrow config yet (not a live bridge target) are skipped. Adapters without an explicit
+    ///         per-asset routing map in config (CCIP/Across/Gnosis/Superchain) are not asserted here — CCIP/Gnosis
+    ///         availability is vendor-token-specific (see the bridge-escrow/bridge-adapters `$comment`s), Across
+    ///         derives + skips per lane, and Superchain carries native ETH.
+    function _validateBridgeRoutes() internal view {
+        string[] memory symbols = ConfigReader.readBridgeEscrowAssetSymbols(vm, currentChainId);
+        string[] memory adapters = _bridgeAdapterNames();
+        for (uint256 a = 0; a < adapters.length; a++) {
+            string memory name = adapters[a];
+            if (!ConfigReader.isAdapterEnabled(vm, currentChainId, "bridgeAdapters", name)) continue;
+            bool isStargate = keccak256(bytes(name)) == keccak256(bytes("Stargate"));
+            bool isCctp = keccak256(bytes(name)) == keccak256(bytes("CCTP"));
+            if (!isStargate && !isCctp) continue;
+
+            uint256[] memory remoteChains =
+                ConfigReader.readAdapterUintArray(vm, currentChainId, "bridgeAdapters", name, "remoteChains");
+            for (uint256 s = 0; s < symbols.length; s++) {
+                // Does this adapter actually carry this asset from the source?
+                bool carried = isCctp
+                    ? keccak256(bytes(symbols[s])) == keccak256(bytes("USDC"))
+                    : ConfigReader.readAdapterMappingAddress(
+                            vm, currentChainId, "bridgeAdapters", "Stargate", "pools", symbols[s]
+                        ) != address(0);
+                if (!carried) continue;
+
+                for (uint256 r = 0; r < remoteChains.length; r++) {
+                    uint256 dst = remoteChains[r];
+                    if (dst == 0 || dst == currentChainId) continue;
+                    // Skip destinations that aren't configured as a bridge target yet (empty escrow config).
+                    string[] memory destSymbols = ConfigReader.readBridgeEscrowAssetSymbols(vm, dst);
+                    if (destSymbols.length == 0) continue;
+                    bool found;
+                    for (uint256 d = 0; d < destSymbols.length; d++) {
+                        if (keccak256(bytes(destSymbols[d])) == keccak256(bytes(symbols[s]))) {
+                            found = true;
+                            break;
+                        }
+                    }
+                    if (!found) {
+                        revert(
+                            string(
+                                abi.encodePacked(
+                                    "route validation failed: adapter ",
+                                    name,
+                                    " ",
+                                    vm.toString(currentChainId),
+                                    "->",
+                                    vm.toString(dst),
+                                    " asset '",
+                                    symbols[s],
+                                    "' not registered on destination bridge-escrow/",
+                                    vm.toString(dst),
+                                    ".json"
+                                )
+                            )
+                        );
+                    }
+                }
+            }
+        }
+        console2.log("[OK] Bridge route validation passed (Stargate pools + CCTP USDC vs destination symbols)");
     }
 
     /// @notice Registers balance adapters on NAVCalculator (idempotent), driven by the explicit NAV-config files:
@@ -252,6 +360,29 @@ contract Configure is BaseDeployScript {
             }
 
             _wireTrustedRemoteAdapters(adapterNames[i], deployed);
+            _ensureAdapterManager(adapterNames[i], deployed);
+
+            // Gnosis authenticates inbound transfers against the SOURCE Omnibridge mediator (what
+            // amb.messageSender() reports), not the sibling adapter — wire it separately.
+            if (keccak256(bytes(adapterNames[i])) == keccak256(bytes("Gnosis"))) {
+                _wireGnosisTrustedMediators(deployed);
+            }
+            // CCIP pays messaging fees in `feeToken`; reconcile the deployed adapter to the config value
+            // (address(0) == native gas token) — CCIP with native fees needs no LINK.
+            else if (keccak256(bytes(adapterNames[i])) == keccak256(bytes("CCIP"))) {
+                _reconcileCcipFeeToken(deployed);
+            }
+            // Stargate resolves a V2 pool per asset; `_bridge` reverts InvalidPool() until the pool is set. It also
+            // needs an lzCompose executor gas option per destination eid, or the destination's `lzCompose`
+            // auto-release never fires (tokens deliver but the invoice is never completed).
+            else if (keccak256(bytes(adapterNames[i])) == keccak256(bytes("Stargate"))) {
+                _wireStargatePools(deployed);
+                _wireStargateComposeOptions(deployed);
+            }
+            // Across V3 requires a non-zero destination output token per lane; set it per (remoteChain, asset).
+            else if (keccak256(bytes(adapterNames[i])) == keccak256(bytes("Across"))) {
+                _wireAcrossOutputTokens(deployed);
+            }
         }
         console2.log("--- Bridge adapters authorized:", authorized);
     }
@@ -375,6 +506,199 @@ contract Configure is BaseDeployScript {
             }
             console2.log("[OK] trustedRemoteAdapter set:", adapterName, remoteChainId);
         }
+    }
+
+    /// @notice Wires the Gnosis adapter's `trustedMediator[srcChainId]` to each source chain's Omnibridge
+    ///         mediator (the remote chain's Gnosis `omnibridge` config value), which is the address
+    ///         `amb.messageSender()` reports for inbound transfers from that chain.
+    function _wireGnosisTrustedMediators(address adapter) internal {
+        uint256[] memory remoteChains =
+            ConfigReader.readAdapterUintArray(vm, currentChainId, "bridgeAdapters", "Gnosis", "remoteChains");
+        for (uint256 i = 0; i < remoteChains.length; i++) {
+            uint256 remoteChainId = remoteChains[i];
+            if (remoteChainId == 0 || remoteChainId == currentChainId) continue;
+            string memory mediatorStr =
+                ConfigReader.readAdapterParam(vm, remoteChainId, "bridgeAdapters", "Gnosis", "omnibridge");
+            // Fail fast: a Gnosis remote lane with no source mediator would leave trustedMediator unset, so a
+            // genuine inbound transfer from that chain reverts in onTokenTransfer (Omnibridge swallows it →
+            // stranded tokens). A misconfigured lane must not ship silently.
+            require(
+                bytes(mediatorStr).length != 0,
+                string(
+                    abi.encodePacked(
+                        "06: Gnosis remoteChain ",
+                        vm.toString(remoteChainId),
+                        " has no omnibridge (source mediator) configured"
+                    )
+                )
+            );
+            address mediator = vm.parseAddress(mediatorStr);
+            (bool ok, bytes memory data) = adapter.call(
+                abi.encodeWithSignature("setTrustedMediator(uint64,address)", uint64(remoteChainId), mediator)
+            );
+            if (!ok) {
+                revert(
+                    string(
+                        abi.encodePacked(
+                            "setTrustedMediator failed for Gnosis sourceKey ",
+                            vm.toString(remoteChainId),
+                            ": ",
+                            _revertMsg(data)
+                        )
+                    )
+                );
+            }
+            console2.log("[OK] trustedMediator set (Gnosis) mediator:", mediator);
+        }
+    }
+
+    /// @notice Reconciles a CCIP adapter's `feeToken` to the config value (address(0) == native gas token).
+    /// @dev CCIP pays messaging fees in `feeToken`. Deploying with LINK requires the adapter to hold LINK; native
+    ///      fees are paid from the adapter's own gas-token balance. If the deployed adapter's feeToken diverges from
+    ///      config, call `setFeeToken` (DEFAULT_ADMIN_ROLE, low-level like the other config calls). Idempotent.
+    function _reconcileCcipFeeToken(address adapter) internal {
+        string memory s = ConfigReader.readAdapterParam(vm, currentChainId, "bridgeAdapters", "CCIP", "feeToken");
+        address want = bytes(s).length == 42 ? vm.parseAddress(s) : address(0);
+        (bool okr, bytes memory ret) = adapter.staticcall(abi.encodeWithSignature("feeToken()"));
+        address have = (okr && ret.length == 32) ? abi.decode(ret, (address)) : address(0);
+        if (have == want) {
+            console2.log("[SKIP] CCIP feeToken already set:", want);
+            return;
+        }
+        (bool ok, bytes memory data) = adapter.call(abi.encodeWithSignature("setFeeToken(address)", want));
+        if (!ok) revert(string(abi.encodePacked("setFeeToken failed for CCIP: ", _revertMsg(data))));
+        console2.log("[OK] CCIP feeToken set (address(0) == native):", want);
+    }
+
+    /// @notice Sets the Stargate V2 pool for each registered escrow symbol that has a configured pool.
+    /// @dev The Stargate adapter's `_bridge` reverts `InvalidPool()` unless `stargatePool[asset]` is set. Pools live
+    ///      in the adapter config under `Stargate.pools.<symbol>`; the local asset is the escrow-registered token for
+    ///      that symbol. `setStargatePool` (DEFAULT_ADMIN_ROLE) validates `IStargate(pool).token() == asset`. Idempotent.
+    function _wireStargatePools(address adapter) internal {
+        string[] memory symbols = ConfigReader.readBridgeEscrowAssetSymbols(vm, currentChainId);
+        uint256 wired;
+        for (uint256 i = 0; i < symbols.length; i++) {
+            address pool = ConfigReader.readAdapterMappingAddress(
+                vm, currentChainId, "bridgeAdapters", "Stargate", "pools", symbols[i]
+            );
+            if (pool == address(0)) continue;
+            address asset = ConfigReader.readBridgeEscrowAssetAddress(vm, currentChainId, symbols[i]);
+            if (asset == address(0)) continue;
+            (bool okr, bytes memory ret) = adapter.staticcall(abi.encodeWithSignature("stargatePool(address)", asset));
+            address have = (okr && ret.length == 32) ? abi.decode(ret, (address)) : address(0);
+            if (have == pool) {
+                console2.log("[SKIP] Stargate pool already set:", symbols[i], pool);
+                continue;
+            }
+            (bool ok, bytes memory data) =
+                adapter.call(abi.encodeWithSignature("setStargatePool(address,address)", asset, pool));
+            if (!ok) {
+                revert(string(abi.encodePacked("setStargatePool failed for ", symbols[i], ": ", _revertMsg(data))));
+            }
+            console2.log("[OK] Stargate pool set:", symbols[i], pool);
+            wired++;
+        }
+        console2.log("--- Stargate pools wired:", wired);
+    }
+
+    /// @notice Builds a LayerZero V2 TYPE_3 executor-options blob carrying a single lzCompose gas budget.
+    /// @dev OptionsBuilder layout for `addExecutorLzComposeOption(index=0, gas, value=0)`:
+    ///      `0x0003` (TYPE_3) | `0x01` (WORKER_ID = EXECUTOR) | `uint16` size (=19: 1 optionType + 2 index + 16 gas) |
+    ///      `0x03` (OPTION_TYPE_LZCOMPOSE) | `uint16` compose index (=0) | `uint128` gas. Matches the bytes the
+    ///      LayerZero SDK emits, so the destination executor is paid to run `lzCompose` after Stargate delivers.
+    function _composeOption(uint128 gas) internal pure returns (bytes memory) {
+        return abi.encodePacked(uint16(3), uint8(1), uint16(19), uint8(3), uint16(0), gas);
+    }
+
+    /// @notice Sets the Stargate lzCompose executor gas option for each configured remote lane.
+    /// @dev Stargate `_bridge` passes `composeOptions[dstEid]` as the send's `extraOptions`. If it is empty, the
+    ///      OFT still delivers the tokens to the destination sibling adapter (covered by the pool's enforced
+    ///      lzReceive options) but the executor is never funded to run `lzCompose`, so the funded pass-through
+    ///      release never auto-fires and the delivered tokens sit in the adapter until a manual completion. For
+    ///      each Stargate `remoteChains` entry we resolve the destination eid from the adapter's own preconfigured
+    ///      table (`getEidForChain`) and set a compose option carrying `STARGATE_COMPOSE_GAS_LIMIT`. Skips a lane
+    ///      whose eid is unknown, and lanes already carrying the same option. Idempotent.
+    function _wireStargateComposeOptions(address adapter) internal {
+        uint256[] memory remoteChains =
+            ConfigReader.readAdapterUintArray(vm, currentChainId, "bridgeAdapters", "Stargate", "remoteChains");
+        bytes memory options = _composeOption(STARGATE_COMPOSE_GAS_LIMIT);
+        uint256 wired;
+        for (uint256 r = 0; r < remoteChains.length; r++) {
+            uint256 dest = remoteChains[r];
+            if (dest == 0 || dest == currentChainId) continue;
+            (bool oke, bytes memory eret) =
+                adapter.staticcall(abi.encodeWithSignature("getEidForChain(uint64)", uint64(dest)));
+            uint32 dstEid = (oke && eret.length == 32) ? abi.decode(eret, (uint32)) : 0;
+            if (dstEid == 0) {
+                console2.log("[SKIP] Stargate composeOptions: no eid for chain:", dest);
+                continue;
+            }
+            (bool okr, bytes memory ret) = adapter.staticcall(abi.encodeWithSignature("composeOptions(uint32)", dstEid));
+            bytes memory have = okr ? abi.decode(ret, (bytes)) : bytes("");
+            if (keccak256(have) == keccak256(options)) {
+                console2.log("[SKIP] Stargate composeOptions already set for chain:", dest);
+                continue;
+            }
+            (bool ok, bytes memory data) =
+                adapter.call(abi.encodeWithSignature("setComposeOptions(uint32,bytes)", dstEid, options));
+            if (!ok) {
+                revert(
+                    string(
+                        abi.encodePacked(
+                            "setComposeOptions failed for chain ", vm.toString(dest), ": ", _revertMsg(data)
+                        )
+                    )
+                );
+            }
+            console2.log("[OK] Stargate composeOptions set for chain:", dest);
+            wired++;
+        }
+        console2.log("--- Stargate composeOptions wired:", wired);
+    }
+
+    /// @notice Sets the Across V3 destination output token for each (remoteChain, registered-symbol) route.
+    /// @dev Across V3's SpokePool rejects `outputToken == address(0)`; the adapter looks up the destination-chain
+    ///      equivalent token per lane. For each Across `remoteChains` entry and each escrow symbol, the destination
+    ///      token is that symbol's registered address on the DESTINATION chain's bridge-escrow config (read via an
+    ///      arbitrary-chainId `readBridgeEscrowAssetAddress`, same cross-chain-read pattern as the Gnosis mediators).
+    ///      Skips a route whose local or destination token is unset (e.g. a configured-but-undeployed remote). Idempotent.
+    function _wireAcrossOutputTokens(address adapter) internal {
+        uint256[] memory remoteChains =
+            ConfigReader.readAdapterUintArray(vm, currentChainId, "bridgeAdapters", "Across", "remoteChains");
+        string[] memory symbols = ConfigReader.readBridgeEscrowAssetSymbols(vm, currentChainId);
+        uint256 wired;
+        for (uint256 r = 0; r < remoteChains.length; r++) {
+            uint256 dest = remoteChains[r];
+            if (dest == 0 || dest == currentChainId) continue;
+            for (uint256 s = 0; s < symbols.length; s++) {
+                address localAsset = ConfigReader.readBridgeEscrowAssetAddress(vm, currentChainId, symbols[s]);
+                address destToken = ConfigReader.readBridgeEscrowAssetAddress(vm, dest, symbols[s]);
+                if (localAsset == address(0) || destToken == address(0)) continue;
+                (bool okr, bytes memory ret) =
+                    adapter.staticcall(abi.encodeWithSignature("outputTokenFor(uint256,address)", dest, localAsset));
+                address have = (okr && ret.length == 32) ? abi.decode(ret, (address)) : address(0);
+                if (have == destToken) continue;
+                (bool ok, bytes memory data) = adapter.call(
+                    abi.encodeWithSignature("setOutputToken(uint256,address,address)", dest, localAsset, destToken)
+                );
+                if (!ok) {
+                    revert(
+                        string(
+                            abi.encodePacked(
+                                "setOutputToken failed (Across) dest ",
+                                vm.toString(dest),
+                                " ",
+                                symbols[s],
+                                ": ",
+                                _revertMsg(data)
+                            )
+                        )
+                    );
+                }
+                wired++;
+            }
+        }
+        console2.log("--- Across output tokens wired:", wired);
     }
 
     /// @notice Bridge adapter name list — kept in sync with `05_DeployBridgeAdapters.s.sol`.

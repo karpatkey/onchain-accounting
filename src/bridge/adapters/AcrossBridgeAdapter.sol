@@ -17,7 +17,7 @@ import "src/errors.sol";
 ///      CREATE2). On a filled V3 relay the destination SpokePool transfers the tokens to this adapter and then
 ///      calls `handleV3AcrossMessage` directly on it. The adapter authenticates the SpokePool, cross-checks the
 ///      delivered token+amount against the invoice, verifies the source against `trustedRemoteAdapter`, then
-///      funds the escrow and releases (funded pass-through, ADR 0012). Across exposes no source-sender on the
+///      funds the escrow, which records the delivery into per-invoice custody (hold-then-claim, ADR 0027). Across exposes no source-sender on the
 ///      fill, so source authentication binds the payload's `sourceChainId` to the configured trusted remote.
 /// @author KPK
 contract AcrossBridgeAdapter is BridgeAdapter, IAcrossBridgeAdapter {
@@ -31,11 +31,22 @@ contract AcrossBridgeAdapter is BridgeAdapter, IAcrossBridgeAdapter {
     ISpokePool public spokePool;
 
     /// @notice Default relayer/LP fee percentage (in 1e18, e.g., 0.01e18 = 1%)
-    /// @dev Retained as config metadata. The invoice tracks the exact bridged amount end to end, so the V3
-    ///      outputAmount is set equal to the inputAmount (the bridged amount must arrive intact for the funded
-    ///      pass-through release). Relayer compensation is handled by the SpokePool fee model, not by shaving
-    ///      the invoice amount.
+    /// @dev Retained as config metadata only. The invoice tracks the exact bridged amount end to end and the
+    ///      escrow pulls exactly that amount into destination custody (hold-then-claim), so the V3 outputAmount
+    ///      MUST equal the inputAmount — we cannot shave a relayer margin out of it. A zero-margin deposit is
+    ///      not filled by the open relayer network; the fill is instead guaranteed by a designated
+    ///      `exclusiveRelayer` (see below). This field does NOT shape outputAmount.
     int64 public defaultRelayerFeePct;
+
+    /// @notice Optional relayer with exclusive rights to fill this adapter's deposits (0 = open to all).
+    /// @dev Because outputAmount == inputAmount (zero open-market margin), no rational open-market relayer
+    ///      fills these deposits. Designating an exclusive relayer (operated/arranged by the fund) that fills
+    ///      at zero margin makes the lane work. When unset, deposits are open but may never be filled — they
+    ///      then expire at fillDeadline and Across refunds inputAmount to this adapter (recoverable by MANAGER).
+    address public exclusiveRelayer;
+
+    /// @notice Seconds after deposit during which `exclusiveRelayer` has exclusive fill rights (0 = none).
+    uint32 public exclusivityPeriod;
 
     /// @notice Mapping from deposit ID to invoice ID
     /// @dev Used to correlate Across deposits with invoice IDs
@@ -48,6 +59,14 @@ contract AcrossBridgeAdapter is BridgeAdapter, IAcrossBridgeAdapter {
     /// @notice Mapping to store message payloads by invoice ID
     /// @dev Used to retrieve payloads on destination chain
     mapping(bytes32 => bytes) public messagePayloads;
+
+    /// @notice Per-route output token: the destination-chain equivalent of a source asset, keyed by
+    ///         (destinationChainId => srcAsset). Across V3's SpokePool rejects `outputToken == address(0)`, so
+    ///         `_bridge` must supply the real destination token; this map is populated per lane by the admin.
+    mapping(uint256 => mapping(address => address)) public outputTokenFor;
+
+    /// @param expectedInitializer_ Address permitted to call initialize (address(0) allows anyone).
+    constructor(address expectedInitializer_) BridgeAdapter(expectedInitializer_) {}
 
     /// @inheritdoc IAcrossBridgeAdapter
     function initialize(
@@ -86,6 +105,27 @@ contract AcrossBridgeAdapter is BridgeAdapter, IAcrossBridgeAdapter {
         defaultRelayerFeePct = relayerFeePct_;
     }
 
+    /// @notice Sets the exclusive relayer and its exclusivity window for deposits (admin only).
+    /// @param exclusiveRelayer_ The relayer with exclusive fill rights (address(0) = open to all relayers).
+    /// @param exclusivityPeriod_ Seconds after deposit during which only `exclusiveRelayer_` may fill.
+    function setExclusiveRelayer(address exclusiveRelayer_, uint32 exclusivityPeriod_)
+        external
+        onlyRole(DEFAULT_ADMIN_ROLE)
+    {
+        exclusiveRelayer = exclusiveRelayer_;
+        exclusivityPeriod = exclusivityPeriod_;
+        emit ExclusiveRelayerSet(exclusiveRelayer_, exclusivityPeriod_);
+    }
+
+    /// @inheritdoc IAcrossBridgeAdapter
+    function setOutputToken(uint256 destChainId, address srcAsset, address outputToken_)
+        external
+        onlyRole(DEFAULT_ADMIN_ROLE)
+    {
+        outputTokenFor[destChainId][srcAsset] = outputToken_;
+        emit OutputTokenSet(destChainId, srcAsset, outputToken_);
+    }
+
     //
     // BridgeAdapter Implementation
     //
@@ -114,7 +154,7 @@ contract AcrossBridgeAdapter is BridgeAdapter, IAcrossBridgeAdapter {
         address recipient = address(this);
 
         // The invoice tracks the exact bridged amount end to end: outputAmount == inputAmount so the full
-        // amount arrives intact for the funded pass-through release.
+        // amount arrives intact for the destination custody record (hold-then-claim, ADR 0027).
         uint256 inputAmount = data.amount;
         uint256 outputAmount = data.amount;
 
@@ -124,22 +164,36 @@ contract AcrossBridgeAdapter is BridgeAdapter, IAcrossBridgeAdapter {
         }
 
         // Across V3 deposit. originToken on the SpokePool side: address(0) for native, asset otherwise.
-        // outputToken address(0) lets Across deliver the canonical equivalent token on the destination chain.
         address inputToken = isNative ? address(0) : asset;
+
+        // outputToken is the destination-chain equivalent of `asset`. Across V3's SpokePool rejects a zero output
+        // token for ERC20 deposits, so each ERC20 lane must be configured via setOutputToken(destChainId, asset,
+        // dstToken) before bridging. Native deposits (not used by the production config, which registers WETH as
+        // an ERC20) keep the zero sentinel — Across resolves the native equivalent itself.
+        address outputToken;
+        if (!isNative) {
+            outputToken = outputTokenFor[uint256(data.destinationChainId)][asset];
+            if (outputToken == address(0)) revert OutputTokenNotSet(uint256(data.destinationChainId), asset);
+        }
+
         uint32 nowTs = uint32(block.timestamp);
+
+        // Optional exclusive relayer: with outputAmount == inputAmount there is no open-market margin, so a
+        // designated relayer is how the deposit gets filled. When unset, deposit is open (and may expire).
+        uint32 exclusivityDeadline = exclusiveRelayer == address(0) ? 0 : nowTs + exclusivityPeriod;
 
         spokePool.depositV3{value: isNative ? inputAmount : 0}(
             address(this), // depositor
             recipient, // recipient (sibling adapter on destination)
             inputToken, // inputToken
-            address(0), // outputToken (canonical equivalent on destination)
+            outputToken, // outputToken (destination-chain equivalent; Across V3 rejects address(0))
             inputAmount, // inputAmount
             outputAmount, // outputAmount (== inputAmount; amount tracked intact)
             uint256(data.destinationChainId), // destinationChainId
-            address(0), // exclusiveRelayer (none)
+            exclusiveRelayer, // exclusiveRelayer (address(0) = open to all)
             nowTs, // quoteTimestamp
             nowTs + spokePool.fillDeadlineBuffer(), // fillDeadline: max the SpokePool accepts (reverts beyond it)
-            0, // exclusivityDeadline (none)
+            exclusivityDeadline, // exclusivityDeadline (0 = no exclusivity)
             messagePayload // message (carries the invoice payload)
         );
 

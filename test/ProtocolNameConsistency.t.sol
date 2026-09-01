@@ -7,6 +7,7 @@ import {Vm} from "forge-std/Vm.sol";
 import {ProtocolNames} from "src/utils/ProtocolNames.sol";
 
 import {AaveUmbrellaBalanceAdapter} from "src/balances/BalanceAdapters/AaveUmbrellaBalanceAdapter.sol";
+import {BridgeHeldBalanceAdapter} from "src/balances/BalanceAdapters/BridgeHeldBalanceAdapter.sol";
 import {AaveV3SafetyModuleBalanceAdapter} from "src/balances/BalanceAdapters/AaveV3SafetyModuleBalanceAdapter.sol";
 import {CapStablecoinBalanceAdapter} from "src/balances/BalanceAdapters/cap/CapStablecoinBalanceAdapter.sol";
 import {CapSavingsBalanceAdapter} from "src/balances/BalanceAdapters/cap/CapSavingsBalanceAdapter.sol";
@@ -189,13 +190,15 @@ contract ProtocolNameConsistencyTest is Test {
     ///      and deriving the name fixed only the meta family — so without this census the exact defect this file
     ///      exists to prevent stays re-introducible here.
     ///
-    ///      12 -> **13** when the combined `CapBalanceAdapter` was split into `CapStablecoinBalanceAdapter` +
-    ///      `CapSavingsBalanceAdapter`: two contracts, one protocol, one `ProtocolNames.CAP`. That is exactly the
-    ///      shape this census exists to make visible — a protocol gaining a second adapter is the moment a phantom
-    ///      sibling can appear — so both are asserted in {test_hardcodedAdapters_matchCanonicalNames} above.
-    ///      `CapBalanceAdapterBase` is abstract and is not counted (the census walks `out/` for deployable artifacts).
-    ///      13 -> **14** when `MerklRewardsAttestedBalanceAdapter` (attested family) was added.
-    uint256 internal constant HARDCODED_ADAPTER_COUNT = 14;
+    ///      12 -> **15** at this merge: **+1** when the combined `CapBalanceAdapter` was split into
+    ///      `CapStablecoinBalanceAdapter` + `CapSavingsBalanceAdapter` (two contracts, one protocol, one
+    ///      `ProtocolNames.CAP`); **+1** for `BridgeHeldBalanceAdapter` (`ProtocolNames.BRIDGE_ESCROW`); and **+1**
+    ///      for `MerklRewardsAttestedBalanceAdapter` (`ProtocolNames.MERKL`, attested family). The Cap split is
+    ///      exactly the shape this census exists to make visible — a protocol gaining a second adapter is the moment
+    ///      a phantom sibling can appear — so both Cap legs (and BridgeHeld and MerklRewards) are asserted in
+    ///      {test_hardcodedAdapters_matchCanonicalNames} above. `CapBalanceAdapterBase` is abstract and is not
+    ///      counted (the census walks `out/` for deployable artifacts).
+    uint256 internal constant HARDCODED_ADAPTER_COUNT = 15;
 
     BalancesHarness internal nav;
     address internal stub;
@@ -274,6 +277,9 @@ contract ProtocolNameConsistencyTest is Test {
             new ERC20DefaultBalanceAdapter(address(nav), new address[](0)).protocolName(),
             ProtocolNames.WALLET,
             "ERC20Default"
+        );
+        assertEq(
+            new BridgeHeldBalanceAdapter(address(nav), stub).protocolName(), ProtocolNames.BRIDGE_ESCROW, "BridgeHeld"
         );
         assertEq(
             new MerklRewardsAttestedBalanceAdapter(stub, address(nav), address(this)).protocolName(),

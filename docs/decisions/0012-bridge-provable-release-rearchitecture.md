@@ -1,6 +1,6 @@
 # 0012 — Bridge: provable destination-side release (remove the escrow fallback dispatcher, authenticate the real protocol)
 
-**Status:** accepted
+**Status:** accepted — but the **destination-release half is superseded by [ADR 0027](0027-bridge-destination-hold-then-claim.md)** (hold-then-claim). The provenance/authentication redesign below (remove the fallback dispatcher; each adapter authenticates the real protocol message) stands unchanged; only the final step changes — the authenticated adapter now funds a per-invoice **custody record** via `recordDelivery` (the escrow **holds** the funds) instead of releasing straight to the account via `releaseByInvoiceId`, and a MANAGER `claim` releases them. Read 0012 for the authentication model and 0027 for the destination custody/claim model.
 
 ## Context
 

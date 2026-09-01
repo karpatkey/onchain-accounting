@@ -55,7 +55,7 @@ interface IBridgeAdapter {
     /// @notice Completes a bridge operation on destination chain
     /// @param messagePayload The message payload (exactly 4 slots: invoiceId, amount, nonce, meta)
     /// @param protocolData Bridge-specific protocol data (e.g., CCTP message+attestation, CCIP Any2EVMMessage)
-    /// @dev The base adapter calls BridgeEscrow.releaseByInvoiceId(messagePayload) after _completeBridge returns. Adapter implementations must not call releaseByInvoiceId; they only perform protocol-specific completion in _completeBridge.
+    /// @dev The base adapter calls BridgeEscrow.recordDelivery(messagePayload) after _completeBridge returns, which records the delivery into escrow custody (ADR 0027); a subsequent MANAGER BridgeEscrow.claim pays the account. Adapter implementations must not call recordDelivery; they only perform protocol-specific completion in _completeBridge.
     function completeBridge(bytes calldata messagePayload, bytes calldata protocolData) external;
 
     /// @notice Returns the bridge provider name (e.g., "CCTP", "Gnosis")

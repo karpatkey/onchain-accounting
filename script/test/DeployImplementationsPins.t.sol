@@ -196,7 +196,7 @@ contract DeployImplementationsRunWiringHarness is DeployImplementations, RunWiri
         guardedDeployCalled = true;
     }
 
-    function _saveAndLog(ImplPlan memory) internal override {}
+    function _saveAndLog(ImplPlan memory, bool) internal override {}
 }
 
 contract DeployNAVImplementationRunWiringHarness is DeployNAVImplementation, RunWiringRecorder {

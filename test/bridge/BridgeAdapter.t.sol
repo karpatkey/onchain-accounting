@@ -25,7 +25,7 @@ contract BridgeAdapterTest is BridgeTestBase {
     }
 
     function _deployAdapter() internal {
-        address impl = address(new MockBridgeAdapter());
+        address impl = address(new MockBridgeAdapter(address(0)));
         address payable proxy = payable(address(
                 UnsafeUpgrades.deployUUPSProxy(
                     impl, abi.encodeCall(MockBridgeAdapter.initialize, (admin, address(bridgeEscrow), "Mock", "1.0.0"))
@@ -37,6 +37,28 @@ contract BridgeAdapterTest is BridgeTestBase {
         vm.startPrank(admin);
         adapter.grantRole(adapter.MANAGER_ROLE(), manager);
         vm.stopPrank();
+    }
+
+    // ============ initialize front-run guard ============
+
+    /// @notice With a non-zero expectedInitializer baked in, only that address can initialize — a
+    ///         front-runner that pre-deploys/races the deterministic address cannot capture admin.
+    function test_initialize_onlyExpectedInitializerCanInitialize() public {
+        address guard = makeAddr("pinnedDeployer");
+        address attacker = makeAddr("frontRunner");
+
+        // Deploy directly (production shape, not a proxy) with a pinned initializer.
+        MockBridgeAdapter guarded = new MockBridgeAdapter(guard);
+
+        // A caller other than the pinned initializer is rejected.
+        vm.prank(attacker);
+        vm.expectRevert(abi.encodeWithSelector(NotAuthorized.selector));
+        guarded.initialize(attacker, address(bridgeEscrow), "Mock", "1.0.0");
+
+        // The pinned initializer succeeds and the supplied admin receives DEFAULT_ADMIN_ROLE.
+        vm.prank(guard);
+        guarded.initialize(admin, address(bridgeEscrow), "Mock", "1.0.0");
+        assertTrue(guarded.hasRole(bytes32(0), admin), "admin should hold DEFAULT_ADMIN_ROLE");
     }
 
     // ============ bridge() ============
@@ -70,7 +92,7 @@ contract BridgeAdapterTest is BridgeTestBase {
     }
 
     // ============ completeBridge() ============
-    // completeBridge is tested in adapter-specific tests (Across, CCTP, etc.) because it calls releaseByInvoiceId on escrow and requires valid messagePayload + destination escrow. We test revert when not manager and when empty payload.
+    // completeBridge is tested in adapter-specific tests (Across, CCTP, etc.) because it records the delivery into escrow custody and requires valid messagePayload + destination escrow. We test revert when not manager and when empty payload.
 
     function test_completeBridge_revertsWhenNotManager() public {
         InvoiceDataLib.InvoiceData memory data =

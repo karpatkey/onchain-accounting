@@ -1023,7 +1023,7 @@ schemas are in the next section and in the per-adapter table above.)
 | `stakewise-v3-exit` | `STAKEWISE_V3_EXIT` | `StakeWiseV3ExitQueueAssistedBalanceAdapter` — assets owed from the StakeWise V3 exit queue |
 | `erc4626` | `ERC4626` | Reserved generic ERC4626 wrapper slug — no live adapter on `main` (the former `ERC4626WrapperBalanceAdapter` was removed) |
 | `ethena-cooldown` | `ETHENA_COOLDOWN` | `EthenaCooldownBalanceAdapter` — USDe in the sUSDe unstaking cooldown |
-| `bridge-escrow` | `BRIDGE_ESCROW` | `BridgeEscrow` (bridge layer, **not** a balance adapter) — funds in flight across a bridge |
+| `bridge-escrow` | `BRIDGE_ESCROW` | `BridgeHeldBalanceAdapter` — destination bridge funds **delivered but not yet claimed**, held in `BridgeEscrow` custody under hold-then-claim ([ADR 0027](../decisions/0027-bridge-destination-hold-then-claim.md)); one `Supplied` (`isLocked=true`) leg per held asset |
 
 Every slug maps to exactly one `positionId` schema — see the next section. Slugs are stable and
 version-qualified (`-v2` / `-v3`); a protocol upgrade that changes the position shape gets a new slug

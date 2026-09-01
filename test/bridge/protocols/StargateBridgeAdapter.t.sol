@@ -38,7 +38,7 @@ contract StargateBridgeAdapterTest is BridgeScenarioHelper {
         usdcPool = new MockStargatePoolV2(address(usdc));
 
         // Deploy Stargate adapter
-        address adapterImpl = address(new StargateBridgeAdapter());
+        address adapterImpl = address(new StargateBridgeAdapter(address(0)));
         address payable adapterProxy = payable(UnsafeUpgrades.deployUUPSProxy(
                 adapterImpl,
                 abi.encodeCall(
@@ -94,6 +94,33 @@ contract StargateBridgeAdapterTest is BridgeScenarioHelper {
 
         bytes memory stored = adapter.getMessagePayload(invoiceData.invoiceId);
         assertEq(stored.length, messagePayload.length, "messagePayload stored");
+    }
+
+    /// @notice Regression: a send carrying a composeMsg MUST forward the configured lzCompose executor gas option
+    ///         as `extraOptions`, or the destination's `lzCompose` auto-release never fires (tokens deliver but the
+    ///         invoice is never completed — the mainnet Stargate finding). Empty composeOptions => empty extraOptions.
+    function test_bridge_forwardsComposeOptionsAsExtraOptions() public {
+        bytes memory opts = hex"00030100130300000000000000000000000000000007a120"; // 500k-gas lzCompose option
+        vm.prank(admin);
+        adapter.setComposeOptions(DEST_EID, opts);
+
+        uint256 amount = 1000 * 10 ** usdc.decimals();
+        InvoiceDataLib.InvoiceData memory invoiceData =
+            _createInvoiceData(SOURCE_CHAIN_ID, DEST_CHAIN_ID, account, USDC_SYMBOL_BYTES6, amount);
+        bytes memory messagePayload = InvoiceDataLib.encode(invoiceData);
+
+        vm.prank(account);
+        // forge-lint: disable-next-line(erc20-unchecked-transfer)
+        usdc.transfer(address(bridgeEscrow), amount);
+        vm.prank(address(bridgeEscrow));
+        usdc.approve(address(adapter), amount);
+        vm.deal(address(adapter), 0.1 ether);
+
+        vm.prank(address(bridgeEscrow));
+        adapter.bridge(messagePayload);
+
+        (,,,, bytes memory extraOptions,,) = usdcPool.lastSendParam();
+        assertEq(extraOptions, opts, "extraOptions carries the configured lzCompose option");
     }
 
     function test_bridge_revertsForUnsupportedDestChain() public {
@@ -154,7 +181,8 @@ contract StargateBridgeAdapterTest is BridgeScenarioHelper {
     // ============ Destination: lzCompose auto path (provenance-checked) ============
 
     /// @notice Full round-trip: deposit on source -> read composed payload from pool -> genuine endpoint
-    ///         delivers tokens + lzCompose on the destination adapter -> escrow funded -> account paid.
+    ///         delivers tokens + lzCompose on the destination adapter -> escrow HOLDS custody -> MANAGER claim
+    ///         pays the account (ADR 0027).
     function test_realistic_fullRoundTrip_lzComposeRelease() public {
         uint256 amount = 1000 * 10 ** usdc.decimals();
 
@@ -185,10 +213,18 @@ contract StargateBridgeAdapterTest is BridgeScenarioHelper {
         destEndpoint.deliverCompose(address(destAdapter), address(destPool), address(usdc), amount, composeMessage);
 
         bytes32 invoiceHash = bytes32(uint256(uint192(InvoiceDataLib.decode(messagePayload).checksum24)));
-        assertTrue(destEscrow.isInvoiceCompleted(invoiceHash), "invoice completed");
-        assertEq(usdc.balanceOf(account) - portfolioBefore, amount, "account received bridged amount");
-        assertEq(usdc.balanceOf(address(destEscrow)), 0, "escrow holds nothing (funded pass-through)");
-        assertEq(usdc.balanceOf(address(destAdapter)), 0, "adapter forwarded everything");
+        assertTrue(destEscrow.isInvoiceCompleted(invoiceHash), "invoice completed on record");
+        // ADR 0027: delivery records custody and HOLDS the funds; the account is paid only on MANAGER claim.
+        assertEq(usdc.balanceOf(account), portfolioBefore, "account NOT paid on delivery");
+        assertEq(usdc.balanceOf(address(destEscrow)), amount, "escrow holds the delivered amount");
+        assertEq(destEscrow.getHeldBalanceForAsset(address(usdc), account), amount, "held for account");
+        assertEq(usdc.balanceOf(address(destAdapter)), 0, "adapter forwarded everything to escrow");
+
+        vm.prank(manager);
+        destEscrow.claim(invoiceHash);
+        assertEq(usdc.balanceOf(account) - portfolioBefore, amount, "account received bridged amount on claim");
+        assertEq(usdc.balanceOf(address(destEscrow)), 0, "escrow drained after claim");
+        assertEq(destEscrow.getHeldBalanceForAsset(address(usdc), account), 0, "held cleared after claim");
     }
 
     /// @notice Post-fee output model (resolves the PR#86 Stargate fee issue): when the pool charges a protocol
@@ -254,14 +290,21 @@ contract StargateBridgeAdapterTest is BridgeScenarioHelper {
         destEndpoint.deliverCompose(address(destAdapter), address(destPool), address(usdc), net, composeMessage);
 
         bytes32 invoiceHash = bytes32(uint256(uint192(InvoiceDataLib.decode(messagePayload).checksum24)));
-        assertTrue(destEscrow.isInvoiceCompleted(invoiceHash), "invoice completed");
-        assertEq(usdc.balanceOf(account) - portfolioBefore, net, "account received the post-fee amount");
-        assertEq(usdc.balanceOf(address(destAdapter)), 0, "adapter forwarded everything");
+        assertTrue(destEscrow.isInvoiceCompleted(invoiceHash), "invoice completed on record");
+        // ADR 0027: the escrow HOLDS the (post-fee) delivered amount until MANAGER claim.
+        assertEq(usdc.balanceOf(account), portfolioBefore, "account NOT paid on delivery");
+        assertEq(destEscrow.getHeldBalanceForAsset(address(usdc), account), net, "held for account == post-fee amount");
+        assertEq(usdc.balanceOf(address(destAdapter)), 0, "adapter forwarded everything to escrow");
+
+        vm.prank(manager);
+        destEscrow.claim(invoiceHash);
+        assertEq(usdc.balanceOf(account) - portfolioBefore, net, "account received the post-fee amount on claim");
+        assertEq(destEscrow.getHeldBalanceForAsset(address(usdc), account), 0, "held cleared after claim");
     }
 
     /// @notice Reward path (PR #90 Copilot): Stargate can quote a reward (`amountReceivedLD > amountLD`); the
     ///         adapter must NOT block it. The payload carries the larger credited amount and the destination
-    ///         releases it (account receives gross + reward).
+    ///         records it into custody (ADR 0027); a MANAGER claim then pays the account gross + reward.
     function test_realistic_rewardOutput_releasesGrossPlusReward() public {
         uint256 amount = 1000 * 10 ** usdc.decimals();
         uint256 reward = 3 * 10 ** usdc.decimals();
@@ -300,8 +343,15 @@ contract StargateBridgeAdapterTest is BridgeScenarioHelper {
         destEndpoint.deliverCompose(address(destAdapter), address(destPool), address(usdc), credited, composeMessage);
 
         bytes32 invoiceHash = bytes32(uint256(uint192(InvoiceDataLib.decode(messagePayload).checksum24)));
-        assertTrue(destEscrow.isInvoiceCompleted(invoiceHash), "invoice completed");
-        assertEq(usdc.balanceOf(account) - portfolioBefore, credited, "account received gross + reward");
+        assertTrue(destEscrow.isInvoiceCompleted(invoiceHash), "invoice completed on record");
+        // ADR 0027: the escrow HOLDS the credited (gross+reward) amount until MANAGER claim.
+        assertEq(usdc.balanceOf(account), portfolioBefore, "account NOT paid on delivery");
+        assertEq(destEscrow.getHeldBalanceForAsset(address(usdc), account), credited, "held == gross + reward");
+
+        vm.prank(manager);
+        destEscrow.claim(invoiceHash);
+        assertEq(usdc.balanceOf(account) - portfolioBefore, credited, "account received gross + reward on claim");
+        assertEq(destEscrow.getHeldBalanceForAsset(address(usdc), account), 0, "held cleared after claim");
     }
 
     /// @notice Fee cap (PR #90 code-review): a quote worse than MAX_BRIDGE_FEE_BPS (5%) reverts the send, so a
@@ -346,7 +396,7 @@ contract StargateBridgeAdapterTest is BridgeScenarioHelper {
         destPool = new MockStargatePoolV2(address(usdc));
 
         address payable destAdapterProxy = payable(UnsafeUpgrades.deployUUPSProxy(
-                address(new StargateBridgeAdapter()),
+                address(new StargateBridgeAdapter(address(0))),
                 abi.encodeCall(
                     StargateBridgeAdapter.initialize, (admin, address(destEscrow), address(destEndpoint), "1.0.0")
                 )
@@ -514,12 +564,21 @@ contract StargateBridgeAdapterTest is BridgeScenarioHelper {
         uint256 portfolioBefore = usdc.balanceOf(account);
         bytes32 invoiceHash = bytes32(uint256(uint192(invoiceData.checksum24)));
 
+        // Step 1 (ADR 0027): completeBridge records the delivery — escrow HOLDS, no payout yet.
         vm.prank(manager);
         destAdapter.completeBridge(messagePayload, protocolData);
 
-        assertEq(usdc.balanceOf(account) - portfolioBefore, amount, "account received tokens");
-        assertEq(usdc.balanceOf(address(destEscrow)), 0, "escrow zero after release");
-        assertTrue(destEscrow.isInvoiceCompleted(invoiceHash), "invoice completed");
+        assertEq(usdc.balanceOf(account), portfolioBefore, "account NOT paid on record");
+        assertEq(usdc.balanceOf(address(destEscrow)), amount, "escrow holds the delivered amount");
+        assertEq(destEscrow.getHeldBalanceForAsset(address(usdc), account), amount, "held for account");
+        assertTrue(destEscrow.isInvoiceCompleted(invoiceHash), "invoice completed on record");
+
+        // Step 2 (ADR 0027): MANAGER claim pays the account.
+        vm.prank(manager);
+        destEscrow.claim(invoiceHash);
+        assertEq(usdc.balanceOf(account) - portfolioBefore, amount, "account received tokens on claim");
+        assertEq(usdc.balanceOf(address(destEscrow)), 0, "escrow zero after claim");
+        assertEq(destEscrow.getHeldBalanceForAsset(address(usdc), account), 0, "held cleared after claim");
     }
 
     function test_completeBridge_revertsIfNotManager() public {
@@ -577,7 +636,7 @@ contract StargateBridgeAdapterTest is BridgeScenarioHelper {
             1, SOURCE_EID, amount, bytes32(uint256(uint160(address(adapter)))), corruptedPayload
         );
 
-        // Source authentication passes; the escrow rejects the bad checksum in releaseByInvoiceId.
+        // Source authentication passes; the escrow rejects the bad checksum in recordDelivery.
         vm.prank(manager);
         vm.expectRevert();
         destAdapter.completeBridge(corruptedPayload, protocolData);

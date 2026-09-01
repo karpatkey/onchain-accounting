@@ -67,7 +67,7 @@ contract Regression_CctpDomainZero is Test {
         vm.stopPrank();
 
         // Deploy CCTP adapter — initialize pre-configures chainIdToDomain[1] = 0 (Ethereum)
-        address adapterImpl = address(new CctpBridgeAdapter());
+        address adapterImpl = address(new CctpBridgeAdapter(address(0)));
         address adapterProxy = UnsafeUpgrades.deployUUPSProxy(
             adapterImpl,
             abi.encodeCall(

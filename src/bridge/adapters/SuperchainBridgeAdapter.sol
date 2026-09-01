@@ -591,6 +591,11 @@ contract SuperchainBridgeAdapter is BridgeAdapter, ISuperchainBridgeAdapter {
     ///        another operation's stored tx or files the tx under a key completion never looks up.
     /// @dev MANAGER-driven on L1 after the withdrawal is initiated on L2. Computes the REAL OP withdrawal
     ///      hash and records the invoice correlation so completion can be tracked.
+    /// @dev Intentionally has NO once-only guard: it may be called again for the same withdrawal to RE-PROVE it —
+    ///      re-storing the tuple and overwriting both correlation maps. This is the recovery path when the dispute
+    ///      game a withdrawal was proven against is invalidated (resolved against the root claim, or blacklisted):
+    ///      the portal lets it be re-proven against a new game, and completion then succeeds. Do NOT add an
+    ///      "already proven" revert here — it would remove the only on-chain recovery for a losing/blacklisted game.
     function proveWithdrawal(
         uint256 l2ChainId,
         Types.WithdrawalTransaction memory withdrawalTx,

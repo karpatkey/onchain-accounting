@@ -695,10 +695,18 @@ contract SuperchainBridgeAdapter is BridgeAdapter, ISuperchainBridgeAdapter {
         // there is nothing left to do, so report not-finalizable.
         if (_settledWithdrawals[withdrawalHash]) return false;
         // A permissionless front-run may have ALREADY finalized the withdrawal on the portal. completeBridge's
-        // skip branch still settles such a withdrawal (delivery is re-verified there), so report finalizable —
-        // NOT false — otherwise a settler following this view would strand exactly the withdrawal the skip branch
-        // (RE3-H-01) exists to settle.
-        if (portal.finalizedWithdrawals(withdrawalHash)) return true;
+        // skip branch can still settle such a withdrawal, so report finalizable rather than false — otherwise a
+        // settler would strand exactly the withdrawal the skip branch (RE3-H-01) exists to settle. Report the two
+        // skip-branch preconditions this view CAN evaluate from the hash alone: (1) THIS adapter proved it (else
+        // `_finalizeWithdrawal` reverts `WithdrawalNotProven`), and (2) the source L2's L1 messenger is wired (else
+        // it reverts `MessengerNotConfigured`). The remaining, tx-specific delivery binding — target == messenger,
+        // delivered value >= amount, `successfulMessages` — is enforced by completeBridge itself from the stored
+        // `WithdrawalTransaction`; it is not derivable from the withdrawal hash, so this view does not duplicate it
+        // (completeBridge safely reverts if it fails, without stranding the front-run-delivered withdrawal).
+        if (portal.finalizedWithdrawals(withdrawalHash)) {
+            (address provenGame,) = portal.provenWithdrawals(withdrawalHash, address(this));
+            return provenGame != address(0) && l1MessengerForL2[l2ChainId] != address(0);
+        }
         // Not yet finalized: delegate the full finalization gate to the portal's OWN predicate — proof-maturity
         // delay, dispute game resolved in the defender's favour, the finality air-gap, not blacklisted, and the
         // respected game type — so this view can never drift from what `finalizeWithdrawalTransaction` enforces.

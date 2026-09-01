@@ -258,16 +258,20 @@ interface ISuperchainBridgeAdapter is IBridgeAdapter {
     /// @return True if proven, false otherwise
     function isWithdrawalProven(uint256 l2ChainId, bytes32 withdrawalHash) external view returns (bool);
 
-    /// @notice Reports whether a `completeBridge` call would make progress settling this withdrawal's invoice
-    ///         RIGHT NOW: true when the withdrawal is finalizable via the portal (proven, past the proof-maturity
-    ///         delay and the dispute-game finality air-gap, its game resolved in the defender's favour and of the
-    ///         respected type, not blacklisted) OR when a permissionless front-run has ALREADY finalized it on the
-    ///         portal (completeBridge's skip branch settles it) — and false once the adapter has settled it.
+    /// @notice Reports whether a `completeBridge` call is worth attempting for this withdrawal RIGHT NOW: true when
+    ///         it is finalizable via the portal (proven, past the proof-maturity delay and the dispute-game finality
+    ///         air-gap, its game resolved in the defender's favour and of the respected type, not blacklisted) OR
+    ///         when a permissionless front-run has ALREADY finalized it on the portal AND the skip/settle path's
+    ///         hash-derivable preconditions hold (this adapter proved it, the source L2's L1 messenger is wired) —
+    ///         and false once the adapter has settled it.
     /// @dev For the not-yet-finalized case it delegates the maturity/air-gap/resolution gate to the portal's own
-    ///      `checkWithdrawal` view, so it can never drift from what the portal enforces at finalize. An
-    ///      already-finalized-but-unsettled withdrawal reports true so a settler does not strand it (the skip/settle
-    ///      path still applies). A paused portal is not reflected (a rare, transient emergency the finalize call
-    ///      itself would surface).
+    ///      `checkWithdrawal` view, so it can never drift from what the portal enforces at finalize. For the
+    ///      already-finalized case it reports only the preconditions derivable from the withdrawal hash; the
+    ///      remaining tx-specific delivery binding (target == messenger, delivered value >= amount,
+    ///      `successfulMessages`) is enforced by `completeBridge` from the stored `WithdrawalTransaction`, so a
+    ///      `true` there means "attempt settlement" — completeBridge safely reverts if delivery does not bind, and
+    ///      the front-run-delivered withdrawal is never stranded. A paused portal is not reflected (a rare,
+    ///      transient emergency the finalize call itself would surface).
     /// @param l2ChainId The source L2 chain id whose portal proved the withdrawal
     /// @param withdrawalHash The withdrawal transaction hash
     /// @return True iff the withdrawal is finalizable now, false otherwise

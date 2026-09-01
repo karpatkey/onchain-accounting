@@ -33,12 +33,15 @@ Reconcile the adapter to the fault-proof portals and ground every fix in fork te
   returns true in TWO cases: the not-yet-finalized withdrawal that clears the portal's own
   `checkWithdrawal(hash, address(this))` predicate (proof-maturity delay, dispute-game resolution in the
   defender's favour, the finality air-gap, blacklist, respected game type), AND the already-finalized (e.g. a
-  permissionless front-run) withdrawal that the skip branch can still settle — and false once the adapter has
-  settled it (`_settledWithdrawals`). Delegating to the portal's own predicate rather than a local
-  reimplementation is deliberate: proven ⇏ finalizable, and a local copy would silently over-report the instant
-  the proof landed. Returning true for the front-run-finalized case (rather than gating on
-  `!finalizedWithdrawals`) is equally deliberate: gating it out would strand exactly the withdrawal RE3-H-01's
-  skip branch exists to settle.
+  permissionless front-run) withdrawal whose skip-branch preconditions *derivable from the hash* hold — this
+  adapter proved it, and the source L2's L1 messenger is wired — and false once the adapter has settled it
+  (`_settledWithdrawals`). The remaining, tx-specific delivery binding (target == messenger, delivered value >=
+  amount, `successfulMessages`) is NOT duplicated in the view: it needs the stored `WithdrawalTransaction`, so
+  completeBridge enforces it and safely reverts if it fails. Delegating the maturity gate to the portal's own
+  predicate rather than a local reimplementation is deliberate: proven ⇏ finalizable, and a local copy would
+  silently over-report the instant the proof landed. Reporting the front-run-finalized case as finalizable (rather
+  than gating on `!finalizedWithdrawals`) is equally deliberate: gating it out would strand exactly the withdrawal
+  RE3-H-01's skip branch exists to settle.
 - **Per-L2 messengers.** `l1MessengerForL2[l2ChainId]` (+ setter) routes the authenticated `completeDeposit` message
   through the *destination* L2's L1CrossDomainMessenger; the single `l1Messenger` stays only as the inbound L2 identity
   for `_authenticateMessengerSource`. A dedicated `completeDepositGasLimit` (500k) sizes that relay.

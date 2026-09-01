@@ -554,6 +554,42 @@ contract SuperchainBridgeAdapterTest is BridgeScenarioHelper {
         assertFalse(l1Ad.canFinalizeWithdrawal(L2_CHAIN_ID, realHash), "after settle: not finalizable");
     }
 
+    /// @notice `finalizedWithdrawals == true` alone is NOT sufficient for completeBridge to make progress: the skip
+    ///         branch also requires the source L2's L1 messenger to be wired (else it reverts MessengerNotConfigured).
+    ///         canFinalizeWithdrawal must report false for a finalized withdrawal whose messenger is unconfigured,
+    ///         rather than a `true` that deterministically reverts.
+    function test_canFinalizeWithdrawal_falseWhenFinalizedButMessengerUnwired() public {
+        vm.chainId(SOURCE_CHAIN_ID);
+        uint256 amount = 1 ether;
+        vm.prank(admin);
+        bridgeEscrow.registerAsset(WETH_SYMBOL, address(0));
+        // _deployL1WithdrawalAdapter wires the portal but NOT the L1 messenger.
+        SuperchainBridgeAdapter l1Ad = _deployL1WithdrawalAdapter(bridgeEscrow);
+
+        InvoiceDataLib.InvoiceData memory invoiceData =
+            _createInvoiceData(L2_CHAIN_ID, SOURCE_CHAIN_ID, account, WETH_SYMBOL_BYTES6, amount);
+        Types.WithdrawalTransaction memory wtx = Types.WithdrawalTransaction({
+            nonce: 1, sender: address(l2Bridge), target: address(0xBEEF), value: amount, gasLimit: 200000, data: ""
+        });
+        Types.OutputRootProof memory emptyProof = Types.OutputRootProof(bytes32(0), bytes32(0), bytes32(0), bytes32(0));
+        bytes32 realHash = l1Ad.hashWithdrawal(wtx);
+        vm.prank(manager);
+        l1Ad.proveWithdrawal(L2_CHAIN_ID, wtx, 0, emptyProof, new bytes[](0), InvoiceDataLib.encode(invoiceData));
+        // Front-run finalize (a third party proves + finalizes on the permissionless portal).
+        address griefer = makeAddr("griefer2");
+        vm.startPrank(griefer);
+        optimismPortal.proveWithdrawalTransaction(wtx, 0, emptyProof, new bytes[](0));
+        optimismPortal.finalizeWithdrawalTransaction(wtx);
+        vm.stopPrank();
+        assertTrue(optimismPortal.finalizedWithdrawals(realHash), "portal finalized");
+
+        // Messenger unwired ⟹ completeBridge's skip branch would revert ⟹ report NOT finalizable.
+        assertFalse(
+            l1Ad.canFinalizeWithdrawal(L2_CHAIN_ID, realHash),
+            "finalized but messenger unwired: not finalizable (skip branch would revert)"
+        );
+    }
+
     /// @notice ADR 0028: `proveWithdrawal` stores the full `WithdrawalTransaction`, readable back for finalize
     ///         without an L2 log re-read. Round-trips every field (esp. the dynamic `data` — the reason the getter
     ///         is explicit rather than a `public` auto-getter, which would silently drop it).

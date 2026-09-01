@@ -91,9 +91,12 @@ contract BridgeConfigResolutionForkTest is TestEnvConfigurator {
                 checked++;
             }
 
-            // Superchain L1 arrays (index-aligned with l2ChainIds) — present only on the L1 config.
+            // Superchain L1 arrays (index-aligned with l2ChainIds) — present only on the L1 config. l1Messengers
+            // drives both L1→L2 message routing and the finalized-withdrawal delivery-authentication check, so a
+            // typo there leaves the lane unusable after deploy; validate it alongside the bridges and portals.
             checked += _assertAddressArrayLive(json, string.concat(ab, ".l1Bridges"), chainId, "l1Bridges");
             checked += _assertAddressArrayLive(json, string.concat(ab, ".optimismPortals"), chainId, "optimismPortals");
+            checked += _assertAddressArrayLive(json, string.concat(ab, ".l1Messengers"), chainId, "l1Messengers");
         }
 
         assertGt(checked, 0, string.concat("chain ", vm.toString(chainId), ": no protocol addresses were checked"));

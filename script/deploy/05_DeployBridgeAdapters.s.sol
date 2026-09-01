@@ -264,6 +264,11 @@ contract DeployBridgeAdapters is BaseDeployScript {
             _salt("SuperchainBridgeAdapter", DeploySalts.SUPERCHAIN_ADAPTER),
             _adapterInitCode(type(SuperchainBridgeAdapter).creationCode)
         );
+        // The Superchain L1 chain id (mainnet = 1). The adapter plays the L1 role when block.chainid equals it; the
+        // SAME value is passed on both the L1 and L2 deployments (so the CREATE2 address is unaffected — it is an
+        // init arg, not a constructor arg). Hardcoded to mainnet here; make it config-driven for a non-mainnet L1.
+        // Hoisted out of the init-only branch below because the per-L2 reconciliation (also below) needs it too.
+        uint256 l1ChainId_ = 1;
         if (fresh || SuperchainBridgeAdapter(payable(adapter)).bridgeEscrow() == address(0)) {
             // Admin + escrow always come from the deploy context (like every other adapter here), NEVER from the
             // adapter config: the config `admin`/`bridgeEscrow` fields are deploy-populated placeholders and may
@@ -274,11 +279,6 @@ contract DeployBridgeAdapters is BaseDeployScript {
             address l2Bridge_ = _parseAddr("Superchain", "l2Bridge", address(0));
             address l1Messenger_ = _parseAddr("Superchain", "l1Messenger", address(0));
             address l2Messenger_ = _parseAddr("Superchain", "l2Messenger", address(0));
-            // The Superchain L1 chain id (mainnet = 1). The adapter plays the L1 role when block.chainid equals it;
-            // the SAME value is passed on both the L1 and L2 deployments (so the CREATE2 address is unaffected — it
-            // is an init arg, not a constructor arg). Hardcoded to mainnet here (the deployed Superchain lane's L1);
-            // make it config-driven when a non-mainnet L1 (testnet) is targeted.
-            uint256 l1ChainId_ = 1;
             SuperchainBridgeAdapter(payable(adapter))
                 .initialize(
                     admin_,
@@ -289,27 +289,37 @@ contract DeployBridgeAdapters is BaseDeployScript {
                     l1ChainId_,
                     _adapterVersion("Superchain")
                 );
+        }
 
-            // On L1, seed the per-L2 standard bridges + portals + L1 messengers from parallel config arrays.
-            if (currentChainId == l1ChainId_ && l2ChainIds.length > 0) {
-                address[] memory l1Bridges = ConfigReader.readAdapterAddressArray(
-                    vm, currentChainId, "bridgeAdapters", "Superchain", "l1Bridges"
-                );
-                address[] memory portals = ConfigReader.readAdapterAddressArray(
-                    vm, currentChainId, "bridgeAdapters", "Superchain", "optimismPortals"
-                );
-                address[] memory l1Messengers = ConfigReader.readAdapterAddressArray(
-                    vm, currentChainId, "bridgeAdapters", "Superchain", "l1Messengers"
-                );
-                require(
-                    l1Bridges.length == l2ChainIds.length && portals.length == l2ChainIds.length
-                        && l1Messengers.length == l2ChainIds.length,
-                    "Superchain: l2ChainIds/l1Bridges/optimismPortals/l1Messengers length mismatch"
-                );
-                for (uint256 i = 0; i < l2ChainIds.length; i++) {
-                    SuperchainBridgeAdapter(payable(adapter)).setL1BridgeForL2(l2ChainIds[i], l1Bridges[i]);
-                    SuperchainBridgeAdapter(payable(adapter)).setOptimismPortalForL2(l2ChainIds[i], portals[i]);
-                    SuperchainBridgeAdapter(payable(adapter)).setL1MessengerForL2(l2ChainIds[i], l1Messengers[i]);
+        // On L1, reconcile the per-L2 standard bridges + portals + L1 messengers from parallel config arrays.
+        // OUTSIDE the init-only branch, and idempotent (skip a setter when the on-chain value already matches), so a
+        // rerun can add a newly configured L2 or repair a run interrupted after init but before the setters ran —
+        // these mappings are configured nowhere else (06 does not touch them). Mirrors the Gnosis transmuter
+        // reconciliation above.
+        if (currentChainId == l1ChainId_ && l2ChainIds.length > 0) {
+            address[] memory l1Bridges =
+                ConfigReader.readAdapterAddressArray(vm, currentChainId, "bridgeAdapters", "Superchain", "l1Bridges");
+            address[] memory portals = ConfigReader.readAdapterAddressArray(
+                vm, currentChainId, "bridgeAdapters", "Superchain", "optimismPortals"
+            );
+            address[] memory l1Messengers = ConfigReader.readAdapterAddressArray(
+                vm, currentChainId, "bridgeAdapters", "Superchain", "l1Messengers"
+            );
+            require(
+                l1Bridges.length == l2ChainIds.length && portals.length == l2ChainIds.length
+                    && l1Messengers.length == l2ChainIds.length,
+                "Superchain: l2ChainIds/l1Bridges/optimismPortals/l1Messengers length mismatch"
+            );
+            SuperchainBridgeAdapter sc = SuperchainBridgeAdapter(payable(adapter));
+            for (uint256 i = 0; i < l2ChainIds.length; i++) {
+                if (address(sc.l1BridgeForL2(l2ChainIds[i])) != l1Bridges[i]) {
+                    sc.setL1BridgeForL2(l2ChainIds[i], l1Bridges[i]);
+                }
+                if (address(sc.optimismPortalForL2(l2ChainIds[i])) != portals[i]) {
+                    sc.setOptimismPortalForL2(l2ChainIds[i], portals[i]);
+                }
+                if (sc.l1MessengerForL2(l2ChainIds[i]) != l1Messengers[i]) {
+                    sc.setL1MessengerForL2(l2ChainIds[i], l1Messengers[i]);
                 }
             }
         }

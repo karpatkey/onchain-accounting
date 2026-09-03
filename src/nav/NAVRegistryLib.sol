@@ -206,8 +206,8 @@ library NAVRegistryLib {
         // it is both reachable and safe to touch.
         //
         // `clearedInstances` is returned for callers that want it; `Balances` deliberately DISCARDS it and
-        // does NOT subtract from `_metaInstanceTotal` — that total only sizes read buffers, where an
-        // overestimate is harmless and was already present for these same coordinates. Do not wire up a
+        // does NOT subtract from `_metaInstanceTotal`. That total has no consumer — every `PriceFeedLib`
+        // signature taking it leaves it unused — so there is no buffer to get wrong. Do not wire up a
         // subtraction on the strength of this comment: see the reasoning at `Balances.sol:191`.
         clearedInstances = metaInstances[adapter].length;
         if (clearedInstances != 0) {

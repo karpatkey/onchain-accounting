@@ -58,12 +58,13 @@ contract RealignHeartbeats is Script {
         // equal, so checking msg.sender can fail a valid run before broadcasting — or pass one whose real
         // signer lacks the role, leaving the revert to land mid-sequence. `10_MigrateAdaptersToCreate2.s.sol`
         // pins the intended broadcaster the same way.
-        address sender = ConfigReader.readChainConfig(vm, chainId).admin;
-        // MANAGER, not DEFAULT_ADMIN. Every call this script makes — `addOrModifyPriceFeed`,
-        // `removeMonitorFeed`, `addMonitorFeed` — is MANAGER-gated. The admin check is left over from the
+        // MANAGER, not DEFAULT_ADMIN, on BOTH sides. Every call this script makes — `addOrModifyPriceFeed`,
+        // `removeMonitorFeed`, `addMonitorFeed` — is MANAGER-gated; the admin wiring is left over from the
         // deleted `HeartbeatRealigner` helper, which needed admin only to `grantRole(MANAGER_ROLE, ...)`.
-        // On a chain where the two roles are different accounts, checking admin passes here and then
-        // reverts mid-sequence on the first write — the exact failure this precondition exists to prevent.
+        // Changing the ROLE but still resolving `.admin` would ask whether the admin holds MANAGER, which
+        // rejects a valid manager wherever the two are different accounts. `ClearDormantMetaInstances.s.sol:67`
+        // resolves the signer the same way.
+        address sender = ConfigReader.readChainConfig(vm, chainId).manager;
         if (!NAVCalculator(NAV).hasRole(MANAGER_ROLE, sender)) revert NotManager(sender);
 
         // Snapshot before, so the post-broadcast report is measured rather than assumed.

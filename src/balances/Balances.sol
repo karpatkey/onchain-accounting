@@ -188,10 +188,18 @@ abstract contract Balances is IBalances, Initializable {
         // alongside its live successor and NAV summed both (+$11,375.92 measured on ACCOUNT_11, with no
         // health flag, because both readings are well-formed).
         //
-        // The cleared count is deliberately NOT subtracted from `_metaInstanceTotal`. That total only SIZES
-        // READ BUFFERS, where an overestimate is harmless — and it was ALREADY an overestimate for exactly
-        // these coordinates before this change, so nothing regresses. Subtracting it costs bytecode in a
-        // contract with single-digit EIP-170 margin and buys an accuracy nothing reads.
+        // The cleared count is deliberately NOT subtracted from `_metaInstanceTotal`, and the reason is
+        // simpler than an earlier version of this comment claimed. That version said the total "only SIZES
+        // READ BUFFERS"; it does not size anything — every `PriceFeedLib` signature that takes
+        // `metaInstanceTotal` (`:672, :765, :840, :945, :966`) leaves it unused, which solc reports as
+        // "Unused function parameter". So there is no buffer to get wrong and nothing downstream reads the
+        // value. Subtracting would cost bytecode in a contract with double-digit EIP-170 margin to correct a
+        // number with no consumer. Underflow is impossible either way: a coordinate is only ever cleared once.
+        //
+        // NOTE: this singular path currently has NO CALLER in `src/` — `NAVCalculator` exposes only the plural
+        // `removeBalanceAdapters`. The clearing below is correct but unreachable today; the plural variant in
+        // `NAVRegistryLib` is the one that does the real work for issue #335. Kept in step so the two cannot
+        // diverge if a caller is ever added.
         NAVRegistryLib.removeBalanceAdapter(
             _isAdapterRegistered, _globalAdapters, _adapterTypes, _metaInstances, adapter, erc20DefaultBalanceAdapter
         );

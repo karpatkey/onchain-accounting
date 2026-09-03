@@ -50,6 +50,17 @@ contract HeartbeatMutabilityTest is SuperTest {
     }
 
     /// @notice A no-op re-registration still reverts, preserving the double-registration guard.
+    /// @notice A changed `priceType` is REJECTED, not silently ignored.
+    /// @dev `_validateFeedSupportInternal` groups Chainlink/Redstone/API3 into one branch, so this mismatch
+    ///      passes validation. Without the guard the call SUCCEEDS, moves the heartbeat, and leaves the type
+    ///      as Chainlink — reporting success for a change it did not make. Two gates disagreed about whether
+    ///      this was reachable; it is.
+    function test_upsert_rejectsChangedPriceType() public {
+        vm.prank(navCalculatorManager);
+        vm.expectRevert(abi.encodeWithSelector(IPrices.PriceFeedTypeImmutable.selector, address(token), address(feed)));
+        nav.addOrModifyPriceFeed(address(token), address(feed), IPrices.PriceType.Redstone, 4242);
+    }
+
     /// @dev The upsert must fire only when something actually changes; accepting an identical re-register
     ///      would swallow the operator error the original guard existed to catch.
     function test_upsert_noOpStillReverts() public {

@@ -47,13 +47,18 @@ interface IPinnedToNav {
 ///      window, where the position is briefly missing, which is an under-report and the direction this repo
 ///      prefers everywhere else.
 ///
-///      **The instance set is read first, then EXPLICITLY CLEARED, and only then is the adapter removed.** An
-///      earlier version of this file claimed `removeBalanceAdapters` "wipes" the instance set. That is FALSE, and
-///      the correction is the reason for the ordering below. `Balances.sol` says so outright: *"a removed
-///      adapter's configured meta-instance set (if any) is left dormant … the stale set persists"*, and
-///      `NAVRegistryLib.removeBalanceAdapter` takes no `_metaInstances` reference at all. Verified on mainnet
-///      after the first swap this script performed: `getMetaInstances(<deregistered predecessor>)` still returned
-///      the carried coordinate.
+///      **⚠️ SUPERSEDED — `removeBalanceAdapters` now CLEARS the instance set itself (issue #335).** This file
+///      previously stated in bold that it does not, quoting a `Balances.sol` comment that has since been
+///      deleted and asserting that `NAVRegistryLib.removeBalanceAdapter` takes no `_metaInstances`
+///      reference — it now does, in both the singular and plural variants. That claim was true when written
+///      and was verified on mainnet at the time; it is left visible here rather than deleted so a reader who
+///      remembers the old behaviour can see exactly what changed and when.
+///
+///      Consequence for this script: the explicit clear-before-remove step below is now REDUNDANT rather
+///      than load-bearing. It remains harmless — `removeMetaInstances` on a still-registered adapter is
+///      valid, and clearing an already-empty set is a no-op — so it is kept as belt-and-braces until this
+///      script is next exercised against a live swap. The five-transaction ordering described below is no
+///      longer required for NEW removals.
 ///
 ///      **Why the residue is not merely untidy.** `addMetaBalanceAdapter` APPENDS
 ///      (`NAVRegistryLib._appendInstances`) and never clears, and `removeMetaInstances` reverts

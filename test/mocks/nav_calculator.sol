@@ -155,6 +155,14 @@ contract Mock_NAVCalculator is INAVCalculator {
     ///      governed instance set that `MetaBalanceAdapter.positionIds()` enumerates.
     mapping(address => bytes32[]) private _metaInstances;
 
+    /// @dev Mirrors `Balances.erc20DefaultBalanceAdapter`, which `INAVCalculator` does not declare. Defaults to
+    ///      `address(0)` so the wallet-yield family's de-dup guard is inactive unless a test arms it.
+    address public erc20DefaultBalanceAdapter;
+
+    function setErc20DefaultBalanceAdapter(address a) external {
+        erc20DefaultBalanceAdapter = a;
+    }
+
     function setMetaInstances(address adapter, bytes32[] memory instances) external {
         _metaInstances[adapter] = instances;
     }

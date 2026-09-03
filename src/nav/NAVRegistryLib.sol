@@ -203,8 +203,12 @@ library NAVRegistryLib {
         // health flag because both readings are well-formed). The residue was also unreachable without
         // first re-registering the adapter, which is the very act that double-counts; that circularity is
         // what forced a five-transaction cleanup dance. Clearing here removes the state at the only moment
-        // it is both reachable and safe to touch, and the caller subtracts the count so the running total
-        // stays honest.
+        // it is both reachable and safe to touch.
+        //
+        // `clearedInstances` is returned for callers that want it; `Balances` deliberately DISCARDS it and
+        // does NOT subtract from `_metaInstanceTotal` — that total only sizes read buffers, where an
+        // overestimate is harmless and was already present for these same coordinates. Do not wire up a
+        // subtraction on the strength of this comment: see the reasoning at `Balances.sol:191`.
         clearedInstances = metaInstances[adapter].length;
         if (clearedInstances != 0) {
             delete metaInstances[adapter];

@@ -40,8 +40,46 @@ import {PositionKind} from "src/utils/PositionKind.sol";
 ///      a single contract could only ever stamp one protocol across every instance, which would replace
 ///      `wallet` with an equally uninformative label.
 abstract contract WalletTokenMetaBalanceAdapterBase is MetaBalanceAdapter {
+    /// @notice The `ERC20DefaultBalanceAdapter` this NAV deploys in `initialize`, or `address(0)` if it has none.
+    /// @dev Resolved ONCE at construction because it is set-once on the NAV: `Balances._setErc20DefaultBalanceAdapter`
+    ///      reverts `InvalidArguments` if it is already non-zero, so it can never change under us and a per-read
+    ///      lookup would buy nothing. Read by low-level staticcall because `INAVCalculator` does not declare the
+    ///      getter, even though `Balances` makes it `public`.
+    address public immutable ERC20_DEFAULT_ADAPTER;
+
+    /// @notice The NAV did not answer `erc20DefaultBalanceAdapter()`, so the de-dup guard could not be armed.
+    /// @dev Deploy-time and loud on purpose. Silently deploying with the guard disarmed is how the double-count
+    ///      this family exists to avoid gets back in.
+    error DefaultAdapterUnresolvable(address navCalculator);
+
     /// @param navCalculator_ The NAVCalculator contract for asset-registry access.
-    constructor(address navCalculator_) MetaBalanceAdapter(navCalculator_) {}
+    constructor(address navCalculator_) MetaBalanceAdapter(navCalculator_) {
+        (bool ok, bytes memory data) =
+            navCalculator_.staticcall(abi.encodeWithSignature("erc20DefaultBalanceAdapter()"));
+        if (!ok || data.length != 32) revert DefaultAdapterUnresolvable(navCalculator_);
+        // A zero answer is legitimate — a NAV with no default adapter cannot double-count, so the guard simply
+        // stays inactive rather than blocking the deploy.
+        ERC20_DEFAULT_ADAPTER = abi.decode(data, (address));
+    }
+
+    /// @notice Whether `ERC20DefaultBalanceAdapter` is CURRENTLY also reporting `token`.
+    /// @dev The de-dup guard. `registerAsset` unconditionally adds every asset to the default adapter's inclusion
+    ///      list (`NAVCalculator.sol:181`), so each of this family's tokens starts out reported there. Until an
+    ///      operator calls `excludeAssetFromDefaultAdapter`, both adapters emit a well-formed leg for the same
+    ///      `balanceOf` under different reconciliation keys with no health flag — the +$11,375.92 species of
+    ///      issue #335, reachable 17 more ways. Enforcing the ordering in a docstring alone leaves an
+    ///      over-report one forgotten transaction away, so it is enforced here instead.
+    ///
+    ///      Fails CLOSED: an unreadable answer is treated as "still included", which suppresses this leg. That
+    ///      is an under-report, the direction this repo licenses everywhere; the alternative fails toward the
+    ///      double-count.
+    function _reportedByDefaultAdapter(address token) internal view returns (bool) {
+        if (ERC20_DEFAULT_ADAPTER == address(0)) return false;
+        (bool ok, bytes memory data) =
+            ERC20_DEFAULT_ADAPTER.staticcall(abi.encodeWithSignature("isSupportedByDefault(address)", token));
+        if (!ok || data.length != 32) return true;
+        return abi.decode(data, (bool));
+    }
 
     /// @notice The `PositionKind` every instance of this adapter reports.
     /// @dev Per-adapter rather than per-instance: the kind follows the PROTOCOL's par-exit verb, and each
@@ -76,6 +114,12 @@ abstract contract WalletTokenMetaBalanceAdapterBase is MetaBalanceAdapter {
         // residue must degrade to an under-report rather than a revert that takes the whole read down.
         (INAVCalculator.Asset memory assetInfo, bool found) = _getAssetInfo(token);
         if (!found) {
+            return new INAVCalculator.PositionBalance[](0);
+        }
+
+        // The de-dup guard. Must sit AFTER the registry check so an unregistered token still short-circuits on
+        // the cheaper path, and BEFORE the balance read so a suppressed leg costs no external call.
+        if (_reportedByDefaultAdapter(token)) {
             return new INAVCalculator.PositionBalance[](0);
         }
 

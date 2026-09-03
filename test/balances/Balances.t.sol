@@ -122,6 +122,12 @@ contract BalancesHarness is Balances {
         _removeMetaInstances(adapter, instances);
     }
 
+    /// @dev The PLURAL path. `NAVCalculator` exposes only `removeBalanceAdapters`, so this — not the singular
+    ///      helper above — is the route production takes and the one issue #335's fix has to hold on.
+    function removeBalanceAdaptersDirect(address[] calldata adapters) public {
+        _removeBalanceAdapters(adapters);
+    }
+
     function metaInstanceTotalForTest() public view returns (uint256) {
         return _metaInstanceTotal;
     }
@@ -604,6 +610,47 @@ contract BalancesTest is Test {
         instances[0] = bytes32(uint256(1));
         vm.expectRevert(IBalances.InvalidBalanceAdapter.selector);
         balances.addMetaInstancesDirect(address(meta), instances);
+    }
+
+    // --- issue #335: removal clears the instance set ------------------------------------------------
+
+    /// @notice Deregistering a meta adapter CLEARS its instance set, on the plural path production uses.
+    /// @dev The direct regression test issue #335 did not have. `DormantInstanceCleanup.fork.t.sol` looks like
+    ///      coverage but is vacuous with respect to this fix: it calls `removeMetaInstances` at step 3, so the
+    ///      set is already empty by the time `removeBalanceAdapters` runs at step 4, and it passes unchanged
+    ///      with the clearing deleted. This one seeds a coordinate and never clears it by hand.
+    function test_removeBalanceAdapters_clearsMetaInstances() public {
+        Mock_MetaAdapter meta = new Mock_MetaAdapter();
+        bytes32[] memory instances = new bytes32[](1);
+        instances[0] = bytes32(uint256(uint160(address(usdc))));
+        balances.addMetaBalanceAdapterDirect(address(meta), instances);
+        assertEq(balances.getMetaInstances(address(meta)).length, 1, "precondition: one governed coordinate");
+
+        address[] memory rm = new address[](1);
+        rm[0] = address(meta);
+        balances.removeBalanceAdaptersDirect(rm);
+
+        assertEq(balances.getMetaInstances(address(meta)).length, 0, "removal must clear the instance set");
+    }
+
+    /// @notice And re-registering the removed adapter cannot revive the old set.
+    /// @dev This is the actual +$11,375.92 mechanism: `addMetaBalanceAdapter` APPENDS and accepts an empty
+    ///      list, so before the fix one re-registration of a superseded adapter brought its whole set back
+    ///      alongside the live successor, and NAV summed both with no health flag because both are well-formed.
+    function test_removeBalanceAdapters_reRegistrationCannotRevive() public {
+        Mock_MetaAdapter meta = new Mock_MetaAdapter();
+        bytes32[] memory instances = new bytes32[](1);
+        instances[0] = bytes32(uint256(uint160(address(usdc))));
+        balances.addMetaBalanceAdapterDirect(address(meta), instances);
+
+        address[] memory rm = new address[](1);
+        rm[0] = address(meta);
+        balances.removeBalanceAdaptersDirect(rm);
+
+        // The revival step, verbatim: re-register with an EMPTY list and see what comes back.
+        balances.addMetaBalanceAdapterDirect(address(meta), new bytes32[](0));
+
+        assertEq(balances.getMetaInstances(address(meta)).length, 0, "re-registration must not resurrect the old set");
     }
 
     // --- meta/non-meta split (addMetaBalanceAdapter) ---

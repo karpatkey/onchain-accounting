@@ -147,6 +147,14 @@ interface IPrices {
     /// @notice Error when attempting to add a feed that is already registered for an asset
     error PriceFeedAlreadyRegistered(address asset, address feed);
 
+    /// @notice The upsert path was given a `priceType` differing from the one the feed is registered with.
+    /// @dev A feed's type is part of its IDENTITY, not its configuration — it selects the read path and the
+    ///      decimals convention. Changing it means removing and re-adding the feed. Rejected rather than
+    ///      ignored because `_validateFeedSupportInternal` puts Chainlink, Redstone and API3 in ONE branch, so a
+    ///      mismatch inside that group passes validation and the caller would otherwise be told a request
+    ///      succeeded that was never applied.
+    error PriceFeedTypeImmutable(address asset, address feed);
+
     /// @notice Error when the feed index is out of bounds
     error PriceFeedIndexOutOfBounds(address asset, uint256 index);
 

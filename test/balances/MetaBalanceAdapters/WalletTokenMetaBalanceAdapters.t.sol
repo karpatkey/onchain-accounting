@@ -20,6 +20,20 @@ import {
     EthenaSavingsWalletMetaBalanceAdapter
 } from "src/balances/MetaBalanceAdapters/walletYield/EthenaSavingsWalletMetaBalanceAdapter.sol";
 
+/// @dev Minimal stand-in for `ERC20DefaultBalanceAdapter`'s inclusion list — the only member the de-dup guard
+///      reads. Kept here rather than reusing the real adapter so the test pins the GUARD, not that adapter.
+contract DefaultAdapterStub {
+    mapping(address => bool) public included;
+
+    function setIncluded(address a, bool v) external {
+        included[a] = v;
+    }
+
+    function isSupportedByDefault(address a) external view returns (bool) {
+        return included[a];
+    }
+}
+
 /// @title WalletTokenMetaBalanceAdaptersTest
 /// @author KPK
 /// @notice Behaviour of the wallet-held yield-token adapter family.
@@ -154,6 +168,101 @@ contract WalletTokenMetaBalanceAdaptersTest is Test {
         INAVCalculator.PositionBalance[] memory p = lido.getAdapterPositionsForInstances(alice, both, address(0));
         assertEq(p.length, 1, "the good instance must survive the bad one");
         assertEq(p[0].balanceAsset.asset, address(wstETH));
+    }
+
+    // --- de-dup against ERC20DefaultBalanceAdapter -------------------------------------------------
+
+    /// @notice While the default adapter still reports the token, this adapter reports NOTHING.
+    /// @dev `registerAsset` unconditionally adds every asset to the default adapter's inclusion list, so a token
+    ///      is reported there from the moment it is registered. Without this guard, adding the meta instance
+    ///      before calling `excludeAssetFromDefaultAdapter` makes BOTH adapters emit a well-formed leg for the
+    ///      same balance under different reconciliation keys, with no health flag — issue #335's species, one
+    ///      forgotten transaction away, 17 times over. The guard makes the operator ordering non-load-bearing.
+    function test_dedupe_suppressedWhileDefaultAdapterStillReports() public {
+        DefaultAdapterStub dflt = new DefaultAdapterStub();
+        nav.setErc20DefaultBalanceAdapter(address(dflt));
+        LidoStakedEthWalletMetaBalanceAdapter a = new LidoStakedEthWalletMetaBalanceAdapter(address(nav));
+
+        wstETH.mint(alice, 1e18);
+        dflt.setIncluded(address(wstETH), true);
+
+        assertEq(
+            a.getAdapterPositionsForInstances(alice, _ins(address(wstETH)), address(0)).length,
+            0,
+            "must not report alongside the default adapter"
+        );
+    }
+
+    /// @notice Once excluded from the default adapter, the SAME adapter reports it normally.
+    /// @dev The other direction, and the one that stops this guard from being a silent kill switch: a fix that
+    ///      suppressed unconditionally would pass the test above while reporting nothing, ever.
+    function test_dedupe_reportsOnceExcludedFromDefault() public {
+        DefaultAdapterStub dflt = new DefaultAdapterStub();
+        nav.setErc20DefaultBalanceAdapter(address(dflt));
+        LidoStakedEthWalletMetaBalanceAdapter a = new LidoStakedEthWalletMetaBalanceAdapter(address(nav));
+
+        wstETH.mint(alice, 1e18);
+        dflt.setIncluded(address(wstETH), false);
+
+        INAVCalculator.PositionBalance[] memory p =
+            a.getAdapterPositionsForInstances(alice, _ins(address(wstETH)), address(0));
+        assertEq(p.length, 1, "must report once the default adapter has let go");
+        assertEq(p[0].amount, 1e18, "and the amount must still be the raw balance");
+    }
+
+    /// @notice An unreadable inclusion answer suppresses the leg rather than risking a double-count.
+    /// @dev Fail-closed. `alice` is an EOA, so the staticcall returns empty returndata — the shape a wrong or
+    ///      self-destructed adapter address produces. Under-reporting is licensed here; over-reporting is not.
+    function test_dedupe_failsClosedWhenInclusionUnreadable() public {
+        nav.setErc20DefaultBalanceAdapter(alice);
+        LidoStakedEthWalletMetaBalanceAdapter a = new LidoStakedEthWalletMetaBalanceAdapter(address(nav));
+
+        wstETH.mint(alice, 1e18);
+        assertEq(
+            a.getAdapterPositionsForInstances(alice, _ins(address(wstETH)), address(0)).length,
+            0,
+            "an unreadable answer must suppress, not report"
+        );
+    }
+
+    /// @notice A NAV that cannot answer at all fails the DEPLOY, not the read.
+    /// @dev The stand-in is built BEFORE `expectRevert`: a `new` in the argument list is evaluated first, so an
+    ///      inline construction would bind the cheatcode to that creation instead of the one under test — which
+    ///      is exactly how the first version of this test passed vacuously.
+    function test_dedupe_constructorRevertsWhenNavCannotAnswer() public {
+        address notANav = address(new Mock_ERC20("NOT-A-NAV", 18));
+        vm.expectRevert();
+        new LidoStakedEthWalletMetaBalanceAdapter(notANav);
+    }
+
+    /// @notice The RETURN TRIP: re-registering an asset must not revive the default-adapter leg.
+    /// @dev Vigilo M-01, PoC-validated against b195a0ce as a $40,000 -> $80,000 silent doubling. `registerAsset`
+    ///      unconditionally re-adds the asset to the default adapter's inclusion list and knows nothing about
+    ///      meta-instance state, so a correctly-rolled-out token that is later unregistered and re-registered —
+    ///      a DOCUMENTED repair, and the only way to move a feed whose decimals differ — came back reported by
+    ///      both adapters, with no health flag because both legs are well-formed.
+    ///
+    ///      The read-time guard closes it: inclusion is re-read on every call, so the moment `registerAsset`
+    ///      puts the token back in the default adapter, this adapter stands down again. Nothing about the
+    ///      rollout ordering has to be remembered a second time.
+    function test_dedupe_reRegistrationDoesNotReviveTheDefaultLeg() public {
+        DefaultAdapterStub dflt = new DefaultAdapterStub();
+        nav.setErc20DefaultBalanceAdapter(address(dflt));
+        LidoStakedEthWalletMetaBalanceAdapter a = new LidoStakedEthWalletMetaBalanceAdapter(address(nav));
+        wstETH.mint(alice, 10e18);
+
+        // Correct rollout: excluded from the default adapter, then governed here.
+        dflt.setIncluded(address(wstETH), false);
+        assertEq(a.getAdapterPositionsForInstances(alice, _ins(address(wstETH)), address(0)).length, 1);
+
+        // The repair: unregisterAsset + registerAsset. The second call re-adds it to the inclusion list.
+        dflt.setIncluded(address(wstETH), true);
+
+        assertEq(
+            a.getAdapterPositionsForInstances(alice, _ins(address(wstETH)), address(0)).length,
+            0,
+            "re-registration must not leave BOTH adapters reporting"
+        );
     }
 
     // --- labels -----------------------------------------------------------------------------------

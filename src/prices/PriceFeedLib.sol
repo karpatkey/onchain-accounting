@@ -1678,9 +1678,19 @@ library PriceFeedLib {
             // untouched, so this cannot change WHICH oracle prices the asset — only when its answer is
             // considered stale. `priceType`/decimals are deliberately NOT re-applied: a caller trying to
             // change those is changing the feed's identity and must remove and re-add it explicitly.
+            // Reject a changed `priceType` rather than ignoring it. The comment above says a caller changing the
+            // feed's identity "must remove and re-add it explicitly" — but nothing enforced that, and the
+            // validator cannot: it groups Chainlink, Redstone and API3 into one branch, so submitting a
+            // Chainlink feed as Redstone passes validation, moves the heartbeat, and leaves the type untouched.
+            // The caller reads that as success for a change that never happened.
+            if (configs[i].priceType != priceType) revert IPrices.PriceFeedTypeImmutable(asset, priceFeed);
+
             uint256 oldHeartbeat = configs[i].chainlinkHeartbeat;
             if (oldHeartbeat == heartbeat) revert IPrices.PriceFeedAlreadyRegistered(asset, priceFeed);
             configs[i].chainlinkHeartbeat = heartbeat;
+            // MONITORING NOTE: this is now the ONLY event a heartbeat change emits. The mirror-swap dance it
+            // replaced surfaced as a `PriceFeedAdded`/`PriceFeedRemoved` pair, so any alerting subscribed to
+            // that pair will no longer see staleness-window changes. Subscribe to this event instead.
             emit IPrices.PriceFeedHeartbeatUpdated(asset, priceFeed, oldHeartbeat, heartbeat);
             return;
         }

@@ -30,7 +30,7 @@ contract RealignHeartbeats is Script {
     address constant NAV = 0x54EaD2A1dB7456cA917675Ea8908ec8A997c6214;
     bytes32 constant MANAGER_ROLE = keccak256("MANAGER");
 
-    error NotAdmin(address who);
+    error NotManager(address who);
     error NoNavDeployed(uint256 chainId);
 
     function run() external {
@@ -59,7 +59,12 @@ contract RealignHeartbeats is Script {
         // signer lacks the role, leaving the revert to land mid-sequence. `10_MigrateAdaptersToCreate2.s.sol`
         // pins the intended broadcaster the same way.
         address sender = ConfigReader.readChainConfig(vm, chainId).admin;
-        if (!NAVCalculator(NAV).hasRole(0x00, sender)) revert NotAdmin(sender);
+        // MANAGER, not DEFAULT_ADMIN. Every call this script makes — `addOrModifyPriceFeed`,
+        // `removeMonitorFeed`, `addMonitorFeed` — is MANAGER-gated. The admin check is left over from the
+        // deleted `HeartbeatRealigner` helper, which needed admin only to `grantRole(MANAGER_ROLE, ...)`.
+        // On a chain where the two roles are different accounts, checking admin passes here and then
+        // reverts mid-sequence on the first write — the exact failure this precondition exists to prevent.
+        if (!NAVCalculator(NAV).hasRole(MANAGER_ROLE, sender)) revert NotManager(sender);
 
         // Snapshot before, so the post-broadcast report is measured rather than assumed.
         uint256[] memory priceBefore = new uint256[](assets.length);

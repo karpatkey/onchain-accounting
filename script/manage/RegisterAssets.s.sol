@@ -93,6 +93,14 @@ contract RegisterAssets is BaseDeployScript {
     ///      discovered later by `08`. There is deliberately no default — see `ConfigReader.accrualKindFromString`.
     error AssetAccrualKindMissingOrInvalid(string symbol);
 
+    /// @notice `getPriceFeedAt` could not be read while verifying a positional skip.
+    error FeedPositionUnreadable(address asset, uint256 index);
+
+    /// @notice The on-chain feed at this index is not the config feed — the append-only assumption is broken.
+    /// @dev Loud on purpose. Since the heartbeat upsert, silently continuing would rewrite the WRONG feed's
+    ///      staleness window instead of reverting the batch.
+    error FeedOrderMismatch(address asset, uint256 index, address onChainFeed, address configFeed);
+
     function run() public override {
         setUp();
 
@@ -204,7 +212,7 @@ contract RegisterAssets is BaseDeployScript {
 
         // Pricing feeds and monitor/tolerance actions are each built in their own frame, then concatenated — this
         // keeps _planAsset under the via_ir stack limit.
-        bytes[] memory feedActs = _planFeedActs(symbol, asset, registered, onChainFeeds, feedCount);
+        bytes[] memory feedActs = _planFeedActs(symbol, asset, registered, onChainFeeds, feedCount, navProxy);
         bytes[] memory monActs = _planMonitorActs(symbol, asset, registered, navProxy);
         acts = _concat(feedActs, monActs);
     }
@@ -217,7 +225,8 @@ contract RegisterAssets is BaseDeployScript {
         address asset,
         bool registered,
         uint256 onChainFeeds,
-        uint256 feedCount
+        uint256 feedCount,
+        address navProxy
     ) private view returns (bytes[] memory acts) {
         bytes[] memory tmp = new bytes[](feedCount);
         uint256 n;
@@ -247,7 +256,22 @@ contract RegisterAssets is BaseDeployScript {
                     (asset, feed, pt, hb, accrual, ConfigReader.readAssetLabels(vm, currentChainId, symbol))
                 );
             } else if (registered && resolvableIdx < onChainFeeds) {
-                // Already present on-chain (added in a prior run) — skip to avoid a duplicate addPriceFeed.
+                // Already present on-chain (added in a prior run) — skip, but verify by ADDRESS first.
+                //
+                // This branch used to skip on POSITION alone, resting on "feeds are appended, never reordered"
+                // with the revert from a duplicate `addPriceFeed` as the backstop if that assumption ever broke.
+                // The upsert removed that backstop: `addOrModifyPriceFeed` now SUCCEEDS on an already-registered
+                // feed whenever the heartbeat differs. So a config reordered from [A, B] to [B, A] against an
+                // on-chain [A] would skip index 0 as "already present", then quietly rewrite A's staleness
+                // window and never add B — where before it aborted the whole batch loudly.
+                //
+                // Reverting here restores that loudness. This runs during `forge script` simulation, so a
+                // mismatch is caught before anything is broadcast.
+                (bool okf, bytes memory fd) =
+                    navProxy.staticcall(abi.encodeWithSelector(IPrices.getPriceFeedAt.selector, asset, resolvableIdx));
+                if (!okf || fd.length == 0) revert FeedPositionUnreadable(asset, resolvableIdx);
+                address onChainFeed = abi.decode(fd, (IPrices.PriceFeedConfig)).priceFeed;
+                if (onChainFeed != feed) revert FeedOrderMismatch(asset, resolvableIdx, onChainFeed, feed);
             } else {
                 uint256 hb = vm.parseUint(ConfigReader.readAssetFeedHeartbeat(vm, currentChainId, symbol, i));
                 tmp[n++] = abi.encodeCall(NAVCalculator.addOrModifyPriceFeed, (asset, feed, pt, hb));

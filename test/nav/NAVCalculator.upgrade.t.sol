@@ -6,6 +6,13 @@ import "test/SuperTest.sol";
 import {Upgrades} from "openzeppelin-foundry-upgrades/Upgrades.sol";
 import {Options} from "openzeppelin-foundry-upgrades/Options.sol";
 
+/// @dev A throwaway SECOND IMPLEMENTATION for the upgrade test to repoint the proxy at. It is not a version
+///      of anything and is never deployed outside the test VM — there is exactly one NAVCalculator.
+///
+///      Named `NAVCalculatorV2` until it wasn't: "V2" reads as though a version 2 exists somewhere in `src/`
+///      or in a deployment record, and that name is what surfaced in a CI size failure, pointing a reader at
+///      a file nobody had edited. `UpgradeTarget` says what it actually is.
+///
 /// @dev Deliberately EMPTY, and that is the whole point.
 ///
 ///      This fixture exists only to be a *second implementation* for the proxy to point at. It used to carry a
@@ -23,7 +30,7 @@ import {Options} from "openzeppelin-foundry-upgrades/Options.sol";
 ///
 ///      Keep it empty. Adding a member here re-imposes the tax and re-breaks CI from an unexpected file.
 /// @custom:oz-upgrades-from NAVCalculator
-contract NAVCalculatorV2 is NAVCalculator {}
+contract NAVCalculatorUpgradeTarget is NAVCalculator {}
 
 contract NAVCalculatorUpgradeTest is SuperTest {
     function setUp() public {
@@ -32,7 +39,7 @@ contract NAVCalculatorUpgradeTest is SuperTest {
 
     /// @notice The proxy points at a different implementation after the upgrade.
     /// @dev Reads the ERC-1967 implementation slot rather than calling a marker member on the new
-    ///      implementation. `NAVCalculatorV2` is bytecode-identical to `NAVCalculator`, so a fresh deployment is
+    ///      implementation. `NAVCalculatorUpgradeTarget` is bytecode-identical to `NAVCalculator`, so a fresh deployment is
     ///      what distinguishes it — hence the assertion is on the ADDRESS changing, not on any behaviour. Also
     ///      asserts the new implementation actually has code, so the test cannot pass by pointing the proxy at an
     ///      empty address.
@@ -60,7 +67,7 @@ contract NAVCalculatorUpgradeTest is SuperTest {
         Options memory opts;
         opts.unsafeSkipAllChecks = true;
         vm.startPrank(from);
-        Upgrades.upgradeProxy(target, "NAVCalculator.upgrade.t.sol:NAVCalculatorV2", "", opts, from);
+        Upgrades.upgradeProxy(target, "NAVCalculator.upgrade.t.sol:NAVCalculatorUpgradeTarget", "", opts, from);
         vm.stopPrank();
     }
 }

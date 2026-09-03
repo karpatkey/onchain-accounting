@@ -31,13 +31,13 @@ import "src/constants.sol";
 ///
 ///      As of the heartbeat upsert, measured by `forge build --sizes`:
 ///        - `NAVCalculator`        24,481 / 24,576 -> **95 bytes** free
-///        - `NAVCalculatorV2`      24,481 / 24,576 -> **95 bytes** free  (identical: empty subclass)
+///        - `NAVCalculatorUpgradeTarget`  24,481 / 24,576 -> **95 bytes** free  (identical: empty subclass)
 ///
 ///      ⚠️ CI's Build step is literally `forge build --sizes`, which **exits 1** on ANY contract over the limit,
 ///      `test/` included. Verified by probe: an oversized contract under `test/` produces
 ///      `Error: some contracts exceed the runtime size limit (EIP-170: 24576 bytes)` and exit code 1.
 ///
-///      `NAVCalculatorV2` is the UUPS upgrade fixture in `test/nav/NAVCalculator.upgrade.t.sol`. It used to be
+///      `NAVCalculatorUpgradeTarget` is the UUPS upgrade fixture in `test/nav/NAVCalculator.upgrade.t.sol`. It used to be
 ///      this contract PLUS a marker member, which made the FIXTURE the binding limit rather than this contract —
 ///      9 bytes of headroom against the 101 here — so a change that fit this contract could still fail CI naming
 ///      a file nobody edited. That is not hypothetical: it happened, and it is what motivated emptying the

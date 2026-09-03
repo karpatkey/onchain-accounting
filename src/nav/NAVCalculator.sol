@@ -29,16 +29,21 @@ import "src/constants.sol";
 ///      it and drifted into three mutually contradictory figures; they now point here instead. If you cite a
 ///      margin, cite this one — and re-measure it, because a number in a comment is never evidence.
 ///
-///      As of {getAdapterDisplayInfo}, measured by `forge build --sizes`:
-///        - `NAVCalculator`        24,475 / 24,576 -> **101 bytes** free
-///        - `NAVCalculatorV2`      24,567 / 24,576 -> **9 bytes** free
+///      As of the heartbeat upsert, measured by `forge build --sizes`:
+///        - `NAVCalculator`        24,481 / 24,576 -> **95 bytes** free
+///        - `NAVCalculatorV2`      24,481 / 24,576 -> **95 bytes** free  (identical: empty subclass)
 ///
-///      ⚠️ **9, not 101, is the number that gates a change.** `NAVCalculatorV2` is the UUPS upgrade fixture in
-///      `test/nav/NAVCalculator.upgrade.t.sol` — this contract plus one `foo()` function, never deployed — and
-///      CI's Build step is literally `forge build --sizes`, which **exits 1** on ANY contract over the limit,
+///      ⚠️ CI's Build step is literally `forge build --sizes`, which **exits 1** on ANY contract over the limit,
 ///      `test/` included. Verified by probe: an oversized contract under `test/` produces
-///      `Error: some contracts exceed the runtime size limit (EIP-170: 24576 bytes)` and exit code 1. So a change
-///      that fits this contract but pushes the fixture over still fails CI, naming a file nobody edited.
+///      `Error: some contracts exceed the runtime size limit (EIP-170: 24576 bytes)` and exit code 1.
+///
+///      `NAVCalculatorV2` is the UUPS upgrade fixture in `test/nav/NAVCalculator.upgrade.t.sol`. It used to be
+///      this contract PLUS a marker member, which made the FIXTURE the binding limit rather than this contract —
+///      9 bytes of headroom against the 101 here — so a change that fit this contract could still fail CI naming
+///      a file nobody edited. That is not hypothetical: it happened, and it is what motivated emptying the
+///      fixture. The test now proves the swap by reading the proxy's ERC-1967 implementation slot before and
+///      after, so V2 needs no member, compiles to exactly this size, and the two margins moved back into lockstep.
+///      **If anyone re-adds a member to that fixture, the 92-byte tax and the confusing CI failure both return.**
 ///
 ///      **Treat this contract as FULL.** For scale: one minimal external getter has measured at 122 B — more than
 ///      the fixture's whole remaining budget — and {getAdapterDisplayInfo} cost 354 B. The next addition here needs

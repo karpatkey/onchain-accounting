@@ -1719,11 +1719,25 @@ A revoked council cannot call any of these without first re-granting itself the 
 | area | functions |
 |---|---|
 | assets | `registerAsset` · `unregisterAsset` |
-| price feeds | `addPriceFeed` · `removePriceFeed` · `removePriceFeedAt` |
+| price feeds | `addOrModifyPriceFeed` · `removePriceFeed` · `removePriceFeedAt` |
 | monitors | `addMonitorFeed` · `removeMonitorFeed` · `removeMonitorFeedAt` |
 | tolerances | `setDivergenceTolerance` · `setPegTolerance` |
 | balance adapters | `addBalanceAdapters` · `removeBalanceAdapters` |
 | meta adapters | `addMetaBalanceAdapter` · `addMetaInstances` · `removeMetaInstances` |
+
+> **⚠️ BREAKING, from the heartbeat-upsert upgrade: `addPriceFeed` no longer exists.**
+> It was RENAMED to `addOrModifyPriceFeed` — not added alongside — so the old selector
+> `addPriceFeed(address,address,uint8,uint256)` is gone. Anything holding that selector reverts
+> against the upgraded proxy: pre-signed Safe batches, keeper scripts, and any off-chain ABI copy
+> (`app/src/config/abis.ts` among them). Re-encode before executing a batch prepared prior to this
+> upgrade.
+>
+> The new function UPSERTS. Re-registering an already-registered (asset, feed) pair now UPDATES its
+> heartbeat in place instead of reverting, which is what makes a heartbeat changeable at all — it
+> was previously immutable, because `removePriceFeed` refuses an asset's last feed and every asset
+> holds exactly one. Two guards remain: an identical re-register still reverts
+> `PriceFeedAlreadyRegistered`, and a `priceType` differing from the stored one reverts
+> `PriceFeedTypeImmutable` (the feed's type is identity, not configuration).
 | default adapter | `excludeAssetFromDefaultAdapter` · `includeAssetInDefaultAdapter` |
 | wiring | `setAssetKindRegistry` |
 | L2 | `setChainlinkL2SequencerGracePeriod` |

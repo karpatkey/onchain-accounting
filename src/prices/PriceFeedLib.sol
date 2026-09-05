@@ -1774,7 +1774,22 @@ library PriceFeedLib {
         IPrices.PriceFeedConfig[] storage monitors = monitorFeeds[asset];
         uint256 len = monitors.length;
         for (uint256 i; i < len; ++i) {
-            if (monitors[i].priceFeed == priceFeed) revert IPrices.MonitorFeedAlreadyRegistered(asset, priceFeed);
+            if (monitors[i].priceFeed != priceFeed) continue;
+            // ALREADY REGISTERED -> UPSERT THE HEARTBEAT, mirroring `addFeed`.
+            //
+            // Without this a monitor's heartbeat could only be changed by remove-then-add, which is TWO
+            // transactions with no atomicity: an interrupted run leaves the monitor removed and divergence
+            // detection silently degraded until someone notices. There is no last-monitor guard to work
+            // around, so unlike the primary-feed case this was never impossible — just unsafe.
+            //
+            // Same two guards as the primary path: an identical re-register still reverts, and the feed's
+            // type is identity rather than configuration, so a changed `priceType` is rejected.
+            if (monitors[i].priceType != priceType) revert IPrices.PriceFeedTypeImmutable(asset, priceFeed);
+            uint256 oldHeartbeat = monitors[i].chainlinkHeartbeat;
+            if (oldHeartbeat == heartbeat) revert IPrices.MonitorFeedAlreadyRegistered(asset, priceFeed);
+            monitors[i].chainlinkHeartbeat = heartbeat;
+            emit IPrices.MonitorFeedHeartbeatUpdated(asset, priceFeed, oldHeartbeat, heartbeat);
+            return;
         }
 
         monitors.push(

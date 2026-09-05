@@ -171,7 +171,8 @@ library ProtocolNames {
         if (protocolId == ProtocolIds.NEXUS_MUTUAL) return NEXUS_MUTUAL;
 
         // Wallet-held yield-bearing token protocols. A MISSING branch here is not cosmetic: `forProtocolId`
-        // reverts UnknownProtocolId, so a new adapter whose brand is absent would have no display name.
+        // reverts UnknownProtocolId, so a new adapter whose PROTOCOL ID is absent would have no display name.
+        // Keyed on protocolId, not protocolBrand — the two differ for adapters like StakeWise V3 and Aave V3.
         if (protocolId == ProtocolIds.ROCKET_POOL) return ROCKET_POOL;
         if (protocolId == ProtocolIds.RENZO) return RENZO;
         if (protocolId == ProtocolIds.LIQUID_COLLECTIVE) return LIQUID_COLLECTIVE;

@@ -22,12 +22,16 @@ import {PositionKind} from "src/utils/PositionKind.sol";
 ///      shares do the same. Yield-bearing assets were the gap only because they ARE registered NAV assets, so
 ///      the default adapter picks them up and no protocol adapter could claim them without double-counting.
 ///
-///      **De-duplication is the caller's job, and the ordering is load-bearing.** Each token must be removed
-///      from the default adapter's inclusion list (`NAVCalculator.excludeAssetFromDefaultAdapter`) BEFORE it
-///      is added to this adapter's instance set. Reversed, both adapters report the same holding under
-///      different reconciliation keys with no health flag — a silent over-report of the exact species that
-///      cost +$11,375.92 in issue #335. Excluding first leaves the token reported by nobody for ~1 block,
-///      which is an under-report: the direction this repo licenses everywhere.
+///      **De-duplication is enforced HERE, on every read — the ordering is no longer load-bearing.** An
+///      earlier version of this comment said the opposite, and it was true when written: the caller had to
+///      call `NAVCalculator.excludeAssetFromDefaultAdapter` BEFORE adding the token to this adapter's
+///      instance set, and reversing that pair double-reported the holding under two reconciliation keys with
+///      no health flag — the +$11,375.92 species of issue #335.
+///
+///      `_reportedByDefaultAdapter` closed that. While the token is still in the default adapter's inclusion
+///      list this adapter reports NOTHING, so the two can never both report and a reversed order now
+///      UNDER-reports instead — the direction this repo licenses everywhere. Exclusion is still required, but
+///      as the step that ENABLES reporting here, not as a safety measure whose omission over-reports.
 ///
 ///      **The balanceAsset is the token itself**, not an underlying. These tokens are registered and priced
 ///      NAV assets already, so the pricing path is untouched and the reported value is bit-identical to what

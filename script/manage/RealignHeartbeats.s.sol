@@ -90,7 +90,9 @@ contract RealignHeartbeats is Script {
             IPrices.PriceFeedConfig[] memory mons = NAVCalculator(NAV).getMonitorFeeds(mAssets[i]);
             for (uint256 j; j < mons.length; ++j) {
                 if (mons[j].priceFeed != mFeeds[i]) continue;
-                NAVCalculator(NAV).removeMonitorFeed(mAssets[i], mFeeds[i]);
+                // ONE transaction. `addMonitorFeed` upserts, so the remove-then-add pair this used to
+                // broadcast is gone — with it the window where an interrupted run left the monitor removed
+                // and divergence detection silently degraded.
                 NAVCalculator(NAV).addMonitorFeed(mAssets[i], mFeeds[i], mons[j].priceType, mHeartbeats[i]);
                 break;
             }

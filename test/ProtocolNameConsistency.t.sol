@@ -469,8 +469,9 @@ contract ProtocolNameConsistencyTest is Test {
             new UniswapV3PoolsMetaBalanceAdapter(stub, n).protocolName(), ProtocolNames.UNISWAP_V3, "UniswapV3Pools"
         );
 
-        // Wallet-held yield-token family: the protocolName comes from the BRAND via forProtocolId, so a
-        // missing ProtocolNames branch would revert UnknownProtocolId rather than return an empty string.
+        // Wallet-held yield-token family: `protocolName()` derives from `_protocolId()` via forProtocolId —
+        // NOT from `_protocolBrand()`, which differs from the id for adapters like StakeWise V3 and Aave V3.
+        // A missing ProtocolNames branch would revert UnknownProtocolId rather than return an empty string.
         i += _expectName(
             new LidoStakedEthWalletMetaBalanceAdapter(n).protocolName(), ProtocolNames.LIDO, "LidoStakedEthWall"
         );

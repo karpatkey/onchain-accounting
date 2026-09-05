@@ -51,6 +51,13 @@ interface IPrices {
         address indexed underlyingAsset, address indexed priceFeed, uint256 oldHeartbeat, uint256 newHeartbeat
     );
 
+    /// @notice A registered MONITOR feed's heartbeat changed in place.
+    /// @dev Mirrors {PriceFeedHeartbeatUpdated}. Emitted instead of a `MonitorFeedRemoved`/`MonitorFeedAdded`
+    ///      pair, so alerting subscribed to that pair will not see monitor staleness-window changes.
+    event MonitorFeedHeartbeatUpdated(
+        address indexed asset, address indexed priceFeed, uint256 oldHeartbeat, uint256 newHeartbeat
+    );
+
     /// @notice Emitted when a price feed is added for a token.
     /// @param underlyingAsset The address of the token.
     /// @param priceFeed The address of the price feed.

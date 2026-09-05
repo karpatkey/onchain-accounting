@@ -49,7 +49,6 @@ contract HeartbeatMutabilityTest is SuperTest {
         assertEq(nav.getPriceFeedCount(address(token)), 1, "must UPDATE in place, not append");
     }
 
-    /// @notice A no-op re-registration still reverts, preserving the double-registration guard.
     /// @notice A changed `priceType` is REJECTED, not silently ignored.
     /// @dev `_validateFeedSupportInternal` groups Chainlink/Redstone/API3 into one branch, so this mismatch
     ///      passes validation. Without the guard the call SUCCEEDS, moves the heartbeat, and leaves the type
@@ -61,6 +60,7 @@ contract HeartbeatMutabilityTest is SuperTest {
         nav.addOrModifyPriceFeed(address(token), address(feed), IPrices.PriceType.Redstone, 4242);
     }
 
+    /// @notice A no-op re-registration still reverts, preserving the double-registration guard.
     /// @dev The upsert must fire only when something actually changes; accepting an identical re-register
     ///      would swallow the operator error the original guard existed to catch.
     function test_upsert_noOpStillReverts() public {
@@ -96,5 +96,50 @@ contract HeartbeatMutabilityTest is SuperTest {
         nav.addOrModifyPriceFeed(address(token), address(second), IPrices.PriceType.Chainlink, 7200);
         assertEq(nav.getPriceFeedCount(address(token)), 2, "a new feed address must APPEND");
         assertEq(nav.getPriceFeedAt(address(token), 0).chainlinkHeartbeat, 3600, "existing feed disturbed");
+    }
+
+    // --- monitor feeds: same upsert, so the realign script needs no remove/add pair ------------------
+
+    /// @notice A monitor feed's heartbeat is changeable in place, in ONE transaction.
+    /// @dev Before this, changing a monitor heartbeat meant `removeMonitorFeed` then `addMonitorFeed` —
+    ///      two independent broadcasts with no atomicity, so an interrupted run left the monitor removed and
+    ///      divergence detection silently degraded. Unlike the primary-feed case there was no last-feed guard
+    ///      making it impossible; it was merely unsafe, which is why it survived longer.
+    function test_monitorUpsert_changesHeartbeatInPlace() public {
+        Mock_PriceOracleChainlink mon = new Mock_PriceOracleChainlink("MON", 1, 8);
+        vm.startPrank(navCalculatorManager);
+        nav.setDivergenceTolerance(address(token), 500);
+        nav.addMonitorFeed(address(token), address(mon), IPrices.PriceType.Chainlink, 3600);
+        nav.addMonitorFeed(address(token), address(mon), IPrices.PriceType.Chainlink, 7200);
+        vm.stopPrank();
+
+        IPrices.PriceFeedConfig[] memory m = nav.getMonitorFeeds(address(token));
+        assertEq(m.length, 1, "must UPDATE in place, not append a second monitor");
+        assertEq(m[0].chainlinkHeartbeat, 7200, "monitor heartbeat did not change");
+        assertEq(m[0].priceFeed, address(mon), "monitor feed address changed");
+    }
+
+    /// @notice An identical monitor re-register still reverts, keeping the duplicate guard.
+    function test_monitorUpsert_noOpStillReverts() public {
+        Mock_PriceOracleChainlink mon = new Mock_PriceOracleChainlink("MON", 1, 8);
+        vm.startPrank(navCalculatorManager);
+        nav.setDivergenceTolerance(address(token), 500);
+        nav.addMonitorFeed(address(token), address(mon), IPrices.PriceType.Chainlink, 3600);
+        vm.expectRevert(
+            abi.encodeWithSelector(IPrices.MonitorFeedAlreadyRegistered.selector, address(token), address(mon))
+        );
+        nav.addMonitorFeed(address(token), address(mon), IPrices.PriceType.Chainlink, 3600);
+        vm.stopPrank();
+    }
+
+    /// @notice A changed `priceType` on the monitor upsert is rejected, as on the primary path.
+    function test_monitorUpsert_rejectsChangedPriceType() public {
+        Mock_PriceOracleChainlink mon = new Mock_PriceOracleChainlink("MON", 1, 8);
+        vm.startPrank(navCalculatorManager);
+        nav.setDivergenceTolerance(address(token), 500);
+        nav.addMonitorFeed(address(token), address(mon), IPrices.PriceType.Chainlink, 3600);
+        vm.expectRevert(abi.encodeWithSelector(IPrices.PriceFeedTypeImmutable.selector, address(token), address(mon)));
+        nav.addMonitorFeed(address(token), address(mon), IPrices.PriceType.Redstone, 7200);
+        vm.stopPrank();
     }
 }

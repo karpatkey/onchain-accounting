@@ -69,6 +69,12 @@ library DeploySalts {
     // chain at once — which means a redeploy AND a re-registration on the NAV, since the NAV's balance-adapter
     // set and each meta-adapter's instance set are keyed by adapter ADDRESS.
     uint256 internal constant AAVE_V3_INSTANCES_META = 2;
+    /// @dev **Version 1, not 2, and that is not an oversight.** Every constant around it skips version 1 because
+    ///      generation 1 of that adapter was deployed with plain `new` (CREATE), so 1 would name a nonce-derived
+    ///      address. `AaveV4SpokesMeta` has no generation 1: it was CREATE2 from birth (mainnet
+    ///      `0x79cad958...`, deployed 2026-09-08 by the canonical deployer), so version 1 is its FIRST
+    ///      generation and bumping it to 2 would move the live address. Do not "align" it with its neighbours.
+    uint256 internal constant AAVE_V4_SPOKES_META = 1;
     uint256 internal constant AAVE_V3_SAFETY_MODULE = 2;
     uint256 internal constant BALANCER_V3_POOLS_META = 2;
     uint256 internal constant CURVE_POOLS_META = 2;

@@ -9,6 +9,9 @@ import {AssetKindRegistry} from "src/nav/AssetKindRegistry.sol";
 import {
     AaveV3InstancesMetaBalanceAdapter
 } from "src/balances/MetaBalanceAdapters/AaveV3InstancesMetaBalanceAdapter.sol";
+import {
+    AaveV4SpokesMetaBalanceAdapter
+} from "src/balances/MetaBalanceAdapters/AaveV4SpokesMetaBalanceAdapter.sol";
 import {AaveV3SafetyModuleBalanceAdapter} from "src/balances/BalanceAdapters/AaveV3SafetyModuleBalanceAdapter.sol";
 import {
     BalancerV3PoolsMetaBalanceAdapter
@@ -201,6 +204,16 @@ contract Create2FleetWideAddressesTest is Test {
             ),
             0x04Ba6789B4AD5D6CF63Ec9cc301c13F6a8A0210b,
             "AaveV3InstancesMeta moved"
+        );
+        // Salt version 1, not 2, because this adapter has no generation 1 to skip — see DeploySalts.
+        assertEq(
+            _derive(
+                type(AaveV4SpokesMetaBalanceAdapter).creationCode,
+                "AaveV4SpokesMetaBalanceAdapter",
+                DeploySalts.AAVE_V4_SPOKES_META
+            ),
+            0x79cad9584012806a76E7892808556Ed3797EAbcD,
+            "AaveV4SpokesMeta moved"
         );
         assertEq(
             _derive(

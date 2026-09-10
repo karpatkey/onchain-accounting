@@ -34,6 +34,9 @@ import {
     AaveV3InstancesMetaBalanceAdapter
 } from "src/balances/MetaBalanceAdapters/AaveV3InstancesMetaBalanceAdapter.sol";
 import {
+    AaveV4SpokesMetaBalanceAdapter
+} from "src/balances/MetaBalanceAdapters/AaveV4SpokesMetaBalanceAdapter.sol";
+import {
     StakeWiseV3VaultsMetaBalanceAdapter
 } from "src/balances/MetaBalanceAdapters/StakeWiseV3VaultsMetaBalanceAdapter.sol";
 import {PolygonStakingMetaBalanceAdapter} from "src/balances/MetaBalanceAdapters/PolygonStakingMetaBalanceAdapter.sol";
@@ -181,7 +184,7 @@ contract ProtocolNameConsistencyTest is Test {
 
     /// @dev Number of concrete meta adapters. Pinned so adding one fails `test_metaAdapterCensus` until the
     ///      author also adds it to `test_everyMetaAdapterReportsItsProtocolName`.
-    uint256 internal constant META_ADAPTER_COUNT = 23;
+    uint256 internal constant META_ADAPTER_COUNT = 24;
 
     /// @dev Number of concrete plain + assisted adapters, i.e. the family whose name is a bytecode LITERAL rather
     ///      than derived. Pinned so adding one fails `test_hardcodedAdapterCensus` until the author also adds it to
@@ -341,6 +344,7 @@ contract ProtocolNameConsistencyTest is Test {
         i += _expectName(
             new AaveV3InstancesMetaBalanceAdapter(n).protocolName(), ProtocolNames.AAVE_V3, "AaveV3Instances"
         );
+        i += _expectName(new AaveV4SpokesMetaBalanceAdapter(n).protocolName(), ProtocolNames.AAVE_V4, "AaveV4Spokes");
         i += _expectName(
             new CompoundV3CometsMetaBalanceAdapter(stub, stub, n).protocolName(),
             ProtocolNames.COMPOUND_V3,

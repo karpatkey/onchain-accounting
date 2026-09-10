@@ -7,6 +7,15 @@
       "0xB85B2bFEbeC4F5f401dbf92ac147A3076391fCD5"
     ]
   },
+  "AaveV4SpokesMeta": {
+    "enabled": true,
+    "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Aave V4 Spoke. Constructor takes only the NAV proxy, so its CREATE2 address is fleet-wide (DeploySalts.AAVE_V4_SPOKES_META = 1 - version 1 is this adapter's FIRST generation; it was never plain-CREATE deployed). The active Spoke set lives on NAVCalculator (addMetaInstances/removeMetaInstances, from `instances` below - each entry is a Spoke address). Reserves are NOT instances: they are enumerated on-chain per Spoke by numeric id via getReserveCount()/getReserve(id). positionId = the Spoke, which is also the unit a v4 health factor is scoped to.",
+    "instances": [
+      "0x65407b940966954b23dfA3caA5C0702bB42984DC"
+    ],
+    "$instanceComment_GoldSpoke": "0x65407b940966954b23dfA3caA5C0702bB42984DC = the Aave V4 Gold Spoke on Ethereum (SPOKE_REVISION() == 1, getReserveCount() == 8, reserve 0 = XAUt 0x68749665FF8D2d112Fa859AA293F07A622782F38 and is the Spoke's only collateral-only reserve, so positionLabels renders [\"Spoke\", \"XAUt\"]). Verified on-chain 2026-09-10; this is the Spoke already carried in the live NAV's meta-instance set for this adapter.",
+    "$reserveRegistrationComment": "OPEN ITEM, not a defect in this adapter: 2 of the Gold Spoke's 8 reserves are NOT registered NAV assets in nav-config/assets-and-price-feeds/1.json - USDG (0xE343167631d89B6Ffc58B88d6b7fB0228795491D) and frxUSD (0xcaCd6fd266aF91b8AeD52aCCc382b4e165586E29). The other six are (XAUt, USDC, RLUSD, EURC, GHO, USDT). Consequence per the adapter's own rule: an unregistered SUPPLY is skipped (understates, safe), but an unregistered BORROW drops the WHOLE Spoke from NAV rather than reporting the supplies alone. So the portfolio must not borrow USDG or frxUSD on this Spoke until both are registered with price feeds. Verified on-chain 2026-09-10."
+  },
   "MorphoVaultsMeta": {
     "enabled": true,
     "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Morpho ERC4626 vault. The active vault set lives on NAVCalculator and is applied via addMetaInstances/removeMetaInstances in 06_Configure (from `instances` below). This SUPERSEDES the per-vault MorphoVault_* adapters, which are disabled below — the NAV calculator now learns the Morpho-vault universe from this list.",

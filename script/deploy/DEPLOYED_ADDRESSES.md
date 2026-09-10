@@ -63,6 +63,7 @@ CREATE2-identical fleet-wide, so each has the same init-code hash everywhere and
 | Adapter | Address | Chains |
 | --- | --- | --- |
 | `AaveV3InstancesMeta` | `0x04Ba6789B4AD5D6CF63Ec9cc301c13F6a8A0210b` | 1, 10, 100, 8453, 42161 |
+| `AaveV4SpokesMeta` | `0x79cad9584012806a76E7892808556Ed3797EAbcD` | 1 |
 | `AaveV3SafetyModule` | `0xa356717027B5d4010a7449904545E5aFb355Bdc9` | 1 |
 | `BalancerV3PoolsMeta` | `0xbF1785E519067f0471eb5C50A634A7eeE0140A21` | 1, 8453, 42161 |
 | `CurvePoolsMeta` | `0xCf200111050Bc5FFbd5c3e675c598995906c3945` | 1 |
@@ -160,6 +161,7 @@ position manager is at a different address entirely.
 | AaveUmbrella | `0x7299757E188000ca576c4197E1Ed1c53A04AC995` |
 | AaveV3InstancesMeta ★ | `0x04Ba6789B4AD5D6CF63Ec9cc301c13F6a8A0210b` |
 | AaveV3SafetyModule ★ | `0xa356717027B5d4010a7449904545E5aFb355Bdc9` |
+| AaveV4SpokesMeta ★ | `0x79cad9584012806a76E7892808556Ed3797EAbcD` |
 | BalancerV3GaugesMeta | `0x0e699e07DB653aDc8ca559287038032D227B8947` |
 | BalancerV3PoolsMeta ★ | `0xbF1785E519067f0471eb5C50A634A7eeE0140A21` |
 | CapSavings | `0xEc605FC2521792f2018dF92Bb5aDBf85EB417cb6` |

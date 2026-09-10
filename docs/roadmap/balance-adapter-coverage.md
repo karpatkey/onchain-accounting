@@ -80,6 +80,7 @@ These are not queues but represent value that lives outside the wallet and is no
 - **Morpho Vaults**: ✅ covered — `MorphoVaultsMeta` (meta-adapter, ADR 0010).
 - **Morpho Markets**: ✅ covered — `MorphoMarketsMeta` (meta-adapter, ADR 0010).
 - **Aave V3 (all instances)**: ✅ covered — `AaveV3InstancesMeta` (meta-adapter, ADR 0010).
+- **Aave V4 (all Spokes)**: ✅ covered — `AaveV4SpokesMeta` (meta-adapter, ADR 0010). Mainnet Gold Spoke configured.
 - **Compound V3**: ✅ covered — `CompoundV3CometsMeta` (meta-adapter, ADR 0010).
 - **Gearbox**: ✅ supply side covered — `GearboxV3MarketsMeta` (meta-adapter, ADR 0010; the passive ERC4626 pool LPs). The borrow side (collateral basket + debt held in Credit Accounts) has a contract — `GearboxV3CreditAccountsMetaBalanceAdapter` (instance coordinate = credit-account address) — but it is not yet wired into the deploy config.
 - **Fluid**: ✅ covered — `FluidFTokensMeta` (ERC4626 lending) + `FluidVaultsMeta` (T1 collateral/debt) meta-adapters (ADR 0010).

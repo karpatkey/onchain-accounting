@@ -31,9 +31,7 @@ import {MorphoMarketsMetaBalanceAdapter} from "src/balances/MetaBalanceAdapters/
 import {
     AaveV3InstancesMetaBalanceAdapter
 } from "src/balances/MetaBalanceAdapters/AaveV3InstancesMetaBalanceAdapter.sol";
-import {
-    AaveV4SpokesMetaBalanceAdapter
-} from "src/balances/MetaBalanceAdapters/AaveV4SpokesMetaBalanceAdapter.sol";
+import {AaveV4SpokesMetaBalanceAdapter} from "src/balances/MetaBalanceAdapters/AaveV4SpokesMetaBalanceAdapter.sol";
 import {
     GearboxV3MarketsMetaBalanceAdapter
 } from "src/balances/MetaBalanceAdapters/GearboxV3MarketsMetaBalanceAdapter.sol";

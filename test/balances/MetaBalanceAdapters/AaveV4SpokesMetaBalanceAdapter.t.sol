@@ -42,11 +42,7 @@ contract MockSpoke {
         );
         _configs.push(
             ISpoke.ReserveConfig({
-                collateralRisk: 0,
-                paused: false,
-                frozen: false,
-                borrowable: borrowable,
-                receiveSharesEnabled: true
+                collateralRisk: 0, paused: false, frozen: false, borrowable: borrowable, receiveSharesEnabled: true
             })
         );
     }
@@ -161,8 +157,7 @@ contract AaveV4SpokesMetaBalanceAdapterTest is Test {
     /// @dev The whole taxonomy, asserted together: a copy-pasted `_protocolId()` from the V3 adapter would still
     ///      produce a plausible non-empty name, so the ids are what pin the identity.
     function test_identity_taxonomy() public view {
-        INAVCalculator.PositionBalance[] memory p =
-            meta.getAdapterPositionsForInstances(alice, _instance(), address(0));
+        INAVCalculator.PositionBalance[] memory p = meta.getAdapterPositionsForInstances(alice, _instance(), address(0));
         assertEq(p[0].protocolBrand, ProtocolIds.AAVE, "brand rolls V3 and V4 together");
         assertEq(p[0].protocolId, ProtocolIds.AAVE_V4, "ecosystem id must be v4, not v3");
         assertEq(p[0].protocolSubId, ProtocolIds.AAVE_V4_LENDING);
@@ -173,8 +168,7 @@ contract AaveV4SpokesMetaBalanceAdapterTest is Test {
     }
 
     function test_legs_collateralAndTwoBorrows() public view {
-        INAVCalculator.PositionBalance[] memory p =
-            meta.getAdapterPositionsForInstances(alice, _instance(), address(0));
+        INAVCalculator.PositionBalance[] memory p = meta.getAdapterPositionsForInstances(alice, _instance(), address(0));
         assertEq(p.length, 3);
 
         assertEq(p[0].balanceAsset.asset, address(xaut));
@@ -197,8 +191,7 @@ contract AaveV4SpokesMetaBalanceAdapterTest is Test {
     ///      them — as `Supplied`, not `Collateral`, and never dropped.
     function test_supplyNotEnabledAsCollateral_isSuppliedNotDropped() public {
         spoke.setSupply(XAUT_ID, alice, 1_717_224, 1_717_224, false);
-        INAVCalculator.PositionBalance[] memory p =
-            meta.getAdapterPositionsForInstances(alice, _instance(), address(0));
+        INAVCalculator.PositionBalance[] memory p = meta.getAdapterPositionsForInstances(alice, _instance(), address(0));
         assertEq(p.length, 3);
         assertEq(p[0].amount, 1_717_224, "an unenabled supply is still a real balance");
         assertEq(uint8(p[0].positionKind), uint8(PositionKind.Supplied));
@@ -214,8 +207,7 @@ contract AaveV4SpokesMetaBalanceAdapterTest is Test {
     ///      would overstate the position by the entire borrow, and no consumer could offset it.
     function test_unregisteredBorrowedReserve_dropsWholeSpoke() public {
         nav.unregisterAssetHelper(address(usdt));
-        INAVCalculator.PositionBalance[] memory p =
-            meta.getAdapterPositionsForInstances(alice, _instance(), address(0));
+        INAVCalculator.PositionBalance[] memory p = meta.getAdapterPositionsForInstances(alice, _instance(), address(0));
         assertEq(p.length, 0, "an unreportable debt must never leave the supplies standing alone");
     }
 
@@ -223,8 +215,7 @@ contract AaveV4SpokesMetaBalanceAdapterTest is Test {
     ///      which is the safe direction.
     function test_unregisteredSuppliedReserve_isSkipped() public {
         nav.unregisterAssetHelper(address(xaut));
-        INAVCalculator.PositionBalance[] memory p =
-            meta.getAdapterPositionsForInstances(alice, _instance(), address(0));
+        INAVCalculator.PositionBalance[] memory p = meta.getAdapterPositionsForInstances(alice, _instance(), address(0));
         assertEq(p.length, 2);
         assertTrue(p[0].isDebt);
         assertTrue(p[1].isDebt);

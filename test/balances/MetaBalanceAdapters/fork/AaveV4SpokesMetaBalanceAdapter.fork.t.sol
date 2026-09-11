@@ -172,4 +172,70 @@ contract AaveV4SpokesMetaBalanceAdapterForkTest is BalanceAdapterTestBase {
         assertEq(live.length, 1);
         assertEq(live[0], bytes32(uint256(uint160(GOLD_SPOKE))));
     }
+
+    /// @notice The property this adapter exists for, read off the LIVE mainnet NAV with no prank, no mock and no
+    ///         local registration: this account's Aave V4 slice is its collateral MINUS both borrows.
+    /// @dev Reads `getAccountNavForAdapters` for the DEPLOYED adapter through the LIVE proxy. The adapter was
+    ///      already registered at FORK_BLOCK (`isAdapterRegistered` is false at the creation block 25_931_340 and
+    ///      true here), so this test needs no setup and NOTHING in it can be satisfied by local wiring — unlike
+    ///      every other test in this file, which builds its own `balances`.
+    ///
+    ///      The figure is deterministic at a pinned block, so it is asserted exactly. The second assertion is the
+    ///      one that names the BUG this adapter closes: a NAV blind to v4 debt does not revert — it returns
+    ///      success, with clean price-quality flags, reporting the collateral ALONE. Here collateral alone is
+    ///      ~7 555 USDC (1.717224 XAUt at this block's gold price) against a true slice of 3 126.918143, so
+    ///      dropping the debt legs would overstate this account by ~2.4x — in the direction that over-redeems.
+    ///      The bound is derived from the NAV's OWN XAUt feed rather than a hardcoded gold quote, so a re-pin to
+    ///      another block does not silently loosen it.
+    function test_liveNav_netsTheV4Debt() public view {
+        address[] memory only = new address[](1);
+        only[0] = DEPLOYED_ADAPTER;
+        INAVCalculator.PartialNAV memory slice = INAVCalculator(NAV_PROXY).getAccountNavForAdapters(HOLDER, USDC, only);
+
+        assertEq(slice.adaptersCovered.length, 1, "slice must cover exactly the v4 adapter");
+        assertEq(slice.adaptersCovered[0], DEPLOYED_ADAPTER);
+        assertEq(slice.value, 3_126_918_143, "XAUt collateral minus the USDC and USDT borrows, quoted in USDC");
+
+        INAVCalculator.PriceFeedData memory px = INAVCalculator(NAV_PROXY).getPriceData(XAUT);
+        assertGt(px.price, 0, "XAUt must be priced at FORK_BLOCK");
+        uint256 collateralAlone =
+            ISpoke(GOLD_SPOKE).getUserSuppliedAssets(XAUT_ID, HOLDER) * uint256(px.price) / (10 ** px.decimals);
+        assertLt(
+            uint256(slice.value),
+            collateralAlone * 6 / 10,
+            "debt must be subtracted: a NAV blind to v4 debt reports the collateral alone"
+        );
+
+        assertFalse(slice.sequencerDown, "the blindness this closes is silent, not flagged");
+        assertFalse(slice.quoteAssetStale);
+        assertEq(slice.stalePriceAssets.length, 0);
+        assertEq(slice.irregularPriceAssets.length, 0);
+    }
+
+    /// @notice The committed source IS the deployed program, asserted IN-TREE and behaviourally rather than by a
+    ///         bytecode diff a reviewer has to run by hand: given the same real three-leg position, the locally
+    ///         compiled adapter and the DEPLOYED one report identical legs.
+    /// @dev This is the automated counterpart to the PR's byte-identity claim. A bytecode diff proves the two
+    ///      programs are the same today; this keeps proving it, because a later source edit that changed any
+    ///      reported balance turns it red without anyone remembering to re-run `cast code`.
+    ///
+    ///      `balanceAdapter` is deliberately excluded from the comparison — it is each instance's own address,
+    ///      the one field that MUST differ. Everything a NAV actually consumes (asset, amount, kind, debt flag,
+    ///      positionId) must not.
+    function test_committedSourceMatchesDeployedBehaviour() public view {
+        INAVCalculator.PositionBalance[] memory local =
+            meta.getAdapterPositionsForInstances(HOLDER, _instance(), address(0));
+        INAVCalculator.PositionBalance[] memory onchain = AaveV4SpokesMetaBalanceAdapter(DEPLOYED_ADAPTER)
+            .getAdapterPositionsForInstances(HOLDER, _instance(), address(0));
+
+        assertEq(local.length, onchain.length, "same number of legs");
+        assertEq(local.length, 3, "fixture premise: three legs at FORK_BLOCK");
+        for (uint256 i; i < local.length; ++i) {
+            assertEq(local[i].balanceAsset.asset, onchain[i].balanceAsset.asset, "asset");
+            assertEq(local[i].amount, onchain[i].amount, "amount");
+            assertEq(uint8(local[i].positionKind), uint8(onchain[i].positionKind), "kind");
+            assertEq(local[i].isDebt, onchain[i].isDebt, "debt flag");
+            assertEq(local[i].positionId, onchain[i].positionId, "positionId");
+        }
+    }
 }

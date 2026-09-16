@@ -1011,5 +1011,40 @@
         "heartbeat": 86400
       }
     ]
+  },
+  "LBTC": {
+    "address": "0x8236a87084f8B84306f72007F36F2618A5634494",
+    "accrualKind": "Appreciating",
+    "$kindComment": "Lombard Staked Bitcoin, 8-dp. accrualKind Appreciating, MEASURED not assumed: the token's own getRate() (BTC per LBTC) read at historical blocks goes 1.003349099 (180d) -> 1.004272766 (90d) -> 1.005005450 (today), i.e. ~+16.6 bps over 180 days (~0.34%/yr). Balance does not rebase; the redemption rate grows, which is exactly the Appreciating case. NOT $1-pegged and not USD-denominated at all - it tracks BTC - so NO pegToleranceBps, and pegKind derives Floating.",
+    "labels": [
+      "Lombard",
+      "Wrapped Bitcoin"
+    ],
+    "$comment": "Priced by a CROSS-RATE custom feed, not a direct Chainlink registration, because Chainlink publishes no LBTC/USD feed on Ethereum - only LBTC/BTC. See the LBTC block in contracts-deployment-config/custom-price-feeds/1.json for the base-asset reasoning (WBTC, whose NAV price IS the Chainlink BTC/USD feed, so no WBTC-specific risk enters).\n\nRegistered so the Aave V4 LombardBTC Spoke (0x7EC68b5695e803e98a21a9A05d744F28b0a7753D) can be carried as a meta-instance: LBTC is its r0 COLLATERAL-ONLY reserve and WBTC/cbBTC (r1/r2) are its borrowables. With the borrowables registered and LBTC not, adding that Spoke would have reported the BTC debt while silently skipping the collateral backing it.\n\nMETHODOLOGY NOTE, because the choice is not free. The Chainlink LBTC/BTC feed is a MARKET price - its reference-data docs give attributeType `dex_state_price`, assetSubClass `Pegged Asset` - while the token also exposes a FUNDAMENTAL rate via getRate(). Measured 2026-09-16 the two sit 4.71 bps apart (market 1.00453494 below fundamental 1.00500545), which is the small discount a liquid wrapper normally carries. The MARKET feed is chosen deliberately: a fundamental rate cannot fall when the wrapper depegs, so pricing LBTC off getRate() would value a broken peg at par.",
+    "$monitorComment": "NO monitorFeeds, and the reason is mechanical rather than an omission. RedStone publishes LBTC_FUNDAMENTAL on mainnet (0xb415eAA355D8440ac7eCB602D3fb67ccC1f0bc81, declared cadence 86400 s in ethereumMultiFeed.json) and it would be a genuinely INDEPENDENT methodology to diverge against - market vs fundamental, the pairing audit finding #2 asked for on ezETH. It cannot be registered directly: monitors are compared in USD, and that feed reports an LBTC/BTC ratio (~1.0e8), so against a ~76,000e8 USD primary it would read ~9,999 bps and mark LBTC permanently irregular. Wiring it needs its own CrossRateCustomPriceFeed wrapper, exactly as ezETHCrossRateMarket does. Left as a follow-up rather than done here so this change is one deploy, not two.",
+    "priceFeeds": [
+      {
+        "type": "Custom",
+        "feed": "LBTC",
+        "heartbeat": 86400
+      }
+    ]
+  },
+  "syrupUSDG": {
+    "address": "0x87b65C4aAFFA76881f9E96F3e7ED945ddFC3Cd7A",
+    "accrualKind": "Appreciating",
+    "$kindComment": "Maple syrupUSDG share, USDG underlying; priced via convertToAssets (per feed config). Same MaplePool code as the already-registered syrupUSDC, so the same Appreciating classification: balance static, share rate grows. Live rate 2026-09-16: 1.011119 USDG per share.",
+    "labels": [
+      "Maple",
+      "Savings"
+    ],
+    "$comment": "Registered so the Aave V4 UsdgMapleE Spoke (0x774b9655413c34809c1f1b16b654465A89EBE989) can be carried as a meta-instance: syrupUSDG is its r1 COLLATERAL-ONLY reserve, with USDG (r0/r3) and USDC (r2) borrowable and already registered.\n\nITS BASE ASSET IS USDG, so this entry depends on the USDG registration made the same day - there was no USDG/USD price for the feed's base leg before it. See the syrupUSDG block in contracts-deployment-config/custom-price-feeds/1.json for the manipulation-resistance measurement and for the convertToAssets-vs-unrealizedLosses property this shares with the live syrupUSDC feed.",
+    "priceFeeds": [
+      {
+        "type": "Custom",
+        "feed": "syrupUSDG",
+        "heartbeat": 86400
+      }
+    ]
   }
 }

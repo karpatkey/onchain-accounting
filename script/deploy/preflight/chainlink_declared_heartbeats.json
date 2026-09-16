@@ -94,6 +94,12 @@
         "threshold": 2,
         "feedCategory": "low"
       },
+      "0x5c29868c58b6e15e2b962943278969ab6a7d3212": {
+        "name": "LBTC / BTC",
+        "declaredHeartbeat": 86400,
+        "threshold": 0.5,
+        "feedCategory": "medium"
+      },
       "0x5f4ec3df9cbd43714fe2740f5e3616155c5b8419": {
         "name": "ETH / USD",
         "declaredHeartbeat": 3600,

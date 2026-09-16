@@ -24,7 +24,10 @@ import {ConfigReader} from "script/utils/ConfigReader.sol";
 ///      **Why five transactions.** The set cannot be cleared directly: `removeMetaInstances` reverts
 ///      `InvalidBalanceAdapter` for an unregistered adapter, so the adapter must be registered first —
 ///      which is the dangerous act. The ordering below is the only one where the two adapters are never
-///      both reporting; every intermediate state is an UNDER-report (the position missing from NAV),
+///      both reporting. Every intermediate state is SAFE, but they are not all under-reports: after step 2
+///      the position is served by the SUPERSEDED predecessor as sole reporter (the fork test asserts exactly
+///      that — "residue must be the ONLY reporter"), which is a correct value from a deregistered adapter
+///      rather than a missing one. Never two reporters at once is the invariant; "always missing" is not,
 ///      which is the direction this repo prefers everywhere. Registering the predecessor FIRST would
 ///      double-count, and that is revert-probed in `DormantInstanceCleanup.fork.t.sol`.
 ///

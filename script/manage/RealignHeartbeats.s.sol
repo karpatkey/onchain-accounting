@@ -76,11 +76,13 @@ contract RealignHeartbeats is Script {
         // Snapshot before, so the post-broadcast report is measured rather than assumed.
         uint256[] memory priceBefore = new uint256[](assets.length);
         bool[] memory staleBefore = new bool[](assets.length);
+        address[] memory feedBefore = new address[](assets.length);
         for (uint256 i; i < assets.length; ++i) {
             IPrices.PriceFeedConfig memory c = NAVCalculator(NAV).getPriceFeedAt(assets[i], 0);
             INAVCalculator.PriceFeedData memory pd = INAVCalculator(NAV).getPriceData(assets[i]);
             priceBefore[i] = uint256(pd.price);
             staleBefore[i] = pd.stale;
+            feedBefore[i] = c.priceFeed;
             console2.log(
                 string.concat(
                     "  ", syms[i], "  ", vm.toString(c.chainlinkHeartbeat), " -> ", vm.toString(heartbeats[i])
@@ -113,7 +115,12 @@ contract RealignHeartbeats is Script {
         console2.log("--- verification ---");
         for (uint256 i; i < assets.length; ++i) {
             IPrices.PriceFeedConfig memory c = NAVCalculator(NAV).getPriceFeedAt(assets[i], 0);
-            require(NAVCalculator(NAV).getPriceFeedCount(assets[i]) == 1, "feed count");
+            // NO `getPriceFeedCount == 1` here. That guard belonged to the deleted `HeartbeatRealigner`,
+            // which refused multi-feed assets outright because its remove-then-add REORDERED the array. The
+            // upsert mutates in place and reorders nothing, so a multi-feed asset is now safe — while the
+            // leftover require aborted the whole chain's run for one, since `forge script` simulates end to
+            // end before broadcasting. Same total-blockage class as the postcondition below.
+            require(c.priceFeed == feedBefore[i], "FEED ADDRESS CHANGED");
             require(c.chainlinkHeartbeat == heartbeats[i], "heartbeat not applied");
             INAVCalculator.PriceFeedData memory d = INAVCalculator(NAV).getPriceData(assets[i]);
             // A stale asset prices 0 by design at declared + 0; only a CHANGED and still-fresh price is a fault.
@@ -124,7 +131,15 @@ contract RealignHeartbeats is Script {
             // `false || (99990000 == 0)` reverts, and since `forge script` simulates `run()` end to end
             // before broadcasting, NOT ONE asset on the chain would have been realigned. ADR 0025 widens
             // exactly the pegged feeds that go stale every cycle, so this was the common case, not the edge.
-            require(staleBefore[i] || d.stale || uint256(d.price) == priceBefore[i], "price moved while fresh");
+            // Compare ONLY when the asset was fresh before AND is fresh after. The previous form,
+            // `staleBefore[i] || d.stale || price == priceBefore`, short-circuited on the first term — and
+            // `staleBefore` is TRUE for exactly the pegged feeds ADR 0025 exists to widen, so the check was
+            // vacuous for the common case. That replaced "aborts on its own success" with "asserts nothing";
+            // this form does neither. A stale->fresh transition is the intended effect and is not compared,
+            // because `_selectFeedCore` reports price 0 while stale so there is nothing to compare against.
+            if (!staleBefore[i] && !d.stale) {
+                require(uint256(d.price) == priceBefore[i], "price moved while fresh");
+            }
             console2.log(
                 string.concat("  ok ", syms[i], "  hb=", vm.toString(c.chainlinkHeartbeat), d.stale ? "  [STALE]" : "")
             );

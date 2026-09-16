@@ -5,6 +5,7 @@ import {MetaBalanceAdapter} from "../MetaBalanceAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
+import {StaticCallLib} from "src/utils/StaticCallLib.sol";
 
 /// @title Wallet-Held Yield Token Meta Balance Adapter (base)
 /// @author KPK
@@ -56,6 +57,14 @@ abstract contract WalletTokenMetaBalanceAdapterBase is MetaBalanceAdapter {
     ///      this family exists to avoid gets back in.
     error DefaultAdapterUnresolvable(address navCalculator);
 
+    /// @notice The inclusion probe was starved of gas, so whether the default adapter reports this token is
+    ///         unknown.
+    /// @dev Raised rather than absorbed. Returning "included" here would drop the leg and return normally,
+    ///      which `MetaBalanceAdapter._positionsForInstances` cannot distinguish from an honest empty result —
+    ///      the holding would vanish from NAV unflagged. Reverting lets the base classify it as
+    ///      `InstanceGasExhausted`.
+    error DefaultAdapterProbeGasExhausted(address token, uint256 budget, uint256 consumed);
+
     /// @param navCalculator_ The NAVCalculator contract for asset-registry access.
     constructor(address navCalculator_) MetaBalanceAdapter(navCalculator_) {
         (bool ok, bytes memory data) =
@@ -86,12 +95,30 @@ abstract contract WalletTokenMetaBalanceAdapterBase is MetaBalanceAdapter {
     ///      double-count.
     function _reportedByDefaultAdapter(address token) internal view returns (bool) {
         // No zero check: the constructor rejects a zero address, so this is non-zero for the contract's life.
-        // An earlier version returned `false` (report) on zero, which was the disarmed branch the constructor
-        // guard exists to make impossible — keeping it would read as if zero were still a supported state.
-        (bool ok, bytes memory data) =
-            ERC20_DEFAULT_ADAPTER.staticcall(abi.encodeWithSignature("isSupportedByDefault(address)", token));
-        if (!ok || data.length != 32) return true;
-        return abi.decode(data, (bool));
+        //
+        // METERED, and that is what makes the fail-closed promise real. An unmetered raw staticcall forwards
+        // 63/64 of the frame and absorbs its OWN out-of-gas as `ok == false` — which this function would then
+        // read as "still included", suppress the leg, and return SUCCESSFULLY. `_positionsForInstances` only
+        // classifies exhaustion inside its `catch`, so a `try` that returns is trusted: the holding would
+        // leave NAV with no `InstanceGasExhausted` and no health flag. That is the blind spot
+        // `MetaBalanceAdapter`'s own docstring names — an instance that swallows its own out-of-gas — and all
+        // three review gates found it independently.
+        //
+        // `probeWordMetered`'s stipend is a share of THIS frame, not a fixed ceiling, so a starved read
+        // consumes enough of the instance budget for the base fan-out to classify it. Rethrowing `starved`
+        // turns a silent under-report into a raised `InstanceGasExhausted`. Ordinary failures — a missing
+        // function, a reverting adapter, a short answer — still fail CLOSED to "included", suppressing this
+        // leg rather than risking the double-count.
+        //
+        // `probeWordMetered` also returns the raw word instead of `abi.decode(...,(bool))`, which reverts on a
+        // word that is neither 0 nor 1; comparing against zero keeps a non-canonical answer on the
+        // fail-closed path the docstring promises.
+        (bool ok, bool hasWord, uint256 word, bool starved, uint256 budget, uint256 consumed) = StaticCallLib.probeWordMetered(
+            ERC20_DEFAULT_ADAPTER, abi.encodeWithSignature("isSupportedByDefault(address)", token)
+        );
+        if (starved) revert DefaultAdapterProbeGasExhausted(token, budget, consumed);
+        if (!ok || !hasWord) return true;
+        return word != 0;
     }
 
     /// @notice The `PositionKind` every instance of this adapter reports.

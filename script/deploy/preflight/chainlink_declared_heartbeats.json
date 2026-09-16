@@ -1,7 +1,7 @@
 {
   "$comment": "Snapshot of each oracle's PROVIDER-DECLARED heartbeat, for the declared-heartbeat-margin guard in declared_heartbeat_guard.py. Committed on purpose: preflight must be DETERMINISTIC and must not depend on a third-party endpoint at deploy time \u2014 a network failure should not block a deploy, and a silently-changed remote should not change the verdict. Regenerate with: python3 declared_heartbeat_guard.py --refresh. Source: Chainlink reference-data-directory. Only addresses referenced by config are recorded; an unrecorded address is reported by the guard as actionable (run --refresh) rather than silently passing.",
   "source": "https://reference-data-directory.vercel.app/",
-  "fetched": "2026-08-28",
+  "fetched": "2026-09-16",
   "chains": {
     "1": {
       "0x04f84020fdf10d9ee64d1dcc2986edf2f556da11": {
@@ -9,6 +9,12 @@
         "declaredHeartbeat": 86400,
         "threshold": 0.3,
         "feedCategory": "low"
+      },
+      "0x14f0737d6b705259e521ea6e9e3506ac78dbd311": {
+        "name": "USDG / USD",
+        "declaredHeartbeat": 86400,
+        "threshold": 0.25,
+        "feedCategory": "medium"
       },
       "0x164b276057258d81941e97b0a900d4c7b358bce0": {
         "name": "wstETH / USD Calculated",
@@ -32,6 +38,12 @@
         "name": "RLUSD / USD",
         "declaredHeartbeat": 86400,
         "threshold": 0.3,
+        "feedCategory": "low"
+      },
+      "0x2c1d072e956affc0d435cb7ac38ef18d24d9127c": {
+        "name": "LINK / USD",
+        "declaredHeartbeat": 3600,
+        "threshold": 0.5,
         "feedCategory": "low"
       },
       "0x3e7d1eab13ad0104d2750b8863b489d65364e32d": {
@@ -117,6 +129,12 @@
         "declaredHeartbeat": 86400,
         "threshold": 0.5,
         "feedCategory": "low"
+      },
+      "0x9b4a96210bc8d9d55b1908b465d8b0de68b7ff83": {
+        "name": "frxUSD / USD",
+        "declaredHeartbeat": 86400,
+        "threshold": 0.5,
+        "feedCategory": "high"
       },
       "0xa569d910839ae8865da8f8e70fffb0cba869f961": {
         "name": "USDe / USD",

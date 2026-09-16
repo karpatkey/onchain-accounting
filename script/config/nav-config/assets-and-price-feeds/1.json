@@ -925,5 +925,64 @@
         "heartbeat": 86400
       }
     ]
+  },
+  "USDG": {
+    "address": "0xe343167631d89B6Ffc58B88d6b7fB0228795491D",
+    "accrualKind": "None",
+    "$kindComment": "Global Dollar (Paxos / Global Dollar Network), 6-dp, USD fiat-backed. accrualKind None: the token neither rebases nor grows a redemption ratio. pegToleranceBps 100 like every other $1 stablecoin here -> pegKind derives Pegged.",
+    "labels": [
+      "Paxos",
+      "Stablecoin"
+    ],
+    "$comment": "REGISTERED TO CLOSE AN AAVE V4 BORROW-DROP TRIPWIRE, not merely for wallet coverage. USDG is a BORROWABLE reserve on all three chain-1 Spokes carried by AaveV4SpokesMeta -- Gold reserve 3, Bluechip reserve 11, Main reserve 11 (enumerated live 2026-09-16 via getReserveCount/getReserve). By the adapter's asymmetric rule an unregistered SUPPLY is skipped (understates, safe) but an unregistered BORROW returns an EMPTY position array for the whole Spoke, so a single USDG borrow would have silently removed the entire Aave V4 leg -- collateral included -- from NAV. See the $reserveRegistrationComment in nav-config/meta-balance-adapters/1.json.",
+    "pegToleranceBps": 100,
+    "priceFeeds": [
+      {
+        "type": "Chainlink",
+        "address": "0x14f0737d6b705259e521EA6E9E3506AC78dBd311",
+        "$comment": "Chainlink USDG/USD, 8-dp, the PROXY (aggregator() returns 0xD7496378523f90f1e82dA528F385B2B30120afE2 -- do not register the aggregator, Chainlink rotates it). It is the ONLY USDG feed Chainlink lists on mainnet: the reference-data-directory feeds-mainnet.json has exactly one USDG entry, and the data.chain.link USDG/USD SVR feed circulated alongside it lives on ROBINHOOD CHAIN, not chain 1, so it is not an alternative here. Declared heartbeat 86400, threshold 0.25%, feedCategory medium -> REGISTERED AT 86400 = EXACTLY declared, no margin (ADR 0025). THIS FEED IS HEARTBEAT-DRIVEN AND THE ZERO MARGIN IS NOT FREE, measured rather than assumed: a getRoundData walk of the 40 rounds from 2026-08-07 to 2026-09-15 gives 39 intervals, min 86400 / median 86424 / max 86436, so 39 of 39 land AT OR PAST the declared 86400. USDG will therefore read stale for roughly 24 s at the end of each daily cycle and be listed in stalePriceAssets. That is the 86400-class row of ADR 0025's own cost table (<30 s/day) and is accepted knowingly -- margin above declared is a window in which a DEAD feed still reads fresh, and consumers gate on stale, so this surfaces as a refusal rather than as a wrong number. Live at registration time: 0.99990003, updatedAt 2026-09-15T19:53:35Z.",
+        "heartbeat": 86400
+      }
+    ],
+    "$monitorComment": "NO monitorFeeds, and therefore no divergenceToleranceBps -- same posture as RLUSD, GHO, crvUSD and EURC. There is no independent mainnet source to diverge against: RedStone publishes a USDG feed only on Ink (chain 57073, 0x83c6f7F61A55Fc7A1337AbD45733AD9c1c68076D), and a sweep of ALL 116 manifests under redstone-oracles-monorepo relayer-remote-config/main on 2026-09-16 found no chain-1 USDG feed in any of them -- including the 7 chain-1 manifests, so this is not the product-specific-manifest miss the redstone guard warns about. Chainlink's other two mainnet USDG-adjacent proxies do not exist either; the catalogue has exactly one. Revisit if RedStone or another push provider lists USDG on mainnet."
+  },
+  "frxUSD": {
+    "address": "0xCAcd6fd266aF91b8AeD52aCCc382b4e165586E29",
+    "accrualKind": "None",
+    "$kindComment": "Frax USD, 18-dp, the redenominated FRAX. accrualKind None -- the yield-bearing wrapper is sfrxUSD, which is NOT registered here. pegToleranceBps 100 like the other $1 stablecoins.",
+    "labels": [
+      "Frax",
+      "Stablecoin"
+    ],
+    "$comment": "THE SECOND HALF OF THE SAME AAVE V4 TRIPWIRE as USDG above, and the last borrowable one: frxUSD is borrowable on Gold reserve 4, Bluechip reserve 8 and Main reserve 12. With USDG and frxUSD both registered, EVERY borrowable underlying on the three carried Spokes is a registered NAV asset, so the whole-Spoke drop is unreachable there rather than merely unlikely. The only remaining unregistered underlying, LINK (Main reserve 6), is collateral-only and so can never trigger it -- it is registered below for wallet coverage, not for this.",
+    "pegToleranceBps": 100,
+    "priceFeeds": [
+      {
+        "type": "Chainlink",
+        "address": "0x9B4a96210bc8D9D55b1908B465D8B0de68B7fF83",
+        "$comment": "Chainlink frxUSD/USD, 8-dp, proxy. Declared heartbeat 86400, threshold 0.5%, feedCategory HIGH (Chainlink's own market-risk classification -- higher than USDG's medium; it reflects frxUSD's liquidity and issuer profile, not feed quality). REGISTERED AT 86400 = EXACTLY declared (ADR 0025). Heartbeat-driven, measured the same way as USDG: 30 rounds to 2026-09-16 give 29 intervals, min 86412 / median 86424 / max 86448 -> 29 of 29 at or past declared, so expect ~24-48 s of stale per daily cycle. Accepted for the same reason. Live at registration time: 0.99997858, updatedAt 2026-09-16T15:07:23Z.",
+        "heartbeat": 86400
+      }
+    ],
+    "$monitorComment": "NO monitorFeeds. RedStone carries frxUSD on Fraxtal (252), Optimism (10), Sei (1329) and Stable (988) but NOT on chain 1 -- verified by the same 116-manifest sweep on 2026-09-16. Chainlink lists one frxUSD/USD proxy on mainnet and one legacy FRAX/USD (0xB9E1E3A9feFf48998E45Fa90847ed4D467E8BcfD); FRAX/USD is deliberately NOT wired as a monitor, because after the FRAX->frxUSD redenomination the two feeds no longer track the same instrument and a stale legacy feed would raise divergence on a healthy asset."
+  },
+  "LINK": {
+    "address": "0x514910771AF9Ca656af840dff83E8264EcF986CA",
+    "accrualKind": "None",
+    "$kindComment": "ChainLink Token, 18-dp. NOT $1-pegged, so NO pegToleranceBps -> pegKind derives Floating. Labelled Governance to match the file's existing use of that segment for a protocol's own token (AAVE, UNI, COMP, ENS, EIGEN); LINK is a work/payment token rather than a governance one, and the taxonomy has no better segment today.",
+    "labels": [
+      "Chainlink",
+      "Governance"
+    ],
+    "$comment": "REGISTERED FOR COMPLETENESS, NOT FOR THE BORROW-DROP GUARD. LINK is Main Spoke reserve 6 and is COLLATERAL-ONLY (getReserveConfig(6).borrowable == false, read live 2026-09-16), so it can never trigger the whole-Spoke drop -- an unregistered LINK supply is merely skipped. Registering it makes every underlying across the three carried Spokes a registered NAV asset, and adds LINK wallet coverage via ERC20Default. COST, stated because it is not free: every registered asset adds a per-asset ERC20Default read to EVERY account's NAV, so this lengthens the complete-read gas for all accounts, not just those touching Aave V4.",
+    "priceFeeds": [
+      {
+        "type": "Chainlink",
+        "address": "0x2c1d072e956AFFC0D435Cb7AC38EF18d24d9127c",
+        "$comment": "Chainlink LINK/USD, 8-dp, proxy -- the canonical mainnet feed, and already the address test/ChainlinkPriceFeeds.sol:linkUsdEthMainnet() carries. Chainlink lists three LINK/USD proxies on mainnet; the other two (0xE5fa3A4e4208858ADdf2CDb4e12651E89f1f1A70, 0x76F8C9E423C228E83DCB11d17F0Bd8aEB0Ca01bb) are SVR variants for Aave's OEV recapture and are NOT independent sources, so neither is usable as a monitor. Declared heartbeat 3600, threshold 0.5% -> REGISTERED AT 3600 = EXACTLY declared (ADR 0025). Unlike USDG and frxUSD this feed is DEVIATION-ACTIVE, so the heartbeat binds only occasionally: a 120-round walk to 2026-09-16 gives 119 intervals, min 60 / median 1056 / max 3672 s, of which 18 (15%) reach or pass 3600 -- by at most 72 s. So LINK will read stale for tens of seconds after roughly one publish cycle in seven, ~0.5% of reads: the same order as ADR 0025's own measured figure for the chain-1 3600 s class (DAI, COMP at 0.66%), and accepted on the same grounds. It is NOT the every-cycle staleness USDG and frxUSD have. Live at registration time: 10.89620000, updatedAt 2026-09-16T19:01:47Z.",
+        "heartbeat": 3600
+      }
+    ],
+    "$monitorComment": "NO monitorFeeds. RedStone publishes LINK on BNB (chain 56) only -- no chain-1 LINK feed in any of the 116 manifests swept on 2026-09-16 -- and the two other Chainlink LINK/USD proxies are SVR feeds off the same aggregation, so they would not constitute an independent second observation."
   }
 }

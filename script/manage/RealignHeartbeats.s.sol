@@ -55,6 +55,11 @@ contract RealignHeartbeats is Script {
             console2.log(string.concat("  monitor ", mSyms[i], " -> ", vm.toString(mHeartbeats[i])));
         }
 
+        // NOTE: this checks the CONFIGURED manager, and `vm.startBroadcast()` below takes no argument — so
+        // forge signs with whatever `--account` / `--private-key` / `--sender` the CLI supplies. This
+        // precheck therefore catches a stale config, NOT a mismatched signer: run it with an account other
+        // than `addresses.manager` and the first write still reverts mid-broadcast. Pass the manager account.
+        //
         // The address that will actually SIGN, not `msg.sender`. Under `forge script` the two need not be
         // equal, so checking msg.sender can fail a valid run before broadcasting — or pass one whose real
         // signer lacks the role, leaving the revert to land mid-sequence. `10_MigrateAdaptersToCreate2.s.sol`
@@ -70,9 +75,12 @@ contract RealignHeartbeats is Script {
 
         // Snapshot before, so the post-broadcast report is measured rather than assumed.
         uint256[] memory priceBefore = new uint256[](assets.length);
+        bool[] memory staleBefore = new bool[](assets.length);
         for (uint256 i; i < assets.length; ++i) {
             IPrices.PriceFeedConfig memory c = NAVCalculator(NAV).getPriceFeedAt(assets[i], 0);
-            priceBefore[i] = uint256(INAVCalculator(NAV).getPriceData(assets[i]).price);
+            INAVCalculator.PriceFeedData memory pd = INAVCalculator(NAV).getPriceData(assets[i]);
+            priceBefore[i] = uint256(pd.price);
+            staleBefore[i] = pd.stale;
             console2.log(
                 string.concat(
                     "  ", syms[i], "  ", vm.toString(c.chainlinkHeartbeat), " -> ", vm.toString(heartbeats[i])
@@ -109,7 +117,14 @@ contract RealignHeartbeats is Script {
             require(c.chainlinkHeartbeat == heartbeats[i], "heartbeat not applied");
             INAVCalculator.PriceFeedData memory d = INAVCalculator(NAV).getPriceData(assets[i]);
             // A stale asset prices 0 by design at declared + 0; only a CHANGED and still-fresh price is a fault.
-            require(d.stale || uint256(d.price) == priceBefore[i], "price moved while fresh");
+            // Compare prices only when the asset was FRESH BEFORE. `_selectFeedCore` returns price 0 for an
+            // asset whose every feed is past its heartbeat, so a currently-stale asset snapshots
+            // `priceBefore == 0` — and widening its window is the script's whole purpose, after which it is
+            // fresh with a real price. Testing `d.stale` (the AFTER state) scored that success as a fault:
+            // `false || (99990000 == 0)` reverts, and since `forge script` simulates `run()` end to end
+            // before broadcasting, NOT ONE asset on the chain would have been realigned. ADR 0025 widens
+            // exactly the pegged feeds that go stale every cycle, so this was the common case, not the edge.
+            require(staleBefore[i] || d.stale || uint256(d.price) == priceBefore[i], "price moved while fresh");
             console2.log(
                 string.concat("  ok ", syms[i], "  hb=", vm.toString(c.chainlinkHeartbeat), d.stale ? "  [STALE]" : "")
             );

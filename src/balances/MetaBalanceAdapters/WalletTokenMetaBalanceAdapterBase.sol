@@ -61,9 +61,16 @@ abstract contract WalletTokenMetaBalanceAdapterBase is MetaBalanceAdapter {
         (bool ok, bytes memory data) =
             navCalculator_.staticcall(abi.encodeWithSignature("erc20DefaultBalanceAdapter()"));
         if (!ok || data.length != 32) revert DefaultAdapterUnresolvable(navCalculator_);
-        // A zero answer is legitimate — a NAV with no default adapter cannot double-count, so the guard simply
-        // stays inactive rather than blocking the deploy.
-        ERC20_DEFAULT_ADAPTER = abi.decode(data, (address));
+        address dflt = abi.decode(data, (address));
+        // ZERO IS REJECTED. An earlier version accepted it, reasoning that "a NAV with no default adapter
+        // cannot double-count" — true at that instant, and false forever after, because
+        // `_setErc20DefaultBalanceAdapter` is precisely a zero -> non-zero transition. The address is
+        // `immutable`, so a zero read at construction disarms the de-dup guard for the contract's life with
+        // no way to re-arm: exactly the outcome this error exists to prevent. Reachable by constructing
+        // against the NAVCalculator IMPLEMENTATION rather than its proxy, or against a proxy deployed but
+        // not yet initialized — both of which satisfy the base class's `getRegisteredAsset` probe.
+        if (dflt == address(0)) revert DefaultAdapterUnresolvable(navCalculator_);
+        ERC20_DEFAULT_ADAPTER = dflt;
     }
 
     /// @notice Whether `ERC20DefaultBalanceAdapter` is CURRENTLY also reporting `token`.

@@ -5,6 +5,9 @@ import {Test} from "forge-std/Test.sol";
 import {Mock_NAVCalculator} from "test/mocks/nav_calculator.sol";
 import {Mock_ERC20} from "test/mocks/tokens.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
+import {
+    WalletTokenMetaBalanceAdapterBase
+} from "src/balances/MetaBalanceAdapters/WalletTokenMetaBalanceAdapterBase.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 import {
@@ -46,12 +49,19 @@ contract WalletTokenMetaBalanceAdaptersTest is Test {
     Mock_ERC20 internal wstETH;
     Mock_ERC20 internal sDAI;
     address internal alice = address(0xA11CE);
+    DefaultAdapterStub internal defaultAdapter;
 
     LidoStakedEthWalletMetaBalanceAdapter internal lido;
     SkySavingsWalletMetaBalanceAdapter internal sky;
 
     function setUp() public {
         nav = new Mock_NAVCalculator();
+        // Arm the de-dup guard BEFORE constructing any adapter: `ERC20_DEFAULT_ADAPTER` is immutable, so an
+        // adapter built while the mock still answers address(0) would be permanently disarmed — and every
+        // assertion below would then run against a shape production never has. The stub reports nothing as
+        // included by default, which is the post-exclusion steady state these tests mean to exercise.
+        defaultAdapter = new DefaultAdapterStub();
+        nav.setErc20DefaultBalanceAdapter(address(defaultAdapter));
         wstETH = new Mock_ERC20("wstETH", 18);
         sDAI = new Mock_ERC20("sDAI", 18);
         nav.registerAsset(address(wstETH), 18, "wstETH");
@@ -225,14 +235,20 @@ contract WalletTokenMetaBalanceAdaptersTest is Test {
         );
     }
 
-    /// @notice A NAV that cannot answer at all fails the DEPLOY, not the read.
-    /// @dev The stand-in is built BEFORE `expectRevert`: a `new` in the argument list is evaluated first, so an
-    ///      inline construction would bind the cheatcode to that creation instead of the one under test — which
-    ///      is exactly how the first version of this test passed vacuously.
-    function test_dedupe_constructorRevertsWhenNavCannotAnswer() public {
-        address notANav = address(new Mock_ERC20("NOT-A-NAV", 18));
-        vm.expectRevert();
-        new LidoStakedEthWalletMetaBalanceAdapter(notANav);
+    /// @notice A NAV that cannot answer `erc20DefaultBalanceAdapter()` fails the DEPLOY, by SELECTOR.
+    /// @dev The previous version of this test was vacuous and its own comment bragged about fixing a
+    ///      *different* vacuity. It passed a `Mock_ERC20`, which trips `MetaBalanceAdapter`'s earlier
+    ///      `NAVCalculatorTooOld` probe (MetaBalanceAdapter.sol:167) before this contract's constructor body
+    ///      ever runs, and the bare `vm.expectRevert()` accepted that substitution — so
+    ///      `DefaultAdapterUnresolvable` had ZERO coverage and could have been deleted with the suite green.
+    ///      This asserts the SELECTOR, against a NAV that passes the base probe and then answers zero.
+    function test_dedupe_constructorRevertsOnZeroDefaultAdapter() public {
+        Mock_NAVCalculator bare = new Mock_NAVCalculator();
+        bare.setErc20DefaultBalanceAdapter(address(0)); // passes the base probe, then answers zero
+        vm.expectRevert(
+            abi.encodeWithSelector(WalletTokenMetaBalanceAdapterBase.DefaultAdapterUnresolvable.selector, address(bare))
+        );
+        new LidoStakedEthWalletMetaBalanceAdapter(address(bare));
     }
 
     /// @notice The RETURN TRIP: re-registering an asset must not revive the default-adapter leg.

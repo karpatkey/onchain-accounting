@@ -10,7 +10,11 @@ import {ConfigReader} from "script/utils/ConfigReader.sol";
 /// @author KPK
 /// @notice Clears the dormant meta-instance set left on the superseded PolygonStakingMeta predecessor
 ///         `0x59039882…`, in the one order that never double-counts.
-/// @dev **The residue.** `removeBalanceAdapter` does not clear `metaInstances` (`Balances.sol:190`), and
+/// @dev **The residue, and why it still exists after the fix.** This PR makes BOTH removal paths clear
+///      `metaInstances`, so no NEW residue can be created — but the clearing lives in the NAVCalculator
+///      implementation, and the residue below was created by the PRE-UPGRADE implementation that is still
+///      live on the proxy this script targets. The structural fix is present; it is simply not retroactive,
+///      which is what this script is for. `removeBalanceAdapter` did not clear `metaInstances`, and
 ///      the 2026-08-26 swap predated the `removeMetaInstances` step now in `SwapMetaAdapter`. So the
 ///      deregistered predecessor still advertises validator 192. It is inert while deregistered — but
 ///      `addMetaBalanceAdapter` APPENDS and accepts an empty list, so a single re-registration of that

@@ -270,8 +270,8 @@ contract RegisterAssets is BaseDeployScript {
                 (bool okf, bytes memory fd) =
                     navProxy.staticcall(abi.encodeWithSelector(IPrices.getPriceFeedAt.selector, asset, resolvableIdx));
                 if (!okf || fd.length == 0) revert FeedPositionUnreadable(asset, resolvableIdx);
-                address onChainFeed = abi.decode(fd, (IPrices.PriceFeedConfig)).priceFeed;
-                if (onChainFeed != feed) revert FeedOrderMismatch(asset, resolvableIdx, onChainFeed, feed);
+                bytes memory act = _existingFeedAct(navProxy, asset, resolvableIdx, feed, pt, symbol, i);
+                if (act.length != 0) tmp[n++] = act;
             } else {
                 uint256 hb = vm.parseUint(ConfigReader.readAssetFeedHeartbeat(vm, currentChainId, symbol, i));
                 tmp[n++] = abi.encodeCall(NAVCalculator.addOrModifyPriceFeed, (asset, feed, pt, hb));
@@ -285,6 +285,36 @@ contract RegisterAssets is BaseDeployScript {
     }
 
     /// @notice Concatenates two calldata-action arrays.
+    /// @notice For a feed already present on-chain: verify it is the config-declared one, and return an
+    ///         `addOrModifyPriceFeed` action if its heartbeat has drifted from config. Empty when aligned.
+    /// @dev Extracted so its locals do not live in `_planFeedActs`' frame, which was one stack slot over
+    ///      solc's limit with them inlined.
+    ///
+    ///      Skipping on ADDRESS alone made this a silent no-op for a changed configured heartbeat — the one
+    ///      operation `addOrModifyPriceFeed` was added to perform — and stranded TRAILING feeds entirely,
+    ///      since `RealignHeartbeats` only ever touches index 0.
+    function _existingFeedAct(
+        address navProxy,
+        address asset,
+        uint256 idx,
+        address feed,
+        IPrices.PriceType pt,
+        string memory symbol,
+        uint256 i
+    ) private view returns (bytes memory) {
+        (bool okf, bytes memory fd) = navProxy.staticcall(
+            abi.encodeWithSelector(IPrices.getPriceFeedAt.selector, asset, idx)
+        );
+        if (!okf || fd.length < 128) revert FeedPositionUnreadable(asset, idx);
+
+        IPrices.PriceFeedConfig memory onChain = abi.decode(fd, (IPrices.PriceFeedConfig));
+        if (onChain.priceFeed != feed) revert FeedOrderMismatch(asset, idx, onChain.priceFeed, feed);
+
+        uint256 cfgHb = vm.parseUint(ConfigReader.readAssetFeedHeartbeat(vm, currentChainId, symbol, i));
+        if (onChain.chainlinkHeartbeat == cfgHb) return "";
+        return abi.encodeCall(NAVCalculator.addOrModifyPriceFeed, (asset, feed, pt, cfgHb));
+    }
+
     function _concat(bytes[] memory a, bytes[] memory b) private pure returns (bytes[] memory out) {
         out = new bytes[](a.length + b.length);
         uint256 w;

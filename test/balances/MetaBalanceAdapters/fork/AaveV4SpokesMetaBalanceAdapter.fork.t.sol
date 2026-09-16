@@ -33,6 +33,10 @@ contract AaveV4SpokesMetaBalanceAdapterForkTest is BalanceAdapterTestBase {
 
     uint256 public constant FORK_BLOCK = 25_942_506;
 
+    /// @dev After {HOLDER} repaid both borrows and withdrew the XAUt collateral. Used by the post-repay gate
+    ///      test, which needs the state where share counters are zero but a residue could survive.
+    uint256 public constant POST_REPAY_BLOCK = 25_960_000;
+
     /// @dev The adapter deployed on mainnet (CREATE2, canonical deployer) and recorded in
     ///      `script/config/deployments/1.json`.
     address public constant DEPLOYED_ADAPTER = 0x79cad9584012806a76E7892808556Ed3797EAbcD;
@@ -145,6 +149,35 @@ contract AaveV4SpokesMetaBalanceAdapterForkTest is BalanceAdapterTestBase {
             assertEq(spoke.getUserTotalDebt(id, stranger), 0);
         }
         assertEq(meta.getAdapterPositionsForInstances(stranger, _instance(), address(0)).length, 0);
+    }
+
+    /// @notice The gate invariant, tested where it can actually FAIL: an account that borrowed and then repaid.
+    /// @dev {test_gate_zeroSharesImpliesZeroAssets} above uses an account that never touched the protocol, so
+    ///      every `UserPosition` field is zero and the test cannot distinguish "the gate is right" from "there
+    ///      was never anything to miss". The gate reads only `drawnShares`/`premiumShares`, while `UserPosition`
+    ///      also carries a SIGNED `int200 premiumOffsetRay` it ignores — so the state that matters is one where
+    ///      the share counters have gone to zero on repay and a stale offset could survive. If it could, a
+    ///      reserve carrying both a supply and that residue would emit the supply leg and drop the debt leg,
+    ///      which is the adapter's only over-report shape.
+    ///
+    ///      {HOLDER} repaid and withdrew after {FORK_BLOCK}, so rolling forward reaches exactly that state.
+    ///      Measured here: all four counters AND the offset are zero, and `getUserTotalDebt` agrees — the offset
+    ///      is cleared alongside the shares, so the gate misses nothing. This is what makes `_instancePositions`'
+    ///      invariant true as written rather than merely plausible.
+    function test_gate_afterRepay_offsetIsClearedWithTheShares() public {
+        vm.rollFork(POST_REPAY_BLOCK);
+        ISpoke spoke = ISpoke(GOLD_SPOKE);
+        uint256 n = spoke.getReserveCount();
+
+        for (uint256 id; id < n; ++id) {
+            ISpoke.UserPosition memory up = spoke.getUserPosition(id, HOLDER);
+            // The residue the gate would miss, asserted absent rather than assumed absent.
+            assertEq(up.premiumOffsetRay, 0, "a stale premium offset would be invisible to the hasDebt gate");
+            bool gateSeesDebt = up.drawnShares > 0 || up.premiumShares > 0;
+            if (!gateSeesDebt) {
+                assertEq(spoke.getUserTotalDebt(id, HOLDER), 0, "zero shares must imply zero debt");
+            }
+        }
     }
 
     /// @notice The label leaf is derived from the Spoke's collateral-only reserves on-chain — the Gold Spoke's

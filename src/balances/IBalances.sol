@@ -52,6 +52,12 @@ interface IBalances {
     /// @notice Error when adding a meta-instance coordinate that is already present (would double-count NAV).
     error DuplicateMetaInstance();
 
+    /// @notice The coordinate is already governed by a DIFFERENT registered meta adapter.
+    /// @dev Two adapters holding one coordinate both emit a well-formed leg for the same holding under
+    ///      different reconciliation keys, and NAV sums them with no health flag. Rejected at configuration
+    ///      time because no read-path guard can see across adapters.
+    error MetaInstanceClaimedByAnotherAdapter(bytes32 instance, address claimedBy);
+
     /// @notice Error when removing a meta-instance coordinate that is not present in the adapter's set.
     error MetaInstanceNotFound();
 

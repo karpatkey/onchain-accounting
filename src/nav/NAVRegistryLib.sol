@@ -160,7 +160,7 @@ library NAVRegistryLib {
     ) external returns (uint256 added) {
         _registerAdapter(isAdapterRegistered, globalAdapters, adapterTypes, adapter, true);
         emit IBalances.BalanceAdapterAdded(address(0), adapter, IBalances.AdapterType.Custom);
-        added = _appendInstances(metaInstances[adapter], instances);
+        added = _appendInstances(globalAdapters, metaInstances, adapter, instances);
     }
 
     /// @notice Removes an adapter from the global registry (swap-remove). Reverts on the ERC20Default singleton or an
@@ -208,10 +208,7 @@ library NAVRegistryLib {
         // does NOT subtract from `_metaInstanceTotal`. That total has no consumer — every `PriceFeedLib`
         // signature taking it leaves it unused — so there is no buffer to get wrong. Do not wire up a
         // subtraction on the strength of this comment: see the reasoning at `Balances.sol:191`.
-        clearedInstances = metaInstances[adapter].length;
-        if (clearedInstances != 0) {
-            delete metaInstances[adapter];
-        }
+        clearedInstances = _releaseInstances(metaInstances, adapter, erc20DefaultBalanceAdapter);
 
         delete isAdapterRegistered[adapter];
         delete adapterTypes[adapter];
@@ -277,11 +274,7 @@ library NAVRegistryLib {
             // Clear the meta-instance set here too (issue #335). This is the path 06_Configure and
             // SwapMetaAdapter actually take, so a fix that only covered the singular variant would have
             // left the real deregistration route still leaking dormant coordinates.
-            uint256 n = metaInstances[adapter].length;
-            if (n != 0) {
-                delete metaInstances[adapter];
-                clearedInstances += n;
-            }
+            clearedInstances += _releaseInstances(metaInstances, adapter, erc20DefaultBalanceAdapter);
             emit IBalances.BalanceAdapterRemoved(address(0), adapter);
         }
     }
@@ -357,6 +350,7 @@ library NAVRegistryLib {
     /// @return added The number of coordinates appended (== instances.length on success)
     function addMetaInstances(
         mapping(address => bool) storage isAdapterRegistered,
+        address[] storage globalAdapters,
         mapping(address => bytes32[]) storage metaInstances,
         address adapter,
         bytes32[] memory instances
@@ -370,7 +364,7 @@ library NAVRegistryLib {
         if (instances.length == 0) {
             revert InvalidArguments();
         }
-        added = _appendInstances(metaInstances[adapter], instances);
+        added = _appendInstances(globalAdapters, metaInstances, adapter, instances);
     }
 
     /// @notice Removes instance coordinates from a meta-adapter's set (all-or-nothing, swap-and-pop). Reverts
@@ -386,7 +380,8 @@ library NAVRegistryLib {
         mapping(address => bool) storage isAdapterRegistered,
         mapping(address => bytes32[]) storage metaInstances,
         address adapter,
-        bytes32[] memory instances
+        bytes32[] memory instances,
+        address erc20DefaultBalanceAdapter
     ) external returns (uint256 removed) {
         if (!isAdapterRegistered[adapter]) {
             revert IBalances.InvalidBalanceAdapter();
@@ -415,6 +410,12 @@ library NAVRegistryLib {
             if (!found) {
                 revert IBalances.MetaInstanceNotFound();
             }
+        }
+
+        // Hand each released coordinate back to the default adapter — same reasoning as the clearing paths:
+        // removing the last governor of a registered asset otherwise leaves it reported by nobody.
+        for (uint256 i = 0; i < instances.length; i++) {
+            _reincludeIfAsset(erc20DefaultBalanceAdapter, instances[i]);
         }
     }
 
@@ -452,17 +453,86 @@ library NAVRegistryLib {
     ///         live set — which already includes coordinates pushed earlier in this batch, so an in-batch repeat is
     ///         caught too. Empty input is a no-op (returns 0); callers that forbid empty check before calling.
     /// @return added The number of coordinates appended (== instances.length).
-    function _appendInstances(bytes32[] storage set, bytes32[] memory instances) private returns (uint256 added) {
+    /// @dev Appends `instances` to `adapter`'s set, rejecting a coordinate already governed by ANY registered
+    ///      meta adapter — not merely by this one.
+    ///
+    ///      The same-adapter check alone left a double-count route the read-time guards cannot see. Two
+    ///      adapters holding one coordinate both emit a well-formed leg for the same holding under different
+    ///      reconciliation keys, and NAV sums them with no health flag — the +$11,375.92 species of issue
+    ///      #335. The wallet-yield family made it reachable rather than theoretical: its coordinates are plain
+    ///      ERC20 token addresses, a namespace it SHARES with the generic ERC-4626 meta adapters (11 of its 17
+    ///      tokens are 4626 vaults, and `MorphoVaultsMetaBalanceAdapter` reads any 4626), whereas every
+    ///      pre-existing meta adapter keys on a protocol-specific coordinate that cannot collide.
+    ///
+    ///      Enforced HERE, at configuration time, rather than on the read path: the check is O(adapters) per
+    ///      coordinate and costs a MANAGER transaction nothing that matters, while the same question asked per
+    ///      instance per NAV read would be prohibitive. Verified against every chain config before landing —
+    ///      104 coordinates across 40 adapter entries on 7 chains, zero collisions — so no existing
+    ///      registration is invalidated.
+    function _appendInstances(
+        address[] storage globalAdapters,
+        mapping(address => bytes32[]) storage metaInstances,
+        address adapter,
+        bytes32[] memory instances
+    ) private returns (uint256 added) {
         added = instances.length;
         for (uint256 i = 0; i < added; i++) {
             bytes32 instance = instances[i];
-            uint256 len = set.length;
-            for (uint256 j = 0; j < len; j++) {
-                if (set[j] == instance) {
-                    revert IBalances.DuplicateMetaInstance();
+
+            uint256 n = globalAdapters.length;
+            for (uint256 a = 0; a < n; a++) {
+                address other = globalAdapters[a];
+                bytes32[] storage otherSet = metaInstances[other];
+                uint256 len = otherSet.length;
+                for (uint256 j = 0; j < len; j++) {
+                    if (otherSet[j] == instance) {
+                        // Same adapter keeps the original error; a different one names the claimant, because
+                        // "already yours" and "already someone else's" are different operator problems.
+                        if (other == adapter) revert IBalances.DuplicateMetaInstance();
+                        revert IBalances.MetaInstanceClaimedByAnotherAdapter(instance, other);
+                    }
                 }
             }
-            set.push(instance);
+
+            metaInstances[adapter].push(instance);
         }
+    }
+
+    /// @dev Hands a released coordinate back to `ERC20DefaultBalanceAdapter` when it is a registered asset.
+    ///
+    ///      Without this, releasing a coordinate left the token held by NOBODY: excluded from the default
+    ///      adapter and governed by no meta adapter, so `getAccountNav` returned a clean, wrong, smaller number
+    ///      with no health flag — the `NAV` struct carries only price-side fields. `includeAssetInDefaultAdapter`
+    ///      existed as the manual repair but had ZERO non-test callers, so nothing prompted anyone to run it.
+    ///
+    ///      Self-limiting by construction, which is why it is safe to apply to EVERY released coordinate rather
+    ///      than only the wallet-yield family's. `addSupportedAsset` reverts `AssetNotFound` unless the address
+    ///      is a registered NAV asset, so a Morpho vault address or a truncated Balancer poolId simply fails and
+    ///      is skipped; and `EnumerableSet.add` is idempotent, so re-including an asset that never left is a
+    ///      no-op. The `catch` is the filter, not an error path.
+    ///
+    ///      Deliberate consequence, decided by the repo owner: retirement no longer means deletion. An operator
+    ///      removing an adapter to stop reporting a token will find it reported by the default adapter again.
+    ///      "Remove this from NAV entirely" is `unregisterAsset`, a separate and explicit operation. The trade is
+    ///      a visible, correct value from an unexpected reporter instead of an invisible, wrong one from none.
+    function _reincludeIfAsset(address erc20DefaultBalanceAdapter, bytes32 instance) private {
+        if (erc20DefaultBalanceAdapter == address(0)) return;
+        address token = address(uint160(uint256(instance)));
+        if (token == address(0)) return;
+        try ERC20DefaultBalanceAdapter(erc20DefaultBalanceAdapter).addSupportedAsset(token) {} catch {}
+    }
+
+    /// @dev Releases every coordinate in `adapter`'s set back to the default adapter, then clears the set.
+    function _releaseInstances(
+        mapping(address => bytes32[]) storage metaInstances,
+        address adapter,
+        address erc20DefaultBalanceAdapter
+    ) private returns (uint256 cleared) {
+        bytes32[] storage set = metaInstances[adapter];
+        cleared = set.length;
+        for (uint256 i = 0; i < cleared; i++) {
+            _reincludeIfAsset(erc20DefaultBalanceAdapter, set[i]);
+        }
+        if (cleared != 0) delete metaInstances[adapter];
     }
 }

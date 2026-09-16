@@ -44,6 +44,12 @@ contract ClearDormantMetaInstances is Script {
     error WrongChain(uint256 chainId);
     error NotManager(address who);
     error NothingToDo();
+
+    /// @notice Post-condition failures. Custom errors rather than `require` strings, per the repo rule.
+    error ResidueSetNotCleared();
+    error LiveLostItsInstance();
+    error LiveHoldsWrongCoordinate();
+    error ResidueStillRegistered();
     error PreconditionLiveNotRegistered();
     error PreconditionResidueRegistered();
     error DoubleCount(uint256 reporters);
@@ -56,6 +62,23 @@ contract ClearDormantMetaInstances is Script {
     function _addrs(address x) internal pure returns (address[] memory a) {
         a = new address[](1);
         a[0] = x;
+    }
+
+    /// @dev Whether `adapter` is registered AND currently advertises V192. Every step below is gated on this
+    ///      rather than on the run's starting state, which is what makes re-running safe from any halt point.
+    function _holds(address adapter) internal view returns (bool) {
+        if (!NAVCalculator(NAV).isAdapterRegistered(adapter)) return false;
+        bytes32[] memory inst = NAVCalculator(NAV).getMetaInstances(adapter);
+        for (uint256 i; i < inst.length; ++i) {
+            if (inst[i] == V192) return true;
+        }
+        return false;
+    }
+
+    /// @dev Residue's set is non-empty. Distinct from `_holds` because a residue set can outlive its
+    ///      registration, which is the whole reason this script exists.
+    function _residueHoldsCoord() internal view returns (bool) {
+        return NAVCalculator(NAV).getMetaInstances(RESIDUE).length != 0;
     }
 
     function _reporters() internal view returns (uint256 n) {
@@ -74,29 +97,49 @@ contract ClearDormantMetaInstances is Script {
         address sender = ConfigReader.readChainConfig(vm, 1).manager;
         if (!NAVCalculator(NAV).hasRole(keccak256("MANAGER"), sender)) revert NotManager(sender);
 
+        // LIVE must exist; everything else is a state this script can resume from.
         if (!NAVCalculator(NAV).isAdapterRegistered(LIVE)) revert PreconditionLiveNotRegistered();
-        if (NAVCalculator(NAV).isAdapterRegistered(RESIDUE)) revert PreconditionResidueRegistered();
-        if (NAVCalculator(NAV).getMetaInstances(RESIDUE).length == 0) revert NothingToDo();
+
+        // Already finished? Then there is nothing to do and saying so is not an error condition.
+        if (!NAVCalculator(NAV).isAdapterRegistered(RESIDUE) && _holds(LIVE) && !_residueHoldsCoord()) {
+            revert NothingToDo();
+        }
 
         console2.log("=== clearing dormant meta-instance set ===");
         console2.log("residue      :", RESIDUE);
         console2.log("live         :", LIVE);
         console2.log("reporters now:", _reporters());
 
+        // EVERY STEP IS CONDITIONAL, so an interrupted run is resumed by re-running rather than being
+        // stranded. These are five independent broadcasts with no atomicity available — the repo has
+        // precedent for a trailing transaction in this family dying out of gas — and the previous version
+        // gated all five behind preconditions that accepted only the INITIAL state. A halt after step 1 then
+        // failed to re-run because the live instance was already absent; after step 2 because RESIDUE was
+        // registered; after step 4 with `NothingToDo`. Worse, a halt after step 2 leaves the SUPERSEDED
+        // predecessor as sole reporter, and the natural manual repair — run step 5 alone — produces TWO
+        // reporters, the +$11,375.92 double-count.
+        //
+        // The ordering invariant is unchanged and is what keeps every intermediate state safe: never two
+        // reporters at once. Re-running from any point preserves it, because each step now asserts only its
+        // own precondition.
         vm.startBroadcast();
-        NAVCalculator(NAV).removeMetaInstances(LIVE, _one(V192)); // 1
-        NAVCalculator(NAV).addMetaBalanceAdapter(RESIDUE, new bytes32[](0)); // 2
-        NAVCalculator(NAV).removeMetaInstances(RESIDUE, _one(V192)); // 3
-        NAVCalculator(NAV).removeBalanceAdapters(_addrs(RESIDUE)); // 4
-        NAVCalculator(NAV).addMetaInstances(LIVE, _one(V192)); // 5
+        if (_holds(LIVE)) NAVCalculator(NAV).removeMetaInstances(LIVE, _one(V192)); // 1
+        if (!NAVCalculator(NAV).isAdapterRegistered(RESIDUE)) {
+            NAVCalculator(NAV).addMetaBalanceAdapter(RESIDUE, new bytes32[](0)); // 2
+        }
+        if (_holds(RESIDUE)) NAVCalculator(NAV).removeMetaInstances(RESIDUE, _one(V192)); // 3
+        if (NAVCalculator(NAV).isAdapterRegistered(RESIDUE)) {
+            NAVCalculator(NAV).removeBalanceAdapters(_addrs(RESIDUE)); // 4
+        }
+        if (!_holds(LIVE)) NAVCalculator(NAV).addMetaInstances(LIVE, _one(V192)); // 5
         vm.stopBroadcast();
 
         uint256 n = _reporters();
         if (n != 1) revert DoubleCount(n);
-        require(NAVCalculator(NAV).getMetaInstances(RESIDUE).length == 0, "residue set not cleared");
-        require(NAVCalculator(NAV).getMetaInstances(LIVE).length == 1, "live lost its instance");
-        require(NAVCalculator(NAV).getMetaInstances(LIVE)[0] == V192, "live holds the wrong coordinate");
-        require(!NAVCalculator(NAV).isAdapterRegistered(RESIDUE), "residue still registered");
+        if (NAVCalculator(NAV).getMetaInstances(RESIDUE).length != 0) revert ResidueSetNotCleared();
+        if (NAVCalculator(NAV).getMetaInstances(LIVE).length != 1) revert LiveLostItsInstance();
+        if (NAVCalculator(NAV).getMetaInstances(LIVE)[0] != V192) revert LiveHoldsWrongCoordinate();
+        if (NAVCalculator(NAV).isAdapterRegistered(RESIDUE)) revert ResidueStillRegistered();
         console2.log("done. reporters:", n, "residue set cleared, live restored");
     }
 }

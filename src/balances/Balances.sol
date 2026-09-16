@@ -247,7 +247,9 @@ abstract contract Balances is IBalances, Initializable {
     function _addMetaInstances(address adapter, bytes32[] memory instances) internal {
         // Loop + validation delegated to NAVRegistryLib (external library, DELEGATECALL) to keep NAVCalculator
         // under EIP-170; only the running total stays inline.
-        _metaInstanceTotal += NAVRegistryLib.addMetaInstances(_isAdapterRegistered, _metaInstances, adapter, instances);
+        _metaInstanceTotal += NAVRegistryLib.addMetaInstances(
+            _isAdapterRegistered, _globalAdapters, _metaInstances, adapter, instances
+        );
     }
 
     /// @notice Removes instance coordinates from a meta-adapter's set (ADR 0010). All-or-nothing: reverts with
@@ -259,7 +261,7 @@ abstract contract Balances is IBalances, Initializable {
     function _removeMetaInstances(address adapter, bytes32[] memory instances) internal {
         // Loop + validation delegated to NAVRegistryLib (see _addMetaInstances); only the running total stays inline.
         _metaInstanceTotal -= NAVRegistryLib.removeMetaInstances(
-            _isAdapterRegistered, _metaInstances, adapter, instances
+            _isAdapterRegistered, _metaInstances, adapter, instances, erc20DefaultBalanceAdapter
         );
     }
 }

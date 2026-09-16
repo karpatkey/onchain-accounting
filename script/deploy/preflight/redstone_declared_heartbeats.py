@@ -59,17 +59,7 @@ ERROR, WARN = "ERROR", "WARN"
 # CI, so an uncatalogued feed would be reported as unverified and permitted in the same breath, which is
 # indistinguishable from not checking at all. That is precisely how 31 RedStone registrations sat
 # unverified while seven of them were wrong.
-UNCATALOGUED_EXCEPTIONS: dict[tuple[str, str], str] = {
-    ("1", "0xddb6f90ffb4d3257dd666b69178e5b3c5bf41136"): (
-        "weETH monitor feed. Live and answering (age ~3 h when checked 2026-08-28, description "
-        "'Redstone Price Feed'), but present in NONE of the 116 manifests under "
-        "relayer-remote-config/main — searched exhaustively, not just the chain's primary manifest. "
-        "So its declared cadence is genuinely unknown rather than merely unlooked-for. It is a MONITOR "
-        "feed, so a wrong heartbeat degrades the divergence check and cannot zero an asset. "
-        "TO CLOSE: ask RedStone which manifest publishes it, add that manifest to MANIFESTS, and delete "
-        "this entry."
-    ),
-}
+UNCATALOGUED_EXCEPTIONS: dict[tuple[str, str], str] = {}
 
 
 def _fetch(path: str) -> dict:
@@ -96,10 +86,22 @@ def declared_map(chain: str, fetch=_fetch) -> tuple[dict[str, int], list[str]]:
             continue
         default = (m.get("updateTriggers") or {}).get("timeSinceLastUpdateInMilliseconds")
         for _, v in (m.get("priceFeeds") or {}).items():
-            if not isinstance(v, dict):
+            # TWO MANIFEST SHAPES, and skipping the second one is what made a catalogued feed read as
+            # uncatalogued. The multi-feed manifests map a data-feed id to an OBJECT carrying
+            # `priceFeedAddress` plus optional `updateTriggersOverrides`. The classic single-adapter
+            # manifests (`main/relayer-manifests/…`) map it to the address STRING, with the cadence only
+            # in the manifest-level `updateTriggers`. Requiring a dict dropped every feed published that
+            # way — which is how weETH sat in `UNCATALOGUED_EXCEPTIONS` as "present in NONE of the 116
+            # manifests" while `ethereumEtherfiWeeth.json` declared it at 21600 s all along, and the
+            # registration sat 4x above declared. An exception whose premise is a parser gap is worse
+            # than no exception: it launders the very mismatch this guard exists to catch.
+            if isinstance(v, str):
+                addr, ms = v.lower(), default
+            elif isinstance(v, dict):
+                addr = (v.get("priceFeedAddress") or "").lower()
+                ms = (v.get("updateTriggersOverrides") or {}).get("timeSinceLastUpdateInMilliseconds", default)
+            else:
                 continue
-            addr = (v.get("priceFeedAddress") or "").lower()
-            ms = (v.get("updateTriggersOverrides") or {}).get("timeSinceLastUpdateInMilliseconds", default)
             if addr and isinstance(ms, (int, float)) and not isinstance(ms, bool):
                 out.setdefault(addr, int(ms) // 1000)
     return out, failures

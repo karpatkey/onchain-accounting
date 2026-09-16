@@ -52,6 +52,14 @@ contract NAVCalculatorUpgradeTest is SuperTest {
         address implAfter = Upgrades.getImplementationAddress(address(nav));
         assertNotEq(implAfter, implBefore, "upgrade must repoint the proxy");
         assertGt(implAfter.code.length, 0, "new implementation must have code");
+
+        // And the proxy still ANSWERS through the new implementation. Both assertions above are properties of
+        // `upgradeToAndCall`'s SSTORE, not of a working proxy: a regression in `_authorizeUpgrade`, the UUPS
+        // `proxiableUUID` check, or the initializer could leave the proxy pointing at code that reverts on
+        // every call and still satisfy them. The emptied fixture removed the old `foo()` call that covered
+        // this; one read back through the proxy restores it at zero fixture bytecode, which was the whole
+        // point of emptying it.
+        assertEq(NAVCalculator(address(nav)).getPriceFeedCount(address(weth)), 1, "proxy must still answer");
     }
 
     function test_upgrade_notAuthorized() public {

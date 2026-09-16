@@ -222,7 +222,7 @@ Most adapters pin a single instance (one vault, one pool, one market) in their c
   reports a fabricated balance in a *NAV-registered* asset and inflate NAV — the registered-asset filter does not
   help, because the attack is denominated in a registered asset. The governed `bytes32[]` set on NAVCalculator is
   exactly the **allowlist** that blocks this. Secondary reasons: (a) **bounded gas/DoS** — the read path sizes its
-  buffers by `_metaInstanceTotal` and fans out per instance, so iterating hundreds of factory entries per account
+  buffers per instance and fans out, so iterating hundreds of factory entries per account
   read is impractical; (b) **relevance** — a portfolio holds positions in a small curated subset, and the registries
   are often the wrong set anyway (the KPK-curated Gearbox markets we use are *not* in Gearbox's `ContractsRegister`,
   Aave's registry is both stale — still lists the deprecated EtherFi market — and incomplete — omits the Horizon RWA

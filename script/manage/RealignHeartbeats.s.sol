@@ -19,8 +19,9 @@ import {ConfigReader} from "script/utils/ConfigReader.sol";
 ///      Both axes are now plain MANAGER calls. `addOrModifyPriceFeed` UPDATES the heartbeat of an
 ///      already-registered feed in place, so the helper contract this script used to deploy — plus its
 ///      MANAGER_ROLE grant, its self-renounce, and the four-transaction mirror swap it performed per
-///      asset — are all gone. Monitor feeds never needed the dance: their array has no last-feed guard,
-///      so a remove/add works directly.
+///      asset — are all gone. Monitor feeds never needed the dance either — their array has no last-feed
+///      guard — and now that `addMonitorFeed` upserts too, they need no remove/add at all: one call each.
+///      This commit is what deleted that remove/add; the sentence describing it was left behind.
 ///
 ///      Run with `--broadcast` from the account holding MANAGER_ROLE.
 ///

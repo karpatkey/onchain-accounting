@@ -1663,6 +1663,24 @@ library PriceFeedLib {
 
         IPrices.PriceFeedConfig[] storage configs = priceOracles[asset];
         uint256 len = configs.length;
+
+        // Resolved BEFORE the dedup loop so the UPSERT path revalidates too, matching `addMonitorFeed`.
+        //
+        // The read path scales with the STORED value — `_scaleTo8(rawPrice, cfg.decimals)` — and never
+        // re-reads `decimals()`. So if a feed's decimals drift away from what was stored, every price for
+        // that asset is wrong by 10**delta, and a POSITIVE delta OVER-reports: the one direction this repo
+        // never licenses. Chainlink's `AggregatorProxy.decimals()` forwards to the swappable current
+        // aggregator rather than being immutable, so the drift is not structurally impossible.
+        //
+        // This was previously resolved only on the append path, below the loop. The 4-transaction mirror
+        // dance the upsert replaced ended in an `addPriceFeed` that ran this check, so the upsert quietly
+        // removed the one thing that would have caught the drift. Reverting is the safe direction: it
+        // surfaces the drift instead of preserving a stale scale.
+        uint8 dec = _resolveFeedDecimals(priceFeed, priceType);
+        if (len > 0 && configs[0].decimals != dec) {
+            revert IPrices.PriceFeedDecimalsMismatch(asset, configs[0].decimals, dec);
+        }
+
         for (uint256 i; i < len; ++i) {
             if (configs[i].priceFeed != priceFeed) continue;
             // ALREADY REGISTERED -> UPDATE THE HEARTBEAT IN PLACE, do not revert.
@@ -1693,12 +1711,6 @@ library PriceFeedLib {
             // that pair will no longer see staleness-window changes. Subscribe to this event instead.
             emit IPrices.PriceFeedHeartbeatUpdated(asset, priceFeed, oldHeartbeat, heartbeat);
             return;
-        }
-
-        uint8 dec = _resolveFeedDecimals(priceFeed, priceType);
-
-        if (len > 0 && configs[0].decimals != dec) {
-            revert IPrices.PriceFeedDecimalsMismatch(asset, configs[0].decimals, dec);
         }
 
         configs.push(
@@ -1752,8 +1764,10 @@ library PriceFeedLib {
     // Monitor feed registration / deregistration
     // -------------------------------------------------------------------------
 
-    /// @notice Adds a monitor (divergence-only) feed for an asset. Requires the divergence tolerance to be set
-    ///         first (>0) and the feed to report NAV_DECIMALS decimals. Reverts on duplicates.
+    /// @notice Adds a monitor (divergence-only) feed, or UPDATES the heartbeat of one already registered.
+    /// @dev A new monitor requires the divergence tolerance to be set first (>0); an in-place heartbeat update
+    ///      does not, since that check admits a monitor rather than validating an existing one. Both paths
+    ///      require the feed to report NAV_DECIMALS decimals — the read path scales by the stored value.
     function addMonitorFeed(
         mapping(address => IPrices.PriceFeedConfig[]) storage monitorFeeds,
         mapping(address => IPrices.AssetPricing) storage assetPricing,
@@ -1765,7 +1779,6 @@ library PriceFeedLib {
         _validateFeedSupportInternal(asset, priceFeed, priceType);
 
         if (heartbeat == 0) revert IPrices.InvalidPriceOracle();
-        if (assetPricing[asset].divergenceToleranceBps == 0) revert IPrices.DivergenceToleranceRequired(asset);
 
         uint8 dec = _resolveFeedDecimals(priceFeed, priceType);
         // Monitors must be USD-comparable to the primary (always NAV_DECIMALS).
@@ -1791,6 +1804,20 @@ library PriceFeedLib {
             emit IPrices.MonitorFeedHeartbeatUpdated(asset, priceFeed, oldHeartbeat, heartbeat);
             return;
         }
+
+        // ADMISSION check, deliberately below the upsert loop: a zero tolerance means a NEW monitor would have
+        // nothing to compare against, which says nothing about one already admitted.
+        //
+        // This is ordering hygiene, NOT a bug fix, and the distinction is worth recording. A review argued the
+        // check above the loop would lock out a heartbeat update on an asset whose tolerance had been zeroed
+        // "operationally". It would — but that state is unreachable: `setDivergenceTolerance` rejects zero with
+        // `InvalidTolerance` (pinned by `test_divergenceToleranceCannotBeZeroed`), and admitting a monitor at
+        // all requires a non-zero tolerance, so every monitored asset has one. Keeping the check here because
+        // an admission check belongs on the admission path, not because it was reachable from below.
+        //
+        // The decimals guard above the loop is a different matter and stays there: it protects the read path,
+        // which scales by the STORED value and never re-reads.
+        if (assetPricing[asset].divergenceToleranceBps == 0) revert IPrices.DivergenceToleranceRequired(asset);
 
         monitors.push(
             IPrices.PriceFeedConfig({

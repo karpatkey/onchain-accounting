@@ -552,8 +552,13 @@ interface INAVCalculator is IBalances {
     function registerAsset(address asset, address priceFeed, IPrices.PriceType priceType, uint256 chainlinkHeartbeat)
         external;
 
-    /// @notice Adds an additional price feed for an already registered asset.
-    /// @dev Reverts with PriceFeedAlreadyRegistered if the feed address is already registered for this asset.
+    /// @notice Adds a price feed for an already registered asset, or UPDATES the heartbeat of one already there.
+    /// @dev UPSERTS. If `priceFeed` is already registered for `asset`, this REWRITES its `chainlinkHeartbeat`
+    ///      in place and emits {IPrices-PriceFeedHeartbeatUpdated}; it does NOT revert, and it does NOT emit a
+    ///      PriceFeedAdded/PriceFeedRemoved pair. Do not build idempotency on a duplicate reverting.
+    ///      Reverts: PriceFeedAlreadyRegistered only when the heartbeat is UNCHANGED; PriceFeedTypeImmutable
+    ///      when `priceType` differs from the stored one (a feed's type is identity, not configuration);
+    ///      PriceFeedDecimalsMismatch when the feed's live decimals no longer match the stored value.
     /// @param asset Registered asset address.
     /// @param priceFeed Price feed address (cannot be zero).
     /// @param priceType Chainlink, Custom, Redstone, or API3.
@@ -569,7 +574,7 @@ interface INAVCalculator is IBalances {
     ///         only to detect divergence between the primary price and the worst-case (furthest) healthy monitor price.
     /// @dev Requires the asset's divergence tolerance to be set first (>0), else reverts DivergenceToleranceRequired.
     ///      Monitor feeds must report NAV_DECIMALS decimals (else MonitorFeedDecimalsMismatch). Reverts
-    ///      MonitorFeedAlreadyRegistered on a duplicate.
+    ///      MonitorFeedAlreadyRegistered only when the heartbeat is UNCHANGED (this UPSERTS an existing monitor's heartbeat, emitting MonitorFeedHeartbeatUpdated).
     /// @param asset Registered asset address.
     /// @param priceFeed Monitor feed address (cannot be zero).
     /// @param priceType Chainlink, Custom, Redstone, or API3.

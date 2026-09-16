@@ -142,4 +142,59 @@ contract HeartbeatMutabilityTest is SuperTest {
         nav.addMonitorFeed(address(token), address(mon), IPrices.PriceType.Redstone, 7200);
         vm.stopPrank();
     }
+
+    /// @notice The upsert REVALIDATES the feed's decimals; drift reverts instead of silently persisting.
+    /// @dev Vigilo, on 53a106a6. The read path scales by the STORED `cfg.decimals` and never re-reads
+    ///      `decimals()`, so a feed whose decimals drift make every price for that asset wrong by 10**delta —
+    ///      and a positive delta OVER-reports, the one direction this repo never licenses. Chainlink's
+    ///      `AggregatorProxy.decimals()` forwards to the swappable current aggregator, so it is not
+    ///      structurally impossible. `addMonitorFeed` already resolved decimals above its dedup loop; `addFeed`
+    ///      resolved them below, so the upsert path returned first and skipped the check entirely.
+    function test_upsert_revalidatesDecimals() public {
+        vm.mockCall(address(feed), abi.encodeWithSignature("decimals()"), abi.encode(uint8(18)));
+
+        vm.prank(navCalculatorManager);
+        vm.expectRevert(abi.encodeWithSelector(IPrices.PriceFeedDecimalsMismatch.selector, address(token), 8, 18));
+        nav.addOrModifyPriceFeed(address(token), address(feed), IPrices.PriceType.Chainlink, 7200);
+
+        vm.clearMockedCalls();
+        assertEq(nav.getPriceFeedAt(address(token), 0).chainlinkHeartbeat, 3600, "heartbeat must not have moved");
+    }
+
+    /// @notice Both upserts emit their heartbeat event with the right asset, feed and argument ORDER.
+    /// @dev Nothing asserted these before. They are the whole monitoring story of this PR — `PriceFeedLib`
+    ///      states in bold that the PriceFeedAdded/PriceFeedRemoved pair no longer fires for a heartbeat
+    ///      change and tells alerting to subscribe to these instead. A swapped (old, new) order, a wrong
+    ///      `indexed` choice or the wrong asset would have shipped green, and the first signal would be an
+    ///      alerting pipeline reporting every widening as a narrowing.
+    function test_upsert_emitsHeartbeatEvents() public {
+        vm.expectEmit(true, true, false, true, address(nav));
+        emit IPrices.PriceFeedHeartbeatUpdated(address(token), address(feed), 3600, 4242);
+        vm.prank(navCalculatorManager);
+        nav.addOrModifyPriceFeed(address(token), address(feed), IPrices.PriceType.Chainlink, 4242);
+
+        Mock_PriceOracleChainlink mon = new Mock_PriceOracleChainlink("MON", 1, 8);
+        vm.startPrank(navCalculatorManager);
+        nav.setDivergenceTolerance(address(token), 500);
+        nav.addMonitorFeed(address(token), address(mon), IPrices.PriceType.Chainlink, 3600);
+
+        vm.expectEmit(true, true, false, true, address(nav));
+        emit IPrices.MonitorFeedHeartbeatUpdated(address(token), address(mon), 3600, 7200);
+        nav.addMonitorFeed(address(token), address(mon), IPrices.PriceType.Chainlink, 7200);
+        vm.stopPrank();
+    }
+
+    /// @notice The divergence tolerance CANNOT be zeroed, which refutes a review finding rather than fixing it.
+    /// @dev A review argued that running `DivergenceToleranceRequired` above the monitor upsert loop would lock
+    ///      out a heartbeat update on an asset whose tolerance had been "zeroed operationally". The lockout is
+    ///      real in the abstract and unreachable in this codebase: the setter rejects zero, and admitting a
+    ///      monitor requires a non-zero tolerance, so every monitored asset has one. Pinned so the refutation
+    ///      survives — if the setter ever accepts zero, the finding becomes live and this test says so.
+    function test_divergenceToleranceCannotBeZeroed() public {
+        vm.startPrank(navCalculatorManager);
+        nav.setDivergenceTolerance(address(token), 500);
+        vm.expectRevert(abi.encodeWithSelector(IPrices.InvalidTolerance.selector, uint32(0)));
+        nav.setDivergenceTolerance(address(token), 0);
+        vm.stopPrank();
+    }
 }

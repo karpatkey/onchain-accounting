@@ -34,6 +34,11 @@ contract RealignHeartbeats is Script {
     error NotManager(address who);
     error NoNavDeployed(uint256 chainId);
 
+    /// @notice Live feed index 0 is not the feed config declares first, so the planned heartbeat would land on
+    ///         the wrong feed.
+    /// @dev Caught during `forge script` simulation, before any broadcast.
+    error FeedAddressMismatch(address asset, address liveFeed, address configFeed);
+
     function run() external {
         uint256 chainId = block.chainid;
         if (NAV.code.length == 0) revert NoNavDeployed(chainId);
@@ -84,7 +89,9 @@ contract RealignHeartbeats is Script {
         for (uint256 i; i < assets.length; ++i) {
             IPrices.PriceFeedConfig memory c = NAVCalculator(NAV).getPriceFeedAt(assets[i], 0);
             // Same feed, same type — only the heartbeat moves. No helper contract, no role grant, and no
-            // window in which an unaudited pass-through prices the asset.
+            // window in which an unaudited pass-through prices the asset. Re-reading index 0 here is safe
+            // because `_plan` already asserted it equals the config-declared feed; without that assertion this
+            // line would apply one feed's configured heartbeat to whichever feed a swap-and-pop left behind.
             NAVCalculator(NAV).addOrModifyPriceFeed(assets[i], c.priceFeed, c.priceType, heartbeats[i]);
         }
         for (uint256 i; i < mAssets.length; ++i) {
@@ -221,7 +228,24 @@ contract RealignHeartbeats is Script {
             if (NAVCalculator(NAV).getPriceFeedCount(asset) == 0) continue;
 
             uint256 want = vm.parseJsonUint(json, string.concat(base, ".priceFeeds[0].heartbeat"));
-            if (NAVCalculator(NAV).getPriceFeedAt(asset, 0).chainlinkHeartbeat == want) continue;
+            IPrices.PriceFeedConfig memory live = NAVCalculator(NAV).getPriceFeedAt(asset, 0);
+            if (live.chainlinkHeartbeat == want) continue;
+
+            // The heartbeat comes from config `priceFeeds[0]`, but it is APPLIED to whatever occupies live
+            // index 0, and `_swapPopFeed` makes the on-chain array swap-and-pop ordered — so the two need not
+            // be the same feed. Writing config feed A's heartbeat onto live feed B would pass every
+            // postcondition here, because they check the heartbeat, the count and an unchanged price, never
+            // the address. `_planMonitors` already matches by address; this is the primary axis catching up.
+            //
+            // `readAssetFeedAddress` resolves both forms — a literal `address`, and a Custom feed's `feed`
+            // name looked up in `deployments.customPriceFeeds` (24 of 49 mainnet assets are Custom, which is
+            // why matching on the raw JSON field alone would not work). It returns "" when the feed cannot be
+            // resolved — an undeployed Custom feed, say — and in that case this SKIPS the asset rather than
+            // writing blind: doing nothing is the recoverable outcome, writing to the wrong feed is not.
+            string memory cfgFeedStr = ConfigReader.readAssetFeedAddress(vm, chainId, keys[i], 0);
+            if (bytes(cfgFeedStr).length == 0) continue;
+            address cfgFeed = vm.parseAddress(cfgFeedStr);
+            if (cfgFeed != live.priceFeed) revert FeedAddressMismatch(asset, live.priceFeed, cfgFeed);
 
             aBuf[n] = asset;
             hBuf[n] = want;

@@ -4,7 +4,6 @@ pragma solidity ^0.8;
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {ERC165Checker} from "@openzeppelin/contracts/utils/introspection/ERC165Checker.sol";
 import {INAVCalculator} from "./INAVCalculator.sol";
-import {IPrices} from "../prices/IPrices.sol";
 import {IBalances} from "src/balances/IBalances.sol";
 import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
 import {IMetaBalanceAdapter} from "src/balances/IMetaBalanceAdapter.sol";

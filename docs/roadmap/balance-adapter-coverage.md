@@ -80,7 +80,7 @@ These are not queues but represent value that lives outside the wallet and is no
 - **Morpho Vaults**: ✅ covered — `MorphoVaultsMeta` (meta-adapter, ADR 0010).
 - **Morpho Markets**: ✅ covered — `MorphoMarketsMeta` (meta-adapter, ADR 0010).
 - **Aave V3 (all instances)**: ✅ covered — `AaveV3InstancesMeta` (meta-adapter, ADR 0010).
-- **Aave V4 (all Spokes)**: ✅ covered — `AaveV4SpokesMeta` (meta-adapter, ADR 0010). Mainnet Gold Spoke configured.
+- **Aave V4 (all Spokes)**: ✅ covered — `AaveV4SpokesMeta` (meta-adapter, ADR 0010). Mainnet Gold, Bluechip and Main Spokes configured. The address book lists 14 chain-1 Spokes, 13 of them readable (`TREASURY_SPOKE` reverts `getReserveCount()`); the other 10 are un-blocked — every borrowable underlying across them is a registered NAV asset — and are added on mandate rather than wholesale, since each costs ~18.5k gas per reserve on every account's NAV read.
 - **Compound V3**: ✅ covered — `CompoundV3CometsMeta` (meta-adapter, ADR 0010).
 - **Gearbox**: ✅ supply side covered — `GearboxV3MarketsMeta` (meta-adapter, ADR 0010; the passive ERC4626 pool LPs). The borrow side (collateral basket + debt held in Credit Accounts) has a contract — `GearboxV3CreditAccountsMetaBalanceAdapter` (instance coordinate = credit-account address) — but it is not yet wired into the deploy config.
 - **Fluid**: ✅ covered — `FluidFTokensMeta` (ERC4626 lending) + `FluidVaultsMeta` (T1 collateral/debt) meta-adapters (ADR 0010).

@@ -3,7 +3,7 @@
     {
       "hash": "0x5b3fcf3d42b771185be0c8a77575631383e6637c6265798a78fdf76ae6a48e3b",
       "transactionType": "CREATE",
-      "contractName": "RWIV_CustomPriceFeed",
+      "contractName": "syrupUSDG_CustomPriceFeed",
       "contractAddress": "0x99b00dc4a17ee195a691b9c2281ea5928e923e41",
       "function": null,
       "arguments": [

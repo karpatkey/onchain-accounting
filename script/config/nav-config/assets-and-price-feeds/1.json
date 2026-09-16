@@ -984,5 +984,32 @@
       }
     ],
     "$monitorComment": "NO monitorFeeds. RedStone publishes LINK on BNB (chain 56) only -- no chain-1 LINK feed in any of the 116 manifests swept on 2026-09-16 -- and the two other Chainlink LINK/USD proxies are SVR feeds off the same aggregation, so they would not constitute an independent second observation."
+  },
+  "PAXG": {
+    "address": "0x45804880De22913dAFE09f4980848ECE6EcbAf78",
+    "accrualKind": "None",
+    "$kindComment": "Paxos Gold, 18-dp, 1 PAXG = 1 troy oz of LBMA gold held by Paxos. Not $1-pegged, so NO pegToleranceBps -> pegKind derives Floating, exactly as XAUt. accrualKind None: no rebase, no growing redemption ratio; its USD value moves only with the gold price.",
+    "labels": [
+      "Paxos",
+      "Paxos Gold"
+    ],
+    "$comment": "Registered to make the Aave V4 PaxgGold Spoke (0xAD75cE6354f87F3135cE10621d385d8D1e2562C2, Global Dollar Hub) usable as a NAV meta-instance. That Spoke has exactly two reserves - PAXG (r0, collateral-only) and USDG (r1, borrowable) - so with USDG already registered and PAXG unregistered, adding the instance would have reported the USDG DEBT while silently skipping the PAXG COLLATERAL that backs it. Unregistered supply is skipped and unregistered borrow drops the Spoke, so that combination understates rather than over-reports, but for a collateralised position it is still the wrong number: it is the mirror of the equity loss that registering USDG fixed. Reserve layout read live 2026-09-16.\n\nTHIS IS THE EXACT MIRROR OF THE XAUt ENTRY, deliberately. XAUt is priced by Chainlink XAU/USD and monitored by Chainlink PAXG/USD; PAXG is priced by PAXG/USD and monitored by XAU/USD. The two registrations are independent - neither reads the other's price - and the pair's divergence behaviour is therefore already measured rather than assumed (see the XAUt monitor comment: max 59.2 bps over the overlapping window, 0 of 57 aligned samples past 100 bps).",
+    "divergenceToleranceBps": 100,
+    "priceFeeds": [
+      {
+        "type": "Chainlink",
+        "address": "0x9944D86CEB9160aF5C5feB251FD671923323f8C3",
+        "$comment": "Chainlink PAXG/USD, 8-dp, the PROXY - and note this is the SAME feed already registered as XAUt's monitor, now serving as PAXG's primary. That is a shared source, not a circularity: XAUt's primary is XAU/USD, so neither asset's price depends on the other's. Declared heartbeat 86400, threshold 0.5%, feedCategory low, marketHours Crypto (24/7, unlike the Precious_Metals XAU/USD feed) -> REGISTERED AT 86400 = EXACTLY declared (ADR 0025), which is also how this same proxy is already registered on XAUt. Measured 2026-09-16 over 60 rounds: 59 intervals, min 48 / median 6,840 / max 86,424 s, so it is mostly DEVIATION-active and reaches the heartbeat in only 4 of 59 intervals - but when it does it overshoots by ~24 s, so brief false-stale is possible there. Live at registration time: 4,278.24229062.",
+        "heartbeat": 86400
+      }
+    ],
+    "monitorFeeds": [
+      {
+        "type": "Chainlink",
+        "address": "0x214eD9Da11D2fbe465a6fc601a91E62EbEc1a0D6",
+        "$comment": "Chainlink XAU/USD - spot gold, an INDEPENDENT observation of what PAXG claims to represent, and the same feed that is XAUt's primary. Catches a bad or frozen PAXG/USD print and a PAXG depeg from gold. It does NOT catch a move in gold itself, which is not an error. Declared 86400 -> registered 86400 (ADR 0025).\nMARKET-HOURS ASYMMETRY, same as XAUt's but reversed: the PRIMARY here is Crypto (24/7) while the MONITOR is Precious_Metals (frozen at weekends), so the two legitimately drift while gold spot is closed. divergenceToleranceBps 100 is carried over from the XAUt entry because it is the SAME PAIR measured there - max 59.2 bps, on a Saturday, 0 of 57 aligned samples past 100 bps - so the tolerance sits ~1.7x above the observed maximum.",
+        "heartbeat": 86400
+      }
+    ]
   }
 }

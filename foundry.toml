@@ -166,8 +166,17 @@ threads = 1
 # MemoryOOG against the default 1 GiB script gas_limit. Bump both to 16 GiB
 # under the slow profile so the integration tests have headroom; default
 # profile (unit tests) is unaffected.
-gas_limit = 17179869184
-memory_limit = 17179869184
+gas_limit = 68719476736
+memory_limit = 68719476736
+# 16 GiB -> 64 GiB on 2026-09-17. NOT speculative headroom: `script/manage/RegisterAssets.s.sol` died with a
+# bare `EvmError: MemoryOOG` under the 16 GiB value at 55 configured assets / 7 planned actions, having run
+# fine at 52 assets / 5 actions days earlier. The cause is the one that script's own docstring documents —
+# `ConfigReader` re-reads the ENTIRE per-chain JSON for EVERY FIELD of EVERY ASSET and Solidity frees nothing —
+# so the ceiling is crossed by the config file GROWING, not by the batch. This is a raised ceiling, not a fix:
+# the real fix is caching the parsed config per run (#318), which touches every deploy script.
+#
+# These are EVM-level caps, not compiler settings: they cannot move bytecode and so cannot move the CREATE2
+# library pins. Raising them is safe in a way that editing [libraries] never is.
 
 
 [etherscan]

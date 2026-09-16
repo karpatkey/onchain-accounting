@@ -34,11 +34,6 @@ contract RealignHeartbeats is Script {
     error NotManager(address who);
     error NoNavDeployed(uint256 chainId);
 
-    /// @notice Live feed index 0 is not the feed config declares first, so the planned heartbeat would land on
-    ///         the wrong feed.
-    /// @dev Caught during `forge script` simulation, before any broadcast.
-    error FeedAddressMismatch(address asset, address liveFeed, address configFeed);
-
     function run() external {
         uint256 chainId = block.chainid;
         if (NAV.code.length == 0) revert NoNavDeployed(chainId);
@@ -188,7 +183,6 @@ contract RealignHeartbeats is Script {
                 ++n;
             }
         }
-
         assets = new address[](n);
         feeds = new address[](n);
         heartbeats = new uint256[](n);
@@ -219,6 +213,7 @@ contract RealignHeartbeats is Script {
         uint256[] memory hBuf = new uint256[](keys.length);
         string[] memory sBuf = new string[](keys.length);
         uint256 n;
+        uint256 skipped;
 
         for (uint256 i; i < keys.length; ++i) {
             string memory base = string.concat("$.", keys[i]);
@@ -238,19 +233,53 @@ contract RealignHeartbeats is Script {
             // the address. `_planMonitors` already matches by address; this is the primary axis catching up.
             //
             // `readAssetFeedAddress` resolves both forms — a literal `address`, and a Custom feed's `feed`
-            // name looked up in `deployments.customPriceFeeds` (24 of 49 mainnet assets are Custom, which is
-            // why matching on the raw JSON field alone would not work). It returns "" when the feed cannot be
-            // resolved — an undeployed Custom feed, say — and in that case this SKIPS the asset rather than
-            // writing blind: doing nothing is the recoverable outcome, writing to the wrong feed is not.
+            // name looked up in `deployments.customPriceFeeds`. That second form means the authority for the
+            // 24 Custom assets is the DEPLOYMENTS RECORD, not the config this contract's docstring names: a
+            // record poisoned by a dry-run, or updated ahead of an unexecuted feed swap
+            // (`SwapCustomPriceFeeds.s.sol`, `RedeployWarsFeed.s.sol` — wARS is one of the 24), resolves to an
+            // address that is not live index 0.
+            //
+            // Both failures SKIP the asset LOUDLY rather than aborting the run. An earlier version reverted on
+            // mismatch, which stopped all 48 other assets from being realigned over one asset's swap-pop
+            // artifact — trading the exact pricing defect ADR 0025 exists to remove (a too-long window prices
+            // a stale feed as fresh) against a narrower one. And an earlier version skipped the unresolvable
+            // case SILENTLY, on the same statement form as the already-aligned skip, so an operator could not
+            // tell "chain fully aligned" from "aligned except the feeds whose names did not resolve" — a
+            // strict regression against the pre-guard code, which realigned those assets correctly.
             string memory cfgFeedStr = ConfigReader.readAssetFeedAddress(vm, chainId, keys[i], 0);
-            if (bytes(cfgFeedStr).length == 0) continue;
+            if (bytes(cfgFeedStr).length == 0) {
+                console2.log(
+                    string.concat(
+                        "  SKIP ", keys[i], " - config feed unresolvable (check deployments.customPriceFeeds)"
+                    )
+                );
+                skipped++;
+                continue;
+            }
             address cfgFeed = vm.parseAddress(cfgFeedStr);
-            if (cfgFeed != live.priceFeed) revert FeedAddressMismatch(asset, live.priceFeed, cfgFeed);
+            if (cfgFeed != live.priceFeed) {
+                console2.log(
+                    string.concat(
+                        "  SKIP ",
+                        keys[i],
+                        " - live index 0 is not the config feed; live=",
+                        vm.toString(live.priceFeed),
+                        " config=",
+                        vm.toString(cfgFeed)
+                    )
+                );
+                skipped++;
+                continue;
+            }
 
             aBuf[n] = asset;
             hBuf[n] = want;
             sBuf[n] = keys[i];
             ++n;
+        }
+
+        if (skipped != 0) {
+            console2.log("  skipped (not realigned, see SKIP lines above):", skipped);
         }
 
         assets = new address[](n);

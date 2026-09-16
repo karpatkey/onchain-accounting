@@ -161,7 +161,7 @@ contract DeployPriceFeeds is BaseDeployScript {
         }
 
         // Deploy LBTC Price Oracle (LBTC/USD = WBTC/USD x LBTC.getRate()). LBTC is yield-bearing, so the rate is
-        // read ON-CHAIN, exactly as rETH/cbETH/wstETH/ezETH are — never from a market feed.
+        // read ON-CHAIN, as rETH/wstETH/ezETH are on this chain — never from a market feed.
         if (ConfigReader.isAdapterEnabled(vm, currentChainId, "priceFeeds", "LBTC")) {
             _deployLbtc();
         }

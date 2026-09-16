@@ -75,8 +75,11 @@ contract LBTC_CrossRateCustomPriceFeedForkTest is TestEnvConfigurator {
     }
 
     /// @notice Why this MARKET leg is the monitor rather than the primary.
-    /// @dev The primary reads the token's own `getRate()`, which by construction cannot fall when the wrapper
-    ///      depegs; this leg can, which is the whole reason it is paired against it. The two are close but NOT
+    /// @dev The primary reads the token's own `getRate()`, which does not observe market price at all, so a
+    ///      market discount on LBTC cannot move it. (It CAN fall for protocol reasons — measured, 3 decreases in
+    ///      20 intervals over 60 days — so "cannot fall" would be wrong; what it cannot do is fall BECAUSE the
+    ///      wrapper is trading below par.) This leg observes exactly that, which is why it is paired against the
+    ///      primary rather than replacing it. The two are close but NOT
     ///      equal — over 90 days the spread was min 0.01 / median 5.07 / max 19.63 bps, market below fundamental
     ///      in 35 of 46 samples — and 100 bps is the configured tolerance. Pinned at 100 bps here rather than at
     ///      the observed max, so ordinary drift does not redden the suite.

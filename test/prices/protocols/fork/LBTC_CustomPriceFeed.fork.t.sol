@@ -61,7 +61,8 @@ contract LBTC_CustomPriceFeedForkTest is TestEnvConfigurator {
     }
 
     /// @notice The primary and its market monitor must agree inside the configured divergence tolerance.
-    /// @dev The pairing is the point: the primary cannot fall on a depeg and the monitor can, so this pins that
+    /// @dev The pairing is the point: the primary does not observe market price, so a depeg cannot move it while
+    ///      the monitor tracks it directly (the primary CAN still fall for protocol reasons). This pins that
     ///      the two agree TODAY within the 100 bps the config sets — measured max over 90 days was 19.63 bps.
     ///      Both read WBTC/USD from the same NAV, so the base cancels and this is a rate-vs-rate comparison.
     function test_primaryAndMarketMonitorAgreeWithinTolerance() public {

@@ -8,8 +8,11 @@ import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 
 /// @title syrupUSDG_CustomPriceFeed fork tests
 /// @dev Pinned AFTER the USDG registration (blocks 25_992_630-25_992_635) on purpose: this feed reads USDG/USD
-///      from the NAV, so at any earlier block the base leg does not resolve and the feed cannot be built at all.
-///      That is the dependency worth pinning, not an incidental choice of block.
+///      from the NAV, so at any earlier block the base leg does not resolve and `getLatestPrice` cannot return a
+///      price. Note the feed would still CONSTRUCT at an earlier block — `ERC4626VaultRatePriceFeed`'s
+///      constructor validates addresses and the vault's `asset()` pairing, and never reads a NAV price — so the
+///      dependency is on PRICING, not on deployment order. That is the dependency worth pinning, not an
+///      incidental choice of block; `test_usdgIsRegisteredAtThePinnedBlock` below asserts it directly.
 ///
 ///      Uses the LIVE NAV proxy 0x54EaD2A1…, not the superseded 0x42aC2659… that the sibling syrupUSDC fork test
 ///      still names.

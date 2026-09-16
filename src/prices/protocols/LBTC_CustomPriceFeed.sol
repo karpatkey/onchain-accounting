@@ -11,8 +11,10 @@ import {BaseCustomPriceFeed} from "src/prices/BaseCustomPriceFeed.sol";
 ///      **LBTC is yield-bearing, which is why the rate is read ON-CHAIN rather than taken from a market feed.**
 ///      Babylon staking rewards are converted to BTC and reflected in a rising LBTC→BTC exchange rate rather than
 ///      in holders' balances — the implementation behind the LBTC proxy is named `StakedLBTC` — so LBTC is the
-///      same shape as rETH, cbETH, wstETH and ezETH, every one of which is priced here from its own on-chain
-///      rate. The Chainlink LBTC/BTC feed is a MARKET price (`attributeType: dex_state_price`) and is wired as a
+///      same shape as rETH, wstETH and ezETH, each of which is priced on this chain from its own on-chain rate
+///      (`nav-config/assets-and-price-feeds/1.json`: every `Appreciating`/`Rebasing` asset there carries a
+///      `Custom` primary, with market feeds appearing only under `monitorFeeds`). The Chainlink LBTC/BTC feed
+///      is a MARKET price (`attributeType: dex_state_price`) and is wired as a
 ///      divergence MONITOR instead, via `LBTCCrossRateMarket`. Both legs read WBTC/USD from the same NAV, so the
 ///      base term cancels and the divergence check reduces to rate-vs-rate.
 ///

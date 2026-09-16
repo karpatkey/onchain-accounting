@@ -15,12 +15,14 @@ interface ILbtcRate {
     function getRate() external view returns (uint256);
 }
 
-/// @title LBTC cross-rate price feed — fork tests
-/// @notice LBTC/USD = (LBTC/BTC Chainlink rate) x (WBTC/USD from the NAV). Chainlink publishes NO LBTC/USD feed
-///         on Ethereum, which is the whole reason this asset is a cross-rate rather than a direct registration.
-/// @dev Deployed by the GENERIC `_deployCrossRateMonitor("LBTC")` path in 03, so the contract under test is the
-///      generic {CrossRateCustomPriceFeed} — what is LBTC-specific, and therefore what this suite pins, is the
-///      wiring: which feed, which base, and that the product lands where an independent BTC-scale check expects.
+/// @title LBTC market cross-rate — fork tests for the divergence MONITOR
+/// @notice LBTC/USD = (LBTC/BTC Chainlink rate) x (WBTC/USD from the NAV). This is LBTC's **monitor**, not its
+///         primary: LBTC is yield-bearing, so the primary reads Lombard's on-chain rate
+///         ({LBTC_CustomPriceFeed}) and this market leg exists to diverge against it.
+/// @dev Deployed by the GENERIC `_deployCrossRateMonitor("LBTCCrossRateMarket")` path in 03, so the contract
+///      under test is the generic {CrossRateCustomPriceFeed} — what is LBTC-specific, and therefore what this
+///      suite pins, is the wiring: which feed, which base, and that the product lands where an independent
+///      BTC-scale check expects.
 contract LBTC_CrossRateCustomPriceFeedForkTest is TestEnvConfigurator {
     CrossRateCustomPriceFeed oracle;
 
@@ -72,11 +74,12 @@ contract LBTC_CrossRateCustomPriceFeedForkTest is TestEnvConfigurator {
         assertEq(IAggregatorV3(LBTC_BTC_FEED).decimals(), 8, "rate feed decimals");
     }
 
-    /// @notice Why the MARKET feed is the primary rather than the token's own `getRate()`.
-    /// @dev Both are readable on-chain and they are close but NOT equal — measured 4.71 bps apart at the time of
-    ///      writing. The market rate is the one that can fall when the wrapper depegs, so it is the primary; this
-    ///      test pins that they remain within a sane distance of each other, which is the assumption that makes
-    ///      the choice low-cost rather than a change of valuation basis.
+    /// @notice Why this MARKET leg is the monitor rather than the primary.
+    /// @dev The primary reads the token's own `getRate()`, which by construction cannot fall when the wrapper
+    ///      depegs; this leg can, which is the whole reason it is paired against it. The two are close but NOT
+    ///      equal — over 90 days the spread was min 0.01 / median 5.07 / max 19.63 bps, market below fundamental
+    ///      in 35 of 46 samples — and 100 bps is the configured tolerance. Pinned at 100 bps here rather than at
+    ///      the observed max, so ordinary drift does not redden the suite.
     function test_marketRateTracksTheFundamentalRate() public view {
         (, int256 marketRate,,,) = IAggregatorV3(LBTC_BTC_FEED).latestRoundData();
         uint256 market1e18 = uint256(marketRate) * 1e10; // 8 -> 18 decimals

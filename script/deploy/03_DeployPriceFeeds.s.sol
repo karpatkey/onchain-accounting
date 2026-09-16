@@ -11,6 +11,7 @@ import {sUSDS_CustomPriceFeed} from "../../src/prices/protocols/sUSDS_CustomPric
 import {sUSDe_CustomPriceFeed} from "../../src/prices/protocols/sUSDe_CustomPriceFeed.sol";
 import {syrupUSDC_CustomPriceFeed} from "../../src/prices/protocols/syrupUSDC_CustomPriceFeed.sol";
 import {syrupUSDG_CustomPriceFeed} from "../../src/prices/protocols/syrupUSDG_CustomPriceFeed.sol";
+import {LBTC_CustomPriceFeed} from "../../src/prices/protocols/LBTC_CustomPriceFeed.sol";
 import {spUSDC_CustomPriceFeed} from "../../src/prices/protocols/spUSDC_CustomPriceFeed.sol";
 import {spUSDT_CustomPriceFeed} from "../../src/prices/protocols/spUSDT_CustomPriceFeed.sol";
 import {spETH_CustomPriceFeed} from "../../src/prices/protocols/spETH_CustomPriceFeed.sol";
@@ -159,10 +160,17 @@ contract DeployPriceFeeds is BaseDeployScript {
             _deploySyrupUsdg();
         }
 
-        // Deploy LBTC Price Oracle (LBTC/USD = WBTC/USD x LBTC/BTC). Chainlink publishes NO LBTC/USD feed on
-        // mainnet, only the LBTC/BTC rate, so this is a cross-rate rather than a direct registration.
+        // Deploy LBTC Price Oracle (LBTC/USD = WBTC/USD x LBTC.getRate()). LBTC is yield-bearing, so the rate is
+        // read ON-CHAIN, exactly as rETH/cbETH/wstETH/ezETH are — never from a market feed.
         if (ConfigReader.isAdapterEnabled(vm, currentChainId, "priceFeeds", "LBTC")) {
-            _deployCrossRateMonitor("LBTC");
+            _deployLbtc();
+        }
+
+        // LBTC's MARKET divergence monitor (LBTC/USD = WBTC/USD x Chainlink LBTC/BTC). Independent METHODOLOGY
+        // from the primary above, not merely an independent source — which is what makes it able to catch a
+        // depeg the fundamental rate cannot express. Same role ezETHCrossRateMarket plays for ezETH.
+        if (ConfigReader.isAdapterEnabled(vm, currentChainId, "priceFeeds", "LBTCCrossRateMarket")) {
+            _deployCrossRateMonitor("LBTCCrossRateMarket");
         }
 
         // Deploy spUSDC Price Oracle
@@ -421,6 +429,22 @@ contract DeployPriceFeeds is BaseDeployScript {
         syrupUSDG_CustomPriceFeed syrupUsdgAdapter = new syrupUSDG_CustomPriceFeed(syrupUsdg, nav, baseAsset);
         ConfigReader.writeAdapterAddress(vm, currentChainId, "priceFeeds", "syrupUSDG", address(syrupUsdgAdapter));
         console2.log("syrupUSDG_CustomPriceFeed deployed at:", address(syrupUsdgAdapter));
+    }
+
+    function _deployLbtc() internal {
+        address deployed = _readAdapterDeployed("priceFeeds", "LBTC");
+        if (deployed != address(0)) {
+            console2.log("LBTC_CustomPriceFeed already deployed at:", deployed);
+            return;
+        }
+
+        address lbtc = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "LBTC", "lbtc"));
+        address baseAsset = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "LBTC", "baseAsset"));
+        address nav = ConfigReader.readDeployedAddress(vm, currentChainId, "NAVCalculatorProxy");
+
+        LBTC_CustomPriceFeed lbtcAdapter = new LBTC_CustomPriceFeed(lbtc, nav, baseAsset);
+        ConfigReader.writeAdapterAddress(vm, currentChainId, "priceFeeds", "LBTC", address(lbtcAdapter));
+        console2.log("LBTC_CustomPriceFeed deployed at:", address(lbtcAdapter));
     }
 
     function _deploySpUsdc() internal {

@@ -272,6 +272,18 @@ contract MetaLabelGasBoundsTest is Test {
     ///      let an earlier ceiling of 2M pass while bounding almost nothing.
     uint256 internal constant BOUNDED_CEILING = LEAF_GAS + 150_000;
 
+    /// @dev The Fluid leaf's cost as a function of the registered-asset count, measured on this fixture (see
+    ///      {test_fluidLeaf_atMainnetRegistrySize_rendersCold} for the readings). Fixed cost plus a per-asset
+    ///      slope, because `vaultPairSymbols` pulls the whole registry across the call boundary to resolve two
+    ///      symbols.
+    uint256 internal constant FLUID_LEAF_FIXED = 74_100;
+    uint256 internal constant FLUID_LEAF_PER_ASSET = 9_700;
+
+    /// @dev Slack allowed above the measured line. Deliberately far below the ~171,000 that a registry fetch
+    ///      per SIDE adds at this registry size — that regression is what this bound exists to catch, and a
+    ///      margin large enough to hide it would pin nothing.
+    uint256 internal constant FLUID_LEAF_MARGIN = 40_000;
+
     /// @dev Mainnet's registered-asset count, read from
     ///      `script/config/nav-config/assets-and-price-feeds/1.json` rather than hand-pinned.
     ///
@@ -608,17 +620,40 @@ contract MetaLabelGasBoundsTest is Test {
     ///      resolve two symbols, so its cost is linear in how many assets happen to be registered protocol-wide.
     ///      Registering an unrelated asset is a routine MANAGER config TX, so the headroom above today's count
     ///      is a budget denominated in future config changes — not a static margin.
+    ///
+    ///      THE BOUND IS DERIVED, NOT PINNED, for exactly the reason {_mainnetRegisteredAssets} is: a literal
+    ///      mirroring a moving quantity re-drifts by construction. The previous literal `550_000` was calibrated
+    ///      at 43 assets and went red the moment three unrelated assets (USDG, frxUSD, LINK) were registered —
+    ///      a routine config TX — even though the leaf still rendered and still sat far under the on-chain
+    ///      stipend. Measured on this fixture by padding the mock registry:
+    ///
+    ///          n = 43 -> 489,497    n = 49 -> 547,421    n = 52 -> 576,402
+    ///          n = 62 -> 673,101    n = 72 -> 769,944
+    ///
+    ///      ~9,670 gas per registered asset over a ~74,100 fixed cost, flat to within 0.3% across that range.
+    ///      So the line is asserted, not a point on it, and adding an asset no longer reddens this test while
+    ///      a real regression in the leaf still does.
     function test_fluidLeaf_atMainnetRegistrySize_rendersCold() public {
         (bool ok, uint256 used, uint256 segments) =
             harness.labelCost(address(coldFluidMeta), abi.encode(address(coldFluidVault)), BUDGET);
+        uint256 n = _mainnetRegisteredAssets();
 
         assertTrue(ok, "the Fluid leaf must label successfully at mainnet's registry size");
         assertEq(segments, 2, "the leaf must NOT have been dropped");
-        // Tight deliberately, and tighter than {BOUNDED_CEILING}. This leaf's cost is the argument for the
-        // ceiling's value, so a bound loose enough to survive a regression in it pins nothing: resolving the two
-        // symbols with one registry fetch per SIDE instead of one per leaf costs ~660k here and would sail past
-        // any ceiling-shaped assertion while silently undoing the change this figure is quoted from.
-        assertLt(used, 550_000, "the leaf must resolve both symbols from a SINGLE registry fetch");
-        emit log_named_uint("cold Fluid leaf gas at 43 registered assets", used);
+        assertLt(
+            used,
+            FLUID_LEAF_FIXED + FLUID_LEAF_PER_ASSET * n + FLUID_LEAF_MARGIN,
+            "the leaf must resolve both symbols from a SINGLE registry fetch"
+        );
+        // THE ABSOLUTE CEILING, and the only one here that is not a calibration: above {LEAF_GAS} the capped
+        // self-call in `positionLabels` runs out and EVERY Fluid vault silently renders as the category alone.
+        // That cliff is real and was measured on this fixture, not extrapolated: n = 85 still renders, at
+        // 896,055 gas, and n = 92 DROPS the leaf (`segments == 1`). So the whole family is ~38 routine asset
+        // registrations away from losing its Fluid labels on a live chain, and this is the guard that has to
+        // fire first. Raising {LABEL_LEAF_GAS} is not the fix if it does — the fix is to stop
+        // `_getAssetInfo` pulling the entire registry per call.
+        assertLt(used, LEAF_GAS, "the Fluid leaf must still fit the on-chain LABEL_LEAF_GAS stipend");
+        emit log_named_uint("registered assets in mainnet config", n);
+        emit log_named_uint("cold Fluid leaf gas at that registry size", used);
     }
 }

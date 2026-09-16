@@ -85,7 +85,9 @@ abstract contract WalletTokenMetaBalanceAdapterBase is MetaBalanceAdapter {
     ///      is an under-report, the direction this repo licenses everywhere; the alternative fails toward the
     ///      double-count.
     function _reportedByDefaultAdapter(address token) internal view returns (bool) {
-        if (ERC20_DEFAULT_ADAPTER == address(0)) return false;
+        // No zero check: the constructor rejects a zero address, so this is non-zero for the contract's life.
+        // An earlier version returned `false` (report) on zero, which was the disarmed branch the constructor
+        // guard exists to make impossible — keeping it would read as if zero were still a supported state.
         (bool ok, bytes memory data) =
             ERC20_DEFAULT_ADAPTER.staticcall(abi.encodeWithSignature("isSupportedByDefault(address)", token));
         if (!ok || data.length != 32) return true;

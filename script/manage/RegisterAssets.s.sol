@@ -96,6 +96,11 @@ contract RegisterAssets is BaseDeployScript {
     /// @notice `getPriceFeedAt` could not be read while verifying a positional skip.
     error FeedPositionUnreadable(address asset, uint256 index);
 
+    /// @notice The config declares a different `priceType` than the feed is registered with.
+    /// @dev Caught at PLAN time. `addOrModifyPriceFeed` would reject it at execution, after the Safe batch
+    ///      file has already been written and possibly signed.
+    error FeedTypeMismatch(address asset, uint256 index, IPrices.PriceType onChainType, IPrices.PriceType configType);
+
     /// @notice The on-chain feed at this index is not the config feed — the append-only assumption is broken.
     /// @dev Loud on purpose. Since the heartbeat upsert, silently continuing would rewrite the WRONG feed's
     ///      staleness window instead of reverting the batch.
@@ -309,6 +314,18 @@ contract RegisterAssets is BaseDeployScript {
 
         IPrices.PriceFeedConfig memory onChain = abi.decode(fd, (IPrices.PriceFeedConfig));
         if (onChain.priceFeed != feed) revert FeedOrderMismatch(asset, idx, onChain.priceFeed, feed);
+
+        // A feed's TYPE is identity, and `addOrModifyPriceFeed` rejects a changed one
+        // (`PriceFeedLib.PriceFeedTypeImmutable`). Compare it here, where the value is already decoded,
+        // because this is the only failure in this script that would otherwise get PAST planning:
+        // `FeedOrderMismatch` and `AssetKindRegistryNotDeployed` both abort before `writeSafeTx`, but a
+        // `priceType` drift plans cleanly, the Safe batch is WRITTEN TO DISK (`vm.writeJson` is a filesystem
+        // cheatcode, not rolled back by a later revert), and only then does execution die — leaving a
+        // fully-formed, signable batch that the script itself already proved cannot execute, and taking the
+        // whole chain's MultiSend with it. The sibling `RealignHeartbeats` passes the STORED type read back
+        // from chain, so it is correct by construction; this is the only caller sourcing it from config for a
+        // feed that is already registered.
+        if (onChain.priceType != pt) revert FeedTypeMismatch(asset, idx, onChain.priceType, pt);
 
         uint256 cfgHb = vm.parseUint(ConfigReader.readAssetFeedHeartbeat(vm, currentChainId, symbol, i));
         if (onChain.chainlinkHeartbeat == cfgHb) return "";

@@ -38,6 +38,9 @@ library ProtocolNames {
 
     /// @dev `ProtocolIds.AAVE_V3` — shared by lending instances, the Safety Module, and Umbrella.
     string internal constant AAVE_V3 = "Aave V3";
+    /// @dev `ProtocolIds.AAVE_V4` — a distinct protocol id from V3, hence a distinct name: V4 is a separate
+    ///      deployment with its own Spokes, so a consumer grouping by display name must not merge the two.
+    string internal constant AAVE_V4 = "Aave V4";
     /// @dev `ProtocolIds.SPARK`.
     string internal constant SPARK = "Spark";
     string internal constant ROCKET_POOL = "Rocket Pool";
@@ -143,6 +146,7 @@ library ProtocolNames {
     /// @return The display name every adapter under that protocol id must report.
     function forProtocolId(bytes32 protocolId) internal pure returns (string memory) {
         if (protocolId == ProtocolIds.AAVE_V3) return AAVE_V3;
+        if (protocolId == ProtocolIds.AAVE_V4) return AAVE_V4;
         if (protocolId == ProtocolIds.MORPHO) return MORPHO;
         if (protocolId == ProtocolIds.SPARK) return SPARK;
         if (protocolId == ProtocolIds.EULER) return EULER;

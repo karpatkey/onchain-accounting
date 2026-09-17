@@ -11,6 +11,9 @@ import {
     AaveV3InstancesMetaBalanceAdapter
 } from "../../src/balances/MetaBalanceAdapters/AaveV3InstancesMetaBalanceAdapter.sol";
 import {
+    AaveV4SpokesMetaBalanceAdapter
+} from "../../src/balances/MetaBalanceAdapters/AaveV4SpokesMetaBalanceAdapter.sol";
+import {
     CompoundV3CometsMetaBalanceAdapter
 } from "../../src/balances/MetaBalanceAdapters/CompoundV3CometsMetaBalanceAdapter.sol";
 import {SparkLendBalanceAdapter} from "../../src/balances/BalanceAdapters/SparkLendBalanceAdapter.sol";
@@ -135,6 +138,9 @@ contract DeployBalanceAdapters is BaseDeployScript {
         // The legacy per-market adapters (AaveV3_Core/_Prime/_Arbitrum/_Base/_Optimism/_Gnosis) are
         // superseded by AaveV3InstancesMeta and disabled in chain config — they have no deploy path here.
         _deployIfEnabled("AaveV3InstancesMeta"); // DataProvider set configured on NAV via addMetaInstances/removeMetaInstances
+
+        // --- Aave V4 (one instance per Spoke; a v4 health factor is Spoke-scoped) ---
+        _deployIfEnabled("AaveV4SpokesMeta"); // Meta-adapter: all Aave V4 Spokes; Spoke set on NAV (ADR 0010)
 
         // --- Compound V3 (one instance per Comet) ---
         _deployIfEnabled("CompoundV3CometsMeta"); // Meta-adapter: all Compound V3 comets; comet set on NAV (ADR 0010)
@@ -343,6 +349,11 @@ contract DeployBalanceAdapters is BaseDeployScript {
         // Aave V3 instances meta-adapter (one adapter for all instances; DataProvider set lives on NAV — ADR 0010)
         if (_equals(adapterName, "AaveV3InstancesMeta")) {
             return _deployAaveV3InstancesMeta(adapterName, navCalculator);
+        }
+
+        // Aave V4 meta-adapter (Spokes; no per-Spoke adapters exist — v4 was meta from the start)
+        if (_equals(adapterName, "AaveV4SpokesMeta")) {
+            return _deployAaveV4SpokesMeta(adapterName, navCalculator);
         }
 
         // CompoundV3 meta-adapter (per-instance adapters removed — superseded by CompoundV3CometsMeta)
@@ -556,6 +567,18 @@ contract DeployBalanceAdapters is BaseDeployScript {
             navCalculator,
             "AaveV3InstancesMetaBalanceAdapter",
             DeploySalts.AAVE_V3_INSTANCES_META
+        );
+        return adapter;
+    }
+
+    /// @notice Deploys the Aave V4 Spokes meta-adapter. Constructor takes only the NAV proxy; the Spoke set is
+    ///         configured on NAVCalculator via addMetaInstances/removeMetaInstances in 06 (ADR 0010).
+    function _deployAaveV4SpokesMeta(string memory, address navCalculator) internal returns (address) {
+        address adapter = _create2NavOnly(
+            type(AaveV4SpokesMetaBalanceAdapter).creationCode,
+            navCalculator,
+            "AaveV4SpokesMetaBalanceAdapter",
+            DeploySalts.AAVE_V4_SPOKES_META
         );
         return adapter;
     }

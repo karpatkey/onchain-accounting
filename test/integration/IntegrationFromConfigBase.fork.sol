@@ -31,6 +31,7 @@ import {MorphoMarketsMetaBalanceAdapter} from "src/balances/MetaBalanceAdapters/
 import {
     AaveV3InstancesMetaBalanceAdapter
 } from "src/balances/MetaBalanceAdapters/AaveV3InstancesMetaBalanceAdapter.sol";
+import {AaveV4SpokesMetaBalanceAdapter} from "src/balances/MetaBalanceAdapters/AaveV4SpokesMetaBalanceAdapter.sol";
 import {
     GearboxV3MarketsMetaBalanceAdapter
 } from "src/balances/MetaBalanceAdapters/GearboxV3MarketsMetaBalanceAdapter.sol";
@@ -596,6 +597,9 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         if (_equals(name, "AaveV3InstancesMeta")) {
             return _deployAaveV3InstancesMeta(name, navAddr);
         }
+        if (_equals(name, "AaveV4SpokesMeta")) {
+            return _deployAaveV4SpokesMeta(name, navAddr);
+        }
         if (_startsWith(name, "AaveV3_")) {
             return _deployAaveV3(name, navAddr);
         }
@@ -745,6 +749,12 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
 
     function _deployAaveV3InstancesMeta(string memory, address navAddr) internal returns (address) {
         return address(new AaveV3InstancesMetaBalanceAdapter(navAddr));
+    }
+
+    /// @dev Meta-adapter: the Spoke set comes from `_configureMetaInstances` (nav-config `instances`); reserves
+    ///      inside a Spoke are enumerated on-chain by numeric id, so nothing else needs seeding.
+    function _deployAaveV4SpokesMeta(string memory, address navAddr) internal returns (address) {
+        return address(new AaveV4SpokesMetaBalanceAdapter(navAddr));
     }
 
     function _deployGearboxV3MarketsMeta(string memory, address navAddr) internal returns (address) {

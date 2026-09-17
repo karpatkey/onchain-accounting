@@ -75,6 +75,7 @@ import {
 import {
     AaveV3InstancesMetaBalanceAdapter
 } from "src/balances/MetaBalanceAdapters/AaveV3InstancesMetaBalanceAdapter.sol";
+import {AaveV4SpokesMetaBalanceAdapter} from "src/balances/MetaBalanceAdapters/AaveV4SpokesMetaBalanceAdapter.sol";
 import {
     StakeWiseV3VaultsMetaBalanceAdapter
 } from "src/balances/MetaBalanceAdapters/StakeWiseV3VaultsMetaBalanceAdapter.sol";
@@ -495,7 +496,7 @@ contract MetaBalanceAdapterAdvertisedShapeTest is PositionIdJoinAsserts {
 
     /// @dev Pinned so adding an adapter fails `test_metaAdapterEnumerationCensus` until the author also adds it to
     ///      `test_everyMetaAdapter_advertisesItsCoordinateUnlessItDeclaresOtherwise`.
-    uint256 internal constant META_ADAPTER_COUNT = 40;
+    uint256 internal constant META_ADAPTER_COUNT = 41;
 
     /// @dev A coordinate with dirty high bits, for the two adapters whose instance is a raw `bytes32` rather than
     ///      an address. Deliberately un-address-like: it proves those adapters really do override
@@ -557,6 +558,9 @@ contract MetaBalanceAdapterAdvertisedShapeTest is PositionIdJoinAsserts {
         );
 
         // --- Address-keyed, base default ---------------------------------------------------------------------
+        // Aave V4's coordinate is the Spoke, which is already the contract users transact against, so unlike v3
+        // it needs NO `_instancePositionId` override — the base default is correct and is what must be advertised.
+        i += _assertAdvertisesCoordinate(new AaveV4SpokesMetaBalanceAdapter(n), "AaveV4Spokes");
         i += _assertAdvertisesCoordinate(new CompoundV3CometsMetaBalanceAdapter(stub, stub, n), "CompoundV3Comets");
         i += _assertAdvertisesCoordinate(
             new ConvexCurveLPStakingMetaBalanceAdapter(stub, stub, n), "ConvexCurveLPStaking"

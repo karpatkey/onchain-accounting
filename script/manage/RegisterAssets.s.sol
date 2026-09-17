@@ -41,6 +41,14 @@ import {console2} from "forge-std/console2.sol";
 ///     Confirmed at 1, 2, 4, 8, 12 and 17 actions, and against `origin/main`'s config with no XAUt in it, so this
 ///     predates the XAUt entry and is not caused by it.
 ///
+///     **2026-09-17: `slow` STOPPED BEING ENOUGH, and the trigger is the config file's SIZE.** At 55 configured
+///     assets / 7 planned actions this died with the same bare `EvmError: MemoryOOG` under the profile's then
+///     16 GiB `memory_limit`, having run clean at 52 assets / 5 actions days earlier; chain-1 nav-config had grown
+///     45,909 -> 55,061 bytes in between. That follows directly from the cause below — cost is
+///     O(assets x fields x FILE SIZE) — so **adding prose to a config comment can break this script**, which is
+///     not an obvious coupling. The profile's ceiling is now 64 GiB. Treat another OOM as a signal to fix the
+///     re-reading, not to raise the number again.
+///
 ///     Because ONE action is enough, the cause is NOT the batch size. The scan itself already sits just under the
 ///     32 MiB ceiling and any batch at all tips it over. The dominant cost is `ConfigReader`: field readers such as
 ///     `_readUintOrZero` call `_readOrEmpty(vm, _navAssetsPath(...))`, so the ENTIRE per-chain JSON (~28 KiB, 44

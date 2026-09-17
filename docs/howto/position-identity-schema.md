@@ -1156,6 +1156,31 @@ position level must SUM amounts across legs that share the key** — this is exa
 the on-chain total is always correct; only a consumer that _upserts_ (deduplicates) by the key would
 collapse those legs and under-count. Consumers needing per-item granularity read `positionInstanceId`.
 
+> ### `aave-v4-lending` emits duplicate keys too — its discriminator is the **reserve id**
+>
+> `AaveV4SpokesMetaBalanceAdapter` sets `positionId = abi.encode(spoke)`, because a v4 health factor is
+> Spoke-scoped. But **one Spoke can list the same underlying at two reserve ids against two different
+> Hubs**, and both are borrowable — which is how a single Spoke quotes two borrow rates. An account
+> borrowing that underlying on both emits two `Borrowed` legs whose entire stable key is byte-identical,
+> differing only in `amount`. **`positionInstanceId` carries the `reserveId`**, so the rows are
+> distinguishable; decode it as `uint256(positionInstanceId)`.
+>
+> This is live, not hypothetical. On the Bluechip Spoke `0x973a023A…5A08`, account
+> `0x166ce42d…d2a3` carries USDC debt on reserve 4 (Prime Hub, 60,043.60) *and* reserve 7 (Core Hub,
+> 80,074.03). Measured 2026-09-17: **37 accounts hold USDC debt on both reserves and 31 hold USDT on
+> both.**
+>
+> **Direction of error, which is the opposite of the queue/NFT cases above, and the reason this one got
+> a redeploy rather than a note.** Those legs are all credits, so collapsing them **under**-counts.
+> These are **debt**, so a consumer that upserts by the key drops a borrow and **over-reports NAV** —
+> the critical direction. NAV itself is unaffected (`PriceFeedLib` sums rows). **Sum, never upsert.**
+>
+> Adapter generation 1 (`0x79cad958…`, salt version 1) left `positionInstanceId` at zero and so offered
+> no discriminator at all; generation 2 (salt version 2) added it. Folding `reserveId` into `positionId`
+> instead is NOT possible: `positionIds()` maps each governed instance through `_instancePositionId` and
+> `IPositionEnumerable` requires those ids to be byte-identical to the emitted ones, so one instance must
+> yield exactly one `positionId`.
+
 **Excluded from the key by design:**
 - `balanceAdapter` — provenance only; redeploying an adapter doesn't change the position
 - `isDebt` — the canonical NAV-sign field; read it directly, do not infer it from `positionKind`

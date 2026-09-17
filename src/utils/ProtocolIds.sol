@@ -12,6 +12,7 @@ pragma solidity ^0.8;
 ///      positionId schemas (all are `abi.encode(...)`):
 ///        WALLET                          → (address asset)
 ///        AAVE_V3_LENDING / SPARK_LEND    → (address pool) — one position per instance; reserve in balanceAsset
+///        AAVE_V4_LENDING                 → (address spoke) — one position per Spoke; reserve in balanceAsset
 ///        AAVE_V3_SAFETY_MODULE / UMBRELLA→ (address stakeToken) for BOTH staking legs (no discriminator);
 ///                                          isLocked=non-withdrawable splits them — active stake is LOCKED
 ///                                          (isLocked=true), only a cooldown elapsed-and-in-window is UNLOCKED;
@@ -66,7 +67,7 @@ library ProtocolIds {
 
     // ─────────────────────────────────────────────────────────────────────────────────────────────────────────────
     // Brand ids — the broadest `PositionBalance.protocolBrand` layer (the protocol brand, version-stripped). Several
-    // ecosystem ids roll up to one brand: AAVE_V3 → AAVE; BALANCER_V2 + BALANCER_V3 → BALANCER; UNISWAP_V2 +
+    // ecosystem ids roll up to one brand: AAVE_V3 + AAVE_V4 → AAVE; BALANCER_V2 + BALANCER_V3 → BALANCER; UNISWAP_V2 +
     // UNISWAP_V3 → UNISWAP; etc. For unversioned protocols the brand equals the ecosystem id (CURVE, MORPHO, FLUID,
     // EULER, LIDO, KELP, …) — those reuse the same constant; only the versioned brands need a dedicated constant here.
     // Display/grouping only; NOT part of the stable identity key (that uses `protocolSubId`).
@@ -91,6 +92,7 @@ library ProtocolIds {
     // uses `protocolSubId`. See INAVCalculator.PositionBalance.
     // ─────────────────────────────────────────────────────────────────────────────────────────────────────────────
     bytes32 internal constant AAVE_V3 = keccak256("aave-v3");
+    bytes32 internal constant AAVE_V4 = keccak256("aave-v4");
     bytes32 internal constant GEARBOX_V3 = keccak256("gearbox-v3");
     bytes32 internal constant STAKEWISE_V3 = keccak256("stakewise-v3");
     bytes32 internal constant MORPHO = keccak256("morpho");
@@ -123,6 +125,7 @@ library ProtocolIds {
     bytes32 internal constant AAVE_V3_LENDING = keccak256("aave-v3-lending");
     bytes32 internal constant AAVE_V3_SAFETY_MODULE = keccak256("aave-v3-safety-module");
     bytes32 internal constant AAVE_V3_UMBRELLA = keccak256("aave-v3-umbrella");
+    bytes32 internal constant AAVE_V4_LENDING = keccak256("aave-v4-lending");
 
     // Morpho
     bytes32 internal constant MORPHO_VAULTS = keccak256("morpho-vaults");

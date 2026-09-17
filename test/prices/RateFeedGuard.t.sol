@@ -199,7 +199,23 @@ contract RateFeedGuardTest is Test {
         // This is the population growing, not the counting method mis-measuring: one real instance was added
         // and verified. Its guard is what makes the direction load-bearing — an ARS/USD feed swapped in would
         // answer ~6.3e14 at 1e18 scale and fail the band by five orders of magnitude.
-        assertEq(total, 21, "rate-feed instance count changed - re-verify description() on the new set");
+        //
+        // 2026-09-16: 21 -> 22. Mainnet `LBTC` added — the cross-rate primary that makes the Aave V4 LombardBTC
+        // Spoke's collateral priceable, since Chainlink publishes NO LBTC/USD feed on Ethereum. Population grew
+        // by one real instance, and its pair identity WAS confirmed on-chain before this number moved —
+        // `0x5c29868C58b6e15e2b962943278969Ab6a7D3212` measured 2026-09-16:
+        //
+        //   description()     "LBTC / BTC"  <- a real pair string, so exact-match IS implementable here, unlike
+        //                                      the RedStone Classic-Push constant above. The config asserts it.
+        //   decimals()        8
+        //   latestRoundData() 100453494  ->  1.00453494e18, inside the configured 0.9-1.1e18 band
+        //   aggregator()      0x3F6047b77131ce78Ab4775feE2d38b7339471a01  <- so the configured address is the
+        //                                      PROXY, not the aggregator that Chainlink rotates beneath it.
+        //
+        // The band is tighter than its neighbours' on purpose: LBTC is 1:1 BTC-backed, so anything far from
+        // parity is a wiring error. A BTC/USD feed swapped in here would answer ~7.6e22 at 1e18 scale and miss
+        // the band by four orders of magnitude.
+        assertEq(total, 22, "rate-feed instance count changed - re-verify description() on the new set");
     }
 
     function _countGuarded(uint256 chainId) internal view returns (uint256 n) {

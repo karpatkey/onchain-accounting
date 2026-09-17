@@ -6,6 +6,7 @@
   "balanceAdapters": {
     "ERC20Default": "0x4Bc39Dce61245F5A63189d1FA03E6D76646f1EE6",
     "AaveV3InstancesMeta": "0x04Ba6789B4AD5D6CF63Ec9cc301c13F6a8A0210b",
+    "AaveV4SpokesMeta": "0xdF1B9d57A40D3866F9EFc9d391EDf9dF51325B59",
     "CompoundV3CometsMeta": "0xbd8aE779400C2692dd0eF3fC59F11AADEA74B776",
     "SparkLend": "0x9ad8dDaAD5166f2f0Fe4e883aFe78902f8BF0CAE",
     "AaveV3SafetyModule": "0xa356717027B5d4010a7449904545E5aFb355Bdc9",
@@ -69,7 +70,11 @@
     "spUSDC": "0x571cB9069eb2ad434d8A5bB4853602eb6D2a6d43",
     "spUSDT": "0xA41107cb75012A399358482cC850630D9dD8672A",
     "spETH": "0x93E408dF0A0BEb203e24163bE513e25ca6EF983B",
-    "sDAI": "0x84eDa44d3ab2982692804b153D4bE88A0AfD533C"
+    "sDAI": "0x84eDa44d3ab2982692804b153D4bE88A0AfD533C",
+    "syrupUSDG": "0x99b00DC4a17eE195a691B9c2281Ea5928e923e41",
+    "LBTC": "0x91FF9E29C489350a977570adF94f67361f0cE52F",
+    "LBTCCrossRateMarket": "0x558eC1E928a5b9cDbb3ae8d254f1A7ee0f760520",
+    "syrupUSDT": "0xfA25d9C240bA0d43b71672c1E04De882E324cFA9"
   },
   "retiredCustomPriceFeeds": {
     "$comment": "Deployed feed contracts no longer configured as NAV price sources. A SIBLING of customPriceFeeds, not a member of it, and that is the whole point: reset_deployment_records.CLEAR_SECTIONS is [\"balanceAdapters\", \"customPriceFeeds\"] and its loop blanks EVERY non-empty value in a listed section, so a retirement note stored inside customPriceFeeds is destroyed by the very step-1.1 reset that makes the record worth annotating. Measured, not assumed: both the address and the note come back as \"\". This section is in neither CLEAR_TOP nor CLEAR_SECTIONS, so plan_for never touches it.",

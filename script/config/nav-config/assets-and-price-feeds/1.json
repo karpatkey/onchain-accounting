@@ -98,11 +98,12 @@
         "heartbeat": 86400
       }
     ],
+    "$monitorComment": "weETH monitor heartbeat is 21600, NOT 86400: RedStone publishes this feed in the CLASSIC manifest main/relayer-manifests/ethereumEtherfiWeeth.json (adapterContract == priceFeeds.weETH == 0xdDb6F90f…1136, dataServiceId redstone-primary-prod) whose manifest-level updateTriggers.timeSinceLastUpdateInMilliseconds is 21600000. ADR 0025 requires exact equality. It read as uncatalogued until 2026-09-16 only because redstone_declared_heartbeats.py required the multi-feed OBJECT shape and skipped string-valued classic entries; the registration sat +64800s above declared, a window in which a dead monitor still reads fresh. On-chain is still 86400 -> run script/manage/RealignHeartbeats.s.sol on chain 1 to push this value.",
     "monitorFeeds": [
       {
         "type": "Redstone",
         "address": "0xdDb6F90fFb4d3257dd666b69178e5B3c5Bf41136",
-        "heartbeat": 86400
+        "heartbeat": 21600
       }
     ]
   },
@@ -755,13 +756,7 @@
         "heartbeat": 86400
       }
     ],
-    "monitorFeeds": [
-      {
-        "type": "Redstone",
-        "address": "0x2ee5Ce6556599E16c226579BA14F94926d8Cb86d",
-        "heartbeat": 86400
-      }
-    ]
+    "note": "MONITOR FEED REMOVED 2026-09-16 for RedStone's EIGEN delisting, the same shape as ETHx's 2026-07-27 sunset above. The RedStone push feed 0x2ee5Ce6556599E16c226579BA14F94926d8Cb86d was dropped from main/relayer-manifests-multi-feed/ethereumMultiFeed.json upstream: present at redstone-oracles-monorepo 8234070c (2026-08-31), absent at 48452b66 (2026-09-08, 'Changes from PR #12917'), and the EIGEN key appears in NONE of the 116 manifests under relayer-remote-config/main today. The contract itself now REVERTS on latestRoundData() (custom error 0x4f319ffe, dataFeedId 'EIGEN'; decimals() still answers 8), so it was already contributing nothing: NAVCalculator.getPriceData(EIGEN) on the live proxy reads monitorFeedCount 0, divergenceBps 0, irregular false, while the Chainlink primary 0xf2917e60…A4A1 stays healthy. Keeping the registration cost the ADR 0025 guard its only honest verdict (cadence UNCHECKED) while advertising a monitor that cannot answer. divergenceToleranceBps is retained deliberately: EIGEN gets no divergence signal until a live monitor exists (preflight_config WARN, exactly as ETHx carries), and Chainlink has no second EIGEN/USD feed to promote. TO CLOSE: register a replacement monitor when one is published, or drop the tolerance. On-chain the dead monitor is STILL registered -> deregister with NAVCalculator.removeMonitorFeed(0xec53bF91…1F83, 0x2ee5Ce65…b86d) from the MANAGER EOA."
   },
   "COMP": {
     "address": "0xc00e94Cb662C3520282E6f5717214004A7f26888",
@@ -927,6 +922,152 @@
         "type": "Chainlink",
         "address": "0x9944D86CEB9160aF5C5feB251FD671923323f8C3",
         "$comment": "Chainlink PAXG/USD -- the PROXY. The address circulated in the thread, 0x6795D4A47c9c8F4117b409D966259CdCf6A9Eb6E, is the underlying AGGREGATOR (it reverts on aggregator(); the proxy returns it). Chainlink rotates aggregators behind a proxy, so pointing at the aggregator would freeze this feed silently at the next migration. Declared heartbeat 86400 -> registered 86400: EXACTLY declared, no margin (ADR 0025). The earlier 90000 (+1h) was the superseded margin rule; do not restore it.\nNOTE THE MARKET-HOURS ASYMMETRY: the primary is Precious_Metals (frozen at weekends) while PAXG is Crypto (24/7), so the two legitimately drift when gold spot is closed. Measured over the overlapping window, the largest divergence was 59.2 bps -- on a Saturday -- and 0 of 57 aligned samples exceeded 100 bps. divergenceToleranceBps 100 therefore sits ~1.7x above the observed maximum.",
+        "heartbeat": 86400
+      }
+    ]
+  },
+  "USDG": {
+    "address": "0xe343167631d89B6Ffc58B88d6b7fB0228795491D",
+    "accrualKind": "None",
+    "$kindComment": "Global Dollar (Paxos / Global Dollar Network), 6-dp, USD fiat-backed. accrualKind None: the token neither rebases nor grows a redemption ratio. pegToleranceBps 100 like every other $1 stablecoin here -> pegKind derives Pegged.",
+    "labels": [
+      "Paxos",
+      "Stablecoin"
+    ],
+    "$comment": "REGISTERED TO CLOSE AN AAVE V4 BORROW-DROP TRIPWIRE, not merely for wallet coverage. USDG is a BORROWABLE reserve on all three chain-1 Spokes carried by AaveV4SpokesMeta -- Gold reserve 3, Bluechip reserve 11, Main reserve 11 (enumerated live 2026-09-16 via getReserveCount/getReserve). By the adapter's asymmetric rule an unregistered SUPPLY is skipped (understates, safe) but an unregistered BORROW returns an EMPTY position array for the whole Spoke, so a single USDG borrow would have silently removed the entire Aave V4 leg -- collateral included -- from NAV. See the $reserveRegistrationComment in nav-config/meta-balance-adapters/1.json.",
+    "pegToleranceBps": 100,
+    "priceFeeds": [
+      {
+        "type": "Chainlink",
+        "address": "0x14f0737d6b705259e521EA6E9E3506AC78dBd311",
+        "$comment": "Chainlink USDG/USD, 8-dp, the PROXY (aggregator() returns 0xD7496378523f90f1e82dA528F385B2B30120afE2 -- do not register the aggregator, Chainlink rotates it). It is the ONLY USDG feed Chainlink lists on mainnet: the reference-data-directory feeds-mainnet.json has exactly one USDG entry, and the data.chain.link USDG/USD SVR feed circulated alongside it lives on ROBINHOOD CHAIN, not chain 1, so it is not an alternative here. Declared heartbeat 86400, threshold 0.25%, feedCategory medium -> REGISTERED AT 86400 = EXACTLY declared, no margin (ADR 0025). THIS FEED IS HEARTBEAT-DRIVEN AND THE ZERO MARGIN IS NOT FREE, measured rather than assumed: a getRoundData walk of the 40 rounds from 2026-08-07 to 2026-09-15 gives 39 intervals, min 86400 / median 86424 / max 86436, so 39 of 39 land AT OR PAST the declared 86400. USDG will therefore read stale for roughly 24 s at the end of each daily cycle and be listed in stalePriceAssets. That is the 86400-class row of ADR 0025's own cost table (<30 s/day) and is accepted knowingly -- margin above declared is a window in which a DEAD feed still reads fresh, and consumers gate on stale, so this surfaces as a refusal rather than as a wrong number. Live at registration time: 0.99990003, updatedAt 2026-09-15T19:53:35Z.",
+        "heartbeat": 86400
+      }
+    ],
+    "$monitorComment": "NO monitorFeeds, and therefore no divergenceToleranceBps -- same posture as RLUSD, GHO, crvUSD and EURC. There is no independent mainnet source to diverge against: RedStone publishes a USDG feed only on Ink (chain 57073, 0x83c6f7F61A55Fc7A1337AbD45733AD9c1c68076D), and a sweep of ALL 116 manifests under redstone-oracles-monorepo relayer-remote-config/main on 2026-09-16 found no chain-1 USDG feed in any of them -- including the 7 chain-1 manifests, so this is not the product-specific-manifest miss the redstone guard warns about. Chainlink's other two mainnet USDG-adjacent proxies do not exist either; the catalogue has exactly one. Revisit if RedStone or another push provider lists USDG on mainnet."
+  },
+  "frxUSD": {
+    "address": "0xCAcd6fd266aF91b8AeD52aCCc382b4e165586E29",
+    "accrualKind": "None",
+    "$kindComment": "Frax USD, 18-dp, the redenominated FRAX. accrualKind None -- the yield-bearing wrapper is sfrxUSD, which is NOT registered here. pegToleranceBps 100 like the other $1 stablecoins.",
+    "labels": [
+      "Frax",
+      "Stablecoin"
+    ],
+    "$comment": "THE SECOND HALF OF THE SAME AAVE V4 TRIPWIRE as USDG above, and the last borrowable one: frxUSD is borrowable on Gold reserve 4, Bluechip reserve 8 and Main reserve 12. With USDG and frxUSD both registered, EVERY borrowable underlying on the three carried Spokes is a registered NAV asset, so the whole-Spoke drop is unreachable there rather than merely unlikely. The only remaining unregistered underlying, LINK (Main reserve 6), is collateral-only and so can never trigger it -- it is registered below for wallet coverage, not for this.",
+    "pegToleranceBps": 100,
+    "priceFeeds": [
+      {
+        "type": "Chainlink",
+        "address": "0x9B4a96210bc8D9D55b1908B465D8B0de68B7fF83",
+        "$comment": "Chainlink frxUSD/USD, 8-dp, proxy. Declared heartbeat 86400, threshold 0.5%, feedCategory HIGH (Chainlink's own market-risk classification -- higher than USDG's medium; it reflects frxUSD's liquidity and issuer profile, not feed quality). REGISTERED AT 86400 = EXACTLY declared (ADR 0025). Heartbeat-driven, measured the same way as USDG: 30 rounds to 2026-09-16 give 29 intervals, min 86412 / median 86424 / max 86448 -> 29 of 29 at or past declared, so expect ~24-48 s of stale per daily cycle. Accepted for the same reason. Live at registration time: 0.99997858, updatedAt 2026-09-16T15:07:23Z.",
+        "heartbeat": 86400
+      }
+    ],
+    "$monitorComment": "NO monitorFeeds. RedStone carries frxUSD on Fraxtal (252), Optimism (10), Sei (1329) and Stable (988) but NOT on chain 1 -- verified by the same 116-manifest sweep on 2026-09-16. Chainlink lists one frxUSD/USD proxy on mainnet and one legacy FRAX/USD (0xB9E1E3A9feFf48998E45Fa90847ed4D467E8BcfD); FRAX/USD is deliberately NOT wired as a monitor, because after the FRAX->frxUSD redenomination the two feeds no longer track the same instrument and a stale legacy feed would raise divergence on a healthy asset."
+  },
+  "LINK": {
+    "address": "0x514910771AF9Ca656af840dff83E8264EcF986CA",
+    "accrualKind": "None",
+    "$kindComment": "ChainLink Token, 18-dp. NOT $1-pegged, so NO pegToleranceBps -> pegKind derives Floating. Labelled Governance to match the file's existing use of that segment for a protocol's own token (AAVE, UNI, COMP, ENS, EIGEN); LINK is a work/payment token rather than a governance one, and the taxonomy has no better segment today.",
+    "labels": [
+      "Chainlink",
+      "Governance"
+    ],
+    "$comment": "REGISTERED FOR COMPLETENESS, NOT FOR THE BORROW-DROP GUARD. LINK is Main Spoke reserve 6 and is COLLATERAL-ONLY (getReserveConfig(6).borrowable == false, read live 2026-09-16), so it can never trigger the whole-Spoke drop -- an unregistered LINK supply is merely skipped. Registering it makes every underlying across the three carried Spokes a registered NAV asset, and adds LINK wallet coverage via ERC20Default. COST, stated because it is not free: every registered asset adds a per-asset ERC20Default read to EVERY account's NAV, so this lengthens the complete-read gas for all accounts, not just those touching Aave V4.",
+    "priceFeeds": [
+      {
+        "type": "Chainlink",
+        "address": "0x2c1d072e956AFFC0D435Cb7AC38EF18d24d9127c",
+        "$comment": "Chainlink LINK/USD, 8-dp, proxy -- the canonical mainnet feed, and already the address test/ChainlinkPriceFeeds.sol:linkUsdEthMainnet() carries. Chainlink lists three LINK/USD proxies on mainnet; the other two (0xE5fa3A4e4208858ADdf2CDb4e12651E89f1f1A70, 0x76F8C9E423C228E83DCB11d17F0Bd8aEB0Ca01bb) are SVR variants for Aave's OEV recapture and are NOT independent sources, so neither is usable as a monitor. Declared heartbeat 3600, threshold 0.5% -> REGISTERED AT 3600 = EXACTLY declared (ADR 0025). Unlike USDG and frxUSD this feed is DEVIATION-ACTIVE, so the heartbeat binds only occasionally: a 120-round walk to 2026-09-16 gives 119 intervals, min 60 / median 1056 / max 3672 s, of which 18 (15%) reach or pass 3600 -- by at most 72 s. So LINK will read stale for tens of seconds after roughly one publish cycle in seven, ~0.5% of reads: the same order as ADR 0025's own measured figure for the chain-1 3600 s class (DAI, COMP at 0.66%), and accepted on the same grounds. It is NOT the every-cycle staleness USDG and frxUSD have. Live at registration time: 10.89620000, updatedAt 2026-09-16T19:01:47Z.",
+        "heartbeat": 3600
+      }
+    ],
+    "$monitorComment": "NO monitorFeeds. RedStone publishes LINK on BNB (chain 56) only -- no chain-1 LINK feed in any of the 116 manifests swept on 2026-09-16 -- and the two other Chainlink LINK/USD proxies are SVR feeds off the same aggregation, so they would not constitute an independent second observation."
+  },
+  "PAXG": {
+    "address": "0x45804880De22913dAFE09f4980848ECE6EcbAf78",
+    "accrualKind": "None",
+    "$kindComment": "Paxos Gold, 18-dp, 1 PAXG = 1 troy oz of LBMA gold held by Paxos. Not $1-pegged, so NO pegToleranceBps -> pegKind derives Floating, exactly as XAUt. accrualKind None: no rebase, no growing redemption ratio; its USD value moves only with the gold price.",
+    "labels": [
+      "Paxos",
+      "Paxos Gold"
+    ],
+    "$comment": "Registered to make the Aave V4 PaxgGold Spoke (0xAD75cE6354f87F3135cE10621d385d8D1e2562C2, Global Dollar Hub) usable as a NAV meta-instance. That Spoke has exactly two reserves - PAXG (r0, collateral-only) and USDG (r1, borrowable) - so with USDG already registered and PAXG unregistered, adding the instance would have reported the USDG DEBT while silently skipping the PAXG COLLATERAL that backs it. Unregistered supply is skipped and unregistered borrow drops the Spoke, so that combination understates rather than over-reports, but for a collateralised position it is still the wrong number: it is the mirror of the equity loss that registering USDG fixed. Reserve layout read live 2026-09-16.\n\nTHIS IS THE EXACT MIRROR OF THE XAUt ENTRY, deliberately. XAUt is priced by Chainlink XAU/USD and monitored by Chainlink PAXG/USD; PAXG is priced by PAXG/USD and monitored by XAU/USD. The two registrations are independent - neither reads the other's price - and the pair's divergence behaviour is therefore already measured rather than assumed (see the XAUt monitor comment: max 59.2 bps over the overlapping window, 0 of 57 aligned samples past 100 bps).",
+    "divergenceToleranceBps": 100,
+    "priceFeeds": [
+      {
+        "type": "Chainlink",
+        "address": "0x9944D86CEB9160aF5C5feB251FD671923323f8C3",
+        "$comment": "Chainlink PAXG/USD, 8-dp, the PROXY - and note this is the SAME feed already registered as XAUt's monitor, now serving as PAXG's primary. That is a shared source, not a circularity: XAUt's primary is XAU/USD, so neither asset's price depends on the other's. Declared heartbeat 86400, threshold 0.5%, feedCategory low, marketHours Crypto (24/7, unlike the Precious_Metals XAU/USD feed) -> REGISTERED AT 86400 = EXACTLY declared (ADR 0025), which is also how this same proxy is already registered on XAUt. Measured 2026-09-16 over 60 rounds: 59 intervals, min 48 / median 6,840 / max 86,424 s, so it is mostly DEVIATION-active and reaches the heartbeat in only 4 of 59 intervals - but when it does it overshoots by ~24 s, so brief false-stale is possible there. Live at registration time: 4,278.24229062.",
+        "heartbeat": 86400
+      }
+    ],
+    "monitorFeeds": [
+      {
+        "type": "Chainlink",
+        "address": "0x214eD9Da11D2fbe465a6fc601a91E62EbEc1a0D6",
+        "$comment": "Chainlink XAU/USD - spot gold, an INDEPENDENT observation of what PAXG claims to represent, and the same feed that is XAUt's primary. Catches a bad or frozen PAXG/USD print and a PAXG depeg from gold. It does NOT catch a move in gold itself, which is not an error. Declared 86400 -> registered 86400 (ADR 0025).\nMARKET-HOURS ASYMMETRY, same as XAUt's but reversed: the PRIMARY here is Crypto (24/7) while the MONITOR is Precious_Metals (frozen at weekends), so the two legitimately drift while gold spot is closed. divergenceToleranceBps 100 is carried over from the XAUt entry because it is the SAME PAIR measured there - max 59.2 bps, on a Saturday, 0 of 57 aligned samples past 100 bps - so the tolerance sits ~1.7x above the observed maximum.",
+        "heartbeat": 86400
+      }
+    ]
+  },
+  "LBTC": {
+    "address": "0x8236a87084f8B84306f72007F36F2618A5634494",
+    "accrualKind": "Appreciating",
+    "$kindComment": "Lombard Staked Bitcoin, 8-dp. LBTC IS yield-bearing and non-rebasing: Babylon staking rewards are converted to BTC and reflected in a rising LBTC->BTC exchange rate rather than in holders' balances (the implementation behind the proxy is named StakedLBTC). Balance static, rate grows => accrualKind Appreciating.\n\nTHE RATE IS STEPWISE AND NOT MONOTONIC, which Lombard's own docs ('the exchange rate update is continuous') do not convey and an earlier version of this comment implied by quoting only rising samples. Measured every 3 days over 60 days on getRate(): 1.004899545 at 30d and still exactly that at 21d (flat ~9 days), then -1.80 bps, -0.83 bps and -4.57 bps to a trough of 1.004179667 at 12d, then back up to 1.005005450 today - 3 DECREASES in 20 intervals and ~7.2 bps peak-to-trough. The long-run trend is up (1.003349099 at 180d -> 1.005005450 now, ~+16.6 bps / ~0.34%/yr), which is what makes Appreciating the right classification, but the rate is NOT a monotonic accrual index like stETH's or sDAI's and must not be treated as a floor.\n\nThat the rate can fall on its own account is also why the MARKET cross-rate is wired as the divergence MONITOR: the two legs can move apart for protocol reasons as well as market ones, which is what divergenceToleranceBps is sized against. The PRIMARY is the on-chain rate, per the yield-bearing rule - see $comment below.\n\nNOT $1-pegged and not USD-denominated at all - it tracks BTC - so NO pegToleranceBps, and pegKind derives Floating.",
+    "labels": [
+      "Lombard",
+      "Wrapped Bitcoin"
+    ],
+    "$comment": "Priced from LBTC's OWN ON-CHAIN RATE (LBTC.getRate(), BTC per LBTC) scaled by WBTC/USD from the NAV, because LBTC is a yield-bearing token and this repo prices yield-bearing assets from the chain, never from a market feed. Every other Appreciating/Rebasing asset on this chain follows the same rule - wstETH, weETH, rETH, ezETH, rsETH, ETHx, osETH, the Maple and Spark vaults - with market feeds used only as monitors. An earlier revision of this entry had the Chainlink LBTC/BTC MARKET feed as the primary; that was wrong for this asset class, and that feed is now the monitor (LBTCCrossRateMarket).\n\nThere is no direct LBTC/USD Chainlink feed on Ethereum in any case - the catalogue's only LBTC entry is the LBTC/BTC rate - so both legs here are cross-rates over WBTC. See the LBTC block in contracts-deployment-config/custom-price-feeds/1.json for the base-asset reasoning (WBTC's NAV price IS the Chainlink BTC/USD feed, so no WBTC-specific risk enters).\n\nRegistered so the Aave V4 LombardBTC Spoke (0x7EC68b5695e803e98a21a9A05d744F28b0a7753D) can be carried as a meta-instance: LBTC is its r0 COLLATERAL-ONLY reserve and WBTC/cbBTC (r1/r2) are its borrowables. With the borrowables registered and LBTC not, adding that Spoke would have reported the BTC debt while silently skipping the collateral backing it.",
+    "$monitorComment": "The monitor is the MARKET cross-rate (LBTCCrossRateMarket), which supplies exactly the methodology the primary structurally lacks: the primary reads Lombard's own on-chain rate, which does not observe market price at all, so a market discount cannot move it (it CAN still fall for protocol reasons - measured, 3 decreases in 20 intervals over 60 days - so the claim is about the CAUSE, not about the rate being a floor). Both legs read WBTC/USD from the same NAV, so the base term cancels and the divergence check reduces to rate-vs-rate.\n\ndivergenceToleranceBps 100 is MEASURED, not chosen: market-vs-fundamental spread sampled every 2 days over 90 days, 46 samples - |spread| min 0.01, median 5.07, p90 13.18, MAX 19.63 bps, market BELOW fundamental in 35 of 46 (the persistent small discount a liquid wrapper carries). 100 bps is ~5.1x the observed maximum, and deliberately far tighter than the 250 bps the ETH LSTs carry because this spread is an order of magnitude smaller than theirs.\n\nRedStone also publishes LBTC_FUNDAMENTAL on mainnet (0xb415eAA355D8440ac7eCB602D3fb67ccC1f0bc81). It is deliberately NOT wired: it is a second FUNDAMENTAL source, so pairing it against a fundamental primary would repeat the exact defect audit finding #2 raised on ezETH - two fundamental rates agreeing says nothing about market price.",
+    "divergenceToleranceBps": 100,
+    "priceFeeds": [
+      {
+        "type": "Custom",
+        "feed": "LBTC",
+        "heartbeat": 86400
+      }
+    ],
+    "monitorFeeds": [
+      {
+        "type": "Custom",
+        "feed": "LBTCCrossRateMarket",
+        "heartbeat": 86400
+      }
+    ]
+  },
+  "syrupUSDG": {
+    "address": "0x87b65C4aAFFA76881f9E96F3e7ED945ddFC3Cd7A",
+    "accrualKind": "Appreciating",
+    "$kindComment": "Maple syrupUSDG share, USDG underlying; priced via convertToAssets (per feed config). Same MaplePool code as the already-registered syrupUSDC, so the same Appreciating classification: balance static, share rate grows. Live rate 2026-09-16: 1.011119 USDG per share.",
+    "labels": [
+      "Maple",
+      "Savings"
+    ],
+    "$comment": "Registered so the Aave V4 UsdgMapleE Spoke (0x774b9655413c34809c1f1b16b654465A89EBE989) can be carried as a meta-instance: syrupUSDG is its r1 COLLATERAL-ONLY reserve, with USDG (r0/r3) and USDC (r2) borrowable and already registered.\n\nITS BASE ASSET IS USDG, so this entry depends on the USDG registration made the same day - there was no USDG/USD price for the feed's base leg before it. See the syrupUSDG block in contracts-deployment-config/custom-price-feeds/1.json for the manipulation-resistance measurement and for the convertToAssets-vs-unrealizedLosses property this shares with the live syrupUSDC feed.",
+    "priceFeeds": [
+      {
+        "type": "Custom",
+        "feed": "syrupUSDG",
+        "heartbeat": 86400
+      }
+    ]
+  },
+  "syrupUSDT": {
+    "address": "0x356B8d89c1e1239Cbbb9dE4815c39A1474d5BA7D",
+    "accrualKind": "Appreciating",
+    "$kindComment": "Maple syrupUSDT share, USDT underlying; priced via convertToAssets (per feed config). Same MaplePool code as the registered syrupUSDC and syrupUSDG, so the same Appreciating classification: balance static, share rate grows. Live rate 2026-09-17: 1.143506 USDT per share.",
+    "labels": [
+      "Maple",
+      "Savings"
+    ],
+    "$comment": "Registered for the XAUt carry fund's syrupUSDT leg (requested 2026-09-16). Its base asset USDT was already registered with a direct Chainlink primary, so unlike syrupUSDG this feed had no prerequisite registration. See the syrupUSDT block in contracts-deployment-config/custom-price-feeds/1.json for the manipulation measurement, the shared convertToAssets-vs-unrealizedLosses property, and the liquidity caveat that pricing does not capture.",
+    "priceFeeds": [
+      {
+        "type": "Custom",
+        "feed": "syrupUSDT",
         "heartbeat": 86400
       }
     ]

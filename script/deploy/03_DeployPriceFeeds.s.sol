@@ -10,6 +10,9 @@ import {LDO_CustomPriceFeed} from "../../src/prices/protocols/LDO_CustomPriceFee
 import {sUSDS_CustomPriceFeed} from "../../src/prices/protocols/sUSDS_CustomPriceFeed.sol";
 import {sUSDe_CustomPriceFeed} from "../../src/prices/protocols/sUSDe_CustomPriceFeed.sol";
 import {syrupUSDC_CustomPriceFeed} from "../../src/prices/protocols/syrupUSDC_CustomPriceFeed.sol";
+import {syrupUSDG_CustomPriceFeed} from "../../src/prices/protocols/syrupUSDG_CustomPriceFeed.sol";
+import {LBTC_CustomPriceFeed} from "../../src/prices/protocols/LBTC_CustomPriceFeed.sol";
+import {syrupUSDT_CustomPriceFeed} from "../../src/prices/protocols/syrupUSDT_CustomPriceFeed.sol";
 import {spUSDC_CustomPriceFeed} from "../../src/prices/protocols/spUSDC_CustomPriceFeed.sol";
 import {spUSDT_CustomPriceFeed} from "../../src/prices/protocols/spUSDT_CustomPriceFeed.sol";
 import {spETH_CustomPriceFeed} from "../../src/prices/protocols/spETH_CustomPriceFeed.sol";
@@ -149,6 +152,32 @@ contract DeployPriceFeeds is BaseDeployScript {
         // Deploy syrupUSDC Price Oracle
         if (ConfigReader.isAdapterEnabled(vm, currentChainId, "priceFeeds", "syrupUSDC")) {
             _deploySyrupUsdc();
+        }
+
+        // Deploy syrupUSDG Price Oracle. Gated on its OWN config entry, never nested inside syrupUSDC's — the
+        // two are separate Maple pools over different underlyings, and nesting would make an enabled syrupUSDG
+        // silently not deploy whenever syrupUSDC is disabled (the failure mode the wARS comment below records).
+        if (ConfigReader.isAdapterEnabled(vm, currentChainId, "priceFeeds", "syrupUSDG")) {
+            _deploySyrupUsdg();
+        }
+
+        // Deploy syrupUSDT Price Oracle. Third Maple vault on this chain; gated on its OWN config entry for the
+        // same reason as syrupUSDG above.
+        if (ConfigReader.isAdapterEnabled(vm, currentChainId, "priceFeeds", "syrupUSDT")) {
+            _deploySyrupUsdt();
+        }
+
+        // Deploy LBTC Price Oracle (LBTC/USD = WBTC/USD x LBTC.getRate()). LBTC is yield-bearing, so the rate is
+        // read ON-CHAIN, as rETH/wstETH/ezETH are on this chain — never from a market feed.
+        if (ConfigReader.isAdapterEnabled(vm, currentChainId, "priceFeeds", "LBTC")) {
+            _deployLbtc();
+        }
+
+        // LBTC's MARKET divergence monitor (LBTC/USD = WBTC/USD x Chainlink LBTC/BTC). Independent METHODOLOGY
+        // from the primary above, not merely an independent source — which is what makes it able to catch a
+        // depeg the fundamental rate cannot express. Same role ezETHCrossRateMarket plays for ezETH.
+        if (ConfigReader.isAdapterEnabled(vm, currentChainId, "priceFeeds", "LBTCCrossRateMarket")) {
+            _deployCrossRateMonitor("LBTCCrossRateMarket");
         }
 
         // Deploy spUSDC Price Oracle
@@ -389,6 +418,58 @@ contract DeployPriceFeeds is BaseDeployScript {
         syrupUSDC_CustomPriceFeed syrupUsdcAdapter = new syrupUSDC_CustomPriceFeed(syrupUsdc, nav, baseAsset);
         ConfigReader.writeAdapterAddress(vm, currentChainId, "priceFeeds", "syrupUSDC", address(syrupUsdcAdapter));
         console2.log("syrupUSDC_CustomPriceFeed deployed at:", address(syrupUsdcAdapter));
+    }
+
+    function _deploySyrupUsdg() internal {
+        address deployed = _readAdapterDeployed("priceFeeds", "syrupUSDG");
+        if (deployed != address(0)) {
+            console2.log("syrupUSDG_CustomPriceFeed already deployed at:", deployed);
+            return;
+        }
+
+        address syrupUsdg =
+            vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "syrupUSDG", "syrupUsdg"));
+        address baseAsset =
+            vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "syrupUSDG", "baseAsset"));
+        address nav = ConfigReader.readDeployedAddress(vm, currentChainId, "NAVCalculatorProxy");
+
+        syrupUSDG_CustomPriceFeed syrupUsdgAdapter = new syrupUSDG_CustomPriceFeed(syrupUsdg, nav, baseAsset);
+        ConfigReader.writeAdapterAddress(vm, currentChainId, "priceFeeds", "syrupUSDG", address(syrupUsdgAdapter));
+        console2.log("syrupUSDG_CustomPriceFeed deployed at:", address(syrupUsdgAdapter));
+    }
+
+    function _deploySyrupUsdt() internal {
+        address deployed = _readAdapterDeployed("priceFeeds", "syrupUSDT");
+        if (deployed != address(0)) {
+            console2.log("syrupUSDT_CustomPriceFeed already deployed at:", deployed);
+            return;
+        }
+
+        address syrupUsdt =
+            vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "syrupUSDT", "syrupUsdt"));
+        address baseAsset =
+            vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "syrupUSDT", "baseAsset"));
+        address nav = ConfigReader.readDeployedAddress(vm, currentChainId, "NAVCalculatorProxy");
+
+        syrupUSDT_CustomPriceFeed syrupUsdtAdapter = new syrupUSDT_CustomPriceFeed(syrupUsdt, nav, baseAsset);
+        ConfigReader.writeAdapterAddress(vm, currentChainId, "priceFeeds", "syrupUSDT", address(syrupUsdtAdapter));
+        console2.log("syrupUSDT_CustomPriceFeed deployed at:", address(syrupUsdtAdapter));
+    }
+
+    function _deployLbtc() internal {
+        address deployed = _readAdapterDeployed("priceFeeds", "LBTC");
+        if (deployed != address(0)) {
+            console2.log("LBTC_CustomPriceFeed already deployed at:", deployed);
+            return;
+        }
+
+        address lbtc = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "LBTC", "lbtc"));
+        address baseAsset = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "LBTC", "baseAsset"));
+        address nav = ConfigReader.readDeployedAddress(vm, currentChainId, "NAVCalculatorProxy");
+
+        LBTC_CustomPriceFeed lbtcAdapter = new LBTC_CustomPriceFeed(lbtc, nav, baseAsset);
+        ConfigReader.writeAdapterAddress(vm, currentChainId, "priceFeeds", "LBTC", address(lbtcAdapter));
+        console2.log("LBTC_CustomPriceFeed deployed at:", address(lbtcAdapter));
     }
 
     function _deploySpUsdc() internal {

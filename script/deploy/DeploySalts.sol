@@ -69,6 +69,19 @@ library DeploySalts {
     // chain at once — which means a redeploy AND a re-registration on the NAV, since the NAV's balance-adapter
     // set and each meta-adapter's instance set are keyed by adapter ADDRESS.
     uint256 internal constant AAVE_V3_INSTANCES_META = 2;
+    /// @dev **Version 2 as of 2026-09-17 — a DELIBERATE bump, superseding generation 1.** Unlike its neighbours,
+    ///      generation 1 of this adapter was NOT a plain-CREATE deployment: it was CREATE2 from birth (mainnet
+    ///      `0x79cad958...`, deployed 2026-09-08 by the canonical deployer), so version 1 was its first real
+    ///      generation and this is the first genuine supersession.
+    ///
+    ///      **Why it was superseded.** Generation 1 left `positionInstanceId` at zero on every leg, so the two
+    ///      legs a Spoke emits when it lists the same underlying against two Hubs (Bluechip: USDC at reserves 4
+    ///      and 7, USDT at 5 and 10) were indistinguishable in every identity field — 37 accounts with USDC and
+    ///      31 with USDT on mainnet at the time. Because those legs are DEBT, a consumer de-duplicating on the
+    ///      documented reconciliation key dropped a borrow and OVER-reported. Generation 2 carries the reserve id
+    ///      in `positionInstanceId`. The adapter is immutable, so this is a redeploy plus a swap
+    ///      (`script/manage/SwapMetaAdapter.s.sol` — REMOVE before ADD, never both registered at once).
+    uint256 internal constant AAVE_V4_SPOKES_META = 2;
     uint256 internal constant AAVE_V3_SAFETY_MODULE = 2;
     uint256 internal constant BALANCER_V3_POOLS_META = 2;
     uint256 internal constant CURVE_POOLS_META = 2;

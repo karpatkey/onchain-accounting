@@ -85,7 +85,7 @@ could not give them a shared address. Read those per-chain from the deployment r
 
 ---
 
-## Chains (24)
+## Chains (25)
 
 | Chain | Chain ID | Scope | Custom price feeds | Balance adapters (excl. ERC20Default) |
 | --- | --- | --- | --- | --- |
@@ -113,9 +113,9 @@ could not give them a shared address. Read those per-chain from the deployment r
 | Hemi | 43111 | impl + proxy | — | — |
 | 0G | 16661 | impl + proxy | — | — |
 | HyperEVM | 999 | impl + proxy | — | — |
-| Arc | 5042 | impl + proxy | — | — |
+| Arc | 5042 | impl + proxy + assets | 1 | 1 |
 
-The 18 impl+proxy chains run the canonical layer only; custom price feeds and balance adapters are registered as assets land on each.
+The 17 impl+proxy chains run the canonical layer only; custom price feeds and balance adapters are registered as assets land on each.
 
 ---
 
@@ -251,6 +251,12 @@ position manager is at a different address entirely.
 | MerklRewards ☆ | `0xFf2D5A8bf801191eD1292E6DD6792F5D03c5aFBF` |
 | MorphoMarketsMeta ☆ † | `0x5C951CF5C596BC4908A5fd846710070553830b06` |
 
+### Arc (5042)
+
+| Adapter | Address |
+| --- | --- |
+| MorphoVaultsMeta ★ | `0x64e1ba8B12ee2bFdBDdFd4E0863EdfaaE824C86a` |
+
 ## Assisted-adapter assistants (per chain, plain CREATE)
 
 Delegatecall action modules for the assisted adapters. They are **not** registered on the NAV Calculator —
@@ -344,3 +350,9 @@ addresses. Chains not listed have no custom feeds; their assets use direct feeds
 | osGNO | `0xd0e852a932490290B5bAACe8DafF04D9ec19c164` |
 | sXDAI | `0x513F159f9a2a65fec8AC61d16203450fDC7cA893` |
 | wstETH_L2 | `0x2A0Fa71f5923f720c4a622cD4Da0b7837C466612` |
+
+### Arc (5042)
+
+| Token | Feed address |
+| --- | --- |
+| wARS | `0xC67360B2Cf8d23849ad2b7F3E79AB813D64A94C5` |

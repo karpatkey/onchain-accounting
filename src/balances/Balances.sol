@@ -68,9 +68,10 @@ abstract contract Balances is IBalances, Initializable {
     ///      unused, so it sized no buffer and fed no computation. It was maintained by three call sites and
     ///      defended by two long comments in two files telling future authors not to "fix" its inconsistency —
     ///      a standing prose-drift generator for a number with no consumer. The arithmetic is gone; the SLOT
-    ///      and its LABEL stay exactly as they were: `script/upgrade/storage-layout/NAVCalculator.json:94` pins
-    ///      this label, and editing a drift-detection baseline to match my own change is the move this repo
-    ///      forbids. A retired counter is worth a stale-looking name; a silenced layout guard is not.
+    ///      and its LABEL stay exactly as they were: the committed baseline under
+    ///      `script/upgrade/storage-layout/` pins this label, and editing a drift-detection baseline to match
+    ///      my own change is the move this repo forbids. A retired counter is worth a stale-looking name; a
+    ///      silenced layout guard is not.
     uint256 internal _metaInstanceTotal;
 
     /// @dev Reserved storage gap for future Balances expansions (47 slots; 3 consumed by meta-adapter registry).

@@ -329,6 +329,22 @@ jobs:
           python3 published_addresses_guard.py --self-test
           python3 published_addresses_guard.py
 
+      - name: Source gates (file:line refs; raw staticcall ratchet)
+        # Two classes nothing else catches. (1) A comment citing `Foo.sol:191` is correct the day it is
+        # written and silently wrong the next time a line is inserted above it — nothing recompiles a
+        # comment. When this gate was added, THREE of the four such references in `src/` were already stale
+        # or false, one of them asserting behaviour that had since been reversed. (2) An unmetered raw
+        # staticcall forwards 63/64 of the frame and absorbs its own out-of-gas as `ok == false`, so a
+        # caller that fails closed on it returns SUCCESSFULLY from a starved read and the holding leaves NAV
+        # with no health flag; one such read measured 1.05e9 gas before it was capped (#168).
+        #
+        # The staticcall half is a RATCHET with a per-file allowlist, not a ban: the 26 existing sites stay
+        # visible and unrewritten, but the class cannot grow. Self-test first, for the same reason as the
+        # steps above — a gate whose detector silently matches nothing is worse than no gate.
+        run: |
+          python3 script/deploy/preflight/source_comment_gates.py --self-test
+          python3 script/deploy/preflight/source_comment_gates.py
+
       - name: Heartbeat-guard self-test (declared_heartbeat_guard --self-test)
         # Wired for the same reason as the step below, and after the same failure: a scope change to
         # `configured_chain_ids` made this module's own self-test exit 1 on a clean tree (its arm redirects

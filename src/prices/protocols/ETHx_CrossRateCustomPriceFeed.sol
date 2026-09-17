@@ -28,8 +28,8 @@ import {CrossRateCustomPriceFeed} from "src/prices/protocols/CrossRateCustomPric
 ///      passed it — while **every contract is denied**: measured on mainnet, `checkEnabled() == true` and
 ///      `hasAccess(<contract>, "") == false`. {OracleArgumentChecks-assertChainlinkOracle} probes `latestRoundData()`
 ///      in a `try`, was denied, and this constructor reverted `NotChainlinkOracle()`, so `_deployEthxCrossRate()`
-///      (`03_DeployPriceFeeds.s.sol:211` → `:639` — the NAMED deploy function; ETHx does not use the generic
-///      `_deployCrossRateMonitor` at `:598`) reverted during simulation, leaving phantom `customPriceFeeds` addresses
+///      (`03_DeployPriceFeeds.s.sol`'s `_deployEthxCrossRate` — the NAMED deploy function; ETHx does not use the
+///      generic `_deployCrossRateMonitor`) reverted during simulation, leaving phantom `customPriceFeeds` addresses
 ///      in `deployments/1.json` because `vm.writeJson` side effects are not rolled back.
 ///
 ///      **The durable lesson: "right pair" and "readable on-chain" are independent properties.** The bad address's

@@ -47,6 +47,7 @@ contract BackfillMetaInstanceClaimants is Script {
     uint256 internal constant CLAIMANT_SLOT = 109;
 
     error NotManager(address who);
+    error SignerNotManager(address signer);
     error NothingToDo();
     error CoordinateHeldTwice(bytes32 coordinate, address first, address second);
     error ClaimantSlotWrong(bytes32 coordinate, address expected, address got);
@@ -106,6 +107,13 @@ contract BackfillMetaInstanceClaimants is Script {
 
         // --- round-trip each adapter's unclaimed coordinates ---------------------------------------------
         vm.startBroadcast();
+
+        // The configured manager is not necessarily the signer — `startBroadcast()` takes no argument, so
+        // forge uses whatever the CLI supplied. Check the real one before the first write, or a wrong
+        // `--account` reverts partway through and leaves an adapter's set half round-tripped.
+        (, address signer,) = vm.readCallers();
+        if (!NAVCalculator(nav).hasRole(keccak256("MANAGER"), signer)) revert SignerNotManager(signer);
+
         for (uint256 i; i < adapters.length; ++i) {
             address adapter = adapters[i];
             bytes32[] memory set = NAVCalculator(nav).getMetaInstances(adapter);

@@ -32,6 +32,7 @@ contract RealignHeartbeats is Script {
     bytes32 constant MANAGER_ROLE = keccak256("MANAGER");
 
     error NotManager(address who);
+    error SignerNotManager(address signer);
     error NoNavDeployed(uint256 chainId);
 
     function run() external {
@@ -55,20 +56,21 @@ contract RealignHeartbeats is Script {
             console2.log(string.concat("  monitor ", mSyms[i], " -> ", vm.toString(mHeartbeats[i])));
         }
 
-        // NOTE: this checks the CONFIGURED manager, and `vm.startBroadcast()` below takes no argument — so
-        // forge signs with whatever `--account` / `--private-key` / `--sender` the CLI supplies. This
-        // precheck therefore catches a stale config, NOT a mismatched signer: run it with an account other
-        // than `addresses.manager` and the first write still reverts mid-broadcast. Pass the manager account.
+        // TWO checks, because they answer different questions and the config one alone was never enough.
         //
-        // The address that will actually SIGN, not `msg.sender`. Under `forge script` the two need not be
-        // equal, so checking msg.sender can fail a valid run before broadcasting — or pass one whose real
-        // signer lacks the role, leaving the revert to land mid-sequence. `10_MigrateAdaptersToCreate2.s.sol`
-        // pins the intended broadcaster the same way.
+        // This first one reads the CONFIGURED manager, so it catches a STALE CONFIG — a chain whose
+        // `addresses.manager` no longer holds the role. It says nothing about who will sign:
+        // `vm.startBroadcast()` below takes no argument, so forge signs with whatever `--account` /
+        // `--private-key` / `--sender` the CLI supplies. The real signer is checked against the role
+        // immediately after the broadcast opens, via `vm.readCallers()` — see there. Before that second
+        // check existed, running with any account other than `addresses.manager` passed here and then
+        // reverted MID-SEQUENCE, after some heartbeats had already been written.
+        //
         // MANAGER, not DEFAULT_ADMIN, on BOTH sides. Every call this script makes — `addOrModifyPriceFeed`,
         // `removeMonitorFeed`, `addMonitorFeed` — is MANAGER-gated; the admin wiring is left over from the
         // deleted `HeartbeatRealigner` helper, which needed admin only to `grantRole(MANAGER_ROLE, ...)`.
         // Changing the ROLE but still resolving `.admin` would ask whether the admin holds MANAGER, which
-        // rejects a valid manager wherever the two are different accounts. `ClearDormantMetaInstances.s.sol:67`
+        // rejects a valid manager wherever the two are different accounts. `ClearDormantMetaInstances`
         // resolves the signer the same way.
         address sender = ConfigReader.readChainConfig(vm, chainId).manager;
         if (!NAVCalculator(NAV).hasRole(MANAGER_ROLE, sender)) revert NotManager(sender);
@@ -91,6 +93,14 @@ contract RealignHeartbeats is Script {
         }
 
         vm.startBroadcast();
+
+        // The account that will ACTUALLY sign, which the config check above cannot see. `readCallers` returns
+        // the broadcaster only once the broadcast is open, so this has to sit here rather than with the other
+        // precondition — but it still runs before the first state-changing call, so a wrong `--account` now
+        // stops the script with a named error instead of reverting partway through the rewrite.
+        (, address signer,) = vm.readCallers();
+        if (!NAVCalculator(NAV).hasRole(MANAGER_ROLE, signer)) revert SignerNotManager(signer);
+
         for (uint256 i; i < assets.length; ++i) {
             IPrices.PriceFeedConfig memory c = NAVCalculator(NAV).getPriceFeedAt(assets[i], 0);
             // Same feed, same type — only the heartbeat moves. No helper contract, no role grant, and no

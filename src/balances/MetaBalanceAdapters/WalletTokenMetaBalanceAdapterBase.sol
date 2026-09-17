@@ -83,12 +83,20 @@ abstract contract WalletTokenMetaBalanceAdapterBase is MetaBalanceAdapter {
     }
 
     /// @notice Whether `ERC20DefaultBalanceAdapter` is CURRENTLY also reporting `token`.
-    /// @dev The de-dup guard. `registerAsset` unconditionally adds every asset to the default adapter's inclusion
-    ///      list (`NAVCalculator.sol:181`), so each of this family's tokens starts out reported there. Until an
-    ///      operator calls `excludeAssetFromDefaultAdapter`, both adapters emit a well-formed leg for the same
+    /// @dev The de-dup guard, and it remains load-bearing even though the NAV now closes the same hole from
+    ///      the other side. `registerAsset` USED TO arm the default adapter unconditionally, so each of this
+    ///      family's tokens started out reported there and stayed so until an operator remembered
+    ///      `excludeAssetFromDefaultAdapter`; both adapters then emitted a well-formed leg for the same
     ///      `balanceOf` under different reconciliation keys with no health flag — the +$11,375.92 species of
-    ///      issue #335, reachable 17 more ways. Enforcing the ordering in a docstring alone leaves an
-    ///      over-report one forgotten transaction away, so it is enforced here instead.
+    ///      issue #335, reachable 17 more ways. `NAVCalculator` now refuses to arm the default adapter for a
+    ///      coordinate a meta adapter governs, and claiming a coordinate disarms it, so the two cannot both be
+    ///      armed by configuration.
+    ///
+    ///      This check stays because that guarantee lives in the UPGRADEABLE contract and this adapter is
+    ///      immutable and outlives any single implementation — and because a proxy upgraded past the claimant
+    ///      map has an EMPTY map until `BackfillMetaInstanceClaimants` runs, a window in which the NAV-side
+    ///      guard passes for exactly the coordinates already governed. Reading the inclusion list here is the
+    ///      one check that is true in that window too.
     ///
     ///      Fails CLOSED: an unreadable answer is treated as "still included", which suppresses this leg. That
     ///      is an under-report, the direction this repo licenses everywhere; the alternative fails toward the

@@ -221,10 +221,11 @@ library NAVRegistryLib {
         // what forced a five-transaction cleanup dance. Clearing here removes the state at the only moment
         // it is both reachable and safe to touch.
         //
-        // `clearedInstances` is returned for callers that want it; `Balances` deliberately DISCARDS it and
-        // does NOT subtract from `_metaInstanceTotal`. That total has no consumer — every `PriceFeedLib`
-        // signature taking it leaves it unused — so there is no buffer to get wrong. Do not wire up a
-        // subtraction on the strength of this comment: see the reasoning at `Balances.sol:191`.
+        // `clearedInstances` is returned for callers that want it; `Balances` deliberately DISCARDS it.
+        // `_metaInstanceTotal` is RETIRED — it had no consumer (every `PriceFeedLib` signature taking it left
+        // the parameter unused), so its arithmetic is gone and its value stays 0; only its slot and label
+        // survive, because a live UUPS proxy's layout is pinned. Do not wire a subtraction back in: see the
+        // declaration of `_metaInstanceTotal` in `Balances`, and the test that pins it at zero.
         clearedInstances = _releaseInstances(claimant, metaInstances, adapter, erc20DefaultBalanceAdapter);
 
         delete isAdapterRegistered[adapter];

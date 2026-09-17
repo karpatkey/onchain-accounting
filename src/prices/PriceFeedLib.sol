@@ -1657,9 +1657,14 @@ library PriceFeedLib {
         uint256 heartbeat,
         IPrices.PriceType priceType
     ) external {
-        _validateFeedSupportInternal(asset, priceFeed, priceType);
-
         if (heartbeat == 0) revert IPrices.InvalidPriceOracle();
+
+        // IDENTITY checks stay above the loop; only the LIVE HEALTH check moves below it. A code-less feed
+        // must fail by name here — `_resolveFeedDecimals` would otherwise reach it first and revert with
+        // EMPTY returndata, which is how moving the whole validator broke
+        // test_RevertWhen_{addFeeds,registerAsset}_codelessPriceFeed.
+        if (priceFeed == address(0) || asset == address(0)) revert IPrices.InvalidPriceOracle();
+        AddressCheckLib.requireContract(priceFeed, "priceFeed");
 
         IPrices.PriceFeedConfig[] storage configs = priceOracles[asset];
         uint256 len = configs.length;
@@ -1712,6 +1717,18 @@ library PriceFeedLib {
             emit IPrices.PriceFeedHeartbeatUpdated(asset, priceFeed, oldHeartbeat, heartbeat);
             return;
         }
+
+        // ADMISSION validation, deliberately BELOW the upsert loop. It calls latestRoundData() and reverts
+        // InvalidPriceOracle on answer <= 0 — which, run above the loop, made a heartbeat-only change
+        // impossible for exactly the feed needing one: TIGHTENING a window is the standard response to a feed
+        // reporting a non-positive answer, and that feed could not be touched. Blast radius was a whole chain,
+        // since RealignHeartbeats calls this inside its broadcast loop and forge script simulates end to end.
+        // It also froze any feed registered before the Custom guards (#199, #268) existed.
+        //
+        // The upsert path needs none of it: the feed is already admitted, its identity is pinned by the
+        // priceType equality check, and its SCALE is revalidated by _resolveFeedDecimals, which reads
+        // decimals() only and is unaffected by a bad answer.
+        _validateFeedSupportInternal(asset, priceFeed, priceType);
 
         configs.push(
             IPrices.PriceFeedConfig({

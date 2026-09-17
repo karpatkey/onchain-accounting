@@ -278,7 +278,13 @@ contract RegisterAssets is BaseDeployScript {
                 bytes memory act = _existingFeedAct(navProxy, asset, resolvableIdx, feed, pt, symbol, i);
                 if (act.length != 0) tmp[n++] = act;
             } else {
+                // Trailing feed (config lists more than the chain carries). Check MEMBERSHIP first: the upsert
+                // replaced the duplicate-address revert that used to abort the batch loudly, so a duplicated
+                // config address here would silently rewrite the incumbent feed staleness window instead.
                 uint256 hb = vm.parseUint(ConfigReader.readAssetFeedHeartbeat(vm, currentChainId, symbol, i));
+                if (registered && _feedAlreadyRegistered(navProxy, asset, onChainFeeds, feed)) {
+                    revert FeedOrderMismatch(asset, resolvableIdx, feed, feed);
+                }
                 tmp[n++] = abi.encodeCall(NAVCalculator.addOrModifyPriceFeed, (asset, feed, pt, hb));
             }
             resolvableIdx++;
@@ -298,6 +304,24 @@ contract RegisterAssets is BaseDeployScript {
     ///      Skipping on ADDRESS alone made this a silent no-op for a changed configured heartbeat — the one
     ///      operation `addOrModifyPriceFeed` was added to perform — and stranded TRAILING feeds entirely,
     ///      since `RealignHeartbeats` only ever touches index 0.
+    /// @dev Whether `feed` is already registered for `asset` at any index below `count`.
+    /// @dev Guards the trailing-feed branch. Pre-upsert, a duplicate address reverted
+    ///      `PriceFeedAlreadyRegistered` and aborted the batch; now it would succeed and rewrite a live
+    ///      staleness window, so the membership test has to be explicit.
+    function _feedAlreadyRegistered(address navProxy, address asset, uint256 count, address feed)
+        private
+        view
+        returns (bool)
+    {
+        for (uint256 k = 0; k < count; k++) {
+            (bool ok, bytes memory d) =
+                navProxy.staticcall(abi.encodeWithSelector(IPrices.getPriceFeedAt.selector, asset, k));
+            if (!ok || d.length < 128) continue;
+            if (abi.decode(d, (IPrices.PriceFeedConfig)).priceFeed == feed) return true;
+        }
+        return false;
+    }
+
     function _existingFeedAct(
         address navProxy,
         address asset,
@@ -417,7 +441,19 @@ contract RegisterAssets is BaseDeployScript {
             string memory maddr = ConfigReader.readAssetMonitorFeedAddress(vm, currentChainId, symbol, i);
             if (bytes(maddr).length == 0) continue; // unresolved (e.g. Custom monitor not deployed yet)
             address feed = vm.parseAddress(maddr);
-            if (feed == address(0) || _containsFeed(onChain, feed)) continue; // skip already-registered monitors
+            if (feed == address(0)) continue;
+            // Already registered? Compare the HEARTBEAT before skipping. Skipping on address alone made this
+            // a silent no-op for a changed monitor heartbeat — the identical defect fixed on the primary axis
+            // in `_existingFeedAct`, left behind here. `addMonitorFeed` upserts now, so an edited heartbeat
+            // has a path; without this, config and chain diverge with a green run and no signal.
+            if (_containsFeed(onChain, feed)) {
+                uint256 want = vm.parseUint(ConfigReader.readAssetMonitorFeedHeartbeat(vm, currentChainId, symbol, i));
+                bool drifted;
+                for (uint256 k = 0; k < onChain.length; k++) {
+                    if (onChain[k].priceFeed == feed && onChain[k].chainlinkHeartbeat != want) drifted = true;
+                }
+                if (!drifted) continue;
+            }
 
             uint256 hb = vm.parseUint(ConfigReader.readAssetMonitorFeedHeartbeat(vm, currentChainId, symbol, i));
             tmp[n++] = abi.encodeCall(NAVCalculator.addMonitorFeed, (asset, feed, pt, hb));

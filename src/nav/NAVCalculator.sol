@@ -177,8 +177,10 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
         // Register first price feed as part of asset registration
         _addPriceFeed(asset, priceFeed, chainlinkHeartbeat, priceType);
 
-        // Add asset to default adapter's inclusion list so wallet balances are reported
-        ERC20DefaultBalanceAdapter(erc20DefaultBalanceAdapter).addSupportedAsset(asset);
+        // Add asset to default adapter's inclusion list so wallet balances are reported — unless a meta
+        // adapter already claims it. Claiming a coordinate does not require the token to be a registered
+        // asset yet, so claim-then-register would otherwise end with two reporters.
+        _includeAssetIfUnclaimed(asset);
 
         emit AssetRegistered(asset, _getRegisteredAsset(asset).decimals);
     }
@@ -371,7 +373,8 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
     function includeAssetInDefaultAdapter(address asset) external {
         _requireManager();
         _requireAssetExists(asset);
-        ERC20DefaultBalanceAdapter(erc20DefaultBalanceAdapter).addSupportedAsset(asset);
+        // A meta adapter may already govern this token; including it would make TWO reporters.
+        _includeAssetIfUnclaimed(asset);
     }
 
     /// @inheritdoc INAVCalculator

@@ -286,6 +286,14 @@ contract RealignHeartbeats is Script {
                 skipped++;
                 continue;
             }
+            // A malformed config address would revert `vm.parseAddress` inside `_plan`, BEFORE the SKIP
+            // branches below can run — re-opening the whole-chain abort those branches exist to close, since
+            // `forge script` simulates `run()` end to end. Shape-check first and skip loudly instead.
+            if (bytes(cfgFeedStr).length != 42) {
+                console2.log(string.concat("  SKIP ", keys[i], " - config feed address is malformed: ", cfgFeedStr));
+                skipped++;
+                continue;
+            }
             address cfgFeed = vm.parseAddress(cfgFeedStr);
             if (cfgFeed != live.priceFeed) {
                 console2.log(

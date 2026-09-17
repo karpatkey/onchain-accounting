@@ -45,7 +45,7 @@ This deployment system uses an **EOA deployer** (`--broadcast`) with **CREATE2 d
 
 | Script | Purpose |
 |--------|---------|
-| `UpgradeNAVCalculator.s.sol` | Upgrade NAVCalculator implementation |
+| `UpgradeNAVCalculator.s.sol` | Upgrade NAVCalculator implementation. **On any proxy upgraded PAST the claimant-map change, `script/manage/BackfillMetaInstanceClaimants.s.sol` MUST be run immediately after** — see the management table. |
 | `UpgradeBridgeEscrow.s.sol` | Upgrade BridgeEscrow implementation |
 
 ### Management Scripts (`script/manage/`)
@@ -56,6 +56,7 @@ This deployment system uses an **EOA deployer** (`--broadcast`) with **CREATE2 d
 | `AuthorizeBridgeAdapters.s.sol` | Authorize enabled bridge adapters on BridgeEscrow (EOA admin broadcast) |
 | `RegisterAssets.s.sol` | Register assets/price feeds. Emits Safe-TX JSON **and** broadcasts the same batch from the deployer EOA, so it doubles as the EOA-flow registration step. A primary registration is addressed to `AssetKindRegistry` (atomic register + classify + label), every other action to the NAV — so it requires `08` to have run first |
 | `RegisterBridgeEscrow.s.sol` | Register the CCTP bridge adapter + USDC on BridgeEscrow via Safe (emits Safe-TX JSON) |
+| `BackfillMetaInstanceClaimants.s.sol` | **Run once per chain, immediately after the upgrade that introduces `_claimant`.** Populates the claimant map for coordinates the proxy already governs. `_claimant` is new storage, so on an upgraded proxy it starts EMPTY while `_metaInstances` is full — every pre-existing coordinate then reads as unclaimed, and the dual-claim and inclusion guards pass for exactly the coordinates that are already governed. Until this runs the implementation is **strictly weaker on existing state** than the O(adapters × instances) scan it replaced, because that scan read `_metaInstances` directly. Uses only existing selectors (`removeMetaInstances` + `addMetaInstances`), so it costs no NAVCalculator bytes and is chunkable and resumable where an initializer migration would be neither. Run with `--slow`; idempotent, and it refuses to broadcast if two adapters already hold one coordinate. |
 
 ### Verification Scripts (`script/verify/`)
 

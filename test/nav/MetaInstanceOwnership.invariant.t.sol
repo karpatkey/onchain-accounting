@@ -226,10 +226,19 @@ contract MetaOwnershipHandler is Test {
 /// @notice The three properties that together say "exactly one thing reports any given holding". Each is read
 ///         through the PRODUCTION getters rather than through `_claimant`, so they assert the observable
 ///         behaviour and would still bind if the internal representation changed again.
-/// @dev These are the invariants the claimant map exists to make true. The falsifier lives in
-///      `test/nav/MetaInstanceOwnership.falsifier.t.sol`: it reintroduces the two defects this PR fixed and
-///      requires I1/I2 to go red. An invariant suite that stays green against a known defect is decorative,
-///      and asserting that is the only way to know these are not.
+/// @dev These are the invariants the claimant map exists to make true. A suite that stays green against a
+///      known defect is decorative, so each was FALSIFIED by reintroducing a fixed defect in
+///      `NAVRegistryLib` one at a time and requiring red (tree restored after each):
+///
+///        | defect reintroduced                          | unit tests red | invariants red |
+///        |----------------------------------------------|----------------|----------------|
+///        | inclusion gate removed from `includeAsset…`   | 2              | I2             |
+///        | `_claim` no longer disarms the default adapter| 2              | I2             |
+///        | dual-claim check removed from `_claim`        | 3              | I1, I2, I3     |
+///
+///      I1 and I3 stay green under the first two, correctly: neither creates a cross-adapter claim, so
+///      neither reaches a duplicate reconciliation key. I2 is the one that catches all three, which is why
+///      it is stated as "never both" rather than as an XOR.
 contract MetaInstanceOwnershipInvariantTest is SuperTest {
     MetaOwnershipHandler public handler;
 

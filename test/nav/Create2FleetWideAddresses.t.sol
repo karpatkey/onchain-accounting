@@ -203,14 +203,18 @@ contract Create2FleetWideAddressesTest is Test {
             0x04Ba6789B4AD5D6CF63Ec9cc301c13F6a8A0210b,
             "AaveV3InstancesMeta moved"
         );
-        // Salt version 1, not 2, because this adapter has no generation 1 to skip — see DeploySalts.
+        // GENERATION 2. Version 1 (`0x79cad958…`) is superseded: it left `positionInstanceId` at zero, so the two
+        // legs a Spoke emits for the same underlying against two Hubs were indistinguishable in every identity
+        // field — and being DEBT legs, a consumer de-duplicating by the reconciliation key over-reported NAV.
+        // Both the creation code and the salt changed, so the address moves for two independent reasons; see
+        // DeploySalts.AAVE_V4_SPOKES_META.
         assertEq(
             _derive(
                 type(AaveV4SpokesMetaBalanceAdapter).creationCode,
                 "AaveV4SpokesMetaBalanceAdapter",
                 DeploySalts.AAVE_V4_SPOKES_META
             ),
-            0x79cad9584012806a76E7892808556Ed3797EAbcD,
+            0xdF1B9d57A40D3866F9EFc9d391EDf9dF51325B59,
             "AaveV4SpokesMeta moved"
         );
         assertEq(

@@ -17,7 +17,16 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 ///      and neither does `ProtocolDataProvider` — which is why the v3 meta-adapter cannot be re-pointed at a
 ///      Spoke and a separate adapter exists at all.
 interface ISpoke {
-    /// @param underlying The reserve's ERC20. `address(0)` for a reserve id that is not populated.
+    /// @param underlying The reserve's ERC20.
+    /// @dev **A reserve id outside the Spoke's list REVERTS — it does NOT return `underlying == address(0)`.**
+    ///      Measured on mainnet against the Gold Spoke (`getReserveCount() == 8`): `getReserve(8)`,
+    ///      `getReserve(9)` and `getReserve(100)` all revert `0x2e5d6bb4` (`ReserveNotListed()`), as do
+    ///      `getReserveConfig` and `getUserPosition` for the same ids. An earlier version of this docstring
+    ///      claimed `address(0)`, which is why {AaveV4SpokesMetaBalanceAdapter} carries `address(0)` skips that
+    ///      can never fire against a real Spoke, and why `MockSpoke` models a behaviour the protocol does not
+    ///      have. Those skips are harmless dead code while ids `0 … getReserveCount()-1` are always listed, which
+    ///      is true of revision 1; what is NOT handled is a reverting read inside that range. See the adapter's
+    ///      `_instancePositions` note on the consequence.
     /// @param hub The Hub this reserve draws its liquidity from.
     /// @param assetId The reserve's asset id *on the Hub* (Hub-scoped, NOT the Spoke's `reserveId`).
     /// @param decimals The underlying's decimals.
@@ -123,6 +132,28 @@ contract AaveV4SpokesMetaBalanceAdapter is MetaBalanceAdapter {
         returns (INAVCalculator.PositionBalance[] memory)
     {
         ISpoke spoke = ISpoke(_toAddress(instance));
+        // **EVERY LEG CARRIES ITS reserveId IN `positionInstanceId`, AND THAT IS LOAD-BEARING.** One Spoke can
+        // list the SAME underlying at two reserve ids against two different Hubs — Bluechip carries USDC at
+        // reserve 4 (Prime) and reserve 7 (Core), USDT at 5 and 10, all four borrowable, which is how one Spoke
+        // quotes two borrow rates. Those legs share every field of the stable reconciliation key
+        // (`chainId, protocolSubId, positionId, balanceAsset.asset, positionKind` —
+        // docs/howto/position-identity-schema.md), so without a discriminator they are literally
+        // indistinguishable. Measured on mainnet 2026-09-17: 37 accounts hold USDC debt on BOTH Bluechip
+        // reserves and 31 hold USDT on both.
+        //
+        // The direction of the error is what makes this worth a redeploy rather than a note. The queue and NFT
+        // adapters also emit duplicate keys, but their legs are CREDITS, so a consumer that upserts by the key
+        // under-counts. These are DEBT, so the same consumer drops a borrow and OVER-reports — the direction
+        // this repo treats as critical. NAV itself is unaffected (`PriceFeedLib` sums rows).
+        //
+        // Why the discriminator goes here and NOT into `positionId`: `positionIds()` maps each governed instance
+        // through {_instancePositionId} and {IPositionEnumerable} requires those ids to be byte-identical to the
+        // ones emitted, so ONE instance must yield exactly ONE positionId. Folding reserveId into positionId
+        // would make a Spoke emit N of them and break that contract. `positionInstanceId` is the field the schema
+        // reserves for exactly this per-item coordinate, and it is what the withdrawal queues and NFT adapters
+        // already use. Consumers must still SUM across a shared key; this gives them the means to tell the rows
+        // apart when they need to.
+        //
         // positionId is the Spoke itself — one position per Spoke, which is also the unit the health factor is
         // scoped to. The reserve is NOT in positionId; each reserve's legs are distinguished by balanceAsset +
         // positionKind (the multi-leg convention). Unlike v3 — whose coordinate is a ProtocolDataProvider and
@@ -136,9 +167,15 @@ contract AaveV4SpokesMetaBalanceAdapter is MetaBalanceAdapter {
         INAVCalculator.PositionBalance[] memory temp = new INAVCalculator.PositionBalance[](reserveCount * 2);
 
         for (uint256 id; id < reserveCount; ++id) {
+            // KNOWN GAP, recorded rather than silently carried: a reserve read that REVERTS inside
+            // `0 … reserveCount-1` is not handled here. `_positionsForInstances` catches it, `consumed` is small
+            // so `GasStipendLib.exhausted` reads false, and the Spoke is recorded as ZERO legs while
+            // `getAdapterPositions` returns success with clean flags — dropping any borrow leg, which raises
+            // reported NAV. Unreachable on Spoke revision 1 (every id below the count is listed; verified on
+            // mainnet), and not fixable in place because this adapter is immutable and already deployed.
             address underlying = spoke.getReserve(id).underlying;
-            // A reserve id that is not populated. Nothing to read, and `address(0)` must never be published as
-            // an underlying.
+            // Dead against a real Spoke — an unlisted id reverts rather than returning zero (see {ISpoke.Reserve}).
+            // Kept because it costs one comparison and `address(0)` must never be published as an underlying.
             if (underlying == address(0)) continue;
 
             ISpoke.UserPosition memory up = spoke.getUserPosition(id, account);
@@ -180,13 +217,15 @@ contract AaveV4SpokesMetaBalanceAdapter is MetaBalanceAdapter {
                     // Shares round down to zero assets only for dust, but a zero-amount leg is still a leg —
                     // re-check rather than trusting the gate, exactly as the v3 adapter checks its balances.
                     (bool usingAsCollateral,) = spoke.getUserReserveStatus(id, account);
-                    temp[count++] = _leg(
+                    INAVCalculator.PositionBalance memory leg = _leg(
                         assetInfo,
                         supplied,
                         false,
                         pid,
                         usingAsCollateral ? PositionKind.Collateral : PositionKind.Supplied
                     );
+                    leg.positionInstanceId = bytes32(id);
+                    temp[count++] = leg;
                 }
             }
 
@@ -195,7 +234,11 @@ contract AaveV4SpokesMetaBalanceAdapter is MetaBalanceAdapter {
                 // produce rows with an identical reconciliation key (same Spoke positionId, same reserve
                 // balanceAsset, same Borrowed kind), which is not univocal — and the sum is what NAV needs.
                 uint256 debt = spoke.getUserTotalDebt(id, account);
-                if (debt > 0) temp[count++] = _leg(assetInfo, debt, true, pid, PositionKind.Borrowed);
+                if (debt > 0) {
+                    INAVCalculator.PositionBalance memory leg = _leg(assetInfo, debt, true, pid, PositionKind.Borrowed);
+                    leg.positionInstanceId = bytes32(id);
+                    temp[count++] = leg;
+                }
             }
         }
 

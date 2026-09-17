@@ -37,9 +37,21 @@ contract AaveV4SpokesMetaBalanceAdapterForkTest is BalanceAdapterTestBase {
     ///      test, which needs the state where share counters are zero but a residue could survive.
     uint256 public constant POST_REPAY_BLOCK = 25_960_000;
 
+    /// @dev The Aave V4 Bluechip Spoke, which lists USDC at reserve 4 (Prime Hub) AND reserve 7 (Core Hub) —
+    ///      the shape the duplicate-key regression test exists for.
+    address public constant BLUECHIP_SPOKE = 0x973a023A77420ba610f06b3858aD991Df6d85A08;
+    /// @dev An account carrying USDC debt on BOTH Bluechip hubs, so the two legs collide on the stable key.
+    address public constant DUAL_HUB_BORROWER = 0x166Ce42Df5f4BAA94aBC5B62C60dab1B3C73D2a3;
+    uint256 public constant BLUECHIP_BLOCK = 25_993_000;
+
     /// @dev The adapter deployed on mainnet (CREATE2, canonical deployer) and recorded in
     ///      `script/config/deployments/1.json`.
     address public constant DEPLOYED_ADAPTER = 0x79cad9584012806a76E7892808556Ed3797EAbcD;
+
+    /// @dev GENERATION 1, kept deliberately after the gen-2 swap. It is the positive control for the
+    ///      duplicate-key regression: still on-chain, still emitting `positionInstanceId == 0`, so it shows what
+    ///      the successor's assertion looks like when the fix is absent. Do NOT repoint this at the successor.
+    address public constant DEPLOYED_ADAPTER_V1 = 0x79cad9584012806a76E7892808556Ed3797EAbcD;
     /// @dev The fleet-wide NAVCalculator proxy the deployed adapter was constructed against.
     address public constant NAV_PROXY = 0x54EaD2A1dB7456cA917675Ea8908ec8A997c6214;
 
@@ -176,8 +188,69 @@ contract AaveV4SpokesMetaBalanceAdapterForkTest is BalanceAdapterTestBase {
             bool gateSeesDebt = up.drawnShares > 0 || up.premiumShares > 0;
             if (!gateSeesDebt) {
                 assertEq(spoke.getUserTotalDebt(id, HOLDER), 0, "zero shares must imply zero debt");
+                // The protocol's OWN borrowing flag, the third axis the gate does not read. It is set in
+                // `Spoke.borrow` and cleared in `repay`/liquidation exactly when `drawnShares` hits zero, so it
+                // carries no information the gate lacks — asserted rather than assumed, because this is where V4
+                // differs from V3, whose user-configuration bit CAN outlive the debt (which is why the V3
+                // sibling re-reads its balances before suppressing).
+                (, bool borrowing) = spoke.getUserReserveStatus(id, HOLDER);
+                assertFalse(borrowing, "borrowing flag must not outlive the share counters");
             }
         }
+    }
+
+    /// @notice THE DUPLICATE-KEY REGRESSION. One Spoke can list the same underlying at two reserve ids against
+    ///         two different Hubs; both legs then share every field of the stable reconciliation key. This pins
+    ///         that `positionInstanceId` tells them apart — the defect generation 1 shipped with.
+    /// @dev Real account on the real Bluechip Spoke, which carries USDC at reserve 4 (Prime Hub) and reserve 7
+    ///      (Core Hub). Measured 2026-09-17: 37 accounts hold USDC debt on both and 31 hold USDT on both, so this
+    ///      is a live shape, not a constructed one. The key is
+    ///      `(chainId, protocolSubId, positionId, balanceAsset.asset, positionKind)` — all five identical here —
+    ///      and because these are DEBT legs, a consumer upserting by that key drops a borrow and OVER-reports.
+    ///      Generation 1 left `positionInstanceId` at zero on both, making them indistinguishable.
+    function test_duplicateUnderlyingAcrossHubs_isDiscriminatedByReserveId() public {
+        vm.rollFork(BLUECHIP_BLOCK);
+        address[] memory assets = new address[](1);
+        assets[0] = USDC;
+        AaveV4SpokesMetaBalanceAdapter bluechipMeta =
+            new AaveV4SpokesMetaBalanceAdapter(address(_deployBalancesForAdapter(assets)));
+
+        bytes32[] memory ins = new bytes32[](1);
+        ins[0] = bytes32(uint256(uint160(BLUECHIP_SPOKE)));
+        INAVCalculator.PositionBalance[] memory p =
+            bluechipMeta.getAdapterPositionsForInstances(DUAL_HUB_BORROWER, ins, USDC);
+
+        uint256 borrows;
+        uint256 seenReserve4;
+        uint256 seenReserve7;
+        for (uint256 i; i < p.length; ++i) {
+            if (p[i].positionKind != PositionKind.Borrowed) continue;
+            ++borrows;
+            assertEq(p[i].balanceAsset.asset, USDC, "both legs are USDC");
+            assertEq(p[i].positionId, abi.encode(BLUECHIP_SPOKE), "positionId stays the Spoke");
+            assertGt(p[i].amount, 0, "a real borrow, not a dust row");
+            if (p[i].positionInstanceId == bytes32(uint256(4))) ++seenReserve4;
+            if (p[i].positionInstanceId == bytes32(uint256(7))) ++seenReserve7;
+        }
+
+        assertEq(borrows, 2, "fixture premise: USDC borrowed on BOTH hubs at this block");
+        assertEq(seenReserve4, 1, "the Prime Hub leg is tagged with reserve 4");
+        assertEq(seenReserve7, 1, "the Core Hub leg is tagged with reserve 7");
+
+        // POSITIVE CONTROL against the real predecessor rather than a mutation. Generation 1 is still on-chain
+        // at DEPLOYED_ADAPTER_V1 and still carries the old behaviour, so calling it on the SAME account at the
+        // SAME block shows what this test would look like if the fix were absent: both legs tagged zero, hence
+        // indistinguishable. If this half ever starts passing with non-zero ids, the constant is pointing at the
+        // successor and the test above has stopped proving anything.
+        INAVCalculator.PositionBalance[] memory old = AaveV4SpokesMetaBalanceAdapter(DEPLOYED_ADAPTER_V1)
+            .getAdapterPositionsForInstances(DUAL_HUB_BORROWER, ins, USDC);
+        uint256 oldBorrows;
+        for (uint256 i; i < old.length; ++i) {
+            if (old[i].positionKind != PositionKind.Borrowed) continue;
+            ++oldBorrows;
+            assertEq(old[i].positionInstanceId, bytes32(0), "generation 1 left the discriminator empty");
+        }
+        assertEq(oldBorrows, 2, "predecessor sees the same two borrows, it just cannot tell them apart");
     }
 
     /// @notice The label leaf is derived from the Spoke's collateral-only reserves on-chain — the Gold Spoke's
@@ -201,9 +274,18 @@ contract AaveV4SpokesMetaBalanceAdapterForkTest is BalanceAdapterTestBase {
             "deployed adapter is bound to the fleet-wide NAV proxy"
         );
         assertTrue(IBalances(NAV_PROXY).isAdapterRegistered(DEPLOYED_ADAPTER), "not registered on the live NAV");
+        // MEMBERSHIP, not an exact set. The live instance set has since grown to [Gold, Bluechip, Main] — this
+        // fixture is green on `length == 1` only because FORK_BLOCK predates that `addMetaInstances`. Pinning the
+        // COUNT here means any forward re-pin of FORK_BLOCK (routine — the holder repaid ~5,000 blocks later)
+        // goes red reading as "the instance set is wrong" when it is the assertion that is stale. What this test
+        // is actually for is that the RECORDED address is the live registration, so assert exactly that.
         bytes32[] memory live = IBalances(NAV_PROXY).getMetaInstances(DEPLOYED_ADAPTER);
-        assertEq(live.length, 1);
-        assertEq(live[0], bytes32(uint256(uint160(GOLD_SPOKE))));
+        assertGe(live.length, 1, "the deployed adapter must carry at least the Gold Spoke");
+        bool goldPresent;
+        for (uint256 i; i < live.length; ++i) {
+            if (live[i] == bytes32(uint256(uint160(GOLD_SPOKE)))) goldPresent = true;
+        }
+        assertTrue(goldPresent, "Gold Spoke must be in the live instance set");
     }
 
     /// @notice The property this adapter exists for, read off the LIVE mainnet NAV with no prank, no mock and no

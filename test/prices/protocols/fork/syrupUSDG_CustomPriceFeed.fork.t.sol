@@ -5,6 +5,7 @@ import {TestEnvConfigurator} from "test/TestEnvConfigurator.sol";
 import {syrupUSDG_CustomPriceFeed} from "src/prices/protocols/syrupUSDG_CustomPriceFeed.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
+import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 
 /// @title syrupUSDG_CustomPriceFeed fork tests
 /// @dev Pinned AFTER the USDG registration (blocks 25_992_630-25_992_635) on purpose: this feed reads USDG/USD
@@ -29,6 +30,9 @@ contract syrupUSDG_CustomPriceFeedForkTest is TestEnvConfigurator {
         uint256 fork = createForkWithCadence(getAlchemyUrl("eth-mainnet"));
         vm.selectFork(fork);
         vm.rollFork(FORK_BLOCK);
+        // See the LBTC primary suite: without this the feed is exercised against the FROZEN deployed NAV
+        // bytecode rather than the in-tree build, so an in-tree base-price change breaks it silently.
+        _useNewNavImpl(NAV);
 
         oracle = new syrupUSDG_CustomPriceFeed(SYRUP_USDG, NAV, USDG);
     }
@@ -37,9 +41,14 @@ contract syrupUSDG_CustomPriceFeedForkTest is TestEnvConfigurator {
     function test_getLatestPrice() public view {
         INAVCalculator.PriceFeedData memory pd = INAVCalculator(NAV).getPriceData(USDG);
         uint256 base8 = uint256(pd.price);
-        uint256 unit = 10 ** IERC4626(SYRUP_USDG).decimals();
-        uint256 assetsPerShare = IERC4626(SYRUP_USDG).convertToAssets(unit);
-        uint256 expected = (assetsPerShare * base8) / unit;
+        // The two units are DISTINCT and must not be collapsed: `convertToAssets` takes one whole SHARE and
+        // returns a value denominated in the ASSET's decimals, so the divisor is the asset unit. They are equal
+        // here only because syrupUSDG is 6-dp over 6-dp USDG — writing `unit` for both would let the exact
+        // decimals-offset bug `ERC4626VaultRatePriceFeed` warns about pass this test unnoticed.
+        uint256 shareUnit = 10 ** IERC4626(SYRUP_USDG).decimals();
+        uint256 assetUnit = 10 ** IERC20Metadata(USDG).decimals();
+        uint256 assetsPerShare = IERC4626(SYRUP_USDG).convertToAssets(shareUnit);
+        uint256 expected = (assetsPerShare * base8) / assetUnit;
 
         (uint256 price, bool stale) = oracle.getLatestPrice();
         assertEq(price, expected, "price == convertToAssets(unit) * NAV(USDG/USD) / unit");

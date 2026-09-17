@@ -26,6 +26,12 @@ contract LBTC_CustomPriceFeedForkTest is TestEnvConfigurator {
         uint256 fork = createForkWithCadence(getAlchemyUrl("eth-mainnet"));
         vm.selectFork(fork);
         vm.rollFork(FORK_BLOCK);
+        // Point the live proxy at the IN-TREE NAVCalculator/PriceFeedLib. Without this the suite exercises the
+        // FROZEN deployed bytecode, so a change to the in-tree base-price path (`getPriceDataNoDivergence`'s
+        // shape, the ICustomPriceFeed ERC165 id, decimals normalisation) would break `NavBaseUsdLib.baseUsd`
+        // for this feed while these tests stayed green — surfacing only after the next NAV upgrade, on a live
+        // proxy. 42 of the 49 fork feed suites call this; the copy that seeded this file dropped the line.
+        _useNewNavImpl(NAV);
 
         oracle = new LBTC_CustomPriceFeed(LBTC, NAV, WBTC);
     }

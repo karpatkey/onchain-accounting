@@ -37,6 +37,9 @@ contract LBTC_CrossRateCustomPriceFeedForkTest is TestEnvConfigurator {
         uint256 fork = createForkWithCadence(getAlchemyUrl("eth-mainnet"));
         vm.selectFork(fork);
         vm.rollFork(FORK_BLOCK);
+        // See the sibling LBTC primary suite: without this the feed is exercised against the FROZEN deployed
+        // NAV bytecode rather than the in-tree build, so an in-tree base-price change breaks it silently.
+        _useNewNavImpl(NAV);
 
         oracle = new CrossRateCustomPriceFeed(LBTC, LBTC_BTC_FEED, RATE_HEARTBEAT, NAV, WBTC);
     }

@@ -648,10 +648,19 @@ contract MetaLabelGasBoundsTest is Test {
         // THE ABSOLUTE CEILING, and the only one here that is not a calibration: above {LEAF_GAS} the capped
         // self-call in `positionLabels` runs out and EVERY Fluid vault silently renders as the category alone.
         // That cliff is real and was measured on this fixture, not extrapolated: n = 85 still renders, at
-        // 896,055 gas, and n = 92 DROPS the leaf (`segments == 1`). So the whole family is ~38 routine asset
-        // registrations away from losing its Fluid labels on a live chain, and this is the guard that has to
-        // fire first. Raising {LABEL_LEAF_GAS} is not the fix if it does — the fix is to stop
-        // `_getAssetInfo` pulling the entire registry per call.
+        // 896,055 gas, and n = 92 DROPS the leaf (`segments == 1`).
+        //
+        // READ THE LIMITS OF THIS GUARD HONESTLY. It fires at the cliff, NOT ahead of it: the derived bound
+        // above is n-invariant by construction, so registry growth cannot trip it, and this ceiling only binds
+        // around n ≈ 86-91 — roughly where production loses the labels anyway. The literal it replaced went red
+        // at n = 50 and so bought ~40 registrations of warning. That early-warning property was NOT preserved,
+        // and is recorded as Outstanding on the PR rather than pretended away. Current n is 55.
+        //
+        // Raising {LABEL_LEAF_GAS} is not the fix if this fires. The linear cost is
+        // `FluidVaultsMetaBalanceAdapter.vaultPairSymbols` calling `NAV_CALCULATOR.getRegisteredAssets()` — the
+        // WHOLE registry, to resolve two symbols. An earlier version of this comment blamed `_getAssetInfo`,
+        // which is wrong: `MetaBalanceAdapter._getAssetInfo` is `getRegisteredAsset(address)`, an O(1) mapping
+        // read.
         assertLt(used, LEAF_GAS, "the Fluid leaf must still fit the on-chain LABEL_LEAF_GAS stipend");
         emit log_named_uint("registered assets in mainnet config", n);
         emit log_named_uint("cold Fluid leaf gas at that registry size", used);

@@ -63,7 +63,7 @@ CREATE2-identical fleet-wide, so each has the same init-code hash everywhere and
 | Adapter | Address | Chains |
 | --- | --- | --- |
 | `AaveV3InstancesMeta` | `0x04Ba6789B4AD5D6CF63Ec9cc301c13F6a8A0210b` | 1, 10, 100, 8453, 42161 |
-| `AaveV4SpokesMeta` | `0x79cad9584012806a76E7892808556Ed3797EAbcD` | 1 |
+| `AaveV4SpokesMeta` | `0xdF1B9d57A40D3866F9EFc9d391EDf9dF51325B59` | 1 |
 | `AaveV3SafetyModule` | `0xa356717027B5d4010a7449904545E5aFb355Bdc9` | 1 |
 | `BalancerV3PoolsMeta` | `0xbF1785E519067f0471eb5C50A634A7eeE0140A21` | 1, 8453, 42161 |
 | `CurvePoolsMeta` | `0xCf200111050Bc5FFbd5c3e675c598995906c3945` | 1 |
@@ -89,7 +89,7 @@ could not give them a shared address. Read those per-chain from the deployment r
 
 | Chain | Chain ID | Scope | Custom price feeds | Balance adapters (excl. ERC20Default) |
 | --- | --- | --- | --- | --- |
-| Ethereum | 1 | full | 33 | 26 |
+| Ethereum | 1 | full | 34 | 26 |
 | Optimism | 10 | full | 0 | 2 |
 | Arbitrum | 42161 | full | 8 | 7 |
 | Base | 8453 | full | 4 | 6 |
@@ -161,7 +161,7 @@ position manager is at a different address entirely.
 | AaveUmbrella | `0x7299757E188000ca576c4197E1Ed1c53A04AC995` |
 | AaveV3InstancesMeta ★ | `0x04Ba6789B4AD5D6CF63Ec9cc301c13F6a8A0210b` |
 | AaveV3SafetyModule ★ | `0xa356717027B5d4010a7449904545E5aFb355Bdc9` |
-| AaveV4SpokesMeta ★ | `0x79cad9584012806a76E7892808556Ed3797EAbcD` |
+| AaveV4SpokesMeta ★ | `0xdF1B9d57A40D3866F9EFc9d391EDf9dF51325B59` |
 | BalancerV3GaugesMeta | `0x0e699e07DB653aDc8ca559287038032D227B8947` |
 | BalancerV3PoolsMeta ★ | `0xbF1785E519067f0471eb5C50A634A7eeE0140A21` |
 | CapSavings | `0xEc605FC2521792f2018dF92Bb5aDBf85EB417cb6` |
@@ -308,6 +308,7 @@ addresses. Chains not listed have no custom feeds; their assets use direct feeds
 | spUSDT | `0xA41107cb75012A399358482cC850630D9dD8672A` |
 | syrupUSDC | `0xB88B09725A2d8c3D05f77d0D4225b5DAE673Dfeb` |
 | syrupUSDG | `0x99b00DC4a17eE195a691B9c2281Ea5928e923e41` |
+| syrupUSDT | `0xfA25d9C240bA0d43b71672c1E04De882E324cFA9` |
 | wARS | `0xbAcb08665c68b5798D6C6138cA02471e7c704931` |
 | wNXM | `0x9e032A4536Bd09cF253ec1097d1c4D9540d4273A` |
 | weETH | `0x9E435B56E0e210342Db30d30cafeb5855F73c5A4` |

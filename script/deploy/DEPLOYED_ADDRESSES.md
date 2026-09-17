@@ -2,7 +2,7 @@
 
 Canonical deployed-address reference for the Onchain Accounting System (NAV). The machine source of truth is `script/config/deployments/<chainId>.json` per chain (written by the deploy scripts); this file mirrors those records. The one exception is `UUPSPlaceholder` — a transient CREATE2 address used only during the atomic proxy deploy, identical everywhere and not persisted in the per-chain JSON; it is listed here for completeness.
 
-Deployed across **24 chains**: 7 fully configured (custom price feeds + balance adapters) + 17 with the NAV implementation + proxy only.
+Deployed across **25 chains**: 8 fully configured (custom price feeds + balance adapters) + 17 with the NAV implementation + proxy only.
 
 - **Roles (current):** the deployer EOA `0xAa5A7C7Ea51F276301f881F9CCB501a1dFeF4F72` holds `DEFAULT_ADMIN_ROLE` + `MANAGER` on every chain. Handoff to the karpatkey security-council Safe `0x8b884f80B3B839F52b6cE168f133e7a5D1f0A537` (via `07_TransferAdminToSecurityCouncil`) is **deferred** until the operational handover — step 07 has not been run.
 - **Bridge:** deployed-but-dormant — only the `BridgeEscrow` implementation is deployed (no proxy, adapters, or wiring).
@@ -12,7 +12,7 @@ Deployed across **24 chains**: 7 fully configured (custom price feeds + balance 
 
 ## Canonical layer (CREATE2 — identical on every chain)
 
-Deployed via the canonical CREATE2 deployer (`0x4e59b44847b379578588920cA78FbF26c0B4956C`), so each address is the same on all 24 chains.
+Deployed via the canonical CREATE2 deployer (`0x4e59b44847b379578588920cA78FbF26c0B4956C`), so each address is the same on all 25 chains.
 
 **Redeployed 2026-08-18 — every address below changed.** The previous generation is listed under
 *Superseded* at the end of this section; it is **abandoned in place**, still answering but no longer
@@ -39,7 +39,7 @@ implementation `0x07bd077cFB40bBDa8A67d0D33ce41b974aB0F8a8`, PriceFeedLib
 
 | Contract | Address |
 | --- | --- |
-| `AssetKindRegistry` | `0xf60467a88C2b4d0f46C0c41C3Ba0C74da3d3CCD0` (all 24 chains) |
+| `AssetKindRegistry` | `0xf60467a88C2b4d0f46C0c41C3Ba0C74da3d3CCD0` (all 25 chains) |
 
 Deployed via the canonical CREATE2 deployer (`0x4e59b44847b379578588920cA78FbF26c0B4956C`) with salt
 version `DeploySalts.ASSET_KIND_REGISTRY = 2`. Its only constructor argument is the NAV proxy, which is

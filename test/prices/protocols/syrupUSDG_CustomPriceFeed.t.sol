@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: BUSL-1.1
-pragma solidity ^0.8.0;
+pragma solidity ^0.8;
 
 import {Test} from "forge-std/Test.sol";
 import {syrupUSDG_CustomPriceFeed} from "src/prices/protocols/syrupUSDG_CustomPriceFeed.sol";

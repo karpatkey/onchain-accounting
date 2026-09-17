@@ -654,7 +654,7 @@ contract MetaLabelGasBoundsTest is Test {
         // above is n-invariant by construction, so registry growth cannot trip it, and this ceiling only binds
         // around n ≈ 86-91 — roughly where production loses the labels anyway. The literal it replaced went red
         // at n = 50 and so bought ~40 registrations of warning. That early-warning property was NOT preserved,
-        // and is recorded as Outstanding on the PR rather than pretended away. Current n is 55.
+        // and is recorded as Outstanding on the PR rather than pretended away. Current n is 56.
         //
         // Raising {LABEL_LEAF_GAS} is not the fix if this fires. The linear cost is
         // `FluidVaultsMetaBalanceAdapter.vaultPairSymbols` calling `NAV_CALCULATOR.getRegisteredAssets()` — the

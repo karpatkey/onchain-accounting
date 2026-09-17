@@ -50,9 +50,18 @@ contract AaveV4SpokesMetaBalanceAdapterForkTest is BalanceAdapterTestBase {
     /// @dev The WBTC Carry Fund's collateral: Bluechip reserve 1, Main reserve 3 — the same token at two ids.
     address public constant WBTC = 0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599;
 
-    /// @dev The adapter deployed on mainnet (CREATE2, canonical deployer) and recorded in
-    ///      `script/config/deployments/1.json`.
+    /// @dev GENERATION 1, the adapter that WAS recorded when the fixtures below were written. It is no longer
+    ///      what `script/config/deployments/1.json` names — that is {DEPLOYED_ADAPTER_V2} — and it is no longer
+    ///      registered on the live NAV. The two fixtures using this constant therefore assert a HISTORICAL
+    ///      state, valid only because {FORK_BLOCK} predates the swap. Read their docstrings before re-pinning.
     address public constant DEPLOYED_ADAPTER = 0x79cad9584012806a76E7892808556Ed3797EAbcD;
+
+    /// @dev GENERATION 2 — the address `script/config/deployments/1.json` records today, and the one registered
+    ///      on the live NAV with [Gold, Bluechip, Main].
+    address public constant DEPLOYED_ADAPTER_V2 = 0xdF1B9d57A40D3866F9EFc9d391EDf9dF51325B59;
+
+    /// @dev After the gen-1 -> gen-2 swap, whose three transactions landed in blocks 25_994_422..25_994_424.
+    uint256 public constant POST_SWAP_BLOCK = 25_995_000;
 
     /// @dev GENERATION 1, kept deliberately after the gen-2 swap. It is the positive control for the
     ///      duplicate-key regression: still on-chain, still emitting `positionInstanceId == 0`, so it shows what
@@ -320,10 +329,13 @@ contract AaveV4SpokesMetaBalanceAdapterForkTest is BalanceAdapterTestBase {
         );
     }
 
-    /// @notice What this PR records must be what mainnet runs: the recorded adapter address is a contract bound
-    ///         to the recorded NAV proxy, registered on it, and carrying the Gold Spoke as its instance set.
-    /// @dev Asserts the DEPLOYED adapter, not the locally deployed one — the config entry is only worth
-    ///      anything if the address it names is the live registration.
+    /// @notice HISTORICAL: generation 1 was a contract bound to the NAV proxy, registered on it, and carrying
+    ///         the Gold Spoke — as it stood at {FORK_BLOCK}, before the gen-2 swap.
+    /// @dev This does NOT check that the recorded address is the live registration; gen-1 is deregistered today
+    ///      and is no longer what the deployment record names. That check is
+    ///      `test_recordedGeneration2IsLiveAndMatchesCommittedSource`, which pins {DEPLOYED_ADAPTER_V2} at
+    ///      {POST_SWAP_BLOCK}. Kept because the predecessor's state is what the duplicate-key positive control
+    ///      is read against.
     function test_deployedAdapterIsRegisteredWithTheGoldSpoke() public view {
         assertGt(DEPLOYED_ADAPTER.code.length, 0, "recorded address must hold code at FORK_BLOCK");
         assertEq(
@@ -409,6 +421,79 @@ contract AaveV4SpokesMetaBalanceAdapterForkTest is BalanceAdapterTestBase {
             assertEq(uint8(local[i].positionKind), uint8(onchain[i].positionKind), "kind");
             assertEq(local[i].isDebt, onchain[i].isDebt, "debt flag");
             assertEq(local[i].positionId, onchain[i].positionId, "positionId");
+        }
+    }
+
+    /// @notice The RECORDED adapter — generation 2, the one `script/config/deployments/1.json` names — is the
+    ///         one the live NAV actually runs, and the committed source reproduces it leg for leg.
+    /// @dev This test exists because the two fixtures above do NOT cover it, and their names suggest otherwise.
+    ///      They pin {DEPLOYED_ADAPTER}, which is generation 1, at {FORK_BLOCK}, which predates the swap — so
+    ///      they assert a historical state about a now-DEREGISTERED contract. Proven, not argued: reverting
+    ///      `AaveV4SpokesMetaBalanceAdapter.sol` to its pre-fix source leaves
+    ///      `test_committedSourceMatchesDeployedBehaviour` GREEN, because it compares gen-2 source against the
+    ///      gen-1 deployment. Without this test the configured replacement could be missing, misregistered, or
+    ///      behaviourally different and the suite would not notice.
+    ///
+    ///      {DUAL_HUB_BORROWER} is used rather than {HOLDER} because {HOLDER} repaid and withdrew long before
+    ///      the swap, so at a post-swap block it has nothing to compare.
+    function test_recordedGeneration2IsLiveAndMatchesCommittedSource() public {
+        vm.rollFork(POST_SWAP_BLOCK);
+
+        // --- The record names gen-2, and gen-2 is what is registered.
+        assertGt(DEPLOYED_ADAPTER_V2.code.length, 0, "recorded gen-2 address must hold code after the swap");
+        assertEq(
+            address(AaveV4SpokesMetaBalanceAdapter(DEPLOYED_ADAPTER_V2).NAV_CALCULATOR()),
+            NAV_PROXY,
+            "gen-2 is bound to the fleet-wide NAV proxy"
+        );
+        assertTrue(IBalances(NAV_PROXY).isAdapterRegistered(DEPLOYED_ADAPTER_V2), "gen-2 must be registered");
+
+        bytes32[] memory live = IBalances(NAV_PROXY).getMetaInstances(DEPLOYED_ADAPTER_V2);
+        assertEq(live.length, 3, "gen-2 carries exactly [Gold, Bluechip, Main]");
+        bool gold;
+        bool bluechip;
+        bool main;
+        for (uint256 i; i < live.length; ++i) {
+            if (live[i] == bytes32(uint256(uint160(GOLD_SPOKE)))) gold = true;
+            if (live[i] == bytes32(uint256(uint160(BLUECHIP_SPOKE)))) bluechip = true;
+            if (live[i] == bytes32(uint256(uint160(MAIN_SPOKE)))) main = true;
+        }
+        assertTrue(gold && bluechip && main, "all three configured Spokes carried across the swap");
+
+        // --- And the predecessor is fully stood down. Both adapters registered at once double-counts EVERY
+        //     Aave V4 position, so this half is the one that matters most.
+        assertFalse(
+            IBalances(NAV_PROXY).isAdapterRegistered(DEPLOYED_ADAPTER_V1), "gen-1 must be DEREGISTERED after the swap"
+        );
+        assertEq(
+            IBalances(NAV_PROXY).getMetaInstances(DEPLOYED_ADAPTER_V1).length,
+            0,
+            "gen-1 must carry no dormant instance residue"
+        );
+
+        // --- Committed source reproduces the live gen-2 deployment, discriminator included.
+        address[] memory assets = new address[](1);
+        assets[0] = USDC;
+        AaveV4SpokesMetaBalanceAdapter local =
+            new AaveV4SpokesMetaBalanceAdapter(address(_deployBalancesForAdapter(assets)));
+
+        bytes32[] memory ins = new bytes32[](1);
+        ins[0] = bytes32(uint256(uint160(BLUECHIP_SPOKE)));
+        INAVCalculator.PositionBalance[] memory mine =
+            local.getAdapterPositionsForInstances(DUAL_HUB_BORROWER, ins, USDC);
+        INAVCalculator.PositionBalance[] memory onchain = AaveV4SpokesMetaBalanceAdapter(DEPLOYED_ADAPTER_V2)
+            .getAdapterPositionsForInstances(DUAL_HUB_BORROWER, ins, USDC);
+
+        assertEq(mine.length, onchain.length, "same number of legs");
+        assertGt(mine.length, 0, "fixture premise: the dual-hub borrower is still live at POST_SWAP_BLOCK");
+        for (uint256 i; i < mine.length; ++i) {
+            assertEq(mine[i].balanceAsset.asset, onchain[i].balanceAsset.asset, "asset");
+            assertEq(mine[i].amount, onchain[i].amount, "amount");
+            assertEq(uint8(mine[i].positionKind), uint8(onchain[i].positionKind), "kind");
+            assertEq(mine[i].isDebt, onchain[i].isDebt, "debt flag");
+            assertEq(mine[i].positionId, onchain[i].positionId, "positionId");
+            // The whole point of generation 2. If the live deployment were gen-1 this would read zero.
+            assertEq(mine[i].positionInstanceId, onchain[i].positionInstanceId, "reserve-id discriminator");
         }
     }
 }

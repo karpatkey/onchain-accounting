@@ -576,8 +576,8 @@ class TestImportTimeInvariants(unittest.TestCase):
         # The disjointness check was widened from the original pair to all FOUR L1 sets; without a test
         # it could silently narrow back, and a third set is exactly where a second classification hides.
         with self.assertRaises(ValueError):
-            self._exec_with("L1_FEE_NONE_VERIFIED = {42161, 196, 1, 100, 143, 16661}",
-                            "L1_FEE_NONE_VERIFIED = {42161, 196, 1, 100, 143, 16661, 534352}")
+            self._exec_with("L1_FEE_NONE_VERIFIED = {42161, 196, 1, 100, 143, 16661, 5042}",
+                            "L1_FEE_NONE_VERIFIED = {42161, 196, 1, 100, 143, 16661, 5042, 534352}")
         with self.assertRaises(ValueError):
             self._exec_with("L1_FEE_UNVERIFIED = {9745, 999, 59144, 56, 137, 146, 43114, 80094}",
                             "L1_FEE_UNVERIFIED = {9745, 999, 59144, 56, 137, 146, 43114, 80094, 8453}")

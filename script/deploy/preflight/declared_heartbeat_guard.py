@@ -118,6 +118,7 @@ DIRECTORY_FILES = {
     "137": "feeds-matic-mainnet.json",
     "8453": "feeds-ethereum-mainnet-base-1.json",
     "42161": "feeds-ethereum-mainnet-arbitrum-1.json",
+    "5042": "feeds-arc-mainnet.json",
 }
 DIRECTORY_BASE = "https://reference-data-directory.vercel.app/"
 

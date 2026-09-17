@@ -1,0 +1,35 @@
+{
+  "USDC": {
+    "address": "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE",
+    "$kindComment": "THE NATIVE ASSET ON ARC IS USDC, NOT ETH — Arc is Circle's L1 and pays gas in USDC. NAVCalculator stamps NATIVE_ADDRESS with the chain config's nativeTokenSymbol and treats it as 18 DECIMALS, which matches Arc's native balance representation (the deployer held 24.487455e18 after funding). Verified on-chain 2026-09-17: getRegisteredAssets() on the live proxy returns exactly one entry — address 0xEeee…EEeE, decimals 18, symbol 'USDC'.\n\nDO NOT RECONCILE THIS WITH ERC-20 USDC. If Circle's 6-decimal ERC-20 USDC is ever registered on Arc it is a DISTINCT asset at a different address with different decimals; treating the two as one would misprice by 1e12.\n\nRegistered here because the NAV auto-registers the native asset at initialize() but registers NO feed for it, so until this lands an account's gas balance is carried unpriced.",
+    "accrualKind": "None",
+    "labels": [
+      "Circle",
+      "Stablecoin"
+    ],
+    "priceFeeds": [
+      {
+        "type": "Chainlink",
+        "$comment": "Chainlink USDC/USD on Arc, a day-one Chainlink Scale integration. Read live 2026-09-17: answer 0.99991531, 8 decimals, updatedAt 2026-09-16T15:14:13Z. Heartbeat 86400 = EXACTLY Chainlink's declared value for this feed on Arc (reference-data-directory feeds-arc-mainnet.json), per ADR 0025's equality rule. The 22.65 h staleness observed at that read is INSIDE the 24 h heartbeat but leaves little margin on a chain days old — worth watching rather than widening.",
+        "address": "0x84EA90AC252Dc437031461836DB5164219147905",
+        "heartbeat": 86400
+      }
+    ]
+  },
+  "wARS": {
+    "address": "0x0DC4F92879B7670e5f4e4e6e3c801D229129D90D",
+    "$kindComment": "FLAG: ARS fiat-backed, so like EURC it is hard-pegged but NOT to the NAV's quote asset — its USD price moves with ARS/USD. That is why it carries NO pegToleranceBps: a $1 guard would fire constantly. Do not add one.\n\nPriced by the Custom 'wARS' feed, which INVERTS Chainlink's 'USD / ARS' feed; see contracts-deployment-config/custom-price-feeds/5042.json for why a direct type:'Chainlink' registration would over-report by 2,548,496x on this chain.\n\nNOTE the feed quotes the CURRENCY ARS, not the wARS token, so a wARS depeg from ARS is invisible here — the same treatment USDC gets from a USD feed, and unlike EURC whose EURC/USD feed prices the token itself.\n\nSame token address as chain 1. Verified on Arc 2026-09-17: 'Peso Argentino', 18 decimals, codesize 163 (minimal proxy), plain ERC-20 with convertToAssets/getRate/underlying all reverting.",
+    "accrualKind": "None",
+    "labels": [
+      "Num Finance",
+      "Stablecoin"
+    ],
+    "priceFeeds": [
+      {
+        "type": "Custom",
+        "feed": "wARS",
+        "heartbeat": 86400
+      }
+    ]
+  }
+}

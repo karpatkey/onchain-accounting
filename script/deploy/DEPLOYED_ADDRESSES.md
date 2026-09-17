@@ -2,7 +2,7 @@
 
 Canonical deployed-address reference for the Onchain Accounting System (NAV). The machine source of truth is `script/config/deployments/<chainId>.json` per chain (written by the deploy scripts); this file mirrors those records. The one exception is `UUPSPlaceholder` — a transient CREATE2 address used only during the atomic proxy deploy, identical everywhere and not persisted in the per-chain JSON; it is listed here for completeness.
 
-Deployed across **24 chains**: 7 fully configured (custom price feeds + balance adapters) + 17 with the NAV implementation + proxy only.
+Deployed across **25 chains**: 8 fully configured (custom price feeds + balance adapters) + 17 with the NAV implementation + proxy only.
 
 - **Roles (current):** the deployer EOA `0xAa5A7C7Ea51F276301f881F9CCB501a1dFeF4F72` holds `DEFAULT_ADMIN_ROLE` + `MANAGER` on every chain. Handoff to the karpatkey security-council Safe `0x8b884f80B3B839F52b6cE168f133e7a5D1f0A537` (via `07_TransferAdminToSecurityCouncil`) is **deferred** until the operational handover — step 07 has not been run.
 - **Bridge:** deployed-but-dormant — only the `BridgeEscrow` implementation is deployed (no proxy, adapters, or wiring).
@@ -12,7 +12,7 @@ Deployed across **24 chains**: 7 fully configured (custom price feeds + balance 
 
 ## Canonical layer (CREATE2 — identical on every chain)
 
-Deployed via the canonical CREATE2 deployer (`0x4e59b44847b379578588920cA78FbF26c0B4956C`), so each address is the same on all 24 chains.
+Deployed via the canonical CREATE2 deployer (`0x4e59b44847b379578588920cA78FbF26c0B4956C`), so each address is the same on all 25 chains.
 
 **Redeployed 2026-08-18 — every address below changed.** The previous generation is listed under
 *Superseded* at the end of this section; it is **abandoned in place**, still answering but no longer
@@ -27,7 +27,7 @@ stack. Consumers must move to `0x54EaD2A1…`.
 | NAVRegistryLib | `0x55b6AA29D296Eb2Ee0e7b76686eaA2e479CA3511` |
 | ERC20Default balance adapter | `0x4Bc39Dce61245F5A63189d1FA03E6D76646f1EE6` (created inside `NAVCalculator.initialize`; identical everywhere) |
 | UUPSPlaceholder | `0x85Ee38b0385D042918a59C01dB319b6eDdF7A8Cf` (temporary impl during atomic proxy deploy) |
-| BridgeEscrow implementation | `0xe2237d9776041514b1AC66856407Ed344b480De0` (dormant; recorded on 23 chains — no record on HyperEVM (999)) |
+| BridgeEscrow implementation | `0xe2237d9776041514b1AC66856407Ed344b480De0` (dormant; recorded on 23 chains — no record on HyperEVM (999) or Arc (5042), the two in-scope chains brought up without the bridge layer) |
 
 **Superseded 2026-08-18** (do not call): proxy `0x80eD5cc6cEbAe4fEE1eD8687279aa492A50afa8d`,
 implementation `0x07bd077cFB40bBDa8A67d0D33ce41b974aB0F8a8`, PriceFeedLib
@@ -39,7 +39,7 @@ implementation `0x07bd077cFB40bBDa8A67d0D33ce41b974aB0F8a8`, PriceFeedLib
 
 | Contract | Address |
 | --- | --- |
-| `AssetKindRegistry` | `0xf60467a88C2b4d0f46C0c41C3Ba0C74da3d3CCD0` (all 24 chains) |
+| `AssetKindRegistry` | `0xf60467a88C2b4d0f46C0c41C3Ba0C74da3d3CCD0` (all 25 chains) |
 
 Deployed via the canonical CREATE2 deployer (`0x4e59b44847b379578588920cA78FbF26c0B4956C`) with salt
 version `DeploySalts.ASSET_KIND_REGISTRY = 2`. Its only constructor argument is the NAV proxy, which is
@@ -85,7 +85,7 @@ could not give them a shared address. Read those per-chain from the deployment r
 
 ---
 
-## Chains (24)
+## Chains (25)
 
 | Chain | Chain ID | Scope | Custom price feeds | Balance adapters (excl. ERC20Default) |
 | --- | --- | --- | --- | --- |
@@ -113,6 +113,7 @@ could not give them a shared address. Read those per-chain from the deployment r
 | Hemi | 43111 | impl + proxy | — | — |
 | 0G | 16661 | impl + proxy | — | — |
 | HyperEVM | 999 | impl + proxy | — | — |
+| Arc | 5042 | impl + proxy + assets | 1 | 1 |
 
 The 17 impl+proxy chains run the canonical layer only; custom price feeds and balance adapters are registered as assets land on each.
 
@@ -250,6 +251,12 @@ position manager is at a different address entirely.
 | MerklRewards ☆ | `0xFf2D5A8bf801191eD1292E6DD6792F5D03c5aFBF` |
 | MorphoMarketsMeta ☆ † | `0x5C951CF5C596BC4908A5fd846710070553830b06` |
 
+### Arc (5042)
+
+| Adapter | Address |
+| --- | --- |
+| MorphoVaultsMeta ★ | `0x64e1ba8B12ee2bFdBDdFd4E0863EdfaaE824C86a` |
+
 ## Assisted-adapter assistants (per chain, plain CREATE)
 
 Delegatecall action modules for the assisted adapters. They are **not** registered on the NAV Calculator —
@@ -343,3 +350,9 @@ addresses. Chains not listed have no custom feeds; their assets use direct feeds
 | osGNO | `0xd0e852a932490290B5bAACe8DafF04D9ec19c164` |
 | sXDAI | `0x513F159f9a2a65fec8AC61d16203450fDC7cA893` |
 | wstETH_L2 | `0x2A0Fa71f5923f720c4a622cD4Da0b7837C466612` |
+
+### Arc (5042)
+
+| Token | Feed address |
+| --- | --- |
+| wARS | `0xC67360B2Cf8d23849ad2b7F3E79AB813D64A94C5` |

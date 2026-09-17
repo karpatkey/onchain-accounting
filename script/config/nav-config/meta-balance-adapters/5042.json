@@ -1,0 +1,10 @@
+{
+  "MorphoVaultsMeta": {
+    "enabled": true,
+    "$comment": "Active Morpho vault set on Arc. Adding a vault here is a MANAGER addMetaInstances TX, not a deploy — the adapter is immutable and serves any ERC-4626 vault listed. Both the vault's underlying and any asset it reports must be registered NAV assets or the instance reports nothing (the adapter returns an empty array rather than reverting, so one unregistered vault never zeroes the rest of the set).",
+    "$instanceComment_KPKwARSYield": "0xF0943081f646f21cF5BFBa8e0F670C4248ab0ba5 = 'KPK wARS Yield' (symbol KPK_wARS_Yield), the Arc deployment of the same strategy chain 1 runs at 0xb5ce3CA2C774b72955C25875022FdD91f7a7B938. Measured on-chain 2026-09-17: 18-decimal shares, asset() = wARS 0x0DC4F92879B7670e5f4e4e6e3c801D229129D90D, totalAssets 9,000.000000001e18 and totalSupply identical — a freshly seeded vault sitting exactly 1:1, worth ~$5.64 at the inverted ARS rate of 1596.4011 ARS/USD. previewRedeem(1e18) and convertToAssets(1e18) both return 1e18; MORPHO() reverts, which is fine because the adapter is pure ERC-4626 and never calls it. Its underlying wARS is registered in nav-config/assets-and-price-feeds/5042.json against the INVERTED Chainlink feed — without that registration this instance would report nothing.",
+    "instances": [
+      "0xF0943081f646f21cF5BFBa8e0F670C4248ab0ba5"
+    ]
+  }
+}

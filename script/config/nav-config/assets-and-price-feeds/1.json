@@ -1054,5 +1054,22 @@
         "heartbeat": 86400
       }
     ]
+  },
+  "syrupUSDT": {
+    "address": "0x356B8d89c1e1239Cbbb9dE4815c39A1474d5BA7D",
+    "accrualKind": "Appreciating",
+    "$kindComment": "Maple syrupUSDT share, USDT underlying; priced via convertToAssets (per feed config). Same MaplePool code as the registered syrupUSDC and syrupUSDG, so the same Appreciating classification: balance static, share rate grows. Live rate 2026-09-17: 1.143506 USDT per share.",
+    "labels": [
+      "Maple",
+      "Savings"
+    ],
+    "$comment": "Registered for the XAUt carry fund's syrupUSDT leg (requested 2026-09-16). Its base asset USDT was already registered with a direct Chainlink primary, so unlike syrupUSDG this feed had no prerequisite registration. See the syrupUSDT block in contracts-deployment-config/custom-price-feeds/1.json for the manipulation measurement, the shared convertToAssets-vs-unrealizedLosses property, and the liquidity caveat that pricing does not capture.",
+    "priceFeeds": [
+      {
+        "type": "Custom",
+        "feed": "syrupUSDT",
+        "heartbeat": 86400
+      }
+    ]
   }
 }

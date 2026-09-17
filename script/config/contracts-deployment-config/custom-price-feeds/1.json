@@ -363,5 +363,13 @@
       "minRate1e18": "900000000000000000",
       "maxRate1e18": "1100000000000000000"
     }
+  },
+  "syrupUSDT": {
+    "enabled": true,
+    "$comment": "syrupUSDT primary (syrupUSDT_CustomPriceFeed, a thin ERC4626VaultRatePriceFeed subclass). Price = (USDT/USD) x convertToAssets(1 share), the USDT/USD leg read from the NAV (ADR 0019). Third member of the Maple family on this chain after syrupUSDC and syrupUSDG - same MaplePool code, different underlying - so the pricing logic is deliberately identical across all three.\n\nREQUESTED for the XAUt carry fund's syrupUSDT leg: before this feed isAssetRegistered(syrupUSDT) was false and getPriceData reverted, so a syrupUSDT position did not appear in NAV at all.\n\nBASE = USDT, which was already registered and priced by a DIRECT Chainlink feed (0x3E7d1eAB13ad0104d2750B8863b489D65364e32D) - what NavBaseUsdLib's circularity invariant requires of a base, and it means the share is valued with the same USDT/USD price every other USDT leg uses. The base's BaseAssetMismatch check enforces the pairing against the vault's own asset(), so a copy-paste of the syrupUSDC or syrupUSDG block reverts at construction rather than pricing against the wrong dollar. Both sides are 6-dp, so there is no decimals offset.\n\nMANIPULATION GATE (docs/howto/add-price-feed.md) CHECKED: MaplePool.totalAssets() forwards to IPoolManagerLike(manager).totalAssets() - cash plus loan principal plus accrued interest - NOT balanceOf(vault). Measured live 2026-09-17: totalAssets 336,758,291.074368 USDT against a vault USDT balance of 642,712.210795, so cash is 0.19% of assets - a WIDER margin than syrupUSDG's 4.8%. Live rate at registration: 1.143506 USDT per share.\n\nSAME LATENT PROPERTY as its siblings: MaplePool.convertToAssets divides RAW totalAssets() by supply while convertToExitAssets first subtracts unrealizedLosses(), so on a loan default this over-reports until Maple realises the loss. unrealizedLosses() reads 0 on all three Maple vaults on 2026-09-17.\n\nLIQUIDITY IS NOT PRICE: syrupUSDT redemption is not instantaneous - kpk's own Maple risk assessment (risc PR 106, overall score 4; zero on-chain collateral on the USDT loan channel, first-loss cover 0, top-3 borrower concentration 66.8%) records a withdrawal pending far beyond the ~5-minute median. This feed reports a MARK, not an exit price; do not read it as redeemable-on-demand value when sizing redemptions.",
+    "constructor": {
+      "syrupUsdt": "0x356B8d89c1e1239Cbbb9dE4815c39A1474d5BA7D",
+      "baseAsset": "0xdAC17F958D2ee523a2206206994597C13D831ec7"
+    }
   }
 }

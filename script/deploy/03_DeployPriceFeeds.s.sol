@@ -12,6 +12,7 @@ import {sUSDe_CustomPriceFeed} from "../../src/prices/protocols/sUSDe_CustomPric
 import {syrupUSDC_CustomPriceFeed} from "../../src/prices/protocols/syrupUSDC_CustomPriceFeed.sol";
 import {syrupUSDG_CustomPriceFeed} from "../../src/prices/protocols/syrupUSDG_CustomPriceFeed.sol";
 import {LBTC_CustomPriceFeed} from "../../src/prices/protocols/LBTC_CustomPriceFeed.sol";
+import {syrupUSDT_CustomPriceFeed} from "../../src/prices/protocols/syrupUSDT_CustomPriceFeed.sol";
 import {spUSDC_CustomPriceFeed} from "../../src/prices/protocols/spUSDC_CustomPriceFeed.sol";
 import {spUSDT_CustomPriceFeed} from "../../src/prices/protocols/spUSDT_CustomPriceFeed.sol";
 import {spETH_CustomPriceFeed} from "../../src/prices/protocols/spETH_CustomPriceFeed.sol";
@@ -158,6 +159,12 @@ contract DeployPriceFeeds is BaseDeployScript {
         // silently not deploy whenever syrupUSDC is disabled (the failure mode the wARS comment below records).
         if (ConfigReader.isAdapterEnabled(vm, currentChainId, "priceFeeds", "syrupUSDG")) {
             _deploySyrupUsdg();
+        }
+
+        // Deploy syrupUSDT Price Oracle. Third Maple vault on this chain; gated on its OWN config entry for the
+        // same reason as syrupUSDG above.
+        if (ConfigReader.isAdapterEnabled(vm, currentChainId, "priceFeeds", "syrupUSDT")) {
+            _deploySyrupUsdt();
         }
 
         // Deploy LBTC Price Oracle (LBTC/USD = WBTC/USD x LBTC.getRate()). LBTC is yield-bearing, so the rate is
@@ -429,6 +436,24 @@ contract DeployPriceFeeds is BaseDeployScript {
         syrupUSDG_CustomPriceFeed syrupUsdgAdapter = new syrupUSDG_CustomPriceFeed(syrupUsdg, nav, baseAsset);
         ConfigReader.writeAdapterAddress(vm, currentChainId, "priceFeeds", "syrupUSDG", address(syrupUsdgAdapter));
         console2.log("syrupUSDG_CustomPriceFeed deployed at:", address(syrupUsdgAdapter));
+    }
+
+    function _deploySyrupUsdt() internal {
+        address deployed = _readAdapterDeployed("priceFeeds", "syrupUSDT");
+        if (deployed != address(0)) {
+            console2.log("syrupUSDT_CustomPriceFeed already deployed at:", deployed);
+            return;
+        }
+
+        address syrupUsdt =
+            vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "syrupUSDT", "syrupUsdt"));
+        address baseAsset =
+            vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, "syrupUSDT", "baseAsset"));
+        address nav = ConfigReader.readDeployedAddress(vm, currentChainId, "NAVCalculatorProxy");
+
+        syrupUSDT_CustomPriceFeed syrupUsdtAdapter = new syrupUSDT_CustomPriceFeed(syrupUsdt, nav, baseAsset);
+        ConfigReader.writeAdapterAddress(vm, currentChainId, "priceFeeds", "syrupUSDT", address(syrupUsdtAdapter));
+        console2.log("syrupUSDT_CustomPriceFeed deployed at:", address(syrupUsdtAdapter));
     }
 
     function _deployLbtc() internal {

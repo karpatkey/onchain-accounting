@@ -134,7 +134,8 @@ For building adapters, the only required output is **PositionBalance**; Position
 `Balances` is an abstract contract used by NAVCalculator. It maintains the **adapter registry** (the asset registry lives in NAVCalculator, not here):
 
 - **Global adapter registry:** `_globalAdapters[]`, `_adapterTypes[adapter]`, `_isAdapterRegistered[adapter]`. All adapters are in one flat list (no per-asset mapping for registration).
-- **Meta-adapter instance registry:** `_metaInstances[adapter]` — the per-adapter `bytes32[]` of instance coordinates a meta-adapter queries, plus the running total `_metaInstanceTotal`. See §6.1.
+- **Meta-adapter instance registry:** `_metaInstances[adapter]` — the per-adapter `bytes32[]` of instance coordinates a meta-adapter queries — and `_claimant[coordinate]`, the inverse: which adapter currently governs that coordinate, or `address(0)`. `_claimant` is the ownership relation materialised, so "is this coordinate already governed?" is one SLOAD rather than a scan over every adapter's set, and dual claim is unrepresentable rather than merely detected. Written only by `_claim`/`_release` in `NAVRegistryLib`; taking a coordinate also disarms `ERC20DefaultBalanceAdapter` for it and releasing re-arms it, so exactly one thing reports any holding. See §6.1.
+- **`_metaInstanceTotal` is RETIRED.** The slot and label remain (a live UUPS proxy's layout is pinned) but the arithmetic is gone and the value stays 0. It had no consumer: every `PriceFeedLib` signature taking it left the parameter unused, so it sized no buffer and fed no computation.
 - **ERC20DefaultBalanceAdapter:** Set once in NAVCalculator's `initialize()` via `_setErc20DefaultBalanceAdapter(address)`. It is pushed into `_globalAdapters` and marked `AdapterType.Default`.
 
 The **asset registry** (decimals, symbols) lives on **NAVCalculator** (`_registeredAssets`, `_assetIndex`), not on `Balances`. NAVCalculator exposes `registerAsset(asset, priceFeed, priceType, chainlinkHeartbeat)` (MANAGER), which registers the asset and sets its price feed.
@@ -173,7 +174,7 @@ Every balance adapter must implement this interface and ERC165.
 
 ## 6. How NAVCalculator uses adapters
 
-- **getAccountNav(account, quoteAsset):** Validates the quote asset, computes sequencer status, then delegates the whole read/compute path to `PriceFeedLib.computeNav(...)` (passing the price-oracle/registry storage refs, `getAllAdapters()`, `_metaInstanceTotal`, and the native-token symbol). The read/compute engine lives in `PriceFeedLib` to keep `NAVCalculator` under EIP-170 — see [ADR 0010](../../docs/decisions/0010-meta-balance-adapters.md). `computeNav`:
+- **getAccountNav(account, quoteAsset):** Validates the quote asset, computes sequencer status, then delegates the whole read/compute path to `PriceFeedLib.computeNav(...)` (passing the price-oracle/registry storage refs, `getAllAdapters()`, the retired-and-always-zero `_metaInstanceTotal`, and the native-token symbol). The read/compute engine lives in `PriceFeedLib` to keep `NAVCalculator` under EIP-170 — see [ADR 0010](../../docs/decisions/0010-meta-balance-adapters.md). `computeNav`:
   - For each adapter in `getAllAdapters()`: `getAdapterPositions(account, address(0))` (with try/catch).
   - Filters: keep only positions with a registered asset.
   - Fetches prices for all assets that appear in the filtered positions; marks stale.

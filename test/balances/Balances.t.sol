@@ -590,18 +590,27 @@ contract BalancesTest is Test {
         balances.removeMetaInstancesDirect(address(meta), empty);
     }
 
-    function test_meta_instanceTotal_tracksAddAndRemove() public {
+    /// @notice The per-adapter SET tracks add and remove — and `_metaInstanceTotal` deliberately does not.
+    /// @dev This test used to assert the running total. The total is RETIRED: it had no consumer (every
+    ///      `PriceFeedLib` signature taking it left the parameter unused, so it sized no buffer and fed no
+    ///      computation) while three call sites maintained it. Its slot and label survive because a live UUPS
+    ///      proxy's layout is pinned, but the arithmetic is gone. Asserting it stays 0 is the point: it pins
+    ///      the retirement, so a future author who rewires the arithmetic "to fix the inconsistency" — which
+    ///      two long comments used to exist to discourage — gets a red test naming the decision instead.
+    function test_meta_instanceSetTracksAddAndRemove_totalIsRetired() public {
         Mock_MetaAdapter meta = _registerMeta();
         bytes32[] memory two = new bytes32[](2);
         two[0] = bytes32(uint256(1));
         two[1] = bytes32(uint256(2));
         balances.addMetaInstancesDirect(address(meta), two);
-        assertEq(balances.metaInstanceTotalForTest(), 2);
+        assertEq(balances.getMetaInstances(address(meta)).length, 2, "set reflects the add");
 
         bytes32[] memory one = new bytes32[](1);
         one[0] = bytes32(uint256(1));
         balances.removeMetaInstancesDirect(address(meta), one);
-        assertEq(balances.metaInstanceTotalForTest(), 1, "running total reflects removal");
+        assertEq(balances.getMetaInstances(address(meta)).length, 1, "set reflects the removal");
+
+        assertEq(balances.metaInstanceTotalForTest(), 0, "_metaInstanceTotal is retired and must stay 0");
     }
 
     function test_meta_addInstances_onUnregisteredReverts() public {
@@ -666,7 +675,8 @@ contract BalancesTest is Test {
 
         assertTrue(balances.isAdapterRegistered(address(meta)), "meta-adapter registered");
         assertEq(balances.getMetaInstances(address(meta)).length, 2, "instances seeded");
-        assertEq(balances.metaInstanceTotalForTest(), 2, "running total reflects seed");
+        // `_metaInstanceTotal` is retired — see test_meta_instanceSetTracksAddAndRemove_totalIsRetired.
+        assertEq(balances.metaInstanceTotalForTest(), 0, "_metaInstanceTotal is retired and must stay 0");
     }
 
     function test_addBalanceAdapters_rejectsMetaAdapter() public {

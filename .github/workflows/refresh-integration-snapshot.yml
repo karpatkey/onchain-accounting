@@ -12,9 +12,19 @@ on:
     # Weekly Mondays at 06:00 UTC. Adjust as needed.
     - cron: "0 6 * * 1"
 
+# Both triggers mutate the SAME branch and the SAME reused PR, so overlapping runs can fight:
+# a bad run drafts the PR, then an older clean run still in flight reaches its restore step and
+# marks that bad head ready again. cancel-in-progress is deliberately false — a half-cancelled
+# refresh would leave accounts.json partly rewritten.
+concurrency:
+  group: refresh-integration-snapshot
+  cancel-in-progress: false
+
 permissions:
   contents: write
   pull-requests: write
+  # `gh label create` for the drift label writes through the issues API.
+  issues: write
 
 env:
   FOUNDRY_PROFILE: slow
@@ -98,6 +108,7 @@ jobs:
       # accounts.json is internally consistent even when incomplete, and the report names the
       # chains it skipped.
       - name: Open or update PR with refreshed snapshot
+        id: cpr
         if: ${{ steps.refresh.outputs.has_report == 'true' }}
         uses: peter-evans/create-pull-request@v6
         with:
@@ -109,6 +120,74 @@ jobs:
           delete-branch: true
           add-paths: |
             test/integration/accounts.json
+
+      # THE PR MUST CARRY THE VERDICT, NOT JUST THIS JOB.
+      #
+      # A PR opened with the default GITHUB_TOKEN does NOT trigger `pull_request` workflows — that is
+      # GitHub's recursion guard, not a misconfiguration. foundry.yml therefore never runs on this PR
+      # (no Build, no unit/fork/integration tests, no preflight gate), so it shows only the CodeQL and
+      # Analyze checks and READS AS MERGEABLE while this job is failing on drift. Merging it in that
+      # state ratifies the drift as the new expected baseline — the snapshot becomes the oracle, and a
+      # genuine regression is recorded as intended behaviour.
+      #
+      # So on a bad run the PR is converted to a DRAFT and labelled. Draft is the part that matters:
+      # it survives a page refresh, blocks the merge button, and is visible from the PR list, whereas
+      # a failing job on a scheduled run is only visible to whoever opens the Actions tab.
+      - name: Mark the PR as not-mergeable when the run was bad
+        if: ${{ always() && steps.cpr.outputs.pull-request-number && steps.refresh.outputs.rc != '0' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR: ${{ steps.cpr.outputs.pull-request-number }}
+          RC: ${{ steps.refresh.outputs.rc }}
+        run: |
+          set -o pipefail
+          if [ "$RC" = "1" ]; then
+            reason="PARTIAL SNAPSHOT — at least one chain did not regenerate; its forkBlock was rolled back."
+          else
+            reason="TOLERANCE VIOLATIONS — at least one (chain x account) drifted past the configured tolerance."
+          fi
+
+          # Was this PR ALREADY flagged by an earlier run? Captured BEFORE the label is applied, so the
+          # full write-up is posted once and later runs add a one-line "still failing" note instead. The
+          # PR is reused across weekly runs (fixed branch), and #337 sat through six of them — without
+          # this the same essay stacks up and buries the drift table maintainers actually need.
+          already=$(gh pr view "$PR" --json labels --jq '[.labels[].name] | index("snapshot-drift") // empty')
+
+          gh pr ready "$PR" --undo || true
+          gh label create snapshot-drift --color B60205 \
+            --description "Refresh run reported drift or a partial snapshot" 2>/dev/null || true
+          gh pr edit "$PR" --add-label snapshot-drift || true
+
+          if [ -z "$already" ]; then
+            gh pr comment "$PR" --body "$(printf '%s\n\n%s\n\n%s' \
+              "**Converted to draft — do not merge as-is.** $reason" \
+              "Merging this PR would rewrite the values the integration tests assert against, so a real regression would be recorded as the expected baseline. Read the drift table in the PR description, decide whether NAV or the reference source is wrong, and only then mark it ready." \
+              "_Note: this PR cannot run the repo's test suite. GitHub does not trigger \`pull_request\` workflows for PRs opened with the default \`GITHUB_TOKEN\`, so the checks you see here are not a validation of the new snapshot._")" || true
+          else
+            gh pr comment "$PR" --body \
+              "Still failing on \`$(date -u +%Y-%m-%d)\` — $reason The PR description above carries this run's drift table; the original explanation is earlier in this thread." || true
+          fi
+
+          # THE DRAFT IS THE ONLY OPERATION THAT ACTUALLY BLOCKS A MERGE, so it is the only one allowed
+          # to fail the step. Label and comment stay best-effort above: losing them is cosmetic, losing
+          # the draft silently would leave the PR looking mergeable while this run reported rc=$RC —
+          # exactly the state this whole step exists to prevent.
+          is_draft=$(gh pr view "$PR" --json isDraft --jq .isDraft)
+          if [ "$is_draft" != "true" ]; then
+            echo "::error::PR #$PR is NOT in draft after rc=$RC — it still reads as mergeable. Check the"
+            echo "::error::workflow's pull-requests: write permission and the gh CLI output above."
+            exit 1
+          fi
+          echo "PR #$PR is draft=true and labelled snapshot-drift (rc=$RC)."
+
+      - name: Restore the PR to mergeable after a clean run
+        if: ${{ steps.cpr.outputs.pull-request-number && steps.refresh.outputs.rc == '0' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR: ${{ steps.cpr.outputs.pull-request-number }}
+        run: |
+          gh pr edit "$PR" --remove-label snapshot-drift || true
+          gh pr ready "$PR" || true
 
       - name: Fail if snapshot incomplete
         if: ${{ steps.refresh.outputs.rc == '1' }}

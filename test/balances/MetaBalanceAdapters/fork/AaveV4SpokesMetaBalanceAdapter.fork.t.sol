@@ -44,6 +44,12 @@ contract AaveV4SpokesMetaBalanceAdapterForkTest is BalanceAdapterTestBase {
     address public constant DUAL_HUB_BORROWER = 0x166Ce42Df5f4BAA94aBC5B62C60dab1B3C73D2a3;
     uint256 public constant BLUECHIP_BLOCK = 25_993_000;
 
+    /// @dev The Aave V4 Main Spoke, every reserve against the Core Hub. The fund's second venue for the same
+    ///      WBTC/USDC trade, which is why its reserve layout is asserted alongside Bluechip's.
+    address public constant MAIN_SPOKE = 0x94e7A5dCbE816e498b89aB752661904E2F56c485;
+    /// @dev The WBTC Carry Fund's collateral: Bluechip reserve 1, Main reserve 3 — the same token at two ids.
+    address public constant WBTC = 0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599;
+
     /// @dev The adapter deployed on mainnet (CREATE2, canonical deployer) and recorded in
     ///      `script/config/deployments/1.json`.
     address public constant DEPLOYED_ADAPTER = 0x79cad9584012806a76E7892808556Ed3797EAbcD;
@@ -260,6 +266,58 @@ contract AaveV4SpokesMetaBalanceAdapterForkTest is BalanceAdapterTestBase {
         assertEq(l.length, 2);
         assertEq(l[0], "Spoke");
         assertEq(l[1], "XAUt");
+    }
+
+    /// @notice The two Spokes this PR ADDS to the live instance set, asserted rather than merely observed.
+    /// @dev Until this test existed, Bluechip and Main were carried on the strength of a dated `$comment` in
+    ///      `nav-config/meta-balance-adapters/1.json` that said, in as many words, "NOT asserted by any test".
+    ///      Both are production meta-instances the WBTC Carry Fund borrows against, so a reserve renumbering or
+    ///      a collateral-only flag flipped upstream would silently move the fund's coordinates with a green
+    ///      suite. Reserve ids are the discriminator gen-2 writes into `positionInstanceId`, so they are load
+    ///      bearing now, not just documentation.
+    function test_bluechipAndMainSpokes_reserveLayoutAndLabels() public {
+        vm.rollFork(BLUECHIP_BLOCK);
+
+        address[] memory assets = new address[](2);
+        assets[0] = WBTC;
+        assets[1] = USDC;
+        AaveV4SpokesMetaBalanceAdapter m =
+            new AaveV4SpokesMetaBalanceAdapter(address(_deployBalancesForAdapter(assets)));
+
+        // --- Bluechip: 12 reserves, the fund's legs at WBTC r1 (collateral) and USDC r4 (Prime Hub borrow).
+        bytes32[] memory bc = new bytes32[](1);
+        bc[0] = bytes32(uint256(uint160(BLUECHIP_SPOKE)));
+        address[] memory bcAssets = m.underlyingAssetsSupportedForInstances(bc);
+        assertEq(bcAssets.length, ISpoke(BLUECHIP_SPOKE).getReserveCount(), "every Bluechip reserve, none dropped");
+        assertEq(bcAssets.length, 12, "Bluechip reserve count as recorded in nav-config");
+        assertEq(bcAssets[1], WBTC, "Bluechip r1 is the fund's WBTC collateral");
+        assertEq(bcAssets[4], USDC, "Bluechip r4 is the fund's USDC borrow (Prime Hub)");
+        assertEq(bcAssets[7], USDC, "Bluechip r7 is the SAME underlying on the Core Hub - the duplicate-key shape");
+
+        string[] memory bcL = m.positionLabels(abi.encode(BLUECHIP_SPOKE));
+        assertEq(bcL.length, 2);
+        assertEq(bcL[0], "Spoke");
+        assertEq(bcL[1], "WETH/WBTC/cbBTC/wstETH", "collateral-only leaf is ONE joined segment, not four");
+
+        // --- Main: 14 reserves, a different collateral-only set, and WBTC borrowable here but not on Bluechip.
+        bytes32[] memory mn = new bytes32[](1);
+        mn[0] = bytes32(uint256(uint160(MAIN_SPOKE)));
+        address[] memory mnAssets = m.underlyingAssetsSupportedForInstances(mn);
+        assertEq(mnAssets.length, ISpoke(MAIN_SPOKE).getReserveCount(), "every Main reserve, none dropped");
+        assertEq(mnAssets.length, 14, "Main reserve count as recorded in nav-config");
+        assertEq(mnAssets[3], WBTC, "Main r3 is WBTC - a DIFFERENT id than Bluechip's r1 for the same token");
+        assertEq(mnAssets[7], USDC, "Main r7 is the USDC borrow leg");
+
+        string[] memory mnL = m.positionLabels(abi.encode(MAIN_SPOKE));
+        assertEq(mnL.length, 2);
+        assertEq(mnL[0], "Spoke");
+        assertEq(mnL[1], "wstETH/weETH/AAVE/LINK", "Main's risk perimeter is its own, not Bluechip's");
+
+        // The two leaves MUST differ. This is the assertion that would catch the `IComputedLabelSegments` gap
+        // recorded as Outstanding: a literal leaf stamped on the adapter renders identically on every Spoke.
+        assertTrue(
+            keccak256(bytes(bcL[1])) != keccak256(bytes(mnL[1])), "each Spoke's leaf is computed from its OWN reserves"
+        );
     }
 
     /// @notice What this PR records must be what mainnet runs: the recorded adapter address is a contract bound

@@ -94,6 +94,34 @@ library DeploySalts {
     uint256 internal constant UNISWAP_V2_POOLS_META = 2;
 
     //
+    // Wallet-held yield-token adapters (NAV-only constructor, CREATE2 same-address across chains)
+    //
+    // **Version 1, NOT 2 — and the difference from every constant above is deliberate.** Their neighbours
+    // start at 2 because generation 1 of each was deployed with plain `new` (CREATE) before the CREATE2
+    // migration, and skipping 1 keeps a first-generation address from ever being confused with the
+    // CREATE2 one. These adapters have NEVER been deployed on any chain, so there is no generation 1 to
+    // skip: 1 is their first real generation, and starting at 2 would imply a predecessor that does not
+    // exist. Each takes the NAV proxy as its ONLY constructor argument, so one salt yields one address
+    // fleet-wide, exactly as for the group above.
+    uint256 internal constant AAVE_SAVINGS_WALLET_META = 1;
+    uint256 internal constant ANKR_STAKED_ETH_WALLET_META = 1;
+    uint256 internal constant COINBASE_STAKED_ETH_WALLET_META = 1;
+    uint256 internal constant ETHENA_SAVINGS_WALLET_META = 1;
+    uint256 internal constant ETHER_FI_STAKED_ETH_WALLET_META = 1;
+    uint256 internal constant KELP_RESTAKED_ETH_WALLET_META = 1;
+    uint256 internal constant LIDO_STAKED_ETH_WALLET_META = 1;
+    uint256 internal constant LIQUID_COLLECTIVE_STAKED_ETH_WALLET_META = 1;
+    uint256 internal constant MAPLE_SAVINGS_WALLET_META = 1;
+    uint256 internal constant NEXUS_MUTUAL_VAULTS_WALLET_META = 1;
+    uint256 internal constant RENZO_RESTAKED_ETH_WALLET_META = 1;
+    uint256 internal constant RESERVE_BASKETS_WALLET_META = 1;
+    uint256 internal constant ROCKET_POOL_STAKED_ETH_WALLET_META = 1;
+    uint256 internal constant SKY_SAVINGS_WALLET_META = 1;
+    uint256 internal constant SPARK_SAVINGS_WALLET_META = 1;
+    uint256 internal constant STADER_STAKED_ETH_WALLET_META = 1;
+    uint256 internal constant STAKEWISE_V3_OS_TOKEN_WALLET_META = 1;
+
+    //
     // Meta adapters taking ONE chain-specific protocol address (CREATE2 — same address wherever that
     // address is the same)
     //

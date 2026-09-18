@@ -30,6 +30,57 @@ import {EulerVaultsMetaBalanceAdapter} from "../../src/balances/MetaBalanceAdapt
 import {
     SymbioticVaultsMetaBalanceAdapter
 } from "../../src/balances/MetaBalanceAdapters/SymbioticVaultsMetaBalanceAdapter.sol";
+import {
+    AaveSavingsWalletMetaBalanceAdapter
+} from "../../src/balances/MetaBalanceAdapters/walletYield/AaveSavingsWalletMetaBalanceAdapter.sol";
+import {
+    AnkrStakedEthWalletMetaBalanceAdapter
+} from "../../src/balances/MetaBalanceAdapters/walletYield/AnkrStakedEthWalletMetaBalanceAdapter.sol";
+import {
+    CoinbaseStakedEthWalletMetaBalanceAdapter
+} from "../../src/balances/MetaBalanceAdapters/walletYield/CoinbaseStakedEthWalletMetaBalanceAdapter.sol";
+import {
+    EthenaSavingsWalletMetaBalanceAdapter
+} from "../../src/balances/MetaBalanceAdapters/walletYield/EthenaSavingsWalletMetaBalanceAdapter.sol";
+import {
+    EtherFiStakedEthWalletMetaBalanceAdapter
+} from "../../src/balances/MetaBalanceAdapters/walletYield/EtherFiStakedEthWalletMetaBalanceAdapter.sol";
+import {
+    KelpRestakedEthWalletMetaBalanceAdapter
+} from "../../src/balances/MetaBalanceAdapters/walletYield/KelpRestakedEthWalletMetaBalanceAdapter.sol";
+import {
+    LidoStakedEthWalletMetaBalanceAdapter
+} from "../../src/balances/MetaBalanceAdapters/walletYield/LidoStakedEthWalletMetaBalanceAdapter.sol";
+import {
+    LiquidCollectiveStakedEthWalletMetaBalanceAdapter
+} from "../../src/balances/MetaBalanceAdapters/walletYield/LiquidCollectiveStakedEthWalletMetaBalanceAdapter.sol";
+import {
+    MapleSavingsWalletMetaBalanceAdapter
+} from "../../src/balances/MetaBalanceAdapters/walletYield/MapleSavingsWalletMetaBalanceAdapter.sol";
+import {
+    NexusMutualVaultsWalletMetaBalanceAdapter
+} from "../../src/balances/MetaBalanceAdapters/walletYield/NexusMutualVaultsWalletMetaBalanceAdapter.sol";
+import {
+    RenzoRestakedEthWalletMetaBalanceAdapter
+} from "../../src/balances/MetaBalanceAdapters/walletYield/RenzoRestakedEthWalletMetaBalanceAdapter.sol";
+import {
+    ReserveBasketsWalletMetaBalanceAdapter
+} from "../../src/balances/MetaBalanceAdapters/walletYield/ReserveBasketsWalletMetaBalanceAdapter.sol";
+import {
+    RocketPoolStakedEthWalletMetaBalanceAdapter
+} from "../../src/balances/MetaBalanceAdapters/walletYield/RocketPoolStakedEthWalletMetaBalanceAdapter.sol";
+import {
+    SkySavingsWalletMetaBalanceAdapter
+} from "../../src/balances/MetaBalanceAdapters/walletYield/SkySavingsWalletMetaBalanceAdapter.sol";
+import {
+    SparkSavingsWalletMetaBalanceAdapter
+} from "../../src/balances/MetaBalanceAdapters/walletYield/SparkSavingsWalletMetaBalanceAdapter.sol";
+import {
+    StaderStakedEthWalletMetaBalanceAdapter
+} from "../../src/balances/MetaBalanceAdapters/walletYield/StaderStakedEthWalletMetaBalanceAdapter.sol";
+import {
+    StakeWiseV3OsTokenWalletMetaBalanceAdapter
+} from "../../src/balances/MetaBalanceAdapters/walletYield/StakeWiseV3OsTokenWalletMetaBalanceAdapter.sol";
 import {CapStablecoinBalanceAdapter} from "../../src/balances/BalanceAdapters/cap/CapStablecoinBalanceAdapter.sol";
 import {CapSavingsBalanceAdapter} from "../../src/balances/BalanceAdapters/cap/CapSavingsBalanceAdapter.sol";
 import {
@@ -163,6 +214,35 @@ contract DeployBalanceAdapters is BaseDeployScript {
         _deployIfEnabled("MorphoMarketsMeta"); // Meta-adapter: all Morpho markets; marketId set configured on NAV (ADR 0010)
         _deployIfEnabled("EulerVaultsMeta"); // Meta-adapter: all Euler V2 vaults (EulerEarn + core eVaults); supply/collateral + borrow legs; instance set on NAV (ADR 0010)
         _deployIfEnabled("SymbioticVaultsMeta"); // Meta-adapter: Symbiotic ERC-4626 vaults (NOT core vaults); single Supplied leg; instance set on NAV (ADR 0010)
+
+        // --- Wallet-held yield tokens (ADR 0010 meta family; one adapter per protocol) ---
+        // Each reports the RAW `balanceOf` of a token that is itself a registered, priced NAV asset, so the
+        // amount is bit-identical to what `ERC20DefaultBalanceAdapter` reported — only the identity changes.
+        // Enabling one is therefore value-neutral BUT NOT free: the token must stop being reported by the
+        // default adapter, or both report it. Claiming a coordinate now disarms the default adapter on-chain
+        // (`NAVRegistryLib._claim`), so the ordering hazard that made this a runbook step is closed.
+        //
+        // Inert until a config entry enables one: `_deployIfEnabled` reads
+        // `contracts-deployment-config/meta-balance-adapters/<chainId>.json` and returns immediately when the
+        // adapter is absent or disabled. Wiring the dispatch WITHOUT the config is deliberate — without a
+        // branch here, adding the config entry later would log a successful run and deploy nothing.
+        _deployIfEnabled("AaveSavingsWalletMeta");
+        _deployIfEnabled("AnkrStakedEthWalletMeta");
+        _deployIfEnabled("CoinbaseStakedEthWalletMeta");
+        _deployIfEnabled("EthenaSavingsWalletMeta");
+        _deployIfEnabled("EtherFiStakedEthWalletMeta");
+        _deployIfEnabled("KelpRestakedEthWalletMeta");
+        _deployIfEnabled("LidoStakedEthWalletMeta");
+        _deployIfEnabled("LiquidCollectiveStakedEthWalletMeta");
+        _deployIfEnabled("MapleSavingsWalletMeta");
+        _deployIfEnabled("NexusMutualVaultsWalletMeta");
+        _deployIfEnabled("RenzoRestakedEthWalletMeta");
+        _deployIfEnabled("ReserveBasketsWalletMeta");
+        _deployIfEnabled("RocketPoolStakedEthWalletMeta");
+        _deployIfEnabled("SkySavingsWalletMeta");
+        _deployIfEnabled("SparkSavingsWalletMeta");
+        _deployIfEnabled("StaderStakedEthWalletMeta");
+        _deployIfEnabled("StakeWiseV3OsTokenWalletMeta");
 
         // --- Gearbox Markets (Mainnet — ETH Alpha) ---
         _deployIfEnabled("GearboxV3MarketsMeta"); // Meta-adapter: all Gearbox markets; market set on NAV (ADR 0010)
@@ -379,6 +459,13 @@ contract DeployBalanceAdapters is BaseDeployScript {
         // Symbiotic Vaults meta-adapter (ERC-4626 Symbiotic vaults only, NOT core vaults; instance set on NAV, ADR 0010)
         if (_equals(adapterName, "SymbioticVaultsMeta")) {
             return _deploySymbioticVaultsMeta(adapterName, navCalculator);
+        }
+
+        // Wallet-held yield-token family. One delegation rather than seventeen branches here; address(0) means
+        // "not a member", so the chain below is unaffected.
+        {
+            address walletYield = _deployWalletYieldMeta(adapterName, navCalculator);
+            if (walletYield != address(0)) return walletYield;
         }
 
         // Euler Vaults meta-adapter (one adapter for all Euler V2 eVaults; instance set on NAV, ADR 0010)
@@ -1097,5 +1184,153 @@ contract DeployBalanceAdapters is BaseDeployScript {
 
     function _equals(string memory a, string memory b) internal pure returns (bool) {
         return keccak256(bytes(a)) == keccak256(bytes(b));
+    }
+
+    /// @notice Deploys one member of the wallet-held yield-token family, or address(0) if `adapterName` is not one.
+    /// @dev Each takes the NAV proxy as its ONLY constructor argument, so `_create2NavOnly` gives every member ONE
+    ///      address fleet-wide (`DeploySalts.*_WALLET_META`, version 1 — these have never been deployed, so unlike
+    ///      their neighbours there is no plain-CREATE generation to skip).
+    ///
+    ///      Returning address(0) for a non-member is what lets the caller keep a single delegation instead of
+    ///      seventeen branches; it cannot be confused with a failed deploy, because `_create2NavOnly` reverts
+    ///      rather than returning zero.
+    function _deployWalletYieldMeta(string memory adapterName, address navCalculator) internal returns (address) {
+        if (_equals(adapterName, "AaveSavingsWalletMeta")) {
+            return _create2NavOnly(
+                type(AaveSavingsWalletMetaBalanceAdapter).creationCode,
+                navCalculator,
+                "AaveSavingsWalletMetaBalanceAdapter",
+                DeploySalts.AAVE_SAVINGS_WALLET_META
+            );
+        }
+        if (_equals(adapterName, "AnkrStakedEthWalletMeta")) {
+            return _create2NavOnly(
+                type(AnkrStakedEthWalletMetaBalanceAdapter).creationCode,
+                navCalculator,
+                "AnkrStakedEthWalletMetaBalanceAdapter",
+                DeploySalts.ANKR_STAKED_ETH_WALLET_META
+            );
+        }
+        if (_equals(adapterName, "CoinbaseStakedEthWalletMeta")) {
+            return _create2NavOnly(
+                type(CoinbaseStakedEthWalletMetaBalanceAdapter).creationCode,
+                navCalculator,
+                "CoinbaseStakedEthWalletMetaBalanceAdapter",
+                DeploySalts.COINBASE_STAKED_ETH_WALLET_META
+            );
+        }
+        if (_equals(adapterName, "EthenaSavingsWalletMeta")) {
+            return _create2NavOnly(
+                type(EthenaSavingsWalletMetaBalanceAdapter).creationCode,
+                navCalculator,
+                "EthenaSavingsWalletMetaBalanceAdapter",
+                DeploySalts.ETHENA_SAVINGS_WALLET_META
+            );
+        }
+        if (_equals(adapterName, "EtherFiStakedEthWalletMeta")) {
+            return _create2NavOnly(
+                type(EtherFiStakedEthWalletMetaBalanceAdapter).creationCode,
+                navCalculator,
+                "EtherFiStakedEthWalletMetaBalanceAdapter",
+                DeploySalts.ETHER_FI_STAKED_ETH_WALLET_META
+            );
+        }
+        if (_equals(adapterName, "KelpRestakedEthWalletMeta")) {
+            return _create2NavOnly(
+                type(KelpRestakedEthWalletMetaBalanceAdapter).creationCode,
+                navCalculator,
+                "KelpRestakedEthWalletMetaBalanceAdapter",
+                DeploySalts.KELP_RESTAKED_ETH_WALLET_META
+            );
+        }
+        if (_equals(adapterName, "LidoStakedEthWalletMeta")) {
+            return _create2NavOnly(
+                type(LidoStakedEthWalletMetaBalanceAdapter).creationCode,
+                navCalculator,
+                "LidoStakedEthWalletMetaBalanceAdapter",
+                DeploySalts.LIDO_STAKED_ETH_WALLET_META
+            );
+        }
+        if (_equals(adapterName, "LiquidCollectiveStakedEthWalletMeta")) {
+            return _create2NavOnly(
+                type(LiquidCollectiveStakedEthWalletMetaBalanceAdapter).creationCode,
+                navCalculator,
+                "LiquidCollectiveStakedEthWalletMetaBalanceAdapter",
+                DeploySalts.LIQUID_COLLECTIVE_STAKED_ETH_WALLET_META
+            );
+        }
+        if (_equals(adapterName, "MapleSavingsWalletMeta")) {
+            return _create2NavOnly(
+                type(MapleSavingsWalletMetaBalanceAdapter).creationCode,
+                navCalculator,
+                "MapleSavingsWalletMetaBalanceAdapter",
+                DeploySalts.MAPLE_SAVINGS_WALLET_META
+            );
+        }
+        if (_equals(adapterName, "NexusMutualVaultsWalletMeta")) {
+            return _create2NavOnly(
+                type(NexusMutualVaultsWalletMetaBalanceAdapter).creationCode,
+                navCalculator,
+                "NexusMutualVaultsWalletMetaBalanceAdapter",
+                DeploySalts.NEXUS_MUTUAL_VAULTS_WALLET_META
+            );
+        }
+        if (_equals(adapterName, "RenzoRestakedEthWalletMeta")) {
+            return _create2NavOnly(
+                type(RenzoRestakedEthWalletMetaBalanceAdapter).creationCode,
+                navCalculator,
+                "RenzoRestakedEthWalletMetaBalanceAdapter",
+                DeploySalts.RENZO_RESTAKED_ETH_WALLET_META
+            );
+        }
+        if (_equals(adapterName, "ReserveBasketsWalletMeta")) {
+            return _create2NavOnly(
+                type(ReserveBasketsWalletMetaBalanceAdapter).creationCode,
+                navCalculator,
+                "ReserveBasketsWalletMetaBalanceAdapter",
+                DeploySalts.RESERVE_BASKETS_WALLET_META
+            );
+        }
+        if (_equals(adapterName, "RocketPoolStakedEthWalletMeta")) {
+            return _create2NavOnly(
+                type(RocketPoolStakedEthWalletMetaBalanceAdapter).creationCode,
+                navCalculator,
+                "RocketPoolStakedEthWalletMetaBalanceAdapter",
+                DeploySalts.ROCKET_POOL_STAKED_ETH_WALLET_META
+            );
+        }
+        if (_equals(adapterName, "SkySavingsWalletMeta")) {
+            return _create2NavOnly(
+                type(SkySavingsWalletMetaBalanceAdapter).creationCode,
+                navCalculator,
+                "SkySavingsWalletMetaBalanceAdapter",
+                DeploySalts.SKY_SAVINGS_WALLET_META
+            );
+        }
+        if (_equals(adapterName, "SparkSavingsWalletMeta")) {
+            return _create2NavOnly(
+                type(SparkSavingsWalletMetaBalanceAdapter).creationCode,
+                navCalculator,
+                "SparkSavingsWalletMetaBalanceAdapter",
+                DeploySalts.SPARK_SAVINGS_WALLET_META
+            );
+        }
+        if (_equals(adapterName, "StaderStakedEthWalletMeta")) {
+            return _create2NavOnly(
+                type(StaderStakedEthWalletMetaBalanceAdapter).creationCode,
+                navCalculator,
+                "StaderStakedEthWalletMetaBalanceAdapter",
+                DeploySalts.STADER_STAKED_ETH_WALLET_META
+            );
+        }
+        if (_equals(adapterName, "StakeWiseV3OsTokenWalletMeta")) {
+            return _create2NavOnly(
+                type(StakeWiseV3OsTokenWalletMetaBalanceAdapter).creationCode,
+                navCalculator,
+                "StakeWiseV3OsTokenWalletMetaBalanceAdapter",
+                DeploySalts.STAKEWISE_V3_OS_TOKEN_WALLET_META
+            );
+        }
+        return address(0);
     }
 }

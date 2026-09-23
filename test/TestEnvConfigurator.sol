@@ -17,7 +17,7 @@ abstract contract TestEnvConfigurator is Test {
     /// @notice Returns the RPC URL for the given network.
     /// @dev Prefers a chain-specific env var (MAINNET_URL, ARBITRUM_URL, BASE_URL, OP_URL, GNOSIS_URL, BSC_URL) whenever
     ///      one is set, and otherwise builds the Alchemy URL from ALCHEMY_API_KEY. Reverts if neither source is set.
-    ///      CI sets ONLY ALCHEMY_API_KEY (knode is deprecated) — note that "prefers" is by presence, not validity, so a
+    ///      CI sets ONLY ALCHEMY_API_KEY (no *_URL overrides) — note that "prefers" is by presence, not validity, so a
     ///      malformed or empty-keyed *_URL is still chosen over the Alchemy fallback and fails every call. Leave them unset
     ///      rather than blank.
     /// @param network Alchemy network identifier (e.g. "eth-mainnet", "arb-mainnet", "base-mainnet", "opt-mainnet", "gnosis-mainnet", "bnb-mainnet")

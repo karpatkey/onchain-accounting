@@ -590,8 +590,10 @@ library NAVRegistryLib {
         if (token == address(0)) return;
         // NOT fail-open, unlike {_reincludeIfAsset}, and the asymmetry is deliberate. `addSupportedAsset`
         // genuinely reverts `AssetNotFound` for a coordinate that is not a registered asset, so swallowing
-        // that is correct. `removeSupportedAsset` has no such case: it reverts only for a non-NAV caller —
-        // impossible here, since the library runs by DELEGATECALL and `msg.sender` is the proxy — and
+        // that is correct. `removeSupportedAsset` has no such case: it reverts only for a caller that is not
+        // its pinned `NAV_CALCULATOR`, which cannot happen for a correctly deployed pair — the library runs by
+        // DELEGATECALL so `msg.sender` is the proxy, the adapter pins its NAV in an immutable, and
+        // `_setErc20DefaultBalanceAdapter` is set-once, so the pairing is fixed at deploy — and
         // `EnumerableSet.remove` is unguarded on membership, so a non-asset coordinate is simply a no-op.
         // A catch here could therefore absorb nothing legitimate and only a real fault, leaving the token
         // STILL ARMED on the default adapter while a meta adapter claims it: two reporters, no health flag.

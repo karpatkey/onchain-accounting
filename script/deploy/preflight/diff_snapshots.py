@@ -57,6 +57,24 @@ def load_reclassifications(path: Path = MANIFEST) -> dict[int, dict[str, dict]]:
             for cid, rows in raw.get("reclassifications", {}).items()}
 
 
+def _identity_matches(gained: dict, row: dict) -> bool:
+    """Whether the gained leg carries the protocol identity the manifest declares for this asset.
+
+    Load-bearing, not belt-and-braces. Changing these three fields IS the migration, so a pairing that
+    ignored them accepted a Wallet row reappearing under the WRONG protocol's slugs — wstETH attributed to
+    Sky's, say — as RECLASSIFIED with no DIFF. A row that predates the identity fields is treated as NOT
+    matching, so an un-regenerated manifest fails loudly instead of silently widening what it downgrades."""
+    for field, key in (("protocolBrand", "toProtocolBrand"),
+                       ("protocolId", "toProtocolId"),
+                       ("protocolSubId", "toProtocolSubId")):
+        want = row.get(key)
+        if not want:
+            return False
+        if (gained.get(field) or "").lower() != want.lower():
+            return False
+    return True
+
+
 def split_reclassified(lost: list[dict], gained: list[dict], expect: dict[str, dict]):
     """Collapse intended wallet -> protocol moves. Returns (still_lost, still_gained, info_lines).
 
@@ -78,7 +96,8 @@ def split_reclassified(lost: list[dict], gained: list[dict], expect: dict[str, d
             if (gp["balanceAsset"]["address"].lower() == addr
                     and gp["isDebt"] == lp["isDebt"]
                     and str(gp["amount"]) == str(lp["amount"])
-                    and gp["positionKind"] == row["toPositionKind"]):
+                    and gp["positionKind"] == row["toPositionKind"]
+                    and _identity_matches(gp, row)):
                 match = j
                 break
         if match is None:
@@ -259,11 +278,17 @@ def self_test() -> int:
     """Pin the pairing logic. The manifest's whole safety claim is that it downgrades identity churn and
     NEVER value churn, so the cases that must STAY a DIFF matter more than the one that collapses."""
     expect = {"0xaaa": {"asset": "0xAAA", "symbol": "wstETH",
-                        "adapter": "LidoStakedEthWalletMeta", "toPositionKind": "Staking"}}
+                        "adapter": "LidoStakedEthWalletMeta", "toPositionKind": "Staking",
+                        "toProtocolBrand": "0xbrand", "toProtocolId": "0xid", "toProtocolSubId": "0xsub"}}
+    # Same row with the identity fields stripped, for the "un-regenerated manifest" case.
+    expect_no_ident = {"0xaaa": {k: v for k, v in expect["0xaaa"].items() if not k.startswith("toProtocol")}}
 
-    def pos(kind, amount="100", debt=False, asset="0xAAA"):
+    GOOD = ("0xbrand", "0xid", "0xsub")
+
+    def pos(kind, amount="100", debt=False, asset="0xAAA", ident=GOOD):
         return {"balanceAsset": {"address": asset}, "amount": amount,
-                "positionKind": kind, "isDebt": debt}
+                "positionKind": kind, "isDebt": debt,
+                "protocolBrand": ident[0], "protocolId": ident[1], "protocolSubId": ident[2]}
 
     cases = [
         ("the intended move collapses",
@@ -284,10 +309,16 @@ def self_test() -> int:
          [], [pos("Staking")], 0, 1, 0),
         ("two identical holdings collapse one-for-one, not many-for-one",
          [pos("Wallet"), pos("Wallet")], [pos("Staking")], 1, 0, 1),
+        ("the WRONG protocol identity stays a diff",
+         [pos("Wallet")], [pos("Staking", ident=("0xbad", "0xbad", "0xbad"))], 1, 1, 0),
+        ("a manifest row with no declared identity downgrades nothing",
+         [pos("Wallet")], [pos("Staking")], 1, 1, 0, True),
     ]
     failures = []
-    for why, lost, gained, want_l, want_g, want_i in cases:
-        l, g, i = split_reclassified(lost, gained, expect)
+    for case in cases:
+        why, lost, gained, want_l, want_g, want_i = case[:6]
+        exp = expect_no_ident if (len(case) > 6 and case[6]) else expect
+        l, g, i = split_reclassified(lost, gained, exp)
         if (len(l), len(g), len(i)) != (want_l, want_g, want_i):
             failures.append(f"  {why}: expected lost/gained/info {want_l}/{want_g}/{want_i}, "
                             f"got {len(l)}/{len(g)}/{len(i)}")
@@ -351,6 +382,10 @@ def self_test() -> int:
                 failures.append(f"  chain {cid}: bad asset address {addr!r}")
             if r["toPositionKind"] not in ("Staking", "Supplied"):
                 failures.append(f"  chain {cid} {r['symbol']}: unexpected kind {r['toPositionKind']!r}")
+            for key in ("toProtocolBrand", "toProtocolId", "toProtocolSubId"):
+                v = r.get(key)
+                if not v or not v.startswith("0x") or len(v) != 66:
+                    failures.append(f"  chain {cid} {r['symbol']}: {key} missing or not a bytes32 ({v!r})")
 
     if failures:
         print("SELF-TEST FAILED:\n" + "\n".join(failures))

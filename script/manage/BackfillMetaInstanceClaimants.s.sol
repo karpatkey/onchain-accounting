@@ -68,6 +68,17 @@ contract BackfillMetaInstanceClaimants is Script {
     ///      An earlier version of this docstring claimed "every step is gated on live state, so a partial run
     ///      resumes". That was false in the one way that matters: the removal destroys the state the resume
     ///      reads. The snapshot is the state the resume reads instead.
+    ///
+    ///      TWO ORDERING RULES make the snapshot actually work, both of which a first attempt got wrong:
+    ///
+    ///      1. Recovery outranks `NothingToDo`. `pending` counts coordinates that are IN a set and unclaimed,
+    ///         so a coordinate an interrupted run removed counts toward NOTHING. Computing `pending` first and
+    ///         reverting on zero left the recovery block unreachable in exactly its own scenario.
+    ///      2. The file is never deleted at the end of `run()`. Under `forge script` the body runs as LOCAL
+    ///         SIMULATION and Foundry sends the recorded transactions only after `run()` returns — so a delete
+    ///         there removes the recovery file before any transaction has been broadcast, and the
+    ///         post-condition loop is checking simulated state. It is dropped at the TOP of a later run
+    ///         instead, where the chain state is confirmed.
     function _snapshotPath(uint256 chainId) internal pure returns (string memory) {
         return string.concat("script/manage/.backfill-claimants-", vm.toString(chainId), ".json");
     }
@@ -106,6 +117,27 @@ contract BackfillMetaInstanceClaimants is Script {
             }
         }
 
+        // --- the snapshot is read FIRST, because recovery must outrank `NothingToDo` ----------------------
+        // `pending` counts coordinates that are IN a set and unclaimed. A coordinate an interrupted run
+        // removed and failed to re-add is in NO set, so it counts toward nothing: computing `pending` first
+        // and reverting `NothingToDo` on zero made the recovery block below UNREACHABLE in exactly the
+        // situation it exists for, with a valid snapshot sitting on disk. Read, recover, then decide.
+        string memory snapPath = _snapshotPath(chainId);
+        bool haveSnap = vm.exists(snapPath);
+        string memory snapJson = haveSnap ? vm.readFile(snapPath) : "";
+
+        // How many coordinates a previous run lost, measured against the snapshot rather than the chain.
+        uint256 lost;
+        if (haveSnap) {
+            for (uint256 i; i < adapters.length; ++i) {
+                string memory k = string.concat('.sets["', vm.toString(adapters[i]), '"]');
+                if (!vm.keyExistsJson(snapJson, k)) continue;
+                uint256 want = vm.parseJsonBytes32Array(snapJson, k).length;
+                uint256 have = NAVCalculator(nav).getMetaInstances(adapters[i]).length;
+                if (want > have) lost += want - have;
+            }
+        }
+
         // --- what is left to do --------------------------------------------------------------------------
         uint256 pending;
         uint256 total;
@@ -121,15 +153,18 @@ contract BackfillMetaInstanceClaimants is Script {
         console2.log("nav              :", nav);
         console2.log("coordinates total:", total);
         console2.log("coordinates to do:", pending);
-        if (pending == 0) revert NothingToDo();
+        console2.log("coordinates lost :", lost);
 
-        // --- durable snapshot BEFORE any write, so an interrupted run is recoverable ----------------------
-        // Written even when a snapshot already exists: re-reading the chain here is safe because nothing has
-        // been removed yet in THIS run, and a set that a previous run lost is restored below before it is
-        // overwritten. The file is committed to nothing; it is run-local recovery state.
-        string memory snapPath = _snapshotPath(chainId);
-        bool haveSnap = vm.exists(snapPath);
-        string memory snapJson = haveSnap ? vm.readFile(snapPath) : "";
+        // NOTHING TO DO means nothing pending AND nothing lost. This is also the ONLY place the snapshot may
+        // be deleted: here the chain state is CONFIRMED — it is what a previous run's broadcast actually
+        // landed — whereas anything after `startBroadcast()` in this function is still local simulation.
+        if (pending == 0 && lost == 0) {
+            if (haveSnap) {
+                console2.log("every governed coordinate is claimed; dropping the recovery snapshot");
+                vm.removeFile(snapPath);
+            }
+            revert NothingToDo();
+        }
 
         // RECOVERY FIRST: any adapter whose snapshot set is longer than its on-chain set lost coordinates to
         // an interrupted run. Restore them before doing any new work, and do it OUTSIDE the round-trip so a
@@ -231,9 +266,17 @@ contract BackfillMetaInstanceClaimants is Script {
                 if (_claimantOf(nav, set[x]) != adapters[i]) revert BackfillIncomplete(adapters[i], set[x]);
             }
         }
-        // Only now is the snapshot safe to drop. Leaving it would make the NEXT run believe a set was lost
-        // whenever an operator legitimately removes a coordinate afterwards.
-        if (vm.exists(snapPath)) vm.removeFile(snapPath);
-        console2.log("done. every governed coordinate now names its adapter.");
+        // THE SNAPSHOT IS DELIBERATELY KEPT. Deleting it here would run during local simulation: under
+        // `forge script` the body executes first and Foundry only sends the recorded transactions after
+        // `run()` returns. So the post-condition loop above is checking SIMULATED state, and a delete here
+        // would remove the recovery file before a single transaction had been broadcast — precisely when a
+        // partially-landed broadcast needs it. An earlier version did exactly that, which defeated the point
+        // of taking a snapshot at all.
+        //
+        // The file is dropped instead at the TOP of a later run, where the chain state is confirmed: once
+        // nothing is pending and nothing is lost, the backfill demonstrably landed and the snapshot is
+        // redundant. Re-running is the completion check.
+        console2.log("done (simulated). Re-run after the broadcast confirms: it clears the snapshot when");
+        console2.log("every governed coordinate names its adapter, and restores anything the broadcast lost.");
     }
 }

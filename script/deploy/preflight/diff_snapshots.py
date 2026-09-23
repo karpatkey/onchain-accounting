@@ -202,9 +202,27 @@ def diff_chain(a: dict, b: dict, tol: float, expect: dict[str, dict] | None = No
     for k in sorted(set(aa) - set(ba)):
         out.append(f"DIFF  adapter MISSING in new: {k} ({aa[k]['address']})")
     expected_adapters = {r["adapter"] for r in expect.values()}
+    # Coordinates the manifest expects for each newly-added adapter, so an ADDED adapter is checked against
+    # what it should govern rather than merely recognised by name. Without this the per-adapter coordinate
+    # diff below never ran for any of the 17 (they are in `ba` only), so not one of the 35 coordinates was
+    # compared and the whole reclassification rested on a cardinality check.
+    want_by_adapter: dict[str, set[str]] = {}
+    for addr, row in expect.items():
+        want_by_adapter.setdefault(row["adapter"], set()).add(addr)
+    reclassified_ok = 0
     for k in sorted(set(ba) - set(aa)):
         if k in expected_adapters:
-            out.append(f"INFO  adapter ADDED in new:   {k} ({ba[k]['address']}) - reclassification")
+            got = {coord_to_address(x) for x in ba[k]["metaInstances"]}
+            want = want_by_adapter.get(k, set())
+            if got == want:
+                out.append(f"INFO  adapter ADDED in new:   {k} ({ba[k]['address']}) - reclassification,"
+                           f" {len(want)} expected coordinate(s)")
+                reclassified_ok += len(want)
+                continue
+            for x in sorted(want - got):
+                out.append(f"DIFF  adapter {k} MISSING expected reclassified coordinate {x}")
+            for x in sorted(got - want):
+                out.append(f"DIFF  adapter {k} governs UNEXPECTED coordinate {x}")
             continue
         out.append(f"DIFF  adapter ADDED in new:   {k} ({ba[k]['address']})")
     for k in sorted(set(aa) & set(ba)):
@@ -228,7 +246,10 @@ def diff_chain(a: dict, b: dict, tol: float, expect: dict[str, dict] | None = No
         # chain, so that exact delta is expected and anything else is not. Without this the gate failed on the
         # very change the manifest exists to whitelist.
         delta = b["metaInstanceTotal"] - a["metaInstanceTotal"]
-        if expect and delta == len(expect):
+        # Backed by the coordinates actually verified above, not by `len(expect)` alone. A pure cardinality
+        # rule was satisfied by ANY set of the right size — measured: substituting WETH for ankrETH on
+        # `AnkrStakedEthWalletMeta` still printed "matches the reclassified coordinate(s)" and exited 0.
+        if expect and delta == reclassified_ok and reclassified_ok > 0:
             out.append(f"INFO  metaInstanceTotal {a['metaInstanceTotal']} -> {b['metaInstanceTotal']}"
                        f" (+{delta}, matches the {len(expect)} reclassified coordinate(s))")
         else:
@@ -237,6 +258,21 @@ def diff_chain(a: dict, b: dict, tol: float, expect: dict[str, dict] | None = No
     # --- accounts -----------------------------------------------------------
     acc_a = {x["label"]: x for x in a["accounts"]}
     acc_b = {x["label"]: x for x in b["accounts"]}
+    # The VALUE half of this gate is the half that matters, and it was silently skippable: the loop below
+    # iterates the INTERSECTION, so a snapshot captured without accounts on either side meant NAV and every
+    # position line went unchecked while the chain still reported "0 structural difference(s)". An account
+    # dropped between captures disappeared the same way.
+    for label in sorted(set(acc_a) ^ set(acc_b)):
+        side = "new" if label in acc_b else "old"
+        out.append(f"DIFF  account {label} present only in the {side} snapshot - not compared")
+    if not (set(acc_a) & set(acc_b)):
+        # INFO, not DIFF, when BOTH sides are equally empty: that is a property of how the snapshots were
+        # captured, not a difference between them, and making it a DIFF meant comparing a snapshot to ITSELF
+        # reported 19 problems on the 16 chains whose baselines carry no accounts. It still has to be said
+        # out loud, because it means this run's value half checked nothing. An ASYMMETRIC account set is a
+        # real difference and is flagged above.
+        out.append("INFO  no account is present in BOTH snapshots - the NAV and position comparison did"
+                   " NOT run for this chain; its value half is unverified")
     for label in sorted(set(acc_a) & set(acc_b)):
         xa, xb = acc_a[label], acc_b[label]
         if "nav" not in xa or "nav" not in xb:
@@ -361,12 +397,18 @@ def self_test() -> int:
                    (3, 2, False, "one fewer is not"),
                    (3, 0, False, "no change with a non-empty manifest is not reached")]
     for manifest_n, delta, want_info, why in total_cases:
-        exp = {f"0x{i:040x}": {"symbol": "T", "adapter": "A", "toPositionKind": "Staking"}
+        exp = {f"0x{i:040x}": {"symbol": "T", "adapter": "A", "toPositionKind": "Staking",
+                               "toProtocolBrand": "0xb", "toProtocolId": "0xi", "toProtocolSubId": "0xs"}
                for i in range(manifest_n)}
+        # The adapter must actually be ADDED and governing exactly the manifest's coordinates, because the
+        # delta rule is now backed by verified coordinates rather than by len(expect).
+        coords = ["0x" + "0" * 24 + f"{i:040x}"[-40:] for i in range(manifest_n)]
         a = {"metaInstanceTotal": 10, "assets": [], "adapters": [], "accounts": [],
              "proxy": "", "implementation": "", "erc20DefaultBalanceAdapter": "",
              "roles": {}, "version": 1, "usdDecimals": 8}
-        b = dict(a, metaInstanceTotal=10 + delta)
+        b = dict(a, metaInstanceTotal=10 + delta,
+                 adapters=[{"configKey": "A", "address": "0x1", "adapterType": "Custom",
+                            "metaInstances": coords}])
         if delta == 0:
             continue  # no line is emitted at all when the totals match
         lines = [ln for ln in diff_chain(a, b, 0.01, exp) if "metaInstanceTotal" in ln]

@@ -297,6 +297,18 @@ contract RegisterAssets is BaseDeployScript {
                 if (registered && dup) {
                     revert FeedOrderMismatch(asset, dupAt, feed, feed);
                 }
+                // AND against the CONFIG's own earlier entries, which the on-chain scan cannot see. It only
+                // searches the first `onChainFeeds` live slots and is gated on `registered`, so a config
+                // listing the same address twice at positions >= onChainFeeds — [A, B, B'] with B == B'
+                // against a live [A] — planned two upserts and the second silently rewrote the first's
+                // staleness window. Same hole for an unregistered asset, where `registered == false`
+                // suppressed the check even though `registerAsset` in the SAME batch registers the primary.
+                // Pre-upsert both aborted loudly on `PriceFeedAlreadyRegistered`; this restores that.
+                for (uint256 pIdx; pIdx < i; ++pIdx) {
+                    string memory prior = ConfigReader.readAssetFeedAddress(vm, currentChainId, symbol, pIdx);
+                    if (bytes(prior).length == 0) continue;
+                    if (vm.parseAddress(prior) == feed) revert FeedOrderMismatch(asset, pIdx, feed, feed);
+                }
                 tmp[n++] = abi.encodeCall(NAVCalculator.addOrModifyPriceFeed, (asset, feed, pt, hb));
             }
             resolvableIdx++;

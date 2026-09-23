@@ -12,9 +12,11 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 ///         wallet holding. Instances are the token addresses, governed on NAVCalculator (ADR 0010).
 /// @dev Kind is `Supplied`. Exit at par redeems ERC-4626 savings shares. Nothing is staked.
 ///
-///      The token must be EXCLUDED from `ERC20DefaultBalanceAdapter` before being added here, or both
-///      adapters report it under different reconciliation keys and NAV double-counts with no health flag.
-///      See {WalletTokenMetaBalanceAdapterBase}.
+///      The token does NOT need excluding from `ERC20DefaultBalanceAdapter` by hand: claiming a coordinate
+///      disarms the default adapter for it in the same transaction (`NAVRegistryLib._claim`), and this
+///      adapter additionally suppresses its own leg while the default adapter still reports the token. An
+///      earlier version of this line said the exclusion was required first; that was true before the
+///      claimant map and is no longer. See {WalletTokenMetaBalanceAdapterBase}.
 contract SkySavingsWalletMetaBalanceAdapter is WalletTokenMetaBalanceAdapterBase {
     /// @param navCalculator_ The NAVCalculator contract for asset-registry access.
     constructor(address navCalculator_) WalletTokenMetaBalanceAdapterBase(navCalculator_) {}

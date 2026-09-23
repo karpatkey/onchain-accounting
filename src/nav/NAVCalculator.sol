@@ -30,13 +30,19 @@ import "src/constants.sol";
 ///      margin, cite this one — and re-measure it, because a number in a comment is never evidence.
 ///
 ///      As of the heartbeat upsert, measured by `forge build --sizes`:
-///        - `NAVCalculator`        24,403 / 24,576 -> **173 bytes** free
-///        - `NAVCalculatorUpgradeTarget`  24,403 / 24,576 -> **173 bytes** free  (identical: empty subclass)
+///        - `NAVCalculator`        24,511 / 24,576 -> **65 bytes** free
+///        - `NAVCalculatorUpgradeTarget`  24,511 / 24,576 -> **65 bytes** free  (identical: empty subclass)
 ///
-///      Was 24,481 / 95 free earlier in this PR. Fusing the claim guard with the `addSupportedAsset` it
-///      protects into one library call removed an external-call encoding from two call sites and returned 78
-///      bytes. Re-measured with `forge build --sizes` on a clean tree at 0f4c1af3; a reviewer found a script
-///      docstring citing 173 against this block's 95, and this block was the stale one.
+///      This number moved TWICE during this PR and both moves are worth knowing, because 65 is tight enough
+///      that the next change has to be sized against it deliberately:
+///        - 24,481 / 95 -> 24,403 / 173: fusing the claim guard with the `addSupportedAsset` it protects into
+///          one library call removed an external-call encoding from two call sites, returning 78 bytes.
+///        - 24,403 / 173 -> 24,511 / 65: splitting that fused call by caller (`revertIfClaimed`) cost 108.
+///          `registerAsset` passes false and `includeAssetInDefaultAdapter` true, because reverting the whole
+///          registration made a claimed token un-re-registerable — a review finding, not a preference.
+///      Re-measured with `forge build --sizes` on a clean tree. A new external selector is ~220 bytes and does
+///      NOT fit; a reviewer previously caught a script citing 173 against this block's then-stale 95, so if
+///      you cite a margin, cite this one and re-measure it.
 ///
 ///      ⚠️ CI's Build step is literally `forge build --sizes`, which **exits 1** on ANY contract over the limit,
 ///      `test/` included. Verified by probe: an oversized contract under `test/` produces
@@ -185,7 +191,7 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
         // Add asset to default adapter's inclusion list so wallet balances are reported — unless a meta
         // adapter already claims it. Claiming a coordinate does not require the token to be a registered
         // asset yet, so claim-then-register would otherwise end with two reporters.
-        _includeAssetIfUnclaimed(asset);
+        _includeAssetIfUnclaimed(asset, false);
 
         emit AssetRegistered(asset, _getRegisteredAsset(asset).decimals);
     }
@@ -379,7 +385,7 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
         _requireManager();
         _requireAssetExists(asset);
         // A meta adapter may already govern this token; including it would make TWO reporters.
-        _includeAssetIfUnclaimed(asset);
+        _includeAssetIfUnclaimed(asset, true);
     }
 
     /// @inheritdoc INAVCalculator

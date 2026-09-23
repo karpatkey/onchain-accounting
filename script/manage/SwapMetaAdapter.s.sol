@@ -198,12 +198,18 @@ contract SwapMetaAdapter is BaseDeployScript {
             // coordinates, nothing was verified. `protocolName()` cannot substitute — a RENAME is a
             // legitimate reason to swap, and this script's first real use was one — so the operator confirms
             // instead, with both names logged above for comparison.
-            bool vacuous = true;
-            for (uint256 i = 0; i < instances.length; i++) {
-                if (bytes32(uint256(uint160(oldAssets[i]))) != instances[i]) {
-                    vacuous = false;
-                    break;
-                }
+            // Bounded on `oldAssets.length`, not `instances.length`: `underlyingAssetsSupportedForInstances`
+            // returns the CONCATENATION of per-instance asset lists, so it is SHORTER whenever an instance
+            // yields no asset — a reverting `instanceAssets` stores a zero-length list, and Curve's recorded
+            // `getPool -> address(0)` case does exactly that. Indexing by `instances.length` panicked 0x32
+            // on such a set, which blocked the swap with an error the operator cannot read.
+            //
+            // A length mismatch also means the one-asset-per-instance shape does not hold, so the comparison
+            // below is not the tautology this guard is looking for: treat it as NOT vacuous and let the
+            // asset comparison above stand on its own.
+            bool vacuous = oldAssets.length == instances.length;
+            for (uint256 i = 0; vacuous && i < oldAssets.length; i++) {
+                if (bytes32(uint256(uint160(oldAssets[i]))) != instances[i]) vacuous = false;
             }
             if (vacuous && !vm.envOr("SWAP_IDENTITY_CONFIRMED", false)) {
                 console2.log("The asset comparison cannot tell these two adapters apart:");

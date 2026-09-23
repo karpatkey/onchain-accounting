@@ -501,13 +501,21 @@ library NAVRegistryLib {
         // [])` wipes a dormant pre-#335 array, and every coordinate that array still lists gets released —
         // including coordinates the LIVE adapter owns and is still reporting.
         //
-        // The condition is "someone ELSE owns it", not "we own it", and the difference is load-bearing. On an
-        // upgraded proxy `_claimant` is empty for every pre-existing coordinate, so requiring `== adapter`
-        // would make release a no-op exactly there and stop re-arming the default adapter on removal — an
-        // under-report introduced while fixing an over-report. Unclaimed still releases; only a claim held by
-        // a different adapter is left alone.
+        // THE CONDITION IS "WE OWN IT", and an earlier version of this comment argued the opposite — that
+        // skipping only a claim held by a DIFFERENT adapter was load-bearing, because on an upgraded proxy
+        // `_claimant` is empty and requiring `== adapter` would stop release re-arming the default adapter.
+        // That reasoning traded the wrong way round. In the un-backfilled window `holder == 0` for every
+        // pre-existing coordinate, so the weaker gate did not fire at all: wiping a dormant residue array
+        // re-armed the default adapter for coordinates a LIVE adapter was still reporting, and
+        // `addSupportedAsset` succeeds for a registered asset — two reporters, no health flag.
+        //
+        // Both options lose something in that window; they do not lose the same KIND of thing. The weaker
+        // gate risks an OVER-report, which this repo never licenses. This one declines to re-arm a coordinate
+        // whose ownership it cannot prove, which is an under-report — licensed everywhere here, and repaired
+        // by `BackfillMetaInstanceClaimants` populating the map. On a backfilled or freshly deployed proxy
+        // `holder == adapter` for every legitimately held coordinate, so nothing is lost at all.
         address holder = claimant[instance];
-        if (holder != address(0) && holder != adapter) return;
+        if (holder != adapter) return;
 
         delete claimant[instance];
         _reincludeIfAsset(erc20DefaultBalanceAdapter, instance);
@@ -569,14 +577,30 @@ library NAVRegistryLib {
     ///      NOT fail-open, unlike {_reincludeIfAsset}: this runs where the asset is known-registered, so a
     ///      revert from `addSupportedAsset` is a real fault and must reach the MANAGER rather than be
     ///      swallowed.
+    /// @dev `revertIfClaimed` splits the two callers, and collapsing them was a trap.
+    ///
+    ///      `includeAssetInDefaultAdapter` is an operator ASKING for a second reporter, so refusing loudly is
+    ///      the right answer: true.
+    ///
+    ///      `registerAsset` is not asking for anything — arming the default adapter is an incidental
+    ///      convenience on the way to registering an asset. Reverting there made a claimed token permanently
+    ///      UN-RE-REGISTERABLE: `unregisterAsset` does not release the claim, so the documented
+    ///      unregister-then-register repair for a wrong feed died on the second half, and `RegisterAssets`
+    ///      planned it for any unregistered asset with no claimant check — so a whole chain's Safe MultiSend
+    ///      reverted at execution, after the batch file had been written. With `false` the asset registers and
+    ///      simply is not armed, which is the correct end state anyway: its meta adapter reports it.
     function includeAssetIfUnclaimed(
         mapping(bytes32 => address) storage claimant,
         address erc20DefaultBalanceAdapter,
-        address asset
+        address asset,
+        bool revertIfClaimed
     ) external {
         bytes32 coord = bytes32(uint256(uint160(asset)));
         address holder = claimant[coord];
-        if (holder != address(0)) revert IBalances.MetaInstanceClaimedByAnotherAdapter(coord, holder);
+        if (holder != address(0)) {
+            if (revertIfClaimed) revert IBalances.MetaInstanceClaimedByAnotherAdapter(coord, holder);
+            return; // already governed: registering the asset is fine, arming the default adapter is not
+        }
         ERC20DefaultBalanceAdapter(erc20DefaultBalanceAdapter).addSupportedAsset(asset);
     }
 

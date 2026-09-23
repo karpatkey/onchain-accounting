@@ -8,13 +8,15 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 
 /// @title Aave V3 wallet-held yield token adapter
 /// @author KPK
-/// @notice Reports an account's wallet-held sGHO as a Aave V3 position rather than an anonymous
+/// @notice Reports an account's wallet-held sGHO as an Aave V3 position rather than an anonymous
 ///         wallet holding. Instances are the token addresses, governed on NAVCalculator (ADR 0010).
 /// @dev Kind is `Supplied`. Exit at par redeems savings shares against the GHO market.
 ///
-///      The token must be EXCLUDED from `ERC20DefaultBalanceAdapter` before being added here, or both
-///      adapters report it under different reconciliation keys and NAV double-counts with no health flag.
-///      See {WalletTokenMetaBalanceAdapterBase}.
+///      The token does NOT need excluding from `ERC20DefaultBalanceAdapter` by hand: claiming a coordinate
+///      disarms the default adapter for it in the same transaction (`NAVRegistryLib._claim`), and this
+///      adapter additionally suppresses its own leg while the default adapter still reports the token. An
+///      earlier version of this line said the exclusion was required first; that was true before the
+///      claimant map and is no longer. See {WalletTokenMetaBalanceAdapterBase}.
 contract AaveSavingsWalletMetaBalanceAdapter is WalletTokenMetaBalanceAdapterBase {
     /// @param navCalculator_ The NAVCalculator contract for asset-registry access.
     constructor(address navCalculator_) WalletTokenMetaBalanceAdapterBase(navCalculator_) {}

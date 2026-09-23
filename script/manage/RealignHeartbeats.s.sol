@@ -203,18 +203,47 @@ contract RealignHeartbeats is Script {
                 // Bounded by the CONFIG array, not by `live.length`. Those lengths are unrelated: a config
                 // listing [A, B, C] against a single live registration C would only ever examine config
                 // index 0, conclude C is unmatched, and silently drop it from the rollout.
+                // BOUND ON `.heartbeat`, AND RESOLVE THE ADDRESS THE WAY THE CONFIG ACTUALLY WRITES IT.
+                //
+                // This used to bound the scan on `.address` and `break` when that key was missing, treating
+                // "this entry has no literal address" as "past the end of the array". 11 of the 47 configured
+                // monitor feeds are Custom and name a deployed feed instead — `{"type":"Custom","feed":
+                // "rETHCrossRate",...}` on chains 1, 42161 and 8453 — so each of those broke at k = 0 and was
+                // dropped with no output. Worse, the `break` aborted the scan for the WHOLE asset: chain 1's
+                // stETH lists a Custom monitor at index 0 and a Chainlink monitor WITH an address at index 1,
+                // so the addressed one was never examined either. The script printed success having realigned
+                // none of them.
+                //
+                // `ConfigReader.readAssetMonitorFeedAddress` resolves both forms — a literal `address`, and a
+                // Custom `feed` name looked up in the deployment record — which is what the primary axis and
+                // `RegisterAssets` already use. `.heartbeat` is present on every entry, so it is the honest
+                // end-of-array sentinel, and an address that still will not resolve is skipped LOUDLY.
                 bool matched;
                 uint256 want;
                 for (uint256 k;; ++k) {
                     string memory cand = string.concat(base, ".monitorFeeds[", vm.toString(k), "]");
-                    if (!vm.keyExistsJson(json, string.concat(cand, ".address"))) break; // past the end
-                    if (vm.parseJsonAddress(json, string.concat(cand, ".address")) != live[j].priceFeed) continue;
-                    if (!vm.keyExistsJson(json, string.concat(cand, ".heartbeat"))) break;
+                    if (!vm.keyExistsJson(json, string.concat(cand, ".heartbeat"))) break; // past the end
+                    string memory candAddr = ConfigReader.readAssetMonitorFeedAddress(vm, chainId, keys[i], k);
+                    if (bytes(candAddr).length == 0) {
+                        console2.log(
+                            string.concat(
+                                "  [SKIP monitor] ", keys[i], " config index ", vm.toString(k), ": address unresolvable"
+                            )
+                        );
+                        continue;
+                    }
+                    if (vm.parseAddress(candAddr) != live[j].priceFeed) continue;
                     want = vm.parseJsonUint(json, string.concat(cand, ".heartbeat"));
                     matched = true;
                     break;
                 }
-                if (!matched || live[j].chainlinkHeartbeat == want) continue;
+                if (!matched) {
+                    console2.log(
+                        string.concat("  [SKIP monitor] ", keys[i], ": live feed not found in config, left as-is")
+                    );
+                    continue;
+                }
+                if (live[j].chainlinkHeartbeat == want) continue;
 
                 aBuf[n] = asset;
                 fBuf[n] = live[j].priceFeed;

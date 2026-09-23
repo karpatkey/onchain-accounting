@@ -287,8 +287,10 @@ abstract contract Balances is IBalances, Initializable {
     /// @dev THE only route by which a token becomes a wallet-reported holding: arms the default adapter for
     ///      `asset`, reverting if a meta adapter already governs it. Check and inclusion are fused inside the
     ///      library so no caller can perform one without the other.
-    function _includeAssetIfUnclaimed(address asset) internal {
-        NAVRegistryLib.includeAssetIfUnclaimed(_claimant, erc20DefaultBalanceAdapter, asset);
+    /// @param revertIfClaimed true for an explicit operator inclusion (refuse a second reporter loudly),
+    ///        false for `registerAsset` (register the asset, just do not arm the default adapter for it).
+    function _includeAssetIfUnclaimed(address asset, bool revertIfClaimed) internal {
+        NAVRegistryLib.includeAssetIfUnclaimed(_claimant, erc20DefaultBalanceAdapter, asset, revertIfClaimed);
     }
 
     /// @notice Appends instance coordinates to a meta-adapter's set (ADR 0010). All-or-nothing: reverts with

@@ -54,6 +54,20 @@ contract DormantInstanceCleanupForkTest is Test, TestEnvConfigurator {
         }
     }
 
+    /// @notice Pins the PRE-UPGRADE mainnet behaviour the five-step dance exists for — NOT current behaviour.
+    /// @dev Read this before trusting the numbers below. The fork is a mainnet proxy at a PINNED BLOCK, so it
+    ///      runs the implementation that was live then, which is the one WITHOUT this PR's registration wipe.
+    ///      The step-2 assertion ("residue must be the ONLY reporter") is therefore correct here and WRONG of
+    ///      the implementation this PR ships: with the wipe, `addMetaBalanceAdapter(RESIDUE, [])` clears the
+    ///      residue set, so step 3 is skipped and the post-step-2 answer becomes 0, not 1.
+    ///
+    ///      Kept rather than inverted, because what it documents is still true and still useful: it is why the
+    ///      five-step ordering was needed against the state that is live today, and it is the revert-probe for
+    ///      the naive ordering below. But it is a RECORD of a historical state, not a guard on the new code —
+    ///      nothing here upgrades the proxy, so it cannot notice the change, and it must not be read as
+    ///      certifying post-upgrade behaviour. Post-upgrade semantics are covered by the unit tests in
+    ///      `test/nav/MetaInstanceOwnership.t.sol`; retaking this one against the new implementation is
+    ///      recorded in the PR's Outstanding section.
     function test_fiveStepCleanup_neverDoubleCounts() public {
         assertTrue(NAVCalculator(NAV).isAdapterRegistered(LIVE), "precondition: live registered");
         assertFalse(NAVCalculator(NAV).isAdapterRegistered(RESIDUE), "precondition: residue deregistered");

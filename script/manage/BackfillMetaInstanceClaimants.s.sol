@@ -18,7 +18,7 @@ import {ConfigReader} from "script/utils/ConfigReader.sol";
 ///      the map covers only what the new code itself wrote. Shipping the upgrade without running this is a
 ///      regression, and the runbook must order the two.
 ///
-///      **Mechanism: existing selectors only, zero new bytecode.** `NAVCalculator` has 173 bytes of EIP-170
+///      **Mechanism: existing selectors only, zero new bytecode.** `NAVCalculator` has 65 bytes of EIP-170
 ///      margin, which will not carry a backfill entry point, and an initializer-based migration could not be
 ///      chunked or resumed — one out-of-gas at 125 coordinates and the whole upgrade transaction fails.
 ///      `removeMetaInstances` followed by `addMetaInstances` round-trips each coordinate through `_release`
@@ -83,6 +83,16 @@ contract BackfillMetaInstanceClaimants is Script {
         return string.concat("script/manage/.backfill-claimants-", vm.toString(chainId), ".json");
     }
 
+    /// @dev Membership, which is what every comparison in the recovery path actually needs. Sets here are at
+    ///      most a few dozen coordinates, so the linear scan is irrelevant; using lengths as a proxy for it is
+    ///      what made total loss invisible and made the recovery allocation panic.
+    function _contains(bytes32[] memory hay, bytes32 needle) internal pure returns (bool) {
+        for (uint256 i; i < hay.length; ++i) {
+            if (hay[i] == needle) return true;
+        }
+        return false;
+    }
+
     function _claimantOf(address nav, bytes32 coord) internal view returns (address) {
         return address(uint160(uint256(vm.load(nav, keccak256(abi.encode(coord, CLAIMANT_SLOT))))));
     }
@@ -132,9 +142,16 @@ contract BackfillMetaInstanceClaimants is Script {
             for (uint256 i; i < adapters.length; ++i) {
                 string memory k = string.concat('.sets["', vm.toString(adapters[i]), '"]');
                 if (!vm.keyExistsJson(snapJson, k)) continue;
-                uint256 want = vm.parseJsonBytes32Array(snapJson, k).length;
-                uint256 have = NAVCalculator(nav).getMetaInstances(adapters[i]).length;
-                if (want > have) lost += want - have;
+                // MEMBERSHIP, not cardinality. Comparing lengths made total loss invisible whenever the set
+                // had since been refilled with DIFFERENT coordinates: snapshot [c1,c2,c3] against an on-chain
+                // [c4,c5,c6] gives want == have, so `lost` stayed 0, `pending` stayed 0, and the branch below
+                // deleted the snapshot and reported "every governed coordinate is claimed" — with c1..c3 gone
+                // from NAV for good and their only record destroyed by the script that exists to restore them.
+                bytes32[] memory wantArr = vm.parseJsonBytes32Array(snapJson, k);
+                bytes32[] memory haveArr = NAVCalculator(nav).getMetaInstances(adapters[i]);
+                for (uint256 x; x < wantArr.length; ++x) {
+                    if (!_contains(haveArr, wantArr[x])) ++lost;
+                }
             }
         }
 
@@ -166,6 +183,17 @@ contract BackfillMetaInstanceClaimants is Script {
             revert NothingToDo();
         }
 
+        // --- open the broadcast and validate the REAL signer BEFORE any privileged call ------------------
+        // This has to sit above the recovery block, not below it. `vm.readCallers()` only reports the
+        // broadcaster once a broadcast is open, so an earlier version opened it just before the round-trip —
+        // which left the recovery block's own `addMetaInstances` as a privileged, state-changing call made
+        // BEFORE the signer was ever checked. The configured manager is not necessarily the signer
+        // (`startBroadcast()` takes no argument; forge uses whatever the CLI supplied), so that check has to
+        // precede the first write of either phase.
+        vm.startBroadcast();
+        (, address signer,) = vm.readCallers();
+        if (!NAVCalculator(nav).hasRole(keccak256("MANAGER"), signer)) revert SignerNotManager(signer);
+
         // RECOVERY FIRST: any adapter whose snapshot set is longer than its on-chain set lost coordinates to
         // an interrupted run. Restore them before doing any new work, and do it OUTSIDE the round-trip so a
         // recovery run never removes anything.
@@ -176,30 +204,30 @@ contract BackfillMetaInstanceClaimants is Script {
                 if (!vm.keyExistsJson(snapJson, key)) continue;
                 bytes32[] memory want = vm.parseJsonBytes32Array(snapJson, key);
                 bytes32[] memory have = NAVCalculator(nav).getMetaInstances(adapters[i]);
-                if (have.length >= want.length) continue;
-                console2.log("RECOVERING lost instance set for", adapters[i]);
-                bytes32[] memory missing = new bytes32[](want.length - have.length);
+
+                // NO LENGTH GATE, and `missing` is sized at the UPPER BOUND. Both were wrong for the same
+                // reason: `|want \ have|` equals `want.length - have.length` only when `have` is a SUBSET of
+                // `want`. It is not, as soon as a coordinate was re-added by hand or a legitimate config change
+                // landed — and then the old allocation was short and the fill panicked 0x32, with no named
+                // error and no way to recover short of hand-editing the snapshot. A `have.length >= want.length`
+                // skip additionally hid the refilled-with-different-coordinates case entirely.
+                // `m == 0` below is the real "nothing to do" test.
+                bytes32[] memory missing = new bytes32[](want.length);
                 uint256 m;
                 for (uint256 x; x < want.length; ++x) {
-                    bool present;
-                    for (uint256 y; y < have.length; ++y) {
-                        if (have[y] == want[x]) {
-                            present = true;
-                            break;
-                        }
-                    }
-                    if (!present) missing[m++] = want[x];
+                    if (!_contains(have, want[x])) missing[m++] = want[x];
                 }
                 if (m == 0) continue;
+                console2.log("RECOVERING lost instance set for", adapters[i]);
                 assembly {
                     mstore(missing, m)
                 }
-                vm.broadcast();
                 NAVCalculator(nav).addMetaInstances(adapters[i], missing);
-                if (NAVCalculator(nav).getMetaInstances(adapters[i]).length != want.length) {
-                    revert SetLostAndUnrecoverable(
-                        adapters[i], want.length, NAVCalculator(nav).getMetaInstances(adapters[i]).length
-                    );
+                bytes32[] memory after_ = NAVCalculator(nav).getMetaInstances(adapters[i]);
+                for (uint256 x; x < want.length; ++x) {
+                    if (!_contains(after_, want[x])) {
+                        revert SetLostAndUnrecoverable(adapters[i], want.length, after_.length);
+                    }
                 }
             }
         }
@@ -221,15 +249,7 @@ contract BackfillMetaInstanceClaimants is Script {
         }
         vm.writeFile(snapPath, string.concat("{\"chainId\":", vm.toString(chainId), ",\"sets\":{", body, "}}"));
 
-        // --- round-trip each adapter's unclaimed coordinates ---------------------------------------------
-        vm.startBroadcast();
-
-        // The configured manager is not necessarily the signer — `startBroadcast()` takes no argument, so
-        // forge uses whatever the CLI supplied. Check the real one before the first write, or a wrong
-        // `--account` reverts partway through and leaves an adapter's set half round-tripped.
-        (, address signer,) = vm.readCallers();
-        if (!NAVCalculator(nav).hasRole(keccak256("MANAGER"), signer)) revert SignerNotManager(signer);
-
+        // --- round-trip each adapter's unclaimed coordinates (broadcast already open above) --------------
         for (uint256 i; i < adapters.length; ++i) {
             address adapter = adapters[i];
             bytes32[] memory set = NAVCalculator(nav).getMetaInstances(adapter);

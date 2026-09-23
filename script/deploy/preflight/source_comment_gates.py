@@ -31,6 +31,11 @@ inside an unrelated change would be a worse risk than leaving them visible. What
 class GROWING — a new file reaching for a raw staticcall, or an existing file quietly gaining one — which
 is the only part that was ever unbounded.
 
+Re-baselined once, upward, when the counter was fixed: it had counted only the high-level
+`.staticcall(` and so was blind to the Yul `staticcall(` inside `assembly` blocks — which is the
+idiomatic way to write the unmetered full-frame read this ratchet exists for. Ten such sites across
+seven files were already present and invisible. 26 -> 36 is that correction, not new code.
+
 To change an allowlisted count deliberately, edit STATICCALL_ALLOWLIST in the same commit and say why.
 
 usage:
@@ -53,20 +58,28 @@ FILE_LINE = re.compile(r"[A-Za-z0-9_./-]+\.(?:sol|json|py|ts|md|toml|ya?ml):\d+"
 # Only comments — a `:` inside a string literal or a revert message is not a doc reference.
 COMMENT = re.compile(r"(?://.*|/\*[\s\S]*?\*/)")
 
+STATICCALL = re.compile(r"(?<![A-Za-z0-9_.])staticcall\s*\(|\.staticcall\s*\(")
+
 # Files permitted raw `.staticcall(`, with the exact count each had when the ratchet was set. A count
 # that RISES fails; a count that falls is progress and fails too, so the number stays honest.
 STATICCALL_ALLOWLIST = {
-    "src/balances/MetaBalanceAdapters/curve/CurvePoolLib.sol": 14,
-    "src/balances/MetaBalanceAdapters/FluidVaultLib.sol": 2,
-    "src/balances/MetaBalanceAdapters/AaveV3InstancesMetaBalanceAdapter.sol": 2,
-    "src/balances/BalanceAdapters/SparkLendBalanceAdapter.sol": 2,
-    "src/prices/PriceFeedLib.sol": 1,
-    "src/balances/MetaBalanceAdapters/curve/CurvePoolsMetaBalanceAdapter.sol": 1,
-    "src/balances/MetaBalanceAdapters/WalletTokenMetaBalanceAdapterBase.sol": 1,
-    "src/balances/MetaBalanceAdapters/CompoundV3CometLib.sol": 1,
-    "src/balances/MetaBalanceAdapter.sol": 1,
     "src/balances/AttestedBalanceAdapters/AttestedValueCache.sol": 1,
-    "src/utils/StaticCallLib.sol": 0,  # the sanctioned home; counted so a change here is still visible
+    "src/balances/BalanceAdapters/AaveUmbrellaBalanceAdapter.sol": 1,
+    "src/balances/BalanceAdapters/ERC20DefaultBalanceAdapter.sol": 1,
+    "src/balances/BalanceAdapters/SparkLendBalanceAdapter.sol": 2,
+    "src/balances/ERC4626RedeemLib.sol": 1,
+    "src/balances/LabelLib.sol": 1,
+    "src/balances/MetaBalanceAdapter.sol": 1,
+    "src/balances/MetaBalanceAdapters/AaveV3InstancesMetaBalanceAdapter.sol": 2,
+    "src/balances/MetaBalanceAdapters/CompoundV3CometLib.sol": 1,
+    "src/balances/MetaBalanceAdapters/FluidVaultLib.sol": 3,
+    "src/balances/MetaBalanceAdapters/PolygonStakingMetaBalanceAdapter.sol": 1,
+    "src/balances/MetaBalanceAdapters/WalletTokenMetaBalanceAdapterBase.sol": 1,
+    "src/balances/MetaBalanceAdapters/curve/CurvePoolLib.sol": 14,
+    "src/balances/MetaBalanceAdapters/curve/CurvePoolsMetaBalanceAdapter.sol": 1,
+    "src/prices/PriceFeedLib.sol": 2,
+    "src/prices/protocols/ezETH_CustomPriceFeed.sol": 1,
+    "src/utils/StaticCallLib.sol": 2,
 }
 
 
@@ -78,9 +91,63 @@ def find_file_line_refs(text: str) -> list[str]:
     return hits
 
 
+def strip_comments_and_strings(text: str) -> str:
+    """Solidity source with comments and double-quoted string literals blanked out.
+
+    A character scanner rather than a regex, and both halves of that matter. Regex-stripping comments
+    first let `"https://x"` hide the rest of its line, because the `//` inside the literal started a
+    comment. Regex-stripping strings first was worse: Solidity comments are full of apostrophes
+    ("the adapter's set"), each of which opened a bogus single-quoted string that swallowed real code
+    across lines — measured, it dropped one file's count from 14 to 3. Only a scanner that tracks the
+    two states at once gets both right, so this does that and ignores single quotes entirely.
+    """
+    out = []
+    i, n = 0, len(text)
+    in_str = in_line = in_block = False
+    while i < n:
+        c = text[i]
+        two = text[i:i + 2]
+        if in_line:
+            if c == "\n":
+                in_line = False
+                out.append(c)
+            i += 1
+        elif in_block:
+            if two == "*/":
+                in_block = False
+                i += 2
+            else:
+                i += 1
+        elif in_str:
+            if c == "\\":
+                i += 2
+            else:
+                if c == '"':
+                    in_str = False
+                i += 1
+        elif two == "//":
+            in_line = True
+            i += 2
+        elif two == "/*":
+            in_block = True
+            i += 2
+        elif c == '"':
+            in_str = True
+            i += 1
+        else:
+            out.append(c)
+            i += 1
+    return "".join(out)
+
+
 def count_staticcalls(text: str) -> int:
-    """Raw `.staticcall(` outside comments."""
-    return COMMENT.sub("", text).count(".staticcall(")
+    """Raw staticcalls in code, in BOTH spellings — high-level `.staticcall(` and Yul `staticcall(`.
+
+    Counting only the high-level form left the gate blind to the idiomatic way to write the very thing
+    it ratchets: an unmetered full-frame read inside an `assembly` block. Ten such sites were already in
+    `src/` when the gate was added, invisible to it.
+    """
+    return len(STATICCALL.findall(strip_comments_and_strings(text)))
 
 
 def run() -> int:
@@ -139,6 +206,12 @@ def self_test() -> int:
         ("// (bool ok,) = t.staticcall(data);", 0, "a commented-out one does not count"),
         ("/* t.staticcall( */", 0, "block-commented"),
         ("t.call(data);", 0, "a plain call is not a staticcall"),
+        ("ok := staticcall(gas(), t, 0, 4, out, 32)", 1, "the Yul form counts too"),
+        ("// ok := staticcall(gas(), t, 0, 4, out, 32)", 0, "commented-out Yul does not"),
+        ('string memory u = "https://x"; (bool ok,) = t.staticcall(d);', 1,
+         "a // inside a string literal must not hide the rest of the line"),
+        ("// the adapter's set is rebuilt\n(bool ok,) = t.staticcall(d);", 1,
+         "an apostrophe in a comment must not open a string and swallow code"),
     ]
     for text, want, why in sc_cases:
         got = count_staticcalls(text)

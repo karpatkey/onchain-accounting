@@ -60,20 +60,35 @@ contract MetaInstanceOwnershipTest is SuperTest {
     // Route 1: claim, then register the same token as an asset.
     // -------------------------------------------------------------------------
 
-    /// @dev `registerAsset` armed the default adapter UNCONDITIONALLY. Claiming does not require the token to
-    ///      be a registered asset, so claim-then-register ended with a meta adapter and the default adapter
-    ///      both reporting it — and no health flag, because both legs are well-formed.
-    function test_claimThenRegisterAsset_reverts() public {
+    /// @dev `registerAsset` used to arm the default adapter UNCONDITIONALLY, so claim-then-register ended
+    ///      with two reporters. The gate now SKIPS the inclusion instead of reverting the registration, and
+    ///      that distinction was itself a review finding: reverting made a claimed token permanently
+    ///      un-re-registerable, because `unregisterAsset` does not release the claim — so the documented
+    ///      unregister-then-register repair for a wrong feed died on its second half, and `RegisterAssets`
+    ///      planned it for any unregistered asset with no claimant check, reverting a whole chain's Safe
+    ///      MultiSend at execution after the batch file had been written.
+    ///
+    ///      So the asserted behaviour is: registration SUCCEEDS, and the default adapter is NOT armed — which
+    ///      is the correct end state anyway, since the claiming meta adapter reports the token. An explicit
+    ///      `includeAssetInDefaultAdapter` still reverts; that is the operator asking for a second reporter,
+    ///      and it is covered by {test_includeClaimedAsset_reverts}.
+    ///
+    ///      This test previously asserted the revert, and failed when the behaviour changed — which is the
+    ///      test doing its job rather than a regression.
+    function test_claimThenRegisterAsset_registersWithoutArmingDefault() public {
         Mock_ERC20 t = _newToken();
         vm.prank(navCalculatorManager);
         nav.addMetaInstances(address(metaA), _one(_coord(t)));
 
         Mock_CustomPriceFeed f = new Mock_CustomPriceFeed("T", address(t), 1e8, 8);
         vm.prank(navCalculatorManager);
-        vm.expectRevert(
-            abi.encodeWithSelector(IBalances.MetaInstanceClaimedByAnotherAdapter.selector, _coord(t), address(metaA))
-        );
         nav.registerAsset(address(t), address(f), IPrices.PriceType.Custom, type(uint256).max);
+
+        assertTrue(nav.isAssetRegistered(address(t)), "a claimed token must still be registerable");
+        assertFalse(
+            def.isSupportedByDefault(address(t)), "registering a claimed token must NOT arm the default adapter"
+        );
+        assertEq(nav.getMetaInstances(address(metaA)).length, 1, "the claim must be untouched");
     }
 
     /// @dev The other direction: an UNCLAIMED token must still register and still be armed on the default

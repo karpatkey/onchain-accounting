@@ -1793,7 +1793,15 @@ library PriceFeedLib {
         uint256 heartbeat,
         IPrices.PriceType priceType
     ) external {
-        _validateFeedSupportInternal(asset, priceFeed, priceType);
+        // IDENTITY checks stay above the loop; the LIVE HEALTH check moves below it, for the same reason
+        // `addFeed` does it. `_validateFeedSupportInternal` calls `latestRoundData()` and reverts
+        // `InvalidPriceOracle` on a non-positive answer, so running it here made a heartbeat-only change
+        // impossible for exactly the monitor that needs one — and `RealignHeartbeats` batches every drifted
+        // monitor into one simulated broadcast, so that single monitor aborted the whole chain's realignment.
+        // The primary axis was fixed for this; leaving the monitor axis unfixed kept the same total blockage
+        // one axis over.
+        if (priceFeed == address(0) || asset == address(0)) revert IPrices.InvalidPriceOracle();
+        AddressCheckLib.requireContract(priceFeed, "priceFeed");
 
         if (heartbeat == 0) revert IPrices.InvalidPriceOracle();
 
@@ -1835,6 +1843,11 @@ library PriceFeedLib {
         // The decimals guard above the loop is a different matter and stays there: it protects the read path,
         // which scales by the STORED value and never re-reads.
         if (assetPricing[asset].divergenceToleranceBps == 0) revert IPrices.DivergenceToleranceRequired(asset);
+
+        // LIVE HEALTH check, below the loop for the same reason the admission check is: a monitor that is
+        // currently reporting a non-positive answer must still be able to have its window changed, and only a
+        // NEW monitor needs to prove it answers at all.
+        _validateFeedSupportInternal(asset, priceFeed, priceType);
 
         monitors.push(
             IPrices.PriceFeedConfig({

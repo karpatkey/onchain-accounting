@@ -48,11 +48,29 @@ contract BackfillMetaInstanceClaimants is Script {
 
     error NotManager(address who);
     error SignerNotManager(address signer);
+    error SetLostAndUnrecoverable(address adapter, uint256 expected, uint256 onChain);
     error NothingToDo();
     error CoordinateHeldTwice(bytes32 coordinate, address first, address second);
     error ClaimantSlotWrong(bytes32 coordinate, address expected, address got);
     error BackfillIncomplete(address adapter, bytes32 coordinate);
     error InstanceCountChanged(address adapter, uint256 before_, uint256 after_);
+
+    /// @dev Durable record of every adapter's instance set, written BEFORE the first broadcast.
+    ///
+    ///      Required for correctness, not convenience. The round-trip below is `removeMetaInstances` then
+    ///      `addMetaInstances` — two separate transactions with no atomicity available. If the ADD does not
+    ///      land (out of gas, RPC, nonce — this script family has precedent for a trailing transaction dying),
+    ///      the adapter's on-chain set is now EMPTY. A re-run that reads only the chain then sees
+    ///      `set.length == 0`, skips the adapter, computes `pending == 0`, passes a post-condition loop that
+    ///      iterates nothing, and reverts `NothingToDo` — i.e. reports the backfill COMPLETE while every
+    ///      position that adapter governed has silently vanished from NAV on a live chain.
+    ///
+    ///      An earlier version of this docstring claimed "every step is gated on live state, so a partial run
+    ///      resumes". That was false in the one way that matters: the removal destroys the state the resume
+    ///      reads. The snapshot is the state the resume reads instead.
+    function _snapshotPath(uint256 chainId) internal pure returns (string memory) {
+        return string.concat("script/manage/.backfill-claimants-", vm.toString(chainId), ".json");
+    }
 
     function _claimantOf(address nav, bytes32 coord) internal view returns (address) {
         return address(uint160(uint256(vm.load(nav, keccak256(abi.encode(coord, CLAIMANT_SLOT))))));
@@ -105,6 +123,69 @@ contract BackfillMetaInstanceClaimants is Script {
         console2.log("coordinates to do:", pending);
         if (pending == 0) revert NothingToDo();
 
+        // --- durable snapshot BEFORE any write, so an interrupted run is recoverable ----------------------
+        // Written even when a snapshot already exists: re-reading the chain here is safe because nothing has
+        // been removed yet in THIS run, and a set that a previous run lost is restored below before it is
+        // overwritten. The file is committed to nothing; it is run-local recovery state.
+        string memory snapPath = _snapshotPath(chainId);
+        bool haveSnap = vm.exists(snapPath);
+        string memory snapJson = haveSnap ? vm.readFile(snapPath) : "";
+
+        // RECOVERY FIRST: any adapter whose snapshot set is longer than its on-chain set lost coordinates to
+        // an interrupted run. Restore them before doing any new work, and do it OUTSIDE the round-trip so a
+        // recovery run never removes anything.
+        if (haveSnap) {
+            for (uint256 i; i < adapters.length; ++i) {
+                // Bracket notation: the key is an address literal, which is not a bare JSON-path identifier.
+                string memory key = string.concat('.sets["', vm.toString(adapters[i]), '"]');
+                if (!vm.keyExistsJson(snapJson, key)) continue;
+                bytes32[] memory want = vm.parseJsonBytes32Array(snapJson, key);
+                bytes32[] memory have = NAVCalculator(nav).getMetaInstances(adapters[i]);
+                if (have.length >= want.length) continue;
+                console2.log("RECOVERING lost instance set for", adapters[i]);
+                bytes32[] memory missing = new bytes32[](want.length - have.length);
+                uint256 m;
+                for (uint256 x; x < want.length; ++x) {
+                    bool present;
+                    for (uint256 y; y < have.length; ++y) {
+                        if (have[y] == want[x]) {
+                            present = true;
+                            break;
+                        }
+                    }
+                    if (!present) missing[m++] = want[x];
+                }
+                if (m == 0) continue;
+                assembly {
+                    mstore(missing, m)
+                }
+                vm.broadcast();
+                NAVCalculator(nav).addMetaInstances(adapters[i], missing);
+                if (NAVCalculator(nav).getMetaInstances(adapters[i]).length != want.length) {
+                    revert SetLostAndUnrecoverable(
+                        adapters[i], want.length, NAVCalculator(nav).getMetaInstances(adapters[i]).length
+                    );
+                }
+            }
+        }
+
+        // Snapshot the (now-restored) sets. Built by string concatenation rather than forge's serializeJson
+        // helpers: those accumulate into a named object across calls, and the exact shape they emit for a
+        // nested map of arrays is easy to get subtly wrong for a file whose only job is disaster recovery.
+        string memory body = "";
+        for (uint256 i; i < adapters.length; ++i) {
+            bytes32[] memory set = NAVCalculator(nav).getMetaInstances(adapters[i]);
+            if (set.length == 0) continue;
+            string memory arr = "";
+            for (uint256 x; x < set.length; ++x) {
+                arr = string.concat(arr, x == 0 ? "" : ",", "\"", vm.toString(set[x]), "\"");
+            }
+            body = string.concat(
+                body, bytes(body).length == 0 ? "" : ",", "\"", vm.toString(adapters[i]), "\":[", arr, "]"
+            );
+        }
+        vm.writeFile(snapPath, string.concat("{\"chainId\":", vm.toString(chainId), ",\"sets\":{", body, "}}"));
+
         // --- round-trip each adapter's unclaimed coordinates ---------------------------------------------
         vm.startBroadcast();
 
@@ -150,6 +231,9 @@ contract BackfillMetaInstanceClaimants is Script {
                 if (_claimantOf(nav, set[x]) != adapters[i]) revert BackfillIncomplete(adapters[i], set[x]);
             }
         }
+        // Only now is the snapshot safe to drop. Leaving it would make the NEXT run believe a set was lost
+        // whenever an operator legitimately removes a coordinate afterwards.
+        if (vm.exists(snapPath)) vm.removeFile(snapPath);
         console2.log("done. every governed coordinate now names its adapter.");
     }
 }

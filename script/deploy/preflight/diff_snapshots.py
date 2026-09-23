@@ -38,6 +38,16 @@ import chainlib as c
 MANIFEST = Path(__file__).resolve().parent / "reclassification.json"
 
 
+def coord_to_address(coord: str) -> str:
+    """A bytes32 meta-instance coordinate narrowed to its low 20 bytes, lowercased.
+
+    Coordinates are stored as full bytes32 (`0x` + 64 hex). For the address-keyed families the address sits in
+    the low 20 bytes; for Morpho marketIds / Balancer poolIds the whole word is meaningful and this produces a
+    value that simply will not be in the manifest, which is the correct outcome."""
+    h = coord.lower()
+    return "0x" + h[-40:] if h.startswith("0x") and len(h) == 66 else h
+
+
 def load_reclassifications(path: Path = MANIFEST) -> dict[int, dict[str, dict]]:
     """{chainId: {asset_lower: row}}. Absent file means no reclassification is expected."""
     if not path.exists():
@@ -185,13 +195,25 @@ def diff_chain(a: dict, b: dict, tol: float, expect: dict[str, dict] | None = No
         for x in sorted(ia - ib):
             out.append(f"DIFF  adapter {k} LOST meta instance {x}")
         for x in sorted(ib - ia):
-            if k in expected_adapters and x.lower() in expect:
+            # A coordinate is a bytes32 in the snapshot (66 chars, address left-padded), while the manifest is
+            # keyed on the 42-char address — comparing them directly made this branch DEAD, which is why the
+            # first version of this gate downgraded nothing here. Narrow to the low 20 bytes.
+            if k in expected_adapters and coord_to_address(x) in expect:
                 out.append(f"INFO  adapter {k} GAINED meta instance {x} - reclassification")
                 continue
             out.append(f"DIFF  adapter {k} GAINED meta instance {x}")
 
     if a["metaInstanceTotal"] != b["metaInstanceTotal"]:
-        out.append(f"DIFF  metaInstanceTotal {a['metaInstanceTotal']} -> {b['metaInstanceTotal']}")
+        # Not read from the contract — `snapshot_production.py` derives it as sum(metaInstanceCount). A
+        # reclassification therefore RAISES it by exactly the number of coordinates the manifest names for this
+        # chain, so that exact delta is expected and anything else is not. Without this the gate failed on the
+        # very change the manifest exists to whitelist.
+        delta = b["metaInstanceTotal"] - a["metaInstanceTotal"]
+        if expect and delta == len(expect):
+            out.append(f"INFO  metaInstanceTotal {a['metaInstanceTotal']} -> {b['metaInstanceTotal']}"
+                       f" (+{delta}, matches the {len(expect)} reclassified coordinate(s))")
+        else:
+            out.append(f"DIFF  metaInstanceTotal {a['metaInstanceTotal']} -> {b['metaInstanceTotal']}")
 
     # --- accounts -----------------------------------------------------------
     acc_a = {x["label"]: x for x in a["accounts"]}
@@ -270,6 +292,57 @@ def self_test() -> int:
             failures.append(f"  {why}: expected lost/gained/info {want_l}/{want_g}/{want_i}, "
                             f"got {len(l)}/{len(g)}/{len(i)}")
 
+    # The coordinate narrowing, which the first version of this gate got wrong: the manifest is keyed on
+    # 42-char addresses while snapshots store 66-char bytes32, so a missing narrowing silently made the
+    # gained-meta-instance downgrade unreachable. The self-test did not cover that branch, which is why the
+    # dead code shipped — these cases exist so it cannot happen again.
+    coord_cases = [
+        ("0x" + "0" * 24 + "a" * 40, "0x" + "a" * 40, "a bytes32 coordinate narrows to its address"),
+        ("0x" + "0" * 24 + "A" * 40, "0x" + "a" * 40, "and lowercases"),
+        ("0x" + "b" * 40, "0x" + "b" * 40, "an address is already narrow"),
+        ("0x" + "c" * 64, "0x" + "c" * 40, "a raw bytes32 marketId narrows to something not in any manifest"),
+    ]
+    for given, want, why in coord_cases:
+        got = coord_to_address(given)
+        if got != want:
+            failures.append(f"  coord narrowing: expected {want} got {got} - {why}")
+
+    # THROUGH diff_chain, not just the helper: the helper cases above stay green if the CALL SITE forgets to
+    # narrow, which is precisely the defect that shipped. This one fails unless the production path narrows.
+    coord32 = "0x" + "0" * 24 + "d" * 40
+    exp_one = {"0x" + "d" * 40: {"symbol": "wstETH", "adapter": "LidoStakedEthWalletMeta",
+                                 "toPositionKind": "Staking"}}
+    base = {"assets": [], "accounts": [], "proxy": "", "implementation": "",
+            "erc20DefaultBalanceAdapter": "", "roles": {}, "version": 1, "usdDecimals": 8,
+            "metaInstanceTotal": 0}
+    a_one = dict(base, adapters=[{"configKey": "LidoStakedEthWalletMeta", "address": "0x1",
+                                  "adapterType": "Custom", "metaInstances": []}])
+    b_one = dict(base, adapters=[{"configKey": "LidoStakedEthWalletMeta", "address": "0x1",
+                                  "adapterType": "Custom", "metaInstances": [coord32]}])
+    gained = [ln for ln in diff_chain(a_one, b_one, 0.01, exp_one) if "GAINED meta instance" in ln]
+    if not gained or not gained[0].startswith("INFO"):
+        failures.append("  gained-instance downgrade did not fire through diff_chain "
+                        f"(got {gained or 'no line'}) - the call site must narrow the bytes32 coordinate")
+
+    # And the metaInstanceTotal downgrade: only the EXACT manifest count is expected.
+    total_cases = [(3, 3, True, "the exact manifest count is expected"),
+                   (3, 4, False, "one more than the manifest is not"),
+                   (3, 2, False, "one fewer is not"),
+                   (3, 0, False, "no change with a non-empty manifest is not reached")]
+    for manifest_n, delta, want_info, why in total_cases:
+        exp = {f"0x{i:040x}": {"symbol": "T", "adapter": "A", "toPositionKind": "Staking"}
+               for i in range(manifest_n)}
+        a = {"metaInstanceTotal": 10, "assets": [], "adapters": [], "accounts": [],
+             "proxy": "", "implementation": "", "erc20DefaultBalanceAdapter": "",
+             "roles": {}, "version": 1, "usdDecimals": 8}
+        b = dict(a, metaInstanceTotal=10 + delta)
+        if delta == 0:
+            continue  # no line is emitted at all when the totals match
+        lines = [ln for ln in diff_chain(a, b, 0.01, exp) if "metaInstanceTotal" in ln]
+        is_info = bool(lines) and lines[0].startswith("INFO")
+        if is_info != want_info:
+            failures.append(f"  metaInstanceTotal: expected {'INFO' if want_info else 'DIFF'} - {why}")
+
     # The committed manifest must be loadable and internally consistent.
     recl = load_reclassifications()
     for cid, rows in recl.items():
@@ -282,7 +355,7 @@ def self_test() -> int:
     if failures:
         print("SELF-TEST FAILED:\n" + "\n".join(failures))
         return 1
-    print(f"self-test OK: {len(cases)} pairing cases; manifest has "
+    print(f"self-test OK: {len(cases)} pairing + {len(coord_cases)} narrowing + {len(total_cases)} total cases; manifest has "
           f"{sum(len(v) for v in recl.values())} row(s) across {len(recl)} chain(s)")
     return 0
 

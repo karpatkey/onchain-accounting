@@ -211,6 +211,88 @@ contract MetaInstanceOwnershipTest is SuperTest {
     }
 
     // -------------------------------------------------------------------------
+    // Route 4b: the UN-BACKFILLED proxy — the claim map is empty while the set is full.
+    // -------------------------------------------------------------------------
+
+    /// @dev `_claimant` is new storage, so on a proxy upgraded past it the map is EMPTY while `_metaInstances`
+    ///      is already full. Deciding a duplicate on the map ALONE therefore let an adapter re-add a coordinate
+    ///      it already holds: a second copy is pushed, `MetaBalanceAdapter` iterates the raw array without
+    ///      de-duplicating, and the leg is emitted twice — an immediate double-count, in the exact window the
+    ///      backfill script is otherwise the only guard against.
+    ///
+    ///      Simulated by zeroing the claim slot for a coordinate the adapter genuinely holds, which is bit-for-bit
+    ///      the live post-upgrade state. Fails without the own-set scan in `_claim`.
+    function test_unbackfilledProxy_cannotReAddACoordinateItAlreadyHolds() public {
+        Mock_ERC20 t = _newToken();
+        vm.prank(navCalculatorManager);
+        nav.addMetaInstances(address(metaA), _one(_coord(t)));
+        assertEq(nav.getMetaInstances(address(metaA)).length, 1, "precondition: held once");
+
+        // Erase the claim, leaving the instance set intact: the un-backfilled shape.
+        bytes32 slot = keccak256(abi.encode(_coord(t), uint256(109)));
+        vm.store(address(nav), slot, bytes32(0));
+        assertEq(vm.load(address(nav), slot), bytes32(0), "precondition: claim erased");
+
+        vm.prank(navCalculatorManager);
+        vm.expectRevert(IBalances.DuplicateMetaInstance.selector);
+        nav.addMetaInstances(address(metaA), _one(_coord(t)));
+
+        assertEq(nav.getMetaInstances(address(metaA)).length, 1, "the set must not have gained a second copy");
+    }
+
+    /// @dev Release must not delete a claim another adapter owns. Before the ownership gate, `_release` ran
+    ///      unconditionally, so releasing one adapter's set could delete the claim of a DIFFERENT adapter that
+    ///      still held the coordinate and was still reporting it — and re-arm the default adapter for it.
+    ///      Two reporters, no health flag: the +$11,375.92 shape, reintroduced through the release side.
+    ///
+    ///      The residue array is written with `vm.store` because it CANNOT be produced through the external
+    ///      API any more — every post-upgrade removal path wipes the array. That is the point: the dangerous
+    ///      state is PRE-#335 residue, which this implementation inherits and cannot create. `ClearDormantMeta
+    ///      Instances` documents one such array live on mainnet today, and `addMetaBalanceAdapter(residue, [])`
+    ///      — its own step 2, and the natural operator repair — is the single MANAGER call that reaches it.
+    ///
+    ///      A first version of this test re-registered `metaA` with an empty set and asserted the same things.
+    ///      It passed with the fix REVERTED, because `removeBalanceAdapters` had already emptied metaA's array,
+    ///      so the wipe iterated nothing and never reached the theft path at all.
+    function test_release_cannotStealAClaimAnotherAdapterOwns() public {
+        Mock_ERC20 t = _newToken();
+        _register(t);
+
+        vm.prank(navCalculatorManager);
+        nav.addMetaInstances(address(metaB), _one(_coord(t)));
+        assertFalse(def.isSupportedByDefault(address(t)), "precondition: metaB's claim disarmed the default");
+
+        // Deregister metaA first: real residue sits on a DEREGISTERED adapter, which is also what makes
+        // re-registration the call that reaches it.
+        address[] memory one = new address[](1);
+        one[0] = address(metaA);
+        vm.prank(navCalculatorManager);
+        nav.removeBalanceAdapters(one);
+
+        // Fabricate pre-#335 residue: metaA's `_metaInstances` array lists a coordinate metaB owns.
+        // `_metaInstances` is a mapping at slot 60; the array's length lives at the mapping slot and its
+        // elements at keccak256(that slot).
+        bytes32 base = keccak256(abi.encode(address(metaA), uint256(60)));
+        vm.store(address(nav), base, bytes32(uint256(1)));
+        vm.store(address(nav), keccak256(abi.encode(base)), _coord(t));
+        assertEq(nav.getMetaInstances(address(metaA)).length, 1, "precondition: residue fabricated");
+
+        // The single MANAGER call that wipes that residue — and must not touch metaB's claim.
+        vm.prank(navCalculatorManager);
+        nav.addMetaBalanceAdapter(address(metaA), new bytes32[](0));
+
+        assertFalse(def.isSupportedByDefault(address(t)), "a residue wipe must not re-arm the default adapter");
+        assertEq(nav.getMetaInstances(address(metaB)).length, 1, "metaB must still hold its coordinate");
+
+        // And the claim must still be metaB's: the wipe must not have left it takeable.
+        vm.prank(navCalculatorManager);
+        vm.expectRevert(
+            abi.encodeWithSelector(IBalances.MetaInstanceClaimedByAnotherAdapter.selector, _coord(t), address(metaB))
+        );
+        nav.addMetaInstances(address(metaA), _one(_coord(t)));
+    }
+
+    // -------------------------------------------------------------------------
     // Route 5: retirement and re-registration (issue #335).
     // -------------------------------------------------------------------------
 

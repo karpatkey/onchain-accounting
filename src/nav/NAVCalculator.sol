@@ -30,8 +30,13 @@ import "src/constants.sol";
 ///      margin, cite this one — and re-measure it, because a number in a comment is never evidence.
 ///
 ///      As of the heartbeat upsert, measured by `forge build --sizes`:
-///        - `NAVCalculator`        24,481 / 24,576 -> **95 bytes** free
-///        - `NAVCalculatorUpgradeTarget`  24,481 / 24,576 -> **95 bytes** free  (identical: empty subclass)
+///        - `NAVCalculator`        24,403 / 24,576 -> **173 bytes** free
+///        - `NAVCalculatorUpgradeTarget`  24,403 / 24,576 -> **173 bytes** free  (identical: empty subclass)
+///
+///      Was 24,481 / 95 free earlier in this PR. Fusing the claim guard with the `addSupportedAsset` it
+///      protects into one library call removed an external-call encoding from two call sites and returned 78
+///      bytes. Re-measured with `forge build --sizes` on a clean tree at 0f4c1af3; a reviewer found a script
+///      docstring citing 173 against this block's 95, and this block was the stale one.
 ///
 ///      ⚠️ CI's Build step is literally `forge build --sizes`, which **exits 1** on ANY contract over the limit,
 ///      `test/` included. Verified by probe: an oversized contract under `test/` produces

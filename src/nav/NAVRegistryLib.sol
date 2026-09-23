@@ -401,7 +401,7 @@ library NAVRegistryLib {
                 if (set[j] == instance) {
                     set[j] = set[len - 1];
                     set.pop();
-                    _release(claimant, instance, erc20DefaultBalanceAdapter);
+                    _release(claimant, adapter, instance, erc20DefaultBalanceAdapter);
                     found = true;
                     break;
                 }
@@ -444,7 +444,8 @@ library NAVRegistryLib {
 
     /// @dev Takes ownership of `instance` for `adapter`: the only writer that adds a coordinate, to BOTH
     ///      stores — it sets the claim and pushes onto `metaInstances`, so the two cannot diverge on add.
-    /// @dev One SLOAD decides the question the deleted nested scans approximated. `DuplicateMetaInstance` when
+    /// @dev One SLOAD plus a scan of this adapter's OWN set — see the body for why the SLOAD alone is not
+    ///      enough on an upgraded proxy. `DuplicateMetaInstance` when
     ///      this adapter already holds it (a within-adapter duplicate is a real over-report —
     ///      `MetaBalanceAdapter` does not dedupe on read); `MetaInstanceClaimedByAnotherAdapter` naming the
     ///      holder otherwise, because "already yours" and "already someone else's" are different operator
@@ -462,6 +463,22 @@ library NAVRegistryLib {
             if (holder == adapter) revert IBalances.DuplicateMetaInstance();
             revert IBalances.MetaInstanceClaimedByAnotherAdapter(instance, holder);
         }
+
+        // AND the adapter's own set, because the claim map alone is not sufficient on an UPGRADED proxy.
+        // `_claimant` is new storage: it starts EMPTY while `_metaInstances` is already full, so
+        // `claimant[instance] == 0` does NOT prove this adapter is not already holding the coordinate. The
+        // scan this map replaced read `_metaInstances` directly and so covered that case; without this loop,
+        // re-adding a coordinate an adapter already holds would PUSH A SECOND COPY instead of reverting, and
+        // `MetaBalanceAdapter._positionsForInstances` iterates the raw array without de-duplicating — an
+        // immediate double-count, the #335 species, in a window the backfill script is the only other guard
+        // against. Cheap enough to be unconditional: O(one adapter's set), not the O(adapters x instances)
+        // the map exists to delete.
+        bytes32[] storage own = metaInstances[adapter];
+        uint256 ownLen = own.length;
+        for (uint256 i; i < ownLen; ++i) {
+            if (own[i] == instance) revert IBalances.DuplicateMetaInstance();
+        }
+
         claimant[instance] = adapter;
         metaInstances[adapter].push(instance);
         _excludeIfAsset(erc20DefaultBalanceAdapter, instance);
@@ -473,9 +490,25 @@ library NAVRegistryLib {
     ///      released registered asset is reported by somebody rather than nobody.
     function _release(
         mapping(bytes32 => address) storage claimant,
+        address adapter,
         bytes32 instance,
         address erc20DefaultBalanceAdapter
     ) private {
+        // OWNERSHIP GATE. Releasing used to be unconditional, which let one adapter delete another's claim
+        // and re-arm the default adapter for a coordinate somebody else was still reporting — two reporters,
+        // no health flag, the +$11,375.92 shape this PR exists to close, reintroduced through the release
+        // side. The registration WIPE made it reachable in one MANAGER call: `addMetaBalanceAdapter(residue,
+        // [])` wipes a dormant pre-#335 array, and every coordinate that array still lists gets released —
+        // including coordinates the LIVE adapter owns and is still reporting.
+        //
+        // The condition is "someone ELSE owns it", not "we own it", and the difference is load-bearing. On an
+        // upgraded proxy `_claimant` is empty for every pre-existing coordinate, so requiring `== adapter`
+        // would make release a no-op exactly there and stop re-arming the default adapter on removal — an
+        // under-report introduced while fixing an over-report. Unclaimed still releases; only a claim held by
+        // a different adapter is left alone.
+        address holder = claimant[instance];
+        if (holder != address(0) && holder != adapter) return;
+
         delete claimant[instance];
         _reincludeIfAsset(erc20DefaultBalanceAdapter, instance);
     }
@@ -555,7 +588,15 @@ library NAVRegistryLib {
         if (erc20DefaultBalanceAdapter == address(0)) return;
         address token = address(uint160(uint256(instance)));
         if (token == address(0)) return;
-        try ERC20DefaultBalanceAdapter(erc20DefaultBalanceAdapter).removeSupportedAsset(token) {} catch {}
+        // NOT fail-open, unlike {_reincludeIfAsset}, and the asymmetry is deliberate. `addSupportedAsset`
+        // genuinely reverts `AssetNotFound` for a coordinate that is not a registered asset, so swallowing
+        // that is correct. `removeSupportedAsset` has no such case: it reverts only for a non-NAV caller —
+        // impossible here, since the library runs by DELEGATECALL and `msg.sender` is the proxy — and
+        // `EnumerableSet.remove` is unguarded on membership, so a non-asset coordinate is simply a no-op.
+        // A catch here could therefore absorb nothing legitimate and only a real fault, leaving the token
+        // STILL ARMED on the default adapter while a meta adapter claims it: two reporters, no health flag.
+        // Failing loudly is the safe polarity on the exclude side.
+        ERC20DefaultBalanceAdapter(erc20DefaultBalanceAdapter).removeSupportedAsset(token);
     }
 
     /// @dev Releases every coordinate in `adapter`'s set back to the default adapter, then clears the array.
@@ -569,7 +610,7 @@ library NAVRegistryLib {
         bytes32[] storage set = metaInstances[adapter];
         cleared = set.length;
         for (uint256 i = 0; i < cleared; i++) {
-            _release(claimant, set[i], erc20DefaultBalanceAdapter);
+            _release(claimant, adapter, set[i], erc20DefaultBalanceAdapter);
         }
         if (cleared != 0) delete metaInstances[adapter];
     }

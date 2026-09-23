@@ -135,6 +135,11 @@ contract SwapMetaAdapter is BaseDeployScript {
     ///      instances — a silent under-report of everything the plain adapter reported.
     error PredecessorNotMetaAdapter(address old);
 
+    /// @notice The asset comparison could not distinguish the two adapters, so nothing was verified.
+    /// @dev Raised for the wallet-yield family, whose `_instanceAssets` returns the coordinate itself.
+    ///      Re-run with `SWAP_IDENTITY_CONFIRMED=true` after checking the two protocol names by eye.
+    error IdentityCheckVacuous(address oldAdapter, address newAdapter);
+
     /// @notice Thrown when predecessor and successor do not report the same underlying assets for the carried
     ///         instance set — i.e. they are not the same protocol, and the addresses were probably transposed.
     error AdapterMismatch(address old, address newAdapter);
@@ -179,6 +184,33 @@ contract SwapMetaAdapter is BaseDeployScript {
             if (oldAssets.length != newAssets.length) revert AdapterMismatch(old, newAdapter);
             for (uint256 i = 0; i < oldAssets.length; i++) {
                 if (oldAssets[i] != newAssets[i]) revert AdapterMismatch(old, newAdapter);
+            }
+
+            // THE CHECK ABOVE IS VACUOUS FOR A WHOLE FAMILY, so say so rather than appear to have verified.
+            // The wallet-yield adapters' `_instanceAssets` returns the INSTANCE ITSELF — the coordinate is the
+            // token — so every one of the 17 answers `[coordinate]` for any coordinate, and comparing their
+            // answers cannot distinguish Lido from Sky. A transposed NEW_ADAPTER inside that family passes
+            // silently and re-labels the holding's protocol identity: not a value error, but exactly the
+            // misattribution this guard exists to catch, and it is the guard's blind spot rather than its
+            // verdict.
+            //
+            // Detected structurally instead of by naming the family: if the reported assets ARE the
+            // coordinates, nothing was verified. `protocolName()` cannot substitute — a RENAME is a
+            // legitimate reason to swap, and this script's first real use was one — so the operator confirms
+            // instead, with both names logged above for comparison.
+            bool vacuous = true;
+            for (uint256 i = 0; i < instances.length; i++) {
+                if (bytes32(uint256(uint160(oldAssets[i]))) != instances[i]) {
+                    vacuous = false;
+                    break;
+                }
+            }
+            if (vacuous && !vm.envOr("SWAP_IDENTITY_CONFIRMED", false)) {
+                console2.log("The asset comparison cannot tell these two adapters apart:");
+                console2.log("  outgoing:", IHasProtocolName(old).protocolName());
+                console2.log("  incoming:", IHasProtocolName(newAdapter).protocolName());
+                console2.log("Confirm the protocols match, then re-run with SWAP_IDENTITY_CONFIRMED=true.");
+                revert IdentityCheckVacuous(old, newAdapter);
             }
         }
 

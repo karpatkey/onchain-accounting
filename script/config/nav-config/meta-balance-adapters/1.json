@@ -199,5 +199,179 @@
     "instances": [
       "0x97997023aAB1D6b9760538Eb621bF10cfCD84868"
     ]
+  },
+  "AaveSavingsWalletMeta": {
+    "enabled": true,
+    "$comment": "Wallet-held yield tokens (ADR 0010 meta family). Each instance below is the yield TOKEN's own address, which is also a registered priced asset - that is what makes this value-neutral: the adapter reports balanceOf and NAVCalculator prices the asset it already priced, so only the identity changes. Reclassifies sGHO from `wallet`/`Wallet` to `aave`/`Supplied`. ORDERING: the asset must be REGISTERED BEFORE it is claimed here - registerAsset refuses to arm the default adapter for an already-claimed token (MetaInstanceClaimedByAnotherAdapter), a hard revert rather than a silent double-count. The standard order (RegisterAssets, then 06_Configure) satisfies this.",
+    "instances": [
+      "0xE1753F2e00940cC31213dd92013cF019DFE4ca1d"
+    ],
+    "$instanceSymbols": [
+      "sGHO"
+    ]
+  },
+  "AnkrStakedEthWalletMeta": {
+    "enabled": true,
+    "$comment": "Wallet-held yield tokens (ADR 0010 meta family). Each instance below is the yield TOKEN's own address, which is also a registered priced asset - that is what makes this value-neutral: the adapter reports balanceOf and NAVCalculator prices the asset it already priced, so only the identity changes. Reclassifies ankrETH from `wallet`/`Wallet` to `ankr`/`Staking`. ORDERING: the asset must be REGISTERED BEFORE it is claimed here - registerAsset refuses to arm the default adapter for an already-claimed token (MetaInstanceClaimedByAnotherAdapter), a hard revert rather than a silent double-count. The standard order (RegisterAssets, then 06_Configure) satisfies this.",
+    "instances": [
+      "0xE95A203B1a91a908F9B9CE46459d101078c2c3cb"
+    ],
+    "$instanceSymbols": [
+      "ankrETH"
+    ]
+  },
+  "EthenaSavingsWalletMeta": {
+    "enabled": true,
+    "$comment": "Wallet-held yield tokens (ADR 0010 meta family). Each instance below is the yield TOKEN's own address, which is also a registered priced asset - that is what makes this value-neutral: the adapter reports balanceOf and NAVCalculator prices the asset it already priced, so only the identity changes. Reclassifies sUSDe from `wallet`/`Wallet` to `ethena`/`Staking`. ORDERING: the asset must be REGISTERED BEFORE it is claimed here - registerAsset refuses to arm the default adapter for an already-claimed token (MetaInstanceClaimedByAnotherAdapter), a hard revert rather than a silent double-count. The standard order (RegisterAssets, then 06_Configure) satisfies this.",
+    "instances": [
+      "0x9D39A5DE30e57443BfF2A8307A4256c8797A3497"
+    ],
+    "$instanceSymbols": [
+      "sUSDe"
+    ]
+  },
+  "EtherFiStakedEthWalletMeta": {
+    "enabled": true,
+    "$comment": "Wallet-held yield tokens (ADR 0010 meta family). Each instance below is the yield TOKEN's own address, which is also a registered priced asset - that is what makes this value-neutral: the adapter reports balanceOf and NAVCalculator prices the asset it already priced, so only the identity changes. Reclassifies eETH, weETH from `wallet`/`Wallet` to `etherfi`/`Staking`. ORDERING: the asset must be REGISTERED BEFORE it is claimed here - registerAsset refuses to arm the default adapter for an already-claimed token (MetaInstanceClaimedByAnotherAdapter), a hard revert rather than a silent double-count. The standard order (RegisterAssets, then 06_Configure) satisfies this.",
+    "instances": [
+      "0x35fA164735182de50811E8e2E824cFb9B6118ac2",
+      "0xCd5fE23C85820F7B72D0926FC9b05b43E359b7ee"
+    ],
+    "$instanceSymbols": [
+      "eETH",
+      "weETH"
+    ]
+  },
+  "KelpRestakedEthWalletMeta": {
+    "enabled": true,
+    "$comment": "Wallet-held yield tokens (ADR 0010 meta family). Each instance below is the yield TOKEN's own address, which is also a registered priced asset - that is what makes this value-neutral: the adapter reports balanceOf and NAVCalculator prices the asset it already priced, so only the identity changes. Reclassifies rsETH from `wallet`/`Wallet` to `kelp`/`Staking`. ORDERING: the asset must be REGISTERED BEFORE it is claimed here - registerAsset refuses to arm the default adapter for an already-claimed token (MetaInstanceClaimedByAnotherAdapter), a hard revert rather than a silent double-count. The standard order (RegisterAssets, then 06_Configure) satisfies this.",
+    "instances": [
+      "0xA1290d69c65A6Fe4DF752f95823fae25cB99e5A7"
+    ],
+    "$instanceSymbols": [
+      "rsETH"
+    ]
+  },
+  "LidoStakedEthWalletMeta": {
+    "enabled": true,
+    "$comment": "Wallet-held yield tokens (ADR 0010 meta family). Each instance below is the yield TOKEN's own address, which is also a registered priced asset - that is what makes this value-neutral: the adapter reports balanceOf and NAVCalculator prices the asset it already priced, so only the identity changes. Reclassifies wstETH, stETH from `wallet`/`Wallet` to `lido`/`Staking`. ORDERING: the asset must be REGISTERED BEFORE it is claimed here - registerAsset refuses to arm the default adapter for an already-claimed token (MetaInstanceClaimedByAnotherAdapter), a hard revert rather than a silent double-count. The standard order (RegisterAssets, then 06_Configure) satisfies this.",
+    "instances": [
+      "0x7f39C581F595B53c5cb19bD0b3f8dA6c935E2Ca0",
+      "0xae7ab96520DE3A18E5e111B5EaAb095312D7fE84"
+    ],
+    "$instanceSymbols": [
+      "wstETH",
+      "stETH"
+    ]
+  },
+  "LiquidCollectiveStakedEthWalletMeta": {
+    "enabled": true,
+    "$comment": "Wallet-held yield tokens (ADR 0010 meta family). Each instance below is the yield TOKEN's own address, which is also a registered priced asset - that is what makes this value-neutral: the adapter reports balanceOf and NAVCalculator prices the asset it already priced, so only the identity changes. Reclassifies lsETH from `wallet`/`Wallet` to `liquid-collective`/`Staking`. ORDERING: the asset must be REGISTERED BEFORE it is claimed here - registerAsset refuses to arm the default adapter for an already-claimed token (MetaInstanceClaimedByAnotherAdapter), a hard revert rather than a silent double-count. The standard order (RegisterAssets, then 06_Configure) satisfies this.",
+    "instances": [
+      "0x8c1BEd5b9a0928467c9B1341Da1D7BD5e10b6549"
+    ],
+    "$instanceSymbols": [
+      "lsETH"
+    ]
+  },
+  "MapleSavingsWalletMeta": {
+    "enabled": true,
+    "$comment": "Wallet-held yield tokens (ADR 0010 meta family). Each instance below is the yield TOKEN's own address, which is also a registered priced asset - that is what makes this value-neutral: the adapter reports balanceOf and NAVCalculator prices the asset it already priced, so only the identity changes. Reclassifies syrupUSDC, syrupUSDG, syrupUSDT from `wallet`/`Wallet` to `maple`/`Supplied`. ORDERING: the asset must be REGISTERED BEFORE it is claimed here - registerAsset refuses to arm the default adapter for an already-claimed token (MetaInstanceClaimedByAnotherAdapter), a hard revert rather than a silent double-count. The standard order (RegisterAssets, then 06_Configure) satisfies this.",
+    "instances": [
+      "0x80ac24aA929eaF5013f6436cdA2a7ba190f5Cc0b",
+      "0x87b65C4aAFFA76881f9E96F3e7ED945ddFC3Cd7A",
+      "0x356B8d89c1e1239Cbbb9dE4815c39A1474d5BA7D"
+    ],
+    "$instanceSymbols": [
+      "syrupUSDC",
+      "syrupUSDG",
+      "syrupUSDT"
+    ]
+  },
+  "NexusMutualVaultsWalletMeta": {
+    "enabled": true,
+    "$comment": "Wallet-held yield tokens (ADR 0010 meta family). Each instance below is the yield TOKEN's own address, which is also a registered priced asset - that is what makes this value-neutral: the adapter reports balanceOf and NAVCalculator prices the asset it already priced, so only the identity changes. Reclassifies RWIV from `wallet`/`Wallet` to `nexus-mutual`/`Supplied`. ORDERING: the asset must be REGISTERED BEFORE it is claimed here - registerAsset refuses to arm the default adapter for an already-claimed token (MetaInstanceClaimedByAnotherAdapter), a hard revert rather than a silent double-count. The standard order (RegisterAssets, then 06_Configure) satisfies this.",
+    "instances": [
+      "0xcAFeAA466736ac01e0AC9Ca72644beF348694731"
+    ],
+    "$instanceSymbols": [
+      "RWIV"
+    ]
+  },
+  "RenzoRestakedEthWalletMeta": {
+    "enabled": true,
+    "$comment": "Wallet-held yield tokens (ADR 0010 meta family). Each instance below is the yield TOKEN's own address, which is also a registered priced asset - that is what makes this value-neutral: the adapter reports balanceOf and NAVCalculator prices the asset it already priced, so only the identity changes. Reclassifies ezETH from `wallet`/`Wallet` to `renzo`/`Staking`. ORDERING: the asset must be REGISTERED BEFORE it is claimed here - registerAsset refuses to arm the default adapter for an already-claimed token (MetaInstanceClaimedByAnotherAdapter), a hard revert rather than a silent double-count. The standard order (RegisterAssets, then 06_Configure) satisfies this.",
+    "instances": [
+      "0xbf5495Efe5DB9ce00f80364C8B423567e58d2110"
+    ],
+    "$instanceSymbols": [
+      "ezETH"
+    ]
+  },
+  "ReserveBasketsWalletMeta": {
+    "enabled": true,
+    "$comment": "Wallet-held yield tokens (ADR 0010 meta family). Each instance below is the yield TOKEN's own address, which is also a registered priced asset - that is what makes this value-neutral: the adapter reports balanceOf and NAVCalculator prices the asset it already priced, so only the identity changes. Reclassifies ETH+ from `wallet`/`Wallet` to `reserve`/`Supplied`. ORDERING: the asset must be REGISTERED BEFORE it is claimed here - registerAsset refuses to arm the default adapter for an already-claimed token (MetaInstanceClaimedByAnotherAdapter), a hard revert rather than a silent double-count. The standard order (RegisterAssets, then 06_Configure) satisfies this.",
+    "instances": [
+      "0xE72B141DF173b999AE7c1aDcbF60Cc9833Ce56a8"
+    ],
+    "$instanceSymbols": [
+      "ETH+"
+    ]
+  },
+  "RocketPoolStakedEthWalletMeta": {
+    "enabled": true,
+    "$comment": "Wallet-held yield tokens (ADR 0010 meta family). Each instance below is the yield TOKEN's own address, which is also a registered priced asset - that is what makes this value-neutral: the adapter reports balanceOf and NAVCalculator prices the asset it already priced, so only the identity changes. Reclassifies rETH from `wallet`/`Wallet` to `rocket-pool`/`Staking`. ORDERING: the asset must be REGISTERED BEFORE it is claimed here - registerAsset refuses to arm the default adapter for an already-claimed token (MetaInstanceClaimedByAnotherAdapter), a hard revert rather than a silent double-count. The standard order (RegisterAssets, then 06_Configure) satisfies this.",
+    "instances": [
+      "0xae78736Cd615f374D3085123A210448E74Fc6393"
+    ],
+    "$instanceSymbols": [
+      "rETH"
+    ]
+  },
+  "SkySavingsWalletMeta": {
+    "enabled": true,
+    "$comment": "Wallet-held yield tokens (ADR 0010 meta family). Each instance below is the yield TOKEN's own address, which is also a registered priced asset - that is what makes this value-neutral: the adapter reports balanceOf and NAVCalculator prices the asset it already priced, so only the identity changes. Reclassifies sDAI, sUSDS from `wallet`/`Wallet` to `sky`/`Supplied`. ORDERING: the asset must be REGISTERED BEFORE it is claimed here - registerAsset refuses to arm the default adapter for an already-claimed token (MetaInstanceClaimedByAnotherAdapter), a hard revert rather than a silent double-count. The standard order (RegisterAssets, then 06_Configure) satisfies this.",
+    "instances": [
+      "0x83F20F44975D03b1b09e64809B757c47f942BEeA",
+      "0xa3931d71877C0E7a3148CB7Eb4463524FEc27fbD"
+    ],
+    "$instanceSymbols": [
+      "sDAI",
+      "sUSDS"
+    ]
+  },
+  "SparkSavingsWalletMeta": {
+    "enabled": true,
+    "$comment": "Wallet-held yield tokens (ADR 0010 meta family). Each instance below is the yield TOKEN's own address, which is also a registered priced asset - that is what makes this value-neutral: the adapter reports balanceOf and NAVCalculator prices the asset it already priced, so only the identity changes. Reclassifies spETH, spUSDC, spUSDT from `wallet`/`Wallet` to `spark`/`Supplied`. ORDERING: the asset must be REGISTERED BEFORE it is claimed here - registerAsset refuses to arm the default adapter for an already-claimed token (MetaInstanceClaimedByAnotherAdapter), a hard revert rather than a silent double-count. The standard order (RegisterAssets, then 06_Configure) satisfies this.",
+    "instances": [
+      "0xfE6eb3b609a7C8352A241f7F3A21CEA4e9209B8f",
+      "0x28B3a8fb53B741A8Fd78c0fb9A6B2393d896a43d",
+      "0xe2e7a17dFf93280dec073C995595155283e3C372"
+    ],
+    "$instanceSymbols": [
+      "spETH",
+      "spUSDC",
+      "spUSDT"
+    ]
+  },
+  "StaderStakedEthWalletMeta": {
+    "enabled": true,
+    "$comment": "Wallet-held yield tokens (ADR 0010 meta family). Each instance below is the yield TOKEN's own address, which is also a registered priced asset - that is what makes this value-neutral: the adapter reports balanceOf and NAVCalculator prices the asset it already priced, so only the identity changes. Reclassifies ETHx from `wallet`/`Wallet` to `stader`/`Staking`. ORDERING: the asset must be REGISTERED BEFORE it is claimed here - registerAsset refuses to arm the default adapter for an already-claimed token (MetaInstanceClaimedByAnotherAdapter), a hard revert rather than a silent double-count. The standard order (RegisterAssets, then 06_Configure) satisfies this.",
+    "instances": [
+      "0xA35b1B31Ce002FBF2058D22F30f95D405200A15b"
+    ],
+    "$instanceSymbols": [
+      "ETHx"
+    ]
+  },
+  "StakeWiseV3OsTokenWalletMeta": {
+    "enabled": true,
+    "$comment": "Wallet-held yield tokens (ADR 0010 meta family). Each instance below is the yield TOKEN's own address, which is also a registered priced asset - that is what makes this value-neutral: the adapter reports balanceOf and NAVCalculator prices the asset it already priced, so only the identity changes. Reclassifies osETH from `wallet`/`Wallet` to `stakewise-v3`/`Staking`. ORDERING: the asset must be REGISTERED BEFORE it is claimed here - registerAsset refuses to arm the default adapter for an already-claimed token (MetaInstanceClaimedByAnotherAdapter), a hard revert rather than a silent double-count. The standard order (RegisterAssets, then 06_Configure) satisfies this.",
+    "instances": [
+      "0xf1C9acDc66974dFB6dEcB12aA385b9cD01190E38"
+    ],
+    "$instanceSymbols": [
+      "osETH"
+    ]
   }
 }

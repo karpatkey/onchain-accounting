@@ -55,5 +55,35 @@
     "enabled": false,
     "$comment": "Meta-adapter (ADR 0010): PancakeSwap V3 pools via on-chain NFT enumeration. Registered via addMetaBalanceAdapter + addMetaInstances when enabled. Disabled: COW on Base has no feed. Enable + add pool instances (both tokens must be registered) once COW is priced.",
     "instances": []
+  },
+  "CoinbaseStakedEthWalletMeta": {
+    "enabled": true,
+    "$comment": "Wallet-held yield tokens (ADR 0010 meta family). Each instance below is the yield TOKEN's own address, which is also a registered priced asset - that is what makes this value-neutral: the adapter reports balanceOf and NAVCalculator prices the asset it already priced, so only the identity changes. Reclassifies cbETH from `wallet`/`Wallet` to `coinbase`/`Staking`. ORDERING: the asset must be REGISTERED BEFORE it is claimed here - registerAsset refuses to arm the default adapter for an already-claimed token (MetaInstanceClaimedByAnotherAdapter), a hard revert rather than a silent double-count. The standard order (RegisterAssets, then 06_Configure) satisfies this.",
+    "instances": [
+      "0x2Ae3F1Ec7F1F5012CFEab0185bfc7aa3cf0DEc22"
+    ],
+    "$instanceSymbols": [
+      "cbETH"
+    ]
+  },
+  "EtherFiStakedEthWalletMeta": {
+    "enabled": true,
+    "$comment": "Wallet-held yield tokens (ADR 0010 meta family). Each instance below is the yield TOKEN's own address, which is also a registered priced asset - that is what makes this value-neutral: the adapter reports balanceOf and NAVCalculator prices the asset it already priced, so only the identity changes. Reclassifies weETH from `wallet`/`Wallet` to `etherfi`/`Staking`. ORDERING: the asset must be REGISTERED BEFORE it is claimed here - registerAsset refuses to arm the default adapter for an already-claimed token (MetaInstanceClaimedByAnotherAdapter), a hard revert rather than a silent double-count. The standard order (RegisterAssets, then 06_Configure) satisfies this.",
+    "instances": [
+      "0x04C0599Ae5A44757c0af6F9eC3b93da8976c150A"
+    ],
+    "$instanceSymbols": [
+      "weETH"
+    ]
+  },
+  "LidoStakedEthWalletMeta": {
+    "enabled": true,
+    "$comment": "Wallet-held yield tokens (ADR 0010 meta family). Each instance below is the yield TOKEN's own address, which is also a registered priced asset - that is what makes this value-neutral: the adapter reports balanceOf and NAVCalculator prices the asset it already priced, so only the identity changes. Reclassifies wstETH from `wallet`/`Wallet` to `lido`/`Staking`. ORDERING: the asset must be REGISTERED BEFORE it is claimed here - registerAsset refuses to arm the default adapter for an already-claimed token (MetaInstanceClaimedByAnotherAdapter), a hard revert rather than a silent double-count. The standard order (RegisterAssets, then 06_Configure) satisfies this.",
+    "instances": [
+      "0xc1CBa3fCea344f92D9239c08C0568f6F2F0ee452"
+    ],
+    "$instanceSymbols": [
+      "wstETH"
+    ]
   }
 }

@@ -18,5 +18,20 @@
     "constructor": {
       "positionManager": "0xAE8fbE656a77519a7490054274910129c9244FA3"
     }
+  },
+  "LidoStakedEthWalletMeta": {
+    "enabled": true,
+    "$comment": "Wallet-held yield tokens (ADR 0010 meta family). Reports the RAW balanceOf of a token that is itself a registered, priced NAV asset, so the reported amount is bit-identical to what ERC20DefaultBalanceAdapter reported for the same holding - this reclassifies wstETH (Lido) from a generic wallet holding to a Staking position and changes NO value. Constructor takes only the NAV proxy, so the CREATE2 address is identical on every chain. The governed token set lives on NAVCalculator (see nav-config); claiming a token there automatically disarms the default adapter for it, so the two can never both report the same holding.",
+    "constructor": {}
+  },
+  "SkySavingsWalletMeta": {
+    "enabled": true,
+    "$comment": "Wallet-held yield tokens (ADR 0010 meta family). Reports the RAW balanceOf of a token that is itself a registered, priced NAV asset, so the reported amount is bit-identical to what ERC20DefaultBalanceAdapter reported for the same holding - this reclassifies sDAI (Sky) from a generic wallet holding to a Supplied position and changes NO value. Constructor takes only the NAV proxy, so the CREATE2 address is identical on every chain. The governed token set lives on NAVCalculator (see nav-config); claiming a token there automatically disarms the default adapter for it, so the two can never both report the same holding.",
+    "constructor": {}
+  },
+  "StakeWiseV3OsTokenWalletMeta": {
+    "enabled": true,
+    "$comment": "Wallet-held yield tokens (ADR 0010 meta family). Reports the RAW balanceOf of a token that is itself a registered, priced NAV asset, so the reported amount is bit-identical to what ERC20DefaultBalanceAdapter reported for the same holding - this reclassifies osGNO (StakeWise V3) from a generic wallet holding to a Staking position and changes NO value. Constructor takes only the NAV proxy, so the CREATE2 address is identical on every chain. The governed token set lives on NAVCalculator (see nav-config); claiming a token there automatically disarms the default adapter for it, so the two can never both report the same holding.",
+    "constructor": {}
   }
 }

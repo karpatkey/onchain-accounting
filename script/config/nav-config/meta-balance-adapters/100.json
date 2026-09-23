@@ -27,5 +27,35 @@
       "0xc87442b49d6B18facFb8C95483FbeA67c1bb96cE",
       "0x5a2Fb66e66b2aF7F1c2F71c6c695492FaAB2E587"
     ]
+  },
+  "LidoStakedEthWalletMeta": {
+    "enabled": true,
+    "$comment": "Wallet-held yield tokens (ADR 0010 meta family). Each instance below is the yield TOKEN's own address, which is also a registered priced asset - that is what makes this value-neutral: the adapter reports balanceOf and NAVCalculator prices the asset it already priced, so only the identity changes. Reclassifies wstETH from `wallet`/`Wallet` to `lido`/`Staking`. ORDERING: the asset must be REGISTERED BEFORE it is claimed here - registerAsset refuses to arm the default adapter for an already-claimed token (MetaInstanceClaimedByAnotherAdapter), a hard revert rather than a silent double-count. The standard order (RegisterAssets, then 06_Configure) satisfies this.",
+    "instances": [
+      "0x6C76971f98945AE98dD7d4DFcA8711ebea946eA6"
+    ],
+    "$instanceSymbols": [
+      "wstETH"
+    ]
+  },
+  "SkySavingsWalletMeta": {
+    "enabled": true,
+    "$comment": "Wallet-held yield tokens (ADR 0010 meta family). Each instance below is the yield TOKEN's own address, which is also a registered priced asset - that is what makes this value-neutral: the adapter reports balanceOf and NAVCalculator prices the asset it already priced, so only the identity changes. Reclassifies sDAI from `wallet`/`Wallet` to `sky`/`Supplied`. ORDERING: the asset must be REGISTERED BEFORE it is claimed here - registerAsset refuses to arm the default adapter for an already-claimed token (MetaInstanceClaimedByAnotherAdapter), a hard revert rather than a silent double-count. The standard order (RegisterAssets, then 06_Configure) satisfies this.",
+    "instances": [
+      "0xaf204776c7245bF4147c2612BF6e5972Ee483701"
+    ],
+    "$instanceSymbols": [
+      "sDAI"
+    ]
+  },
+  "StakeWiseV3OsTokenWalletMeta": {
+    "enabled": true,
+    "$comment": "Wallet-held yield tokens (ADR 0010 meta family). Each instance below is the yield TOKEN's own address, which is also a registered priced asset - that is what makes this value-neutral: the adapter reports balanceOf and NAVCalculator prices the asset it already priced, so only the identity changes. Reclassifies osGNO from `wallet`/`Wallet` to `stakewise-v3`/`Staking`. ORDERING: the asset must be REGISTERED BEFORE it is claimed here - registerAsset refuses to arm the default adapter for an already-claimed token (MetaInstanceClaimedByAnotherAdapter), a hard revert rather than a silent double-count. The standard order (RegisterAssets, then 06_Configure) satisfies this.",
+    "instances": [
+      "0xF490c80aAE5f2616d3e3BDa2483E30C4CB21d1A0"
+    ],
+    "$instanceSymbols": [
+      "osGNO"
+    ]
   }
 }

@@ -125,5 +125,85 @@
     "constructor": {
       "underlyingToken": "0x455e53CBB86018Ac2B8092FdCd39d8444aFFC3F6"
     }
+  },
+  "AaveSavingsWalletMeta": {
+    "enabled": true,
+    "$comment": "Wallet-held yield tokens (ADR 0010 meta family). Reports the RAW balanceOf of a token that is itself a registered, priced NAV asset, so the reported amount is bit-identical to what ERC20DefaultBalanceAdapter reported for the same holding - this reclassifies sGHO (Aave) from a generic wallet holding to a Supplied position and changes NO value. Constructor takes only the NAV proxy, so the CREATE2 address is identical on every chain. The governed token set lives on NAVCalculator (see nav-config); claiming a token there automatically disarms the default adapter for it, so the two can never both report the same holding.",
+    "constructor": {}
+  },
+  "AnkrStakedEthWalletMeta": {
+    "enabled": true,
+    "$comment": "Wallet-held yield tokens (ADR 0010 meta family). Reports the RAW balanceOf of a token that is itself a registered, priced NAV asset, so the reported amount is bit-identical to what ERC20DefaultBalanceAdapter reported for the same holding - this reclassifies ankrETH (Ankr) from a generic wallet holding to a Staking position and changes NO value. Constructor takes only the NAV proxy, so the CREATE2 address is identical on every chain. The governed token set lives on NAVCalculator (see nav-config); claiming a token there automatically disarms the default adapter for it, so the two can never both report the same holding.",
+    "constructor": {}
+  },
+  "EthenaSavingsWalletMeta": {
+    "enabled": true,
+    "$comment": "Wallet-held yield tokens (ADR 0010 meta family). Reports the RAW balanceOf of a token that is itself a registered, priced NAV asset, so the reported amount is bit-identical to what ERC20DefaultBalanceAdapter reported for the same holding - this reclassifies sUSDe (Ethena) from a generic wallet holding to a Staking position and changes NO value. Constructor takes only the NAV proxy, so the CREATE2 address is identical on every chain. The governed token set lives on NAVCalculator (see nav-config); claiming a token there automatically disarms the default adapter for it, so the two can never both report the same holding.",
+    "constructor": {}
+  },
+  "EtherFiStakedEthWalletMeta": {
+    "enabled": true,
+    "$comment": "Wallet-held yield tokens (ADR 0010 meta family). Reports the RAW balanceOf of a token that is itself a registered, priced NAV asset, so the reported amount is bit-identical to what ERC20DefaultBalanceAdapter reported for the same holding - this reclassifies eETH, weETH (ether.fi) from a generic wallet holding to a Staking position and changes NO value. Constructor takes only the NAV proxy, so the CREATE2 address is identical on every chain. The governed token set lives on NAVCalculator (see nav-config); claiming a token there automatically disarms the default adapter for it, so the two can never both report the same holding.",
+    "constructor": {}
+  },
+  "KelpRestakedEthWalletMeta": {
+    "enabled": true,
+    "$comment": "Wallet-held yield tokens (ADR 0010 meta family). Reports the RAW balanceOf of a token that is itself a registered, priced NAV asset, so the reported amount is bit-identical to what ERC20DefaultBalanceAdapter reported for the same holding - this reclassifies rsETH (Kelp) from a generic wallet holding to a Staking position and changes NO value. Constructor takes only the NAV proxy, so the CREATE2 address is identical on every chain. The governed token set lives on NAVCalculator (see nav-config); claiming a token there automatically disarms the default adapter for it, so the two can never both report the same holding.",
+    "constructor": {}
+  },
+  "LidoStakedEthWalletMeta": {
+    "enabled": true,
+    "$comment": "Wallet-held yield tokens (ADR 0010 meta family). Reports the RAW balanceOf of a token that is itself a registered, priced NAV asset, so the reported amount is bit-identical to what ERC20DefaultBalanceAdapter reported for the same holding - this reclassifies wstETH, stETH (Lido) from a generic wallet holding to a Staking position and changes NO value. Constructor takes only the NAV proxy, so the CREATE2 address is identical on every chain. The governed token set lives on NAVCalculator (see nav-config); claiming a token there automatically disarms the default adapter for it, so the two can never both report the same holding.",
+    "constructor": {}
+  },
+  "LiquidCollectiveStakedEthWalletMeta": {
+    "enabled": true,
+    "$comment": "Wallet-held yield tokens (ADR 0010 meta family). Reports the RAW balanceOf of a token that is itself a registered, priced NAV asset, so the reported amount is bit-identical to what ERC20DefaultBalanceAdapter reported for the same holding - this reclassifies lsETH (Liquid Collective) from a generic wallet holding to a Staking position and changes NO value. Constructor takes only the NAV proxy, so the CREATE2 address is identical on every chain. The governed token set lives on NAVCalculator (see nav-config); claiming a token there automatically disarms the default adapter for it, so the two can never both report the same holding.",
+    "constructor": {}
+  },
+  "MapleSavingsWalletMeta": {
+    "enabled": true,
+    "$comment": "Wallet-held yield tokens (ADR 0010 meta family). Reports the RAW balanceOf of a token that is itself a registered, priced NAV asset, so the reported amount is bit-identical to what ERC20DefaultBalanceAdapter reported for the same holding - this reclassifies syrupUSDC, syrupUSDG, syrupUSDT (Maple) from a generic wallet holding to a Supplied position and changes NO value. Constructor takes only the NAV proxy, so the CREATE2 address is identical on every chain. The governed token set lives on NAVCalculator (see nav-config); claiming a token there automatically disarms the default adapter for it, so the two can never both report the same holding.",
+    "constructor": {}
+  },
+  "NexusMutualVaultsWalletMeta": {
+    "enabled": true,
+    "$comment": "Wallet-held yield tokens (ADR 0010 meta family). Reports the RAW balanceOf of a token that is itself a registered, priced NAV asset, so the reported amount is bit-identical to what ERC20DefaultBalanceAdapter reported for the same holding - this reclassifies RWIV (Nexus Mutual) from a generic wallet holding to a Supplied position and changes NO value. Constructor takes only the NAV proxy, so the CREATE2 address is identical on every chain. The governed token set lives on NAVCalculator (see nav-config); claiming a token there automatically disarms the default adapter for it, so the two can never both report the same holding.",
+    "constructor": {}
+  },
+  "RenzoRestakedEthWalletMeta": {
+    "enabled": true,
+    "$comment": "Wallet-held yield tokens (ADR 0010 meta family). Reports the RAW balanceOf of a token that is itself a registered, priced NAV asset, so the reported amount is bit-identical to what ERC20DefaultBalanceAdapter reported for the same holding - this reclassifies ezETH (Renzo) from a generic wallet holding to a Staking position and changes NO value. Constructor takes only the NAV proxy, so the CREATE2 address is identical on every chain. The governed token set lives on NAVCalculator (see nav-config); claiming a token there automatically disarms the default adapter for it, so the two can never both report the same holding.",
+    "constructor": {}
+  },
+  "ReserveBasketsWalletMeta": {
+    "enabled": true,
+    "$comment": "Wallet-held yield tokens (ADR 0010 meta family). Reports the RAW balanceOf of a token that is itself a registered, priced NAV asset, so the reported amount is bit-identical to what ERC20DefaultBalanceAdapter reported for the same holding - this reclassifies ETH+ (Reserve) from a generic wallet holding to a Supplied position and changes NO value. Constructor takes only the NAV proxy, so the CREATE2 address is identical on every chain. The governed token set lives on NAVCalculator (see nav-config); claiming a token there automatically disarms the default adapter for it, so the two can never both report the same holding.",
+    "constructor": {}
+  },
+  "RocketPoolStakedEthWalletMeta": {
+    "enabled": true,
+    "$comment": "Wallet-held yield tokens (ADR 0010 meta family). Reports the RAW balanceOf of a token that is itself a registered, priced NAV asset, so the reported amount is bit-identical to what ERC20DefaultBalanceAdapter reported for the same holding - this reclassifies rETH (Rocket Pool) from a generic wallet holding to a Staking position and changes NO value. Constructor takes only the NAV proxy, so the CREATE2 address is identical on every chain. The governed token set lives on NAVCalculator (see nav-config); claiming a token there automatically disarms the default adapter for it, so the two can never both report the same holding.",
+    "constructor": {}
+  },
+  "SkySavingsWalletMeta": {
+    "enabled": true,
+    "$comment": "Wallet-held yield tokens (ADR 0010 meta family). Reports the RAW balanceOf of a token that is itself a registered, priced NAV asset, so the reported amount is bit-identical to what ERC20DefaultBalanceAdapter reported for the same holding - this reclassifies sDAI, sUSDS (Sky) from a generic wallet holding to a Supplied position and changes NO value. Constructor takes only the NAV proxy, so the CREATE2 address is identical on every chain. The governed token set lives on NAVCalculator (see nav-config); claiming a token there automatically disarms the default adapter for it, so the two can never both report the same holding.",
+    "constructor": {}
+  },
+  "SparkSavingsWalletMeta": {
+    "enabled": true,
+    "$comment": "Wallet-held yield tokens (ADR 0010 meta family). Reports the RAW balanceOf of a token that is itself a registered, priced NAV asset, so the reported amount is bit-identical to what ERC20DefaultBalanceAdapter reported for the same holding - this reclassifies spETH, spUSDC, spUSDT (Spark) from a generic wallet holding to a Supplied position and changes NO value. Constructor takes only the NAV proxy, so the CREATE2 address is identical on every chain. The governed token set lives on NAVCalculator (see nav-config); claiming a token there automatically disarms the default adapter for it, so the two can never both report the same holding.",
+    "constructor": {}
+  },
+  "StaderStakedEthWalletMeta": {
+    "enabled": true,
+    "$comment": "Wallet-held yield tokens (ADR 0010 meta family). Reports the RAW balanceOf of a token that is itself a registered, priced NAV asset, so the reported amount is bit-identical to what ERC20DefaultBalanceAdapter reported for the same holding - this reclassifies ETHx (Stader) from a generic wallet holding to a Staking position and changes NO value. Constructor takes only the NAV proxy, so the CREATE2 address is identical on every chain. The governed token set lives on NAVCalculator (see nav-config); claiming a token there automatically disarms the default adapter for it, so the two can never both report the same holding.",
+    "constructor": {}
+  },
+  "StakeWiseV3OsTokenWalletMeta": {
+    "enabled": true,
+    "$comment": "Wallet-held yield tokens (ADR 0010 meta family). Reports the RAW balanceOf of a token that is itself a registered, priced NAV asset, so the reported amount is bit-identical to what ERC20DefaultBalanceAdapter reported for the same holding - this reclassifies osETH (StakeWise V3) from a generic wallet holding to a Staking position and changes NO value. Constructor takes only the NAV proxy, so the CREATE2 address is identical on every chain. The governed token set lives on NAVCalculator (see nav-config); claiming a token there automatically disarms the default adapter for it, so the two can never both report the same holding.",
+    "constructor": {}
   }
 }

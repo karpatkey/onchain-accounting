@@ -63,8 +63,9 @@ abstract contract Balances is IBalances, Initializable {
     mapping(address adapter => bytes32[] instances) private _metaInstances;
 
     /// @notice Running total of configured meta instances across all adapters (cheap NAV buffer sizing).
-    /// @dev RETIRED — arithmetic removed, NAME AND SLOT DELIBERATELY UNCHANGED. Never read by anything:
-    ///      every `PriceFeedLib` signature taking it leaves the parameter
+    /// @dev RETIRED — arithmetic removed, NAME AND SLOT DELIBERATELY UNCHANGED. Still SLOADed, but by nothing
+    ///      that uses it: `NAVCalculator` forwards it at six call sites and all five `PriceFeedLib` signatures
+    ///      taking it leave the parameter
     ///      unused, so it sized no buffer and fed no computation. It was maintained by three call sites and
     ///      defended by two long comments in two files telling future authors not to "fix" its inconsistency —
     ///      a standing prose-drift generator for a number with no consumer. The arithmetic is gone; the SLOT

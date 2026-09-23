@@ -442,7 +442,8 @@ library NAVRegistryLib {
         isAdapterRegistered[adapter] = true;
     }
 
-    /// @dev Takes ownership of `instance` for `adapter`: the ONLY writer that adds a coordinate.
+    /// @dev Takes ownership of `instance` for `adapter`: the only writer that adds a coordinate, to BOTH
+    ///      stores — it sets the claim and pushes onto `metaInstances`, so the two cannot diverge on add.
     /// @dev One SLOAD decides the question the deleted nested scans approximated. `DuplicateMetaInstance` when
     ///      this adapter already holds it (a within-adapter duplicate is a real over-report —
     ///      `MetaBalanceAdapter` does not dedupe on read); `MetaInstanceClaimedByAnotherAdapter` naming the
@@ -466,7 +467,9 @@ library NAVRegistryLib {
         _excludeIfAsset(erc20DefaultBalanceAdapter, instance);
     }
 
-    /// @dev Gives up `instance`: the ONLY writer that removes a coordinate. Re-arms the default adapter so a
+    /// @dev Gives up `instance`: the only writer that clears a coordinate's CLAIM. It does NOT remove the
+    ///      coordinate from `metaInstances` — the caller owns that, by swap-and-pop in `removeMetaInstances` or
+    ///      by `delete` in `_releaseInstances` — so the two must stay in step. Re-arms the default adapter so a
     ///      released registered asset is reported by somebody rather than nobody.
     function _release(
         mapping(bytes32 => address) storage claimant,

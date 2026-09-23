@@ -1,0 +1,226 @@
+{
+  "$comment": "Holdings deliberately RECLASSIFIED by the wallet-yield adapter family: the same token, the same amount, reported under a protocol identity instead of the generic wallet one. diff_snapshots.py uses this to downgrade the intended before/after churn to INFO, so a redeploy comparison shows the reclassification as expected rather than as 70 lines of apparent breakage. It downgrades NOTHING on value: a LOST/GAINED pair is only collapsed when the asset, the isDebt flag AND the exact amount all match, the LOST side is positionKind Wallet, and the GAINED side carries the positionKind named here. Any pair that fails one of those stays a DIFF.",
+  "$generated": "From script/config/nav-config/meta-balance-adapters/<chainId>.json; regenerate if that changes.",
+  "reclassifications": {
+    "1": [
+      {
+        "asset": "0xE95A203B1a91a908F9B9CE46459d101078c2c3cb",
+        "symbol": "ankrETH",
+        "adapter": "AnkrStakedEthWalletMeta",
+        "toPositionKind": "Staking"
+      },
+      {
+        "asset": "0x35fA164735182de50811E8e2E824cFb9B6118ac2",
+        "symbol": "eETH",
+        "adapter": "EtherFiStakedEthWalletMeta",
+        "toPositionKind": "Staking"
+      },
+      {
+        "asset": "0xE72B141DF173b999AE7c1aDcbF60Cc9833Ce56a8",
+        "symbol": "ETH+",
+        "adapter": "ReserveBasketsWalletMeta",
+        "toPositionKind": "Supplied"
+      },
+      {
+        "asset": "0xA35b1B31Ce002FBF2058D22F30f95D405200A15b",
+        "symbol": "ETHx",
+        "adapter": "StaderStakedEthWalletMeta",
+        "toPositionKind": "Staking"
+      },
+      {
+        "asset": "0xbf5495Efe5DB9ce00f80364C8B423567e58d2110",
+        "symbol": "ezETH",
+        "adapter": "RenzoRestakedEthWalletMeta",
+        "toPositionKind": "Staking"
+      },
+      {
+        "asset": "0x8c1BEd5b9a0928467c9B1341Da1D7BD5e10b6549",
+        "symbol": "lsETH",
+        "adapter": "LiquidCollectiveStakedEthWalletMeta",
+        "toPositionKind": "Staking"
+      },
+      {
+        "asset": "0xf1C9acDc66974dFB6dEcB12aA385b9cD01190E38",
+        "symbol": "osETH",
+        "adapter": "StakeWiseV3OsTokenWalletMeta",
+        "toPositionKind": "Staking"
+      },
+      {
+        "asset": "0xae78736Cd615f374D3085123A210448E74Fc6393",
+        "symbol": "rETH",
+        "adapter": "RocketPoolStakedEthWalletMeta",
+        "toPositionKind": "Staking"
+      },
+      {
+        "asset": "0xA1290d69c65A6Fe4DF752f95823fae25cB99e5A7",
+        "symbol": "rsETH",
+        "adapter": "KelpRestakedEthWalletMeta",
+        "toPositionKind": "Staking"
+      },
+      {
+        "asset": "0xcAFeAA466736ac01e0AC9Ca72644beF348694731",
+        "symbol": "RWIV",
+        "adapter": "NexusMutualVaultsWalletMeta",
+        "toPositionKind": "Supplied"
+      },
+      {
+        "asset": "0x83F20F44975D03b1b09e64809B757c47f942BEeA",
+        "symbol": "sDAI",
+        "adapter": "SkySavingsWalletMeta",
+        "toPositionKind": "Supplied"
+      },
+      {
+        "asset": "0xE1753F2e00940cC31213dd92013cF019DFE4ca1d",
+        "symbol": "sGHO",
+        "adapter": "AaveSavingsWalletMeta",
+        "toPositionKind": "Supplied"
+      },
+      {
+        "asset": "0xfE6eb3b609a7C8352A241f7F3A21CEA4e9209B8f",
+        "symbol": "spETH",
+        "adapter": "SparkSavingsWalletMeta",
+        "toPositionKind": "Supplied"
+      },
+      {
+        "asset": "0x28B3a8fb53B741A8Fd78c0fb9A6B2393d896a43d",
+        "symbol": "spUSDC",
+        "adapter": "SparkSavingsWalletMeta",
+        "toPositionKind": "Supplied"
+      },
+      {
+        "asset": "0xe2e7a17dFf93280dec073C995595155283e3C372",
+        "symbol": "spUSDT",
+        "adapter": "SparkSavingsWalletMeta",
+        "toPositionKind": "Supplied"
+      },
+      {
+        "asset": "0xae7ab96520DE3A18E5e111B5EaAb095312D7fE84",
+        "symbol": "stETH",
+        "adapter": "LidoStakedEthWalletMeta",
+        "toPositionKind": "Staking"
+      },
+      {
+        "asset": "0x9D39A5DE30e57443BfF2A8307A4256c8797A3497",
+        "symbol": "sUSDe",
+        "adapter": "EthenaSavingsWalletMeta",
+        "toPositionKind": "Staking"
+      },
+      {
+        "asset": "0xa3931d71877C0E7a3148CB7Eb4463524FEc27fbD",
+        "symbol": "sUSDS",
+        "adapter": "SkySavingsWalletMeta",
+        "toPositionKind": "Supplied"
+      },
+      {
+        "asset": "0x80ac24aA929eaF5013f6436cdA2a7ba190f5Cc0b",
+        "symbol": "syrupUSDC",
+        "adapter": "MapleSavingsWalletMeta",
+        "toPositionKind": "Supplied"
+      },
+      {
+        "asset": "0x87b65C4aAFFA76881f9E96F3e7ED945ddFC3Cd7A",
+        "symbol": "syrupUSDG",
+        "adapter": "MapleSavingsWalletMeta",
+        "toPositionKind": "Supplied"
+      },
+      {
+        "asset": "0x356B8d89c1e1239Cbbb9dE4815c39A1474d5BA7D",
+        "symbol": "syrupUSDT",
+        "adapter": "MapleSavingsWalletMeta",
+        "toPositionKind": "Supplied"
+      },
+      {
+        "asset": "0xCd5fE23C85820F7B72D0926FC9b05b43E359b7ee",
+        "symbol": "weETH",
+        "adapter": "EtherFiStakedEthWalletMeta",
+        "toPositionKind": "Staking"
+      },
+      {
+        "asset": "0x7f39C581F595B53c5cb19bD0b3f8dA6c935E2Ca0",
+        "symbol": "wstETH",
+        "adapter": "LidoStakedEthWalletMeta",
+        "toPositionKind": "Staking"
+      }
+    ],
+    "10": [
+      {
+        "asset": "0x1F32b1c2345538c0c6f582fCB022739c4A194Ebb",
+        "symbol": "wstETH",
+        "adapter": "LidoStakedEthWalletMeta",
+        "toPositionKind": "Staking"
+      }
+    ],
+    "100": [
+      {
+        "asset": "0xF490c80aAE5f2616d3e3BDa2483E30C4CB21d1A0",
+        "symbol": "osGNO",
+        "adapter": "StakeWiseV3OsTokenWalletMeta",
+        "toPositionKind": "Staking"
+      },
+      {
+        "asset": "0xaf204776c7245bF4147c2612BF6e5972Ee483701",
+        "symbol": "sDAI",
+        "adapter": "SkySavingsWalletMeta",
+        "toPositionKind": "Supplied"
+      },
+      {
+        "asset": "0x6C76971f98945AE98dD7d4DFcA8711ebea946eA6",
+        "symbol": "wstETH",
+        "adapter": "LidoStakedEthWalletMeta",
+        "toPositionKind": "Staking"
+      }
+    ],
+    "8453": [
+      {
+        "asset": "0x2Ae3F1Ec7F1F5012CFEab0185bfc7aa3cf0DEc22",
+        "symbol": "cbETH",
+        "adapter": "CoinbaseStakedEthWalletMeta",
+        "toPositionKind": "Staking"
+      },
+      {
+        "asset": "0x04C0599Ae5A44757c0af6F9eC3b93da8976c150A",
+        "symbol": "weETH",
+        "adapter": "EtherFiStakedEthWalletMeta",
+        "toPositionKind": "Staking"
+      },
+      {
+        "asset": "0xc1CBa3fCea344f92D9239c08C0568f6F2F0ee452",
+        "symbol": "wstETH",
+        "adapter": "LidoStakedEthWalletMeta",
+        "toPositionKind": "Staking"
+      }
+    ],
+    "42161": [
+      {
+        "asset": "0x2416092f143378750bb29b79eD961ab195CcEea5",
+        "symbol": "ezETH",
+        "adapter": "RenzoRestakedEthWalletMeta",
+        "toPositionKind": "Staking"
+      },
+      {
+        "asset": "0x4186BFC76E2E237523CBC30FD220FE055156b41F",
+        "symbol": "rsETH",
+        "adapter": "KelpRestakedEthWalletMeta",
+        "toPositionKind": "Staking"
+      },
+      {
+        "asset": "0x41CA7586cC1311807B4605fBB748a3B8862b42b5",
+        "symbol": "syrupUSDC",
+        "adapter": "MapleSavingsWalletMeta",
+        "toPositionKind": "Supplied"
+      },
+      {
+        "asset": "0x35751007a407ca6FEFfE80b3cB397736D2cf4dbe",
+        "symbol": "weETH",
+        "adapter": "EtherFiStakedEthWalletMeta",
+        "toPositionKind": "Staking"
+      },
+      {
+        "asset": "0x5979d7b546e38e414f7e9822514be443a4800529",
+        "symbol": "wstETH",
+        "adapter": "LidoStakedEthWalletMeta",
+        "toPositionKind": "Staking"
+      }
+    ]
+  }
+}

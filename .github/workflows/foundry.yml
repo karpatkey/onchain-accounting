@@ -329,6 +329,18 @@ jobs:
           python3 published_addresses_guard.py --self-test
           python3 published_addresses_guard.py
 
+      - name: Reclassification manifest self-test (diff_snapshots --self-test)
+        # The wallet-yield family moves 35 holdings from the generic wallet identity to their protocol's
+        # without changing an amount. To the redeploy comparison that is 35 inclusion flips, 17 new adapters
+        # and 70 position lines, indistinguishable from real breakage — so `reclassification.json` downgrades
+        # the intended moves to INFO.
+        #
+        # A manifest that can downgrade too much is worse than no manifest, so the self-test pins the cases
+        # that must STAY a DIFF: a different amount, a flipped isDebt, the wrong target kind, an asset absent
+        # from the manifest, a LOST leg that was not a Wallet leg, a genuinely vanished or new holding, and
+        # two identical holdings collapsing one-for-one rather than many-for-one. No network, no build.
+        run: python3 script/deploy/preflight/diff_snapshots.py --self-test
+
       - name: Source gates (file:line refs; raw staticcall ratchet)
         # Two classes nothing else catches. (1) A comment citing `Foo.sol:191` is correct the day it is
         # written and silently wrong the next time a line is inserted above it — nothing recompiles a

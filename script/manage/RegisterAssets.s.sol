@@ -290,8 +290,12 @@ contract RegisterAssets is BaseDeployScript {
                 // replaced the duplicate-address revert that used to abort the batch loudly, so a duplicated
                 // config address here would silently rewrite the incumbent feed staleness window instead.
                 uint256 hb = vm.parseUint(ConfigReader.readAssetFeedHeartbeat(vm, currentChainId, symbol, i));
-                if (registered && _feedAlreadyRegistered(navProxy, asset, onChainFeeds, feed)) {
-                    revert FeedOrderMismatch(asset, resolvableIdx, feed, feed);
+                // Both addresses ARE the same here — that is what a duplicate means — but the index must be
+                // the on-chain slot holding the incumbent, not the config position, or the operator cannot
+                // tell which registered feed the config collides with.
+                (bool dup, uint256 dupAt) = _feedAlreadyRegistered(navProxy, asset, onChainFeeds, feed);
+                if (registered && dup) {
+                    revert FeedOrderMismatch(asset, dupAt, feed, feed);
                 }
                 tmp[n++] = abi.encodeCall(NAVCalculator.addOrModifyPriceFeed, (asset, feed, pt, hb));
             }
@@ -316,18 +320,21 @@ contract RegisterAssets is BaseDeployScript {
     /// @dev Guards the trailing-feed branch. Pre-upsert, a duplicate address reverted
     ///      `PriceFeedAlreadyRegistered` and aborted the batch; now it would succeed and rewrite a live
     ///      staleness window, so the membership test has to be explicit.
+    /// @dev Returns the ON-CHAIN index the duplicate sits at, not just whether it exists: that index is the
+    ///      one fact an operator needs to fix the config, and it used to be computed here and discarded — the
+    ///      revert reported the CONFIG position instead, which is never where the incumbent lives.
     function _feedAlreadyRegistered(address navProxy, address asset, uint256 count, address feed)
         private
         view
-        returns (bool)
+        returns (bool found, uint256 atIndex)
     {
         for (uint256 k = 0; k < count; k++) {
             (bool ok, bytes memory d) =
                 navProxy.staticcall(abi.encodeWithSelector(IPrices.getPriceFeedAt.selector, asset, k));
             if (!ok || d.length < 128) continue;
-            if (abi.decode(d, (IPrices.PriceFeedConfig)).priceFeed == feed) return true;
+            if (abi.decode(d, (IPrices.PriceFeedConfig)).priceFeed == feed) return (true, k);
         }
-        return false;
+        return (false, 0);
     }
 
     function _existingFeedAct(

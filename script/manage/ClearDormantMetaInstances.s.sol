@@ -24,10 +24,17 @@ import {ConfigReader} from "script/utils/ConfigReader.sol";
 ///      **Why five transactions.** The set cannot be cleared directly: `removeMetaInstances` reverts
 ///      `InvalidBalanceAdapter` for an unregistered adapter, so the adapter must be registered first —
 ///      which is the dangerous act. The ordering below is the only one where the two adapters are never
-///      both reporting. Every intermediate state is SAFE, but they are not all under-reports: after step 2
-///      the position is served by the SUPERSEDED predecessor as sole reporter (the fork test asserts exactly
-///      that — "residue must be the ONLY reporter"), which is a correct value from a deregistered adapter
-///      rather than a missing one. Never two reporters at once is the invariant; "always missing" is not,
+///      both reporting. Every intermediate state is SAFE, but they are not all under-reports.
+///
+///      **THE STEP-2 STATE CHANGED WITH THE REGISTRATION WIPE, AND THE FORK TEST HAS NOT CAUGHT UP.**
+///      `addMetaBalanceAdapter` now clears an adapter's set before seeding it, so step 2 wipes the residue
+///      itself: step 3 finds nothing to remove and is skipped, and the window after step 2 holds ZERO
+///      reporters rather than the "residue is the ONLY reporter" state this comment used to describe — which
+///      `DormantInstanceCleanup.fork.t.sol` still asserts. Zero reporters is an under-report, the licensed
+///      direction, and every post-condition below still holds, so the script remains safe to run. But that
+///      fork test now pins pre-upgrade behaviour and nothing in CI notices, because it never upgrades the
+///      proxy. Recorded in the PR's Outstanding section: the test needs retaking against the upgraded
+///      implementation. Never two reporters at once is the invariant; "always missing" is not,
 ///      which is the direction this repo prefers everywhere. Registering the predecessor FIRST would
 ///      double-count, and that is revert-probed in `DormantInstanceCleanup.fork.t.sol`.
 ///

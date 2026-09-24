@@ -399,10 +399,35 @@ abstract contract MetaBalanceAdapter is IMetaBalanceAdapter, IPositionDescribabl
         address[][] memory perInstance = new address[][](instances.length);
         uint256 total = 0;
         for (uint256 i = 0; i < instances.length; i++) {
-            try this.instanceAssets(instances[i]) returns (address[] memory a) {
+            // METERED AND CLASSIFIED, exactly as `_positionsForInstances` does, and for the same reason: a bare
+            // `catch` could not tell a starved call from an expected refusal, so this function RETURNED
+            // SUCCESSFULLY WITH A SILENTLY SHORTER LIST. That is the residual `GasStipendLib`'s own docstring
+            // names, and it is worse here than it looks: `underlyingAssetsSupported()` is the surface callers use
+            // to decide whether ANYONE reports an asset, so a truncated answer reads as "nobody reports it" —
+            // the direction that invites a double count. `_instanceAssets` is also far costlier than
+            // `_instancePositions` for some families (Aave enumerates ~67 reserves per instance), so it is the
+            // one that truncates FIRST under a squeezed frame.
+            //
+            // ⚠️ **THIS CHANGES THIS BASE CONTRACT'S BYTECODE, SO EVERY META ADAPTER'S CREATE2 ADDRESS MOVES.**
+            // 23 adapters inherit `MetaBalanceAdapter`; all of them must be redeployed and re-registered. That
+            // is an accepted, deliberate cost (owner decision, 2026-09-24) — not an oversight — and it is why
+            // `testNavOnlyAdapterAddresses` and `testProtocolArgAdapterAddresses` are expected-red until the
+            // deploy-time address regeneration. See the PR description's `## Outstanding`.
+            //
+            // Single-sample discipline: read `available` once, forward `stipendFrom(available)`, classify
+            // `available - gasleft()` against the stipend. Re-sampling nearer the call inverts the slack.
+            uint256 available = gasleft();
+            uint256 stipend = GasStipendLib.stipendFrom(available);
+            try this.instanceAssets{gas: stipend}(instances[i]) returns (address[] memory a) {
                 perInstance[i] = a;
                 total += a.length;
             } catch {
+                uint256 consumed = available - gasleft();
+                if (GasStipendLib.exhausted(stipend, consumed)) {
+                    revert INAVCalculator.InstanceGasExhausted(address(this), instances[i], stipend, consumed);
+                }
+                // Otherwise the expected refusal — an instance this adapter cannot resolve — which is what the
+                // fail-open is for.
                 perInstance[i] = new address[](0);
             }
         }

@@ -16,6 +16,7 @@ A window in which it is reported by *none* is tolerated but still closed whereve
 |---|---|
 | **Implementation** | New `NAVCalculator` implementation; the proxy is **upgraded in place**. No new proxy. |
 | **Libraries** | **Both** pinned libraries move — `NAVRegistryLib` and `PriceFeedLib`. New CREATE2 addresses, pins regenerated. |
+| **Meta adapters** | ⚠️ **ALL 23 move address and must be redeployed AND re-registered.** `MetaBalanceAdapter._assetsForInstances` is now gas-metered, which changes the shared base's bytecode. Owner decision 2026-09-24: accepted. `testNavOnlyAdapterAddresses` / `testProtocolArgAdapterAddresses` are expected-red until the address records are regenerated. |
 | **New storage** | `Balances._claimant` at slot **109**, declared after `__balancesGap` (48→47). Layout verified COMPATIBLE. |
 | **New adapters** | 17 `…WalletMetaBalanceAdapter` contracts, CREATE2, on 5 chains. |
 | **Governance** | `DEFAULT_ADMIN_ROLE` + `MANAGER` move from the deployer EOA to a new `TimelockController`. |
@@ -267,11 +268,20 @@ correct resting states. Rollback means upgrading the proxy back to the implement
 `script/config/deployments/<chainId>.json`; the `_claimant` writes then become inert, since the old
 implementation never reads slot 109.
 
-⚠️ **Rollback is not complete on its own.** `_excludeIfAsset` wrote to `ERC20DefaultBalanceAdapter`'s
-inclusion list — **state on a separate immutable contract** — and the proxy rollback does not undo it. Any
-token excluded during the backfill stays excluded. That is still correct while its meta adapter remains
-registered, but if you also deregister that adapter you must re-arm the token with
-`includeAssetInDefaultAdapter`, or it is reported by nobody. **Re-arm first, deregister second** — the
-mirror of the migration's own polarity rule.
+⚠️ **Rollback is not complete on its own, and this is now a HARD RULE rather than advice.**
+`_excludeIfAsset` wrote to `ERC20DefaultBalanceAdapter`'s inclusion list — **state on a separate immutable
+contract** — and a proxy rollback does not undo it. Any token excluded during the backfill stays excluded.
+
+**`_release` no longer re-arms the default adapter** (owner decision 2026-09-24, reversing the earlier
+"retirement no longer means deletion"), because at release time the code cannot see a PLAIN adapter
+reporting the same token's wallet balance under a different reported asset — `CapStablecoinBalanceAdapter`,
+`AaveV3SafetyModuleBalanceAdapter` and `AaveUmbrellaBalanceAdapter` all do, and re-arming over one is an
+over-report. So nothing hands a token back automatically any more.
+
+**Therefore: RE-ARM FIRST, DEREGISTER SECOND.** Deregistering a meta adapter leaves every registered token
+it governed reported by nobody until `includeAssetInDefaultAdapter` is called for each (that call is
+claim-guarded, so it cannot itself create a second reporter). Doing it in the other order produces a silent
+NAV drop with no health flag. This applies to the wallet-yield rollback specifically: retiring those
+adapters strands their 35 tokens until each is re-armed.
 
 **Do not revoke the deployer EOA until every chain has completed Phase 2 and Phase 3.**

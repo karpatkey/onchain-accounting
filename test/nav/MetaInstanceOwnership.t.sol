@@ -28,8 +28,8 @@ contract MetaInstanceOwnershipTest is SuperTest {
 
     function setUp() public {
         setupAll();
-        metaA = new Mock_OwnershipMetaAdapter();
-        metaB = new Mock_OwnershipMetaAdapter();
+        metaA = new Mock_OwnershipMetaAdapter(address(nav));
+        metaB = new Mock_OwnershipMetaAdapter(address(nav));
         def = ERC20DefaultBalanceAdapter(nav.erc20DefaultBalanceAdapter());
         vm.startPrank(navCalculatorManager);
         nav.addMetaBalanceAdapter(address(metaA), new bytes32[](0));
@@ -147,14 +147,42 @@ contract MetaInstanceOwnershipTest is SuperTest {
     }
 
     /// @dev Releasing must re-arm, so a released registered asset is reported by SOMEBODY rather than nobody.
-    function test_releaseRearmsDefaultAdapter() public {
+    /// @dev **Releasing does NOT re-arm the default adapter**, and this test asserts the reversal rather than
+    ///      the old behaviour. `_claimant` tracks meta coordinates only, so at release time the code cannot see
+    ///      a PLAIN adapter reporting the same token's wallet balance (`CapStablecoinBalanceAdapter` and the
+    ///      two Aave stake-token adapters all do, each under a DIFFERENT reported asset). Re-arming over one of
+    ///      those is a double count with no health flag — an over-report, which this repo never licenses — so
+    ///      the trade is made in the licensed direction: the token is reported by nobody until an operator
+    ///      re-arms it explicitly. The repair is asserted by {test_releaseThenExplicitInclude_restoresReporting}.
+    function test_releaseDoesNotRearmDefaultAdapter() public {
         Mock_ERC20 t = _newToken();
         _register(t);
         vm.startPrank(navCalculatorManager);
         nav.addMetaInstances(address(metaA), _one(_coord(t)));
         nav.removeMetaInstances(address(metaA), _one(_coord(t)));
         vm.stopPrank();
-        assertTrue(def.isSupportedByDefault(address(t)), "release must re-arm the default adapter");
+        assertFalse(
+            def.isSupportedByDefault(address(t)),
+            "release must NOT re-arm the default adapter - it cannot see a plain adapter reporting the token"
+        );
+    }
+
+    /// @dev The other half: the under-report the reversal accepts is REPAIRABLE in one MANAGER call, and the
+    ///      repair is itself guarded by {includeAssetIfUnclaimed} so it cannot create a second reporter. Without
+    ///      this test the reversal would look like a dead end rather than a documented trade.
+    function test_releaseThenExplicitInclude_restoresReporting() public {
+        Mock_ERC20 t = _newToken();
+        _register(t);
+        vm.startPrank(navCalculatorManager);
+        nav.addMetaInstances(address(metaA), _one(_coord(t)));
+        nav.removeMetaInstances(address(metaA), _one(_coord(t)));
+        vm.stopPrank();
+        assertFalse(def.isSupportedByDefault(address(t)), "precondition: release left it unreported");
+
+        vm.prank(navCalculatorManager);
+        nav.includeAssetInDefaultAdapter(address(t));
+
+        assertTrue(def.isSupportedByDefault(address(t)), "explicit inclusion must restore reporting");
     }
 
     /// @dev THE defect-6 shape. `SwapMetaAdapter` does release-then-re-add: `removeMetaInstances` on the old
@@ -313,7 +341,7 @@ contract MetaInstanceOwnershipTest is SuperTest {
 
     /// @dev Retirement hands every coordinate back. Without this the set lies dormant and a later
     ///      re-registration revives it alongside the live adapter.
-    function test_retirementReleasesAndRearms() public {
+    function test_retirementReleasesWithoutRearming() public {
         Mock_ERC20 t = _newToken();
         _register(t);
         address[] memory one = new address[](1);
@@ -324,7 +352,9 @@ contract MetaInstanceOwnershipTest is SuperTest {
         vm.stopPrank();
 
         assertEq(nav.getMetaInstances(address(metaA)).length, 0, "retirement must clear the set");
-        assertTrue(def.isSupportedByDefault(address(t)), "retirement must re-arm the default adapter");
+        // Same reversal as {test_releaseDoesNotRearmDefaultAdapter}: retirement clears the claim but does not
+        // hand the token back, because the release path cannot prove no plain adapter reports it.
+        assertFalse(def.isSupportedByDefault(address(t)), "retirement must NOT re-arm the default adapter");
     }
 
     /// @dev Re-registration WIPES. The guard this replaced scanned the incoming batch, so an EMPTY list
@@ -401,13 +431,13 @@ contract MetaInstanceOwnershipTest is SuperTest {
         assertEq(nav.getMetaInstances(address(metaB)).length, 1, "metaB must still govern the token it never released");
     }
 
-    /// @dev The other direction, and the one that matters for not over-correcting: an ORDINARY release must
-    ///      still re-arm the default adapter. `_release` deletes the claim before calling
-    ///      `_reincludeIfAsset`, so for an address-shaped coordinate the new gate reads zero and the re-arm
-    ///      proceeds exactly as before. Without this test the claim gate could be tightened into a
-    ///      fail-closed that silently strands every released token with no reporter — which is the failure
-    ///      `_reincludeIfAsset` was added to prevent in the first place.
-    function test_releaseOwnAddressShapedCoordinate_stillArmsDefault() public {
+    /// @dev The address-shaped case, which the claimant gate deliberately does NOT decide. It used to assert
+    ///      that an ordinary release hands the token back; that is no longer the behaviour — `_release` never
+    ///      re-arms now, for any coordinate shape, because it cannot see a PLAIN adapter reporting the token.
+    ///      Kept (rather than deleted with the re-arm) because it pins the SHAPE-INDEPENDENCE of the new rule:
+    ///      address-shaped and narrowing coordinates must behave identically here, so a future change that
+    ///      re-introduces a re-arm for only one of them fails.
+    function test_releaseOwnAddressShapedCoordinate_doesNotArmDefault() public {
         Mock_ERC20 t = _newToken();
         _register(t);
 
@@ -418,9 +448,9 @@ contract MetaInstanceOwnershipTest is SuperTest {
         vm.prank(navCalculatorManager);
         nav.removeMetaInstances(address(metaA), _one(_coord(t)));
 
-        assertTrue(
+        assertFalse(
             def.isSupportedByDefault(address(t)),
-            "an ordinary release must hand the token back to the default adapter, not strand it"
+            "release must not re-arm for an address-shaped coordinate either - the rule is shape-independent"
         );
     }
 }

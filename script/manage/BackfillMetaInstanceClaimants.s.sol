@@ -40,9 +40,10 @@ import {SafeTxBuilder} from "script/utils/SafeTxBuilder.sol";
 ///      **The window between the two calls — and why {plan} exists to delete it.** An earlier version of this
 ///      docstring said that between them "a coordinate that is a registered asset is re-armed on the default
 ///      adapter and then disarmed again — a different reporter but never two". **That is also wrong.** It is
-///      not re-armed: `_release` gates on `claimant[instance] != adapter` and on an un-backfilled proxy
-///      `holder == 0`, so it returns BEFORE reaching `_reincludeIfAsset`
-///      (`src/nav/NAVRegistryLib.sol:522-526`, and the library's own comment at `:512-515` says so). The real
+///      not re-armed. `_release` never re-arms the default adapter at all any more — that behaviour was removed
+///      deliberately, because it could not be made safe against a PLAIN adapter reporting the same token (see
+///      the note on `_release` in `NAVRegistryLib`). Even before that removal it did not fire here, because
+///      `_release` gates on `claimant[instance] != adapter` and on an un-backfilled proxy `holder == 0`. The real
 ///      intermediate state is **zero reporters for every coordinate in the pair**, registered asset or not —
 ///      an under-report, the direction this repo licenses, but an unbounded one that lasts until the ADD
 ///      lands and is permanent if it never does.

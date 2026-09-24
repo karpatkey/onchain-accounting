@@ -103,6 +103,9 @@ contract PositionLabelsProbeCoverageTest is Test {
         for (uint256 i; i < entries.length; ++i) {
             if (entries[i].isDir) continue;
             if (!_endsWith(entries[i].path, ".json")) continue;
+            // Same readDir/readFile race as the deployments walk below — sibling tests write synthetic
+            // per-chain config files here and delete them. See the long note at that call site.
+            if (!vm.exists(entries[i].path)) continue;
             string memory json = vm.readFile(entries[i].path);
             string[] memory keys = vm.parseJsonKeys(json, "$");
             for (uint256 k; k < keys.length; ++k) {
@@ -199,6 +202,15 @@ contract PositionLabelsProbeCoverageTest is Test {
         for (uint256 i; i < entries.length; ++i) {
             if (entries[i].isDir) continue;
             if (!_endsWith(entries[i].path, ".json")) continue;
+            // ⚠️ **RE-CHECK EXISTENCE: `readDir` and `readFile` are not atomic, and sibling tests write here.**
+            // `AssetKindRegistryGuards` and `AssetKindRegistryWiring` create and then delete
+            // `deployments/9876543xx.json` for synthetic chain ids — debris this repo documents by name — so a
+            // full-suite run could list an entry that no longer exists by the time it is read, and
+            // `vm.readFile` then reverts with a bare "No such file or directory". That failure looked exactly
+            // like a real coverage gap, passed in isolation, and cost a diagnosis. Skipping a vanished entry is
+            // safe here: this function computes a UNION over chains to check against an allowlist, and a file
+            // that exists for microseconds inside another test's fixture is not a deployment record.
+            if (!vm.exists(entries[i].path)) continue;
 
             string memory json = vm.readFile(entries[i].path);
             // A chain that has not been configured yet has no `balanceAdapters` object at all.

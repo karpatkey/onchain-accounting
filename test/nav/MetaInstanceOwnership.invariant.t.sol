@@ -25,6 +25,15 @@ import "test/mocks/price_oracles.sol";
 ///         meta registration test is a fork test, which is precisely why the unit-level ownership rules below
 ///         went unexercised.
 contract Mock_OwnershipMetaAdapter is IMetaBalanceAdapter {
+    /// @dev Needed so {underlyingAssetsSupported} can map the GOVERNED SET the way `MetaBalanceAdapter` does.
+    ///      Without it the mock could only answer a constant, which is precisely the unfaithfulness that hid
+    ///      two gate defects from a green suite.
+    address public immutable NAV;
+
+    constructor(address nav_) {
+        NAV = nav_;
+    }
+
     function supportsInterface(bytes4 id) external pure override returns (bool) {
         return id == type(IBalanceAdapter).interfaceId || id == type(IMetaBalanceAdapter).interfaceId
             || id == type(IERC165).interfaceId;
@@ -88,8 +97,17 @@ contract Mock_OwnershipMetaAdapter is IMetaBalanceAdapter {
         }
     }
 
-    function underlyingAssetsSupported() external pure returns (address[] memory) {
-        return new address[](0);
+    /// @dev FAITHFUL to `MetaBalanceAdapter.underlyingAssetsSupported`, which maps
+    ///      `getMetaInstances(address(this))` through `_instanceAssets`. An earlier version returned an EMPTY
+    ///      array, and that unfaithfulness is not cosmetic: it is why two defects in the claimant/release gates
+    ///      were invisible to a green suite and had to be caught by a separate review pass. A mock that answers
+    ///      the one method a guard probes must answer it the way the real base does.
+    function underlyingAssetsSupported() external view returns (address[] memory a) {
+        bytes32[] memory set = INAVCalculator(NAV).getMetaInstances(address(this));
+        a = new address[](set.length);
+        for (uint256 i; i < set.length; ++i) {
+            a[i] = address(uint160(uint256(set[i])));
+        }
     }
 
     function getAdapterBalanceForAsset(address, address) external pure returns (uint256, bool) {
@@ -160,7 +178,7 @@ contract MetaOwnershipHandler is Test {
 
     function addMetaAdapter() external {
         if (metas.length >= 3) return;
-        Mock_OwnershipMetaAdapter m = new Mock_OwnershipMetaAdapter();
+        Mock_OwnershipMetaAdapter m = new Mock_OwnershipMetaAdapter(address(nav));
         vm.prank(manager);
         try nav.addMetaBalanceAdapter(address(m), new bytes32[](0)) {
             metas.push(m);

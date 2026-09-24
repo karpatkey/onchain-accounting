@@ -11,7 +11,6 @@ import {ArrayLib} from "src/utils/ArrayLib.sol";
 import {ERC20DefaultBalanceAdapter} from "src/balances/BalanceAdapters/ERC20DefaultBalanceAdapter.sol";
 
 // forge-lint: disable-next-line(unaliased-plain-import)
-import {GasStipendLib} from "src/utils/GasStipendLib.sol";
 import "src/errors.sol";
 
 /// @title NAVRegistryLib
@@ -501,31 +500,43 @@ library NAVRegistryLib {
         bytes32 instance,
         address erc20DefaultBalanceAdapter
     ) private {
-        // OWNERSHIP GATE. Releasing used to be unconditional, which let one adapter delete another's claim
-        // and re-arm the default adapter for a coordinate somebody else was still reporting — two reporters,
-        // no health flag, the +$11,375.92 shape this PR exists to close, reintroduced through the release
-        // side. The registration WIPE made it reachable in one MANAGER call: `addMetaBalanceAdapter(residue,
-        // [])` wipes a dormant pre-#335 array, and every coordinate that array still lists gets released —
-        // including coordinates the LIVE adapter owns and is still reporting.
-        //
-        // THE CONDITION IS "WE OWN IT", and an earlier version of this comment argued the opposite — that
-        // skipping only a claim held by a DIFFERENT adapter was load-bearing, because on an upgraded proxy
-        // `_claimant` is empty and requiring `== adapter` would stop release re-arming the default adapter.
-        // That reasoning traded the wrong way round. In the un-backfilled window `holder == 0` for every
-        // pre-existing coordinate, so the weaker gate did not fire at all: wiping a dormant residue array
-        // re-armed the default adapter for coordinates a LIVE adapter was still reporting, and
-        // `addSupportedAsset` succeeds for a registered asset — two reporters, no health flag.
-        //
-        // Both options lose something in that window; they do not lose the same KIND of thing. The weaker
-        // gate risks an OVER-report, which this repo never licenses. This one declines to re-arm a coordinate
-        // whose ownership it cannot prove, which is an under-report — licensed everywhere here, and repaired
-        // by `BackfillMetaInstanceClaimants` populating the map. On a backfilled or freshly deployed proxy
-        // `holder == adapter` for every legitimately held coordinate, so nothing is lost at all.
+        // OWNERSHIP GATE. Releasing used to be unconditional, which let one adapter delete another's claim.
+        // The condition is "we own it": on a backfilled or freshly deployed proxy `holder == adapter` for every
+        // legitimately held coordinate, and in the un-backfilled window `holder == 0` for every pre-existing
+        // one, so a wipe of a dormant residue array cannot clear a live adapter's claim.
         address holder = claimant[instance];
         if (holder != adapter) return;
 
         delete claimant[instance];
-        _reincludeIfAsset(claimant, erc20DefaultBalanceAdapter, instance);
+
+        // **RELEASING DOES NOT RE-ARM THE DEFAULT ADAPTER, and that is a deliberate reversal.** An earlier
+        // revision handed a released coordinate back to `ERC20DefaultBalanceAdapter` when it was a registered
+        // asset, so that retiring an adapter could not make a token vanish from NAV. The repo owner recorded
+        // that as intended ("retirement no longer means deletion") and has now reversed it, because the
+        // re-arm could not be made safe:
+        //
+        //   `_claimant` tracks META coordinates only, so at this point the code cannot see a PLAIN adapter
+        //   that reports the same token's wallet balance. Three do — `CapStablecoinBalanceAdapter` (reads
+        //   cUSD, reports USDC), `AaveV3SafetyModuleBalanceAdapter` and `AaveUmbrellaBalanceAdapter` (read a
+        //   stake token, report the underlying) — and each reports under a DIFFERENT asset than the one whose
+        //   balance it read, so nothing records that the wrapper is already accounted for. Re-arming over one
+        //   of them is two well-formed non-debt legs for a single balance with no health flag: an OVER-report,
+        //   which this repo never licenses.
+        //
+        // Two ways to keep the re-arm safely were implemented and rejected on evidence: asking every adapter
+        // via `underlyingAssetsSupported()` (that is a VALUATION surface — `AaveV3InstancesMetaBalanceAdapter`
+        // declares every reserve token, ~67 on mainnet — so it refused legitimate re-arms and broke the
+        // rollback path), and packing an "was armed at claim time" flag into `claimant`'s unused bytes (it
+        // changes the meaning of every read of this map, including the one `BackfillMetaInstanceClaimants`
+        // performs with `vm.load`). A correct predicate would be "does this adapter read THIS token's
+        // `balanceOf`", which no interface answers.
+        //
+        // **So the trade is made explicitly in the licensed direction: releasing under-reports rather than
+        // risking a double count.** `includeAssetInDefaultAdapter` is the repair, it is one MANAGER call, and
+        // it is guarded by {includeAssetIfUnclaimed} so it cannot itself create a second reporter. The
+        // operational consequence is that retiring a meta adapter leaves its registered tokens reported by
+        // nobody until an operator re-arms them — **re-arm first, deregister second**, which the migration
+        // runbook now states as a rule rather than advice.
     }
 
     /// @dev Appends `instances` to `adapter`'s set via `_claim`, which is the only writer that adds.
@@ -543,73 +554,6 @@ library NAVRegistryLib {
         }
     }
 
-    /// @dev Hands a released coordinate back to `ERC20DefaultBalanceAdapter` when it is a registered asset.
-    ///
-    ///      Without this, releasing a coordinate left the token held by NOBODY: excluded from the default
-    ///      adapter and governed by no meta adapter, so `getAccountNav` returned a clean, wrong, smaller number
-    ///      with no health flag — the `NAV` struct carries only price-side fields. `includeAssetInDefaultAdapter`
-    ///      existed as the manual repair but had ZERO non-test callers, so nothing prompted anyone to run it.
-    ///
-    ///      Self-limiting by construction, which is why it is safe to apply to EVERY released coordinate rather
-    ///      than only the wallet-yield family's. `addSupportedAsset` reverts `AssetNotFound` unless the address
-    ///      is a registered NAV asset, so a Morpho vault address or a truncated Balancer poolId simply fails and
-    ///      is skipped; and `EnumerableSet.add` is idempotent, so re-including an asset that never left is a
-    ///      no-op. The `catch` is the filter, not an error path.
-    ///
-    ///      Deliberate consequence, decided by the repo owner: retirement no longer means deletion. An operator
-    ///      removing an adapter to stop reporting a token will find it reported by the default adapter again.
-    ///      "Remove this from NAV entirely" is `unregisterAsset`, a separate and explicit operation. The trade is
-    ///      a visible, correct value from an unexpected reporter instead of an invisible, wrong one from none.
-    ///      CLAIM-GATED, because the truncation below is not injective. `instance` is narrowed to an address by
-    ///      dropping its top 12 bytes, so a coordinate that is NOT address-shaped — a Morpho marketId, a Balancer
-    ///      V2 poolId — can narrow onto a real token `T` that a DIFFERENT meta adapter governs under the
-    ///      address-shaped coordinate `bytes32(T)`. Releasing that coordinate would then re-arm the default
-    ///      adapter for a token somebody else is still reporting: two reporters, no health flag, which is the
-    ///      exact shape this PR exists to close, arriving through the release side instead of the claim side.
-    ///      Its inclusion twin {includeAssetIfUnclaimed} has always consulted `claimant`; this one did not, and
-    ///      the asymmetry was the gap. One SLOAD closes it.
-    ///
-    ///      The address-shaped case — `instance == bytes32(T)`, the overwhelming majority — is unaffected:
-    ///      `_release` has already `delete`d that key before calling here, so the lookup reads zero and the
-    ///      re-arm proceeds exactly as before. Only a coordinate narrowing onto a key somebody ELSE holds is
-    ///      skipped, and skipping is an under-report, which this repo licenses.
-    function _reincludeIfAsset(
-        mapping(bytes32 => address) storage claimant,
-        address erc20DefaultBalanceAdapter,
-        bytes32 instance
-    ) private {
-        if (erc20DefaultBalanceAdapter == address(0)) return;
-        address token = address(uint160(uint256(instance)));
-        if (token == address(0)) return;
-
-        // Decline to re-arm a token whose address-shaped coordinate another adapter still claims.
-        if (claimant[bytes32(uint256(uint160(token)))] != address(0)) return;
-
-        // METERED, because the fail-open here had no way to tell a starved call from an expected one.
-        // `addSupportedAsset` is a full external call that itself calls back into the proxy
-        // (`isAssetRegistered`), so the bare `catch {}` this replaces treated an out-of-gas identically to the
-        // expected `AssetNotFound`. On `removeBalanceAdapters` over a large set, a coordinate late in the loop
-        // gets a dwindling frame: the call failed, the catch swallowed it, the outer transaction still
-        // succeeded, and the token ended up released from the meta adapter AND not re-armed on the default one
-        // — governed by nobody, no health flag. That is the outcome this function exists to prevent, and the
-        // direction being merely an under-report is not a reason to leave it undetectable.
-        //
-        // Same single-sample discipline as `MetaBalanceAdapter._positionsForInstances`: read `available` ONCE
-        // before the call, forward `stipendFrom(available)`, and classify `available - gasleft()` against it.
-        // Re-sampling nearer the call inverts the slack and a real exhaustion reads as a benign revert.
-        uint256 available = gasleft();
-        uint256 stipend = GasStipendLib.stipendFrom(available);
-        try ERC20DefaultBalanceAdapter(erc20DefaultBalanceAdapter).addSupportedAsset{gas: stipend}(token) {}
-        catch {
-            uint256 consumed = available - gasleft();
-            if (GasStipendLib.exhausted(stipend, consumed)) {
-                revert IBalances.DefaultAdapterReincludeGasExhausted(token, stipend, consumed);
-            }
-            // Otherwise it is the expected refusal — the coordinate is not a registered asset — which is
-            // exactly what this fail-open is for.
-        }
-    }
-
     /// @notice Arms the default adapter for `asset`, refusing if a meta adapter already governs it — i.e. the
     ///         single gate through which a token may become a wallet-reported holding.
     /// @dev One SLOAD decides it, replacing an O(adapters x instances) scan; that collapse is what let the
@@ -624,7 +568,7 @@ library NAVRegistryLib {
     ///      the caller must remember to place before a separate call is exactly the seven-writers shape this
     ///      PR exists to remove — fused, there is no way to reach the inclusion without passing the gate.
     ///
-    ///      NOT fail-open, unlike {_reincludeIfAsset}: this runs where the asset is known-registered, so a
+    ///      NOT fail-open: this runs where the asset is known-registered, so a
     ///      revert from `addSupportedAsset` is a real fault and must reach the MANAGER rather than be
     ///      swallowed.
     /// @dev `revertIfClaimed` splits the two callers, and collapsing them was a trap.
@@ -655,14 +599,14 @@ library NAVRegistryLib {
     }
 
     /// @dev Removes a taken coordinate from the default adapter's inclusion list — the mirror of
-    ///      {_reincludeIfAsset}, and self-limiting the same way: `removeSupportedAsset` is idempotent and
+    ///      self-limiting: `removeSupportedAsset` is idempotent and
     ///      unguarded on membership, so a coordinate that is not a registered asset is simply absent and the
     ///      call is a no-op.
     function _excludeIfAsset(address erc20DefaultBalanceAdapter, bytes32 instance) private {
         if (erc20DefaultBalanceAdapter == address(0)) return;
         address token = address(uint160(uint256(instance)));
         if (token == address(0)) return;
-        // NOT fail-open, unlike {_reincludeIfAsset}, and the asymmetry is deliberate. `addSupportedAsset`
+        // NOT fail-open, and that is deliberate. `addSupportedAsset`
         // genuinely reverts `AssetNotFound` for a coordinate that is not a registered asset, so swallowing
         // that is correct. `removeSupportedAsset` has no such case: it reverts only for a caller that is not
         // its pinned `NAV_CALCULATOR`, which cannot happen for a correctly deployed pair — the library runs by

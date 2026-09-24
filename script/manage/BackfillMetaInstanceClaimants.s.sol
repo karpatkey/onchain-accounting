@@ -93,6 +93,31 @@ contract BackfillMetaInstanceClaimants is Script {
         return false;
     }
 
+    /// @notice The coordinates in `want` that are absent from `have` — the set an interrupted run must restore.
+    /// @dev EXTRACTED AND PURE so it can be truth-tabled, which is the half of the hardening plan's S3 that did
+    ///      not land the first time. Both of this function's predecessors were wrong in ways a table would have
+    ///      caught immediately, and both were found by an audit instead:
+    ///        - `lost` was computed as `want.length - have.length`, so a set refilled with DIFFERENT coordinates
+    ///          (snapshot [c1,c2,c3] vs on-chain [c4,c5,c6]) reported ZERO lost, and the caller then deleted the
+    ///          recovery snapshot while reporting success.
+    ///        - the restore array was SIZED `want.length - have.length`, which equals `|want \ have|` only when
+    ///          `have` is a subset of `want`; otherwise the fill ran past the end and panicked 0x32.
+    ///      Sizing at `want.length` is the upper bound and cannot be short.
+    /// @param want The snapshotted set, taken before any write.
+    /// @param have The set currently on chain.
+    /// @return missing Exactly the members of `want` not present in `have`, in `want` order.
+    function missingFrom(bytes32[] memory want, bytes32[] memory have) public pure returns (bytes32[] memory missing) {
+        bytes32[] memory buf = new bytes32[](want.length);
+        uint256 m;
+        for (uint256 x; x < want.length; ++x) {
+            if (!_contains(have, want[x])) buf[m++] = want[x];
+        }
+        missing = new bytes32[](m);
+        for (uint256 i; i < m; ++i) {
+            missing[i] = buf[i];
+        }
+    }
+
     function _claimantOf(address nav, bytes32 coord) internal view returns (address) {
         return address(uint160(uint256(vm.load(nav, keccak256(abi.encode(coord, CLAIMANT_SLOT))))));
     }
@@ -149,9 +174,7 @@ contract BackfillMetaInstanceClaimants is Script {
                 // from NAV for good and their only record destroyed by the script that exists to restore them.
                 bytes32[] memory wantArr = vm.parseJsonBytes32Array(snapJson, k);
                 bytes32[] memory haveArr = NAVCalculator(nav).getMetaInstances(adapters[i]);
-                for (uint256 x; x < wantArr.length; ++x) {
-                    if (!_contains(haveArr, wantArr[x])) ++lost;
-                }
+                lost += missingFrom(wantArr, haveArr).length;
             }
         }
 
@@ -212,16 +235,9 @@ contract BackfillMetaInstanceClaimants is Script {
                 // error and no way to recover short of hand-editing the snapshot. A `have.length >= want.length`
                 // skip additionally hid the refilled-with-different-coordinates case entirely.
                 // `m == 0` below is the real "nothing to do" test.
-                bytes32[] memory missing = new bytes32[](want.length);
-                uint256 m;
-                for (uint256 x; x < want.length; ++x) {
-                    if (!_contains(have, want[x])) missing[m++] = want[x];
-                }
-                if (m == 0) continue;
+                bytes32[] memory missing = missingFrom(want, have);
+                if (missing.length == 0) continue;
                 console2.log("RECOVERING lost instance set for", adapters[i]);
-                assembly {
-                    mstore(missing, m)
-                }
                 NAVCalculator(nav).addMetaInstances(adapters[i], missing);
                 bytes32[] memory after_ = NAVCalculator(nav).getMetaInstances(adapters[i]);
                 for (uint256 x; x < want.length; ++x) {

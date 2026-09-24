@@ -46,21 +46,41 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[3]
 DEPLOYMENTS = "script/config/deployments/{chain}.json"
 
-# getMetaInstances(address) / isAdapterRegistered(address) / getAllAdapters()
-SEL_META = "0x" + "e1a7b6d3"  # placeholder, replaced at runtime by the computed selector
 SIG_META = "getMetaInstances(address)"
-SIG_REG = "isAdapterRegistered(address)"
 SIG_ALL = "getAllAdapters()"
 
+# Selectors as LITERALS, not computed. The preflight CI job installs only `requests`, so importing a keccak
+# backend here made this gate fail on the runner while passing locally — the gate's own dependency breaking
+# the gate. They are constants of the ABI, so a literal is as correct as a derivation; `selector()` below
+# still derives them WHEN a backend happens to be available, and the self-test cross-checks the two, so a
+# typo cannot survive a local run.
+SELECTORS = {
+    SIG_META: "0x888f2262",
+    SIG_ALL: "0xe31ada97",
+}
 
-def _keccak(data: bytes) -> bytes:
-    from eth_hash.auto import keccak
 
+def _keccak_or_none(data: bytes):
+    """keccak256 if a backend is installed, else None. Never a hard dependency of this module."""
+    try:
+        from eth_hash.auto import keccak  # noqa: PLC0415 - optional, and deliberately lazy
+    except Exception:  # noqa: BLE001 - any import failure means "unavailable", not "broken"
+        return None
     return keccak(data)
 
 
 def selector(sig: str) -> str:
-    return "0x" + _keccak(sig.encode()).hex()[:8]
+    """The 4-byte selector. Literal by default; derived and cross-checked when a backend is present."""
+    lit = SELECTORS.get(sig)
+    got = _keccak_or_none(sig.encode())
+    if got is not None:
+        derived = "0x" + got.hex()[:8]
+        if lit is not None and derived != lit:
+            raise SystemExit(f"selector literal for {sig} is {lit} but keccak says {derived}")
+        return derived
+    if lit is None:
+        raise SystemExit(f"no selector literal for {sig} and no keccak backend to derive one")
+    return lit
 
 
 def rpc(url: str, to: str, data: str) -> str:
@@ -144,8 +164,14 @@ def audit_chain(chain: int, url: str, nav: str) -> list[tuple[str, int]]:
 def self_test() -> int:
     """Pin the decoders, which are the only part that can be wrong without an RPC."""
     failures = []
-    if selector(SIG_META) != "0x" + _keccak(SIG_META.encode()).hex()[:8]:
-        failures.append("  selector() is not keccak-derived")
+    # Selector agreement is only checkable where a keccak backend exists; on the CI runner it does not, and
+    # the literals are the point. Report which path ran so a green line cannot be mistaken for the stronger one.
+    if _keccak_or_none(b"") is None:
+        print("  (no keccak backend: selector literals used, derivation not cross-checked)")
+    else:
+        for sig, lit in SELECTORS.items():
+            if selector(sig) != lit:
+                failures.append(f"  selector literal disagrees with keccak for {sig}")
     empty = "0x" + "20".rjust(64, "0") + "0".rjust(64, "0")
     if decode_bytes32_array(empty) != []:
         failures.append("  an empty bytes32[] must decode to []")

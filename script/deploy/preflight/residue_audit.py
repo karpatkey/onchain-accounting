@@ -142,8 +142,9 @@ def historical_adapters(chain: int) -> set[str]:
 def audit_chain(chain: int, url: str, nav: str) -> list[tuple[str, int]]:
     # NOTE: an earlier revision also unpacked a `sel_reg` from a `SIG_REG` that was never defined, so this
     # function raised NameError on EVERY real invocation while the self-test - which does not call it -
-    # stayed green. The gate's own smoke check below now resolves these selectors so the pair cannot
-    # diverge again.
+    # stayed green. The self-test now resolves SIG_META and SIG_ALL, so a typo in EITHER OF THOSE TWO
+    # fails the gate. It does not cover a selector added here later and not added there - keep the two
+    # lists in step by hand.
     sel_meta, sel_all = selector(SIG_META), selector(SIG_ALL)
     registered = {a.lower() for a in decode_address_array(rpc(url, nav, sel_all))}
     candidates = historical_adapters(chain) | registered
@@ -311,8 +312,9 @@ def self_test() -> int:
 
     # --- smoke the audit entry points' selector resolution ---------------------------------------------
     # `audit_chain` previously unpacked a selector for an undefined `SIG_REG`, so it raised NameError on
-    # every real run while this self-test - which never called it - stayed green. Resolving exactly the
-    # selectors both functions use turns that class of typo into a self-test failure.
+    # every real run while this self-test - which never called it - stayed green. Resolving the selectors
+    # both functions use turns a typo in one of THESE into a self-test failure; it does not detect a
+    # newly-added selector that was never listed here.
     try:
         for sig in (SIG_META, SIG_ALL):
             selector(sig)

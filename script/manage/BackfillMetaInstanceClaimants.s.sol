@@ -57,9 +57,17 @@ import {SafeTxBuilder} from "script/utils/SafeTxBuilder.sol";
 ///      same coordinate in live state — the issue #335 double-count — then backfilling adapter-by-adapter
 ///      would let the first claim it and the second fail mid-batch, stranding that adapter with an EMPTY set
 ///      and losing its other coordinates. So the script scans for cross-adapter duplicates FIRST and stops,
-///      naming the coordinate, rather than discovering it halfway through a broadcast. Measured across the 7
-///      configured chains before this landed — 104 coordinates over 40 adapter entries, zero duplicates — so
-///      the stop is expected never to fire; it exists because "expected never" is not "cannot".
+///      naming the coordinate, rather than discovering it halfway through a broadcast. No duplicate has been
+///      observed on the 7 configured chains, so the stop is expected never to fire; it exists because
+///      "expected never" is not "cannot".
+///
+///      An earlier revision quantified that as "104 coordinates over 40 adapter entries". **That figure is
+///      dropped rather than restated, because it is not reproducible:** parsing
+///      `nav-config/meta-balance-adapters/*.json` gives 154 or 163 governed coordinates depending on how
+///      `enabled: false` entries are counted, and a live read gave 142. Three disagreeing numbers mean the
+///      count is not something this docstring can assert. It does not bear on correctness — every scan here is
+///      driven by live `getMetaInstances` reads, never by a count — which is why an unverifiable figure had no
+///      business being stated as a measurement.
 contract BackfillMetaInstanceClaimants is Script {
     /// @dev Storage slot of `Balances._claimant`, per `script/upgrade/storage-layout/NAVCalculator.json`.
     ///      NOT trusted blind: {_assertSlotIsRight} proves it against live state before the slot is used to
@@ -155,9 +163,9 @@ contract BackfillMetaInstanceClaimants is Script {
     ///      double-count — then backfilling adapter-by-adapter would let the first claim it and the second
     ///      fail, stranding that adapter with an EMPTY set and losing its other coordinates. So both entry
     ///      points scan for cross-adapter duplicates FIRST and stop, naming the coordinate, rather than
-    ///      discovering it halfway through a broadcast or shipping it inside a signed Safe batch. Measured
-    ///      across the 7 configured chains before this landed — zero duplicates — so the stop is expected
-    ///      never to fire; it exists because "expected never" is not "cannot".
+    ///      discovering it halfway through a broadcast or shipping it inside a signed Safe batch. See the
+    ///      contract docstring for what has and has not been observed on the configured chains — deliberately
+    ///      not restated here, so the two cannot drift.
     ///
     ///      SHARED by {plan} and {run} deliberately. Two copies of a precondition are two things to keep in
     ///      step, and the one that matters is whichever path is not being tested.
@@ -192,10 +200,21 @@ contract BackfillMetaInstanceClaimants is Script {
 
     /// @notice Emits the backfill as ONE atomic Safe Transaction Builder batch. Broadcasts nothing.
     /// @dev **This is the production path; {run} is the EOA fallback.** Each adapter's `removeMetaInstances`
-    ///      is followed IMMEDIATELY by its `addMetaInstances`, so the Safe app's MultiSend wrap makes every
-    ///      pair atomic and the zero-reporter window described in the contract docstring never exists. That
-    ///      also removes the entire reason the recovery snapshot exists: a dead trailing transaction cannot
-    ///      empty a set when there is no trailing transaction. This function therefore writes no snapshot.
+    ///      is followed IMMEDIATELY by its `addMetaInstances`, closing the zero-reporter window described in
+    ///      the contract docstring — provided the batch really does execute as ONE transaction. That also
+    ///      removes the reason the recovery snapshot exists: a dead trailing transaction cannot empty a set
+    ///      when there is no trailing transaction. This function therefore writes no snapshot.
+    ///
+    ///      ⚠️ **The atomicity comes from the Safe Transaction Builder app, NOT from anything in this repo.**
+    ///      `SafeTxBuilder.writeSafeTx` emits a FLAT LIST of transactions; the app is what wraps a
+    ///      multi-transaction import into `multiSend` at signing time. A true single-transaction emitter does
+    ///      exist here — `SafeTxBuilder.writeSafeTxViaMultiSend` — but it has no call sites and the repo holds
+    ///      no MultiSend address constant, so it cannot be used without supplying one.
+    ///
+    ///      **So: execute this batch only through the Transaction Builder.** Dispatching the same JSON as
+    ///      individual transactions reinstates the window in full, and the adjacency this function is built
+    ///      around would then buy nothing. The snapshot being absent makes that failure mode WORSE than {run}'s,
+    ///      because there would be no recovery record either.
     ///
     ///      **Ordering, which the batch cannot enforce on its own.** The upgrade may share this batch (put
     ///      `upgradeToAndCall` first — the proxy SLOADs the implementation slot on every call, so later

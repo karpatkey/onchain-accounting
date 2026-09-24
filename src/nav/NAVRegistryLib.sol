@@ -11,6 +11,7 @@ import {ArrayLib} from "src/utils/ArrayLib.sol";
 import {ERC20DefaultBalanceAdapter} from "src/balances/BalanceAdapters/ERC20DefaultBalanceAdapter.sol";
 
 // forge-lint: disable-next-line(unaliased-plain-import)
+import {GasStipendLib} from "src/utils/GasStipendLib.sol";
 import "src/errors.sol";
 
 /// @title NAVRegistryLib
@@ -557,7 +558,30 @@ library NAVRegistryLib {
         if (erc20DefaultBalanceAdapter == address(0)) return;
         address token = address(uint160(uint256(instance)));
         if (token == address(0)) return;
-        try ERC20DefaultBalanceAdapter(erc20DefaultBalanceAdapter).addSupportedAsset(token) {} catch {}
+
+        // METERED, because the fail-open here had no way to tell a starved call from an expected one.
+        // `addSupportedAsset` is a full external call that itself calls back into the proxy
+        // (`isAssetRegistered`), so the bare `catch {}` this replaces treated an out-of-gas identically to the
+        // expected `AssetNotFound`. On `removeBalanceAdapters` over a large set, a coordinate late in the loop
+        // gets a dwindling frame: the call failed, the catch swallowed it, the outer transaction still
+        // succeeded, and the token ended up released from the meta adapter AND not re-armed on the default one
+        // — governed by nobody, no health flag. That is the outcome this function exists to prevent, and the
+        // direction being merely an under-report is not a reason to leave it undetectable.
+        //
+        // Same single-sample discipline as `MetaBalanceAdapter._positionsForInstances`: read `available` ONCE
+        // before the call, forward `stipendFrom(available)`, and classify `available - gasleft()` against it.
+        // Re-sampling nearer the call inverts the slack and a real exhaustion reads as a benign revert.
+        uint256 available = gasleft();
+        uint256 stipend = GasStipendLib.stipendFrom(available);
+        try ERC20DefaultBalanceAdapter(erc20DefaultBalanceAdapter).addSupportedAsset{gas: stipend}(token) {}
+        catch {
+            uint256 consumed = available - gasleft();
+            if (GasStipendLib.exhausted(stipend, consumed)) {
+                revert IBalances.DefaultAdapterReincludeGasExhausted(token, stipend, consumed);
+            }
+            // Otherwise it is the expected refusal — the coordinate is not a registered asset — which is
+            // exactly what this fail-open is for.
+        }
     }
 
     /// @notice Arms the default adapter for `asset`, refusing if a meta adapter already governs it — i.e. the

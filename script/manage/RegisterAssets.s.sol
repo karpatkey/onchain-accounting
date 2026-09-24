@@ -114,6 +114,12 @@ contract RegisterAssets is BaseDeployScript {
     ///      staleness window instead of reverting the batch.
     error FeedOrderMismatch(address asset, uint256 index, address onChainFeed, address configFeed);
 
+    /// @notice A registered monitor's `priceType` differs from config, which `addMonitorFeed` will refuse.
+    /// @dev Raised at PLAN time. The feed's type is identity, not configuration, so the NAV reverts
+    ///      `PriceFeedTypeImmutable` on an attempt to change it — and without this check that revert landed at
+    ///      Safe EXECUTION, after the batch file had been written and signed.
+    error MonitorFeedTypeDrift(address asset, address feed, uint8 onChainType, uint8 configType);
+
     function run() public override {
         setUp();
 
@@ -280,9 +286,10 @@ contract RegisterAssets is BaseDeployScript {
                 //
                 // Reverting here restores that loudness. This runs during `forge script` simulation, so a
                 // mismatch is caught before anything is broadcast.
-                (bool okf, bytes memory fd) =
-                    navProxy.staticcall(abi.encodeWithSelector(IPrices.getPriceFeedAt.selector, asset, resolvableIdx));
-                if (!okf || fd.length == 0) revert FeedPositionUnreadable(asset, resolvableIdx);
+                // The inline staticcall this replaced was dead: `_existingFeedAct` repeats it immediately with
+                // the STRICTER `fd.length < 128` (a `PriceFeedConfig` is four words), so the outer
+                // `fd.length == 0` could not reject anything the inner check accepts — while doubling the RPC
+                // calls in the hottest loop of a script that already needs `FOUNDRY_PROFILE=slow` to avoid OOM.
                 bytes memory act = _existingFeedAct(navProxy, asset, resolvableIdx, feed, pt, symbol, i);
                 if (act.length != 0) tmp[n++] = act;
             } else {
@@ -477,7 +484,18 @@ contract RegisterAssets is BaseDeployScript {
                 uint256 want = vm.parseUint(ConfigReader.readAssetMonitorFeedHeartbeat(vm, currentChainId, symbol, i));
                 bool drifted;
                 for (uint256 k = 0; k < onChain.length; k++) {
-                    if (onChain[k].priceFeed == feed && onChain[k].chainlinkHeartbeat != want) drifted = true;
+                    if (onChain[k].priceFeed != feed) continue;
+                    // PLAN-TIME `priceType` CHECK, the monitor-axis twin of `_existingFeedAct`'s. That one was
+                    // added because a type drift "plans cleanly, the Safe batch is WRITTEN TO DISK … and only
+                    // then does execution die". This loop reused the CONFIG `pt` for an already-registered
+                    // monitor and never compared it to the stored one, so editing a monitor's `type` in config
+                    // while its heartbeat also drifted produced a fully-formed, signable MultiSend that
+                    // `addMonitorFeed` rejects with `PriceFeedTypeImmutable` — the identical defect, one axis
+                    // over. Fail here, before anything is written.
+                    if (onChain[k].priceType != pt) {
+                        revert MonitorFeedTypeDrift(asset, feed, uint8(onChain[k].priceType), uint8(pt));
+                    }
+                    if (onChain[k].chainlinkHeartbeat != want) drifted = true;
                 }
                 if (!drifted) continue;
             }

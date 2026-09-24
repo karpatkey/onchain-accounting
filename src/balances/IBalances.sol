@@ -58,6 +58,15 @@ interface IBalances {
     ///      time because no read-path guard can see across adapters.
     error MetaInstanceClaimedByAnotherAdapter(bytes32 instance, address claimedBy);
 
+    /// @notice Re-arming `ERC20DefaultBalanceAdapter` for a released coordinate ran out of gas.
+    /// @dev Raised instead of swallowing the failure. The fail-open in {NAVRegistryLib._reincludeIfAsset} exists
+    ///      to absorb the EXPECTED refusal for a coordinate that is not a registered asset; a starved call is a
+    ///      different thing, and absorbing it left the token governed by nobody with no health flag.
+    /// @param token The coordinate that could not be re-armed.
+    /// @param stipend Gas forwarded to `addSupportedAsset`.
+    /// @param consumed Gas the call actually cost the caller.
+    error DefaultAdapterReincludeGasExhausted(address token, uint256 stipend, uint256 consumed);
+
     /// @notice Error when removing a meta-instance coordinate that is not present in the adapter's set.
     error MetaInstanceNotFound();
 

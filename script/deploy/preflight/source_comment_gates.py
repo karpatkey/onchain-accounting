@@ -53,7 +53,20 @@ SRC = REPO / "src"
 
 # A `path.ext:NNN` reference. Requires a real source extension so that ordinary prose ("ADR 0010:2",
 # "issue #335", a URL with a port) is not swept up.
-FILE_LINE = re.compile(r"[A-Za-z0-9_./-]+\.(?:sol|json|py|ts|md|toml|ya?ml):\d+")
+# Three spellings, not one. The first version matched only `Foo.sol:191` and so stopped a single form of
+# the class rather than the class: `Balances.sol#L191` (GitHub's own anchor form), `Balances:191` (extension
+# dropped) and `` `Balances.sol`:191 `` (backtick before the colon) all passed it. All three drift the same way
+# and all three read as authoritative to the next person.
+_SRC_EXT = r"(?:sol|json|py|ts|md|toml|ya?ml)"
+FILE_LINE = re.compile(
+    # path.ext:NNN  and  path.ext#LNNN
+    rf"[A-Za-z0-9_./-]+\.{_SRC_EXT}(?::|#L)\d+"
+    # `path.ext`:NNN — the backtick closes before the colon
+    rf"|`[A-Za-z0-9_./-]+\.{_SRC_EXT}`:\d+"
+    # BareIdentifier:NNN — a CamelCase contract/file name with the extension dropped. Anchored on two
+    # capitals so ordinary prose ("ADR 0010:2", "chain 1:3") cannot match.
+    rf"|(?<![A-Za-z0-9_.])[A-Z][A-Za-z0-9_]*[A-Z][A-Za-z0-9_]*:\d+"
+)
 
 # Only comments — a `:` inside a string literal or a revert message is not a doc reference.
 COMMENT = re.compile(r"(?://.*|/\*[\s\S]*?\*/)")
@@ -194,6 +207,11 @@ def self_test() -> int:
         ('string memory s = "Foo.sol:12";', 0, "a string literal is not a comment"),
         ("// http://localhost:8545 is fine", 0, "a URL port is not a file ref"),
         ("// see script/deploy/03_DeployPriceFeeds.s.sol:211", 1, "a path with directories"),
+        ("// see Balances.sol#L191", 1, "GitHub's anchor form"),
+        ("// see `Balances.sol`:191", 1, "backtick closing before the colon"),
+        ("// see NAVRegistryLib:452", 1, "extension dropped, CamelCase identifier"),
+        ("// see ADR 0010:2 and chain 1:3", 0, "prose with a colon and digits is not a ref"),
+        ("// budget 1:3 and Aave:v3", 0, "single-capital words are not file refs"),
     ]
     failures = []
     for text, want, why in cases:

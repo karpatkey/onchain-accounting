@@ -24,6 +24,57 @@ import {
 import {SparkLendBalanceAdapter} from "src/balances/BalanceAdapters/SparkLendBalanceAdapter.sol";
 import {MorphoVaultsMetaBalanceAdapter} from "src/balances/MetaBalanceAdapters/MorphoVaultsMetaBalanceAdapter.sol";
 import {
+    AaveSavingsWalletMetaBalanceAdapter
+} from "src/balances/MetaBalanceAdapters/walletYield/AaveSavingsWalletMetaBalanceAdapter.sol";
+import {
+    AnkrStakedEthWalletMetaBalanceAdapter
+} from "src/balances/MetaBalanceAdapters/walletYield/AnkrStakedEthWalletMetaBalanceAdapter.sol";
+import {
+    CoinbaseStakedEthWalletMetaBalanceAdapter
+} from "src/balances/MetaBalanceAdapters/walletYield/CoinbaseStakedEthWalletMetaBalanceAdapter.sol";
+import {
+    EthenaSavingsWalletMetaBalanceAdapter
+} from "src/balances/MetaBalanceAdapters/walletYield/EthenaSavingsWalletMetaBalanceAdapter.sol";
+import {
+    EtherFiStakedEthWalletMetaBalanceAdapter
+} from "src/balances/MetaBalanceAdapters/walletYield/EtherFiStakedEthWalletMetaBalanceAdapter.sol";
+import {
+    KelpRestakedEthWalletMetaBalanceAdapter
+} from "src/balances/MetaBalanceAdapters/walletYield/KelpRestakedEthWalletMetaBalanceAdapter.sol";
+import {
+    LidoStakedEthWalletMetaBalanceAdapter
+} from "src/balances/MetaBalanceAdapters/walletYield/LidoStakedEthWalletMetaBalanceAdapter.sol";
+import {
+    LiquidCollectiveStakedEthWalletMetaBalanceAdapter
+} from "src/balances/MetaBalanceAdapters/walletYield/LiquidCollectiveStakedEthWalletMetaBalanceAdapter.sol";
+import {
+    MapleSavingsWalletMetaBalanceAdapter
+} from "src/balances/MetaBalanceAdapters/walletYield/MapleSavingsWalletMetaBalanceAdapter.sol";
+import {
+    NexusMutualVaultsWalletMetaBalanceAdapter
+} from "src/balances/MetaBalanceAdapters/walletYield/NexusMutualVaultsWalletMetaBalanceAdapter.sol";
+import {
+    RenzoRestakedEthWalletMetaBalanceAdapter
+} from "src/balances/MetaBalanceAdapters/walletYield/RenzoRestakedEthWalletMetaBalanceAdapter.sol";
+import {
+    ReserveBasketsWalletMetaBalanceAdapter
+} from "src/balances/MetaBalanceAdapters/walletYield/ReserveBasketsWalletMetaBalanceAdapter.sol";
+import {
+    RocketPoolStakedEthWalletMetaBalanceAdapter
+} from "src/balances/MetaBalanceAdapters/walletYield/RocketPoolStakedEthWalletMetaBalanceAdapter.sol";
+import {
+    SkySavingsWalletMetaBalanceAdapter
+} from "src/balances/MetaBalanceAdapters/walletYield/SkySavingsWalletMetaBalanceAdapter.sol";
+import {
+    SparkSavingsWalletMetaBalanceAdapter
+} from "src/balances/MetaBalanceAdapters/walletYield/SparkSavingsWalletMetaBalanceAdapter.sol";
+import {
+    StaderStakedEthWalletMetaBalanceAdapter
+} from "src/balances/MetaBalanceAdapters/walletYield/StaderStakedEthWalletMetaBalanceAdapter.sol";
+import {
+    StakeWiseV3OsTokenWalletMetaBalanceAdapter
+} from "src/balances/MetaBalanceAdapters/walletYield/StakeWiseV3OsTokenWalletMetaBalanceAdapter.sol";
+import {
     SymbioticVaultsMetaBalanceAdapter
 } from "src/balances/MetaBalanceAdapters/SymbioticVaultsMetaBalanceAdapter.sol";
 import {InvertedChainlinkCustomPriceFeed} from "src/prices/protocols/InvertedChainlinkCustomPriceFeed.sol";
@@ -612,6 +663,18 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         if (_equals(name, "MorphoMarketsMeta")) {
             return _deployMorphoMarketsMeta(name, navAddr);
         }
+        // Wallet-held yield tokens (ADR 0010). DISPATCHED rather than declared in
+        // `undispatched-adapters.json`, on the grounds this file already states for SymbioticVaultsMeta: the
+        // constructor is a bare `(navAddr)`, so dispatching is cheap, and it permanently removes the hazard
+        // the declaration file describes. Here that hazard is narrower than usual — undispatched, each token
+        // stays armed on `ERC20DefaultBalanceAdapter` and reports the same `balanceOf`, so `navUsd8dp` would
+        // not move — but what a declaration WOULD lose is identity coverage: the harness would never exercise
+        // the wallet -> protocol reclassification this PR exists to perform.
+        {
+            address wy = _deployWalletYieldMeta(name, navAddr);
+            if (wy != address(0)) return wy;
+        }
+
         if (_equals(name, "MorphoVaultsMeta")) {
             return _deployMorphoVaultsMeta(name, navAddr);
         }
@@ -707,6 +770,57 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
 
     function _deployMorphoVaultsMeta(string memory, address navAddr) internal returns (address) {
         return address(new MorphoVaultsMetaBalanceAdapter(navAddr));
+    }
+
+    /// @dev One member of the wallet-held yield-token family, or address(0) if `name` is not one. Returning
+    ///      zero for a non-member is what lets the caller keep a single delegation instead of seventeen
+    ///      branches; it cannot be confused with a failed deploy, because `new` reverts rather than
+    ///      returning zero.
+    function _deployWalletYieldMeta(string memory name, address navAddr) internal returns (address) {
+        if (_equals(name, "AaveSavingsWalletMeta")) return address(new AaveSavingsWalletMetaBalanceAdapter(navAddr));
+        if (_equals(name, "AnkrStakedEthWalletMeta")) {
+            return address(new AnkrStakedEthWalletMetaBalanceAdapter(navAddr));
+        }
+        if (_equals(name, "CoinbaseStakedEthWalletMeta")) {
+            return address(new CoinbaseStakedEthWalletMetaBalanceAdapter(navAddr));
+        }
+        if (_equals(name, "EthenaSavingsWalletMeta")) {
+            return address(new EthenaSavingsWalletMetaBalanceAdapter(navAddr));
+        }
+        if (_equals(name, "EtherFiStakedEthWalletMeta")) {
+            return address(new EtherFiStakedEthWalletMetaBalanceAdapter(navAddr));
+        }
+        if (_equals(name, "KelpRestakedEthWalletMeta")) {
+            return address(new KelpRestakedEthWalletMetaBalanceAdapter(navAddr));
+        }
+        if (_equals(name, "LidoStakedEthWalletMeta")) {
+            return address(new LidoStakedEthWalletMetaBalanceAdapter(navAddr));
+        }
+        if (_equals(name, "LiquidCollectiveStakedEthWalletMeta")) {
+            return address(new LiquidCollectiveStakedEthWalletMetaBalanceAdapter(navAddr));
+        }
+        if (_equals(name, "MapleSavingsWalletMeta")) return address(new MapleSavingsWalletMetaBalanceAdapter(navAddr));
+        if (_equals(name, "NexusMutualVaultsWalletMeta")) {
+            return address(new NexusMutualVaultsWalletMetaBalanceAdapter(navAddr));
+        }
+        if (_equals(name, "RenzoRestakedEthWalletMeta")) {
+            return address(new RenzoRestakedEthWalletMetaBalanceAdapter(navAddr));
+        }
+        if (_equals(name, "ReserveBasketsWalletMeta")) {
+            return address(new ReserveBasketsWalletMetaBalanceAdapter(navAddr));
+        }
+        if (_equals(name, "RocketPoolStakedEthWalletMeta")) {
+            return address(new RocketPoolStakedEthWalletMetaBalanceAdapter(navAddr));
+        }
+        if (_equals(name, "SkySavingsWalletMeta")) return address(new SkySavingsWalletMetaBalanceAdapter(navAddr));
+        if (_equals(name, "SparkSavingsWalletMeta")) return address(new SparkSavingsWalletMetaBalanceAdapter(navAddr));
+        if (_equals(name, "StaderStakedEthWalletMeta")) {
+            return address(new StaderStakedEthWalletMetaBalanceAdapter(navAddr));
+        }
+        if (_equals(name, "StakeWiseV3OsTokenWalletMeta")) {
+            return address(new StakeWiseV3OsTokenWalletMetaBalanceAdapter(navAddr));
+        }
+        return address(0);
     }
 
     /// @dev Dispatched rather than declared in `undispatched-adapters.json`. No fixture holds a Symbiotic

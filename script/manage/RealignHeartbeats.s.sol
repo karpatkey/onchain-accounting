@@ -35,6 +35,12 @@ contract RealignHeartbeats is Script {
     error SignerNotManager(address signer);
     error NoNavDeployed(uint256 chainId);
 
+    /// @notice {verify} found work still outstanding, i.e. the broadcast did not fully land.
+    /// @dev The whole reason {verify} exists. Every `require` inside {run} runs during local SIMULATION —
+    ///      `forge script` executes the body and only then sends the recorded transactions — so a run where
+    ///      transaction 20 of 49 dies still prints `ok <sym>` for all 49 and exits 0.
+    error StillDrifted(uint256 assetsRemaining, uint256 monitorsRemaining);
+
     function run() external {
         uint256 chainId = block.chainid;
         if (NAV.code.length == 0) revert NoNavDeployed(chainId);
@@ -122,7 +128,14 @@ contract RealignHeartbeats is Script {
         }
         vm.stopBroadcast();
 
-        console2.log("--- verification ---");
+        // [SIMULATED] — and that word is load-bearing. Under `forge script` the body executes first and
+        // Foundry sends the recorded transactions only after `run()` returns, so everything below reads the
+        // SIMULATION, not the chain. It is still worth doing (it catches a plan that cannot succeed at all),
+        // but it cannot witness a partially-landed broadcast: this script now sends one
+        // `addOrModifyPriceFeed` per asset and one `addMonitorFeed` per monitor — ~49 independently-failable
+        // transactions on mainnet, where the deleted `HeartbeatRealigner.realign()` was a single one. Run
+        // `--sig "verify()"` afterwards; that reads confirmed state.
+        console2.log("--- verification [SIMULATED, see verify()] ---");
         for (uint256 i; i < assets.length; ++i) {
             IPrices.PriceFeedConfig memory c = NAVCalculator(NAV).getPriceFeedAt(assets[i], 0);
             // NO `getPriceFeedCount == 1` here. That guard belonged to the deleted `HeartbeatRealigner`,
@@ -163,7 +176,23 @@ contract RealignHeartbeats is Script {
             require(ok, "monitor heartbeat not applied");
             console2.log(string.concat("  ok monitor ", mSyms[i], "  hb=", vm.toString(mHeartbeats[i])));
         }
-        console2.log("done: heartbeats realigned via addOrModifyPriceFeed, no helper contract involved");
+        console2.log("done (SIMULATED): heartbeats realigned via addOrModifyPriceFeed, no helper contract");
+        console2.log("NOW RUN: forge script ... --sig \"verify()\" --rpc-url $RPC   (reads confirmed state)");
+    }
+
+    /// @notice Confirms against CONFIRMED chain state that nothing is still drifted. Run after the broadcast.
+    /// @dev Re-derives the plan from config instead of re-checking snapshotted values: if `_plan` and
+    ///      `_planMonitors` both come back empty, every configured heartbeat already equals what is on chain,
+    ///      which is exactly what a fully-landed run means. Cheap, read-only, and re-runnable — and unlike the
+    ///      block inside {run} it cannot be fooled by a simulation that succeeded while a transaction did not.
+    function verify() external view {
+        uint256 chainId = block.chainid;
+        (address[] memory assets,,) = _plan(chainId);
+        (address[] memory mAssets,,,) = _planMonitors(chainId);
+        console2.log("verify: assets still drifted  :", assets.length);
+        console2.log("verify: monitors still drifted:", mAssets.length);
+        if (assets.length != 0 || mAssets.length != 0) revert StillDrifted(assets.length, mAssets.length);
+        console2.log("verify: OK - every configured heartbeat matches chain state");
     }
 
     /// @notice Builds the MONITOR work list: every monitor registration whose live heartbeat differs.

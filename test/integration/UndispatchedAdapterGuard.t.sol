@@ -31,16 +31,11 @@ contract GuardHarness {
 contract UndispatchedAdapterGuardTest is Test {
     GuardHarness internal harness;
 
-    /// @dev The chain-1 names, verified against the deploy config and dispatch chain rather than
+    /// @dev The seven chain-1 names, verified against the deploy config and dispatch chain rather than
     ///      transcribed: every adapter `enabled: true` in
     ///      contracts-deployment-config/{balance-adapters,meta-balance-adapters}/1.json that no
     ///      `_equals`/`_startsWith` branch in `_deployBalanceAdapter` resolves. Six as of 2026-07-30;
-    ///      `MerklRewards` joined on 2026-08-28 when the attested adapter was enabled fleet-wide; the 16
-    ///      `*WalletMeta` names joined when the wallet-yield family was enabled in config. Those are
-    ///      value-neutral to omit — undispatched, each token stays armed on `ERC20DefaultBalanceAdapter` and
-    ///      is reported as a Wallet position for the same amount — so `expected.navUsd8dp` does not move.
-    ///      What the omission costs is IDENTITY coverage, which is why the declaration says to add the
-    ///      dispatch branch once the adapters are deployed.
+    ///      `MerklRewards` joined on 2026-08-28 when the attested adapter was enabled fleet-wide.
     string[] internal CHAIN_1_SKIPPED = [
         "EthenaCooldown",
         "EtherFiWithdrawalQueueAssisted",
@@ -48,23 +43,7 @@ contract UndispatchedAdapterGuardTest is Test {
         "LidoWithdrawalQueue",
         "MerklRewards",
         "NexusMutualStakingPoolsAssisted",
-        "StakeWiseV3ExitQueueAssisted",
-        "AaveSavingsWalletMeta",
-        "AnkrStakedEthWalletMeta",
-        "EthenaSavingsWalletMeta",
-        "EtherFiStakedEthWalletMeta",
-        "KelpRestakedEthWalletMeta",
-        "LidoStakedEthWalletMeta",
-        "LiquidCollectiveStakedEthWalletMeta",
-        "MapleSavingsWalletMeta",
-        "NexusMutualVaultsWalletMeta",
-        "RenzoRestakedEthWalletMeta",
-        "ReserveBasketsWalletMeta",
-        "RocketPoolStakedEthWalletMeta",
-        "SkySavingsWalletMeta",
-        "SparkSavingsWalletMeta",
-        "StaderStakedEthWalletMeta",
-        "StakeWiseV3OsTokenWalletMeta"
+        "StakeWiseV3ExitQueueAssisted"
     ];
 
     function setUp() public {
@@ -133,39 +112,21 @@ contract UndispatchedAdapterGuardTest is Test {
     }
 
     function test_realDeclaration_acceptsChain100SkippedSet() public view {
-        string[] memory chain100 = new string[](5);
+        string[] memory chain100 = new string[](2);
         chain100[0] = "MerklRewards";
         chain100[1] = "StakeWiseV3ExitQueueAssisted";
-        chain100[2] = "LidoStakedEthWalletMeta";
-        chain100[3] = "SkySavingsWalletMeta";
-        chain100[4] = "StakeWiseV3OsTokenWalletMeta";
         harness.checkRealFile(vm, 100, chain100);
     }
 
-    /// @notice The three chains that once had only the attested adapter undispatched.
+    /// @notice The three chains whose ONLY undispatched adapter is the attested one.
     /// @dev These asserted `new string[](0)` — dispatch everything, declare nothing — until `MerklRewards` was
     ///      enabled on 2026-08-28. It is undispatched on every chain it is enabled on, so all three moved from
     ///      "declares nothing" to "declares exactly one". Chains 56 and 137 also enable it but have no
     ///      integration suite, so nothing checks them and they are deliberately absent from the declaration.
     function test_realDeclaration_chainsWithOnlyTheAttestedAdapterSkipped() public view {
-        string[] memory c10 = new string[](2);
-        c10[0] = "MerklRewards";
-        c10[1] = "LidoStakedEthWalletMeta";
-        harness.checkRealFile(vm, 10, c10);
-        string[] memory c8453 = new string[](4);
-        c8453[0] = "MerklRewards";
-        c8453[1] = "CoinbaseStakedEthWalletMeta";
-        c8453[2] = "EtherFiStakedEthWalletMeta";
-        c8453[3] = "LidoStakedEthWalletMeta";
-        harness.checkRealFile(vm, 8453, c8453);
-        string[] memory c42161 = new string[](6);
-        c42161[0] = "MerklRewards";
-        c42161[1] = "EtherFiStakedEthWalletMeta";
-        c42161[2] = "KelpRestakedEthWalletMeta";
-        c42161[3] = "LidoStakedEthWalletMeta";
-        c42161[4] = "MapleSavingsWalletMeta";
-        c42161[5] = "RenzoRestakedEthWalletMeta";
-        harness.checkRealFile(vm, 42161, c42161);
+        harness.checkRealFile(vm, 10, _arr("MerklRewards"));
+        harness.checkRealFile(vm, 8453, _arr("MerklRewards"));
+        harness.checkRealFile(vm, 42161, _arr("MerklRewards"));
     }
 
     /// @notice PROOF IT BITES, against the real file rather than a synthetic one: a newly added adapter that

@@ -141,12 +141,33 @@ contract ClearDormantMetaInstances is Script {
         if (!_holds(LIVE)) NAVCalculator(NAV).addMetaInstances(LIVE, _one(V192)); // 5
         vm.stopBroadcast();
 
+        // [SIMULATED] — under `forge script` the body runs first and Foundry sends the recorded transactions
+        // only after `run()` returns, so every check below reads the SIMULATION. With five independent
+        // broadcasts and no atomicity available, a run where step 5 dies on chain still prints
+        // "done. reporters: 1" while zero reporters are live. Worth keeping (it catches a sequence that cannot
+        // succeed at all), but `verify()` is what witnesses the result.
+        _assertFinalState();
+        console2.log("done (SIMULATED). residue set cleared, live restored");
+        console2.log("NOW RUN: forge script ... --sig \"verify()\" --rpc-url $RPC   (reads confirmed state)");
+    }
+
+    /// @notice Confirms the end state against CONFIRMED chain state. Run after the broadcast; re-runnable.
+    /// @dev Same assertions as the tail of {run}, but read-only and outside any broadcast, so they witness what
+    ///      actually landed rather than what the simulation predicted. This is the check that would have caught
+    ///      a step-5 failure leaving the coordinate governed by nobody.
+    function verify() external view {
+        if (block.chainid != 1) revert WrongChain(block.chainid);
+        _assertFinalState();
+        console2.log("verify: OK - exactly one reporter, residue cleared and deregistered");
+    }
+
+    /// @dev The five post-conditions, shared by {run} (simulated) and {verify} (confirmed).
+    function _assertFinalState() internal view {
         uint256 n = _reporters();
         if (n != 1) revert DoubleCount(n);
         if (NAVCalculator(NAV).getMetaInstances(RESIDUE).length != 0) revert ResidueSetNotCleared();
         if (NAVCalculator(NAV).getMetaInstances(LIVE).length != 1) revert LiveLostItsInstance();
         if (NAVCalculator(NAV).getMetaInstances(LIVE)[0] != V192) revert LiveHoldsWrongCoordinate();
         if (NAVCalculator(NAV).isAdapterRegistered(RESIDUE)) revert ResidueStillRegistered();
-        console2.log("done. reporters:", n, "residue set cleared, live restored");
     }
 }

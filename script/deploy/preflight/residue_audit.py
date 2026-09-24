@@ -395,7 +395,12 @@ def main() -> int:
         record = json.loads((REPO / DEPLOYMENTS.format(chain=chain)).read_text())
         nav = record.get("NAVCalculatorProxy")
         if not nav:
-            print(f"  chain {chain}: no NAVCalculatorProxy in the record, skipping")
+            # COUNTED, like the RPC-missing skip below. This was a fourth way to exit 0 having audited nothing,
+            # one line above the one that was already fixed: a chain whose deployment record has been reset (the
+            # runbook's step 1.1 does exactly that) or added before `02` has no proxy, so it is NOT AUDITED —
+            # which is not the same as clean, and `audit_exit_code`'s docstring promised it would say so.
+            print(f"  chain {chain}: no NAVCalculatorProxy in the record - NOT AUDITED")
+            skipped += 1
             continue
         # `chainlib` owns the chain -> env-var map for the whole preflight suite. An earlier revision
         # invented `CHAIN_<id>_URL`, which exists NOWHERE in this repo: every chain but mainnet resolved to

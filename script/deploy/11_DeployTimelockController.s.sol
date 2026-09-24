@@ -111,9 +111,10 @@ contract DeployTimelockController is BaseDeployScript {
     error Create2DeployProducedNoCode(address predicted);
 
     /// @notice Thrown when the address that will EXECUTE the emitted batch does not hold `DEFAULT_ADMIN_ROLE`.
-    /// @dev Not a formality: if the deployer does not hold it, the batch's revokes are no-ops and the grants
-    ///      below are being emitted for a Safe that may not hold admin either — i.e. the emitted batch would
-    ///      revert on execution, after signatures had been collected.
+    /// @dev Not a formality, and the subject matters: EVERY entry in the emitted batch executes as the SAFE, so
+    ///      the Safe is what must hold admin. Without this the batch reverts at its first `grantRole`, after
+    ///      signatures have been collected. (An earlier revision carried this docstring on the deployer-side
+    ///      check below, describing a subject it did not guard.)
     error BatchExecutorNotAdmin(address safe);
 
     /// @notice Thrown when the deployer EOA resolved from env does not currently hold `DEFAULT_ADMIN_ROLE`.

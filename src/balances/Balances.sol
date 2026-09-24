@@ -316,18 +316,8 @@ abstract contract Balances is IBalances, Initializable {
     /// @param instances The instance coordinates to remove.
     function _removeMetaInstances(address adapter, bytes32[] memory instances) internal {
         // Loop + validation delegated to NAVRegistryLib (see _addMetaInstances); only the running total stays inline.
-        // `_globalAdapters` is passed so the release path can ask whether any OTHER registered adapter already
-        // reports a released token before re-arming the default one. The claimant map records meta COORDINATES
-        // only, so it cannot see a PLAIN adapter reporting that token's wallet balance — and re-arming over one
-        // is an over-report. This was the one release-path entry point that did not already hold the list.
         NAVRegistryLib.removeMetaInstances(
-            _isAdapterRegistered,
-            _metaInstances,
-            _claimant,
-            _globalAdapters,
-            adapter,
-            instances,
-            erc20DefaultBalanceAdapter
+            _isAdapterRegistered, _metaInstances, _claimant, adapter, instances, erc20DefaultBalanceAdapter
         );
     }
 }

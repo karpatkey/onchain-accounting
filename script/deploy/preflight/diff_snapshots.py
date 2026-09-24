@@ -235,7 +235,11 @@ def diff_chain(a: dict, b: dict, tol: float, expect: dict[str, dict] | None = No
             # A coordinate is a bytes32 in the snapshot (66 chars, address left-padded), while the manifest is
             # keyed on the 42-char address — comparing them directly made this branch DEAD, which is why the
             # first version of this gate downgraded nothing here. Narrow to the low 20 bytes.
-            if k in expected_adapters and coord_to_address(x) in expect:
+            # ADAPTER-CHECKED, not just membership. An earlier revision asked only whether the coordinate is
+            # SOMEWHERE in the manifest, so a coordinate registered on the WRONG adapter was downgraded to INFO
+            # and counted toward `reclassified_ok` — the exact class the ADDED branch records as measured and
+            # fixed above ("substituting WETH for ankrETH still printed matches"), reopened on this path.
+            if k in expected_adapters and expect.get(coord_to_address(x), {}).get("adapter") == k:
                 out.append(f"INFO  adapter {k} GAINED meta instance {x} - reclassification")
                 # COUNTED HERE TOO, and leaving it out made the `metaInstanceTotal` downgrade below fire on
                 # the FIRST comparison only. `reclassified_ok` was incremented solely in the adapter-ADDED
@@ -446,6 +450,30 @@ def self_test() -> int:
     if not (rr_lines and rr_lines[0].startswith("INFO")):
         failures.append("  metaInstanceTotal on the RE-RUN shape (adapter in both snapshots, coordinates"
                         f" GAINED): expected INFO, got {rr_lines or 'no line'}")
+
+    # A CROSS-ASSIGNED coordinate must stay a DIFF. PoC'd as passing before the adapter check was added: with
+    # manifest C1->A and C2->B, adapter A GAINING C2 printed "INFO ... reclassification" and counted it, so a
+    # coordinate registered on the WRONG adapter was whitelisted. Membership in the manifest is not enough; the
+    # coordinate has to belong to the adapter that gained it.
+    cross = {
+        "0x" + "1" * 40: {"symbol": "T1", "adapter": "A", "toPositionKind": "Staking",
+                          "toProtocolBrand": "0xb", "toProtocolId": "0xi", "toProtocolSubId": "0xs"},
+        "0x" + "2" * 40: {"symbol": "T2", "adapter": "B", "toPositionKind": "Staking",
+                          "toProtocolBrand": "0xb", "toProtocolId": "0xi", "toProtocolSubId": "0xs"},
+    }
+    c2_coord = "0x" + "0" * 24 + "2" * 40
+    base_x = {"assets": [], "accounts": [], "proxy": "", "implementation": "",
+              "erc20DefaultBalanceAdapter": "", "roles": {}, "version": 1, "usdDecimals": 8}
+    a_x = dict(base_x, metaInstanceTotal=0,
+               adapters=[{"configKey": "A", "address": "0x1", "adapterType": "Custom", "metaInstances": []}])
+    # Adapter A gains C2, which the manifest assigns to B.
+    b_x = dict(base_x, metaInstanceTotal=1,
+               adapters=[{"configKey": "A", "address": "0x1", "adapterType": "Custom",
+                          "metaInstances": [c2_coord]}])
+    x_lines = [ln for ln in diff_chain(a_x, b_x, 0.01, cross) if "GAINED meta instance" in ln]
+    if not (x_lines and x_lines[0].startswith("DIFF")):
+        failures.append("  a coordinate GAINED by an adapter the manifest assigns to ANOTHER adapter must stay"
+                        f" a DIFF, got {x_lines or 'no line'}")
 
     # The committed manifest must be loadable and internally consistent.
     recl = load_reclassifications()

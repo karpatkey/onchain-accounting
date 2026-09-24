@@ -293,7 +293,13 @@ contract RealignHeartbeats is Script {
                                 "  [SKIP monitor] ", keys[i], " config index ", vm.toString(k), ": address unresolvable"
                             )
                         );
-                        ++skipped;
+                        // NOT counted, and that is the fix rather than an omission. This branch is a per-CANDIDATE
+                        // miss inside the `k` loop and it `continue`s, so a later candidate can still match and
+                        // set `matched` — in which case the live feed WAS resolved and realigned. Counting here
+                        // made `verify()` revert `VerifyIncomplete` on a chain where nothing was actually left
+                        // undone, and inflated the count once per live feed `j`. The only state that means "this
+                        // live registration is not described by config at all" is `!matched` below, so that is
+                        // the one place a skip is counted.
                         continue;
                     }
                     if (vm.parseAddress(candAddr) != live[j].priceFeed) continue;
@@ -302,6 +308,12 @@ contract RealignHeartbeats is Script {
                     break;
                 }
                 if (!matched) {
+                    // THE one genuine "cannot tell" state: a live monitor registration that no config entry
+                    // describes. `run()` cannot fix it — it is a CONFIG gap, not chain drift — so `verify()` will
+                    // keep reverting `VerifyIncomplete` until the config is corrected. That is the intended
+                    // remedy, not a dead end: add the missing `monitorFeeds` entry for this asset (or remove the
+                    // stale live feed) and re-run. A verifier that passed here would be certifying a feed it
+                    // could not see, which is the defect this counter exists to close.
                     console2.log(
                         string.concat("  [SKIP monitor] ", keys[i], ": live feed not found in config, left as-is")
                     );

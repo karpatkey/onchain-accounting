@@ -171,7 +171,11 @@ library NAVRegistryLib {
         // The guard this replaces scanned the incoming batch, so an EMPTY list skipped it entirely — and an
         // empty list is exactly how issue #335 residue revives: addMetaBalanceAdapter(superseded, []) brings
         // back dormant coordinates written by the PRE-UPGRADE implementation, which this PR clearing cannot
-        // reach retroactively. That is live mainnet state today (RESIDUE 0x59039882... still holds V192).
+        // reach retroactively. Measured against mainnet 2026-09-24 with `residue_audit.py`: the RESIDUE
+        // 0x59039882... this was originally written about is now CLEARED, but ELEVEN other deregistered
+        // adapters still carry dormant sets totalling 51 coordinates, and EVERY ONE of those coordinates is
+        // also held by a live registered adapter — so each would double-count if its stale address were ever
+        // re-registered. This wipe is what closes that, fleet-wide, without needing them cleaned first.
         // A scan could only reject a CONFLICTING residue; an unconflicting dormant set still revived silently.
         //
         // Releasing first keeps the default adapter honest: a wiped coordinate that is a registered asset goes

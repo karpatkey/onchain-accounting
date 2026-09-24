@@ -16,7 +16,12 @@ import {ConfigReader} from "script/utils/ConfigReader.sol";
 ///      live on the proxy this script targets. The structural fix is present; it is simply not retroactive,
 ///      which is what this script is for. `removeBalanceAdapter` did not clear `metaInstances`, and
 ///      the 2026-08-26 swap predated the `removeMetaInstances` step now in `SwapMetaAdapter`. So the
-///      deregistered predecessor still advertises validator 192. It is inert while deregistered — but
+///      deregistered predecessor advertised validator 192. **Measured 2026-09-24: this particular set is now
+///      CLEARED (0 coordinates), so this script has nothing left to do on its hardcoded address and reverts
+///      `NothingToDo`.** `residue_audit.py` found eleven OTHER deregistered adapters still carrying dormant
+///      sets on mainnet, so the class is not gone — but this PR's registration wipe makes them unrevivable,
+///      which is a better fix than cleaning them one hardcoded address at a time. It is inert while
+///      deregistered — but
 ///      `addMetaBalanceAdapter` APPENDS and accepts an empty list, so a single re-registration of that
 ///      superseded address revives the coordinate alongside the live adapter and NAV sums both:
 ///      +$11,375.92 on ACCOUNT_11, with no health flag, because both readings are well-formed.

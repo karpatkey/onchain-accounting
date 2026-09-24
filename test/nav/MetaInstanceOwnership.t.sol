@@ -487,6 +487,75 @@ contract MetaInstanceOwnershipTest is SuperTest {
 
         assertTrue(def.isSupportedByDefault(address(share)), "explicit inclusion must succeed for an unreported token");
     }
+
+    // -------------------------------------------------------------------------
+    // Route 10: release must not re-arm over a PLAIN adapter reporting the token.
+    // -------------------------------------------------------------------------
+
+    /// @dev **The route the claimant map structurally cannot see.** `_claimant` records meta COORDINATES, so a
+    ///      registered asset deliberately excluded from the default adapter because a PLAIN adapter reads its
+    ///      wallet balance was re-armed the moment any meta coordinate equal to that token was released: two
+    ///      well-formed legs for one balance, no health flag - an over-report, which this repo never licenses.
+    ///
+    ///      `_reincludeIfAsset` now asks whether any OTHER registered adapter reports the token before arming,
+    ///      treating every inconclusive answer as "yes" so a wrong guess can only under-report.
+    ///      {test_releaseRearmsDefaultAdapter} and {test_retirementReleasesAndRearms} are the not-firing twins:
+    ///      with no other reporter the re-arm must still happen, or this fix would strand every released token.
+    function test_release_doesNotReArmOverAPlainAdapterReportingTheToken() public {
+        Mock_ERC20 t = _newToken();
+        _register(t);
+        assertTrue(def.isSupportedByDefault(address(t)), "registering must arm the default adapter first");
+
+        Mock_PlainReportingAdapter plain = new Mock_PlainReportingAdapter(address(t));
+        address[] memory one = new address[](1);
+        one[0] = address(plain);
+        vm.prank(navCalculatorManager);
+        nav.addBalanceAdapters(one);
+
+        // A meta adapter claims the token's coordinate, disarming the default adapter. One reporter: `plain`.
+        vm.prank(navCalculatorManager);
+        nav.addMetaInstances(address(metaA), _one(_coord(t)));
+        assertFalse(def.isSupportedByDefault(address(t)), "claiming must disarm the default adapter");
+
+        vm.prank(navCalculatorManager);
+        nav.removeMetaInstances(address(metaA), _one(_coord(t)));
+
+        assertFalse(
+            def.isSupportedByDefault(address(t)),
+            "releasing must NOT re-arm the default adapter while a plain adapter reports the token - that is"
+            " two reporters for one balance"
+        );
+    }
+
+    /// @dev The same hazard through DEREGISTRATION rather than an explicit instance removal — a different one of
+    ///      `_releaseInstances`' three callers. `removeBalanceAdapters` releases every coordinate the adapter
+    ///      held, so it reaches `_reincludeIfAsset` without anyone naming a coordinate, and it is the path the
+    ///      original report described as reachable in one MANAGER call.
+    function test_deregistration_doesNotReArmOverAPlainAdapter() public {
+        Mock_ERC20 t = _newToken();
+        _register(t);
+
+        Mock_PlainReportingAdapter plain = new Mock_PlainReportingAdapter(address(t));
+        address[] memory plainOne = new address[](1);
+        plainOne[0] = address(plain);
+        vm.prank(navCalculatorManager);
+        nav.addBalanceAdapters(plainOne);
+
+        vm.prank(navCalculatorManager);
+        nav.addMetaInstances(address(metaA), _one(_coord(t)));
+        assertFalse(def.isSupportedByDefault(address(t)), "claiming must disarm the default adapter");
+
+        // Deregistering metaA releases the coordinate it held.
+        address[] memory metaOne = new address[](1);
+        metaOne[0] = address(metaA);
+        vm.prank(navCalculatorManager);
+        nav.removeBalanceAdapters(metaOne);
+
+        assertFalse(
+            def.isSupportedByDefault(address(t)),
+            "deregistration must not re-arm the default adapter over a plain adapter's token"
+        );
+    }
 }
 
 /// @notice A meta adapter shaped like an ERC-4626 VAULT family: its instance coordinate is the vault/share
@@ -524,6 +593,40 @@ contract Mock_VaultLikeMetaAdapter is IMetaBalanceAdapter {
         returns (INAVCalculator.PositionBalance[] memory)
     {
         return new INAVCalculator.PositionBalance[](0);
+    }
+
+    function getAdapterPositions(address, address) external pure returns (INAVCalculator.PositionBalance[] memory) {
+        return new INAVCalculator.PositionBalance[](0);
+    }
+
+    function getAdapterBalanceForAsset(address, address) external pure returns (uint256, bool) {
+        return (0, false);
+    }
+
+    function getAdapterBalances(address) external pure returns (address[] memory, uint256[] memory, bool[] memory) {
+        return (new address[](0), new uint256[](0), new bool[](0));
+    }
+}
+
+/// @notice A PLAIN balance adapter that declares it reports one specific token's wallet balance.
+/// @dev The shape `CapStablecoinBalanceAdapter` has: a plain adapter reading a wallet ERC20 that is also a
+///      registered NAV asset, which is why such an asset is deliberately EXCLUDED from the default adapter. The
+///      claimant map records meta COORDINATES only, so it structurally cannot see this reporter - which is
+///      exactly what the tests using this mock exercise.
+contract Mock_PlainReportingAdapter is IBalanceAdapter {
+    address public immutable TOKEN;
+
+    constructor(address token) {
+        TOKEN = token;
+    }
+
+    function supportsInterface(bytes4 id) external pure override returns (bool) {
+        return id == type(IBalanceAdapter).interfaceId || id == type(IERC165).interfaceId;
+    }
+
+    function underlyingAssetsSupported() external view returns (address[] memory a) {
+        a = new address[](1);
+        a[0] = TOKEN;
     }
 
     function getAdapterPositions(address, address) external pure returns (INAVCalculator.PositionBalance[] memory) {

@@ -5,6 +5,9 @@ import {Test} from "forge-std/Test.sol";
 import {TestEnvConfigurator} from "test/TestEnvConfigurator.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
+import {
+    CoinbaseStakedEthWalletMetaBalanceAdapter
+} from "src/balances/MetaBalanceAdapters/walletYield/CoinbaseStakedEthWalletMetaBalanceAdapter.sol";
 import {Mock_NAVCalculator} from "test/mocks/nav_calculator.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
@@ -327,5 +330,82 @@ contract WalletYieldFamilyForkParityTest is TestEnvConfigurator {
                 .getAdapterPositionsForInstances(empty, _ins(c.token), address(0));
             assertEq(p.length, 0, string.concat(c.label, ": zero balance must emit no leg"));
         }
+    }
+}
+
+/// @title cbETH wallet-yield parity, on BASE
+/// @notice The 17th family member, which the mainnet table above structurally cannot cover.
+/// @dev **Why this is a separate contract rather than another `_case` row.** The parity table above forks
+///      eth-mainnet, and `CoinbaseStakedEthWalletMetaBalanceAdapter` is the one family member enabled ONLY on
+///      Base (`script/config/nav-config/meta-balance-adapters/8453.json`). A mainnet row would therefore test a
+///      configuration that is not deployed anywhere, which is worse than no row: it would satisfy the
+///      per-adapter fork-coverage rule while asserting nothing about the chain the adapter actually runs on.
+///      So this takes a second fork context, and cbETH is asserted against its real Base address.
+///
+///      The block is `chains.8453.forkBlock` from `test/integration/accounts.json` — the same pin the
+///      integration suite uses — so a snapshot refresh moves this test with it rather than leaving a second,
+///      independently-rotting block constant in the tree.
+contract CoinbaseStakedEthWalletBaseForkTest is TestEnvConfigurator {
+    /// @dev `chains.8453.forkBlock` in `test/integration/accounts.json`.
+    uint256 internal constant BASE_FORK_BLOCK = 49_853_005;
+
+    /// @dev cbETH on Base, from the `CoinbaseStakedEthWalletMeta` instance list in `8453.json`.
+    address internal constant CBETH_BASE = 0x2Ae3F1Ec7F1F5012CFEab0185bfc7aa3cf0DEc22;
+
+    Mock_NAVCalculator internal nav;
+    CoinbaseStakedEthWalletMetaBalanceAdapter internal adapter;
+
+    function setUp() public {
+        createSelectForkWithCadence(getAlchemyUrl("base-mainnet"), BASE_FORK_BLOCK);
+        nav = new Mock_NAVCalculator();
+        // Armed BEFORE the adapter is constructed: `ERC20_DEFAULT_ADAPTER` is immutable, so an adapter built
+        // while the mock still answers address(0) would be permanently disarmed.
+        nav.setErc20DefaultBalanceAdapter(address(new NothingIncludedStub()));
+        adapter = new CoinbaseStakedEthWalletMetaBalanceAdapter(address(nav));
+        // REQUIRED, and its absence is a silent empty leg rather than a revert: the family skips any token the
+        // NAV does not report as a registered asset, so without this the parity assertion below fails with
+        // "expected exactly one leg: 0 != 1" and nothing says why. The mainnet table above does the same thing
+        // per case.
+        nav.registerAssetFromERC20(CBETH_BASE);
+    }
+
+    function _ins() internal pure returns (bytes32[] memory a) {
+        a = new bytes32[](1);
+        a[0] = bytes32(uint256(uint160(CBETH_BASE)));
+    }
+
+    /// @notice The reported amount is the raw `balanceOf`, exactly, with the reclassified identity.
+    function test_cbEthOnBase_matchesBalanceOfExactly() public {
+        address account = address(uint160(0xCB27));
+        deal(CBETH_BASE, account, 3.5 ether, true);
+
+        uint256 bal = IERC20(CBETH_BASE).balanceOf(account);
+        // Asserted BEFORE parity, so a `deal` that cannot reach this token's storage fails loudly instead of
+        // passing vacuously against an empty leg — the same guard the mainnet table uses.
+        assertGt(bal, 0, "cbETH: no balance to test; this case would pass vacuously");
+
+        INAVCalculator.PositionBalance[] memory p = adapter.getAdapterPositionsForInstances(account, _ins(), address(0));
+
+        assertEq(p.length, 1, "cbETH: expected exactly one leg");
+        assertEq(p[0].amount, bal, "cbETH: amount must equal balanceOf EXACTLY");
+        assertEq(p[0].balanceAsset.asset, CBETH_BASE, "cbETH: balanceAsset must be the token itself");
+        assertFalse(p[0].isDebt, "cbETH: must never be debt");
+        assertEq(uint256(uint8(p[0].positionKind)), uint256(uint8(PositionKind.Staking)), "cbETH: kind must be Staking");
+        assertEq(p[0].balanceAdapter, address(adapter), "cbETH: balanceAdapter must be address(this)");
+    }
+
+    /// @notice A zero balance drops the leg rather than emitting a zero-amount position.
+    /// @dev The probe address is KECCAK-DERIVED, not `0x…dEaD`. The first version used the burn address and
+    ///      failed with "1 != 0" — because on Base that address really does hold cbETH, so the test was
+    ///      measuring a live balance rather than an empty one. The mainnet table sidesteps this by `continue`-ing
+    ///      past any non-empty address, which is fine across 22 cases but would make a single-case test silently
+    ///      vacuous. So instead: derive an address nothing can hold, and ASSERT it is empty first, so a future
+    ///      collision fails loudly and names the reason instead of looking like a broken adapter.
+    function test_cbEthOnBase_zeroBalanceEmitsNothing() public view {
+        address empty = address(uint160(uint256(keccak256("cbETH-empty-probe"))));
+        assertEq(IERC20(CBETH_BASE).balanceOf(empty), 0, "probe address unexpectedly holds cbETH; pick another");
+
+        INAVCalculator.PositionBalance[] memory p = adapter.getAdapterPositionsForInstances(empty, _ins(), address(0));
+        assertEq(p.length, 0, "cbETH: a zero balance must emit no leg at all");
     }
 }

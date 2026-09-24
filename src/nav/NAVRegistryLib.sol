@@ -180,7 +180,7 @@ library NAVRegistryLib {
         //
         // Releasing first keeps the default adapter honest: a wiped coordinate that is a registered asset goes
         // back to ERC20DefaultBalanceAdapter rather than being reported by nobody.
-        _releaseInstances(claimant, metaInstances, adapter, erc20DefaultBalanceAdapter);
+        _releaseInstances(claimant, globalAdapters, metaInstances, adapter, erc20DefaultBalanceAdapter);
         added = _appendInstances(claimant, metaInstances, adapter, instances, erc20DefaultBalanceAdapter);
     }
 
@@ -233,7 +233,8 @@ library NAVRegistryLib {
         // implementation last wrote, and nothing zeroes it. Only a fresh deploy reads 0. Its slot and label
         // survive, because a live UUPS proxy's layout is pinned. Do not wire a subtraction back in: see the
         // declaration of `_metaInstanceTotal` in `Balances`, and the test that pins it at zero.
-        clearedInstances = _releaseInstances(claimant, metaInstances, adapter, erc20DefaultBalanceAdapter);
+        clearedInstances =
+            _releaseInstances(claimant, globalAdapters, metaInstances, adapter, erc20DefaultBalanceAdapter);
 
         delete isAdapterRegistered[adapter];
         delete adapterTypes[adapter];
@@ -300,7 +301,9 @@ library NAVRegistryLib {
             // Clear the meta-instance set here too (issue #335). This is the path 06_Configure and
             // SwapMetaAdapter actually take, so a fix that only covered the singular variant would have
             // left the real deregistration route still leaking dormant coordinates.
-            clearedInstances += _releaseInstances(claimant, metaInstances, adapter, erc20DefaultBalanceAdapter);
+            clearedInstances += _releaseInstances(
+                claimant, globalAdapters, metaInstances, adapter, erc20DefaultBalanceAdapter
+            );
             emit IBalances.BalanceAdapterRemoved(address(0), adapter);
         }
     }
@@ -384,6 +387,7 @@ library NAVRegistryLib {
         mapping(address => bool) storage isAdapterRegistered,
         mapping(address => bytes32[]) storage metaInstances,
         mapping(bytes32 => address) storage claimant,
+        address[] storage globalAdapters,
         address adapter,
         bytes32[] memory instances,
         address erc20DefaultBalanceAdapter
@@ -408,7 +412,7 @@ library NAVRegistryLib {
                 if (set[j] == instance) {
                     set[j] = set[len - 1];
                     set.pop();
-                    _release(claimant, adapter, instance, erc20DefaultBalanceAdapter);
+                    _release(claimant, globalAdapters, adapter, instance, erc20DefaultBalanceAdapter);
                     found = true;
                     break;
                 }
@@ -497,6 +501,7 @@ library NAVRegistryLib {
     ///      released registered asset is reported by somebody rather than nobody.
     function _release(
         mapping(bytes32 => address) storage claimant,
+        address[] storage globalAdapters,
         address adapter,
         bytes32 instance,
         address erc20DefaultBalanceAdapter
@@ -525,7 +530,7 @@ library NAVRegistryLib {
         if (holder != adapter) return;
 
         delete claimant[instance];
-        _reincludeIfAsset(claimant, erc20DefaultBalanceAdapter, instance);
+        _reincludeIfAsset(claimant, globalAdapters, erc20DefaultBalanceAdapter, instance);
     }
 
     /// @dev Appends `instances` to `adapter`'s set via `_claim`, which is the only writer that adds.
@@ -609,6 +614,7 @@ library NAVRegistryLib {
     ///      skipped, and skipping is an under-report, which this repo licenses.
     function _reincludeIfAsset(
         mapping(bytes32 => address) storage claimant,
+        address[] storage globalAdapters,
         address erc20DefaultBalanceAdapter,
         bytes32 instance
     ) private {
@@ -616,8 +622,16 @@ library NAVRegistryLib {
         address token = address(uint160(uint256(instance)));
         if (token == address(0)) return;
 
-        // Decline to re-arm a token whose address-shaped coordinate another adapter still claims.
+        // Decline to re-arm a token whose address-shaped coordinate another META adapter still claims.
         if (claimant[bytes32(uint256(uint160(token)))] != address(0)) return;
+
+        // AND decline when any OTHER REGISTERED ADAPTER already reports the token, which the claimant map
+        // structurally cannot see. `_claimant` records meta COORDINATES only, so a registered asset that was
+        // deliberately excluded from the default adapter because a PLAIN adapter reads its wallet balance — the
+        // shape `CapStablecoinBalanceAdapter` has — was re-armed the moment any meta coordinate equal to that
+        // token was released. Two well-formed legs, no health flag: an over-report, which this repo never
+        // licenses, through a route no amount of claim-tracking would have caught.
+        if (_anyOtherAdapterReports(globalAdapters, erc20DefaultBalanceAdapter, token)) return;
 
         // METERED, because the fail-open here had no way to tell a starved call from an expected one.
         // `addSupportedAsset` is a full external call that itself calls back into the proxy
@@ -642,6 +656,47 @@ library NAVRegistryLib {
             // Otherwise it is the expected refusal — the coordinate is not a registered asset — which is
             // exactly what this fail-open is for.
         }
+    }
+
+    /// @dev Does any registered adapter OTHER than the default one already report `token`?
+    ///
+    ///      **EVERY INCONCLUSIVE ANSWER IS "YES", and that asymmetry is the whole design.** This runs on the
+    ///      re-arm path, so a wrong "no" arms the default adapter for a token somebody else reports — an
+    ///      OVER-report, which this repo never licenses — while a wrong "yes" merely leaves the token
+    ///      unreported, an under-report, which it licenses everywhere and which
+    ///      `includeAssetInDefaultAdapter` repairs in one MANAGER call. So a reverting adapter and an
+    ///      exhausted budget both return true; neither is treated as evidence of absence.
+    ///
+    ///      Note this is the OPPOSITE polarity to {getAdaptersForAsset}, which skips a faulty adapter with
+    ///      `continue`. That is a read path answering "who reports this", where omitting a broken adapter is
+    ///      the safe simplification. Here the question is "is it safe to add a reporter", and the same
+    ///      simplification would be the bug.
+    ///
+    ///      BUDGETED rather than unbounded: the scan is O(registered adapters) external calls and it runs once
+    ///      per released coordinate, so a large `removeBalanceAdapters` could otherwise exhaust the block. The
+    ///      budget is checked before each call, and running out returns true — so on a big batch the later
+    ///      coordinates are simply not re-armed, and the operator re-arms them explicitly.
+    function _anyOtherAdapterReports(address[] storage globalAdapters, address defaultAdapter, address token)
+        private
+        view
+        returns (bool)
+    {
+        uint256 available = gasleft();
+        uint256 budget = GasStipendLib.stipendFrom(available);
+        uint256 n = globalAdapters.length;
+        for (uint256 i; i < n; ++i) {
+            address a = globalAdapters[i];
+            if (a == defaultAdapter) continue;
+            if (available - gasleft() >= budget) return true; // out of budget: inconclusive, so do not re-arm
+            try IBalanceAdapter(a).underlyingAssetsSupported() returns (address[] memory supported) {
+                for (uint256 j; j < supported.length; ++j) {
+                    if (supported[j] == token) return true;
+                }
+            } catch {
+                return true; // cannot tell what this adapter reports, so do not re-arm
+            }
+        }
+        return false;
     }
 
     /// @notice Arms the default adapter for `asset`, refusing if a meta adapter already governs it — i.e. the
@@ -733,6 +788,7 @@ library NAVRegistryLib {
     ///      Registration wipes too, so a dormant residue can never ride back in on a re-registration.
     function _releaseInstances(
         mapping(bytes32 => address) storage claimant,
+        address[] storage globalAdapters,
         mapping(address => bytes32[]) storage metaInstances,
         address adapter,
         address erc20DefaultBalanceAdapter
@@ -740,7 +796,7 @@ library NAVRegistryLib {
         bytes32[] storage set = metaInstances[adapter];
         cleared = set.length;
         for (uint256 i = 0; i < cleared; i++) {
-            _release(claimant, adapter, set[i], erc20DefaultBalanceAdapter);
+            _release(claimant, globalAdapters, adapter, set[i], erc20DefaultBalanceAdapter);
         }
         if (cleared != 0) delete metaInstances[adapter];
     }

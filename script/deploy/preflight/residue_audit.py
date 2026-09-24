@@ -140,7 +140,11 @@ def historical_adapters(chain: int) -> set[str]:
 
 
 def audit_chain(chain: int, url: str, nav: str) -> list[tuple[str, int]]:
-    sel_meta, sel_reg, sel_all = selector(SIG_META), selector(SIG_REG), selector(SIG_ALL)
+    # NOTE: an earlier revision also unpacked a `sel_reg` from a `SIG_REG` that was never defined, so this
+    # function raised NameError on EVERY real invocation while the self-test - which does not call it -
+    # stayed green. The gate's own smoke check below now resolves these selectors so the pair cannot
+    # diverge again.
+    sel_meta, sel_all = selector(SIG_META), selector(SIG_ALL)
     registered = {a.lower() for a in decode_address_array(rpc(url, nav, sel_all))}
     candidates = historical_adapters(chain) | registered
     print(f"  chain {chain}: {len(candidates)} candidate address(es), {len(registered)} currently registered")
@@ -159,6 +163,105 @@ def audit_chain(chain: int, url: str, nav: str) -> list[tuple[str, int]]:
             residue.append((addr, len(coords)))
             print(f"    RESIDUE {addr} holds {len(coords)} coordinate(s): {', '.join(coords[:4])}")
     return residue
+
+
+META_CONFIG = "script/config/nav-config/meta-balance-adapters/{chain}.json"
+
+
+def planned_wallet_coordinates(chain: int) -> dict[str, list[str]]:
+    """The wallet-yield instances this chain intends to register, keyed by adapter config name.
+
+    Read from config rather than from chain, because these adapters are NOT registered yet - that is the
+    whole point of checking before they are.
+    """
+    path = REPO / META_CONFIG.format(chain=chain)
+    if not path.exists():
+        return {}
+    out: dict[str, list[str]] = {}
+    for name, entry in json.loads(path.read_text()).items():
+        if "Wallet" not in name or not isinstance(entry, dict):
+            continue
+        if entry.get("enabled") is False:
+            continue
+        insts = [i.lower() for i in (entry.get("instances") or []) if isinstance(i, str)]
+        if insts:
+            out[name] = insts
+    return out
+
+
+def find_collisions(
+    planned: dict[str, list[str]],
+    held: dict[str, str],
+    narrowed: dict[str, str],
+) -> list[tuple[str, str, str]]:
+    """The pure core of {collision_audit}: which planned tokens are already governed, and by whom.
+
+    EXTRACTED AND PURE so it can be truth-tabled without an RPC, following the same reasoning as
+    `BackfillMetaInstanceClaimants.missingFrom` - both of that function's predecessors were wrong in ways
+    a table catches instantly, and both were found by an audit instead.
+
+    `held` is keyed on the full 32-byte coordinate, `narrowed` on its low 20 bytes. The exact-key check
+    comes FIRST and wins: when a coordinate IS address-shaped both maps contain it, and reporting it as a
+    narrowing collision would misdescribe the cause to whoever has to fix it.
+
+    Returns (adapter config name, token, holding adapter), in a deterministic order.
+    """
+    out: list[tuple[str, str, str]] = []
+    for name in sorted(planned):
+        for token in planned[name]:
+            as_coord = "0x" + token[2:].rjust(64, "0")
+            holder = held.get(as_coord) or narrowed.get(token)
+            if holder:
+                out.append((name, token, holder))
+    return out
+
+
+def collision_audit(chain: int, url: str, nav: str) -> list[tuple[str, str, str]]:
+    """Refuse to register a wallet-yield coordinate that a LIVE adapter already governs.
+
+    This is the check nothing else performs. `BackfillMetaInstanceClaimants` scans existing-vs-existing
+    (two live adapters holding one coordinate); `_claim` catches the same thing once `_claimant` is
+    populated. Neither covers NEW-vs-existing on an un-backfilled proxy: `_claimant` is empty so
+    `_claim`'s cross-adapter check passes, and its own-set loop only sees the new adapter. Two meta
+    adapters would then both emit a well-formed leg for one balance under different reconciliation keys,
+    with no health flag - a silent double-count, which this repo never licenses.
+
+    `WalletTokenMetaBalanceAdapterBase._reportedByDefaultAdapter` does NOT save us here: it probes only
+    `ERC20DefaultBalanceAdapter`, not other meta adapters.
+
+    Both forms are compared, because `_excludeIfAsset` narrows a coordinate to its low 20 bytes: an
+    address-shaped coordinate collides on the key itself, while a non-address coordinate (a Morpho
+    marketId, a Balancer V2 poolId) can NARROW onto the same token.
+    """
+    planned = planned_wallet_coordinates(chain)
+    if not planned:
+        print(f"  chain {chain}: no wallet-yield instances configured, nothing to check")
+        return []
+
+    sel_meta, sel_all = selector(SIG_META), selector(SIG_ALL)
+    registered = {a.lower() for a in decode_address_array(rpc(url, nav, sel_all))}
+
+    # coordinate (full bytes32) and its low-20-byte narrowing -> the live adapter holding it
+    held: dict[str, str] = {}
+    narrowed: dict[str, str] = {}
+    for addr in sorted(registered):
+        arg = sel_meta + "0" * 24 + addr[2:]
+        try:
+            coords = decode_bytes32_array(rpc(url, nav, arg))
+        except Exception as exc:  # noqa: BLE001 - a failed probe must not read as clean
+            print(f"    !! {addr}: probe FAILED ({exc}) - treat as UNKNOWN, not clean")
+            continue
+        for c in coords:
+            held[c.lower()] = addr
+            narrowed.setdefault("0x" + c.lower()[-40:], addr)
+
+    collisions = find_collisions(planned, held, narrowed)
+    for name, token, holder in collisions:
+        print(f"    COLLISION {name} wants {token}, already governed by {holder}")
+    if not collisions:
+        total = sum(len(v) for v in planned.values())
+        print(f"  chain {chain}: {total} planned wallet coordinate(s) across {len(planned)} adapter(s), no collisions")
+    return collisions
 
 
 def self_test() -> int:
@@ -185,10 +288,41 @@ def self_test() -> int:
         failures.append(f"  one-element address[] decoded wrong: {got_a}")
     if decode_bytes32_array("0x") != [] or decode_address_array("0x") != []:
         failures.append("  a short/empty return must decode to [] rather than raising")
+    # --- find_collisions truth table ------------------------------------------------------------------
+    # The exact-key case must WIN over the narrowing case: an address-shaped coordinate is present in BOTH
+    # maps, and reporting it as a narrowing would misdescribe the cause to whoever has to fix it.
+    tok = "0x" + "11" * 20
+    coord = "0x" + ("11" * 20).rjust(64, "0")
+    other = "0x" + "22" * 20
+    holder, holder2 = "0x" + "aa" * 20, "0x" + "bb" * 20
+    cases = [
+        ("clean", {"W": [tok]}, {}, {}, []),
+        ("exact key held", {"W": [tok]}, {coord: holder}, {}, [("W", tok, holder)]),
+        ("narrowed only", {"W": [tok]}, {}, {tok: holder}, [("W", tok, holder)]),
+        # Both populated: exact must win, so the reported holder is `holder`, not `holder2`.
+        ("exact beats narrowed", {"W": [tok]}, {coord: holder}, {tok: holder2}, [("W", tok, holder)]),
+        ("unrelated token ignored", {"W": [other]}, {coord: holder}, {tok: holder}, []),
+        ("empty plan", {}, {coord: holder}, {tok: holder}, []),
+    ]
+    for label, planned, held_, narrowed_, want in cases:
+        got = find_collisions(planned, held_, narrowed_)
+        if got != want:
+            failures.append(f"  find_collisions[{label}]: want {want}, got {got}")
+
+    # --- smoke the audit entry points' selector resolution ---------------------------------------------
+    # `audit_chain` previously unpacked a selector for an undefined `SIG_REG`, so it raised NameError on
+    # every real run while this self-test - which never called it - stayed green. Resolving exactly the
+    # selectors both functions use turns that class of typo into a self-test failure.
+    try:
+        for sig in (SIG_META, SIG_ALL):
+            selector(sig)
+    except SystemExit as exc:
+        failures.append(f"  audit selector resolution failed: {exc}")
+
     if failures:
         print("SELF-TEST FAILED:\n" + "\n".join(failures))
         return 1
-    print("self-test OK: selector + 5 decoder cases")
+    print(f"self-test OK: selector + 5 decoder cases + {len(cases)} collision cases + selector smoke")
     return 0
 
 
@@ -202,6 +336,7 @@ def main() -> int:
 
     chains = args.chain or [1]
     total = 0
+    collisions = 0
     for chain in chains:
         record = json.loads((REPO / DEPLOYMENTS.format(chain=chain)).read_text())
         nav = record.get("NAVCalculatorProxy")
@@ -213,10 +348,15 @@ def main() -> int:
             print(f"  chain {chain}: no RPC in the environment, skipping")
             continue
         total += len(audit_chain(chain, url, nav))
+        collisions += len(collision_audit(chain, url, nav))
 
     print(f"\n{total} dormant instance set(s) found on deregistered adapters.")
     print("A clean run means NONE FOUND IN THE RECORDED HISTORY - it is a lower bound, not a proof.")
-    return 1 if total else 0
+    print(f"{collisions} planned wallet-yield coordinate(s) already governed by a live adapter.")
+    if collisions:
+        print("DO NOT register the wallet-yield adapters: on an un-backfilled proxy `_claim` cannot see the")
+        print("existing claim, so both adapters would report the same balance with no health flag.")
+    return 1 if (total or collisions) else 0
 
 
 if __name__ == "__main__":

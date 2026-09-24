@@ -5,18 +5,30 @@ import {Script} from "forge-std/Script.sol";
 import {console2} from "forge-std/console2.sol";
 import {NAVCalculator} from "src/nav/NAVCalculator.sol";
 import {ConfigReader} from "script/utils/ConfigReader.sol";
+import {SafeTxBuilder} from "script/utils/SafeTxBuilder.sol";
 
 /// @title BackfillMetaInstanceClaimants
 /// @author KPK
 /// @notice Populates `_claimant` for every meta-instance coordinate a LIVE proxy already governs.
-/// @dev **Why this is mandatory, not a nicety.** The claimant map is new storage, so on an upgraded proxy it
-///      starts EMPTY while `_metaInstances` is full. Every pre-existing coordinate therefore reads as
-///      unclaimed, and the guards built on the map — `_claim`'s dual-claim check and the inclusion gate —
-///      pass for exactly the coordinates that are already governed. Until this runs, the upgraded
-///      implementation is STRICTLY WEAKER on existing state than the O(adapters x instances) scan it
-///      replaced: that scan read `_metaInstances` directly and so covered pre-existing coordinates, whereas
-///      the map covers only what the new code itself wrote. Shipping the upgrade without running this is a
-///      regression, and the runbook must order the two.
+/// @dev **Why this is mandatory, though NOT because the upgrade regresses anything.** The claimant map is new
+///      storage, so on an upgraded proxy it starts EMPTY while `_metaInstances` is full. Every pre-existing
+///      coordinate therefore reads as unclaimed, and the guards built on the map — `_claim`'s dual-claim
+///      check and the inclusion gate — pass for exactly the coordinates that are already governed.
+///
+///      An earlier version of this docstring called that state "STRICTLY WEAKER on existing state than the
+///      O(adapters x instances) scan it replaced: that scan read `_metaInstances` directly and so covered
+///      pre-existing coordinates". **That is false, and it was the stated justification for the whole
+///      script.** The base implementation has no such scan: `_appendInstances`
+///      (`git show 451e72ad:src/nav/NAVRegistryLib.sol:427-438`) iterates only the adapter's OWN set, which
+///      is exactly what `_claim`'s own-set loop reproduces today. An un-backfilled coordinate is therefore
+///      governed precisely as strongly as it is on the live chain right now — the upgrade is not a
+///      regression, and shipping it before this script runs is not one either.
+///
+///      What the backfill actually buys is the CROSS-adapter guarantee, which neither base nor an
+///      un-backfilled head has ever had: once the map is populated, `_claim` can refuse a coordinate another
+///      adapter already holds, and the inclusion gate can refuse to arm the default adapter for a governed
+///      token. That is why the runbook still orders the upgrade, then this, then any new meta-adapter
+///      registration — see the ordering note on `plan()`.
 ///
 ///      **Mechanism: existing selectors only, zero new bytecode.** `NAVCalculator` has 65 bytes of EIP-170
 ///      margin, which will not carry a backfill entry point, and an initializer-based migration could not be
@@ -25,13 +37,21 @@ import {ConfigReader} from "script/utils/ConfigReader.sol";
 ///      and `_claim`, which are the only writers of the map, so the backfill uses precisely the production
 ///      paths rather than a parallel one that could drift from them.
 ///
-///      **The window between the two calls.** They are separate transactions; no atomicity is available here,
-///      as in every other script in this family. Between them a coordinate that is a registered asset is
-///      re-armed on the default adapter and then disarmed again — so it is reported by the default adapter
-///      rather than by the meta adapter, a different reporter but never two. A coordinate that is NOT a
-///      registered asset (Morpho market ids, Balancer pool ids) is reported by nobody for that window: an
-///      under-report, the direction this repo licenses everywhere. Run with `--slow` so the pair lands in
-///      order, and re-run after any halt — every step is gated on live state, so a partial run resumes.
+///      **The window between the two calls — and why {plan} exists to delete it.** An earlier version of this
+///      docstring said that between them "a coordinate that is a registered asset is re-armed on the default
+///      adapter and then disarmed again — a different reporter but never two". **That is also wrong.** It is
+///      not re-armed: `_release` gates on `claimant[instance] != adapter` and on an un-backfilled proxy
+///      `holder == 0`, so it returns BEFORE reaching `_reincludeIfAsset`
+///      (`src/nav/NAVRegistryLib.sol:522-526`, and the library's own comment at `:512-515` says so). The real
+///      intermediate state is **zero reporters for every coordinate in the pair**, registered asset or not —
+///      an under-report, the direction this repo licenses, but an unbounded one that lasts until the ADD
+///      lands and is permanent if it never does.
+///
+///      That is why {plan} is the production path and {run} is the fallback. {plan} emits the remove and its
+///      add as ADJACENT entries in one Safe Transaction Builder batch, which the Safe app wraps in MultiSend,
+///      so the pair executes atomically and the window does not exist. {run} broadcasts them as two separate
+///      EOA transactions and the window does; use it only where no Safe holds MANAGER, run it with `--slow`
+///      so the pair lands in order, and re-run after any halt.
 ///
 ///      **The precondition that is checked rather than assumed.** If two registered adapters already hold the
 ///      same coordinate in live state — the issue #335 double-count — then backfilling adapter-by-adapter
@@ -131,15 +151,17 @@ contract BackfillMetaInstanceClaimants is Script {
         if (got != adapter) revert ClaimantSlotWrong(coord, adapter, got);
     }
 
-    function run() external {
-        uint256 chainId = block.chainid;
-        address nav = ConfigReader.readDeployedAddress(vm, chainId, "NAVCalculatorProxy");
-        address sender = ConfigReader.readChainConfig(vm, chainId).manager;
-        if (!NAVCalculator(nav).hasRole(keccak256("MANAGER"), sender)) revert NotManager(sender);
-
-        address[] memory adapters = NAVCalculator(nav).getAllAdapters();
-
-        // --- precondition: no coordinate is already held by two adapters -------------------------------
+    /// @dev If two registered adapters already hold the same coordinate in live state — the issue #335
+    ///      double-count — then backfilling adapter-by-adapter would let the first claim it and the second
+    ///      fail, stranding that adapter with an EMPTY set and losing its other coordinates. So both entry
+    ///      points scan for cross-adapter duplicates FIRST and stop, naming the coordinate, rather than
+    ///      discovering it halfway through a broadcast or shipping it inside a signed Safe batch. Measured
+    ///      across the 7 configured chains before this landed — zero duplicates — so the stop is expected
+    ///      never to fire; it exists because "expected never" is not "cannot".
+    ///
+    ///      SHARED by {plan} and {run} deliberately. Two copies of a precondition are two things to keep in
+    ///      step, and the one that matters is whichever path is not being tested.
+    function _assertNoDuplicateCoordinates(address nav, address[] memory adapters) internal view {
         for (uint256 i; i < adapters.length; ++i) {
             bytes32[] memory a = NAVCalculator(nav).getMetaInstances(adapters[i]);
             for (uint256 x; x < a.length; ++x) {
@@ -151,6 +173,112 @@ contract BackfillMetaInstanceClaimants is Script {
                 }
             }
         }
+    }
+
+    /// @notice The coordinates in `adapter`'s live set whose claimant is not yet `adapter`.
+    /// @dev Shared by both entry points so a resumed run and a regenerated batch select the same work. Returns
+    ///      an empty array when the adapter is finished, which both callers treat as "skip".
+    function _todoFor(address nav, address adapter) internal view returns (bytes32[] memory todo) {
+        bytes32[] memory set = NAVCalculator(nav).getMetaInstances(adapter);
+        todo = new bytes32[](set.length);
+        uint256 n;
+        for (uint256 x; x < set.length; ++x) {
+            if (_claimantOf(nav, set[x]) != adapter) todo[n++] = set[x];
+        }
+        assembly {
+            mstore(todo, n)
+        }
+    }
+
+    /// @notice Emits the backfill as ONE atomic Safe Transaction Builder batch. Broadcasts nothing.
+    /// @dev **This is the production path; {run} is the EOA fallback.** Each adapter's `removeMetaInstances`
+    ///      is followed IMMEDIATELY by its `addMetaInstances`, so the Safe app's MultiSend wrap makes every
+    ///      pair atomic and the zero-reporter window described in the contract docstring never exists. That
+    ///      also removes the entire reason the recovery snapshot exists: a dead trailing transaction cannot
+    ///      empty a set when there is no trailing transaction. This function therefore writes no snapshot.
+    ///
+    ///      **Ordering, which the batch cannot enforce on its own.** The upgrade may share this batch (put
+    ///      `upgradeToAndCall` first — the proxy SLOADs the implementation slot on every call, so later
+    ///      entries already run the new code). But any `addMetaBalanceAdapter` for the wallet-yield family
+    ///      MUST come after every pair here. Before the map is populated `_claim` cannot see that a
+    ///      pre-existing adapter already holds a coordinate, so registering a wallet adapter first can leave
+    ///      two adapters emitting a well-formed leg for the same balance with no health flag. Backfilling
+    ///      first turns that into a `MetaInstanceClaimedByAnotherAdapter` revert.
+    ///
+    ///      **The batch is generated against pre-upgrade state, and that is safe.** Everything read here is
+    ///      upgrade-invariant: `getMetaInstances` is the same slot and the same getter, and `CLAIMANT_SLOT`
+    ///      reads zero on every live proxy because it sits inside the never-written `__balancesGap`. So on an
+    ///      un-upgraded chain `_todoFor` simply returns the adapter's whole set, which is the correct work.
+    ///
+    ///      **Regenerate immediately before signing.** `removeMetaInstances` reverts `MetaInstanceNotFound`
+    ///      and `addMetaInstances` reverts `DuplicateMetaInstance`, so a batch that goes stale dies whole
+    ///      rather than half-applying — safe, but wasted. Freeze MANAGER activity on the chain between
+    ///      generation and execution.
+    function plan() external {
+        uint256 chainId = block.chainid;
+        address nav = ConfigReader.readDeployedAddress(vm, chainId, "NAVCalculatorProxy");
+        ConfigReader.ChainConfig memory cfg = ConfigReader.readChainConfig(vm, chainId);
+        address safe = cfg.securityCouncil;
+
+        address[] memory adapters = NAVCalculator(nav).getAllAdapters();
+        _assertNoDuplicateCoordinates(nav, adapters);
+
+        // Two entries per adapter that has work. Sized at the upper bound, then trimmed — the alternative is
+        // a second pass over every adapter's set purely to count.
+        SafeTxBuilder.Transaction[] memory batch = new SafeTxBuilder.Transaction[](adapters.length * 2);
+        uint256 k;
+        uint256 coords;
+        for (uint256 i; i < adapters.length; ++i) {
+            bytes32[] memory todo = _todoFor(nav, adapters[i]);
+            if (todo.length == 0) continue;
+            coords += todo.length;
+            // ADJACENT, in this order. A split between them is the unbounded under-report.
+            batch[k++] =
+                SafeTxBuilder.call(nav, 0, abi.encodeCall(NAVCalculator.removeMetaInstances, (adapters[i], todo)));
+            batch[k++] = SafeTxBuilder.call(nav, 0, abi.encodeCall(NAVCalculator.addMetaInstances, (adapters[i], todo)));
+        }
+        if (k == 0) revert NothingToDo();
+        assembly {
+            mstore(batch, k)
+        }
+
+        console2.log("=== backfill claimants: Safe batch ===");
+        console2.log("chain            :", chainId);
+        console2.log("nav              :", nav);
+        console2.log("safe             :", safe);
+        console2.log("coordinates      :", coords);
+        console2.log("transactions     :", k);
+
+        // Not a revert: at plan time the grant may not have happened yet (it is a separate, earlier step), and
+        // refusing to emit the batch would make it impossible to prepare one in advance.
+        if (!NAVCalculator(nav).hasRole(keccak256("MANAGER"), safe)) {
+            console2.log("WARNING: the Safe does NOT hold MANAGER yet - grant it before executing this batch");
+        }
+
+        SafeTxBuilder.writeSafeTx(
+            vm,
+            chainId,
+            string.concat(vm.toString(chainId), "-backfill-claimants.json"),
+            "Backfill meta-instance claimants",
+            "Round-trips every governed coordinate through removeMetaInstances + addMetaInstances to populate "
+            "the new _claimant map. Each remove is IMMEDIATELY followed by its add; the pairs MUST stay "
+            "adjacent and MUST execute atomically, because between a remove and its add the coordinate is "
+            "reported by nobody. Execute BEFORE registering any wallet-yield meta adapter.",
+            safe,
+            batch
+        );
+    }
+
+    function run() external {
+        uint256 chainId = block.chainid;
+        address nav = ConfigReader.readDeployedAddress(vm, chainId, "NAVCalculatorProxy");
+        address sender = ConfigReader.readChainConfig(vm, chainId).manager;
+        if (!NAVCalculator(nav).hasRole(keccak256("MANAGER"), sender)) revert NotManager(sender);
+
+        address[] memory adapters = NAVCalculator(nav).getAllAdapters();
+
+        // --- precondition: no coordinate is already held by two adapters -------------------------------
+        _assertNoDuplicateCoordinates(nav, adapters);
 
         // --- the snapshot is read FIRST, because recovery must outrank `NothingToDo` ----------------------
         // `pending` counts coordinates that are IN a set and unclaimed. A coordinate an interrupted run
@@ -271,16 +399,10 @@ contract BackfillMetaInstanceClaimants is Script {
             bytes32[] memory set = NAVCalculator(nav).getMetaInstances(adapter);
             if (set.length == 0) continue;
 
-            // Only the coordinates that still need it, so a resumed run does not churn finished ones.
-            bytes32[] memory todo = new bytes32[](set.length);
-            uint256 n;
-            for (uint256 x; x < set.length; ++x) {
-                if (_claimantOf(nav, set[x]) != adapter) todo[n++] = set[x];
-            }
-            if (n == 0) continue;
-            assembly {
-                mstore(todo, n)
-            }
+            // Only the coordinates that still need it, so a resumed run does not churn finished ones. Shared
+            // with {plan} so a regenerated batch and a resumed broadcast select identical work.
+            bytes32[] memory todo = _todoFor(nav, adapter);
+            if (todo.length == 0) continue;
 
             NAVCalculator(nav).removeMetaInstances(adapter, todo);
             NAVCalculator(nav).addMetaInstances(adapter, todo);

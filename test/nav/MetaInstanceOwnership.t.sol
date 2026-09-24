@@ -354,4 +354,73 @@ contract MetaInstanceOwnershipTest is SuperTest {
         assertEq(got.length, 1, "re-registration must seed the supplied list");
         assertEq(got[0], _coord(t), "and seed exactly it");
     }
+
+    // -------------------------------------------------------------------------
+    // Route 8: release a coordinate that NARROWS onto a token another adapter governs.
+    // -------------------------------------------------------------------------
+
+    /// @dev `_reincludeIfAsset` narrows a coordinate to an address by dropping its top 12 bytes, and that
+    ///      narrowing is NOT injective: a coordinate that is not address-shaped — a Morpho marketId, a
+    ///      Balancer V2 poolId — can land on a real token another meta adapter governs under the
+    ///      address-shaped coordinate `bytes32(T)`.
+    ///
+    ///      Before the claim gate, releasing such a coordinate re-armed the default adapter for `T` while the
+    ///      other adapter was still reporting it: two reporters, no health flag — the exact shape this PR
+    ///      exists to close, arriving through the RELEASE side rather than the claim side. Its inclusion twin
+    ///      `includeAssetIfUnclaimed` had always consulted `claimant`; `_reincludeIfAsset` had not, and that
+    ///      asymmetry was the gap.
+    ///
+    ///      Unreachable on today's configs — zero low-160 collisions across every configured coordinate — but
+    ///      it becomes live the moment the claimant map is populated, and from then on it governs every
+    ///      `removeMetaInstances` and `removeBalanceAdapters`. "Expected never" is not "cannot".
+    function test_releaseNarrowingOntoGovernedToken_doesNotArmDefault() public {
+        Mock_ERC20 t = _newToken();
+        _register(t);
+
+        // metaB governs the token itself, which disarms the default adapter.
+        vm.prank(navCalculatorManager);
+        nav.addMetaInstances(address(metaB), _one(_coord(t)));
+        assertFalse(def.isSupportedByDefault(address(t)), "claiming the token must disarm the default adapter");
+
+        // metaA governs a DIFFERENT coordinate that narrows onto the same token: same low 160 bits, a set
+        // high bit so it is a distinct map key. This is the marketId/poolId shape.
+        bytes32 narrowing = bytes32(uint256(uint160(address(t))) | (uint256(1) << 255));
+        assertTrue(narrowing != _coord(t), "the probe must be a DISTINCT coordinate, or it tests nothing");
+        vm.prank(navCalculatorManager);
+        nav.addMetaInstances(address(metaA), _one(narrowing));
+
+        // Releasing metaA's coordinate must NOT hand the token back to the default adapter: metaB still
+        // reports it.
+        vm.prank(navCalculatorManager);
+        nav.removeMetaInstances(address(metaA), _one(narrowing));
+
+        assertFalse(
+            def.isSupportedByDefault(address(t)),
+            "releasing a coordinate that narrows onto a GOVERNED token must not arm the default adapter"
+        );
+        assertEq(nav.getMetaInstances(address(metaB)).length, 1, "metaB must still govern the token it never released");
+    }
+
+    /// @dev The other direction, and the one that matters for not over-correcting: an ORDINARY release must
+    ///      still re-arm the default adapter. `_release` deletes the claim before calling
+    ///      `_reincludeIfAsset`, so for an address-shaped coordinate the new gate reads zero and the re-arm
+    ///      proceeds exactly as before. Without this test the claim gate could be tightened into a
+    ///      fail-closed that silently strands every released token with no reporter — which is the failure
+    ///      `_reincludeIfAsset` was added to prevent in the first place.
+    function test_releaseOwnAddressShapedCoordinate_stillArmsDefault() public {
+        Mock_ERC20 t = _newToken();
+        _register(t);
+
+        vm.prank(navCalculatorManager);
+        nav.addMetaInstances(address(metaA), _one(_coord(t)));
+        assertFalse(def.isSupportedByDefault(address(t)), "claiming must disarm the default adapter");
+
+        vm.prank(navCalculatorManager);
+        nav.removeMetaInstances(address(metaA), _one(_coord(t)));
+
+        assertTrue(
+            def.isSupportedByDefault(address(t)),
+            "an ordinary release must hand the token back to the default adapter, not strand it"
+        );
+    }
 }

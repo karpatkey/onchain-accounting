@@ -52,6 +52,23 @@ library DeploySalts {
     ///      init-code hash is identical fleet-wide and this salt yields ONE address everywhere.
     uint256 internal constant ASSET_KIND_REGISTRY = 2;
 
+    /// @notice `TimelockController` salt. Used by 11_DeployTimelockController.
+    /// @dev Version 1 — this contract has never been deployed, so there is no earlier generation to
+    ///      disambiguate from (contrast {ASSET_KIND_REGISTRY}, which skips 1 precisely because generation 1
+    ///      existed and was CREATE, not CREATE2).
+    ///
+    ///      **The fleet-wide-address property depends on the constructor args being identical on every chain,
+    ///      and here they are by construction, not by luck:** `minDelay = 0`, `proposers = [securityCouncil]`,
+    ///      `executors = [address(0)]`, `admin = address(0)`. The security-council Safe is the same address in
+    ///      every `script/config/chains/<chainId>.json` (verified, and deployed on 24 of them), so the init-code
+    ///      hash is identical and this salt yields ONE address everywhere.
+    ///
+    ///      ⚠️ **Therefore: if the council Safe address ever differs on a chain, that chain's timelock address
+    ///      DIVERGES.** It is not a failure — the deploy still works and the address is still deterministic —
+    ///      but it breaks the "one governance address fleet-wide" property that makes the role matrix auditable
+    ///      at a glance. Check `securityCouncil` across chains before assuming a single address.
+    uint256 internal constant TIMELOCK_CONTROLLER = 1;
+
     //
     // NAV-only balance adapters (CREATE2 same-address across chains)
     //

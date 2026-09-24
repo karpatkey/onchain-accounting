@@ -523,7 +523,7 @@ library NAVRegistryLib {
         if (holder != adapter) return;
 
         delete claimant[instance];
-        _reincludeIfAsset(erc20DefaultBalanceAdapter, instance);
+        _reincludeIfAsset(claimant, erc20DefaultBalanceAdapter, instance);
     }
 
     /// @dev Appends `instances` to `adapter`'s set via `_claim`, which is the only writer that adds.
@@ -558,10 +558,30 @@ library NAVRegistryLib {
     ///      removing an adapter to stop reporting a token will find it reported by the default adapter again.
     ///      "Remove this from NAV entirely" is `unregisterAsset`, a separate and explicit operation. The trade is
     ///      a visible, correct value from an unexpected reporter instead of an invisible, wrong one from none.
-    function _reincludeIfAsset(address erc20DefaultBalanceAdapter, bytes32 instance) private {
+    ///      CLAIM-GATED, because the truncation below is not injective. `instance` is narrowed to an address by
+    ///      dropping its top 12 bytes, so a coordinate that is NOT address-shaped — a Morpho marketId, a Balancer
+    ///      V2 poolId — can narrow onto a real token `T` that a DIFFERENT meta adapter governs under the
+    ///      address-shaped coordinate `bytes32(T)`. Releasing that coordinate would then re-arm the default
+    ///      adapter for a token somebody else is still reporting: two reporters, no health flag, which is the
+    ///      exact shape this PR exists to close, arriving through the release side instead of the claim side.
+    ///      Its inclusion twin {includeAssetIfUnclaimed} has always consulted `claimant`; this one did not, and
+    ///      the asymmetry was the gap. One SLOAD closes it.
+    ///
+    ///      The address-shaped case — `instance == bytes32(T)`, the overwhelming majority — is unaffected:
+    ///      `_release` has already `delete`d that key before calling here, so the lookup reads zero and the
+    ///      re-arm proceeds exactly as before. Only a coordinate narrowing onto a key somebody ELSE holds is
+    ///      skipped, and skipping is an under-report, which this repo licenses.
+    function _reincludeIfAsset(
+        mapping(bytes32 => address) storage claimant,
+        address erc20DefaultBalanceAdapter,
+        bytes32 instance
+    ) private {
         if (erc20DefaultBalanceAdapter == address(0)) return;
         address token = address(uint160(uint256(instance)));
         if (token == address(0)) return;
+
+        // Decline to re-arm a token whose address-shaped coordinate another adapter still claims.
+        if (claimant[bytes32(uint256(uint160(token)))] != address(0)) return;
 
         // METERED, because the fail-open here had no way to tell a starved call from an expected one.
         // `addSupportedAsset` is a full external call that itself calls back into the proxy

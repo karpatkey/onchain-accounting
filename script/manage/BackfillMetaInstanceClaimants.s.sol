@@ -169,14 +169,23 @@ contract BackfillMetaInstanceClaimants is Script {
     ///
     ///      SHARED by {plan} and {run} deliberately. Two copies of a precondition are two things to keep in
     ///      step, and the one that matters is whichever path is not being tested.
+    ///      PREFETCHED, one `getMetaInstances` call per adapter. The obvious nesting re-reads the `j` side
+    ///      inside the `x` loop, which is O(adapters^2 x instances) `eth_call`s — about 2,800 on chain 1's ~40
+    ///      adapters against ~142 coordinates, versus ~40 here. This repo has recorded precedent for exactly
+    ///      that shape OOM-ing a manage script (#318, `RegisterAssets`, where `ConfigReader` re-read the whole
+    ///      per-chain JSON per field), and this function runs in BOTH entry points.
     function _assertNoDuplicateCoordinates(address nav, address[] memory adapters) internal view {
+        bytes32[][] memory sets = new bytes32[][](adapters.length);
         for (uint256 i; i < adapters.length; ++i) {
-            bytes32[] memory a = NAVCalculator(nav).getMetaInstances(adapters[i]);
-            for (uint256 x; x < a.length; ++x) {
+            sets[i] = NAVCalculator(nav).getMetaInstances(adapters[i]);
+        }
+        for (uint256 i; i < adapters.length; ++i) {
+            for (uint256 x; x < sets[i].length; ++x) {
                 for (uint256 j = i + 1; j < adapters.length; ++j) {
-                    bytes32[] memory b = NAVCalculator(nav).getMetaInstances(adapters[j]);
-                    for (uint256 y; y < b.length; ++y) {
-                        if (a[x] == b[y]) revert CoordinateHeldTwice(a[x], adapters[i], adapters[j]);
+                    for (uint256 y; y < sets[j].length; ++y) {
+                        if (sets[i][x] == sets[j][y]) {
+                            revert CoordinateHeldTwice(sets[i][x], adapters[i], adapters[j]);
+                        }
                     }
                 }
             }

@@ -39,6 +39,11 @@ contract RealignHeartbeats is Script {
     /// @dev The whole reason {verify} exists. Every `require` inside {run} runs during local SIMULATION —
     ///      `forge script` executes the body and only then sends the recorded transactions — so a run where
     ///      transaction 20 of 49 dies still prints `ok <sym>` for all 49 and exits 0.
+    /// @notice Thrown by {verify} when the monitor planner could not resolve one or more configured feeds.
+    /// @dev Distinct from {StillDrifted}: that one means "drift found", this one means "cannot tell". Both block
+    ///      a green verification, because a verifier that cannot see a feed must not certify it.
+    error VerifyIncomplete(uint256 skipped);
+
     error StillDrifted(uint256 assetsRemaining, uint256 monitorsRemaining);
 
     function run() external {
@@ -46,15 +51,29 @@ contract RealignHeartbeats is Script {
         if (NAV.code.length == 0) revert NoNavDeployed(chainId);
 
         (address[] memory assets, uint256[] memory heartbeats, string[] memory syms) = _plan(chainId);
-        (address[] memory mAssets, address[] memory mFeeds, uint256[] memory mHeartbeats, string[] memory mSyms) =
-            _planMonitors(chainId);
+        (
+            address[] memory mAssets,
+            address[] memory mFeeds,
+            uint256[] memory mHeartbeats,
+            string[] memory mSyms,
+            uint256 mSkipped
+        ) = _planMonitors(chainId);
 
         console2.log("=== ADR 0025 heartbeat realignment ===");
         console2.log("chain      :", chainId);
         console2.log("nav        :", NAV);
         console2.log("assets     :", assets.length);
         console2.log("monitors   :", mAssets.length);
+        console2.log("skipped    :", mSkipped);
         if (assets.length == 0 && mAssets.length == 0) {
+            // NOT "nothing to do" when feeds were skipped: a skipped monitor feed is one the planner could not
+            // resolve, so it is unknown rather than aligned. Saying "already matches the config" there is the
+            // same false certification `verify()` used to give, and `verify()` is what reverts on it.
+            if (mSkipped != 0) {
+                console2.log("WARNING: no work planned, but", mSkipped, "monitor feed(s) were SKIPPED as");
+                console2.log("unresolvable - run `verify()`, which reverts VerifyIncomplete rather than pass.");
+                return;
+            }
             console2.log("nothing to do -- every registered heartbeat already matches the config");
             return;
         }
@@ -188,10 +207,19 @@ contract RealignHeartbeats is Script {
     function verify() external view {
         uint256 chainId = block.chainid;
         (address[] memory assets,,) = _plan(chainId);
-        (address[] memory mAssets,,,) = _planMonitors(chainId);
+        (address[] memory mAssets,,,, uint256 skipped) = _planMonitors(chainId);
         console2.log("verify: assets still drifted  :", assets.length);
         console2.log("verify: monitors still drifted:", mAssets.length);
+        console2.log("verify: monitor feeds skipped :", skipped);
         if (assets.length != 0 || mAssets.length != 0) revert StillDrifted(assets.length, mAssets.length);
+        // ⚠️ **THE VERIFIER SHARES ITS EVIDENCE SOURCE WITH THE THING IT VERIFIES, so a skip must be fatal
+        // here.** `verify()` calls the same `_planMonitors` that `run()` does, and that planner `continue`s
+        // past a monitor feed whose config address is unresolvable or does not match the live feed — logging
+        // "left as-is" and omitting it from the work list. An omitted feed is therefore indistinguishable from
+        // an aligned one: `mAssets.length == 0` and `verify()` used to print "every configured heartbeat
+        // matches chain state" while those feeds were never realigned at all. A wrong heartbeat accepts a stale
+        // price, so certifying that falsely is a wrong-NAV path, not a reporting nicety.
+        if (skipped != 0) revert VerifyIncomplete(skipped);
         console2.log("verify: OK - every configured heartbeat matches chain state");
     }
 
@@ -203,7 +231,13 @@ contract RealignHeartbeats is Script {
     function _planMonitors(uint256 chainId)
         internal
         view
-        returns (address[] memory assets, address[] memory feeds, uint256[] memory heartbeats, string[] memory syms)
+        returns (
+            address[] memory assets,
+            address[] memory feeds,
+            uint256[] memory heartbeats,
+            string[] memory syms,
+            uint256 skipped
+        )
     {
         string memory json = vm.readFile(
             string.concat("script/config/nav-config/assets-and-price-feeds/", vm.toString(chainId), ".json")
@@ -259,6 +293,7 @@ contract RealignHeartbeats is Script {
                                 "  [SKIP monitor] ", keys[i], " config index ", vm.toString(k), ": address unresolvable"
                             )
                         );
+                        ++skipped;
                         continue;
                     }
                     if (vm.parseAddress(candAddr) != live[j].priceFeed) continue;
@@ -270,6 +305,7 @@ contract RealignHeartbeats is Script {
                     console2.log(
                         string.concat("  [SKIP monitor] ", keys[i], ": live feed not found in config, left as-is")
                     );
+                    ++skipped;
                     continue;
                 }
                 if (live[j].chainlinkHeartbeat == want) continue;

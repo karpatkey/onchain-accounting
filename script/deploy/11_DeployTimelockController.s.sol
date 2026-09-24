@@ -105,10 +105,18 @@ contract DeployTimelockController is BaseDeployScript {
     ///      admin role is the failure this refuses.
     error ExistingTimelockMisconfigured(address timelock, string what);
 
-    /// @notice Thrown when the deployer EOA resolved from env does not currently hold `DEFAULT_ADMIN_ROLE`.
+    /// @notice Thrown when the CREATE2 call returned success but the predicted address still has no code.
+    /// @dev The realistic cause is the canonical factory `0x4e59b448…` being absent on a newly added chain. It is
+    ///      present on every chain already brought up through `01`/`02`, so this guards the next chain, not today's.
+    error Create2DeployProducedNoCode(address predicted);
+
+    /// @notice Thrown when the address that will EXECUTE the emitted batch does not hold `DEFAULT_ADMIN_ROLE`.
     /// @dev Not a formality: if the deployer does not hold it, the batch's revokes are no-ops and the grants
     ///      below are being emitted for a Safe that may not hold admin either — i.e. the emitted batch would
     ///      revert on execution, after signatures had been collected.
+    error BatchExecutorNotAdmin(address safe);
+
+    /// @notice Thrown when the deployer EOA resolved from env does not currently hold `DEFAULT_ADMIN_ROLE`.
     error DeployerNotAdmin(address deployer);
 
     function run() public override {
@@ -162,6 +170,18 @@ contract DeployTimelockController is BaseDeployScript {
         if (predicted.code.length == 0) {
             (bool ok,) = CANONICAL_CREATE2_DEPLOYER.call(abi.encodePacked(salt, initCode));
             require(ok, "TimelockController CREATE2 deploy failed");
+            // ⚠️ **`ok` DOES NOT MEAN DEPLOYED, and on this script that distinction bricks the NAV.** A
+            // low-level call to an address holding NO CODE returns `true` and does nothing. If the Arachnid
+            // factory is absent on this chain, `require(ok)` passes, `saveDeployedAddress` records `predicted`,
+            // and the batch below grants the NAV's `DEFAULT_ADMIN_ROLE` + `MANAGER` to a CODELESS address and
+            // then revokes both from the deployer EOA and (by default) from the Safe. End state: no admin, no
+            // MANAGER, no upgrade, no registration, no recovery.
+            //
+            // This check costs one EXTCODESIZE and fails during local simulation, before anything is broadcast.
+            // The sibling CREATE2 sites (`01_DeployImplementations`, `04_DeployBalanceAdapters`,
+            // `AtomicNAVProxyDeployer`) share the gap; it is fixed HERE because this is the only one whose
+            // follow-on step is irreversible.
+            if (predicted.code.length == 0) revert Create2DeployProducedNoCode(predicted);
             console2.log("[OK] TimelockController deployed at:", predicted);
         } else {
             // Idempotent re-run, or a chain reached twice. Adopt it only after proving it is OURS and
@@ -194,6 +214,16 @@ contract DeployTimelockController is BaseDeployScript {
         // Checked here rather than assumed, because a batch emitted against the wrong role holder wastes a
         // signing round: if the deployer is not admin, the revokes are no-ops and the grants may not be
         // executable by the Safe at all.
+        // ⚠️ **The SAFE is what executes every entry below, so the Safe is what must hold admin.** An earlier
+        // revision checked only the DEPLOYER, whose `DeployerNotAdmin` docstring claimed to prevent "the emitted
+        // batch would revert on execution, after signatures had been collected" — the exact failure it could not
+        // see. In the fleet's CURRENT state that guard passes and the batch reverts at `batch[0]`: `admin ==
+        // manager == the deployer EOA` on every chain, because the council handover (`07` steps 2-3) was a
+        // recorded decision NOT to run. Phase 1 of the runbook grants the Safe both roles first; this is the
+        // check that the operator actually did it.
+        if (!IAccessControl(nav).hasRole(DEFAULT_ADMIN_ROLE, safe)) revert BatchExecutorNotAdmin(safe);
+        // The deployer is checked too, but for a different reason: it is the subject of the revokes, and if it
+        // holds nothing then either this already ran or the wrong EOA was passed.
         if (!IAccessControl(nav).hasRole(DEFAULT_ADMIN_ROLE, deployer)) revert DeployerNotAdmin(deployer);
 
         // ORDER IS LOAD-BEARING AND THE WHOLE BATCH MUST BE ATOMIC.
@@ -210,6 +240,14 @@ contract DeployTimelockController is BaseDeployScript {
         //
         // ⚠️ If entries 5-6 were ever split into a later batch and 1-2 had failed, the chain would be left with
         // no admin at all. That is why they are one batch and why the revoke is last within it.
+        //
+        // ⚠️ **And the atomicity comes from the Safe Transaction Builder app, NOT from anything in this repo.**
+        // `SafeTxBuilder.writeSafeTx` emits a FLAT LIST; the app is what wraps a multi-transaction import into
+        // `multiSend` at signing time. (`writeSafeTxViaMultiSend` exists but has no call sites and the repo holds
+        // no MultiSend address constant to give it.) **Execute this batch only through the Transaction Builder.**
+        // Dispatched as individual transactions, a failure at entries 1-2 after 5-6 land is exactly the
+        // no-admin brick named above — so "MUST be atomic" is a requirement on the OPERATOR here, not a
+        // property the emitter can guarantee.
         uint256 n = safeRetains ? 4 : 6;
         SafeTxBuilder.Transaction[] memory batch = new SafeTxBuilder.Transaction[](n);
 

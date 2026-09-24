@@ -43,6 +43,8 @@ import sys
 import urllib.request
 from pathlib import Path
 
+import chainlib
+
 REPO = Path(__file__).resolve().parents[3]
 DEPLOYMENTS = "script/config/deployments/{chain}.json"
 
@@ -217,7 +219,7 @@ def find_collisions(
     return out
 
 
-def collision_audit(chain: int, url: str, nav: str) -> list[tuple[str, str, str]]:
+def collision_audit(chain: int, url: str, nav: str) -> tuple[list[tuple[str, str, str]], int]:
     """Refuse to register a wallet-yield coordinate that a LIVE adapter already governs.
 
     This is the check nothing else performs. `BackfillMetaInstanceClaimants` scans existing-vs-existing
@@ -237,7 +239,7 @@ def collision_audit(chain: int, url: str, nav: str) -> list[tuple[str, str, str]
     planned = planned_wallet_coordinates(chain)
     if not planned:
         print(f"  chain {chain}: no wallet-yield instances configured, nothing to check")
-        return []
+        return [], 0
 
     sel_meta, sel_all = selector(SIG_META), selector(SIG_ALL)
     registered = {a.lower() for a in decode_address_array(rpc(url, nav, sel_all))}
@@ -245,12 +247,19 @@ def collision_audit(chain: int, url: str, nav: str) -> list[tuple[str, str, str]
     # coordinate (full bytes32) and its low-20-byte narrowing -> the live adapter holding it
     held: dict[str, str] = {}
     narrowed: dict[str, str] = {}
+    probe_failures = 0
     for addr in sorted(registered):
         arg = sel_meta + "0" * 24 + addr[2:]
         try:
             coords = decode_bytes32_array(rpc(url, nav, arg))
         except Exception as exc:  # noqa: BLE001 - a failed probe must not read as clean
+            # COUNTED, not just printed. `held`/`narrowed` are now INCOMPLETE, so `find_collisions` can
+            # report a planned coordinate as clean when a live adapter governs it -- and here the EXIT CODE
+            # is the gate, so swallowing this would greenlight the wallet-yield registration that produces a
+            # silent two-reporter double-count. Contrast `audit_chain`, whose output is documented as a lower
+            # bound; there a skipped probe is tolerable, here it is the whole answer.
             print(f"    !! {addr}: probe FAILED ({exc}) - treat as UNKNOWN, not clean")
+            probe_failures += 1
             continue
         for c in coords:
             held[c.lower()] = addr
@@ -259,10 +268,12 @@ def collision_audit(chain: int, url: str, nav: str) -> list[tuple[str, str, str]
     collisions = find_collisions(planned, held, narrowed)
     for name, token, holder in collisions:
         print(f"    COLLISION {name} wants {token}, already governed by {holder}")
+    if probe_failures:
+        print(f"  chain {chain}: {probe_failures} probe(s) FAILED - this result is INCOMPLETE, not clean")
     if not collisions:
         total = sum(len(v) for v in planned.values())
         print(f"  chain {chain}: {total} planned wallet coordinate(s) across {len(planned)} adapter(s), no collisions")
-    return collisions
+    return collisions, probe_failures
 
 
 def self_test() -> int:
@@ -310,6 +321,28 @@ def self_test() -> int:
         if got != want:
             failures.append(f"  find_collisions[{label}]: want {want}, got {got}")
 
+    # --- audit_exit_code: the three ways this gate used to pass having checked nothing -----------------
+    # POSITIVE CONTROLS. Each known-bad state below made the gate exit 0 before this round.
+    exit_cases = [
+        ("all clean", (0, 0, 0, 0), 0),
+        ("residue found", (1, 0, 0, 0), 1),
+        ("collision found", (0, 1, 0, 0), 1),
+        ("probe failed -> INCOMPLETE, not clean", (0, 0, 1, 0), 1),
+        ("chain skipped for want of an RPC", (0, 0, 0, 1), 1),
+        ("clean but one chain unaudited", (0, 0, 0, 3), 1),
+        ("probe failure with zero collisions", (0, 0, 2, 0), 1),
+    ]
+    for label, args_, want_code in exit_cases:
+        got_code = audit_exit_code(*args_)
+        if got_code != want_code:
+            failures.append(f"  audit_exit_code[{label}]: want {want_code}, got {got_code}")
+
+    # `chainlib`'s map must actually cover the chains this gate is run against, or the skip counter fires
+    # for a reason that is a typo rather than a missing endpoint.
+    for cid in (1, 10, 56, 100, 137, 8453, 42161):
+        if cid not in chainlib.CHAIN_URL_ENV and cid not in chainlib.PUBLIC_FALLBACK_RPC:
+            failures.append(f"  chain {cid} has no entry in CHAIN_URL_ENV or PUBLIC_FALLBACK_RPC")
+
     # --- smoke the audit entry points' selector resolution ---------------------------------------------
     # `audit_chain` previously unpacked a selector for an undefined `SIG_REG`, so it raised NameError on
     # every real run while this self-test - which never called it - stayed green. Resolving the selectors
@@ -324,8 +357,25 @@ def self_test() -> int:
     if failures:
         print("SELF-TEST FAILED:\n" + "\n".join(failures))
         return 1
-    print(f"self-test OK: selector + 5 decoder cases + {len(cases)} collision cases + selector smoke")
+    print(
+        f"self-test OK: selector + 5 decoder cases + {len(cases)} collision cases"
+        f" + {len(exit_cases)} exit-code cases + 7 chain-map cases + selector smoke"
+    )
     return 0
+
+
+def audit_exit_code(residue: int, collisions: int, probe_failures: int, skipped: int) -> int:
+    """0 only when every requested chain was actually audited and came back clean.
+
+    EXTRACTED AND PURE because the exit code IS this gate. Three separate ways existed to pass while
+    having checked nothing, and none was visible from the printed output:
+      - a `getMetaInstances` probe that raised was counted as clean (`probe_failures`);
+      - a chain whose RPC env var was absent was skipped and still exited 0 (`skipped`);
+      - both printed a line into a wall of output that nobody diffs.
+    A gate whose green means "audited and clean" for some chains and "did not look" for others is worse
+    than no gate, because it is quoted as evidence.
+    """
+    return 1 if (residue or collisions or probe_failures or skipped) else 0
 
 
 def main() -> int:
@@ -339,18 +389,28 @@ def main() -> int:
     chains = args.chain or [1]
     total = 0
     collisions = 0
+    probe_failures = 0
+    skipped = 0
     for chain in chains:
         record = json.loads((REPO / DEPLOYMENTS.format(chain=chain)).read_text())
         nav = record.get("NAVCalculatorProxy")
         if not nav:
             print(f"  chain {chain}: no NAVCalculatorProxy in the record, skipping")
             continue
-        url = os.environ.get("MAINNET_URL") if chain == 1 else os.environ.get(f"CHAIN_{chain}_URL")
+        # `chainlib` owns the chain -> env-var map for the whole preflight suite. An earlier revision
+        # invented `CHAIN_<id>_URL`, which exists NOWHERE in this repo: every chain but mainnet resolved to
+        # None, printed "skipping", and `main()` still returned 0. So the collision gate -- the check
+        # nothing else performs -- audited nothing on 6 of the 7 asset-bearing chains while reporting clean.
+        url = os.environ.get(chainlib.CHAIN_URL_ENV.get(chain, "")) or chainlib.PUBLIC_FALLBACK_RPC.get(chain)
         if not url:
-            print(f"  chain {chain}: no RPC in the environment, skipping")
+            envname = chainlib.CHAIN_URL_ENV.get(chain, f"(no env var mapped for chain {chain})")
+            print(f"  chain {chain}: no RPC ({envname} unset and no public fallback) - NOT AUDITED")
+            skipped += 1
             continue
         total += len(audit_chain(chain, url, nav))
-        collisions += len(collision_audit(chain, url, nav))
+        chain_collisions, chain_probe_failures = collision_audit(chain, url, nav)
+        collisions += len(chain_collisions)
+        probe_failures += chain_probe_failures
 
     print(f"\n{total} dormant instance set(s) found on deregistered adapters.")
     print("A clean run means NONE FOUND IN THE RECORDED HISTORY - it is a lower bound, not a proof.")
@@ -358,7 +418,11 @@ def main() -> int:
     if collisions:
         print("DO NOT register the wallet-yield adapters: on an un-backfilled proxy `_claim` cannot see the")
         print("existing claim, so both adapters would report the same balance with no health flag.")
-    return 1 if (total or collisions) else 0
+    if probe_failures:
+        print(f"{probe_failures} probe(s) FAILED - the collision result above is INCOMPLETE.")
+    if skipped:
+        print(f"{skipped} chain(s) NOT AUDITED for lack of an RPC endpoint - export the *_URL vars.")
+    return audit_exit_code(total, collisions, probe_failures, skipped)
 
 
 if __name__ == "__main__":

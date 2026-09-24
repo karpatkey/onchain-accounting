@@ -594,7 +594,8 @@ contract BalancesTest is Test {
     /// @dev This test used to assert the running total. The total is RETIRED: it had no consumer (every
     ///      `PriceFeedLib` signature taking it left the parameter unused, so it sized no buffer and fed no
     ///      computation) while three call sites maintained it. Its slot and label survive because a live UUPS
-    ///      proxy's layout is pinned, but the arithmetic is gone. Asserting it stays 0 is the point: it pins
+    ///      proxy's layout is pinned, but the arithmetic is gone. Asserting it stays 0 is the point HERE, on a
+    ///      fresh deploy where the slot was never written: it pins
     ///      the retirement, so a future author who rewires the arithmetic "to fix the inconsistency" — which
     ///      two long comments used to exist to discourage — gets a red test naming the decision instead.
     function test_meta_instanceSetTracksAddAndRemove_totalIsRetired() public {
@@ -610,7 +611,11 @@ contract BalancesTest is Test {
         balances.removeMetaInstancesDirect(address(meta), one);
         assertEq(balances.getMetaInstances(address(meta)).length, 1, "set reflects the removal");
 
-        assertEq(balances.metaInstanceTotalForTest(), 0, "_metaInstanceTotal is retired and must stay 0");
+        assertEq(
+            balances.metaInstanceTotalForTest(),
+            0,
+            "_metaInstanceTotal is retired: no arithmetic, so it stays 0 on a FRESH deploy (a live proxy freezes instead)"
+        );
     }
 
     function test_meta_addInstances_onUnregisteredReverts() public {
@@ -676,7 +681,11 @@ contract BalancesTest is Test {
         assertTrue(balances.isAdapterRegistered(address(meta)), "meta-adapter registered");
         assertEq(balances.getMetaInstances(address(meta)).length, 2, "instances seeded");
         // `_metaInstanceTotal` is retired — see test_meta_instanceSetTracksAddAndRemove_totalIsRetired.
-        assertEq(balances.metaInstanceTotalForTest(), 0, "_metaInstanceTotal is retired and must stay 0");
+        assertEq(
+            balances.metaInstanceTotalForTest(),
+            0,
+            "_metaInstanceTotal is retired: no arithmetic, so it stays 0 on a FRESH deploy (a live proxy freezes instead)"
+        );
     }
 
     function test_addBalanceAdapters_rejectsMetaAdapter() public {

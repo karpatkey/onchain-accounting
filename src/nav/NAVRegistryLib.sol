@@ -228,7 +228,9 @@ library NAVRegistryLib {
         //
         // `clearedInstances` is returned for callers that want it; `Balances` deliberately DISCARDS it.
         // `_metaInstanceTotal` is RETIRED — it had no consumer (every `PriceFeedLib` signature taking it left
-        // the parameter unused), so its arithmetic is gone and its value stays 0; only its slot and label
+        // the parameter unused), so its arithmetic is gone; only its slot and label survive. NOTE it does NOT
+        // become 0 on an upgraded LIVE proxy — removing the arithmetic FREEZES the slot at whatever the old
+        // implementation last wrote, and nothing zeroes it. Only a fresh deploy reads 0. Its slot and label
         // survive, because a live UUPS proxy's layout is pinned. Do not wire a subtraction back in: see the
         // declaration of `_metaInstanceTotal` in `Balances`, and the test that pins it at zero.
         clearedInstances = _releaseInstances(claimant, metaInstances, adapter, erc20DefaultBalanceAdapter);

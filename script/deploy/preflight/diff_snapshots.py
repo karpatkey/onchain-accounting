@@ -237,6 +237,13 @@ def diff_chain(a: dict, b: dict, tol: float, expect: dict[str, dict] | None = No
             # first version of this gate downgraded nothing here. Narrow to the low 20 bytes.
             if k in expected_adapters and coord_to_address(x) in expect:
                 out.append(f"INFO  adapter {k} GAINED meta instance {x} - reclassification")
+                # COUNTED HERE TOO, and leaving it out made the `metaInstanceTotal` downgrade below fire on
+                # the FIRST comparison only. `reclassified_ok` was incremented solely in the adapter-ADDED
+                # branch, so once a `pre/` snapshot already contains the wallet-yield adapters they are in
+                # BOTH sets, their coordinates arrive through this branch instead, and a correct run reported
+                # `DIFF metaInstanceTotal` — the gate failing on exactly the change the manifest exists to
+                # whitelist, but only on the re-run, which is the run nobody tests.
+                reclassified_ok += 1
                 continue
             out.append(f"DIFF  adapter {k} GAINED meta instance {x}")
 
@@ -415,6 +422,30 @@ def self_test() -> int:
         is_info = bool(lines) and lines[0].startswith("INFO")
         if is_info != want_info:
             failures.append(f"  metaInstanceTotal: expected {'INFO' if want_info else 'DIFF'} - {why}")
+
+    # THE RE-RUN SHAPE, which the four cases above structurally cannot reach: every one of them builds `a`
+    # with `adapters: []`, so the adapter is always newly ADDED and the coordinates always arrive through the
+    # ADDED branch. Once a `pre/` snapshot already contains the wallet-yield adapters, they are in BOTH sets
+    # and their coordinates arrive through the GAINED branch instead. That branch did not increment
+    # `reclassified_ok`, so the downgrade fired on the first comparison only and a correct re-run reported
+    # DIFF. Untested shape, live defect - this case is the positive control for it.
+    recl_n = 3
+    exp_rerun = {f"0x{i:040x}": {"symbol": "T", "adapter": "A", "toPositionKind": "Staking",
+                                 "toProtocolBrand": "0xb", "toProtocolId": "0xi", "toProtocolSubId": "0xs"}
+                 for i in range(recl_n)}
+    coords_all = ["0x" + "0" * 24 + f"{i:040x}"[-40:] for i in range(recl_n)]
+    base_rerun = {"assets": [], "accounts": [], "proxy": "", "implementation": "",
+                  "erc20DefaultBalanceAdapter": "", "roles": {}, "version": 1, "usdDecimals": 8}
+    # Adapter A present in BOTH, holding none of the reclassified coordinates yet, then holding all of them.
+    a_rr = dict(base_rerun, metaInstanceTotal=10,
+                adapters=[{"configKey": "A", "address": "0x1", "adapterType": "Custom", "metaInstances": []}])
+    b_rr = dict(base_rerun, metaInstanceTotal=10 + recl_n,
+                adapters=[{"configKey": "A", "address": "0x1", "adapterType": "Custom",
+                           "metaInstances": coords_all}])
+    rr_lines = [ln for ln in diff_chain(a_rr, b_rr, 0.01, exp_rerun) if "metaInstanceTotal" in ln]
+    if not (rr_lines and rr_lines[0].startswith("INFO")):
+        failures.append("  metaInstanceTotal on the RE-RUN shape (adapter in both snapshots, coordinates"
+                        f" GAINED): expected INFO, got {rr_lines or 'no line'}")
 
     # The committed manifest must be loadable and internally consistent.
     recl = load_reclassifications()

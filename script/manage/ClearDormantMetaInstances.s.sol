@@ -171,8 +171,26 @@ contract ClearDormantMetaInstances is Script {
         uint256 n = _reporters();
         if (n != 1) revert DoubleCount(n);
         if (NAVCalculator(NAV).getMetaInstances(RESIDUE).length != 0) revert ResidueSetNotCleared();
-        if (NAVCalculator(NAV).getMetaInstances(LIVE).length != 1) revert LiveLostItsInstance();
-        if (NAVCalculator(NAV).getMetaInstances(LIVE)[0] != V192) revert LiveHoldsWrongCoordinate();
+        // MEMBERSHIP, not cardinality, and not index 0 either. Both of the checks this replaces were brittle
+        // for independent reasons:
+        //   - `length != 1` hardcodes ONE instance, but `LIVE` is the Polygon staking meta-adapter and the
+        //     2026-08-29 decision was to keep it GOVERNED — one instance per validator. Registering a second
+        //     validator would make this read-only, advertised-as-re-runnable `verify()` revert on a chain whose
+        //     residue is correctly cleared.
+        //   - `[0] != V192` pins V192 to index 0, but `removeMetaInstances` removes by SWAP-AND-POP, so any
+        //     unrelated add/remove around it can move V192 to another index with nothing wrong at all.
+        // What actually matters is that the live adapter still holds V192 and that there is exactly one
+        // reporter — the latter is already asserted above by `_reporters()`.
+        bytes32[] memory live = NAVCalculator(NAV).getMetaInstances(LIVE);
+        if (live.length == 0) revert LiveLostItsInstance();
+        bool holdsV192;
+        for (uint256 i; i < live.length; ++i) {
+            if (live[i] == V192) {
+                holdsV192 = true;
+                break;
+            }
+        }
+        if (!holdsV192) revert LiveHoldsWrongCoordinate();
         if (NAVCalculator(NAV).isAdapterRegistered(RESIDUE)) revert ResidueStillRegistered();
     }
 }

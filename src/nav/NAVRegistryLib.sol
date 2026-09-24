@@ -543,6 +543,40 @@ library NAVRegistryLib {
         }
     }
 
+    /// @dev Does the meta adapter governing `coord` actually report `asset`? Asked, not assumed — see
+    ///      {includeAssetIfUnclaimed} for why the two differ.
+    ///
+    ///      METERED and FAIL-SAFE, with the polarity chosen deliberately. On a plain revert — an adapter that
+    ///      somehow does not answer, or answers malformed — this returns TRUE, i.e. "assume it reports the asset,
+    ///      so do not arm the default adapter". That direction risks an under-report, which this repo licenses;
+    ///      the opposite default would risk two reporters, which it never does. It is also exactly the behaviour
+    ///      that shipped before this probe existed, so the probe can only ever improve the outcome.
+    ///
+    ///      STARVATION IS THE ONE CASE THAT REVERTS, because there both defaults are wrong and a registration can
+    ///      simply be retried. Same single-sample discipline as {_reincludeIfAsset}: read `available` once,
+    ///      forward `stipendFrom(available)`, classify `available - gasleft()` against the stipend.
+    function _holderReportsAsset(address holder, bytes32 coord, address asset) private view returns (bool) {
+        bytes32[] memory one = new bytes32[](1);
+        one[0] = coord;
+
+        uint256 available = gasleft();
+        uint256 stipend = GasStipendLib.stipendFrom(available);
+        try IMetaBalanceAdapter(holder).underlyingAssetsSupportedForInstances{gas: stipend}(one) returns (
+            address[] memory reported
+        ) {
+            for (uint256 i; i < reported.length; ++i) {
+                if (reported[i] == asset) return true;
+            }
+            return false;
+        } catch {
+            uint256 consumed = available - gasleft();
+            if (GasStipendLib.exhausted(stipend, consumed)) {
+                revert IBalances.ClaimantAssetProbeGasExhausted(holder, asset, stipend, consumed);
+            }
+            return true;
+        }
+    }
+
     /// @dev Hands a released coordinate back to `ERC20DefaultBalanceAdapter` when it is a registered asset.
     ///
     ///      Without this, releasing a coordinate left the token held by NOBODY: excluded from the default
@@ -647,10 +681,30 @@ library NAVRegistryLib {
     ) external {
         bytes32 coord = bytes32(uint256(uint160(asset)));
         address holder = claimant[coord];
-        if (holder != address(0)) {
+
+        // **CLAIMED IS NOT THE SAME AS REPORTED, and conflating them left a token with NO reporter.** An earlier
+        // version skipped the inclusion for any claimed coordinate, reasoning "already governed, so somebody
+        // reports it". That holds only where the coordinate, the token and the reported `balanceAsset` are the
+        // same address — the wallet-yield family. Everywhere else the coordinate is a PROTOCOL INSTANCE and the
+        // reported asset is the UNDERLYING: an ERC-4626 vault coordinate (Morpho, Euler, Fluid, Spark) reports
+        // `convertToAssets`, in the underlying, not the share token. So registering such a vault's share token as
+        // a NAV asset skipped arming the default adapter while its meta adapter reported a DIFFERENT asset,
+        // leaving the share token reported by nobody behind a successful-looking `AssetRegistered`.
+        //
+        // So ASK, rather than assume. `underlyingAssetsSupportedForInstances` is the adapter's own declaration of
+        // what it reports for a coordinate, which makes this exact rather than a guess about adapter families —
+        // and it needs no new interface, no registry and no marker bit.
+        if (holder != address(0) && _holderReportsAsset(holder, coord, asset)) {
+            // Genuinely governed AND reported: arming the default adapter here is the double-count this PR exists
+            // to close, so refuse it. `revertIfClaimed` distinguishes the two callers — an explicit
+            // `includeAssetInDefaultAdapter` is an operator asking for a second reporter and must fail loudly,
+            // whereas `registerAsset` must still succeed or a claimed token becomes un-re-registerable.
             if (revertIfClaimed) revert IBalances.MetaInstanceClaimedByAnotherAdapter(coord, holder);
-            return; // already governed: registering the asset is fine, arming the default adapter is not
+            return;
         }
+        // Either unclaimed, or claimed by an adapter that reports a different asset — in which case the default
+        // adapter is the only reporter this token would otherwise have, and arming it is correct, not a
+        // double-count.
         ERC20DefaultBalanceAdapter(erc20DefaultBalanceAdapter).addSupportedAsset(asset);
     }
 

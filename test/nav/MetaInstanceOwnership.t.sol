@@ -4,6 +4,9 @@ pragma solidity ^0.8;
 import {NAVCalculator} from "src/nav/NAVCalculator.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IBalances} from "src/balances/IBalances.sol";
+import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
+import {IMetaBalanceAdapter} from "src/balances/IMetaBalanceAdapter.sol";
+import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {ERC20DefaultBalanceAdapter} from "src/balances/BalanceAdapters/ERC20DefaultBalanceAdapter.sol";
 import {IPrices} from "src/prices/IPrices.sol";
 import {Mock_OwnershipMetaAdapter} from "test/nav/MetaInstanceOwnership.invariant.t.sol";
@@ -422,5 +425,116 @@ contract MetaInstanceOwnershipTest is SuperTest {
             def.isSupportedByDefault(address(t)),
             "an ordinary release must hand the token back to the default adapter, not strand it"
         );
+    }
+
+    // -------------------------------------------------------------------------
+    // Route 9: the holder governs the coordinate but reports a DIFFERENT asset.
+    // -------------------------------------------------------------------------
+
+    /// @dev **"Claimed" is not "reported", and treating them as identical left a token with NO reporter.** The
+    ///      inclusion gate used to skip arming the default adapter for any claimed coordinate, reasoning that
+    ///      somebody already reports it. That holds only for the wallet-yield family, where the coordinate, the
+    ///      token and the reported `balanceAsset` are one address. For an ERC-4626 vault family the coordinate is
+    ///      the share token and the reported asset is the UNDERLYING — so registering that share token skipped the
+    ///      default adapter while the meta adapter reported something else, and the share token was reported by
+    ///      nobody behind a successful-looking `AssetRegistered`.
+    ///
+    ///      The gate now asks the holder via `underlyingAssetsSupportedForInstances`, so this case arms the
+    ///      default adapter, which is the only reporter the token would otherwise have.
+    function test_registerAsset_holderReportsDifferentAsset_armsDefault() public {
+        Mock_ERC20 underlying = _newToken();
+        Mock_ERC20 share = _newToken();
+        Mock_VaultLikeMetaAdapter vault = new Mock_VaultLikeMetaAdapter(address(underlying));
+
+        vm.startPrank(navCalculatorManager);
+        nav.addMetaBalanceAdapter(address(vault), new bytes32[](0));
+        // The vault adapter governs the SHARE token's address as its instance coordinate...
+        nav.addMetaInstances(address(vault), _one(_coord(share)));
+        vm.stopPrank();
+
+        // ...but it reports `underlying`, not `share`. So registering `share` must arm the default adapter.
+        _register(share);
+
+        assertTrue(nav.isAssetRegistered(address(share)), "the share token must be registerable");
+        assertTrue(
+            def.isSupportedByDefault(address(share)),
+            "a token whose claiming adapter reports a DIFFERENT asset must be armed on the default adapter,"
+            " or it is reported by nobody"
+        );
+    }
+
+    /// @dev The same asymmetry on the explicit operator path. `includeAssetInDefaultAdapter` used to revert for
+    ///      ANY claimed coordinate; it must now succeed here, because arming the default adapter for a token the
+    ///      claiming adapter does not report is not a second reporter — it is the first one.
+    ///      {test_includeClaimedAsset_reverts} is the other half: it still reverts when the holder DOES report it.
+    function test_includeAsset_holderReportsDifferentAsset_succeeds() public {
+        Mock_ERC20 underlying = _newToken();
+        Mock_ERC20 share = _newToken();
+        Mock_VaultLikeMetaAdapter vault = new Mock_VaultLikeMetaAdapter(address(underlying));
+
+        vm.startPrank(navCalculatorManager);
+        nav.addMetaBalanceAdapter(address(vault), new bytes32[](0));
+        nav.addMetaInstances(address(vault), _one(_coord(share)));
+        vm.stopPrank();
+
+        Mock_CustomPriceFeed f = new Mock_CustomPriceFeed("T", address(share), 1e8, 8);
+        vm.prank(navCalculatorManager);
+        nav.registerAsset(address(share), address(f), IPrices.PriceType.Custom, type(uint256).max);
+
+        // Idempotent and must not revert: the claim belongs to an adapter reporting another asset.
+        vm.prank(navCalculatorManager);
+        nav.includeAssetInDefaultAdapter(address(share));
+
+        assertTrue(def.isSupportedByDefault(address(share)), "explicit inclusion must succeed for an unreported token");
+    }
+}
+
+/// @notice A meta adapter shaped like an ERC-4626 VAULT family: its instance coordinate is the vault/share
+///         address, but the asset it reports is the UNDERLYING, which is a different address.
+/// @dev This is the shape `MorphoVaultsMeta`, `EulerVaultsMeta`, `FluidVaultsMeta` and `SparkSavings` have, and
+///      the shape that made "claimed implies reported" false. It exists so the claimant gate can be tested
+///      against a holder that governs a coordinate WITHOUT reporting it — which the wallet-yield-shaped
+///      {Mock_OwnershipMetaAdapter} (whose reported asset IS its coordinate) structurally cannot express.
+contract Mock_VaultLikeMetaAdapter is IMetaBalanceAdapter {
+    address public immutable UNDERLYING;
+
+    constructor(address underlying) {
+        UNDERLYING = underlying;
+    }
+
+    function supportsInterface(bytes4 id) external pure override returns (bool) {
+        return id == type(IBalanceAdapter).interfaceId || id == type(IMetaBalanceAdapter).interfaceId
+            || id == type(IERC165).interfaceId;
+    }
+
+    /// @dev The whole point: whatever coordinate it is asked about, it reports the UNDERLYING.
+    function underlyingAssetsSupportedForInstances(bytes32[] calldata) external view returns (address[] memory a) {
+        a = new address[](1);
+        a[0] = UNDERLYING;
+    }
+
+    function underlyingAssetsSupported() external view returns (address[] memory a) {
+        a = new address[](1);
+        a[0] = UNDERLYING;
+    }
+
+    function getAdapterPositionsForInstances(address, bytes32[] calldata, address)
+        external
+        pure
+        returns (INAVCalculator.PositionBalance[] memory)
+    {
+        return new INAVCalculator.PositionBalance[](0);
+    }
+
+    function getAdapterPositions(address, address) external pure returns (INAVCalculator.PositionBalance[] memory) {
+        return new INAVCalculator.PositionBalance[](0);
+    }
+
+    function getAdapterBalanceForAsset(address, address) external pure returns (uint256, bool) {
+        return (0, false);
+    }
+
+    function getAdapterBalances(address) external pure returns (address[] memory, uint256[] memory, bool[] memory) {
+        return (new address[](0), new uint256[](0), new bool[](0));
     }
 }

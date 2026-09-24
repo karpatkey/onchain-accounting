@@ -67,6 +67,14 @@ interface IBalances {
     /// @param consumed Gas the call actually cost the caller.
     error DefaultAdapterReincludeGasExhausted(address token, uint256 stipend, uint256 consumed);
 
+    /// @notice The claiming meta adapter's asset-surface probe ran out of its forwarded stipend, so whether it
+    ///         reports this asset is UNKNOWN.
+    /// @dev Reverts rather than guessing. Both guesses are wrong in a different direction: assume it reports the
+    ///      asset and the token may end up with no reporter; assume it does not and the token may be reported
+    ///      twice. A registration is a one-shot MANAGER action that can simply be retried with more gas, so
+    ///      failing loudly costs nothing that guessing does not cost more of.
+    error ClaimantAssetProbeGasExhausted(address holder, address asset, uint256 stipend, uint256 consumed);
+
     /// @notice Error when removing a meta-instance coordinate that is not present in the adapter's set.
     error MetaInstanceNotFound();
 

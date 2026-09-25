@@ -195,7 +195,11 @@ L1_FEE_OMITTED_PRICED = {10, 130, 204, 480, 5000, 8453, 42220, 57073}
 #   1     mainnet  — no predeploy. It IS the L1; there is no DA fee to post.
 #   100   gnosis   — no predeploy. Standalone L1, not a rollup.
 #   143   monad, 16661 0g — no predeploy (codesize 0).
-L1_FEE_NONE_VERIFIED = {42161, 196, 1, 100, 143, 16661}
+#   5042  arc      — no predeploy (codesize 0), read on-chain 2026-09-17; a getL1Fee call to that
+#                    address hits a non-contract and returns empty. Classified on THAT READING, not
+#                    on "Arc is an L1 so it has no DA fee" — that is the inference this set's
+#                    neighbours in L1_FEE_UNVERIFIED exist to forbid, and it is what produced hemi.
+L1_FEE_NONE_VERIFIED = {42161, 196, 1, 100, 143, 16661, 5042}
 
 # NOT VERIFIED, AND NOT THE SAME AS VERIFIED-ZERO. These endpoints were unreachable from the
 # environment this classification was made in, so nothing was read from them. They are recorded as

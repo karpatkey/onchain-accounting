@@ -1,7 +1,7 @@
 {
   "$comment": "Snapshot of each oracle's PROVIDER-DECLARED heartbeat, for the declared-heartbeat-margin guard in declared_heartbeat_guard.py. Committed on purpose: preflight must be DETERMINISTIC and must not depend on a third-party endpoint at deploy time \u2014 a network failure should not block a deploy, and a silently-changed remote should not change the verdict. Regenerate with: python3 declared_heartbeat_guard.py --refresh. Source: Chainlink reference-data-directory. Only addresses referenced by config are recorded; an unrecorded address is reported by the guard as actionable (run --refresh) rather than silently passing.",
   "source": "https://reference-data-directory.vercel.app/",
-  "fetched": "2026-09-16",
+  "fetched": "2026-09-17",
   "chains": {
     "1": {
       "0x04f84020fdf10d9ee64d1dcc2986edf2f556da11": {
@@ -519,6 +519,20 @@
         "declaredHeartbeat": 86400,
         "threshold": 0.05,
         "feedCategory": "custom"
+      }
+    },
+    "5042": {
+      "0x84ea90ac252dc437031461836db5164219147905": {
+        "name": "USDC / USD",
+        "declaredHeartbeat": 86400,
+        "threshold": 0.5,
+        "feedCategory": "low"
+      },
+      "0xa261c56cabf7ed6081646b892e57175ab2dd8617": {
+        "name": "USD / ARS",
+        "declaredHeartbeat": 86400,
+        "threshold": 0.5,
+        "feedCategory": ""
       }
     }
   }

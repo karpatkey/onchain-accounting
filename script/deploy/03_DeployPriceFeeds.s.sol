@@ -112,6 +112,9 @@ contract DeployPriceFeeds is BaseDeployScript {
         } else if (currentChainId == 100) {
             // Gnosis
             _deployGnosisPriceAdapters();
+        } else if (currentChainId == 5042) {
+            // Arc
+            _deployArcPriceAdapters();
         } else if (currentChainId == 137) {
             // Polygon: only Chainlink-priced assets are registered today (POL, WPOL, WETH,
             // USDC, USDT). No custom price-feed contracts to deploy. Add a branch here when
@@ -1068,6 +1071,29 @@ contract DeployPriceFeeds is BaseDeployScript {
     }
 
     // Gnosis price feed deployments
+    /// @notice Arc (chain 5042). One custom feed today: wARS.
+    /// @dev Arc's ONLY ARS feed is quoted `USD / ARS` -- the reciprocal of the asset/USD direction every
+    ///      primary uses -- so wARS MUST go through {InvertedChainlinkCustomPriceFeed} and can never be
+    ///      registered as a plain `type: "Chainlink"` primary. Measured on Arc 2026-09-17: the feed answers
+    ///      1596.4011 ARS per USD, so a direct registration would over-report wARS by ~2.5 MILLION x (the
+    ///      square of the rate). The `rateFeedGuard` in the chain's custom-price-feeds config pins both the
+    ///      pair and the direction; `_deployInvertedFeed` enforces it at deploy time.
+    function _deployArcPriceAdapters() internal {
+        console2.log("Deploying Arc price feeds...\n");
+
+        vm.startBroadcast();
+
+        // Gated ONLY on its own config entry, for the same reason as on mainnet: nesting this inside
+        // another feed's `if` would make an enabled wARS silently not deploy whenever that unrelated feed
+        // is disabled, and RegisterAssets would then skip wARS for want of a resolved custom-feed address
+        // -- a silent under-report, not a loud failure.
+        if (ConfigReader.isPriceFeedEnabled(vm, currentChainId, "wARS")) {
+            _deployInvertedFeed("wARS");
+        }
+
+        vm.stopBroadcast();
+    }
+
     function _deployGnosisPriceAdapters() internal {
         console2.log("Deploying Gnosis price feeds...\n");
 

@@ -1,0 +1,14 @@
+{
+  "chainId": 5042,
+  "name": "arc",
+  "rpc": "$ARC_RPC_URL",
+  "explorer": "https://arc-scan.org",
+  "explorerApiKey": "",
+  "chainlinkSequencerFeed": "0x0000000000000000000000000000000000000000",
+  "nativeTokenSymbol": "USDC",
+  "addresses": {
+    "securityCouncil": "0x8b884f80B3B839F52b6cE168f133e7a5D1f0A537",
+    "admin": "0xAa5A7C7Ea51F276301f881F9CCB501a1dFeF4F72",
+    "manager": "0xAa5A7C7Ea51F276301f881F9CCB501a1dFeF4F72"
+  }
+}

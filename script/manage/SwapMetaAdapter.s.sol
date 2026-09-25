@@ -154,6 +154,47 @@ contract SwapMetaAdapter is BaseDeployScript {
     /// @notice `plan()` found no registered meta adapter whose address moved — nothing to swap on this chain.
     error NoMetaAdaptersToSwap(uint256 chainId);
 
+    /// @dev Predecessor and successor must be the same protocol. `isAdapterRegistered(old)` is true for ANY
+    ///      registered adapter, and `protocolName()` cannot be compared — a RENAME is a legitimate reason to swap,
+    ///      and this script's first real use was exactly that. Comparing the underlying assets each reports for the
+    ///      carried coordinates catches a transposed address (say SymbioticVaultsMeta pasted as the predecessor)
+    ///      without forbidding a rename: a different protocol answers with different assets, or reverts. Shared by
+    ///      `run()` (single swap) and `plan()` (batch emitter) so the two integrity checks cannot drift apart —
+    ///      `plan()` omitting this is exactly how a stale/mislabeled `.pre-swap.json` could pair a wrong old<->new.
+    ///      No-op for an empty instance set.
+    function _assertSameProtocol(address old, address newAdapter, bytes32[] memory instances) internal {
+        if (instances.length == 0) return;
+        address[] memory oldAssets = IMetaAdapterAssets(old).underlyingAssetsSupportedForInstances(instances);
+        address[] memory newAssets = IMetaAdapterAssets(newAdapter).underlyingAssetsSupportedForInstances(instances);
+        if (oldAssets.length != newAssets.length) revert AdapterMismatch(old, newAdapter);
+        for (uint256 i = 0; i < oldAssets.length; i++) {
+            if (oldAssets[i] != newAssets[i]) revert AdapterMismatch(old, newAdapter);
+        }
+
+        // THE CHECK ABOVE IS VACUOUS FOR A WHOLE FAMILY. The wallet-yield adapters' `_instanceAssets` returns the
+        // INSTANCE ITSELF — the coordinate is the token — so every one answers `[coordinate]` for any coordinate,
+        // and comparing their answers cannot distinguish Lido from Sky. A transposed successor inside that family
+        // passes silently and re-labels the holding's protocol identity: not a value error, but exactly the
+        // misattribution this guard exists to catch. Detected structurally: if the reported assets ARE the
+        // coordinates, nothing was verified, so the operator must confirm (both names are logged by the caller).
+        // Bounded on `oldAssets.length`, not `instances.length`: `underlyingAssetsSupportedForInstances` returns
+        // the CONCATENATION of per-instance asset lists, so it is SHORTER whenever an instance yields no asset (a
+        // reverting `instanceAssets` stores a zero-length list; Curve's `getPool -> address(0)` does exactly that).
+        // A length mismatch means the one-asset-per-instance shape does not hold, so the comparison above is not a
+        // tautology — treat it as NOT vacuous and let the asset comparison stand on its own.
+        bool vacuous = oldAssets.length == instances.length;
+        for (uint256 i = 0; vacuous && i < oldAssets.length; i++) {
+            if (bytes32(uint256(uint160(oldAssets[i]))) != instances[i]) vacuous = false;
+        }
+        if (vacuous && !vm.envOr("SWAP_IDENTITY_CONFIRMED", false)) {
+            console2.log("The asset comparison cannot tell these two adapters apart:");
+            console2.log("  outgoing:", IHasProtocolName(old).protocolName());
+            console2.log("  incoming:", IHasProtocolName(newAdapter).protocolName());
+            console2.log("Confirm the protocols match, then re-run with SWAP_IDENTITY_CONFIRMED=true.");
+            revert IdentityCheckVacuous(old, newAdapter);
+        }
+    }
+
     function run() public override {
         uint256 chainId = block.chainid;
         address nav = ConfigReader.readDeployedAddress(vm, chainId, "NAVCalculatorProxy");
@@ -178,52 +219,8 @@ contract SwapMetaAdapter is BaseDeployScript {
         // Read the set before touching it; the clear below consumes exactly these coordinates.
         bytes32[] memory instances = navAdmin.getMetaInstances(old);
 
-        // Predecessor and successor must be the same protocol. `isAdapterRegistered(old)` is true for ANY
-        // registered adapter, and `protocolName()` cannot be compared — a RENAME is a legitimate reason to swap,
-        // and this script's first real use was exactly that. Comparing the underlying assets each reports for the
-        // carried coordinates catches a transposed address (say SymbioticVaultsMeta pasted as OLD_ADAPTER) without
-        // forbidding a rename: a different protocol answers with different assets, or reverts and is caught below.
-        if (instances.length > 0) {
-            address[] memory oldAssets = IMetaAdapterAssets(old).underlyingAssetsSupportedForInstances(instances);
-            address[] memory newAssets = IMetaAdapterAssets(newAdapter).underlyingAssetsSupportedForInstances(instances);
-            if (oldAssets.length != newAssets.length) revert AdapterMismatch(old, newAdapter);
-            for (uint256 i = 0; i < oldAssets.length; i++) {
-                if (oldAssets[i] != newAssets[i]) revert AdapterMismatch(old, newAdapter);
-            }
-
-            // THE CHECK ABOVE IS VACUOUS FOR A WHOLE FAMILY, so say so rather than appear to have verified.
-            // The wallet-yield adapters' `_instanceAssets` returns the INSTANCE ITSELF — the coordinate is the
-            // token — so every one of the 17 answers `[coordinate]` for any coordinate, and comparing their
-            // answers cannot distinguish Lido from Sky. A transposed NEW_ADAPTER inside that family passes
-            // silently and re-labels the holding's protocol identity: not a value error, but exactly the
-            // misattribution this guard exists to catch, and it is the guard's blind spot rather than its
-            // verdict.
-            //
-            // Detected structurally instead of by naming the family: if the reported assets ARE the
-            // coordinates, nothing was verified. `protocolName()` cannot substitute — a RENAME is a
-            // legitimate reason to swap, and this script's first real use was one — so the operator confirms
-            // instead, with both names logged above for comparison.
-            // Bounded on `oldAssets.length`, not `instances.length`: `underlyingAssetsSupportedForInstances`
-            // returns the CONCATENATION of per-instance asset lists, so it is SHORTER whenever an instance
-            // yields no asset — a reverting `instanceAssets` stores a zero-length list, and Curve's recorded
-            // `getPool -> address(0)` case does exactly that. Indexing by `instances.length` panicked 0x32
-            // on such a set, which blocked the swap with an error the operator cannot read.
-            //
-            // A length mismatch also means the one-asset-per-instance shape does not hold, so the comparison
-            // below is not the tautology this guard is looking for: treat it as NOT vacuous and let the
-            // asset comparison above stand on its own.
-            bool vacuous = oldAssets.length == instances.length;
-            for (uint256 i = 0; vacuous && i < oldAssets.length; i++) {
-                if (bytes32(uint256(uint160(oldAssets[i]))) != instances[i]) vacuous = false;
-            }
-            if (vacuous && !vm.envOr("SWAP_IDENTITY_CONFIRMED", false)) {
-                console2.log("The asset comparison cannot tell these two adapters apart:");
-                console2.log("  outgoing:", IHasProtocolName(old).protocolName());
-                console2.log("  incoming:", IHasProtocolName(newAdapter).protocolName());
-                console2.log("Confirm the protocols match, then re-run with SWAP_IDENTITY_CONFIRMED=true.");
-                revert IdentityCheckVacuous(old, newAdapter);
-            }
-        }
+        // Predecessor and successor must be the same protocol (transposition guard). Shared with `plan()`.
+        _assertSameProtocol(old, newAdapter, instances);
 
         console2.log("NAV:", nav);
         console2.log("  outgoing:", old, IHasProtocolName(old).protocolName());
@@ -379,9 +376,25 @@ contract SwapMetaAdapter is BaseDeployScript {
             address old = vm.keyExistsJson(preSwap, ptr) ? vm.parseJsonAddress(preSwap, ptr) : address(0);
 
             // Skip anything this swap does not touch: absent in either file, address unchanged, or the
-            // predecessor is no longer registered (already swapped, or never live).
-            if (old == address(0) || newA == address(0) || old == newA) continue;
-            if (!navAdmin.isAdapterRegistered(old)) continue;
+            // predecessor is no longer registered (already swapped, or never live). Log every skip with its
+            // reason — a silently omitted adapter (esp. `newA==0`, i.e. `04` has not redeployed it yet) must be
+            // visible so an incomplete batch is never signed unnoticed (audit L-2).
+            if (newA == address(0)) {
+                console2.log("  skip (successor not in deployments record - 04 not run yet?):", names[i]);
+                continue;
+            }
+            if (old == address(0)) {
+                console2.log("  skip (no pre-swap address - nothing to supersede):", names[i]);
+                continue;
+            }
+            if (old == newA) {
+                console2.log("  skip (address unchanged - adapter did not move):", names[i]);
+                continue;
+            }
+            if (!navAdmin.isAdapterRegistered(old)) {
+                console2.log("  skip (predecessor not registered - already swapped or never live):", names[i]);
+                continue;
+            }
 
             // Fail CLOSED on pair integrity — a wrong old/new corrupts NAV, so stop the whole batch.
             if (!_isMetaAdapter(old)) revert PredecessorNotMetaAdapter(old);
@@ -393,6 +406,10 @@ contract SwapMetaAdapter is BaseDeployScript {
             if (pinned != nav) revert SuccessorPinnedToDifferentNav(newA, pinned, nav);
 
             bytes32[] memory set = navAdmin.getMetaInstances(old);
+
+            // Same protocol on both ends — the transposition guard `run()` enforces, now shared, so a stale or
+            // mislabeled `.pre-swap.json` cannot pair a wrong old<->new under one config name (audit M-1).
+            _assertSameProtocol(old, newA, set);
 
             // ADJACENT. `removeBalanceAdapters` clears the set itself now, so the leading `removeMetaInstances`
             // is belt-and-braces and skipped when the set is empty.

@@ -37,6 +37,18 @@ contract DefaultAdapterStub {
     }
 }
 
+/// @notice A default adapter whose inclusion probe NEVER returns — it burns every wei of gas it is handed, so
+///         the metered probe in `_reportedByDefaultAdapter` reports `starved`. Mirrors the infinite-loop sink in
+///         `MetaBalanceAdapterGasExhaustion.t.sol`. `view` because the real `isSupportedByDefault` is a
+///         staticcall target; non-termination is fine — it out-of-gases before it could return.
+contract GasBurningDefaultAdapterStub {
+    function isSupportedByDefault(address) external view returns (bool) {
+        assembly {
+            for {} 1 {} { mstore(0x00, keccak256(0x00, 0x20)) }
+        }
+    }
+}
+
 /// @title WalletTokenMetaBalanceAdaptersTest
 /// @author KPK
 /// @notice Behaviour of the wallet-held yield-token adapter family.
@@ -279,6 +291,66 @@ contract WalletTokenMetaBalanceAdaptersTest is Test {
             0,
             "re-registration must not leave BOTH adapters reporting"
         );
+    }
+
+    // --- de-dup probe starvation (M-02) -----------------------------------------------------------
+
+    /// @notice The starved inclusion probe reverts `DefaultAdapterProbeGasExhausted` at the leaf.
+    /// @dev The M-02 gap: this branch (`_reportedByDefaultAdapter` -> `probeWordMetered` -> `starved`) had ZERO
+    ///      coverage, and it is the branch that makes the read-guard fail LOUD rather than silently. An unmetered
+    ///      probe would absorb its own out-of-gas as `ok == false`, read that as "included", suppress the leg,
+    ///      and return SUCCESSFULLY — dropping the holding from NAV with no health flag. Here a gas-burning
+    ///      default adapter forces starvation; at some budget the external `instancePositions` wrapper surfaces
+    ///      the leaf error rather than a normal empty return.
+    function test_dedupe_starvedProbe_leafRevertsDefaultAdapterProbeGasExhausted() public {
+        GasBurningDefaultAdapterStub burner = new GasBurningDefaultAdapterStub();
+        Mock_NAVCalculator n = new Mock_NAVCalculator();
+        n.setErc20DefaultBalanceAdapter(address(burner));
+        Mock_ERC20 tok = new Mock_ERC20("wstETH", 18);
+        n.registerAsset(address(tok), 18, "wstETH");
+        LidoStakedEthWalletMetaBalanceAdapter a = new LidoStakedEthWalletMetaBalanceAdapter(address(n));
+        tok.mint(alice, 1e18);
+
+        bytes32 coord = bytes32(uint256(uint160(address(tok))));
+        uint256[4] memory budgets = [uint256(500_000), 1_000_000, 3_000_000, 8_000_000];
+        bool sawLeaf;
+        for (uint256 i; i < budgets.length; i++) {
+            (bool ok, bytes memory err) = address(a).staticcall{gas: budgets[i]}(
+                abi.encodeCall(a.instancePositions, (alice, coord, address(0)))
+            );
+            assertFalse(ok, "a starved probe must revert, never return an empty (silently dropped) leg set");
+            if (err.length >= 4 && bytes4(err) == WalletTokenMetaBalanceAdapterBase.DefaultAdapterProbeGasExhausted.selector)
+            {
+                sawLeaf = true;
+            }
+        }
+        assertTrue(sawLeaf, "the leaf starvation must surface as DefaultAdapterProbeGasExhausted at some budget");
+    }
+
+    /// @notice Through the base fan-out, a starved probe surfaces as `InstanceGasExhausted` — never a dropped leg.
+    /// @dev The load-bearing polarity: `MetaBalanceAdapter._positionsForInstances` re-raises the leaf as
+    ///      `InstanceGasExhausted` when the per-instance stipend is exhausted, so the whole read fails LOUD
+    ///      instead of the holding vanishing. Remove that re-raise and this test goes red.
+    function test_dedupe_starvedProbe_surfacesAsInstanceGasExhausted() public {
+        GasBurningDefaultAdapterStub burner = new GasBurningDefaultAdapterStub();
+        Mock_NAVCalculator n = new Mock_NAVCalculator();
+        n.setErc20DefaultBalanceAdapter(address(burner));
+        Mock_ERC20 tok = new Mock_ERC20("wstETH", 18);
+        n.registerAsset(address(tok), 18, "wstETH");
+        LidoStakedEthWalletMetaBalanceAdapter a = new LidoStakedEthWalletMetaBalanceAdapter(address(n));
+        tok.mint(alice, 1e18);
+
+        bytes32[] memory ins = _ins(address(tok));
+        uint256[4] memory budgets = [uint256(500_000), 1_000_000, 3_000_000, 8_000_000];
+        bool sawExhaustion;
+        for (uint256 i; i < budgets.length; i++) {
+            (bool ok, bytes memory err) = address(a).staticcall{gas: budgets[i]}(
+                abi.encodeCall(a.getAdapterPositionsForInstances, (alice, ins, address(0)))
+            );
+            assertFalse(ok, "a starved instance must never return a (silently dropped) empty leg set");
+            if (err.length >= 4 && bytes4(err) == INAVCalculator.InstanceGasExhausted.selector) sawExhaustion = true;
+        }
+        assertTrue(sawExhaustion, "starvation must surface as InstanceGasExhausted at some budget");
     }
 
     // --- labels -----------------------------------------------------------------------------------

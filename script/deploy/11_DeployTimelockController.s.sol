@@ -81,6 +81,8 @@ import "../../src/constants.sol";
 ///      executes:
 ///        - on the NAV: `hasRole(0x00, timelock)` and `hasRole(MANAGER, timelock)` are true;
 ///          `hasRole(0x00, deployer)` and `hasRole(MANAGER, deployer)` are false; `getRoleMemberCount(0x00) >= 1`
+///        - if an `OPS_SAFE` was used for the Phase-2 swap: `hasRole(MANAGER, opsSafe)` and
+///          `hasRole(0x00, opsSafe)` are both false (the batch revokes it — see the ops-Safe note below)
 ///        - on the timelock: `getMinDelay() == 0`, `hasRole(PROPOSER_ROLE, safe)`,
 ///          `hasRole(CANCELLER_ROLE, safe)`, `hasRole(EXECUTOR_ROLE, address(0))`,
 ///          `hasRole(DEFAULT_ADMIN_ROLE, deployer) == false`
@@ -142,6 +144,18 @@ contract DeployTimelockController is BaseDeployScript {
         // very signer it exists to delay. Retaining is a reasonable transitional choice while the ops scripts
         // lack a timelock emitter; it is not a reasonable end state.
         bool safeRetains = vm.envOr("SAFE_RETAINS_ROLES", false);
+
+        // The throwaway ops Safe (if one was used for the Phase-2 meta-adapter swap) was granted MANAGER outside
+        // this repo so it could execute that batch. It MUST NOT survive into the timelock end state — a 1/1
+        // throwaway key retaining a timelock-bypassing MANAGER is exactly the hole a governance handoff exists to
+        // close, and it is invisible to a checklist that only names the deployer and the Safe (Vigilo CRITICAL-01).
+        // Revoke it here, inside the audited batch, rather than trusting a separate manual step. Optional and
+        // idempotent: pass `OPS_SAFE` (the same address `SwapMetaAdapter` used); if it no longer holds the role
+        // (already revoked earlier), no entry is emitted and the on-chain check printed below still asserts the
+        // clean end state. It never legitimately holds admin, but revoke that too if present, defensively.
+        address opsSafe = vm.envOr("OPS_SAFE", address(0));
+        bool revokeOpsManager = opsSafe != address(0) && IAccessControl(nav).hasRole(MANAGER, opsSafe);
+        bool revokeOpsAdmin = opsSafe != address(0) && IAccessControl(nav).hasRole(DEFAULT_ADMIN_ROLE, opsSafe);
 
         console2.log("\n=== Deploy governance TimelockController ===");
         console2.log("NAV proxy            :", nav);
@@ -249,16 +263,33 @@ contract DeployTimelockController is BaseDeployScript {
         // Dispatched as individual transactions, a failure at entries 1-2 after 5-6 land is exactly the
         // no-admin brick named above — so "MUST be atomic" is a requirement on the OPERATOR here, not a
         // property the emitter can guarantee.
-        uint256 n = safeRetains ? 4 : 6;
+        // Base 4 (grant timelock x2, revoke deployer x2) + up to 2 ops-Safe revokes + (2 Safe self-revokes unless
+        // it retains). Assembled with a running index `k` so the ops entries slot in without hardcoded offsets.
+        uint256 opsExtra = (revokeOpsManager ? 1 : 0) + (revokeOpsAdmin ? 1 : 0);
+        uint256 n = (safeRetains ? 4 : 6) + opsExtra;
         SafeTxBuilder.Transaction[] memory batch = new SafeTxBuilder.Transaction[](n);
+        uint256 k;
 
-        batch[0] = SafeTxBuilder.call(nav, 0, abi.encodeCall(IAccessControl.grantRole, (DEFAULT_ADMIN_ROLE, predicted)));
-        batch[1] = SafeTxBuilder.call(nav, 0, abi.encodeCall(IAccessControl.grantRole, (MANAGER, predicted)));
-        batch[2] = SafeTxBuilder.call(nav, 0, abi.encodeCall(IAccessControl.revokeRole, (MANAGER, deployer)));
-        batch[3] = SafeTxBuilder.call(nav, 0, abi.encodeCall(IAccessControl.revokeRole, (DEFAULT_ADMIN_ROLE, deployer)));
+        batch[k++] =
+            SafeTxBuilder.call(nav, 0, abi.encodeCall(IAccessControl.grantRole, (DEFAULT_ADMIN_ROLE, predicted)));
+        batch[k++] = SafeTxBuilder.call(nav, 0, abi.encodeCall(IAccessControl.grantRole, (MANAGER, predicted)));
+        batch[k++] = SafeTxBuilder.call(nav, 0, abi.encodeCall(IAccessControl.revokeRole, (MANAGER, deployer)));
+        batch[k++] =
+            SafeTxBuilder.call(nav, 0, abi.encodeCall(IAccessControl.revokeRole, (DEFAULT_ADMIN_ROLE, deployer)));
+        // Ops-Safe revokes go BEFORE the Safe's own revoke below: they need an account that still holds
+        // DEFAULT_ADMIN_ROLE (the executing Safe) to authorize them, and when `!safeRetains` the Safe renounces its
+        // own admin in the last entries — so ordering these after that would revert.
+        if (revokeOpsManager) {
+            batch[k++] = SafeTxBuilder.call(nav, 0, abi.encodeCall(IAccessControl.revokeRole, (MANAGER, opsSafe)));
+        }
+        if (revokeOpsAdmin) {
+            batch[k++] =
+                SafeTxBuilder.call(nav, 0, abi.encodeCall(IAccessControl.revokeRole, (DEFAULT_ADMIN_ROLE, opsSafe)));
+        }
         if (!safeRetains) {
-            batch[4] = SafeTxBuilder.call(nav, 0, abi.encodeCall(IAccessControl.revokeRole, (MANAGER, safe)));
-            batch[5] = SafeTxBuilder.call(nav, 0, abi.encodeCall(IAccessControl.revokeRole, (DEFAULT_ADMIN_ROLE, safe)));
+            batch[k++] = SafeTxBuilder.call(nav, 0, abi.encodeCall(IAccessControl.revokeRole, (MANAGER, safe)));
+            batch[k++] =
+                SafeTxBuilder.call(nav, 0, abi.encodeCall(IAccessControl.revokeRole, (DEFAULT_ADMIN_ROLE, safe)));
         }
 
         writeSafeTx(
@@ -277,9 +308,18 @@ contract DeployTimelockController is BaseDeployScript {
             batch
         );
 
+        if (revokeOpsManager || revokeOpsAdmin) {
+            console2.log("Ops Safe (revoking) :", opsSafe);
+        } else if (opsSafe != address(0)) {
+            console2.log("Ops Safe (already clean, no revoke emitted):", opsSafe);
+        }
+
         console2.log("\n--- verify ON-CHAIN after the batch executes (this script CANNOT) ---");
         console2.log("NAV      hasRole(DEFAULT_ADMIN, timelock) == true, hasRole(MANAGER, timelock) == true");
         console2.log("NAV      hasRole(DEFAULT_ADMIN, deployer) == false, hasRole(MANAGER, deployer) == false");
+        if (opsSafe != address(0)) {
+            console2.log("NAV      hasRole(MANAGER, opsSafe) == false, hasRole(DEFAULT_ADMIN, opsSafe) == false");
+        }
         console2.log("timelock getMinDelay() == 0, PROPOSER+CANCELLER == safe, EXECUTOR == address(0)");
         console2.log("then     rehearse one scheduleBatch -> executeBatch round trip before declaring done");
     }

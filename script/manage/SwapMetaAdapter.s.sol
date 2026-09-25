@@ -4,6 +4,7 @@ pragma solidity ^0.8;
 import {BaseDeployScript} from "../utils/BaseDeployScript.sol";
 import {ConfigReader} from "../utils/ConfigReader.sol";
 import {IMetaBalanceAdapter} from "../../src/balances/IMetaBalanceAdapter.sol";
+import {SafeTxBuilder} from "../utils/SafeTxBuilder.sol";
 import {console2} from "forge-std/console2.sol";
 
 interface IMetaAdapterAssets {
@@ -19,6 +20,7 @@ interface INavAdmin {
     function removeBalanceAdapters(address[] calldata adapters) external;
     function getMetaInstances(address adapter) external view returns (bytes32[] memory);
     function isAdapterRegistered(address adapter) external view returns (bool);
+    function hasRole(bytes32 role, address account) external view returns (bool);
 }
 
 interface IHasProtocolName {
@@ -148,6 +150,9 @@ contract SwapMetaAdapter is BaseDeployScript {
     /// @dev It would read `getMetaInstances(address(this))` from the WRONG contract and silently report nothing.
     ///      The MetaBalanceAdapter constructor probe does not cover this — it only checks the NAV answers at all.
     error SuccessorPinnedToDifferentNav(address newAdapter, address pinned, address expected);
+
+    /// @notice `plan()` found no registered meta adapter whose address moved — nothing to swap on this chain.
+    error NoMetaAdaptersToSwap(uint256 chainId);
 
     function run() public override {
         uint256 chainId = block.chainid;
@@ -328,5 +333,112 @@ contract SwapMetaAdapter is BaseDeployScript {
         } else {
             console2.log("  ADAPTER_KEY unset - deployment record NOT updated; set it and re-run verify()");
         }
+    }
+
+    /// @notice PR #338 Phase 2: emit ONE atomic ops-Safe MultiSend that swaps EVERY moved meta adapter old->new,
+    ///         carrying each instance set across. This is the PRODUCTION path for the 24-adapter redeploy; {run}
+    ///         is the per-adapter EOA fallback, which has a transient under-report window (since `_release` no
+    ///         longer re-arms the default adapter, each token is reported by nobody between an adapter's remove
+    ///         and add). Keeping every adapter's calls adjacent inside one MultiSend closes that window.
+    /// @dev Maps old->new by adapter NAME, never by `protocolName()` (which collides — Morpho vaults vs markets,
+    ///      Balancer pools vs gauges, Curve pools vs gauges, Uniswap/Pancake v2 vs v3):
+    ///        - names    = keys of `contracts-deployment-config/meta-balance-adapters/<chainId>.json`
+    ///        - NEW addr = `deployments/<chainId>.json` `.balanceAdapters.<name>`          (written by `04`)
+    ///        - OLD addr = `deployments/<chainId>.pre-swap.json` `.balanceAdapters.<name>` (snapshotted by the
+    ///                     preflight BEFORE the meta keys were cleared and `04` ran)
+    ///      Per moved+registered pair it emits, ADJACENT and in this order (mirroring {run}):
+    ///      `removeMetaInstances(old,set)` [belt-and-braces, skipped when empty] + `removeBalanceAdapters([old])`
+    ///      + `addMetaBalanceAdapter(new,set)`. Fails CLOSED on any pair-integrity doubt. Safe defaults to
+    ///      `securityCouncil`; set `OPS_SAFE` to stamp the throwaway ops Safe instead.
+    ///      **Regenerate immediately before signing** — a stale batch dies whole on `MetaInstanceNotFound` /
+    ///      `DuplicateMetaInstance` / an address that already swapped.
+    function plan() external {
+        uint256 chainId = block.chainid;
+        address nav = ConfigReader.readDeployedAddress(vm, chainId, "NAVCalculatorProxy");
+        ConfigReader.ChainConfig memory cfg = ConfigReader.readChainConfig(vm, chainId);
+        address safe = vm.envOr("OPS_SAFE", cfg.securityCouncil);
+        INavAdmin navAdmin = INavAdmin(nav);
+
+        string memory idStr = vm.toString(chainId);
+        string memory metaCfg = vm.readFile(
+            string.concat("script/config/contracts-deployment-config/meta-balance-adapters/", idStr, ".json")
+        );
+        string[] memory names = vm.parseJsonKeys(metaCfg, "$");
+
+        string memory record = vm.readFile(string.concat("script/config/deployments/", idStr, ".json"));
+        string memory preSwap = vm.readFile(string.concat("script/config/deployments/", idStr, ".pre-swap.json"));
+
+        // Upper bound of 3 calls per moved adapter; trimmed to `k` below.
+        SafeTxBuilder.Transaction[] memory batch = new SafeTxBuilder.Transaction[](names.length * 3);
+        uint256 k;
+        uint256 swapped;
+
+        for (uint256 i; i < names.length; ++i) {
+            string memory ptr = string.concat(".balanceAdapters.", names[i]);
+            address newA = vm.keyExistsJson(record, ptr) ? vm.parseJsonAddress(record, ptr) : address(0);
+            address old = vm.keyExistsJson(preSwap, ptr) ? vm.parseJsonAddress(preSwap, ptr) : address(0);
+
+            // Skip anything this swap does not touch: absent in either file, address unchanged, or the
+            // predecessor is no longer registered (already swapped, or never live).
+            if (old == address(0) || newA == address(0) || old == newA) continue;
+            if (!navAdmin.isAdapterRegistered(old)) continue;
+
+            // Fail CLOSED on pair integrity — a wrong old/new corrupts NAV, so stop the whole batch.
+            if (!_isMetaAdapter(old)) revert PredecessorNotMetaAdapter(old);
+            if (newA.code.length == 0) revert SuccessorHasNoCode(newA);
+            if (!IPinnedToNav(newA).supportsInterface(type(IMetaBalanceAdapter).interfaceId)) {
+                revert SuccessorNotMetaAdapter(newA);
+            }
+            address pinned = IPinnedToNav(newA).NAV_CALCULATOR();
+            if (pinned != nav) revert SuccessorPinnedToDifferentNav(newA, pinned, nav);
+
+            bytes32[] memory set = navAdmin.getMetaInstances(old);
+
+            // ADJACENT. `removeBalanceAdapters` clears the set itself now, so the leading `removeMetaInstances`
+            // is belt-and-braces and skipped when the set is empty.
+            if (set.length > 0) {
+                batch[k++] = SafeTxBuilder.call(nav, 0, abi.encodeCall(INavAdmin.removeMetaInstances, (old, set)));
+            }
+            address[] memory one = new address[](1);
+            one[0] = old;
+            batch[k++] = SafeTxBuilder.call(nav, 0, abi.encodeCall(INavAdmin.removeBalanceAdapters, (one)));
+            batch[k++] = SafeTxBuilder.call(nav, 0, abi.encodeCall(INavAdmin.addMetaBalanceAdapter, (newA, set)));
+
+            swapped++;
+            console2.log("  swap", names[i]);
+            console2.log("    old:", old, IHasProtocolName(old).protocolName());
+            console2.log("    new:", newA, IHasProtocolName(newA).protocolName());
+            console2.log("    instances carried:", set.length);
+        }
+
+        if (swapped == 0) revert NoMetaAdaptersToSwap(chainId);
+        assembly {
+            mstore(batch, k)
+        }
+
+        console2.log("=== swap meta adapters: ops-Safe batch ===");
+        console2.log("chain       :", chainId);
+        console2.log("nav         :", nav);
+        console2.log("safe        :", safe);
+        console2.log("adapters    :", swapped);
+        console2.log("transactions:", k);
+        // Not a revert: the MANAGER grant may be a later, separate step, and refusing here would block preparing
+        // the batch in advance.
+        if (!navAdmin.hasRole(keccak256("MANAGER"), safe)) {
+            console2.log("WARNING: the Safe does NOT hold MANAGER yet - grant it before executing this batch");
+        }
+
+        SafeTxBuilder.writeSafeTx(
+            vm,
+            chainId,
+            string.concat(idStr, "-swap-meta-adapters.json"),
+            "Swap moved meta adapters (PR #338)",
+            "Deregisters each moved meta adapter and re-registers its redeployed successor, carrying the instance "
+            "set across. Per adapter: [removeMetaInstances] + removeBalanceAdapters([old]) + "
+            "addMetaBalanceAdapter(new, set), kept ADJACENT so the MultiSend import makes them atomic - no window "
+            "in which a token is reported by two adapters (over-report) or by none (under-report).",
+            safe,
+            batch
+        );
     }
 }

@@ -457,8 +457,10 @@ library NAVRegistryLib {
     ///      this adapter already holds it (a within-adapter duplicate is a real over-report —
     ///      `MetaBalanceAdapter` does not dedupe on read); `MetaInstanceClaimedByAnotherAdapter` naming the
     ///      holder otherwise, because "already yours" and "already someone else's" are different operator
-    ///      problems. Taking a coordinate also DISARMS the default adapter, which is the half that kept going
-    ///      missing: release re-arms it, so take must disarm it or release-then-re-add ends with two reporters.
+    ///      problems. Taking a coordinate also DISARMS the default adapter (`_excludeIfAsset`): once a meta adapter
+    ///      governs a coordinate the default adapter must not also report that token, or the two double-count.
+    ///      (`_release` no longer re-arms the default — see its body — so disarming on take is what keeps a governed
+    ///      token reported by exactly one adapter.)
     function _claim(
         mapping(bytes32 => address) storage claimant,
         mapping(address => bytes32[]) storage metaInstances,
@@ -494,8 +496,9 @@ library NAVRegistryLib {
 
     /// @dev Gives up `instance`: the only writer that clears a coordinate's CLAIM. It does NOT remove the
     ///      coordinate from `metaInstances` — the caller owns that, by swap-and-pop in `removeMetaInstances` or
-    ///      by `delete` in `_releaseInstances` — so the two must stay in step. Re-arms the default adapter so a
-    ///      released registered asset is reported by somebody rather than nobody.
+    ///      by `delete` in `_releaseInstances` — so the two must stay in step. Does NOT re-arm the default adapter
+    ///      (deliberate — see the body): a released registered asset is left reported by nobody (under-report, the
+    ///      licensed direction) until an operator re-arms it via `includeAssetInDefaultAdapter`.
     function _release(
         mapping(bytes32 => address) storage claimant,
         address adapter,

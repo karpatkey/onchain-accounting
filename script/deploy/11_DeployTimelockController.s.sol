@@ -154,6 +154,14 @@ contract DeployTimelockController is BaseDeployScript {
         // (already revoked earlier), no entry is emitted and the on-chain check printed below still asserts the
         // clean end state. It never legitimately holds admin, but revoke that too if present, defensively.
         address opsSafe = vm.envOr("OPS_SAFE", address(0));
+        // OPS_SAFE must be the DISTINCT throwaway ops Safe. If it were the council Safe, these entries would strip
+        // the governance holder of its roles — silently under `SAFE_RETAINS_ROLES=true`, which is the opposite of
+        // that flag's intent; if it were the deployer, they would duplicate the deployer revokes above. address(0)
+        // (the common "no ops Safe was used" case) is allowed and disables the block.
+        require(
+            opsSafe == address(0) || (opsSafe != safe && opsSafe != deployer),
+            "OPS_SAFE must be the throwaway ops Safe, not the council Safe or the deployer"
+        );
         bool revokeOpsManager = opsSafe != address(0) && IAccessControl(nav).hasRole(MANAGER, opsSafe);
         bool revokeOpsAdmin = opsSafe != address(0) && IAccessControl(nav).hasRole(DEFAULT_ADMIN_ROLE, opsSafe);
 

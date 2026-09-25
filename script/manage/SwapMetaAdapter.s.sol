@@ -181,8 +181,12 @@ contract SwapMetaAdapter is BaseDeployScript {
         // the CONCATENATION of per-instance asset lists, so it is SHORTER whenever an instance yields no asset (a
         // reverting `instanceAssets` stores a zero-length list; Curve's `getPool -> address(0)` does exactly that).
         // A length mismatch means the one-asset-per-instance shape does not hold, so the comparison above is not a
-        // tautology — treat it as NOT vacuous and let the asset comparison stand on its own.
-        bool vacuous = oldAssets.length == instances.length;
+        // tautology — treat it as NOT vacuous and let the asset comparison stand on its own. BUT an entirely EMPTY
+        // asset list (`oldAssets.length == 0`: every carried instance yielded no asset — e.g. all-delisted Curve
+        // pools, `getPool -> address(0)`) means the comparison verified NOTHING, so it is vacuous too and must be
+        // operator-confirmed rather than passing silently (Vigilo LOW-01: without this, a transposed pair whose
+        // instances resolve empty on both sides slips the guard with no revert).
+        bool vacuous = oldAssets.length == 0 || oldAssets.length == instances.length;
         for (uint256 i = 0; vacuous && i < oldAssets.length; i++) {
             if (bytes32(uint256(uint160(oldAssets[i]))) != instances[i]) vacuous = false;
         }

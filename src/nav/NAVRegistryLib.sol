@@ -177,8 +177,10 @@ library NAVRegistryLib {
         // re-registered. This wipe is what closes that, fleet-wide, without needing them cleaned first.
         // A scan could only reject a CONFLICTING residue; an unconflicting dormant set still revived silently.
         //
-        // Releasing first keeps the default adapter honest: a wiped coordinate that is a registered asset goes
-        // back to ERC20DefaultBalanceAdapter rather than being reported by nobody.
+        // Releasing first keeps registration consistent: the wipe clears any stale claim before the re-seed, so a
+        // re-registered adapter never carries coordinates nobody asked it to. NOTE: `_release` deliberately does
+        // NOT re-arm ERC20DefaultBalanceAdapter (see its own comment below) — a wiped registered-asset coordinate is
+        // left reported by nobody (under-report) until an operator re-arms it, which is the licensed direction.
         _releaseInstances(claimant, metaInstances, adapter, erc20DefaultBalanceAdapter);
         added = _appendInstances(claimant, metaInstances, adapter, instances, erc20DefaultBalanceAdapter);
     }

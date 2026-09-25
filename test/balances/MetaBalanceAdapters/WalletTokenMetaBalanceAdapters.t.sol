@@ -315,12 +315,13 @@ contract WalletTokenMetaBalanceAdaptersTest is Test {
         uint256[4] memory budgets = [uint256(500_000), 1_000_000, 3_000_000, 8_000_000];
         bool sawLeaf;
         for (uint256 i; i < budgets.length; i++) {
-            (bool ok, bytes memory err) = address(a).staticcall{gas: budgets[i]}(
-                abi.encodeCall(a.instancePositions, (alice, coord, address(0)))
-            );
+            (bool ok, bytes memory err) =
+                address(a).staticcall{gas: budgets[i]}(abi.encodeCall(a.instancePositions, (alice, coord, address(0))));
             assertFalse(ok, "a starved probe must revert, never return an empty (silently dropped) leg set");
-            if (err.length >= 4 && bytes4(err) == WalletTokenMetaBalanceAdapterBase.DefaultAdapterProbeGasExhausted.selector)
-            {
+            if (
+                err.length >= 4
+                    && bytes4(err) == WalletTokenMetaBalanceAdapterBase.DefaultAdapterProbeGasExhausted.selector
+            ) {
                 sawLeaf = true;
             }
         }

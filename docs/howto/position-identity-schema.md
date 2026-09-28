@@ -610,6 +610,50 @@ Thin subclasses of the UniswapV3/V2 adapters with different factory/`pair` addre
 `pancakeswap-v3` / `pancakeswap-v2` protocol slugs. All field schemas are identical (V3 positionId = pool
 address, NFT id in `positionInstanceId`; V2 positionId = pair address).
 
+#### `walletYield` family — wallet-held yield-bearing tokens (17 adapters)
+
+Each adapter reclassifies a wallet-held yield token: it values the raw `balanceOf` (`balanceAsset` = the token
+itself, no conversion, `isDebt = false`) and is governed on-chain by the token address as its single meta
+coordinate. The identity is uniform across the family — `positionId = abi.encode(token)`, so the reconciliation
+key is `(protocolSubId, token)` — and only the `protocolId` / `protocolSubId` slugs and the `positionKind`
+(`Staking` for LST/LRT, `Supplied` for savings/vaults) vary. Example:
+
+```solidity
+// LidoStakedEthWallet — wstETH held in the wallet
+PositionBalance({
+    balanceAsset:  Asset({ asset: 0x7f39…Ca0, symbol: "wstETH", decimals: 18 }),
+    balanceAdapter: 0x<LidoStakedEthWallet>,
+    amount:        3e18,                    // raw balanceOf, no conversion
+    isDebt:        false,
+    protocolSubId: keccak256("lido-staked-eth"),
+    positionId:    abi.encode(0x<wstETH>),
+    positionKind:  PositionKind.Staking
+})
+```
+
+| Adapter | `protocolId` | `protocolSubId` | `positionKind` |
+|---|---|---|---|
+| `AaveSavingsWallet` | `aave-v3` | `aave-v3-savings` | Supplied |
+| `AnkrStakedEthWallet` | `ankr` | `ankr-staked-eth` | Staking |
+| `CoinbaseStakedEthWallet` | `coinbase` | `coinbase-staked-eth` | Staking |
+| `EthenaSavingsWallet` | `ethena` | `ethena-savings` | Staking |
+| `EtherFiStakedEthWallet` | `etherfi` | `etherfi-staked-eth` | Staking |
+| `KelpRestakedEthWallet` | `kelp` | `kelp-restaked-eth` | Staking |
+| `LidoStakedEthWallet` | `lido` | `lido-staked-eth` | Staking |
+| `LiquidCollectiveStakedEthWallet` | `liquid-collective` | `liquid-collective-staked-eth` | Staking |
+| `MapleSavingsWallet` | `maple` | `maple-savings` | Supplied |
+| `NexusMutualVaultsWallet` | `nexus-mutual` | `nexus-mutual-vaults` | Supplied |
+| `RenzoRestakedEthWallet` | `renzo` | `renzo-restaked-eth` | Staking |
+| `ReserveBasketsWallet` | `reserve` | `reserve-baskets` | Supplied |
+| `RocketPoolStakedEthWallet` | `rocket-pool` | `rocket-pool-staked-eth` | Staking |
+| `SkySavingsWallet` | `sky` | `sky-savings` | Supplied |
+| `SparkSavingsWallet` | `spark` | `spark-savings` | Supplied |
+| `StaderStakedEthWallet` | `stader` | `stader-staked-eth` | Staking |
+| `StakeWiseV3OsTokenWallet` | `stakewise-v3` | `stakewise-v3-os-tokens` | Staking |
+
+(`protocolBrand` is the version-stripped slug — e.g. `aave` for `AaveSavingsWallet`, `stakewise` for
+`StakeWiseV3OsTokenWallet`; it matches `protocolId` for the rest.)
+
 ---
 
 ## `getAccountPositionsVerbose` — full return values by adapter

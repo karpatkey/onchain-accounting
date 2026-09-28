@@ -14,7 +14,7 @@ import {console2} from "forge-std/console2.sol";
 ///         re-deployed NAV-sourced versions (ADR 0019). Run AFTER `03_DeployPriceFeeds` has re-deployed the new
 ///         feeds (so the config's `Custom` entries resolve to the NEW addresses in `deployments/<id>.json`).
 /// @dev Per asset, in two GLOBAL passes so no asset is ever left without a valid feed:
-///        Pass A (adds):    for each new Custom feed (from config) not already registered on-chain -> addPriceFeed.
+///        Pass A (adds):    for each new Custom feed (from config) not already registered on-chain -> addOrModifyPriceFeed.
 ///        Pass B (removes): for each on-chain `Custom` feed not in the new set                     -> removePriceFeed.
 ///      Old feed addresses are read LIVE from the NAV (`getPriceFeeds`), never from the JSON that 03 overwrote.
 ///      ONLY `PriceType.Custom` feeds are touched — direct Chainlink/API3/Redstone redundancy feeds are left intact.

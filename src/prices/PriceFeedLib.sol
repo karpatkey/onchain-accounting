@@ -1906,7 +1906,7 @@ library PriceFeedLib {
         // `extcodesize` precheck fires in this frame before the call and reverts with empty returndata — no
         // selector for the MANAGER to read. The zero-address check above does not cover it; an EOA or a mistyped
         // address is non-zero and code-less. Placed in the shared validator rather than at each entry point so
-        // `registerAsset`, `addPriceFeed` and `addMonitorFeed` all answer the same way.
+        // `registerAsset`, `addOrModifyPriceFeed` and `addMonitorFeed` all answer the same way.
         AddressCheckLib.requireContract(priceFeed, "priceFeed");
         if (priceType == IPrices.PriceType.Custom) {
             if (!priceFeed.supportsInterface(type(ICustomPriceFeed).interfaceId)) revert IPrices.InvalidPriceOracle();

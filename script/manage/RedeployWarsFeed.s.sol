@@ -24,7 +24,7 @@ import {ConfigReader} from "script/utils/ConfigReader.sol";
 ///      immutable, so `HeartbeatRealigner` cannot touch it; the contract has to be replaced.
 ///
 ///      **No mirror is needed here, unlike a heartbeat realignment.** The new feed is a DIFFERENT
-///      address, so `addPriceFeed` does not hit `PriceFeedAlreadyRegistered` and the asset is never
+///      address, so `addOrModifyPriceFeed` does not hit `PriceFeedAlreadyRegistered` and the asset is never
 ///      single-feed at the moment of removal:
 ///
 ///        add(new) -> asset holds [old, new], primary is still `old`

@@ -13,16 +13,16 @@ import {console2} from "forge-std/console2.sol";
 
 /// @title RegisterAssets
 /// @notice Registers each asset from `script/config/nav-config/assets-and-price-feeds/<id>.json` on NAVCalculator, wiring ALL of the asset's
-///         configured price feeds: the first via `registerAsset`, any additional via `addPriceFeed` (ADR 0009
-///         multi-feed redundancy). Generates a Safe tx batch and (when the signer is MANAGER) can broadcast.
+///         configured price feeds: the first via `registerAsset`, any additional via `addOrModifyPriceFeed` (ADR
+///         0009 multi-feed redundancy). Generates a Safe tx batch and (when the signer is MANAGER) can broadcast.
 /// @dev
 ///   - Asset list per chain comes from `assets.json` keys (no hardcoded list).
 ///   - Each asset's `priceFeeds[]` drives the feeds. `Custom` feeds resolve their on-chain address from the
 ///     deployments file (`deployments/<id>.json .customPriceFeeds.<name>`), so 03_DeployPriceFeeds must run first.
 ///   - Idempotent: feeds already present on-chain are skipped, so an asset already registered with all its
-///     configured feeds is a no-op, while any new trailing feeds are topped up via addPriceFeed (ADR-0009
+///     configured feeds is a no-op, while any new trailing feeds are topped up via addOrModifyPriceFeed (ADR-0009
 ///     redundancy). A pre-registered asset with no feed (the NATIVE_ADDRESS sentinel from initialize) gets its
-///     first feed via addPriceFeed too (registerAsset is used only for an unregistered asset's primary feed).
+///     first feed via addOrModifyPriceFeed too (registerAsset is used only for an unregistered asset's primary feed).
 ///   - Idempotent on TOLERANCES too: `setDivergenceTolerance` / `setPegTolerance` are emitted only when the
 ///     configured value differs from what the NAV already holds. Before that check existed, registering ONE asset
 ///     planned 27 transactions — 24 of them rewriting tolerances that already equalled config. They changed no

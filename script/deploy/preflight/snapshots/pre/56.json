@@ -1,17 +1,17 @@
 {
  "chainId": 56,
  "name": "bsc",
- "rpcSource": "env BNB_URL",
- "block": 112468834,
- "capturedAtUnix": 1785170931,
- "proxy": "0x80eD5cc6cEbAe4fEE1eD8687279aa492A50afa8d",
+ "rpcSource": "alchemy",
+ "block": 124569802,
+ "capturedAtUnix": 1790618781,
+ "proxy": "0x54EaD2A1dB7456cA917675Ea8908ec8A997c6214",
  "errors": [],
- "implementation": "0x07bd077cfb40bbda8a67d0d33ce41b974ab0f8a8",
- "implementationRecorded": "0x07bd077cFB40bBDa8A67d0D33ce41b974aB0F8a8",
+ "implementation": "0x40e4134849308d53f85a8b685324e2189b13ff7d",
+ "implementationRecorded": "0x40e4134849308d53F85A8B685324E2189b13ff7D",
  "version": 1,
  "usdDecimals": 8,
- "erc20DefaultBalanceAdapter": "0x41967559d0a20ad102f6e27b7723b1963390ad75",
- "erc20DefaultRecorded": "0x41967559D0a20Ad102F6e27b7723b1963390aD75",
+ "erc20DefaultBalanceAdapter": "0x4bc39dce61245f5a63189d1fa03e6d76646f1ee6",
+ "erc20DefaultRecorded": "0x4Bc39Dce61245F5A63189d1FA03E6D76646f1EE6",
  "erc20DefaultSupportedAssets": [
   "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
   "0xbb4cdb9cbd36b01bd1cbaebf2de08d9173bc095c",
@@ -48,7 +48,7 @@
      "priceFeed": "0x0567f2323251f0aab15c8dfb1967e4e8a7d42aee",
      "decimals": 8,
      "priceType": "Chainlink",
-     "heartbeat": 3600
+     "heartbeat": 27
     }
    ],
    "monitorFeeds": [
@@ -56,7 +56,7 @@
      "priceFeed": "0x29d2fec890b037b2d34f061f9a50f76f85ddbcae",
      "decimals": 8,
      "priceType": "Redstone",
-     "heartbeat": 86400
+     "heartbeat": 60
     }
    ],
    "divergenceToleranceBps": 50,
@@ -72,7 +72,7 @@
      "priceFeed": "0x0567f2323251f0aab15c8dfb1967e4e8a7d42aee",
      "decimals": 8,
      "priceType": "Chainlink",
-     "heartbeat": 3600
+     "heartbeat": 27
     }
    ],
    "monitorFeeds": [
@@ -80,7 +80,7 @@
      "priceFeed": "0x29d2fec890b037b2d34f061f9a50f76f85ddbcae",
      "decimals": 8,
      "priceType": "Redstone",
-     "heartbeat": 86400
+     "heartbeat": 60
     }
    ],
    "divergenceToleranceBps": 50,
@@ -96,7 +96,7 @@
      "priceFeed": "0x51597f405303c4377e36123cbc172b13269ea163",
      "decimals": 8,
      "priceType": "Chainlink",
-     "heartbeat": 86400
+     "heartbeat": 900
     }
    ],
    "monitorFeeds": [
@@ -104,7 +104,7 @@
      "priceFeed": "0xea2511205b959548459a01e358e0a30424dc0b70",
      "decimals": 8,
      "priceType": "Redstone",
-     "heartbeat": 86400
+     "heartbeat": 21600
     }
    ],
    "divergenceToleranceBps": 50,
@@ -120,7 +120,7 @@
      "priceFeed": "0xb97ad0e74fa7d920791e90258a6e2085088b4320",
      "decimals": 8,
      "priceType": "Chainlink",
-     "heartbeat": 86400
+     "heartbeat": 900
     }
    ],
    "monitorFeeds": [
@@ -128,7 +128,7 @@
      "priceFeed": "0xf57ba29437c130e155ca4b65128630777638f05d",
      "decimals": 8,
      "priceType": "Redstone",
-     "heartbeat": 86400
+     "heartbeat": 21600
     }
    ],
    "divergenceToleranceBps": 50,
@@ -144,7 +144,7 @@
      "priceFeed": "0x9ef1b8c0e4f7dc8bf5719ea496883dc6401d5b2e",
      "decimals": 8,
      "priceType": "Chainlink",
-     "heartbeat": 86400
+     "heartbeat": 60
     }
    ],
    "monitorFeeds": [
@@ -152,7 +152,7 @@
      "priceFeed": "0x9cf19d284862a66378c304acacb0e857ebc3f856",
      "decimals": 8,
      "priceType": "Redstone",
-     "heartbeat": 86400
+     "heartbeat": 21600
     }
    ],
    "divergenceToleranceBps": 50,
@@ -168,7 +168,7 @@
      "priceFeed": "0xb6064ed41d4f67e353768aa239ca86f4f73665a1",
      "decimals": 8,
      "priceType": "Chainlink",
-     "heartbeat": 86400
+     "heartbeat": 60
     }
    ],
    "monitorFeeds": [
@@ -176,7 +176,7 @@
      "priceFeed": "0x1102d8c7a6021e45ccddec4912dc998bc5ebd8e5",
      "decimals": 8,
      "priceType": "Redstone",
-     "heartbeat": 86400
+     "heartbeat": 21600
     }
    ],
    "divergenceToleranceBps": 50,
@@ -185,12 +185,19 @@
   }
  ],
  "excludedFromDefaultAdapter": [],
- "adapterCount": 1,
+ "adapterCount": 2,
  "adapters": [
   {
-   "address": "0x41967559d0a20ad102f6e27b7723b1963390ad75",
+   "address": "0x4bc39dce61245f5a63189d1fa03e6d76646f1ee6",
    "configKey": "ERC20Default",
    "adapterType": "Default",
+   "metaInstanceCount": 0,
+   "metaInstances": []
+  },
+  {
+   "address": "0xff2d5a8bf801191ed1292e6dd6792f5d03c5afbf",
+   "configKey": "MerklRewards",
+   "adapterType": "Custom",
    "metaInstanceCount": 0,
    "metaInstances": []
   }

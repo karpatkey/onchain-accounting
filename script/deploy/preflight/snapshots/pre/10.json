@@ -2,16 +2,16 @@
  "chainId": 10,
  "name": "optimism",
  "rpcSource": "alchemy",
- "block": 154786073,
- "capturedAtUnix": 1785170930,
- "proxy": "0x80eD5cc6cEbAe4fEE1eD8687279aa492A50afa8d",
+ "block": 157509999,
+ "capturedAtUnix": 1790618781,
+ "proxy": "0x54EaD2A1dB7456cA917675Ea8908ec8A997c6214",
  "errors": [],
- "implementation": "0x07bd077cfb40bbda8a67d0d33ce41b974ab0f8a8",
- "implementationRecorded": "0x07bd077cFB40bBDa8A67d0D33ce41b974aB0F8a8",
+ "implementation": "0x40e4134849308d53f85a8b685324e2189b13ff7d",
+ "implementationRecorded": "0x40e4134849308d53F85A8B685324E2189b13ff7D",
  "version": 1,
  "usdDecimals": 8,
- "erc20DefaultBalanceAdapter": "0x41967559d0a20ad102f6e27b7723b1963390ad75",
- "erc20DefaultRecorded": "0x41967559D0a20Ad102F6e27b7723b1963390aD75",
+ "erc20DefaultBalanceAdapter": "0x4bc39dce61245f5a63189d1fa03e6d76646f1ee6",
+ "erc20DefaultRecorded": "0x4Bc39Dce61245F5A63189d1FA03E6D76646f1EE6",
  "erc20DefaultSupportedAssets": [
   "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
   "0x4200000000000000000000000000000000000006",
@@ -171,26 +171,17 @@
   }
  ],
  "excludedFromDefaultAdapter": [],
- "adapterCount": 3,
+ "adapterCount": 4,
  "adapters": [
   {
-   "address": "0x41967559d0a20ad102f6e27b7723b1963390ad75",
+   "address": "0x4bc39dce61245f5a63189d1fa03e6d76646f1ee6",
    "configKey": "ERC20Default",
    "adapterType": "Default",
    "metaInstanceCount": 0,
    "metaInstances": []
   },
   {
-   "address": "0xdf311222bfbb8f2bb1572ff08e96936c3d22418b",
-   "configKey": "AaveV3InstancesMeta",
-   "adapterType": "Custom",
-   "metaInstanceCount": 1,
-   "metaInstances": [
-    "0x0000000000000000000000007f23d86ee20d869112572136221e173428dd740b"
-   ]
-  },
-  {
-   "address": "0x5ed372f3ac1f3039608180792caffcacf000e11c",
+   "address": "0xeddbc540ed724ab3cc95b1c419c6f9d6348a373b",
    "configKey": "CompoundV3CometsMeta",
    "adapterType": "Custom",
    "metaInstanceCount": 3,
@@ -199,6 +190,22 @@
     "0x000000000000000000000000995e394b8b2437ac8ce61ee0bc610d617962b214",
     "0x000000000000000000000000e36a30d249f7761327fd973001a32010b521b6fd"
    ]
+  },
+  {
+   "address": "0x04ba6789b4ad5d6cf63ec9cc301c13f6a8a0210b",
+   "configKey": "AaveV3InstancesMeta",
+   "adapterType": "Custom",
+   "metaInstanceCount": 1,
+   "metaInstances": [
+    "0x0000000000000000000000007f23d86ee20d869112572136221e173428dd740b"
+   ]
+  },
+  {
+   "address": "0xff2d5a8bf801191ed1292e6dd6792f5d03c5afbf",
+   "configKey": "MerklRewards",
+   "adapterType": "Custom",
+   "metaInstanceCount": 0,
+   "metaInstances": []
   }
  ],
  "metaInstanceTotal": 4,
@@ -213,7 +220,7 @@
      "symbol": "USD",
      "decimals": 8
     },
-    "timestamp": 1785170923,
+    "timestamp": 1790618775,
     "stalePriceAssets": [],
     "sequencerDown": false,
     "quoteAssetStale": false,
@@ -233,7 +240,7 @@
      "symbol": "USD",
      "decimals": 8
     },
-    "timestamp": 1785170923,
+    "timestamp": 1790618775,
     "stalePriceAssets": [],
     "sequencerDown": false,
     "quoteAssetStale": false,
@@ -253,7 +260,7 @@
      "symbol": "USD",
      "decimals": 8
     },
-    "timestamp": 1785170923,
+    "timestamp": 1790618775,
     "stalePriceAssets": [],
     "sequencerDown": false,
     "quoteAssetStale": false,
@@ -267,13 +274,13 @@
    "address": "0xD20E007881ea62B5922B06D025c9dc1D41962953",
    "label": "ACCOUNT_6_COMPOUND_OPTIMISM",
    "nav": {
-    "value": "350516025278",
+    "value": "493991659264",
     "quoteAsset": {
      "address": "0x0000000000000000000000000000000000000000",
      "symbol": "USD",
      "decimals": 8
     },
-    "timestamp": 1785170923,
+    "timestamp": 1790618775,
     "stalePriceAssets": [],
     "sequencerDown": false,
     "quoteAssetStale": false,
@@ -288,7 +295,7 @@
        "symbol": "ETH",
        "decimals": 18
       },
-      "balanceAdapter": "0x41967559d0a20ad102f6e27b7723b1963390ad75",
+      "balanceAdapter": "0x4bc39dce61245f5a63189d1fa03e6d76646f1ee6",
       "amount": "49048461992886275",
       "isDebt": false,
       "quoteAsset": {
@@ -296,8 +303,8 @@
        "symbol": "USD",
        "decimals": 8
       },
-      "value": "9514489994",
-      "price": "193981413646",
+      "value": "13228341376",
+      "price": "269699412350",
       "priceDecimals": 8,
       "stale": false,
       "quoteAssetStale": false,
@@ -323,7 +330,7 @@
        "symbol": "USDC",
        "decimals": 6
       },
-      "balanceAdapter": "0x41967559d0a20ad102f6e27b7723b1963390ad75",
+      "balanceAdapter": "0x4bc39dce61245f5a63189d1fa03e6d76646f1ee6",
       "amount": "189",
       "isDebt": false,
       "quoteAsset": {
@@ -332,7 +339,7 @@
        "decimals": 8
       },
       "value": "18897",
-      "price": "99986716",
+      "price": "99988436",
       "priceDecimals": 8,
       "stale": false,
       "quoteAssetStale": false,
@@ -358,7 +365,7 @@
        "symbol": "USDT",
        "decimals": 6
       },
-      "balanceAdapter": "0x41967559d0a20ad102f6e27b7723b1963390ad75",
+      "balanceAdapter": "0x4bc39dce61245f5a63189d1fa03e6d76646f1ee6",
       "amount": "100",
       "isDebt": false,
       "quoteAsset": {
@@ -366,8 +373,8 @@
        "symbol": "USD",
        "decimals": 8
       },
-      "value": "9988",
-      "price": "99886441",
+      "value": "9997",
+      "price": "99974000",
       "priceDecimals": 8,
       "stale": false,
       "quoteAssetStale": false,
@@ -393,7 +400,7 @@
        "symbol": "COMP",
        "decimals": 18
       },
-      "balanceAdapter": "0x41967559d0a20ad102f6e27b7723b1963390ad75",
+      "balanceAdapter": "0x4bc39dce61245f5a63189d1fa03e6d76646f1ee6",
       "amount": "202339341000000000000",
       "isDebt": false,
       "quoteAsset": {
@@ -401,8 +408,8 @@
        "symbol": "USD",
        "decimals": 8
       },
-      "value": "341001506399",
-      "price": "1685295132",
+      "value": "480763288994",
+      "price": "2376024784",
       "priceDecimals": 8,
       "stale": false,
       "quoteAssetStale": false,

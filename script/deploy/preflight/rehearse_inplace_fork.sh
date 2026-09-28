@@ -424,6 +424,13 @@ for A in "$COUNCIL" "$OPS" "$EXECUTOR"; do
 done
 mkdir -p safe-transactions
 
+# A fork's oracles are FROZEN at the fork block, so letting its clock follow the wall clock makes short-heartbeat
+# feeds go stale mid-run and price at 0 — a false value diff (observed on Arbitrum: USDC/USDT0 heartbeat 255 s,
+# 206 s between snapshots → USDC stale → ACCOUNT_7 "-100%" with identical balances). Advance time 1 s per mined
+# block instead, so the whole rehearsal moves the chain clock only by the handful of blocks it mines.
+cast rpc anvil_setBlockTimestampInterval 1 --rpc-url "$RPC" >/dev/null \
+  || { echo "REFUSING: could not pin the fork clock (anvil_setBlockTimestampInterval)"; exit 2; }
+
 # snapshot_production.py resolves its endpoint by the chain's URL env var, so pointing that one var at the
 # fork makes it snapshot the fork. Found the same way chainlib resolves it: CHAIN_URL_ENV first, then a
 # `$VAR` in the chain config's rpc (Arc: `$ARC_RPC_URL`).

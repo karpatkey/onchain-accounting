@@ -149,7 +149,7 @@
   },
   "CompoundV3CometsMeta": {
     "enabled": true,
-    "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Compound V3 (Comet) market. Emits base Supply/Borrow + per-collateral Collateral + COMP Rewards legs per comet. CometRewards + reward token (COMP) are chain-level constants pinned in the constructor; the active comet set lives on NAVCalculator (addMetaInstances/removeMetaInstances, from instances below — each entry is a comet address). Identity derived on-chain: positionId = comet address; name = comet name(). Supersedes the per-comet CompoundV3_* adapters, disabled below. cinUSDC (Compound Institutional Market, base USDC) was seeded on the LIVE mainnet NAV by a direct addMetaInstances governance tx on 2026-08-24 (0x67eab0f01ec3cd5c4d68d4b30ebcf9b28cb533478a7088642b6b3238a2a2491a, block 25826568), which left this committed list at 6 while the chain held 7. Added here so a redeploy does not DROP it: 06_Configure seeds the instance set from this file, so an instance that exists only on-chain is silently lost the next time the set is rebuilt, and the positions it reports vanish from NAV. See issue #312.",
+    "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Compound V3 (Comet) market. Emits base Supply/Borrow + per-collateral Collateral + COMP Rewards legs per comet. CometRewards + reward token (COMP) are chain-level constants pinned in the constructor; the active comet set lives on NAVCalculator (addMetaInstances/removeMetaInstances, from instances below — each entry is a comet address). Identity derived on-chain: positionId = comet address; name = comet name(). Supersedes the per-comet CompoundV3_* adapters, disabled below. cinUSDC (Compound Institutional Market, base USDC) was seeded on the LIVE mainnet NAV by a direct addMetaInstances governance tx on 2026-08-24 (0x67eab0f01ec3cd5c4d68d4b30ebcf9b28cb533478a7088642b6b3238a2a2491a, block 25826568), which left this committed list at 6 while the chain held 7. Added here so a redeploy does not DROP it: 06_Configure seeds the instance set from this file, so an instance that exists only on-chain is silently lost the next time the set is rebuilt, and the positions it reports vanish from NAV. See issue #312. The Institutional market was later REDEPLOYED: the cinUSDC comet (0xf5a628D53c47fBA2C062cd6F5B6D255cb05645Eb) was replaced on the live NAV by ciUSDCv3 (0x207158a267CBD2598BB3d611D8CBdEE2709F2F8C; same base USDC and collaterals, new address and symbol) via two governance txs (remove old, add new) — see issue #339. This list tracks the NEW comet; keeping the old one here would make 06_Configure reconcile the live set back to the dead market.",
     "instances": [
       "0xc3d688B66703497DAA19211EEdff47f25384cdc3",
       "0x5D409e56D886231aDAf00c8775665AD0f9897b56",
@@ -157,7 +157,7 @@
       "0xe85Dc543813B8c2CFEaAc371517b925a166a9293",
       "0xA17581A9E3356d9A858b789D68B4d866e593aE94",
       "0x3D0bb1ccaB520A66e607822fC55BC921738fAFE3",
-      "0xf5a628D53c47fBA2C062cd6F5B6D255cb05645Eb"
+      "0x207158a267CBD2598BB3d611D8CBdEE2709F2F8C"
     ]
   },
   "StakeWiseV3VaultsMeta": {

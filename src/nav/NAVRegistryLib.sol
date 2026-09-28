@@ -624,8 +624,10 @@ library NAVRegistryLib {
         ERC20DefaultBalanceAdapter(erc20DefaultBalanceAdapter).removeSupportedAsset(token);
     }
 
-    /// @dev Releases every coordinate in `adapter`'s set back to the default adapter, then clears the array.
-    ///      Registration wipes too, so a dormant residue can never ride back in on a re-registration.
+    /// @dev Releases every coordinate in `adapter`'s set (clears each claim — `_release` does NOT re-arm the
+    ///      default adapter, so a registered token is left reported by nobody until an operator re-includes it),
+    ///      then deletes the array. Registration wipes too, so a dormant residue can never ride back in on a
+    ///      re-registration.
     function _releaseInstances(
         mapping(bytes32 => address) storage claimant,
         mapping(address => bytes32[]) storage metaInstances,

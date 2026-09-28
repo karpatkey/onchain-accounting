@@ -94,5 +94,34 @@ class PlanForTest(unittest.TestCase):
             self._run({"noAdapters": {}}, ["A"])
 
 
+class ApplyChainTest(unittest.TestCase):
+    """A second --apply must NOT overwrite the pre-swap snapshot with the already-cleared record (Copilot)."""
+
+    def test_rerun_preserves_old_address_snapshot(self):
+        old = {"balanceAdapters": {"A": "0xOLD", "Plain": "0xppp"}}
+        cleared = {"balanceAdapters": {"A": "", "Plain": "0xppp"}}
+        with tempfile.TemporaryDirectory() as d:
+            tmp = Path(d)
+            (tmp / "1.json").write_text(json.dumps(old))
+            orig_dir, orig_dep = c.DEPLOY_DIR, c.deployment
+            c.DEPLOY_DIR = tmp
+            c.deployment = lambda cid: json.loads((tmp / f"{cid}.json").read_text())
+            try:
+                # first apply: writes the snapshot (OLD addresses) + the cleared record
+                first = sc.apply_chain(1, cleared)
+                self.assertTrue(first)
+                snap = json.loads((tmp / "1.pre-swap.json").read_text())
+                self.assertEqual(snap["balanceAdapters"]["A"], "0xOLD")
+                self.assertEqual(json.loads((tmp / "1.json").read_text())["balanceAdapters"]["A"], "")
+
+                # second apply, now that the record is already cleared: snapshot must be PRESERVED
+                second = sc.apply_chain(1, cleared)
+                self.assertFalse(second)
+                snap2 = json.loads((tmp / "1.pre-swap.json").read_text())
+                self.assertEqual(snap2["balanceAdapters"]["A"], "0xOLD")  # NOT overwritten with ""
+            finally:
+                c.DEPLOY_DIR, c.deployment = orig_dir, orig_dep
+
+
 if __name__ == "__main__":
     unittest.main()

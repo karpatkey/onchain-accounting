@@ -90,6 +90,28 @@ def plan_for(chain_id: int) -> tuple[dict, list[str], list[str]]:
     return out, cleared, warnings
 
 
+def apply_chain(chain_id: int, new_record: dict) -> bool:
+    """Write the surgically-cleared record, and the `.pre-swap.json` snapshot IFF one does not already exist.
+
+    PRESERVING an existing snapshot is the whole point (Copilot). The snapshot is `plan()`'s only source for
+    the OLD (pre-redeploy) addresses. A second `--apply` before the swap would otherwise re-snapshot the record
+    that this very tool has already cleared (blank meta keys), destroying those OLD addresses and making `plan()`
+    silently skip the swaps. So the first run captures them; every re-run leaves that snapshot untouched. To force
+    a fresh snapshot (e.g. the first was taken from a wrong record), delete `<id>.pre-swap.json` by hand.
+
+    Returns True if a new snapshot was written, False if an existing one was preserved.
+    """
+    src = c.DEPLOY_DIR / f"{chain_id}.json"
+    pre_swap = c.DEPLOY_DIR / f"{chain_id}.pre-swap.json"
+    snapshotted = False
+    if not pre_swap.exists():
+        # Full record, as-is, BEFORE the clear below — read fresh so it is the on-disk pre-clear state.
+        pre_swap.write_text(json.dumps(c.deployment(chain_id), indent=2) + "\n")
+        snapshotted = True
+    src.write_text(json.dumps(new_record, indent=2) + "\n")
+    return snapshotted
+
+
 def scope(explicit: list[int]) -> list[int]:
     """Explicit chain ids if given, else every deployed chain that has a meta-adapter config."""
     if explicit:
@@ -127,12 +149,9 @@ def main() -> int:
             print(f"           WARN {w}")
 
         if args.apply:
-            pre_swap = c.DEPLOY_DIR / f"{cid}.pre-swap.json"
-            # Snapshot the FULL record (as-is, before the clear) — this is plan()'s OLD-address source.
-            # Overwriting an existing snapshot is intentional: re-running the preflight for a chain that
-            # has not yet been swapped should re-capture the current record.
-            pre_swap.write_text(json.dumps(c.deployment(cid), indent=2) + "\n")
-            src.write_text(json.dumps(new, indent=2) + "\n")
+            snapshotted = apply_chain(cid, new)
+            if not snapshotted:
+                print(f"           (kept existing {cid}.pre-swap.json — OLD addresses preserved)")
 
     if args.apply:
         print(f"\nWrote .pre-swap.json snapshots and cleared {total_cleared} meta key(s) across "

@@ -122,6 +122,52 @@ contract DeployTimelockController is BaseDeployScript {
     /// @notice Thrown when the deployer EOA resolved from env does not currently hold `DEFAULT_ADMIN_ROLE`.
     error DeployerNotAdmin(address deployer);
 
+    /// @notice Builds the ordered role-handover batch: grant both roles to the timelock, revoke the deployer,
+    ///         revoke the ops Safe (only the roles it still holds), and — unless the Safe retains — revoke the Safe
+    ///         itself LAST. `pure` so it is unit-testable without a live NAV or env; the caller decides the three
+    ///         booleans from live `hasRole` reads.
+    /// @dev ORDER IS LOAD-BEARING. Grants strictly before revokes (splitting leaves a half-empowered governor). The
+    ///      ops-Safe revokes sit BEFORE the Safe's own revoke, because they need an account that still holds
+    ///      DEFAULT_ADMIN_ROLE (the executing Safe) to authorize them; when `!safeRetains` the Safe renounces its own
+    ///      admin in the final entries, so ordering the ops revokes after that would revert. The whole batch MUST
+    ///      execute atomically as one Transaction-Builder MultiSend — see run()'s notes above.
+    function buildHandoffBatch(
+        address nav,
+        address predicted,
+        address deployer,
+        address safe,
+        address opsSafe,
+        bool safeRetains,
+        bool revokeOpsManager,
+        bool revokeOpsAdmin
+    ) public pure returns (SafeTxBuilder.Transaction[] memory batch) {
+        // Base 4 (grant timelock x2, revoke deployer x2) + up to 2 ops-Safe revokes + (2 Safe self-revokes unless
+        // it retains). Assembled with a running index `k` so the ops entries slot in without hardcoded offsets.
+        uint256 opsExtra = (revokeOpsManager ? 1 : 0) + (revokeOpsAdmin ? 1 : 0);
+        uint256 n = (safeRetains ? 4 : 6) + opsExtra;
+        batch = new SafeTxBuilder.Transaction[](n);
+        uint256 k;
+
+        batch[k++] =
+            SafeTxBuilder.call(nav, 0, abi.encodeCall(IAccessControl.grantRole, (DEFAULT_ADMIN_ROLE, predicted)));
+        batch[k++] = SafeTxBuilder.call(nav, 0, abi.encodeCall(IAccessControl.grantRole, (MANAGER, predicted)));
+        batch[k++] = SafeTxBuilder.call(nav, 0, abi.encodeCall(IAccessControl.revokeRole, (MANAGER, deployer)));
+        batch[k++] =
+            SafeTxBuilder.call(nav, 0, abi.encodeCall(IAccessControl.revokeRole, (DEFAULT_ADMIN_ROLE, deployer)));
+        if (revokeOpsManager) {
+            batch[k++] = SafeTxBuilder.call(nav, 0, abi.encodeCall(IAccessControl.revokeRole, (MANAGER, opsSafe)));
+        }
+        if (revokeOpsAdmin) {
+            batch[k++] =
+                SafeTxBuilder.call(nav, 0, abi.encodeCall(IAccessControl.revokeRole, (DEFAULT_ADMIN_ROLE, opsSafe)));
+        }
+        if (!safeRetains) {
+            batch[k++] = SafeTxBuilder.call(nav, 0, abi.encodeCall(IAccessControl.revokeRole, (MANAGER, safe)));
+            batch[k++] =
+                SafeTxBuilder.call(nav, 0, abi.encodeCall(IAccessControl.revokeRole, (DEFAULT_ADMIN_ROLE, safe)));
+        }
+    }
+
     function run() public override {
         setUp();
 
@@ -271,34 +317,10 @@ contract DeployTimelockController is BaseDeployScript {
         // Dispatched as individual transactions, a failure at entries 1-2 after 5-6 land is exactly the
         // no-admin brick named above — so "MUST be atomic" is a requirement on the OPERATOR here, not a
         // property the emitter can guarantee.
-        // Base 4 (grant timelock x2, revoke deployer x2) + up to 2 ops-Safe revokes + (2 Safe self-revokes unless
-        // it retains). Assembled with a running index `k` so the ops entries slot in without hardcoded offsets.
-        uint256 opsExtra = (revokeOpsManager ? 1 : 0) + (revokeOpsAdmin ? 1 : 0);
-        uint256 n = (safeRetains ? 4 : 6) + opsExtra;
-        SafeTxBuilder.Transaction[] memory batch = new SafeTxBuilder.Transaction[](n);
-        uint256 k;
-
-        batch[k++] =
-            SafeTxBuilder.call(nav, 0, abi.encodeCall(IAccessControl.grantRole, (DEFAULT_ADMIN_ROLE, predicted)));
-        batch[k++] = SafeTxBuilder.call(nav, 0, abi.encodeCall(IAccessControl.grantRole, (MANAGER, predicted)));
-        batch[k++] = SafeTxBuilder.call(nav, 0, abi.encodeCall(IAccessControl.revokeRole, (MANAGER, deployer)));
-        batch[k++] =
-            SafeTxBuilder.call(nav, 0, abi.encodeCall(IAccessControl.revokeRole, (DEFAULT_ADMIN_ROLE, deployer)));
-        // Ops-Safe revokes go BEFORE the Safe's own revoke below: they need an account that still holds
-        // DEFAULT_ADMIN_ROLE (the executing Safe) to authorize them, and when `!safeRetains` the Safe renounces its
-        // own admin in the last entries — so ordering these after that would revert.
-        if (revokeOpsManager) {
-            batch[k++] = SafeTxBuilder.call(nav, 0, abi.encodeCall(IAccessControl.revokeRole, (MANAGER, opsSafe)));
-        }
-        if (revokeOpsAdmin) {
-            batch[k++] =
-                SafeTxBuilder.call(nav, 0, abi.encodeCall(IAccessControl.revokeRole, (DEFAULT_ADMIN_ROLE, opsSafe)));
-        }
-        if (!safeRetains) {
-            batch[k++] = SafeTxBuilder.call(nav, 0, abi.encodeCall(IAccessControl.revokeRole, (MANAGER, safe)));
-            batch[k++] =
-                SafeTxBuilder.call(nav, 0, abi.encodeCall(IAccessControl.revokeRole, (DEFAULT_ADMIN_ROLE, safe)));
-        }
+        // The ordered handover batch, built by a pure helper so it can be unit-tested without a live NAV or env
+        // (DeployTimelockControllerBatch.t.sol). The ordering rationale is documented above and on the builder.
+        SafeTxBuilder.Transaction[] memory batch =
+            buildHandoffBatch(nav, predicted, deployer, safe, opsSafe, safeRetains, revokeOpsManager, revokeOpsAdmin);
 
         writeSafeTx(
             string.concat(vm.toString(currentChainId), "-install-timelock.json"),

@@ -439,9 +439,19 @@ fi
 # It must be set-to-EMPTY, not unset: chainlib.load_env re-reads .env and would restore an UNSET key, but it
 # never overrides a key that is present (even empty) — the same setdefault rule rehearse_fork.sh mirrors.
 # And it is VERIFIED, not assumed: a snapshot whose rpcSource does not name the override fails the step.
+# A COLD fork fetches every slot upstream, so the heaviest accounts' getAccountNavVerbose can exceed chainlib's
+# 120 s read timeout on the FIRST snapshot (observed on mainnet: 4 accounts "Read timed out" pre, all fine post).
+# Retry a snapshot that recorded read errors — the retry hits the now-warm fork cache — and fail only if they persist.
 snap() {
-  env ALCHEMY_API_KEY= "$URL_VAR=$RPC" python3 script/deploy/preflight/snapshot_production.py \
-    --out "$1" "$CHAIN_ID" > "$1.log" 2>&1 || return 1
+  local try n=0
+  for try in 1 2 3; do
+    env ALCHEMY_API_KEY= "$URL_VAR=$RPC" python3 script/deploy/preflight/snapshot_production.py \
+      --out "$1" "$CHAIN_ID" > "$1.log" 2>&1 || return 1
+    n="$(jq '.errors | length' "$1/${CHAIN_ID}.json")"
+    (( n == 0 )) && break
+    echo "    snapshot attempt $try recorded $n read error(s) — retrying on the warm cache"
+  done
+  (( n == 0 )) || { echo "    FAIL snapshot still has $n read error(s) after 3 attempts (see $1/${CHAIN_ID}.json)"; return 1; }
   local src; src="$(jq -r '.rpcSource // ""' "$1/${CHAIN_ID}.json")"
   [[ "$src" == *"$URL_VAR"* ]] || { echo "    FAIL snapshot read '$src', NOT the fork (${URL_VAR})"; return 1; }
   echo "    snapshot source: $src, block $(jq -r .block "$1/${CHAIN_ID}.json")"

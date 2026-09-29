@@ -75,3 +75,18 @@ new adapter here — this chain proves the mechanics; Base/Arbitrum are the firs
 | `06` idempotence | — | nothing left |
 | revoke ops Safe MANAGER | `0xe47c84d7cb1fe9fc7d08bbd7837be85fdc4cd78f00c2e9ce4a99ba30e89d0a3e` | ops Safe holds no role |
 | Phase 3 heartbeats | — | nothing to realign; `verify()` OK; backfill `NothingToDo` |
+
+### 42161 Arbitrum — 2026-09-29 (Phase 2 + 3)
+
+| Step | Tx | Result |
+|---|---|---|
+| snapshot s0 | — | block 510138707, impl `0x40e41348`, NAV $1,882,991.82, 0 errors |
+| `upgradeToAndCall` | `0xeb6d23be56b4338344535b60376736f9a9730f0f5954d788cb1c4063a905b238` | `upgrade` gate 3/3 |
+| snapshot s1 | — | **0 differences vs s0** |
+| swap batch (21 calls: AaveV3, MorphoVaults, MorphoMarkets, BalancerV3 Pools+Gauges, FluidFTokens, CompoundV3) | `0xc16798e45445ad099d34b02b7df7e5b65b65ec5eee993bef86c935227e33c5c1` | gas 1,760,141 (rehearsal 1,744,981; Arbitrum gasUsed includes a variable L1 component) |
+| wallet-adds batch (EtherFi, Kelp, Lido, Maple, Renzo) | `0x398be6f15b21c681d9b4940fb19b94a0af29a43c46421f6d9267f9c467812e88` | gas 904,781 |
+| `swap` gate | — | 56/56 |
+| snapshot s2 | — | 12→12 positions, none lost/added; 8 now read by NEW adapters (incl. USDC Supplied $1.48M + $406k); amounts only up (interest); syrupUSDC Wallet → Supplied same amount; NAV −$3.13 = USDC oracle 1.00000787 → 1.00000580; 0 health flags |
+| `06` idempotence | — | nothing left |
+| revoke ops Safe MANAGER | `0x5b79252143f68a80576db5f513b5a8153d6c5ec2b3dd396cc410314945922e7d` | ops Safe holds no role |
+| Phase 3 heartbeats | — | nothing to realign; `verify()` OK; backfill `NothingToDo` |

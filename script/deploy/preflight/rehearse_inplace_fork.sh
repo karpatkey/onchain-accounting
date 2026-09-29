@@ -5,15 +5,17 @@
 # in place and swaps every moved meta adapter, so it needs its own sequence. This is that sequence, in the
 # migration plan's order, on a fork of the real chain:
 #
-#   pre-snapshot (fork) -> snapshot_and_clear_meta --apply -> 01_2 -> 04 -> grant ops MANAGER
-#   -> upgradeToAndCall (EOA) -> upgrade-landed check -> SwapMetaAdapter.plan() -> replay the batch as the
-#   ops Safe -> wallet adds as the ops Safe -> post-snapshot + diff_snapshots (value neutrality)
+#   pre-snapshot (fork) -> snapshot_and_clear_meta --apply -> 01_2 -> 04 -> deploy the REAL 1/1 ops Safe
+#   (ops_safe.py deploy) -> grant it MANAGER -> upgradeToAndCall (EOA) -> upgrade-landed check
+#   -> SwapMetaAdapter.plan() -> ONE atomic MultiSend execTransaction (ops_safe.py exec) -> wallet-adds batch
+#   (emit_wallet_adds_batch.py) as a second MultiSend -> post-snapshot + diff_snapshots (value neutrality)
 #   -> 06 idempotence -> RealignHeartbeats -> backfill NothingToDo -> Council grant (cast, not 07)
 #   -> 11 + replay its batch as the Council -> timelock schedule/execute round trip -> role assertions.
 #
-# The ops Safe is stood in for by a codeless MANAGER-only address (the batch contents are exactly what the
-# Safe executes; only the MultiSend wrapper, a Safe property, is not exercised). Batch gas is reported as
-# the sum of its inner transactions, which approximates one MultiSend.
+# The ops Safe is a REAL Safe v1.4.1 deployed on the fork by the same tool and salt the live deploy uses, and
+# each ops-Safe batch runs exactly as it will live: one `execTransaction` into MultiSendCallOnly, sent by the
+# deployer (sole owner). So the batch gas reported is the real single-transaction gas, and a batch that cannot
+# land atomically fails here.
 #
 # Safety: identical to rehearse_fork.sh — refuses a non-loopback RPC, refuses unless script/config and
 # broadcast/ are git-clean, and restores both byte-exactly on exit — plus the GITIGNORED safe-transactions/
@@ -425,13 +427,15 @@ IMPL_SLOT=0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc
 ADMIN_ROLE=0x0000000000000000000000000000000000000000000000000000000000000000
 MANAGER_ROLE="$(cast keccak MANAGER)"
 ZERO32=0x0000000000000000000000000000000000000000000000000000000000000000
-# Stand-in for the throwaway 1/1 ops Safe: a codeless address granted MANAGER ONLY. Executing the swap and
-# the wallet adds FROM it proves MANAGER alone suffices (the plan's HIGH-2); passing it to `11` as OPS_SAFE
-# proves the handoff revokes it (Vigilo CRITICAL-01). The batch contents are identical to what the real
-# Safe would execute; only the atomic MultiSend wrapper is not exercised (it is a Safe property).
-OPS="${REHEARSAL_OPS:-0x00000000000000000000000000000000000C5AfE}"
+# The throwaway 1/1 ops Safe, deployed below (after the fork is up) with the live deploy's tool + salt, then
+# granted MANAGER ONLY. Executing the swap and the wallet adds THROUGH it proves MANAGER alone suffices (the
+# plan's HIGH-2) and that each batch lands as one atomic MultiSend; passing it to `11` as OPS_SAFE proves
+# the handoff revokes it (Vigilo CRITICAL-01).
+OPS_TOOL=script/deploy/preflight/ops_safe.py
+OPS="$(python3 "$OPS_TOOL" address --rpc-url "$RPC" --owner "$DEPLOYER" 2>/dev/null)" \
+  || { echo "REFUSING: cannot predict the ops Safe address (canonical Safe v1.4.1 missing on this fork?)"; exit 2; }
 EXECUTOR=0x000000000000000000000000000000000000bEEF   # an arbitrary account, for the open-executor check
-for A in "$COUNCIL" "$OPS" "$EXECUTOR"; do
+for A in "$COUNCIL" "$EXECUTOR"; do
   cast rpc anvil_setBalance "$A" 0x21e19e0c9bab2400000 --rpc-url "$RPC" >/dev/null
 done
 mkdir -p safe-transactions
@@ -549,6 +553,20 @@ exec_batch() {
   echo -e "${label}\t0\t${TX_GAS}\tOK(${n} tx)" >> "$WORK/steps.tsv"
   echo "    batch gas (sum of inner txs) = $TX_GAS"
 }
+# Run a Transaction-Builder batch through the REAL ops Safe as ONE MultiSend execTransaction (ops_safe.py).
+ops_exec() {
+  local label="$1" file="$2" out gas
+  echo "--- $label: ONE execTransaction via ops Safe $OPS"
+  out=$(python3 "$OPS_TOOL" exec --rpc-url "$RPC" --owner "$DEPLOYER" --safe "$OPS" --batch "$file" --send \
+        -- --unlocked --from "$DEPLOYER" 2>&1)
+  local rc=$?
+  echo "$out" | sed 's/^/    /'
+  gas=$(echo "$out" | grep -oE "gasUsed [0-9]+" | grep -oE "[0-9]+$")
+  if (( rc == 0 )); then
+    echo -e "${label}\t0\t${gas:-0}\tOK($(jq '.transactions|length' "$file") calls, 1 tx)" >> "$WORK/steps.tsv"; return 0
+  fi
+  echo -e "${label}\t0\t0\tFAIL" >> "$WORK/steps.tsv"; return 1
+}
 assert() { if eval "$2"; then echo "  PASS  $1"; else echo "  FAIL  $1"; FAILED=1; fi; }
 impl_of() { cast parse-bytes32-address "$(cast storage "$NAV" $IMPL_SLOT --rpc-url "$RPC")"; }
 reg() { cast call "$NAV" 'isAdapterRegistered(address)(bool)' "$1" --rpc-url "$RPC" 2>/dev/null; }
@@ -588,6 +606,10 @@ grep -E "meta key|WARN" "$WORK/clear.log" | head -4 | sed 's/^/  /'
 run_step 01_2_DeployNAVImplementation script/deploy/01_2_DeployNAVImplementation.s.sol || FAILED=1
 ALLOW_ALREADY=1 run_step 04_DeployBalanceAdapters script/deploy/04_DeployBalanceAdapters.s.sol || FAILED=1
 NEW_IMPL="$(jq -r '.NAVCalculatorImplementation // ""' "$REC")"
+echo "--- deploy the 1/1 ops Safe (ops_safe.py deploy)"
+python3 "$OPS_TOOL" deploy --rpc-url "$RPC" --owner "$DEPLOYER" --send -- --unlocked --from "$DEPLOYER" 2>&1 \
+  | sed 's/^/    /'
+[[ "${PIPESTATUS[0]}" == 0 ]] || FAILED=1
 send_tx grant-ops-MANAGER "$DEPLOYER" "$NAV" "$(cast calldata 'grantRole(bytes32,address)' "$MANAGER_ROLE" "$OPS")" || FAILED=1
 
 # --- Phase 2: upgrade (EOA, needs ADMIN), upgrade-landed gate, swap, wallet adds ------------------------
@@ -604,15 +626,15 @@ if (( ${#LIVE[@]} == 0 )); then
   echo -e "swap-batch\t0\t0\tNONE(impl-only)" >> "$WORK/steps.tsv"
 else
   if (( PLAN_RC != 0 )); then echo "    FAIL plan() — tail:"; tail -15 "$WORK/SwapMetaAdapter.plan.log" | sed 's/^/      /'; FAILED=1
-  else exec_batch swap-batch "$SWAP_JSON" "$OPS" || FAILED=1; fi
+  else ops_exec swap-batch "$SWAP_JSON" || FAILED=1; fi
 fi
 
-WALLET_GAS=0
-while IFS=$'\t' read -r name addr; do
-  [[ -z "$addr" ]] && { echo "    FAIL wallet $name — no recorded address after 04"; FAILED=1; continue; }
-  coords=$(jq -r --arg k "$name" '.[$k].instances // [] | map("0x000000000000000000000000" + (ascii_downcase | ltrimstr("0x"))) | join(",")' "$NAV_META_CFG")
-  send_tx "wallet-add:$name" "$OPS" "$NAV" "$(cast calldata 'addMetaBalanceAdapter(address,bytes32[])' "$addr" "[$coords]")" || FAILED=1
-done < <(jq -r --slurpfile rec "$REC" 'to_entries[] | select((.key|test("Wallet")) and (.value|type=="object") and .value.enabled==true) | [.key, ($rec[0].balanceAdapters[.key] // "")] | @tsv' "$META_CFG")
+WALLET_JSON="safe-transactions/${CHAIN_ID}-wallet-adds.json"
+echo "--- emit the wallet-adds batch (emit_wallet_adds_batch.py)"
+python3 script/deploy/preflight/emit_wallet_adds_batch.py "$CHAIN_ID" --safe "$OPS" 2>&1 | sed 's/^/    /'
+if [[ "${PIPESTATUS[0]}" != 0 ]]; then FAILED=1
+elif [[ -f "$WALLET_JSON" ]]; then ops_exec wallet-adds-batch "$WALLET_JSON" || FAILED=1
+else echo -e "wallet-adds-batch\t0\t0\tNONE" >> "$WORK/steps.tsv"; fi
 
 # --- Phase-2 value-neutrality check: post-snapshot NOW, before Phase 3/4 intentionally change heartbeats
 #     and roles (which the structural diff would otherwise, correctly, flag). ---------------------------

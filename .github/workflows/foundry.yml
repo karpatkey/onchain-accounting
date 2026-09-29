@@ -315,6 +315,15 @@ jobs:
           python3 -m unittest test_reset_deployment_records -v
           python3 -O -m unittest test_reset_deployment_records
 
+      - name: PR #338 migration tools (snapshot_and_clear_meta, ops_safe)
+        # The two tools that carry the in-place migration's live-NAV writes: the surgical record clear +
+        # `.pre-swap.json` producer that SwapMetaAdapter.plan() reads, and the ops-Safe MultiSend encoder
+        # that makes each chain's swap atomic. Pure-logic suites, no network; -O as well, as above.
+        working-directory: script/deploy/preflight
+        run: |
+          python3 -m unittest test_snapshot_and_clear_meta test_ops_safe -v
+          python3 -O -m unittest test_snapshot_and_clear_meta test_ops_safe
+
       - name: Published addresses match the deployment records
         # Added after DEPLOYED_ADDRESSES.md was found publishing 66 addresses that appear in NO deployment
         # record — contracts from a superseded generation. Stale entries still have code, so an integrator

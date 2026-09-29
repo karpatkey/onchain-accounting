@@ -60,3 +60,18 @@ new adapter here — this chain proves the mechanics; Base/Arbitrum are the firs
 |---|---|
 | 10 Optimism | nothing to realign (10 configured heartbeats already match); `verify()` OK; backfill `NothingToDo` |
 | 100 Gnosis | nothing to realign; `verify()` OK; backfill `NothingToDo` |
+
+### 8453 Base — 2026-09-29 (Phase 2 + 3)
+
+| Step | Tx | Result |
+|---|---|---|
+| snapshot s0 | — | block 51962074, impl `0x40e41348`, NAV $400,163.77, 0 errors |
+| `upgradeToAndCall` | `0x0e32dc1d35f8b653bd39c1c46674413f4f5a1005e2395efee17f6f5c459392c8` | `upgrade` gate 3/3 |
+| snapshot s1 | — | **0 differences vs s0** (NAV +$0.04 accrual) |
+| swap batch (18 calls: AaveV3, MorphoMarkets, BalancerV3 Pools+Gauges, FluidFTokens, CompoundV3) | `0x0139fd1e02e262c54637040e9f99e83ff8e7d77efa18b4731158da68b3443386` | gas 1,633,946 (= rehearsal); PancakeSwapV3 skipped (disabled, never deployed) |
+| wallet-adds batch (Coinbase cbETH, EtherFi weETH, Lido wstETH) | `0xc078da91838f0fef4b5639bdb01f6bc37891dea76942589ab3090278822b2501` | gas 579,200 |
+| `swap` gate | — | 45/45 |
+| snapshot s2 | — | 7→7 positions, none lost/added; USDC Supplied $399,775 (Compound V3) now read by the NEW adapter, +$0.38 interest only; COMP Rewards moved adapter, same amount; 0 health flags |
+| `06` idempotence | — | nothing left |
+| revoke ops Safe MANAGER | `0xe47c84d7cb1fe9fc7d08bbd7837be85fdc4cd78f00c2e9ce4a99ba30e89d0a3e` | ops Safe holds no role |
+| Phase 3 heartbeats | — | nothing to realign; `verify()` OK; backfill `NothingToDo` |

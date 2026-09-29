@@ -67,9 +67,17 @@ CAST_SIGNER=(--account "$ACCT" --password-file "$PWF")
 
 # On the swap chains the ops Safe is used: its address must be what ops_safe.py actually predicts here,
 # so a MANAGER grant can never go to an address the tool will not deploy.
+# Once deployed, the factory's prediction call reverts (the proxy exists), so check the deployed Safe instead.
 case "$CHAIN" in 1|10|100|137|8453|42161|5042)
-  PRED="$(python3 "$PR338_ROOT/script/deploy/preflight/ops_safe.py" address --rpc-url "$RPC" --owner "$DEPLOYER" 2>/dev/null)"
-  [[ "${PRED,,}" == "${OPS,,}" ]] || { pr338_env_fail "ops Safe predicted ${PRED:-<error>} != pinned $OPS"; return 1; } ;;
+  if [[ "$(cast code "$OPS" --rpc-url "$RPC" 2>/dev/null)" == 0x ]]; then
+    PRED="$(python3 "$PR338_ROOT/script/deploy/preflight/ops_safe.py" address --rpc-url "$RPC" --owner "$DEPLOYER" 2>/dev/null)"
+    [[ "${PRED,,}" == "${OPS,,}" ]] || { pr338_env_fail "ops Safe predicted ${PRED:-<error>} != pinned $OPS"; return 1; }
+  else
+    OWN="$(cast call "$OPS" 'getOwners()(address[])' --rpc-url "$RPC" 2>/dev/null)"
+    THR="$(cast call "$OPS" 'getThreshold()(uint256)' --rpc-url "$RPC" 2>/dev/null)"
+    [[ "${OWN,,}" == "[${DEPLOYER,,}]" && "$THR" == 1 ]] \
+      || { pr338_env_fail "deployed ops Safe $OPS is not 1/1 owned by the deployer (owners $OWN, threshold $THR)"; return 1; }
+  fi ;;
 esac
 
 FORGE_GAS=(); CAST_GAS=()

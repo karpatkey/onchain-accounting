@@ -80,7 +80,10 @@ import "../../src/constants.sol";
 ///      checks are therefore logged as a checklist, not asserted. Confirm on-chain, after the Safe batch
 ///      executes:
 ///        - on the NAV: `hasRole(0x00, timelock)` and `hasRole(MANAGER, timelock)` are true;
-///          `hasRole(0x00, deployer)` and `hasRole(MANAGER, deployer)` are false; `getRoleMemberCount(0x00) >= 1`
+///          `hasRole(0x00, deployer)` and `hasRole(MANAGER, deployer)` are false. The NAV is NOT
+///          `AccessControlEnumerable`, so there is no `getRoleMemberCount`: rebuild the holder set from the NAV's
+///          `RoleGranted`/`RoleRevoked` logs and confirm each survivor with `hasRole` (recipe:
+///          `script/deploy/REDEPLOY_RUNBOOK.md`, "Check the current set")
 ///        - if an `OPS_SAFE` was used for the Phase-2 swap: `hasRole(MANAGER, opsSafe)` and
 ///          `hasRole(0x00, opsSafe)` are both false (the batch revokes it — see the ops-Safe note below)
 ///        - on the timelock: `getMinDelay() == 0`, `hasRole(PROPOSER_ROLE, safe)`,

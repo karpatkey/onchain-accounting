@@ -241,8 +241,12 @@ so the Safe schedules it through the timelock.
 `forge script` bodies run as local simulation and Foundry sends transactions only after `run()` returns,
 so any in-script post-condition checks the *simulation*.
 
-- **NAV:** `hasRole(0x00, timelock)` and `hasRole(MANAGER, timelock)` true; both false for the deployer;
-  `getRoleMemberCount(0x00) >= 1`.
+- **NAV:** `hasRole(0x00, timelock)` and `hasRole(MANAGER, timelock)` true; both false for the deployer
+  **and for the ops Safe** (if one was used). The NAV is `AccessControlUpgradeable`, not the `Enumerable`
+  variant, so `getRoleMemberCount` does not exist — rebuild the `0x00` and `MANAGER` holder sets from the
+  proxy's `RoleGranted`/`RoleRevoked` logs and confirm every survivor with `hasRole` (recipe:
+  `REDEPLOY_RUNBOOK.md` → "Check the current set"). The only survivors should be the timelock and, with
+  `SAFE_RETAINS_ROLES=true`, the Council Safe.
 - **Timelock:** `getMinDelay() == 0`; `hasRole(PROPOSER_ROLE, safe)`; `hasRole(CANCELLER_ROLE, safe)`;
   `hasRole(EXECUTOR_ROLE, address(0))`; `hasRole(DEFAULT_ADMIN_ROLE, deployer)` false.
 - **Backfill:** every live coordinate's claimant names its adapter —

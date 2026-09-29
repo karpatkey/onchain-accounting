@@ -174,7 +174,7 @@ Every balance adapter must implement this interface and ERC165.
 
 ## 6. How NAVCalculator uses adapters
 
-- **getAccountNav(account, quoteAsset):** Validates the quote asset, computes sequencer status, then delegates the whole read/compute path to `PriceFeedLib.computeNav(...)` (passing the price-oracle/registry storage refs, `getAllAdapters()`, the retired-and-always-zero `_metaInstanceTotal`, and the native-token symbol). The read/compute engine lives in `PriceFeedLib` to keep `NAVCalculator` under EIP-170 — see [ADR 0010](../../docs/decisions/0010-meta-balance-adapters.md). `computeNav`:
+- **getAccountNav(account, quoteAsset):** Validates the quote asset, computes sequencer status, then delegates the whole read/compute path to `PriceFeedLib.computeNav(...)` (passing the price-oracle/registry storage refs, `getAllAdapters()`, the retired `_metaInstanceTotal` — unused by `computeNav`; frozen, not zero, on an upgraded proxy (see §4), and the native-token symbol). The read/compute engine lives in `PriceFeedLib` to keep `NAVCalculator` under EIP-170 — see [ADR 0010](../../docs/decisions/0010-meta-balance-adapters.md). `computeNav`:
   - For each adapter in `getAllAdapters()`: `getAdapterPositions(account, address(0))` (with try/catch).
   - Filters: keep only positions with a registered asset.
   - Fetches prices for all assets that appear in the filtered positions; marks stale.

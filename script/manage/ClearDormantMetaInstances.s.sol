@@ -10,6 +10,12 @@ import {ConfigReader} from "script/utils/ConfigReader.sol";
 /// @author KPK
 /// @notice Clears the dormant meta-instance set left on the superseded PolygonStakingMeta predecessor
 ///         `0x59039882…`, in the one order that never double-counts.
+/// @dev **Status: a verified no-op, kept as a guarded record.** Its one target set is already empty, so every
+///      run reverts `NothingToDo` before broadcasting anything. It is kept (not deleted) because CI and the
+///      migration docs invoke it as that completion check, and its guards document the only safe manual order
+///      on a pre-upgrade implementation. Post-upgrade no cleanup script is needed at all: re-registering any
+///      deregistered adapter wipes its residue (`DormantInstanceCleanup.fork.t.sol`,
+///      `test_postUpgrade_reRegisteringResidueNeverRevives`).
 /// @dev **The residue, and why it still exists after the fix.** This PR makes BOTH removal paths clear
 ///      `metaInstances`, so no NEW residue can be created — but the clearing lives in the NAVCalculator
 ///      implementation, and the residue below was created by the PRE-UPGRADE implementation that is still
@@ -31,16 +37,14 @@ import {ConfigReader} from "script/utils/ConfigReader.sol";
 ///      which is the dangerous act. The ordering below is the only one where the two adapters are never
 ///      both reporting. Every intermediate state is SAFE, but they are not all under-reports.
 ///
-///      **THE STEP-2 STATE CHANGED WITH THE REGISTRATION WIPE, AND THE FORK TEST HAS NOT CAUGHT UP.**
-///      `addMetaBalanceAdapter` now clears an adapter's set before seeding it, so step 2 wipes the residue
-///      itself: step 3 finds nothing to remove and is skipped, and the window after step 2 holds ZERO
-///      reporters rather than the "residue is the ONLY reporter" state this comment used to describe — which
-///      `DormantInstanceCleanup.fork.t.sol` still asserts. Zero reporters is an under-report, the licensed
-///      direction, and every post-condition below still holds, so the script remains safe to run. But that
-///      fork test now pins pre-upgrade behaviour and nothing in CI notices, because it never upgrades the
-///      proxy. Recorded in the PR's Outstanding section: the test needs retaking against the upgraded
-///      implementation. Never two reporters at once is the invariant; "always missing" is not,
-///      which is the direction this repo prefers everywhere. Registering the predecessor FIRST would
+///      **The step-2 state differs by implementation.** On the pre-upgrade implementation step 2 leaves the
+///      residue as the ONLY reporter (the pre-upgrade tests in `DormantInstanceCleanup.fork.t.sol` pin that).
+///      On this PR's implementation `addMetaBalanceAdapter` clears an adapter's set before seeding it, so
+///      step 2 wipes the residue itself: step 3 finds nothing to remove and is skipped, and the window after
+///      step 2 holds ZERO reporters — pinned on the upgraded fork by
+///      `test_postUpgrade_reRegisteringResidueNeverRevives`. Zero reporters is an under-report, the licensed
+///      direction, and every post-condition below still holds. Never two reporters at once is the invariant;
+///      "always missing" is not, which is the direction this repo prefers everywhere. Registering the predecessor FIRST would
 ///      double-count, and that is revert-probed in `DormantInstanceCleanup.fork.t.sol`.
 ///
 ///      Rehearsed against mainnet state before broadcasting: the sequence never exceeds one reporter,

@@ -11,6 +11,10 @@ ops-Safe tool (`ops_safe.py`) — rehearsal `RESULT: PASS` on all 8 asset chains
 - **Explicit go per phase.** Nothing in Phase N+1 starts until Phase N's gates are green on every chain
   it touched.
 - **Every broadcast step starts in a fresh shell with** `. script/deploy/preflight/pr338_env.sh <chainId>`.
+  ⚠️ **Never pipe it** (`. pr338_env.sh 10 | tail -1`): a pipeline sources it in a SUBSHELL, so `$RPC` and
+  the signer arrays stay empty in yours. forge then reads the empty `--rpc-url` as a local socket path
+  ("Connection refused … with <cwd>"). This happened live on Gnosis; nothing broadcast. Redirect instead
+  (`> file`), and check `[[ -n "$RPC" ]]` before any forge command.
   It resolves `$RPC` (never printed), checks the endpoint's chain id, unlocks the keystore into a 0600
   password file and checks it is the deployer, and sets the chain's gas workarounds (`FORGE_GAS`/`CAST_GAS`:
   Gnosis tip, HyperEVM `--legacy`, Hemi fee floor). It refuses on any mismatch — do not work around a refusal.
@@ -102,6 +106,16 @@ cast call $NAV "hasRole(bytes32,address)(bool)" $MANAGER_ROLE $OPS --rpc-url "$R
 cast call $NAV "hasRole(bytes32,address)(bool)" $ADMIN_ROLE $OPS --rpc-url "$RPC"  # false
 ```
 
+**Verify every contract before calling the chain done** (standing rule: ALL contracts on ALL chains):
+`script/deploy/preflight/verify_pr338_chain.sh $C` verifies, on Etherscan V2:
+- every adapter `04` created;
+- `NAVRegistryLib`, the implementation and `PriceFeedLib` (plain `forge verify-contract` works for all of
+  them, including the library).
+
+It skips anything already verified and prints one line per contract; every line must read `VERIFIED`. The
+ops Safe is auto-matched as `SafeProxy`. Chains NOT on Etherscan V2 (Ink, Scroll, X Layer, 0G, Hemi) need
+their native explorer: see the verification recipes in `script/verify/sweeps/README.md`.
+
 The ops Safe gets **MANAGER only, never ADMIN.** `ops_safe.py deploy` verifies owner = deployer,
 threshold 1, the SafeL2 v1.4.1 singleton, the canonical fallback handler, no guard, no modules.
 
@@ -112,6 +126,7 @@ threshold 1, the SafeL2 v1.4.1 singleton, the canonical fallback handler, no gua
 FOUNDRY_PROFILE=slow PERSIST_DEPLOYMENTS=1 forge script script/deploy/01_2_DeployNAVImplementation.s.sol \
   --rpc-url "$RPC" "${FORGE_SIGNER[@]}" "${FORGE_GAS[@]}" --broadcast --slow
 python3 script/deploy/preflight/pr338_check.py phase1 $C                  # GATE
+script/deploy/preflight/verify_pr338_chain.sh $C                          # every line VERIFIED
 ```
 
 Commit the updated `deployments/*.json` **and `deployments/*.pre-swap.json`** once Phase 1 is green

@@ -156,7 +156,7 @@ contract RegisterAssets is BaseDeployScript {
             return;
         }
 
-        // Pass 1: count actions (registerAsset + addPriceFeed) across all assets.
+        // Pass 1: count actions (registerAsset + addOrModifyPriceFeed) across all assets.
         uint256 total;
         for (uint256 i = 0; i < symbols.length; i++) {
             total += _planAsset(symbols[i], navProxy).length;
@@ -215,8 +215,9 @@ contract RegisterAssets is BaseDeployScript {
         if (registered) {
             (bool okc, bytes memory cd) =
                 navProxy.staticcall(abi.encodeWithSelector(IPrices.getPriceFeedCount.selector, asset));
-            // If the on-chain feed count can't be read, skip rather than risk re-adding existing feeds (a duplicate
-            // addPriceFeed reverts and would abort the whole batch).
+            // If the on-chain feed count can't be read, skip rather than risk re-adding existing feeds: under the
+            // upsert a re-add is no longer a guaranteed revert — `addOrModifyPriceFeed` reverts on an IDENTICAL
+            // heartbeat but silently rewrites a registered feed's heartbeat when it differs.
             if (!(okc && cd.length == 32)) return acts;
             onChainFeeds = abi.decode(cd, (uint256));
         }
@@ -236,7 +237,7 @@ contract RegisterAssets is BaseDeployScript {
         acts = _concat(feedActs, monActs);
     }
 
-    /// @notice Plans an asset's pricing-feed actions (registerAsset for the primary; addPriceFeed for trailing new
+    /// @notice Plans an asset's pricing-feed actions (registerAsset for the primary; addOrModifyPriceFeed for trailing new
     ///         feeds). The first `onChainFeeds` resolvable feeds are already present (feeds are appended, never
     ///         reordered) and skipped.
     function _planFeedActs(

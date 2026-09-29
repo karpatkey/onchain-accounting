@@ -41,6 +41,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import time
 
 import chainlib as c
 
@@ -90,6 +91,41 @@ def plan_for(chain_id: int) -> tuple[dict, list[str], list[str]]:
     return out, cleared, warnings
 
 
+# A preserved snapshot older than this is almost certainly left over from an earlier cycle or an aborted
+# attempt (the file is untracked and nothing deletes it after a swap) — refuse rather than silently reuse it.
+PRE_SWAP_MAX_AGE_S = 7 * 24 * 3600
+PRE_SWAP_META_KEY = "$preSwap"
+
+
+def check_preserved_snapshot(chain_id: int, snap: dict, record: dict, now: float | None = None) -> None:
+    """Refuse to reuse a `.pre-swap.json` that is stale or does not belong to the current record.
+
+    The snapshot is `plan()`'s ONLY source of OLD addresses, so a wrong one makes `plan()` skip real swaps
+    ("predecessor not registered") or emit an incomplete batch. It must (a) carry this tool's capture stamp and be
+    younger than PRE_SWAP_MAX_AGE_S, (b) name the same NAV proxy, and (c) agree with the current record on every
+    NON-meta balance adapter (those do not move in this migration). Meta keys are expected to differ (cleared,
+    then redeployed by 04). Raises RuntimeError — `raise`, not `assert`, so it survives `python3 -O`.
+    """
+    now = time.time() if now is None else now
+    stamp = snap.get(PRE_SWAP_META_KEY) or {}
+    at = stamp.get("capturedAtUnix")
+    if not isinstance(at, (int, float)):
+        raise RuntimeError(f"deployments/{chain_id}.pre-swap.json has no capture stamp ({PRE_SWAP_META_KEY}) — "
+                           f"it was not written by this tool or predates the stamp; delete it and re-run --apply")
+    if now - at > PRE_SWAP_MAX_AGE_S:
+        raise RuntimeError(f"deployments/{chain_id}.pre-swap.json is {int((now - at) // 86400)} day(s) old — "
+                           f"likely left over from an earlier cycle; delete it and re-run --apply")
+    if (snap.get("NAVCalculatorProxy") or "").lower() != (record.get("NAVCalculatorProxy") or "").lower():
+        raise RuntimeError(f"deployments/{chain_id}.pre-swap.json names a different NAVCalculatorProxy than the record")
+    meta = set(enabled_meta_names(chain_id))
+    sa, ra = snap.get(ADAPTERS_SECTION) or {}, record.get(ADAPTERS_SECTION) or {}
+    drift = sorted(k for k in set(sa) | set(ra)
+                   if k not in meta and (sa.get(k) or "").lower() != (ra.get(k) or "").lower())
+    if drift:
+        raise RuntimeError(f"deployments/{chain_id}.pre-swap.json disagrees with the record on non-meta adapter(s) "
+                           f"{drift} — it is from a different state; delete it and re-run --apply")
+
+
 def apply_chain(chain_id: int, new_record: dict) -> bool:
     """Write the surgically-cleared record, and the `.pre-swap.json` snapshot IFF one does not already exist.
 
@@ -105,9 +141,16 @@ def apply_chain(chain_id: int, new_record: dict) -> bool:
     pre_swap = c.DEPLOY_DIR / f"{chain_id}.pre-swap.json"
     snapshotted = False
     if not pre_swap.exists():
-        # Full record, as-is, BEFORE the clear below — read fresh so it is the on-disk pre-clear state.
-        pre_swap.write_text(json.dumps(c.deployment(chain_id), indent=2) + "\n")
+        # Full record, as-is, BEFORE the clear below — read fresh so it is the on-disk pre-clear state — plus a
+        # capture stamp so a later re-run can tell a fresh snapshot from a stale leftover. SwapMetaAdapter.plan()
+        # only reads `.balanceAdapters.<name>`, so the extra top-level key is inert for it.
+        snap = c.deployment(chain_id)
+        snap[PRE_SWAP_META_KEY] = {"capturedAtUnix": int(time.time()),
+                                   "note": "written by snapshot_and_clear_meta.py; OLD addresses for SwapMetaAdapter.plan()"}
+        pre_swap.write_text(json.dumps(snap, indent=2) + "\n")
         snapshotted = True
+    else:
+        check_preserved_snapshot(chain_id, json.loads(pre_swap.read_text()), c.deployment(chain_id))
     src.write_text(json.dumps(new_record, indent=2) + "\n")
     return snapshotted
 
@@ -154,7 +197,7 @@ def main() -> int:
                 print(f"           (kept existing {cid}.pre-swap.json — OLD addresses preserved)")
 
     if args.apply:
-        print(f"\nWrote .pre-swap.json snapshots and cleared {total_cleared} meta key(s) across "
+        print(f"\n.pre-swap.json snapshots written/validated; cleared {total_cleared} meta key(s) across "
               f"{len(chains)} chain(s).")
         print("NEXT: run 01_2 then 04 (PERSIST_DEPLOYMENTS=1), then SwapMetaAdapter.plan().")
     else:

@@ -59,7 +59,7 @@ contract DeployNAV is Script {
         // Admin grants itself MANAGER so a single EOA can keep registering assets/adapters in later phases.
         nav.grantRole(MANAGER, admin);
 
-        // initialize() already pre-registers NATIVE_ADDRESS (feedless); attach its Chainlink feed via addPriceFeed.
+        // initialize() already pre-registers NATIVE_ADDRESS (feedless); attach its Chainlink feed via addOrModifyPriceFeed.
         nav.addOrModifyPriceFeed(NATIVE_ADDRESS, nativeFeed, IPrices.PriceType.Chainlink, nativeHeartbeat);
 
         vm.stopBroadcast();

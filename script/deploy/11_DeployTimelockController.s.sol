@@ -130,7 +130,7 @@ contract DeployTimelockController is BaseDeployScript {
     ///      ops-Safe revokes sit BEFORE the Safe's own revoke, because they need an account that still holds
     ///      DEFAULT_ADMIN_ROLE (the executing Safe) to authorize them; when `!safeRetains` the Safe renounces its own
     ///      admin in the final entries, so ordering the ops revokes after that would revert. The whole batch MUST
-    ///      execute atomically as one Transaction-Builder MultiSend — see run()'s notes above.
+    ///      execute atomically as one Transaction-Builder MultiSend — see the ORDER notes in run() below.
     function buildHandoffBatch(
         address nav,
         address predicted,
@@ -304,11 +304,15 @@ contract DeployTimelockController is BaseDeployScript {
         //        `07_TransferAdminToSecurityCouncil:83-102` follows, though that script executes it as one
         //        `startBroadcast`/`stopBroadcast` pair PER TARGET and so is not atomic. One Safe batch is
         //        strictly better and is why this is emitted rather than broadcast.
-        //   5-6. Revoke the Safe LAST, and only in this same batch. `revokeRole`, not `renounceRole`: the Safe
-        //        is the caller here, and `07` uses renounce only because the EOA calls it on itself.
+        //   then 0-2 ops-Safe revokes (MANAGER and/or admin, only those it still holds) — BEFORE the Safe's own
+        //        revoke, because they need the still-admin Safe to authorize them.
+        //   LAST 2 (only if !SAFE_RETAINS_ROLES). Revoke the Safe itself, and only in this same batch.
+        //        `revokeRole`, not `renounceRole`: the Safe is the caller here, and `07` uses renounce only
+        //        because the EOA calls it on itself. So the Safe's revoke is entries 5-6 with no ops Safe,
+        //        6-7 with one ops revoke, 7-8 with two — always the final two.
         //
-        // ⚠️ If entries 5-6 were ever split into a later batch and 1-2 had failed, the chain would be left with
-        // no admin at all. That is why they are one batch and why the revoke is last within it.
+        // ⚠️ If the Safe's own revoke were ever split into a later batch and 1-2 had failed, the chain would be
+        // left with no admin at all. That is why they are one batch and why the Safe's revoke is last within it.
         //
         // ⚠️ **And the atomicity comes from the Safe Transaction Builder app, NOT from anything in this repo.**
         // `SafeTxBuilder.writeSafeTx` emits a FLAT LIST; the app is what wraps a multi-transaction import into
@@ -318,7 +322,7 @@ contract DeployTimelockController is BaseDeployScript {
         // no-admin brick named above — so "MUST be atomic" is a requirement on the OPERATOR here, not a
         // property the emitter can guarantee.
         // The ordered handover batch, built by a pure helper so it can be unit-tested without a live NAV or env
-        // (DeployTimelockControllerBatch.t.sol). The ordering rationale is documented above and on the builder.
+        // (DeployTimelockControllerBatch.t.sol). The ordering rationale is the ORDER block above and the builder's @dev.
         SafeTxBuilder.Transaction[] memory batch =
             buildHandoffBatch(nav, predicted, deployer, safe, opsSafe, safeRetains, revokeOpsManager, revokeOpsAdmin);
 

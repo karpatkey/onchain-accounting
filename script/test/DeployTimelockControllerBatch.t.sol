@@ -86,6 +86,26 @@ contract DeployTimelockControllerBatchTest is Test {
         _assertEntry(b[4], _revoke(MANAGER, OPS));
     }
 
+    /// @dev Safe revoked + exactly ONE ops revoke: the single ops entry must land at [4], strictly before the
+    ///      Safe's self-revoke at [5..6] — else the MultiSend reverts once the Safe gives up its own admin.
+    function test_safeRevoked_opsManagerOnly_opsBeforeSafe() public {
+        SafeTxBuilder.Transaction[] memory b = s.buildHandoffBatch(NAV, TL, DEP, SAFE, OPS, false, true, false);
+        assertEq(b.length, 7);
+        _assertBase(b);
+        _assertEntry(b[4], _revoke(MANAGER, OPS));
+        _assertEntry(b[5], _revoke(MANAGER, SAFE));
+        _assertEntry(b[6], _revoke(DEFAULT_ADMIN_ROLE, SAFE));
+    }
+
+    function test_safeRevoked_opsAdminOnly_opsBeforeSafe() public {
+        SafeTxBuilder.Transaction[] memory b = s.buildHandoffBatch(NAV, TL, DEP, SAFE, OPS, false, false, true);
+        assertEq(b.length, 7);
+        _assertBase(b);
+        _assertEntry(b[4], _revoke(DEFAULT_ADMIN_ROLE, OPS));
+        _assertEntry(b[5], _revoke(MANAGER, SAFE));
+        _assertEntry(b[6], _revoke(DEFAULT_ADMIN_ROLE, SAFE));
+    }
+
     function test_opsAdminOnly() public {
         SafeTxBuilder.Transaction[] memory b = s.buildHandoffBatch(NAV, TL, DEP, SAFE, OPS, true, false, true);
         assertEq(b.length, 5);

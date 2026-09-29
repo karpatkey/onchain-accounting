@@ -16,7 +16,8 @@
 # the sum of its inner transactions, which approximates one MultiSend.
 #
 # Safety: identical to rehearse_fork.sh — refuses a non-loopback RPC, refuses unless script/config and
-# broadcast/ are git-clean, and restores both byte-exactly on exit. It never touches a live chain.
+# broadcast/ are git-clean, and restores both byte-exactly on exit — plus the GITIGNORED safe-transactions/
+# (restored from a backup) and any new ignored broadcast/ dry-run files (removed). It never touches a live chain.
 #
 # usage:
 #   script/deploy/preflight/rehearse_inplace_fork.sh [chainId] [forkBlock]
@@ -351,6 +352,17 @@ ANVIL_PID=$!
 RESTORED=0
 cleanup() {
   kill "$ANVIL_PID" 2>/dev/null
+  # safe-transactions/ and broadcast/**/dry-run are GITIGNORED, so the git-clean rail and the checkout/clean
+  # restore below cannot see them. The fork writes real-looking batches there (e.g. 1-swap-meta-adapters.json
+  # stamped with the stand-in ops address), which could overwrite — or be mistaken for — a real prepared batch.
+  if [[ -n "${SAFE_TX_BACKUP:-}" && -d "$SAFE_TX_BACKUP" ]]; then
+    rm -rf safe-transactions && cp -a "$SAFE_TX_BACKUP" safe-transactions \
+      && echo "restored: safe-transactions/ to its pre-run state (fork batches kept in $WORK/safe-transactions)"
+  fi
+  if [[ -n "${IGNORED_BEFORE:-}" && -f "$IGNORED_BEFORE" ]]; then
+    comm -13 <(sort "$IGNORED_BEFORE") <(git ls-files -oi --exclude-standard -- broadcast | sort) \
+      | while IFS= read -r f; do rm -f -- "$f"; done
+  fi
   [[ $RESTORED -eq 1 ]] && return
   RESTORED=1
 
@@ -427,7 +439,9 @@ mkdir -p safe-transactions
 # A fork's oracles are FROZEN at the fork block, so letting its clock follow the wall clock makes short-heartbeat
 # feeds go stale mid-run and price at 0 — a false value diff (observed on Arbitrum: USDC/USDT0 heartbeat 255 s,
 # 206 s between snapshots → USDC stale → ACCOUNT_7 "-100%" with identical balances). Advance time 1 s per mined
-# block instead, so the whole rehearsal moves the chain clock only by the handful of blocks it mines.
+# block instead. The clock still advances ~1 s per mined tx (≈60 blocks between snapshots on Arbitrum,
+# ≈150 on mainnet), so a feed ALREADY near its heartbeat at the fork block can still go stale. That can only
+# produce a false FAIL — and a visible one: check `stalePriceAssets` in the post snapshot — never a false PASS.
 cast rpc anvil_setBlockTimestampInterval 1 --rpc-url "$RPC" >/dev/null \
   || { echo "REFUSING: could not pin the fork clock (anvil_setBlockTimestampInterval)"; exit 2; }
 
@@ -483,8 +497,11 @@ run_step() {
   t1=$(date +%s)
   gas=$(grep -aoE "Estimated total gas used for script: [0-9]+" "$log" | grep -oE "[0-9]+$" | paste -sd+ | bc 2>/dev/null)
   [[ -z "$gas" ]] && gas=0
-  local noop_re="NAVCalculator not deployed for this chain|No assets configured|ERROR: NAVCalculator not configured|WARNING: NAVCalculator not deployed"
-  [[ "${ALLOW_ALREADY:-0}" != 1 ]] && noop_re="${noop_re}|[Aa]lready deployed"
+  # Full detector written STATICALLY (same phrases as rehearse_fork.sh, so its guard test can read it); the one
+  # in-place exception REMOVES the skip phrase for the step that legitimately emits it (04) rather than the
+  # other steps adding it — identical runtime behaviour, but visible to script/test/rehearsal-harness-guards.test.sh.
+  local noop_re="NAVCalculator not deployed for this chain|[Aa]lready deployed|No assets configured|ERROR: NAVCalculator not configured|WARNING: NAVCalculator not deployed"
+  [[ "${ALLOW_ALREADY:-0}" == 1 ]] && noop_re="${noop_re//|\[Aa\]lready deployed/}"
   if grep -qaE "$noop_re" "$log"; then
     echo -e "${label}\t$((t1-t0))\t${gas}\tNO-OP" >> "$WORK/steps.tsv"
     echo "    NO-OP ($((t1-t0))s):"; grep -aE "$noop_re" "$log" | head -3 | sed 's/^/      /'
@@ -539,6 +556,12 @@ ninst() { cast call "$NAV" 'getMetaInstances(address)(bytes32[])' "$1" --rpc-url
 has() { cast call "$NAV" 'hasRole(bytes32,address)(bool)' "$1" "$2" --rpc-url "$RPC" 2>/dev/null; }
 
 FAILED=0
+
+# Snapshot the gitignored outputs BEFORE any step writes them; `cleanup` restores / prunes them (see there).
+SAFE_TX_BACKUP="$WORK/safe-transactions.orig"
+rm -rf "$SAFE_TX_BACKUP"; cp -a safe-transactions "$SAFE_TX_BACKUP"
+IGNORED_BEFORE="$WORK/broadcast-ignored-before.txt"
+git ls-files -oi --exclude-standard -- broadcast > "$IGNORED_BEFORE"
 
 # --- 0. pre-snapshot of the FORK — the base state the Phase-2 post-snapshot is diffed against ---------
 rm -rf "$WORK/pre" "$WORK/post"
@@ -600,6 +623,7 @@ DIFF_RC=$?
 
 # 06 must now have NOTHING to do (plan MEDIUM-3): any add/reconcile means the swap left a gap.
 sim_step 06_Configure.idempotence script/deploy/06_Configure.s.sol
+SIX_RC=$?
 
 # --- Phase 3: heartbeats (EOA MANAGER), then the backfill completion check -----------------------------
 run_step RealignHeartbeats script/manage/RealignHeartbeats.s.sol || FAILED=1
@@ -646,8 +670,11 @@ done < <(jq -r --slurpfile rec "$REC" 'to_entries[] | select((.key|test("Wallet"
 assert "post-snapshot was taken ON THE FORK (sees the new impl)" \
        '[[ "$(jq -r .implementation "$WORK/post/${CHAIN_ID}.json" | tr A-Z a-z)" == "${NEW_IMPL,,}" ]]'
 assert "Phase-2 value-neutral: diff_snapshots pre->post passes (see $WORK/diff.log)" '[[ $DIFF_RC -eq 0 ]]'
-assert "06_Configure has nothing left to do (no Added/Reconciled)" \
-       '! grep -qaE "Added balance adapter|Reconciled" "$WORK/06_Configure.idempotence.log"'
+# Positive check, not just "no Added/Reconciled": a 06 that REVERTS prints neither, and a gap the swap left
+# (e.g. a double-claimed coordinate) is exactly what makes 06 revert. So require a clean exit AND its own
+# zero-work summary line (`added` counts adapter registrations, `configured` counts instance reconciles).
+assert "06_Configure exits cleanly and has nothing left to do (added 0, configured 0)" \
+       '[[ $SIX_RC -eq 0 ]] && grep -qaE "Balance adapters: added 0 ; meta sets configured 0" "$WORK/06_Configure.idempotence.log"'
 assert "backfill complete: plan() reverts NothingToDo" 'grep -qa NothingToDo "$WORK/Backfill.plan.log"'
 assert "timelock deployed + recorded" '[[ -n "$TL" ]]'
 if [[ -n "$TL" ]]; then

@@ -103,9 +103,10 @@ class ApplyChainTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             tmp = Path(d)
             (tmp / "1.json").write_text(json.dumps(old))
-            orig_dir, orig_dep = c.DEPLOY_DIR, c.deployment
+            orig_dir, orig_dep, orig_names = c.DEPLOY_DIR, c.deployment, sc.enabled_meta_names
             c.DEPLOY_DIR = tmp
             c.deployment = lambda cid: json.loads((tmp / f"{cid}.json").read_text())
+            sc.enabled_meta_names = lambda cid: ["A"]
             try:
                 # first apply: writes the snapshot (OLD addresses) + the cleared record
                 first = sc.apply_chain(1, cleared)
@@ -120,7 +121,48 @@ class ApplyChainTest(unittest.TestCase):
                 snap2 = json.loads((tmp / "1.pre-swap.json").read_text())
                 self.assertEqual(snap2["balanceAdapters"]["A"], "0xOLD")  # NOT overwritten with ""
             finally:
-                c.DEPLOY_DIR, c.deployment = orig_dir, orig_dep
+                c.DEPLOY_DIR, c.deployment, sc.enabled_meta_names = orig_dir, orig_dep, orig_names
+
+
+class PreservedSnapshotCheckTest(unittest.TestCase):
+    """A preserved snapshot must be fresh and belong to the current record, else it is refused (claude-review)."""
+
+    NOW = 2_000_000_000
+    RECORD = {"NAVCalculatorProxy": "0xPROXY", "balanceAdapters": {"A": "", "Plain": "0xppp"}}
+
+    def _snap(self, **over):
+        snap = {"NAVCalculatorProxy": "0xPROXY", "balanceAdapters": {"A": "0xOLD", "Plain": "0xppp"},
+                sc.PRE_SWAP_META_KEY: {"capturedAtUnix": self.NOW - 3600}}
+        snap.update(over)
+        return snap
+
+    def _check(self, snap):
+        orig = sc.enabled_meta_names
+        sc.enabled_meta_names = lambda cid: ["A"]
+        try:
+            sc.check_preserved_snapshot(1, snap, self.RECORD, now=self.NOW)
+        finally:
+            sc.enabled_meta_names = orig
+
+    def test_fresh_consistent_snapshot_is_accepted(self):
+        self._check(self._snap())  # meta key A differs (expected); must not raise
+
+    def test_stale_snapshot_is_refused(self):
+        with self.assertRaises(RuntimeError):
+            self._check(self._snap(**{sc.PRE_SWAP_META_KEY: {"capturedAtUnix": self.NOW - 8 * 24 * 3600}}))
+
+    def test_unstamped_snapshot_is_refused(self):
+        snap = self._snap(); del snap[sc.PRE_SWAP_META_KEY]
+        with self.assertRaises(RuntimeError):
+            self._check(snap)
+
+    def test_different_proxy_is_refused(self):
+        with self.assertRaises(RuntimeError):
+            self._check(self._snap(NAVCalculatorProxy="0xOTHER"))
+
+    def test_non_meta_adapter_drift_is_refused(self):
+        with self.assertRaises(RuntimeError):
+            self._check(self._snap(balanceAdapters={"A": "0xOLD", "Plain": "0xDIFFERENT"}))
 
 
 if __name__ == "__main__":

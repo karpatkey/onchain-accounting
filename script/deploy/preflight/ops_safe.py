@@ -181,6 +181,20 @@ def verify_safe(rpc: str, safe: str, owner: str) -> int:
     return int(cast("call", safe, "nonce()(uint256)", "--rpc-url", rpc).split()[0])
 
 
+def settled(fn, what: str, tries: int = 12, delay: float = 5.0):
+    """Retry a post-send read until it passes. Load-balanced RPCs can serve a read from a replica that is
+    behind the node that returned the receipt (observed on Base: "no code at Safe" 0 s after a mined deploy).
+    A false failure here is dangerous — it invites a re-send — so wait out the lag before reporting one."""
+    import time
+    for i in range(tries):
+        try:
+            return fn()
+        except OpsSafeError as e:
+            if i == tries - 1:
+                raise OpsSafeError(f"{what} still failing after {int(tries * delay)} s: {e}")
+            time.sleep(delay)
+
+
 def send(rpc: str, to: str, data: str, signer: list[str], gas_limit: int | None) -> dict:
     extra = ["--gas-limit", str(gas_limit)] if gas_limit else []
     r = json.loads(cast("send", to, data, "--rpc-url", rpc, "--json", *extra, *signer))
@@ -211,7 +225,7 @@ def cmd_deploy(a, signer: list[str]) -> int:
         print(f"SIMULATION: would deploy ops Safe at {safe} (owner {a.owner}, threshold 1). Re-run with --send.")
         return 0
     r = send(a.rpc_url, SAFE_PROXY_FACTORY, data, signer, None)
-    verify_safe(a.rpc_url, safe, a.owner)
+    settled(lambda: verify_safe(a.rpc_url, safe, a.owner), "post-deploy Safe verification")
     print(f"DEPLOYED + verified: {safe}  tx {r.get('transactionHash')}  gas {int(str(r.get('gasUsed')), 0)}")
     return 0
 
@@ -247,9 +261,12 @@ def cmd_exec(a, signer: list[str]) -> int:
     topics = [(l.get("address", "").lower(), (l.get("topics") or [""])[0].lower()) for l in r.get("logs", [])]
     if (a.safe.lower(), bad_t) in topics or (a.safe.lower(), ok_t) not in topics:
         raise OpsSafeError(f"tx {r.get('transactionHash')} mined but the Safe did not emit ExecutionSuccess")
-    nonce_after = int(cast("call", a.safe, "nonce()(uint256)", "--rpc-url", a.rpc_url).split()[0])
-    if nonce_after != nonce_before + 1:
-        raise OpsSafeError(f"Safe nonce {nonce_before} -> {nonce_after}, expected +1")
+    def nonce_advanced() -> int:
+        n = int(cast("call", a.safe, "nonce()(uint256)", "--rpc-url", a.rpc_url).split()[0])
+        if n != nonce_before + 1:
+            raise OpsSafeError(f"Safe nonce {nonce_before} -> {n}, expected +1")
+        return n
+    nonce_after = settled(nonce_advanced, "post-exec nonce check (the tx IS mined with ExecutionSuccess — do NOT re-send)")
     print(f"EXECUTED atomically: tx {r.get('transactionHash')}  gasUsed {int(str(r.get('gasUsed')), 0)}  "
           f"Safe nonce {nonce_before} -> {nonce_after}")
     return 0

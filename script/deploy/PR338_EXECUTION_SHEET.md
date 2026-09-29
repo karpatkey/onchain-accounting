@@ -206,6 +206,11 @@ cast send $NAV "revokeRole(bytes32,address)" $MANAGER_ROLE $OPS \
   --rpc-url "$RPC" "${CAST_SIGNER[@]}" "${CAST_GAS[@]}"     # primary ops-Safe revoke (11 is the backstop)
 ```
 
+**Snapshot timing:** `snapshot_production.py` reads a block a few behind the head, so a snapshot taken right
+after a transaction can predate it (observed on mainnet: s1 read 2 blocks before the upgrade). Every
+after-snapshot must show the post-step state before it counts: s1's `implementation` is the new impl, and
+s2's `block` is ≥ the wallet-adds block. Otherwise re-take it.
+
 **Expected NAV delta ≈ 0** (H7 = 0 measured on every swap chain). Any material move is a regression, not
 the double-count closing — stop and investigate.
 

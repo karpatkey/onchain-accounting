@@ -90,3 +90,18 @@ new adapter here — this chain proves the mechanics; Base/Arbitrum are the firs
 | `06` idempotence | — | nothing left |
 | revoke ops Safe MANAGER | `0x5b79252143f68a80576db5f513b5a8153d6c5ec2b3dd396cc410314945922e7d` | ops Safe holds no role |
 | Phase 3 heartbeats | — | nothing to realign; `verify()` OK; backfill `NothingToDo` |
+
+### 1 Ethereum — 2026-09-29 (Phase 2 + 3)
+
+| Step | Tx | Result |
+|---|---|---|
+| snapshot s0 | — | block 26086301, impl `0x40e41348`, NAV $132,308,262.00, 0 errors; 18 meta sets / 74 instances = this morning's pre-snapshot |
+| `upgradeToAndCall` | `0x55c51f1d4ea5f9941523d9ffd9717c13a9748976eaaedfb10a91dff02a83a0a1` (block 26086307) | `upgrade` gate 3/3 |
+| snapshot s1 | — | first s1 read block 26086305, BEFORE the upgrade (snapshot block lag) — discarded; re-taken at 26086309 on the new impl: **0 differences vs s0** |
+| swap batch (54 calls, 18 meta adapters; every instance set = pre-snapshot) | `0x0aad6aba8d718a8d5a102426aebe7f1c67140a0162c55efdef1ffb8b72d06ae1` | gas 6,297,714 (= rehearsal); BalancerV2 Pools/Gauges skipped (not configured on mainnet) |
+| wallet-adds batch (16 adapters, 23 coordinates, all = config) | `0x6bac365065a9ba5ef98c18cb8c7e42dd1dff6b69ba3d42651455127b5572d38f` | gas 3,057,205 (= rehearsal) |
+| `swap` gate | — | 150/150 |
+| snapshot s2 | — | 130→130 positions, none lost/added; 87 now read by NEW adapters (23 reclassified: 19 Wallet→Staking, 4 Wallet→Supplied); NAV +$372.74 (+0.0003%) over 70 blocks; only decreases = Balancer V3 LP composition shifts ($1–$54 positions); 1 transient stale WBTC on a $0 Uniswap V3 Fees leg (BTC/USD feed mid-heartbeat), 0 flags on re-snapshot |
+| `06` idempotence | — | nothing left |
+| revoke ops Safe MANAGER | `0xe1fbb65cf7849529f6db805987726190c7c87fb9a639b2897f8a88dc16a93cf1` | ops Safe holds no role |
+| Phase 3 heartbeats | `0xe5081f96e0070549f6e82396a3b7a2857b90f90cad1efb976eb54d244364daf1` | weETH monitor feed → 21600 s; `verify()` OK; backfill `NothingToDo` |

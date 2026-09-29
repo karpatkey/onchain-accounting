@@ -39,3 +39,24 @@ Broadcast details: `broadcast/01_2_*/<chainId>/`, `broadcast/04_*/<chainId>/`.
 
 Note: the tracked Optimism account holds only wallet ETH/COMP/USDC/USDT, so no live position went through a
 new adapter here — this chain proves the mechanics; Base/Arbitrum are the first with positions in swapped adapters.
+
+### 100 Gnosis — 2026-09-29
+
+| Step | Tx | Result |
+|---|---|---|
+| snapshot s0 | — | block 48504550, impl `0x40e41348`, NAV $5.034, 0 errors |
+| `upgradeToAndCall` | `0x32b927189560a63f6e70e290505396a237af3b4b66dfa47df4bb7b453cb5e410` | `upgrade` gate 3/3 |
+| snapshot s1 | — | **0 differences vs s0** |
+| swap batch (9 calls: AaveV3, StakeWiseV3Vaults, UniswapV3Pools) | `0x9943d00fc1dfa0ed87f9ff1e39caccec4d89efb6fe977fb602952657f37b7df1` | gas 1,034,627 (= rehearsal) |
+| wallet-adds batch (Lido, SkySavings, StakeWise osToken) | `0xaf21247b19cb0b5b8d0b0c0e23020ae3646bed16e84092541f60e7348de23f2e` | gas 579,200 (= rehearsal) |
+| `swap` gate | — | 27/27 |
+| snapshot s2 | — | every amount identical except Aave WXDAI collateral +interest (read through the NEW Aave adapter); sDAI Wallet → Supplied, same amount; 0 health flags |
+| `06` idempotence | — | nothing left |
+| revoke ops Safe MANAGER | `0x6265780dd9d88dd4ec16c2382a8121e60fc589214ff8223a42c94864c8d231cb` | ops Safe holds no role |
+
+## Phase 3 — heartbeats
+
+| Chain | Result |
+|---|---|
+| 10 Optimism | nothing to realign (10 configured heartbeats already match); `verify()` OK; backfill `NothingToDo` |
+| 100 Gnosis | nothing to realign; `verify()` OK; backfill `NothingToDo` |

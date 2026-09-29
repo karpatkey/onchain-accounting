@@ -586,6 +586,7 @@ rm -rf "$WORK/pre" "$WORK/post"
 echo "--- pre-snapshot (fork, before any step)"
 snap "$WORK/pre" || { echo "pre-snapshot failed; see $WORK/pre.log"; tail -5 "$WORK/pre.log"; exit 1; }
 PRE_IMPL="$(impl_of)"
+FORK_HEAD="$(cast block-number --rpc-url "$RPC")"
 echo "pre-upgrade impl: $PRE_IMPL"
 
 # --- 0b. live swap-set sidecar: which enabled meta keys are REGISTERED pre-swap, and their set sizes ----
@@ -606,6 +607,10 @@ grep -E "meta key|WARN" "$WORK/clear.log" | head -4 | sed 's/^/  /'
 run_step 01_2_DeployNAVImplementation script/deploy/01_2_DeployNAVImplementation.s.sol || FAILED=1
 ALLOW_ALREADY=1 run_step 04_DeployBalanceAdapters script/deploy/04_DeployBalanceAdapters.s.sol || FAILED=1
 NEW_IMPL="$(jq -r '.NAVCalculatorImplementation // ""' "$REC")"
+# The live sheet's gates, run here so each is rehearsed before it is trusted on a real chain.
+CHECK=script/deploy/preflight/pr338_check.py
+gate() { local g="$1"; shift; python3 "$CHECK" "$g" "$CHAIN_ID" --rpc-url "$RPC" "$@" > "$WORK/gate-$g.log" 2>&1; }
+gate phase1 --pre "$WORK/pre"; GATE_P1=$?
 echo "--- deploy the 1/1 ops Safe (ops_safe.py deploy)"
 python3 "$OPS_TOOL" deploy --rpc-url "$RPC" --owner "$DEPLOYER" --send -- --unlocked --from "$DEPLOYER" 2>&1 \
   | sed 's/^/    /'
@@ -615,6 +620,7 @@ send_tx grant-ops-MANAGER "$DEPLOYER" "$NAV" "$(cast calldata 'grantRole(bytes32
 # --- Phase 2: upgrade (EOA, needs ADMIN), upgrade-landed gate, swap, wallet adds ------------------------
 send_tx upgradeToAndCall "$DEPLOYER" "$NAV" "$(cast calldata 'upgradeToAndCall(address,bytes)' "$NEW_IMPL" 0x)" || FAILED=1
 GOT_IMPL="$(impl_of)"
+gate upgrade --pre "$WORK/pre"; GATE_UP=$?
 echo "impl after upgrade: $GOT_IMPL (record: $NEW_IMPL)"
 
 OPS_SAFE="$OPS" sim_step SwapMetaAdapter.plan script/manage/SwapMetaAdapter.s.sol --sig 'plan()'
@@ -635,6 +641,8 @@ python3 script/deploy/preflight/emit_wallet_adds_batch.py "$CHAIN_ID" --safe "$O
 if [[ "${PIPESTATUS[0]}" != 0 ]]; then FAILED=1
 elif [[ -f "$WALLET_JSON" ]]; then ops_exec wallet-adds-batch "$WALLET_JSON" || FAILED=1
 else echo -e "wallet-adds-batch\t0\t0\tNONE" >> "$WORK/steps.tsv"; fi
+
+gate swap --pre "$WORK/pre"; GATE_SWAP=$?
 
 # --- Phase-2 value-neutrality check: post-snapshot NOW, before Phase 3/4 intentionally change heartbeats
 #     and roles (which the structural diff would otherwise, correctly, flag). ---------------------------
@@ -668,9 +676,16 @@ if [[ -n "$TL" ]]; then
   send_tx timelock-execute "$EXECUTOR" "$TL" "$(cast calldata 'execute(address,uint256,bytes,bytes32,bytes32)' "$NAV" 0 "$PAYLOAD" "$ZERO32" "$SALT")" || FAILED=1
 fi
 
+# Census from the fork block: grants made DURING the rehearsal are what it can get wrong; pre-fork holders are
+# the live chain's and are covered by the live census (and by the explicit hasRole checks either way).
+gate roles --ops-safe "$OPS" --council-retains --from-block "$FORK_HEAD"; GATE_ROLES=$?
+
 # --- assertions ----------------------------------------------------------------------------------------
 echo; echo "=== post-conditions ==="
 DEFAULT="$(jq -r '.balanceAdapters.ERC20Default' "$REC")"
+for G in P1:phase1 UP:upgrade SWAP:swap ROLES:roles; do
+  v="GATE_${G%%:*}"; assert "pr338_check.py ${G#*:} gate passes (see $WORK/gate-${G#*:}.log)" "[[ ${!v} -eq 0 ]]"
+done
 assert "upgrade landed: 1967 slot == recorded new impl" '[[ -n "$NEW_IMPL" && "${GOT_IMPL,,}" == "${NEW_IMPL,,}" ]]'
 assert "impl actually changed (new != pre-upgrade $PRE_IMPL)" '[[ "${GOT_IMPL,,}" != "${PRE_IMPL,,}" ]]'
 for name in "${!LIVE[@]}"; do

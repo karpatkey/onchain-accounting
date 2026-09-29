@@ -1,5 +1,17 @@
 # PR #338 migration runbook — claimant map, wallet-yield reclassification, timelock install
 
+> **To execute the migration, follow [`PR338_EXECUTION_SHEET.md`](PR338_EXECUTION_SHEET.md).** It is the
+> rehearsed command list and it supersedes this document's *step list*. Parts of §1–§3 below predate the
+> in-place fork rehearsal and are stale:
+>
+> - there are **8** asset chains, including Arc (5042);
+> - the retired Cap adapter is already deregistered on chain 1, so there is no Cap step;
+> - the swap runs as **one** ops-Safe transaction per chain via `ops_safe.py`, not a Transaction-Builder import split into 3 batches;
+> - the Council grant is two `cast send`s, not `07` step 1;
+> - rollback order is in the sheet's §5.
+>
+> Keep reading here for the *why*: hazards H1–H12, the claimant map and the timelock trade-offs.
+
 **Audience: the operator executing this migration.** Every transaction below is prepared by a script in
 this repo; nothing here asks you to hand-build calldata. The person who wrote these scripts did **not**
 broadcast any of them.

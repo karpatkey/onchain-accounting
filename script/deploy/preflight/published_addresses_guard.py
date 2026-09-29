@@ -148,7 +148,8 @@ def published_by_chain(doc_text: str) -> dict[str, dict[str, str]]:
 
 def all_recorded_chains() -> list[str]:
     """Every chainId that has a deployment record on disk."""
-    return [p.stem for p in sorted(RECORDS.glob("*.json"))]
+    # `<chainId>.json` only — sidecars like `<chainId>.pre-swap.json` (snapshot_and_clear_meta) live here too.
+    return [p.stem for p in sorted(RECORDS.glob("*.json")) if p.stem.isdigit()]
 
 
 def check() -> list[str]:

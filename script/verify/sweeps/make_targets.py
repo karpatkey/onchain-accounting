@@ -34,7 +34,7 @@ FEED_BROADCAST = "broadcast/03_DeployPriceFeeds.s.sol/{chain}/run-latest.json"
 def chains(argv):
     if argv:
         return [int(a) for a in argv]
-    return sorted(int(f[:-5]) for f in os.listdir(DEPLOY_DIR) if f.endswith(".json"))
+    return sorted(int(f[:-5]) for f in os.listdir(DEPLOY_DIR) if f.endswith(".json") and f[:-5].isdigit())
 
 
 def main() -> int:

@@ -1,0 +1,34 @@
+{
+  "PriceFeedLib": "0x713e69954e11c2eD19dBB84950674D6a68DBfebc",
+  "NavRegistryLib": "0x55b6AA29D296Eb2Ee0e7b76686eaA2e479CA3511",
+  "NAVCalculatorImplementation": "0x40e4134849308d53F85A8B685324E2189b13ff7D",
+  "BridgeEscrowImplementation": "0xe2237d9776041514b1AC66856407Ed344b480De0",
+  "balanceAdapters": {
+    "ERC20Default": "0x4Bc39Dce61245F5A63189d1FA03E6D76646f1EE6",
+    "AaveV3InstancesMeta": "0x04Ba6789B4AD5D6CF63Ec9cc301c13F6a8A0210b",
+    "CompoundV3CometsMeta": "0xFB12e2105287604013dAdee87597F8b80390fc82",
+    "MorphoVaultsMeta": "0x64e1ba8B12ee2bFdBDdFd4E0863EdfaaE824C86a",
+    "MorphoMarketsMeta": "0x1a33a8eAE2F927A05e3eaDC87a348323060Ab2a4",
+    "BalancerV3PoolsMeta": "0xbF1785E519067f0471eb5C50A634A7eeE0140A21",
+    "BalancerV3GaugesMeta": "0x9F8ef612cd2F71a76FCDAcc2820f332f74415705",
+    "FluidFTokensMeta": "0x0c312178e10ad15a9DC847d664786146f2C88dcf",
+    "UniswapV3PoolsMeta": "0xACdC33b6a453F629d1ab10A14d3513817F492de7",
+    "MerklRewards": "0xFf2D5A8bf801191eD1292E6DD6792F5D03c5aFBF"
+  },
+  "NAVCalculatorProxy": "0x54EaD2A1dB7456cA917675Ea8908ec8A997c6214",
+  "customPriceFeeds": {
+    "wstETH_L2": "0x24ACa7b73dda9f4f6Fbd366f0537b70C491FEe30",
+    "weETH_L2": "0xE641c8cD8e3f7C31C0312b30cB20620bc80749Ef",
+    "rsETH_L2": "0x500b6920248eAFbB2a11Eaa79193A0C5Cd219c5E",
+    "ezETH_L2": "0xc8FDD6D339864eEd91Ea94f9018439Ff5c98f5EC",
+    "syrupUSDC_L2": "0x925194Ba011f5907943BC1A1CbF7bCaee806aeb5",
+    "weETHCrossRate": "0xA99bE398df4eab668585d5eeC5de7c80f4bB634f",
+    "ezETHCrossRate": "0xCEbB97a1c4aA99EbA63b3885e5BbB76a4893C090",
+    "rsETHCrossRate": "0x4531e81ce4193071311D0De838412cAfCCc0000C"
+  },
+  "AssetKindRegistry": "0xf60467a88C2b4d0f46C0c41C3Ba0C74da3d3CCD0",
+  "$preSwap": {
+    "capturedAtUnix": 1790707723,
+    "note": "written by snapshot_and_clear_meta.py; OLD addresses for SwapMetaAdapter.plan()"
+  }
+}

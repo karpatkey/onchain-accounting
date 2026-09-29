@@ -2,8 +2,8 @@
  "chainId": 10,
  "name": "optimism",
  "rpcSource": "alchemy",
- "block": 157509999,
- "capturedAtUnix": 1790618781,
+ "block": 157553222,
+ "capturedAtUnix": 1790705228,
  "proxy": "0x54EaD2A1dB7456cA917675Ea8908ec8A997c6214",
  "errors": [],
  "implementation": "0x40e4134849308d53f85a8b685324e2189b13ff7d",
@@ -220,7 +220,7 @@
      "symbol": "USD",
      "decimals": 8
     },
-    "timestamp": 1790618775,
+    "timestamp": 1790705221,
     "stalePriceAssets": [],
     "sequencerDown": false,
     "quoteAssetStale": false,
@@ -240,7 +240,7 @@
      "symbol": "USD",
      "decimals": 8
     },
-    "timestamp": 1790618775,
+    "timestamp": 1790705221,
     "stalePriceAssets": [],
     "sequencerDown": false,
     "quoteAssetStale": false,
@@ -260,7 +260,7 @@
      "symbol": "USD",
      "decimals": 8
     },
-    "timestamp": 1790618775,
+    "timestamp": 1790705221,
     "stalePriceAssets": [],
     "sequencerDown": false,
     "quoteAssetStale": false,
@@ -274,13 +274,13 @@
    "address": "0xD20E007881ea62B5922B06D025c9dc1D41962953",
    "label": "ACCOUNT_6_COMPOUND_OPTIMISM",
    "nav": {
-    "value": "493991659264",
+    "value": "513916554750",
     "quoteAsset": {
      "address": "0x0000000000000000000000000000000000000000",
      "symbol": "USD",
      "decimals": 8
     },
-    "timestamp": 1790618775,
+    "timestamp": 1790705221,
     "stalePriceAssets": [],
     "sequencerDown": false,
     "quoteAssetStale": false,
@@ -303,8 +303,8 @@
        "symbol": "USD",
        "decimals": 8
       },
-      "value": "13228341376",
-      "price": "269699412350",
+      "value": "13156424641",
+      "price": "268233174020",
       "priceDecimals": 8,
       "stale": false,
       "quoteAssetStale": false,
@@ -338,8 +338,8 @@
        "symbol": "USD",
        "decimals": 8
       },
-      "value": "18897",
-      "price": "99988436",
+      "value": "18899",
+      "price": "99995869",
       "priceDecimals": 8,
       "stale": false,
       "quoteAssetStale": false,
@@ -373,8 +373,8 @@
        "symbol": "USD",
        "decimals": 8
       },
-      "value": "9997",
-      "price": "99974000",
+      "value": "9995",
+      "price": "99958287",
       "priceDecimals": 8,
       "stale": false,
       "quoteAssetStale": false,
@@ -408,8 +408,8 @@
        "symbol": "USD",
        "decimals": 8
       },
-      "value": "480763288994",
-      "price": "2376024784",
+      "value": "500760101215",
+      "price": "2474852882",
       "priceDecimals": 8,
       "stale": false,
       "quoteAssetStale": false,

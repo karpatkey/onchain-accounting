@@ -3,7 +3,7 @@
   {
    "chainId": 1,
    "name": "mainnet",
-   "block": 26077631,
+   "block": 26084806,
    "proxy": "0x54EaD2A1dB7456cA917675Ea8908ec8A997c6214",
    "implementation": "0x40e4134849308d53f85a8b685324e2189b13ff7d",
    "erc20Default": "0x4bc39dce61245f5a63189d1fa03e6d76646f1ee6",
@@ -17,7 +17,7 @@
   {
    "chainId": 10,
    "name": "optimism",
-   "block": 157509999,
+   "block": 157553222,
    "proxy": "0x54EaD2A1dB7456cA917675Ea8908ec8A997c6214",
    "implementation": "0x40e4134849308d53f85a8b685324e2189b13ff7d",
    "erc20Default": "0x4bc39dce61245f5a63189d1fa03e6d76646f1ee6",
@@ -31,7 +31,7 @@
   {
    "chainId": 56,
    "name": "bsc",
-   "block": 124569802,
+   "block": 124761800,
    "proxy": "0x54EaD2A1dB7456cA917675Ea8908ec8A997c6214",
    "implementation": "0x40e4134849308d53f85a8b685324e2189b13ff7d",
    "erc20Default": "0x4bc39dce61245f5a63189d1fa03e6d76646f1ee6",
@@ -45,7 +45,7 @@
   {
    "chainId": 100,
    "name": "gnosis",
-   "block": 48486306,
+   "block": 48503290,
    "proxy": "0x54EaD2A1dB7456cA917675Ea8908ec8A997c6214",
    "implementation": "0x40e4134849308d53f85a8b685324e2189b13ff7d",
    "erc20Default": "0x4bc39dce61245f5a63189d1fa03e6d76646f1ee6",
@@ -73,7 +73,7 @@
   {
    "chainId": 137,
    "name": "polygon",
-   "block": 94609098,
+   "block": 94666723,
    "proxy": "0x54EaD2A1dB7456cA917675Ea8908ec8A997c6214",
    "implementation": "0x40e4134849308d53f85a8b685324e2189b13ff7d",
    "erc20Default": "0x4bc39dce61245f5a63189d1fa03e6d76646f1ee6",
@@ -185,7 +185,7 @@
   {
    "chainId": 5042,
    "name": "arc",
-   "block": 23238424,
+   "block": 23408736,
    "proxy": "0x54EaD2A1dB7456cA917675Ea8908ec8A997c6214",
    "implementation": "0x40e4134849308d53f85a8b685324e2189b13ff7d",
    "erc20Default": "0x4bc39dce61245f5a63189d1fa03e6d76646f1ee6",
@@ -199,7 +199,7 @@
   {
    "chainId": 8453,
    "name": "base",
-   "block": 51914720,
+   "block": 51957944,
    "proxy": "0x54EaD2A1dB7456cA917675Ea8908ec8A997c6214",
    "implementation": "0x40e4134849308d53f85a8b685324e2189b13ff7d",
    "erc20Default": "0x4bc39dce61245f5a63189d1fa03e6d76646f1ee6",
@@ -241,7 +241,7 @@
   {
    "chainId": 42161,
    "name": "arbitrum",
-   "block": 509784259,
+   "block": 510105857,
    "proxy": "0x54EaD2A1dB7456cA917675Ea8908ec8A997c6214",
    "implementation": "0x40e4134849308d53f85a8b685324e2189b13ff7d",
    "erc20Default": "0x4bc39dce61245f5a63189d1fa03e6d76646f1ee6",

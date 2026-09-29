@@ -2,8 +2,8 @@
  "chainId": 42161,
  "name": "arbitrum",
  "rpcSource": "alchemy",
- "block": 509784259,
- "capturedAtUnix": 1790618798,
+ "block": 510105857,
+ "capturedAtUnix": 1790705242,
  "proxy": "0x54EaD2A1dB7456cA917675Ea8908ec8A997c6214",
  "errors": [],
  "implementation": "0x40e4134849308d53f85a8b685324e2189b13ff7d",
@@ -384,13 +384,13 @@
    "address": "0xa57F127099421cEffEd866C1d969f8B0F4fCdbc6",
    "label": "ACCOUNT_1",
    "nav": {
-    "value": "1008618240",
+    "value": "1008623009",
     "quoteAsset": {
      "address": "0x0000000000000000000000000000000000000000",
      "symbol": "USD",
      "decimals": 8
     },
-    "timestamp": 1790618797,
+    "timestamp": 1790705241,
     "stalePriceAssets": [],
     "sequencerDown": false,
     "quoteAssetStale": false,
@@ -413,8 +413,8 @@
        "symbol": "USD",
        "decimals": 8
       },
-      "value": "200428649",
-      "price": "99997979",
+      "value": "200428316",
+      "price": "99997813",
       "priceDecimals": 8,
       "stale": false,
       "quoteAssetStale": false,
@@ -448,8 +448,8 @@
        "symbol": "USD",
        "decimals": 8
       },
-      "value": "203025787",
-      "price": "99960015",
+      "value": "203033550",
+      "price": "99963837",
       "priceDecimals": 8,
       "stale": false,
       "quoteAssetStale": false,
@@ -483,8 +483,8 @@
        "symbol": "USD",
        "decimals": 8
       },
-      "value": "95532408",
-      "price": "99927413",
+      "value": "95549517",
+      "price": "99945309",
       "priceDecimals": 8,
       "stale": false,
       "quoteAssetStale": false,
@@ -518,8 +518,8 @@
        "symbol": "USD",
        "decimals": 8
       },
-      "value": "205339636",
-      "price": "118520583",
+      "value": "205368681",
+      "price": "118537348",
       "priceDecimals": 8,
       "stale": false,
       "quoteAssetStale": false,
@@ -546,15 +546,15 @@
        "decimals": 6
       },
       "balanceAdapter": "0x64e1ba8b12ee2bfdbddfd4e0863edfaae824c86a",
-      "amount": "1026001",
+      "amount": "1026058",
       "isDebt": false,
       "quoteAsset": {
        "address": "0x0000000000000000000000000000000000000000",
        "symbol": "USD",
        "decimals": 8
       },
-      "value": "102598026",
-      "price": "99997979",
+      "value": "102603556",
+      "price": "99997813",
       "priceDecimals": 8,
       "stale": false,
       "quoteAssetStale": false,
@@ -582,15 +582,15 @@
        "decimals": 6
       },
       "balanceAdapter": "0x04ba6789b4ad5d6cf63ec9cc301c13f6a8a0210b",
-      "amount": "2033240",
+      "amount": "2033409",
       "isDebt": false,
       "quoteAsset": {
        "address": "0x0000000000000000000000000000000000000000",
        "symbol": "USD",
        "decimals": 8
       },
-      "value": "203319890",
-      "price": "99997979",
+      "value": "203336452",
+      "price": "99997813",
       "priceDecimals": 8,
       "stale": false,
       "quoteAssetStale": false,
@@ -618,15 +618,15 @@
        "decimals": 18
       },
       "balanceAdapter": "0x04ba6789b4ad5d6cf63ec9cc301c13f6a8a0210b",
-      "amount": "1035239419400118309",
+      "amount": "1035834867951808518",
       "isDebt": true,
       "quoteAsset": {
        "address": "0x0000000000000000000000000000000000000000",
        "symbol": "USD",
        "decimals": 8
       },
-      "value": "-103448797",
-      "price": "99927413",
+      "value": "-103526835",
+      "price": "99945309",
       "priceDecimals": 8,
       "stale": false,
       "quoteAssetStale": false,
@@ -654,15 +654,15 @@
        "decimals": 6
       },
       "balanceAdapter": "0x1a33a8eae2f927a05e3eadc87a348323060ab2a4",
-      "amount": "1017922",
+      "amount": "1017994",
       "isDebt": false,
       "quoteAsset": {
        "address": "0x0000000000000000000000000000000000000000",
        "symbol": "USD",
        "decimals": 8
       },
-      "value": "101790142",
-      "price": "99997979",
+      "value": "101797173",
+      "price": "99997813",
       "priceDecimals": 8,
       "stale": false,
       "quoteAssetStale": false,
@@ -690,15 +690,15 @@
        "decimals": 6
       },
       "balanceAdapter": "0x1a33a8eae2f927a05e3eadc87a348323060ab2a4",
-      "amount": "325",
+      "amount": "326",
       "isDebt": false,
       "quoteAsset": {
        "address": "0x0000000000000000000000000000000000000000",
        "symbol": "USD",
        "decimals": 8
       },
-      "value": "32499",
-      "price": "99997979",
+      "value": "32599",
+      "price": "99997813",
       "priceDecimals": 8,
       "stale": false,
       "quoteAssetStale": false,
@@ -731,7 +731,7 @@
      "symbol": "USD",
      "decimals": 8
     },
-    "timestamp": 1790618797,
+    "timestamp": 1790705241,
     "stalePriceAssets": [],
     "sequencerDown": false,
     "quoteAssetStale": false,
@@ -751,7 +751,7 @@
      "symbol": "USD",
      "decimals": 8
     },
-    "timestamp": 1790618797,
+    "timestamp": 1790705241,
     "stalePriceAssets": [],
     "sequencerDown": false,
     "quoteAssetStale": false,
@@ -765,13 +765,13 @@
    "address": "0x530Bfd7DE5D63329E2DF996cf5afB2616524936D",
    "label": "ACCOUNT_7_COMPOUND_ARBITRUM",
    "nav": {
-    "value": "188274229795132",
+    "value": "188290835472597",
     "quoteAsset": {
      "address": "0x0000000000000000000000000000000000000000",
      "symbol": "USD",
      "decimals": 8
     },
-    "timestamp": 1790618797,
+    "timestamp": 1790705241,
     "stalePriceAssets": [],
     "sequencerDown": false,
     "quoteAssetStale": false,
@@ -794,8 +794,8 @@
        "symbol": "USD",
        "decimals": 8
       },
-      "value": "346970206",
-      "price": "269614661382",
+      "value": "345275780",
+      "price": "268298000000",
       "priceDecimals": 8,
       "stale": false,
       "quoteAssetStale": false,
@@ -822,15 +822,15 @@
        "decimals": 6
       },
       "balanceAdapter": "0xfb12e2105287604013dadee87597f8b80390fc82",
-      "amount": "1476596497777",
+      "amount": "1476719261660",
       "isDebt": false,
       "quoteAsset": {
        "address": "0x0000000000000000000000000000000000000000",
        "symbol": "USD",
        "decimals": 8
       },
-      "value": "147656665576177",
-      "price": "99997979",
+      "value": "147668696580974",
+      "price": "99997813",
       "priceDecimals": 8,
       "stale": false,
       "quoteAssetStale": false,
@@ -858,15 +858,15 @@
        "decimals": 6
       },
       "balanceAdapter": "0x0c312178e10ad15a9dc847d664786146f2c88dcf",
-      "amount": "406180381393",
+      "amount": "406226820339",
       "isDebt": false,
       "quoteAsset": {
        "address": "0x0000000000000000000000000000000000000000",
        "symbol": "USD",
        "decimals": 8
       },
-      "value": "40617217248749",
-      "price": "99997979",
+      "value": "40621793615843",
+      "price": "99997813",
       "priceDecimals": 8,
       "stale": false,
       "quoteAssetStale": false,

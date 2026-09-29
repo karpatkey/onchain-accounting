@@ -2,8 +2,8 @@
  "chainId": 100,
  "name": "gnosis",
  "rpcSource": "alchemy",
- "block": 48486306,
- "capturedAtUnix": 1790618781,
+ "block": 48503290,
+ "capturedAtUnix": 1790705228,
  "proxy": "0x54EaD2A1dB7456cA917675Ea8908ec8A997c6214",
  "errors": [],
  "implementation": "0x40e4134849308d53f85a8b685324e2189b13ff7d",
@@ -298,13 +298,13 @@
    "address": "0xa57F127099421cEffEd866C1d969f8B0F4fCdbc6",
    "label": "ACCOUNT_1",
    "nav": {
-    "value": "502316564",
+    "value": "502288078",
     "quoteAsset": {
      "address": "0x0000000000000000000000000000000000000000",
      "symbol": "USD",
      "decimals": 8
     },
-    "timestamp": 1790618765,
+    "timestamp": 1790705210,
     "stalePriceAssets": [],
     "sequencerDown": false,
     "quoteAssetStale": false,
@@ -327,8 +327,8 @@
        "symbol": "USD",
        "decimals": 8
       },
-      "value": "199905445",
-      "price": "99976826",
+      "value": "199876244",
+      "price": "99962222",
       "priceDecimals": 8,
       "stale": false,
       "quoteAssetStale": false,
@@ -363,7 +363,7 @@
        "decimals": 8
       },
       "value": "1818",
-      "price": "125898305",
+      "price": "125894729",
       "priceDecimals": 8,
       "stale": false,
       "quoteAssetStale": false,
@@ -397,8 +397,8 @@
        "symbol": "USD",
        "decimals": 8
       },
-      "value": "99777989",
-      "price": "99928624",
+      "value": "99800838",
+      "price": "99951508",
       "priceDecimals": 8,
       "stale": false,
       "quoteAssetStale": false,
@@ -425,15 +425,15 @@
        "decimals": 18
       },
       "balanceAdapter": "0x04ba6789b4ad5d6cf63ec9cc301c13f6a8a0210b",
-      "amount": "2026782813342274562",
+      "amount": "2026857487450910560",
       "isDebt": false,
       "quoteAsset": {
        "address": "0x0000000000000000000000000000000000000000",
        "symbol": "USD",
        "decimals": 8
       },
-      "value": "202631312",
-      "price": "99976826",
+      "value": "202609178",
+      "price": "99962222",
       "priceDecimals": 8,
       "stale": false,
       "quoteAssetStale": false,
@@ -460,13 +460,13 @@
    "address": "0x99b9F5F24205Cb88E33b1CC72008f644Fc23768b",
    "label": "ACCOUNT_2",
    "nav": {
-    "value": "999768",
+    "value": "999622",
     "quoteAsset": {
      "address": "0x0000000000000000000000000000000000000000",
      "symbol": "USD",
      "decimals": 8
     },
-    "timestamp": 1790618765,
+    "timestamp": 1790705210,
     "stalePriceAssets": [],
     "sequencerDown": false,
     "quoteAssetStale": false,
@@ -489,8 +489,8 @@
        "symbol": "USD",
        "decimals": 8
       },
-      "value": "999768",
-      "price": "99976826",
+      "value": "999622",
+      "price": "99962222",
       "priceDecimals": 8,
       "stale": false,
       "quoteAssetStale": false,
@@ -522,7 +522,7 @@
      "symbol": "USD",
      "decimals": 8
     },
-    "timestamp": 1790618765,
+    "timestamp": 1790705210,
     "stalePriceAssets": [],
     "sequencerDown": false,
     "quoteAssetStale": false,

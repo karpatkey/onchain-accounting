@@ -431,4 +431,7 @@ def main() -> int:
 
 
 if __name__ == "__main__":
+    # Load .env like the other preflight tools: without it every chain silently reports "NOT AUDITED"
+    # and the run still looks like a clean pass on its summary lines (observed 2026-09-29).
+    chainlib.load_env()
     sys.exit(main())

@@ -100,5 +100,6 @@
   "NexusMutualStakingPoolsAssistant": "0xC528664DA4B972cCc6c39649da1388a1e756bf91",
   "EtherFiWithdrawalQueueAssistant": "0x03663a1BC7adf766a98421c5C1C1E4E01d45c476",
   "StakeWiseV3ExitQueueAssistant": "0x28bA4320CF3936964268C82F198CAB0626b7d1aD",
-  "AssetKindRegistry": "0xf60467a88C2b4d0f46C0c41C3Ba0C74da3d3CCD0"
+  "AssetKindRegistry": "0xf60467a88C2b4d0f46C0c41C3Ba0C74da3d3CCD0",
+  "TimelockController": "0xAB92EA75D07792915eB1f29259354866B880dFC2"
 }

@@ -214,7 +214,11 @@ s2's `block` is ≥ the wallet-adds block. Otherwise re-take it.
 **Expected NAV delta ≈ 0** (H7 = 0 measured on every swap chain). Any material move is a regression, not
 the double-count closing — stop and investigate.
 
-## 3. Phase 3 — heartbeats (deployer EOA; every chain, after its Phase 2)
+## 3. Phase 3 — heartbeats (deployer EOA; every chain with an asset config, after its Phase 2)
+
+Chains with no `nav-config/assets-and-price-feeds/<id>.json` (the empty chains) register only the native asset
+at initialize and declare no heartbeat, so there is nothing to realign — `RealignHeartbeats` reverts reading the
+missing config. Record "N/A" for them.
 
 ```bash
 . script/deploy/preflight/pr338_env.sh $C

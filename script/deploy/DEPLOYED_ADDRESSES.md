@@ -4,7 +4,7 @@ Canonical deployed-address reference for the Onchain Accounting System (NAV). Th
 
 Deployed across **25 chains**: 8 fully configured (custom price feeds + balance adapters) + 17 with the NAV implementation + proxy only.
 
-- **Roles (current):** the deployer EOA `0xAa5A7C7Ea51F276301f881F9CCB501a1dFeF4F72` holds `DEFAULT_ADMIN_ROLE` + `MANAGER` on every chain. Handoff to the karpatkey security-council Safe `0x8b884f80B3B839F52b6cE168f133e7a5D1f0A537` (via `07_TransferAdminToSecurityCouncil`) is **deferred** until the operational handover — step 07 has not been run.
+- **Roles (current, 2026-10-01 — PR #338 timelock handoff in progress):** on 24 chains `DEFAULT_ADMIN_ROLE` + `MANAGER` on the NAV are held by the `TimelockController` `0xAB92EA75D07792915eB1f29259354866B880dFC2`, the security-council Safe `0x8b884f80B3B839F52b6cE168f133e7a5D1f0A537` (5-of-8) and — until the final revoke step — the deployer EOA `0xAa5A7C7Ea51F276301f881F9CCB501a1dFeF4F72`; `AssetKindRegistry` holds `MANAGER` only, by design. On X Layer (196) the deployer is still the only admin (its Council Safe is 2-of-8; ops decision pending). Step list: `script/deploy/PR338_EXECUTION_SHEET.md`; tx record: `script/deploy/PR338_DEPLOY_LOG.md`.
 - **Bridge:** deployed-but-dormant — only the `BridgeEscrow` implementation is deployed (no proxy, adapters, or wiring).
 - **Polygon zkEVM is intentionally excluded** — the network is being sunset by Polygon, so the system is not deployed there.
 
@@ -35,6 +35,7 @@ The throwaway 1/1 ops Safe `0xEEd8dC3c034Be12ff66646cCaAf07D35C43E8AA1` that exe
 | NAVRegistryLib | `0x3D5369B0b2044d62a8f643bf9a2b8CC03775934D` |
 | ERC20Default balance adapter | `0x4Bc39Dce61245F5A63189d1FA03E6D76646f1EE6` (created inside `NAVCalculator.initialize`; identical everywhere) |
 | UUPSPlaceholder | `0x85Ee38b0385D042918a59C01dB319b6eDdF7A8Cf` (temporary impl during atomic proxy deploy) |
+| TimelockController | `0xAB92EA75D07792915eB1f29259354866B880dFC2` — OpenZeppelin `TimelockController` (CREATE2, identical on every chain it is recorded on; 24 of 25, not X Layer yet). `minDelay` 0, proposer + canceller = the security-council Safe, open executor, self-administered. Holds `DEFAULT_ADMIN_ROLE` + `MANAGER` on the NAV (PR #338) |
 | BridgeEscrow implementation | `0xe2237d9776041514b1AC66856407Ed344b480De0` (dormant; recorded on 23 chains — no record on HyperEVM (999) or Arc (5042), the two in-scope chains brought up without the bridge layer) |
 
 **Superseded 2026-08-18** (do not call): proxy `0x80eD5cc6cEbAe4fEE1eD8687279aa492A50afa8d`,

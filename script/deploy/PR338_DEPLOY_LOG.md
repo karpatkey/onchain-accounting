@@ -212,3 +212,21 @@ historical reads). The deployer still holds ADMIN + MANAGER everywhere — pass 
 | 59144 | `0xc56f437defe222150e9b0941d982376f8434db71196dbb1a53ee903d473e6726` | `0x26187b22ed79b5a9e7d5543ea3609a4f06a84f085af7787ada4470b99d0262d4` |
 | 80094 | `0x37291d0c2b0928953366424fe607295a423c53ffc72f34f1ffa0745cc5865a35` | `0x2c4963eb0ce0b4b23109126a1186857c30b0a8ef83c0ce7fae338f1b62aa6580` |
 | 534352 | `0xed675140d2f498a86934cc8f0120daeb0be8ccb0930de2d00762086bfc4eac99` | `0x6e708c034c9052739810d94376db87bb5bccca2507f36081e427ab1a67bf6a33` |
+
+## Full audit — 2026-10-01 (read-only, before pass 2)
+
+- **All 25 chains** (part 1): 1967 impl slot = `0xA7243DCD…` on every endpoint (≥2 per chain; Arc 1); implementation,
+  PriceFeedLib, NAVRegistryLib and timelock bytecode identical fleet-wide; NAV role census from the proxy's
+  creation block exact on every chain ({timelock, Council, deployer, AssetKindRegistry}; X Layer {deployer,
+  AssetKindRegistry}); AssetKindRegistry holds no ADMIN; ops Safe holds no NAV role and is still 1/1 deployer;
+  the timelock's own roles exact (admin = itself, proposer + canceller = Council, executor = open, minDelay 0,
+  nothing else ever granted); Council Safe 5-of-8 everywhere except X Layer (2-of-8); no pending deployer tx.
+- **8 asset chains** (part 2): `swap` gates all pass (ETH 150/150 …); RealignHeartbeats `verify()` OK; `06` has
+  nothing left; fresh snapshots 0 errors / 0 health flags. Diff vs the pre-migration baseline: only the intended
+  changes (Council roles; ETH weETH monitor heartbeat 86400 → 21600) plus ~2 days of market/account activity.
+  stETH reclassified Wallet → Staking (Lido) with amounts up only by rebase; ACCOUNT_11's rETH left the account
+  on-chain (balance 0); the RocketPool wallet adapter was spot-checked to report a holder's exact rETH balance.
+- **Verification**: 169 contracts (libs, impl, timelock, every adapter 04 created) — all verified on the chain's
+  explorer; Arbitrum's timelock on Sourcify while Arbiscan's queue drains.
+- **Records/CI**: `DEPLOYED_ADDRESSES.md` now lists the timelock; the address guard additionally checks every
+  canonical-layer contract is one address fleet-wide and published (`526e4d4d`); CI 11/11 green.

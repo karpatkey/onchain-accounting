@@ -1,0 +1,18 @@
+{
+  "PriceFeedLib": "0x713e69954e11c2eD19dBB84950674D6a68DBfebc",
+  "NavRegistryLib": "0x55b6AA29D296Eb2Ee0e7b76686eaA2e479CA3511",
+  "NAVCalculatorImplementation": "0x40e4134849308d53F85A8B685324E2189b13ff7D",
+  "BridgeEscrowImplementation": "0xe2237d9776041514b1AC66856407Ed344b480De0",
+  "balanceAdapters": {
+    "ERC20Default": "0x4Bc39Dce61245F5A63189d1FA03E6D76646f1EE6",
+    "MorphoMarketsMeta": "0x5C951CF5C596BC4908A5fd846710070553830b06",
+    "MerklRewards": "0xFf2D5A8bf801191eD1292E6DD6792F5D03c5aFBF"
+  },
+  "NAVCalculatorProxy": "0x54EaD2A1dB7456cA917675Ea8908ec8A997c6214",
+  "customPriceFeeds": {},
+  "AssetKindRegistry": "0xf60467a88C2b4d0f46C0c41C3Ba0C74da3d3CCD0",
+  "$preSwap": {
+    "capturedAtUnix": 1790727578,
+    "note": "written by snapshot_and_clear_meta.py; OLD addresses for SwapMetaAdapter.plan()"
+  }
+}

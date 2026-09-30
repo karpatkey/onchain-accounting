@@ -145,3 +145,9 @@ switched on for the deployer, then off.
 | 59144 Linea | `0x8baff2246283227cbca14f8a91f8955d7601da6362a541e6551281b00b4d8b0c` |
 | 80094 Berachain | `0x400fb17e071e175cc4dfcb57c69faa83a10dfc66e15e3215b5d19836656c1f97` |
 | 534352 Scroll | `0x1da7be3fe3046275d98d80be5f9c235b1e27a7241e6d51a27394b98a28e01714` |
+
+Verification (2026-09-30): PriceFeedLib, NAVRegistryLib and the implementation are source-verified on all 17
+upgrade-only chains — Etherscan V2 on 130, 143, 146, 204, 480, 999, 5000, 9745, 42220, 43114, 59144, 80094;
+Sourcify on the five Etherscan V2 does not serve (196 XLayer, 16661 0G, 43111 Hemi, 57073 Ink, 534352 Scroll).
+Every PR #338 contract on the 8 asset chains is verified on Etherscan, except Arbitrum (Sourcify; Arbiscan's
+queue has held every submission "Pending").

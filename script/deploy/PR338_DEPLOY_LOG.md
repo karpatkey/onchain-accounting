@@ -181,7 +181,7 @@ Two passes, keeping the deployer until everything has landed:
 | 130 Unichain | roles 11/11 | `0xea63b326c4bc7a9d28c2571e7b9ab2369aadbff781e3f1877b4ee0476e574366` | `0xf5d8118ced21ef2d2587a0a24b024ea602a78c242819c9190dc99a7fd78bab12` | exactly {timelock, Council, deployer, AssetKindRegistry} |
 
 ### Pass 1 complete — 2026-10-01: timelock granted ADMIN + MANAGER by the deployer on all 24 chains
-Per chain: fork dry-run of the full deployer sequence (strict  gate 11/11), then the two live grants
+Per chain: fork dry-run of the full deployer sequence (strict `roles` gate 11/11), then the two live grants
 (simulated, confirmed), then a live census from the proxy's creation block = exactly {timelock, Council, deployer,
 AssetKindRegistry}. Census via Etherscan logs on Arc, Berachain and Mantle (their RPCs can't serve the log range /
 historical reads). The deployer still holds ADMIN + MANAGER everywhere — pass 2 (revoke) waits for the go.

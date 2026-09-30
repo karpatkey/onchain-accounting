@@ -14,8 +14,8 @@ K="${ETHERSCAN_API_KEY%$'\r'}"; K="${K//\"/}"
 unset DEPLOYER_KEYSTORE_PASSWORD DEPLOYER2_KEYSTORE_PASSWORD   # not needed to verify; keep them out of child envs
 REC=script/config/deployments/$C.json
 targets=()
-# adapters created by 04 on this chain
-while IFS=$'\t' read -r key addr; do targets+=("$addr|${key}BalanceAdapter"); done < <(
+# adapters created by 04 on this chain (upgrade-only chains ran no 04 — nothing to add)
+[[ -f broadcast/04_DeployBalanceAdapters.s.sol/$C/run-latest.json ]] && while IFS=$'\t' read -r key addr; do targets+=("$addr|${key}BalanceAdapter"); done < <(
   jq -r --slurpfile b broadcast/04_DeployBalanceAdapters.s.sol/$C/run-latest.json '
     ($b[0].transactions | map(select(.contractAddress) | .contractAddress | ascii_downcase)) as $new
     | .balanceAdapters | to_entries[] | select((.value|type)=="string" and ((.value|ascii_downcase) as $v | $new | index($v))) | [.key, .value] | @tsv' $REC)

@@ -19,12 +19,20 @@ Deployed via the canonical CREATE2 deployer (`0x4e59b44847b379578588920cA78FbF26
 maintained, so it will drift from the funds' true NAV as new assets and feeds land only on the new
 stack. Consumers must move to `0x54EaD2A1…`.
 
+**Upgraded in place 2026-09-29/30 (PR #338).** The proxy did not move; the implementation, both libraries and
+every meta balance adapter did (the shared `MetaBalanceAdapter` base changed), and 17 wallet-yield meta adapters
+were added. Superseded (still on-chain, unused): implementation `0x40e4134849308d53F85A8B685324E2189b13ff7D`,
+PriceFeedLib `0x713e69954e11c2eD19dBB84950674D6a68DBfebc`, NAVRegistryLib
+`0x55b6AA29D296Eb2Ee0e7b76686eaA2e479CA3511`; the old meta-adapter addresses are in
+`script/config/deployments/<chainId>.pre-swap.json`. Per-transaction record: `script/deploy/PR338_DEPLOY_LOG.md`.
+The throwaway 1/1 ops Safe `0xEEd8dC3c034Be12ff66646cCaAf07D35C43E8AA1` that executed the swaps holds no role.
+
 | Contract | Address |
 | --- | --- |
 | **NAVCalculator proxy** | `0x54EaD2A1dB7456cA917675Ea8908ec8A997c6214` — the address every consumer should call |
-| NAVCalculator implementation | `0x40e4134849308d53F85A8B685324E2189b13ff7D` |
-| PriceFeedLib | `0x713e69954e11c2eD19dBB84950674D6a68DBfebc` |
-| NAVRegistryLib | `0x55b6AA29D296Eb2Ee0e7b76686eaA2e479CA3511` |
+| NAVCalculator implementation | `0xA7243DCDF7e4D6f8FA20A9F022186C0d0778C2b6` |
+| PriceFeedLib | `0x0f913658d70BB19b7B42eF9926c3df7c70fafCf2` |
+| NAVRegistryLib | `0x3D5369B0b2044d62a8f643bf9a2b8CC03775934D` |
 | ERC20Default balance adapter | `0x4Bc39Dce61245F5A63189d1FA03E6D76646f1EE6` (created inside `NAVCalculator.initialize`; identical everywhere) |
 | UUPSPlaceholder | `0x85Ee38b0385D042918a59C01dB319b6eDdF7A8Cf` (temporary impl during atomic proxy deploy) |
 | BridgeEscrow implementation | `0xe2237d9776041514b1AC66856407Ed344b480De0` (dormant; recorded on 23 chains — no record on HyperEVM (999) or Arc (5042), the two in-scope chains brought up without the bridge layer) |
@@ -62,20 +70,39 @@ CREATE2-identical fleet-wide, so each has the same init-code hash everywhere and
 
 | Adapter | Address | Chains |
 | --- | --- | --- |
-| `AaveV3InstancesMeta` | `0x04Ba6789B4AD5D6CF63Ec9cc301c13F6a8A0210b` | 1, 10, 100, 8453, 42161 |
-| `AaveV4SpokesMeta` | `0xdF1B9d57A40D3866F9EFc9d391EDf9dF51325B59` | 1 |
+| `AaveV3InstancesMeta` | `0xa1b3c695A768A6Ce571fF699F463224CB32260C1` | 1, 10, 100, 8453, 42161 |
+| `AaveV4SpokesMeta` | `0xAd5b905ad5BB13909aE658a1910bC4cdFcD81dE3` | 1 |
 | `AaveV3SafetyModule` | `0xa356717027B5d4010a7449904545E5aFb355Bdc9` | 1 |
-| `BalancerV3PoolsMeta` | `0xbF1785E519067f0471eb5C50A634A7eeE0140A21` | 1, 8453, 42161 |
-| `CurvePoolsMeta` | `0xCf200111050Bc5FFbd5c3e675c598995906c3945` | 1 |
-| `EulerVaultsMeta` | `0xCb28C7d1A27e8FB5ea0e1c75Ef62c80722388135` | 1 |
-| `FluidFTokensMeta` | `0x0c312178e10ad15a9DC847d664786146f2C88dcf` | 1, 137, 8453, 42161 |
-| `GearboxV3MarketsMeta` | `0x160017c8d50D44A8fA3667419a89BA1183daaF38` | 1 |
-| `MorphoVaultsMeta` | `0x64e1ba8B12ee2bFdBDdFd4E0863EdfaaE824C86a` | 1, 42161 |
-| `SymbioticVaultsMeta` | `0x599C72cbd3bDe6D992366130009962B4c2Ec5B23` | 1 |
+| `BalancerV3PoolsMeta` | `0x8AE70624CB7729B0408C8f0ce8ffdac9974FE33A` | 1, 8453, 42161 |
+| `CurvePoolsMeta` | `0x4c25B00401d28d5F6FC65a7Af8386b239FA5e735` | 1 |
+| `EulerVaultsMeta` | `0x331566e8F7b48Fa683fE865403Cf4311b50A7710` | 1 |
+| `FluidFTokensMeta` | `0xb1a03cDD28cAA91f409C417C9f56ab53bc9d7ae9` | 1, 137, 8453, 42161 |
+| `GearboxV3MarketsMeta` | `0xE338E5d4F7adF34107239D59828DEAD2fa2cfD86` | 1 |
+| `MorphoVaultsMeta` | `0x72a012B30b240458C3f79fd20E5c2A907d77e54f` | 1, 42161 |
+| `SymbioticVaultsMeta` | `0x320699dE0693d71C28f5559a68635495AdA0826c` | 1 |
+| `AaveSavingsWalletMeta` | `0x36A3F6424FB9AA5B1a3cDD33B2cE09C0c5035D8F` | 1 |
+| `AnkrStakedEthWalletMeta` | `0xc157f1dF063b161Ec9a89aE25aeBc6fB95b6E90e` | 1 |
+| `CoinbaseStakedEthWalletMeta` | `0x91d437752463B60103d515c16680d0a17C1c91F9` | 8453 |
+| `EthenaSavingsWalletMeta` | `0x51970009da25B52048ACBBB850B11aa198bdC64B` | 1 |
+| `EtherFiStakedEthWalletMeta` | `0x8a6fde256DD9B262596A22BC4a6c8292Fc3a5D65` | 1, 8453, 42161 |
+| `KelpRestakedEthWalletMeta` | `0xc0A8E9FA22F28bDE931624c6A454DE649a790273` | 1, 42161 |
+| `LidoStakedEthWalletMeta` | `0x7ED4F12798ea3f26AE02a6521eE84702CE5f8f90` | 1, 10, 100, 8453, 42161 |
+| `LiquidCollectiveStakedEthWalletMeta` | `0x1473445103673F89Af909387eB905B4328D522D3` | 1 |
+| `MapleSavingsWalletMeta` | `0xDeE2BcC847DFc113ec70296C5D31e055a6cd902b` | 1, 42161 |
+| `NexusMutualVaultsWalletMeta` | `0xeA71c3af5127f7fC0F791FE0bFfF9826Ea589060` | 1 |
+| `RenzoRestakedEthWalletMeta` | `0x9145A559108426e1eA429A2A6441e2A875f069ec` | 1, 42161 |
+| `ReserveBasketsWalletMeta` | `0x11e68edfBc0449b1c863e11b866B7aF4290F8469` | 1 |
+| `RocketPoolStakedEthWalletMeta` | `0x75D1cB3040Dc0322C3f747807360A1Ec03A80eB4` | 1 |
+| `SkySavingsWalletMeta` | `0xb967b206445ca58445d09b6CE9878add5Bb14dd4` | 1, 100 |
+| `SparkSavingsWalletMeta` | `0xd848BE8B5f580C7F8a7f93256DD218cf06CAcd3f` | 1 |
+| `StaderStakedEthWalletMeta` | `0x30c6A35827E3dC294f410073C305C8b3f91f1a4a` | 1 |
+| `StakeWiseV3OsTokenWalletMeta` | `0x818dD183121641B09752891bB7E971b0FE29e101` | 1, 100 |
 
 Each is registered at this address on every chain listed, with no exceptions. The address is a pure function
 of (creation code, NAV proxy, salt version), so it can be re-derived rather than trusted — see
-`test/nav/Create2FleetWideAddresses.t.sol`, which pins all ten and asserts they do not vary by chain.
+`test/nav/Create2FleetWideAddresses.t.sol`, which pins the original ten and asserts they do not vary by chain. The 17
+wallet-yield adapters (added 2026-09-29 by PR #338) are NAV-only too, and are confirmed identical across every chain
+that deploys them by `published_addresses_guard.py` against the records.
 
 **Every other balance adapter and all custom price feeds remain plain CREATE, and correctly so:** their
 constructors take chain-specific protocol addresses, so their init code genuinely differs per chain and CREATE2
@@ -89,11 +116,11 @@ could not give them a shared address. Read those per-chain from the deployment r
 
 | Chain | Chain ID | Scope | Custom price feeds | Balance adapters (excl. ERC20Default) |
 | --- | --- | --- | --- | --- |
-| Ethereum | 1 | full | 34 | 26 |
-| Optimism | 10 | full | 0 | 2 |
-| Arbitrum | 42161 | full | 8 | 7 |
-| Base | 8453 | full | 4 | 6 |
-| Gnosis | 100 | full | 3 | 3 |
+| Ethereum | 1 | full | 34 | 42 |
+| Optimism | 10 | full | 0 | 3 |
+| Arbitrum | 42161 | full | 8 | 12 |
+| Base | 8453 | full | 4 | 9 |
+| Gnosis | 100 | full | 3 | 6 |
 | BSC | 56 | full | 0 | 0 |
 | Polygon | 137 | full | 0 | 1 |
 | Berachain | 80094 | impl + proxy | — | — |
@@ -144,11 +171,11 @@ positions there.
 
 | Adapter | Address | Deployed on | Would reuse this address on | Because |
 | --- | --- | --- | --- | --- |
-| UniswapV3PoolsMeta ☆ | `0xACdC33b6a453F629d1ab10A14d3513817F492de7` | 1 | 10, 137, 42161 | those chains host the canonical NonfungiblePositionManager at `0xC36442…FE88` |
-| UniswapV3PoolsMeta ☆ | `0xA336f7171B9CE77de13451419B3254099beF2C24` | 100 | — | Gnosis hosts its OWN Uniswap V3: NPM `0xAE8fbE…9FA3`, factory `0xe32F7d…89B1`. A different constructor arg, so a different address — it is not part of the row above |
-| MorphoMarketsMeta ☆ | `0x5C951CF5C596BC4908A5fd846710070553830b06` | **1, 8453** | — | both host Morpho at `0xBBBB…FFCb`, so both already answer at this one address |
-| MorphoMarketsMeta ☆ | `0x1a33a8eAE2F927A05e3eaDC87a348323060Ab2a4` | 42161 | — | Arbitrum's Morpho is a separate deployment at `0x6c247b1F…8F5e` |
-| FluidVaultsMeta ☆ | `0x32E94eE2276a2eb4873a68676e1250212b3433fC` | 1 | 56, 137, 8453, 9745, 42161 | Fluid deploys its VaultResolver deterministically at `0xA5C3E165…95cC` on all six |
+| UniswapV3PoolsMeta ☆ | `0x2F7e8f78FD8EE977F6D53752b03A79c77012Ba52` | 1 | 10, 137, 42161 | those chains host the canonical NonfungiblePositionManager at `0xC36442…FE88` |
+| UniswapV3PoolsMeta ☆ | `0xaC47D9Cbe8B3EDc9c9d1a6c8092054299bBC1adE` | 100 | — | Gnosis hosts its OWN Uniswap V3: NPM `0xAE8fbE…9FA3`, factory `0xe32F7d…89B1`. A different constructor arg, so a different address — it is not part of the row above |
+| MorphoMarketsMeta ☆ | `0x08e590BcFc753fC6383aFE327253558C962D3EB6` | **1, 8453** | — | both host Morpho at `0xBBBB…FFCb`, so both already answer at this one address |
+| MorphoMarketsMeta ☆ | `0xCFf47e28B51a7f4599150f73c348E1a155A93437` | 42161 | — | Arbitrum's Morpho is a separate deployment at `0x6c247b1F…8F5e` |
+| FluidVaultsMeta ☆ | `0x161EB6952Ffc4319a05bd8FEBB1B90283F267005` | 1 | 56, 137, 8453, 9745, 42161 | Fluid deploys its VaultResolver deterministically at `0xA5C3E165…95cC` on all six |
 | MerklRewards ☆ | `0xFf2D5A8bf801191eD1292E6DD6792F5D03c5aFBF` | **1, 10, 56, 100, 137, 8453, 42161** | — | Merkl deploys its Distributor deterministically at `0x3Ef3D8bA…D9Ae` on all seven, so all three constructor args (distributor, NAV, admin) are fleet-identical and one salt yields one address. **The admin is a constructor arg**, so changing it would move this address on every chain at once — hand admin over with `grantRole`/`renounceRole`, never by redeploying |
 
 Membership of the Uniswap V3 list is decided by **calling** `name()`/`factory()` on the candidate chain, never
@@ -159,103 +186,131 @@ position manager is at a different address entirely.
 
 | Adapter | Address |
 | --- | --- |
+| AaveSavingsWalletMeta ★ | `0x36A3F6424FB9AA5B1a3cDD33B2cE09C0c5035D8F` |
 | AaveUmbrella | `0x7299757E188000ca576c4197E1Ed1c53A04AC995` |
-| AaveV3InstancesMeta ★ | `0x04Ba6789B4AD5D6CF63Ec9cc301c13F6a8A0210b` |
+| AaveV3InstancesMeta ★ | `0xa1b3c695A768A6Ce571fF699F463224CB32260C1` |
 | AaveV3SafetyModule ★ | `0xa356717027B5d4010a7449904545E5aFb355Bdc9` |
-| AaveV4SpokesMeta ★ | `0xdF1B9d57A40D3866F9EFc9d391EDf9dF51325B59` |
-| BalancerV3GaugesMeta | `0x0e699e07DB653aDc8ca559287038032D227B8947` |
-| BalancerV3PoolsMeta ★ | `0xbF1785E519067f0471eb5C50A634A7eeE0140A21` |
+| AaveV4SpokesMeta ★ | `0xAd5b905ad5BB13909aE658a1910bC4cdFcD81dE3` |
+| AnkrStakedEthWalletMeta ★ | `0xc157f1dF063b161Ec9a89aE25aeBc6fB95b6E90e` |
+| BalancerV3GaugesMeta | `0x1EE1b9dA14225B8a6Dd8D87d1052eC4D37A6E362` |
+| BalancerV3PoolsMeta ★ | `0x8AE70624CB7729B0408C8f0ce8ffdac9974FE33A` |
 | CapSavings | `0xEc605FC2521792f2018dF92Bb5aDBf85EB417cb6` |
 | CapStablecoin | `0x121583E21C671e9B1193FE478ec9dc9D73D73a3F` |
-| CompoundV3CometsMeta | `0xbd8aE779400C2692dd0eF3fC59F11AADEA74B776` |
-| ConvexCurveLPStakingMeta | `0xa94f66772D1dAfb37c6c941fB59Fe3FB68584632` |
-| CurveGaugesMeta | `0x59c2c3D11403A58015ECc96E028Cf863bb50a2cd` |
-| CurvePoolsMeta ★ | `0xCf200111050Bc5FFbd5c3e675c598995906c3945` |
+| CompoundV3CometsMeta | `0xDf85833a69B74e86e38160405a12bA7356AcdCdf` |
+| ConvexCurveLPStakingMeta | `0xB41E5A6F34FdD511716Ee455cb6047D1Fcc171F6` |
+| CurveGaugesMeta | `0xC0c22b89E9cC80a3891dF0ceF1e81b78b865F646` |
+| CurvePoolsMeta ★ | `0x4c25B00401d28d5F6FC65a7Af8386b239FA5e735` |
 | EthenaCooldown | `0x3F12f2baf245eeF00F6b0C5C2173Df990FFBa796` |
+| EthenaSavingsWalletMeta ★ | `0x51970009da25B52048ACBBB850B11aa198bdC64B` |
+| EtherFiStakedEthWalletMeta ★ | `0x8a6fde256DD9B262596A22BC4a6c8292Fc3a5D65` |
 | EtherFiWithdrawalQueueAssisted | `0x5c5c1A98CdF07c9D9B4664933AF98a30e36F3618` |
-| EulerVaultsMeta ★ | `0xCb28C7d1A27e8FB5ea0e1c75Ef62c80722388135` |
-| FluidFTokensMeta ★ | `0x0c312178e10ad15a9DC847d664786146f2C88dcf` |
-| FluidVaultsMeta ☆ | `0x32E94eE2276a2eb4873a68676e1250212b3433fC` |
-| GearboxV3MarketsMeta ★ | `0x160017c8d50D44A8fA3667419a89BA1183daaF38` |
+| EulerVaultsMeta ★ | `0x331566e8F7b48Fa683fE865403Cf4311b50A7710` |
+| FluidFTokensMeta ★ | `0xb1a03cDD28cAA91f409C417C9f56ab53bc9d7ae9` |
+| FluidVaultsMeta ☆ | `0x161EB6952Ffc4319a05bd8FEBB1B90283F267005` |
+| GearboxV3MarketsMeta ★ | `0xE338E5d4F7adF34107239D59828DEAD2fa2cfD86` |
+| KelpRestakedEthWalletMeta ★ | `0xc0A8E9FA22F28bDE931624c6A454DE649a790273` |
 | KelpWithdrawalQueue | `0x136439b0CA2Ff5e9Ec8dC472222248E3A57CeF43` |
+| LidoStakedEthWalletMeta ★ | `0x7ED4F12798ea3f26AE02a6521eE84702CE5f8f90` |
 | LidoWithdrawalQueue | `0xD32d7db9c94E0A08ef354D73d618B86b8215A2cF` |
+| LiquidCollectiveStakedEthWalletMeta ★ | `0x1473445103673F89Af909387eB905B4328D522D3` |
+| MapleSavingsWalletMeta ★ | `0xDeE2BcC847DFc113ec70296C5D31e055a6cd902b` |
 | MerklRewards ☆ | `0xFf2D5A8bf801191eD1292E6DD6792F5D03c5aFBF` |
-| MorphoMarketsMeta ☆ | `0x5C951CF5C596BC4908A5fd846710070553830b06` |
-| MorphoVaultsMeta ★ | `0x64e1ba8B12ee2bFdBDdFd4E0863EdfaaE824C86a` |
+| MorphoMarketsMeta ☆ | `0x08e590BcFc753fC6383aFE327253558C962D3EB6` |
+| MorphoVaultsMeta ★ | `0x72a012B30b240458C3f79fd20E5c2A907d77e54f` |
 | NexusMutualStakingPoolsAssisted | `0x25Be749999683381703c7346462503a5EFFFd184` |
-| PolygonStakingMeta | `0x5144b5855e753Fa6E2BBac95Cc880A73e1eec187` |
+| NexusMutualVaultsWalletMeta ★ | `0xeA71c3af5127f7fC0F791FE0bFfF9826Ea589060` |
+| PolygonStakingMeta | `0x905c04819dd4DB75590663658B7cd635aD67B151` |
+| RenzoRestakedEthWalletMeta ★ | `0x9145A559108426e1eA429A2A6441e2A875f069ec` |
+| ReserveBasketsWalletMeta ★ | `0x11e68edfBc0449b1c863e11b866B7aF4290F8469` |
+| RocketPoolStakedEthWalletMeta ★ | `0x75D1cB3040Dc0322C3f747807360A1Ec03A80eB4` |
+| SkySavingsWalletMeta ★ | `0xb967b206445ca58445d09b6CE9878add5Bb14dd4` |
 | SparkLend | `0x9ad8dDaAD5166f2f0Fe4e883aFe78902f8BF0CAE` |
+| SparkSavingsWalletMeta ★ | `0xd848BE8B5f580C7F8a7f93256DD218cf06CAcd3f` |
+| StaderStakedEthWalletMeta ★ | `0x30c6A35827E3dC294f410073C305C8b3f91f1a4a` |
 | StaderWithdrawalQueue | `0xCB975897AfA295C8fAEB0C33B333C77B95195094` |
 | StakeWiseV3ExitQueueAssisted | `0x83375fDE808F6388c85fC0A1dA86a69492a20798` |
-| StakeWiseV3VaultsMeta | `0xc5e92214517314A5C6Ed7f6998C3bdF5810F9cc1` |
-| SymbioticVaultsMeta ★ | `0x599C72cbd3bDe6D992366130009962B4c2Ec5B23` |
-| UniswapV3PoolsMeta ☆ | `0xACdC33b6a453F629d1ab10A14d3513817F492de7` |
+| StakeWiseV3OsTokenWalletMeta ★ | `0x818dD183121641B09752891bB7E971b0FE29e101` |
+| StakeWiseV3VaultsMeta | `0xE97bE4B11EE8D65A123dD99bDdec7a4fDcA6359E` |
+| SymbioticVaultsMeta ★ | `0x320699dE0693d71C28f5559a68635495AdA0826c` |
+| UniswapV3PoolsMeta ☆ | `0x2F7e8f78FD8EE977F6D53752b03A79c77012Ba52` |
 
 ### Optimism (10)
 
 | Adapter | Address |
 | --- | --- |
-| AaveV3InstancesMeta ★ | `0x04Ba6789B4AD5D6CF63Ec9cc301c13F6a8A0210b` |
-| CompoundV3CometsMeta | `0xEDDbc540eD724aB3cC95B1C419c6f9D6348a373b` |
+| AaveV3InstancesMeta ★ | `0xa1b3c695A768A6Ce571fF699F463224CB32260C1` |
+| CompoundV3CometsMeta | `0xc4422B74ddb9057fcFc9DB64EF7ce166eD6862CA` |
+| LidoStakedEthWalletMeta ★ | `0x7ED4F12798ea3f26AE02a6521eE84702CE5f8f90` |
 | MerklRewards ☆ | `0xFf2D5A8bf801191eD1292E6DD6792F5D03c5aFBF` |
-| UniswapV3PoolsMeta ☆ † | `0xACdC33b6a453F629d1ab10A14d3513817F492de7` |
+| UniswapV3PoolsMeta ☆ † | `0x2F7e8f78FD8EE977F6D53752b03A79c77012Ba52` |
 
 ### Arbitrum (42161)
 
 | Adapter | Address |
 | --- | --- |
-| AaveV3InstancesMeta ★ | `0x04Ba6789B4AD5D6CF63Ec9cc301c13F6a8A0210b` |
-| BalancerV3GaugesMeta | `0x9F8ef612cd2F71a76FCDAcc2820f332f74415705` |
-| BalancerV3PoolsMeta ★ | `0xbF1785E519067f0471eb5C50A634A7eeE0140A21` |
-| CompoundV3CometsMeta | `0xFB12e2105287604013dAdee87597F8b80390fc82` |
-| FluidFTokensMeta ★ | `0x0c312178e10ad15a9DC847d664786146f2C88dcf` |
+| AaveV3InstancesMeta ★ | `0xa1b3c695A768A6Ce571fF699F463224CB32260C1` |
+| BalancerV3GaugesMeta | `0xDe49FB1096Bb3B2A631183779482441c5505dAf8` |
+| BalancerV3PoolsMeta ★ | `0x8AE70624CB7729B0408C8f0ce8ffdac9974FE33A` |
+| CompoundV3CometsMeta | `0x84e2a1205e0bB6F4ECe35c5383948c4607eceEB0` |
+| EtherFiStakedEthWalletMeta ★ | `0x8a6fde256DD9B262596A22BC4a6c8292Fc3a5D65` |
+| FluidFTokensMeta ★ | `0xb1a03cDD28cAA91f409C417C9f56ab53bc9d7ae9` |
+| KelpRestakedEthWalletMeta ★ | `0xc0A8E9FA22F28bDE931624c6A454DE649a790273` |
+| LidoStakedEthWalletMeta ★ | `0x7ED4F12798ea3f26AE02a6521eE84702CE5f8f90` |
+| MapleSavingsWalletMeta ★ | `0xDeE2BcC847DFc113ec70296C5D31e055a6cd902b` |
 | MerklRewards ☆ | `0xFf2D5A8bf801191eD1292E6DD6792F5D03c5aFBF` |
-| MorphoMarketsMeta ☆ | `0x1a33a8eAE2F927A05e3eaDC87a348323060Ab2a4` |
-| MorphoVaultsMeta ★ | `0x64e1ba8B12ee2bFdBDdFd4E0863EdfaaE824C86a` |
-| UniswapV3PoolsMeta ☆ † | `0xACdC33b6a453F629d1ab10A14d3513817F492de7` |
+| MorphoMarketsMeta ☆ | `0xCFf47e28B51a7f4599150f73c348E1a155A93437` |
+| MorphoVaultsMeta ★ | `0x72a012B30b240458C3f79fd20E5c2A907d77e54f` |
+| RenzoRestakedEthWalletMeta ★ | `0x9145A559108426e1eA429A2A6441e2A875f069ec` |
+| UniswapV3PoolsMeta ☆ † | `0x2F7e8f78FD8EE977F6D53752b03A79c77012Ba52` |
 
 ### Base (8453)
 
 | Adapter | Address |
 | --- | --- |
-| AaveV3InstancesMeta ★ | `0x04Ba6789B4AD5D6CF63Ec9cc301c13F6a8A0210b` |
-| BalancerV3GaugesMeta | `0xBEF120B82415F113F8997Ff1C17360c678359187` |
-| BalancerV3PoolsMeta ★ | `0xbF1785E519067f0471eb5C50A634A7eeE0140A21` |
-| CompoundV3CometsMeta | `0xc43D890F5af60E4010266A0AF95b39C31e5c5Abe` |
-| FluidFTokensMeta ★ | `0x0c312178e10ad15a9DC847d664786146f2C88dcf` |
+| AaveV3InstancesMeta ★ | `0xa1b3c695A768A6Ce571fF699F463224CB32260C1` |
+| BalancerV3GaugesMeta | `0xb9210b8311EA6Cee6cc9D1f8D4c29371fDA23495` |
+| BalancerV3PoolsMeta ★ | `0x8AE70624CB7729B0408C8f0ce8ffdac9974FE33A` |
+| CoinbaseStakedEthWalletMeta ★ | `0x91d437752463B60103d515c16680d0a17C1c91F9` |
+| CompoundV3CometsMeta | `0xcf359A24511f6CEBE19125FE733338FCAe28Fc2E` |
+| EtherFiStakedEthWalletMeta ★ | `0x8a6fde256DD9B262596A22BC4a6c8292Fc3a5D65` |
+| FluidFTokensMeta ★ | `0xb1a03cDD28cAA91f409C417C9f56ab53bc9d7ae9` |
+| LidoStakedEthWalletMeta ★ | `0x7ED4F12798ea3f26AE02a6521eE84702CE5f8f90` |
 | MerklRewards ☆ | `0xFf2D5A8bf801191eD1292E6DD6792F5D03c5aFBF` |
-| MorphoMarketsMeta ☆ | `0x5C951CF5C596BC4908A5fd846710070553830b06` |
+| MorphoMarketsMeta ☆ | `0x08e590BcFc753fC6383aFE327253558C962D3EB6` |
 
 ### Gnosis (100)
 
 | Adapter | Address |
 | --- | --- |
-| AaveV3InstancesMeta ★ | `0x04Ba6789B4AD5D6CF63Ec9cc301c13F6a8A0210b` |
+| AaveV3InstancesMeta ★ | `0xa1b3c695A768A6Ce571fF699F463224CB32260C1` |
+| LidoStakedEthWalletMeta ★ | `0x7ED4F12798ea3f26AE02a6521eE84702CE5f8f90` |
 | MerklRewards ☆ | `0xFf2D5A8bf801191eD1292E6DD6792F5D03c5aFBF` |
+| SkySavingsWalletMeta ★ | `0xb967b206445ca58445d09b6CE9878add5Bb14dd4` |
 | StakeWiseV3ExitQueueAssisted | `0xE1e163663961237C0955b665188864f0fD281020` |
-| StakeWiseV3VaultsMeta | `0x8cbAFEC5745AF6727b7be0829e507f58b3b3ce0d` |
-| UniswapV3PoolsMeta ☆ | `0xA336f7171B9CE77de13451419B3254099beF2C24` |
+| StakeWiseV3OsTokenWalletMeta ★ | `0x818dD183121641B09752891bB7E971b0FE29e101` |
+| StakeWiseV3VaultsMeta | `0x04f7a5Faaa9da0a163814e8C30ED7435F159A8eC` |
+| UniswapV3PoolsMeta ☆ | `0xaC47D9Cbe8B3EDc9c9d1a6c8092054299bBC1adE` |
 
 ### Polygon (137)
 
 | Adapter | Address |
 | --- | --- |
-| FluidFTokensMeta ★ | `0x0c312178e10ad15a9DC847d664786146f2C88dcf` |
+| FluidFTokensMeta ★ | `0xb1a03cDD28cAA91f409C417C9f56ab53bc9d7ae9` |
 | MerklRewards ☆ | `0xFf2D5A8bf801191eD1292E6DD6792F5D03c5aFBF` |
-| UniswapV3PoolsMeta ☆ † | `0xACdC33b6a453F629d1ab10A14d3513817F492de7` |
+| UniswapV3PoolsMeta ☆ † | `0x2F7e8f78FD8EE977F6D53752b03A79c77012Ba52` |
 
 ### BNB Chain (56)
 
 | Adapter | Address |
 | --- | --- |
 | MerklRewards ☆ | `0xFf2D5A8bf801191eD1292E6DD6792F5D03c5aFBF` |
-| MorphoMarketsMeta ☆ † | `0x5C951CF5C596BC4908A5fd846710070553830b06` |
+| MorphoMarketsMeta ☆ † | `0x08e590BcFc753fC6383aFE327253558C962D3EB6` |
 
 ### Arc (5042)
 
 | Adapter | Address |
 | --- | --- |
-| MorphoVaultsMeta ★ | `0x64e1ba8B12ee2bFdBDdFd4E0863EdfaaE824C86a` |
+| MorphoVaultsMeta ★ | `0x72a012B30b240458C3f79fd20E5c2A907d77e54f` |
 
 ## Assisted-adapter assistants (per chain, plain CREATE)
 

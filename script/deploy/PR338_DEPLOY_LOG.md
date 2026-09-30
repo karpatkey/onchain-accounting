@@ -118,3 +118,30 @@ new adapter here — this chain proves the mechanics; Base/Arbitrum are the firs
 | 56 BSC | `0x8cccf7322e083eb0ba4fc195fed295d03b4e8834e5cddcaa08bf8f4216c4e1cd` | none — `plan()` = `NoMetaAdaptersToSwap(56)`; H9: no meta set on any adapter | — | no ops Safe | aligned; `verify()` OK |
 
 All three: upgrade window 0 structural differences (s1 confirmed on the new impl).
+
+## Upgrade-only chains — 2026-09-30 (01_2 + upgrade; no adapters, no swap)
+
+Every chain: `phase1` gate 5/5 (incl. H9 before the upgrade), `upgrade` gate 4/4 (1967 slot on ≥2 RPCs + H9: no
+registered adapter carries a meta set), upgrade window 0 structural differences (s1 confirmed on the new impl),
+Phase 3 N/A (no asset config — only the native asset registered at initialize). HyperEVM ran with big blocks
+switched on for the deployer, then off.
+
+| Chain | Upgrade tx |
+|---|---|
+| 130 Unichain | `0x3d4e842c8d9f6b216cdaab043deb8a048343a1b7b9ea3aac9d65d8cc18206289` |
+| 143 Monad | `0x099881fbcc3a2552245956576361f51c1ffbf1771dd211a467ebab19d6e9a060` |
+| 146 Sonic | `0x6039e87ff6e2f1e43eddee6144743c52d727f6c6b92a19587c987560e857192d` |
+| 196 XLayer | `0x808a3abd3a1cda706d3f1fda4657be3273f449b2575c4bd468c8f2de94f8a724` |
+| 204 opBNB | `0xc8fa02411b1769aaa7934937fab5aaf9a4670d401a288eefb646000d8d5efcb4` |
+| 480 Worldchain | `0xa45754e0fcc66a182f7f2e9545689348bed73cc113079ed352da4c99cb1acf77` |
+| 999 HyperEVM | `0x2afe3605cbe90002a4cfb60ca1487e3c4515623c95f3440d2dd48cceba45508d` |
+| 5000 Mantle | `0x7b329f72c0da030a2d7f9819bf1169c47367a31432d2162c2f64fd74f14957ae` |
+| 9745 Plasma | `0xb4305ad08e33234ba5caf3fe9de88ad1c46bb4cbac823659a06b7895af032038` |
+| 16661 0G | `0x5328a1946c88a5e0786e11ee5ec49137fecba6d71abfe9c525d1ad676efa4e32` |
+| 42220 Celo | `0xc964c7eae046873a0e4a8e57d6397823fd342f1f7b238e746cd721195ea2c092` |
+| 43111 Hemi | `0xa198656e39bf5b7d69c3a3272c23f0ad97b9c16a6a0ac4e214cfe80dd5712a92` |
+| 43114 Avalanche | `0x00401b3c5f2b11aff0ce937c310dd6ee366057edc36ff4d926fd424f830bd390` |
+| 57073 Ink | `0x4f86e91529112d8fec03cb92bf7d664b0c653620b17f277df9e0f3d12b3af65c` |
+| 59144 Linea | `0x8baff2246283227cbca14f8a91f8955d7601da6362a541e6551281b00b4d8b0c` |
+| 80094 Berachain | `0x400fb17e071e175cc4dfcb57c69faa83a10dfc66e15e3215b5d19836656c1f97` |
+| 534352 Scroll | `0x1da7be3fe3046275d98d80be5f9c235b1e27a7241e6d51a27394b98a28e01714` |

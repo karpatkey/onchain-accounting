@@ -86,7 +86,10 @@ case "$CHAIN" in
          CAST_GAS=(--gas-price 2000000000 --priority-gas-price 2000000000) ;;
   999)   FORGE_GAS=(--legacy); CAST_GAS=(--legacy) ;;  # + big blocks ON for the deployer before 01_2
   43111) GP=$(( $(cast gas-price --rpc-url "$RPC") * 2 ))                          # fee floor
-         FORGE_GAS=(--with-gas-price "$GP"); CAST_GAS=(--gas-price "$GP") ;;
+         (( GP < 20000000 )) && GP=20000000
+         # --gas-price alone sets only the MAX fee and keeps the node's near-zero TIP, which left a Phase-4 grant
+         # stuck in the mempool for >4 min (2026-10-01); replaced at the same nonce with an explicit tip.
+         FORGE_GAS=(--with-gas-price "$GP" --priority-gas-price 10000000); CAST_GAS=(--gas-price "$GP" --priority-gas-price 10000000) ;;
 esac
 
 cd "$PR338_ROOT" || return 1

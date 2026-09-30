@@ -167,3 +167,15 @@ On 24 chains (all but X Layer 196, held for the ops decision on its Council thre
   `--log-chunk 1000`, Arc with `--log-chunk 10` from just before its grant — their RPCs can't serve long log ranges).
 
 The deployer EOA keeps ADMIN + MANAGER on every chain until the Council executes its batch.
+
+### Handoff route changed (2026-10-01, Nicolás): the DEPLOYER EOA does it, no Council signing round
+Two passes, keeping the deployer until everything has landed:
+- **Pass 1 — grant** the timelock ADMIN + MANAGER from the deployer (additive; each tx simulated first,
+  confirmed before the next). Before each chain: the full deployer-sent sequence (both grants + both revokes)
+  is dry-run on a fork and must pass the strict `roles` gate.
+- **Pass 2 — revoke** the deployer's MANAGER then ADMIN, only once every chain is confirmed; then the strict
+  `roles` gate per chain. The committed Council batches (`pr338-handoff-batches/`) are kept as a record, unused.
+
+| Chain | Fork dry-run (full sequence) | Pass 1 grant ADMIN | Pass 1 grant MANAGER | Live census after |
+|---|---|---|---|---|
+| 130 Unichain | roles 11/11 | `0xea63b326c4bc7a9d28c2571e7b9ab2369aadbff781e3f1877b4ee0476e574366` | `0xf5d8118ced21ef2d2587a0a24b024ea602a78c242819c9190dc99a7fd78bab12` | exactly {timelock, Council, deployer, AssetKindRegistry} |

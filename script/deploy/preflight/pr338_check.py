@@ -29,7 +29,7 @@ usage:
   pr338_check.py phase1  <id> [--rpc-url URL] [--pre DIR]
   pr338_check.py upgrade <id> [--rpc-url URL]
   pr338_check.py swap    <id> [--rpc-url URL] [--pre DIR] [--pre-swap FILE]
-  pr338_check.py roles   <id> --ops-safe 0x… [--council-retains] [--rpc-url URL] [--from-block N]
+  pr338_check.py roles   <id> --ops-safe 0x… [--council-retains] [--rpc-url URL] [--from-block N] [--log-chunk N]
 
 `--rpc-url` pins one endpoint (a fork); otherwise every endpoint chainlib knows for the chain is tried.
 URLs are never printed.
@@ -279,14 +279,13 @@ def gate_council(cid: int, eps: list[tuple[str, str]], pinned: bool) -> int:
     return g.done(f"council chain {cid}")
 
 
-def role_holders(url: str, nav: str, from_block: int) -> set[str]:
+def role_holders(url: str, nav: str, from_block: int, step: int = 100_000) -> set[str]:
     """Every account ever granted a role on the proxy, from its RoleGranted logs.
 
     Bounded chunks (providers cap eth_getLogs ranges, and a fork proxies old ranges upstream), halved on error.
     """
     head = int(cast("block-number", "--rpc-url", url))
     seen: set[str] = set()
-    step = 100_000
     stack = [(lo, min(lo + step - 1, head)) for lo in range(from_block, head + 1, step)][::-1]
     while stack:
         lo, hi = stack.pop()
@@ -315,7 +314,7 @@ def deploy_block(url: str, a: str) -> int:
     return lo
 
 
-def gate_roles(cid: int, url: str, ops: str, retains: bool, from_block: int | None) -> int:
+def gate_roles(cid: int, url: str, ops: str, retains: bool, from_block: int | None, log_chunk: int = 100_000) -> int:
     g, rec = Gate(), c.deployment(cid)
     cfg = c.chain_config(cid)
     nav, tl = rec["NAVCalculatorProxy"], rec.get("TimelockController") or ""
@@ -336,7 +335,7 @@ def gate_roles(cid: int, url: str, ops: str, retains: bool, from_block: int | No
     # the first live census on chain 1 (2026-09-29): the only non-deployer holder today.
     akr = (rec.get("AssetKindRegistry") or "").lower()
     allowed = {tl.lower()} | ({council.lower()} if retains else set())
-    survivors = {a for a in role_holders(url, nav, fb)
+    survivors = {a for a in role_holders(url, nav, fb, log_chunk)
                  if has_role(url, nav, ADMIN, a) or has_role(url, nav, manager, a)}
     if akr in survivors:
         g.check(not has_role(url, nav, ADMIN, akr), f"AssetKindRegistry {akr} holds MANAGER only (never ADMIN)")
@@ -356,6 +355,9 @@ def main() -> int:
     ap.add_argument("--ops-safe", default=None)
     ap.add_argument("--council-retains", action="store_true")
     ap.add_argument("--from-block", type=int, default=None)
+    # Some RPCs HANG (rather than error) on long eth_getLogs ranges — Berachain above ~1k blocks — so the
+    # census can page in smaller chunks. Performance only: every block in the range is still read.
+    ap.add_argument("--log-chunk", type=int, default=100_000)
     a = ap.parse_args()
     eps = endpoints(a.chain, a.rpc_url)
     url = eps[0][0]
@@ -373,7 +375,7 @@ def main() -> int:
         return gate_swap(a.chain, url, Path(a.pre), ps)
     if not a.ops_safe:
         ap.error("roles needs --ops-safe")
-    return gate_roles(a.chain, url, a.ops_safe, a.council_retains, a.from_block)
+    return gate_roles(a.chain, url, a.ops_safe, a.council_retains, a.from_block, a.log_chunk)
 
 
 if __name__ == "__main__":

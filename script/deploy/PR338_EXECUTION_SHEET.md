@@ -254,6 +254,8 @@ DEPLOYER_EOA=$DEPLOYER SAFE_RETAINS_ROLES=true OPS_SAFE=$OPS PERSIST_DEPLOYMENTS
 
   ```bash
   python3 script/deploy/preflight/pr338_check.py roles $C --ops-safe $OPS --council-retains
+  # RPCs that hang on long eth_getLogs ranges: Berachain --log-chunk 1000; Arc (~1 s per 10 blocks) --log-chunk 10
+  # with --from-block set just before the Council grant (the census stays strict; it only pages smaller).
   ```
 
   It checks that the timelock holds ADMIN and MANAGER, and that the deployer and ops Safe hold neither. It

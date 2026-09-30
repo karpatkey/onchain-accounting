@@ -18,8 +18,11 @@ Broadcast details: `broadcast/01_2_*/<chainId>/`, `broadcast/04_*/<chainId>/`.
 | 10 Optimism | `14baac22` | 11/11 | `0x5f5947207bc26516b1da1fc76f960e7af9ef8c30c4e797c4c35cec9d6ba68004` | `0x4c5257cfbaab66eeb6ec87cf6e00aff40f5d2f7b801b8138589fa1191dcd7d0d` | all |
 | 100 Gnosis | `d14b24b8` | 13/13 | `0xfbf086f9cff2867b707117738fbd93f19917503331a517719c24ffdc24fb48e1` | `0x253a82a4d55c3a25f926ad6b500ce8bde46fbbcf036b573c91a4457d9f116575` | all |
 | 8453 Base | `8943500d` | 19/19 | (see broadcast) | `0xc2a76c59791f3e4ac7a62ed670eee6152e31ce49eca575fd806e0c9ed9401396` | all |
-| 42161 Arbitrum | `c75e8979` | 25/25 | `0x39c3ef9395c7f4073bf76c301ee83399fd3a6a278ba888e9216061f43b8bef46` | `0x912a8a81ad6d4c5777056ca1802283662c75ff01fa4456b4ed202661a25f1c68` | pending (Arbiscan queue) |
-| 1 Ethereum | `2bdc492b` | 56/56 | `0x8942a3bc58b91ae4d1a8353254003c6f93f408ac82e30584df709570f714ee33` | `0x392b0a58427d50aa2be1129b2541bb1a2b80147fad668545962c46960642e93b` | in progress |
+| 42161 Arbitrum | `c75e8979` | 25/25 | `0x39c3ef9395c7f4073bf76c301ee83399fd3a6a278ba888e9216061f43b8bef46` | `0x912a8a81ad6d4c5777056ca1802283662c75ff01fa4456b4ed202661a25f1c68` | all on Sourcify; Arbiscan queue stuck |
+| 1 Ethereum | `2bdc492b` | 56/56 | `0x8942a3bc58b91ae4d1a8353254003c6f93f408ac82e30584df709570f714ee33` | `0x392b0a58427d50aa2be1129b2541bb1a2b80147fad668545962c46960642e93b` | all |
+| 137 Polygon | `1f0d214c` | 8/8 | `0xda6cbde7186ee0330807b48ff23d3abc05a70ecbb17f5496dd487ea7b4e012f5` | `0xc1b7ad74c156a9191a7ea739a7acaa43252a12d0a9f281777f27925176ab12e2` | all |
+| 56 BSC | `9d0088a4` | 7/7 | — (upgrade-only) | — | all |
+| 5042 Arc | `39333555` | 6/6 | `0xc8f59d885db73fa5d6a71bce8176eca91e22fd702930732fd2353312e1cd7f09` | `0xbcb437123e18172f5b222fb3d66068d06bb0ae9f823711872ac583da0f0a0edf` | all |
 
 ## Phase 2 — upgrade + swap
 
@@ -105,3 +108,13 @@ new adapter here — this chain proves the mechanics; Base/Arbitrum are the firs
 | `06` idempotence | — | nothing left |
 | revoke ops Safe MANAGER | `0xe1fbb65cf7849529f6db805987726190c7c87fb9a639b2897f8a88dc16a93cf1` | ops Safe holds no role |
 | Phase 3 heartbeats | `0xe5081f96e0070549f6e82396a3b7a2857b90f90cad1efb976eb54d244364daf1` | weETH monitor feed → 21600 s; `verify()` OK; backfill `NothingToDo` |
+
+### 137 Polygon · 5042 Arc · 56 BSC — 2026-09-30 (Phase 2 + 3; no tracked accounts, so structural checks only)
+
+| Chain | Upgrade tx | Swap (1 ops-Safe tx) | `swap` gate | Ops Safe revoke | Phase 3 |
+|---|---|---|---|---|---|
+| 137 Polygon | `0xc2084e02655a770135f9524d4ef5c0b8b742981e2feaeff4a3c15f86ff885ef8` | FluidFTokensMeta (3 calls) `0xdc6516049cef01766604613ed84aeb778b7a3d321fb25bfd1d6e80a277ad7097`, gas 543,177 (rehearsal 427,257: Polygon gas schedule differs from the fork's EVM; outcome gated) | 10/10 | `0xbe5be759e1a1b4f42f694d76410e91a0176181cc13f17a10cfb44be20e41c1b8` | aligned; `verify()` OK; backfill `NothingToDo` |
+| 5042 Arc | `0xd2d47fb3e28de12765e10dbe62514f81c903bdd9d51071505cd0a8147ca272f2` | MorphoVaultsMeta (3 calls) `0xd58316b29d258436c5847ffcf0b3add4780a067c29449664104c251a48011a30`, gas 261,188 (= rehearsal) | 9/9 | `0xf3c6c3bfeade90b84b865d57a0f1f1a366fd2efb056e68be55f8199d7e431b9a` | aligned; `verify()` OK; backfill `NothingToDo` |
+| 56 BSC | `0x8cccf7322e083eb0ba4fc195fed295d03b4e8834e5cddcaa08bf8f4216c4e1cd` | none — `plan()` = `NoMetaAdaptersToSwap(56)`; H9: no meta set on any adapter | — | no ops Safe | aligned; `verify()` OK |
+
+All three: upgrade window 0 structural differences (s1 confirmed on the new impl).

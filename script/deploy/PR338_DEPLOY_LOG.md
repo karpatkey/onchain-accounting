@@ -18,7 +18,7 @@ Broadcast details: `broadcast/01_2_*/<chainId>/`, `broadcast/04_*/<chainId>/`.
 | 10 Optimism | `14baac22` | 11/11 | `0x5f5947207bc26516b1da1fc76f960e7af9ef8c30c4e797c4c35cec9d6ba68004` | `0x4c5257cfbaab66eeb6ec87cf6e00aff40f5d2f7b801b8138589fa1191dcd7d0d` | all |
 | 100 Gnosis | `d14b24b8` | 13/13 | `0xfbf086f9cff2867b707117738fbd93f19917503331a517719c24ffdc24fb48e1` | `0x253a82a4d55c3a25f926ad6b500ce8bde46fbbcf036b573c91a4457d9f116575` | all |
 | 8453 Base | `8943500d` | 19/19 | (see broadcast) | `0xc2a76c59791f3e4ac7a62ed670eee6152e31ce49eca575fd806e0c9ed9401396` | all |
-| 42161 Arbitrum | `c75e8979` | 25/25 | `0x39c3ef9395c7f4073bf76c301ee83399fd3a6a278ba888e9216061f43b8bef46` | `0x912a8a81ad6d4c5777056ca1802283662c75ff01fa4456b4ed202661a25f1c68` | all on Sourcify; Arbiscan queue stuck |
+| 42161 Arbitrum | `c75e8979` | 25/25 | `0x39c3ef9395c7f4073bf76c301ee83399fd3a6a278ba888e9216061f43b8bef46` | `0x912a8a81ad6d4c5777056ca1802283662c75ff01fa4456b4ed202661a25f1c68` | all (Arbiscan + Sourcify) |
 | 1 Ethereum | `2bdc492b` | 56/56 | `0x8942a3bc58b91ae4d1a8353254003c6f93f408ac82e30584df709570f714ee33` | `0x392b0a58427d50aa2be1129b2541bb1a2b80147fad668545962c46960642e93b` | all |
 | 137 Polygon | `1f0d214c` | 8/8 | `0xda6cbde7186ee0330807b48ff23d3abc05a70ecbb17f5496dd487ea7b4e012f5` | `0xc1b7ad74c156a9191a7ea739a7acaa43252a12d0a9f281777f27925176ab12e2` | all |
 | 56 BSC | `9d0088a4` | 7/7 | — (upgrade-only) | — | all |
@@ -151,3 +151,5 @@ upgrade-only chains — Etherscan V2 on 130, 143, 146, 204, 480, 999, 5000, 9745
 Sourcify on the five Etherscan V2 does not serve (196 XLayer, 16661 0G, 43111 Hemi, 57073 Ink, 534352 Scroll).
 Every PR #338 contract on the 8 asset chains is verified on Etherscan, except Arbitrum (Sourcify; Arbiscan's
 queue has held every submission "Pending").
+
+Update 2026-10-01: Arbiscan processed its queue overnight — all 16 Arbitrum contracts now verified on Arbiscan too. Every PR #338 contract is verified on its chain's primary explorer on all 25 chains.

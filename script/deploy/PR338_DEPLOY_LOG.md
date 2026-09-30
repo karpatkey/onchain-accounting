@@ -153,3 +153,17 @@ Every PR #338 contract on the 8 asset chains is verified on Etherscan, except Ar
 queue has held every submission "Pending").
 
 Update 2026-10-01: Arbiscan processed its queue overnight — all 16 Arbitrum contracts now verified on Arbiscan too. Every PR #338 contract is verified on its chain's primary explorer on all 25 chains.
+
+## Phase 4 — timelock handoff (prepared 2026-10-01; awaiting the Security Council)
+
+On 24 chains (all but X Layer 196, held for the ops decision on its Council threshold, 2-of-8 today):
+- deployer granted the Council Safe `0x8b884f80B3B839F52b6cE168f133e7a5D1f0A537` ADMIN + MANAGER (additive);
+- `11` deployed the timelock `0xAB92EA75D07792915eB1f29259354866B880dFC2` (CREATE2, identical everywhere;
+  minDelay 0, Council proposer + canceller, open executor) and wrote the handoff batch — committed in
+  `script/deploy/pr338-handoff-batches/` (4 ordered calls: grant timelock ADMIN, grant timelock MANAGER,
+  revoke deployer MANAGER, revoke deployer ADMIN);
+- every batch equals independently rebuilt calldata, and was dry-run on a fork AS the Council: all calls
+  execute, strict `roles` gate 11/11, timelock schedule → execute round trip OK (Berachain with
+  `--log-chunk 1000`, Arc with `--log-chunk 10` from just before its grant — their RPCs can't serve long log ranges).
+
+The deployer EOA keeps ADMIN + MANAGER on every chain until the Council executes its batch.

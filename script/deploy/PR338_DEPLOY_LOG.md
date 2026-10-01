@@ -227,6 +227,6 @@ historical reads). The deployer still holds ADMIN + MANAGER everywhere — pass 
   stETH reclassified Wallet → Staking (Lido) with amounts up only by rebase; ACCOUNT_11's rETH left the account
   on-chain (balance 0); the RocketPool wallet adapter was spot-checked to report a holder's exact rETH balance.
 - **Verification**: 169 contracts (libs, impl, timelock, every adapter 04 created) — all verified on the chain's
-  explorer; Arbitrum's timelock on Sourcify while Arbiscan's queue drains.
+  explorer; Arbitrum's timelock was verified on Sourcify, then manually on Arbiscan (2026-10-01) after its API queue stalled — all 169 now verified on their primary explorers.
 - **Records/CI**: `DEPLOYED_ADDRESSES.md` now lists the timelock; the address guard additionally checks every
   canonical-layer contract is one address fleet-wide and published (`526e4d4d`); CI 11/11 green.

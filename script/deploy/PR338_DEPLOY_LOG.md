@@ -227,6 +227,42 @@ historical reads). The deployer still holds ADMIN + MANAGER everywhere — pass 
   stETH reclassified Wallet → Staking (Lido) with amounts up only by rebase; ACCOUNT_11's rETH left the account
   on-chain (balance 0); the RocketPool wallet adapter was spot-checked to report a holder's exact rETH balance.
 - **Verification**: 169 contracts (libs, impl, timelock, every adapter 04 created) — all verified on the chain's
-  explorer; Arbitrum's timelock was verified on Sourcify, then manually on Arbiscan (2026-10-01) after its API queue stalled — all 169 now verified on their primary explorers.
+  explorer; Arbitrum's timelock was verified on Sourcify, then manually on Arbiscan (2026-10-01) after its API queue stalled — all 169 now verified on their primary explorers (see "Explorer coverage — 2026-10-06" for every other explorer).
 - **Records/CI**: `DEPLOYED_ADDRESSES.md` now lists the timelock; the address guard additionally checks every
   canonical-layer contract is one address fleet-wide and published (`526e4d4d`); CI 11/11 green.
+
+## Explorer coverage — 2026-10-06 (source verification only, no transactions)
+
+The 2026-10-01 audit checked each contract on its chain's primary explorer. This pass covers every explorer that
+supports each chain. It follows the team's `verify-contracts` skill. 176 rows: the 169 PR #338 contracts plus 7
+ops-Safe proxies.
+
+| Backend | Before | After | Not covered |
+|---|---|---|---|
+| Etherscan V2 (and its "…scan" sites) | 157 | 157 | 19 rows on chains not on V2 (196, 16661, 43111, 57073, 534352) |
+| Sourcify v2 | 53 | **176/176** | — |
+| Routescan | 55 | 55 | supports only 1, 5000, 9745, 43111, 43114 (all verified) |
+| Blockscout | 24 | **78** | Cloudflare-challenged instances (polygon, base, arbitrum `.blockscout.com`, explorer.arc.io), unreachable explorer.hemi.xyz, chains with no instance |
+| 0G chainscan (16661) | 0/4 | **4/4** | — |
+| OKLink | — | **137/137 supported** | chains it doesn't support (130, 143, 146, 480, 5000, 16661, 43111, 80094) |
+| Tenderly (public, org project) | 0 | **153/153 supported** | chains it doesn't support (204, 999, 16661, 43111) |
+
+Every row is verified on at least 2 backends, and most on 4 or more. No Etherscan submission was needed.
+
+## Robinhood (chain 4663) — not part of the 25; pending (2026-10-06)
+
+Robinhood also runs the NAV proxy `0x54EaD2A1dB7456cA917675Ea8908ec8A997c6214`. It still runs the pre-#338
+implementation `0x40e4134849308d53F85A8B685324E2189b13ff7D`, and the deployer EOA is its only admin and manager.
+It is an asset chain: 27 assets, plus three meta-adapters from the separate `kpk-labs/APE-robinhood` kit
+(UniswapV3/V4/Fables Sickle adapters, which have no owner). It prices the kRHUSD, kRHETH and kRHSPY vaults.
+
+Decided by the fund owners: no timelock on Robinhood for now. NAV admin and manager go to the Safe
+`0x2F0d561B9a8CD981e6E73069592BDeA4e48A8bec` (2-of-5), and the deployer is removed last.
+
+The fork rehearsal passed (block 81,739,680):
+- The three `01_2` CREATE2 transactions, replayed with byte-identical calldata, reproduce mainnet's code hashes.
+- The upgrade leaves the adapters, assets, meta sets and all three vaults' NAV and positions identical.
+- The Safe grant and the deployer revoke leave holders = {Safe, AssetKindRegistry (MANAGER)}.
+- The Safe can remove and re-add an instance on each APE adapter with no change to NAV or positions.
+
+No source change is needed: the live run replays the recorded transactions.

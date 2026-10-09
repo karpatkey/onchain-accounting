@@ -266,3 +266,71 @@ The fork rehearsal passed (block 81,739,680):
 - The Safe can remove and re-add an instance on each APE adapter with no change to NAV or positions.
 
 No source change is needed: the live run replays the recorded transactions.
+
+## Robinhood (4663) — upgraded and handed to its Safe (2026-10-06 → 2026-10-08)
+
+Not one of the 25. No timelock, by decision of the fund owners: NAV `DEFAULT_ADMIN_ROLE` + `MANAGER` go to the Robinhood Safe `0x2F0d561B9a8CD981e6E73069592BDeA4e48A8bec` (2-of-5). The three `01_2` CREATE2 transactions were replayed byte-identical from chain 130's broadcast (code hashes == mainnet).
+
+| Step | Tx |
+|---|---|
+| CREATE2 PriceFeedLib | `0x94d2badda077dc60c93617586e9b28c0c5c5d524920c12144729b0a9222da39a` |
+| CREATE2 NAVRegistryLib | `0x7adf93bbe200068f04993ad02718f6cba61a7cba5fbb95648bc159556ce3c8f9` |
+| CREATE2 NAVCalculator | `0x70f9b92e1e8d16a478c3ab8ae9dc823d93bf4246fad7faf63f0d05f243fef3a8` |
+| upgradeToAndCall | `0x2089ff8621b0fa436d52201b1dd3079bb899cc6d1a1a4be1f70398323d4c0c6a` |
+| grant ADMIN -> Safe | `0x494480974b5d7c731aff415c03811479e98a5151df2166d8678fe79d02cf980c` |
+| grant MANAGER -> Safe | `0x7a6e2ff64fae75badeddb40ead2ad5bbce78e540a581e7bddcf0fc36be7ba5ad` |
+| Robinhood Safe revokes the deployer's MANAGER + ADMIN (one Safe tx, 2026-10-08 13:19Z, block 83,343,871) | `0xf97a6878199cd79c1f0da2b96ab51b15f12c62c86d4be73d4fabcf9e3c1b846d` |
+
+Role census from block 0 (Etherscan V2 logs): ADMIN = {Safe}; MANAGER = {Safe, AssetKindRegistry}. The deployer holds nothing. The proxy's setup contract `0x03ee5dad…9a0c` renounced its admin at creation. Verified on Sourcify, Etherscan (robin.etherscan.io), OKLink, Tenderly and Blockscout (partial match = the maximum, `bytecode_hash = "none"`).
+
+## X Layer (196) — full Phase 4 in one run (2026-10-09)
+
+The Council Safe was raised to 5-of-8 first (nonce 1). The timelock was deployed by replaying chain 130's recorded `11` CREATE2 transaction byte-identical (code hash == mainnet; `minDelay` 0, Council proposer + canceller, open executor, self-administered). Verified on Sourcify, OKLink and Tenderly (Etherscan V2, Blockscout and Routescan do not serve 196).
+
+| Step | Tx |
+|---|---|
+| grant ADMIN -> Council | `0xdcd54eb8c38fcd1466fa6373832298e121a31d1f2063afa606cafc31b36c0661` |
+| grant MANAGER -> Council | `0x6f593cf070bef6f7db5965eed70a7f0331e3578b83843c1f8eaf3573b7aec6d6` |
+| CREATE2 TimelockController | `0x8f2891eab4e749b592cba9d8b4758fe16d12bda72dd858ff29d7801d5f0ec440` |
+| grant ADMIN -> timelock | `0xe57e675108553b6f59c951b7e518bc03de4953887a8ecdc6bd6b8f95441a041f` |
+| grant MANAGER -> timelock | `0xea05b59b59b4cb00853319658b694d9235f7189861a7e5cfeb5584346d301708` |
+| NAV revoke MANAGER (deployer) | `0x2eafa612e34f9c8f44dbeedea0f5243c97ba706efed7b1f2250fae291418fc2e` |
+| NAV revoke ADMIN (deployer) | `0x7eda390bd957b930a1003fcedd68d52eb86f51122a3a57fc4d222e98b71dfaad` |
+
+Roles gate `roles 196 --council-retains`: 12 pass, 0 fail.
+
+## Pass 2 — the deployer removes itself (2026-10-09)
+
+Per chain, from the deployer: `revokeRole(MANAGER, deployer)` then `revokeRole(DEFAULT_ADMIN_ROLE, deployer)`, each simulated first, then the strict gate `pr338_check.py roles <cid> --council-retains` (holders = {timelock, Council} + AssetKindRegistry MANAGER). Unichain was the canary, reviewed by Fable before the rest; Ethereum last. On the 7 Merkl chains, the Merkl adapter `0xFf2D5A8bf801191eD1292E6DD6792F5D03c5aFBF` admin went to the Council first (`grantRole` then the deployer's `renounceRole`).
+
+| Chain | Merkl: grant Council | Merkl: deployer renounces | NAV: revoke MANAGER | NAV: revoke ADMIN |
+|---|---|---|---|---|
+| 130 Unichain | — | — | `0x1bab8f18d67cf8e61206cc1acdaaaf903c80ece8117b5d6c4c3e4e924d3d1b2e` | `0x9c5b0a45848e25c4cf025a6e3b6eb08007d8c73938f0f255062ecac48f31c942` |
+| 143 Monad | — | — | `0xc4443c0d87f48487d7ba9c3f78634c659cc9a5531f29fe340ca424fe6c30a304` | `0x0af0d1160ea22077c62fb5fb57c52afd92f7a7b68cd4327d804560d855c2c561` |
+| 146 Sonic | — | — | `0xcad70a03ce78304de67bda3f792c9f1d2c16b5c768790389e7622a1fed1493c6` | `0x44ec54c3ac69c1411fa7e352c3c81dd0b50de63e1ca46970c97457a53b7ddb4a` |
+| 204 opBNB | — | — | `0xef983e41e9d8e58f3dd818fd4651423b5cef4542fa640473aa7f71f7a5f7b366` | `0xdbad4f23f61a014e5f52be6286640b3ab3e1784d20e358b8b72bea4c7c0d4eae` |
+| 480 World Chain | — | — | `0x4555c4b1efd87a919d2ebdd3d5dba884e262bdd8e1a5527f4193faf3ecfdfb91` | `0xfee7437bc1fed01e4327ea6ce030644fb4ac4e472c71d17756cf88d628cf3fdc` |
+| 999 HyperEVM | — | — | `0xe6fcc59c2be802ee67d04063d53ff4b43d7ed55cc66c95298547be1fd6f60147` | `0x649a24b34599ba7c840912e8af03027bd1653c505811142dc72b644996370dfd` |
+| 5000 Mantle | — | — | `0xc845b878b4b85f00d0289fad9ae7c065a1e6620f57039e4c2d58a6d709635c5c` | `0x8267176c74535f717d6ad888019659dbf0d4484e2d300659f3c5990c39b8fd8c` |
+| 9745 Plasma | — | — | `0x3733aa73983160560efdeaebc912c033233274f3f3a9494727f3682eeff2bdeb` | `0x68480f9df58e1a4e797e20d31b5dfac1465055255cbb249a62ea5639958c2556` |
+| 16661 0G | — | — | `0xb23158aa2e12315bf778ab4e83a3f1c8fb5c61408769d99814b1ba1bbae2f30e` | `0x78cc5da880f7bc1433409dc7a56fb99289b82dd99705a3545468fc40e0900623` |
+| 42220 Celo | — | — | `0xf200ee94aeee80a352c098169a915703140081fcd3c7b1855fea3f94ceb9ac91` | `0x9621307e1cc88a97835fbc00f49f91e5d5eaa31fef0a29a8effb807406f98502` |
+| 43111 Hemi | — | — | `0xa2bb7fa935d5ef4722b5d96f755b501194d21a8faf2563c72df9531f6a8b8e6f` | `0x42c26fd4aba6326ed204d67c9ba9bf258764687ea81a3341595838b3b1b957bc` |
+| 43114 Avalanche | — | — | `0x5da3442e957d6f2e0689615a03226d530c07381bfa9d02f8037ebdd7b2c1d475` | `0x01e207b8f4b474c13fd6db59ba21e50c9284bbc0cbdc6864c6a6991045105def` |
+| 57073 Ink | — | — | `0x880c4074ba65cf3afd49728c72408e96d0d67385b286675a8c940cb762af0b62` | `0x5ce8327f8c69bcaaf4ed005111f9cfbca8454c4fb278dc4913a6527442758d51` |
+| 59144 Linea | — | — | `0x4750a366e27284ef99e894ff657ac855e88e67738c3877e236bbda6461f2a3b5` | `0x9c1cc46b1544b57d93049bf02abd416c0b1dcbd03137bd8b237e1fe4c310a4ae` |
+| 80094 Berachain | — | — | `0xb5e492d478d36c2988a004e6c0383c61ce445af5a1e4364620ea5981d77547b0` | `0x626837bc8b2a05dc9046bc95ecb3f0da58b33b6040a49ba58221dad3cfa1b5c1` |
+| 534352 Scroll | — | — | `0x0ebe27646504ee8ac371a26d5ce5b96b17bdc48386fb8060bd28805e329e727c` | `0x08fe207458565cc878c4296575edef9cd0e1fe98e8557daad389bdbf43228469` |
+| 56 BSC | `0xb3839d3c9fed00f5542a41724a3387eb77b2a5d28b2c38c5e909b9978dd4e07a` | `0x9e316fd1e3c4f4d3ffb2efa64180d5702bfa0eb54f0b4b0197b2a42cc06a424e` | `0xa8cf4e7a78c9a5e7836339b3dbb5c62d6817c633a837f2b84c9a653018f267d3` | `0x20e58f72e3e8519b120c95582b91d602244baeefad390ec3e8f3708bae26d456` |
+| 137 Polygon | `0x9a9b990ca471621c60b2e511db5f8ee7a3a9981afc466d9619ac2ee666b3fe55` | `0xd3818a10c0f0fc216e5e97cc9b15d7a5317bc39c7604d87b92f2b7d414e3d707` | `0xb3460ca789e633ecd33705ceba038fd9b02f3a0f4ccef244f7f893ea1023c4a2` | `0x809a963e3022babe836e72158253900528bc8e784f0d4af14a34a2d489db8719` |
+| 100 Gnosis | `0x1d7ae32d8e77191061f4364fb52597df4fda3672afd0b8521c2c79a041daff84` | `0x4cce088b1f4d46406ca60811616b2fb54cc73a0f9b801b6b50221dd8b0f2dcef` | `0xd52157bc7bf854b4da9a4adb339c8082d94b652abd8e60a428c0388196ddbd5b` | `0xf15c05ca8042c83f1e1d7b15378d78b927c6de83534cb912174a203f26a9e298` |
+| 10 Optimism | `0x1103b9069cb2bebaa7663505ad7fc4972a194b8989295ea900ecfe3f7931642a` | `0x2c1410726bbe764235215a2218a856023387cb29281ef2330c200660bd224bd3` | `0x5e6de824080af29254a442b0131cc522976c15de7f8d87b7d3046ae76fa1c149` | `0x7b0178cb76f3d150bcb6ae133e73e687981850b85c3aa6b269f59ed77e52336e` |
+| 8453 Base | `0xa38a478d151542eb706e11b50ec7027919f95f2e6bb11b607c018cdbad0213a5` | `0xf47e817f80d3b493c9f9816a9882aedbd1cb594749895ea32e9cd793f46df41a` | `0x6bc8473c4e6c1bd2da46faa830a0d7e5f8c8612aae05999a735ad8f79b1ec5ca` | `0x05c223930f8e116120a26f7cc0f443111c3831fd8020256dcde6c5fdc9a0c401` |
+| 42161 Arbitrum | `0x7b17a8179089e48619f88dc5b70e6351a3dda4b7d10e3e5316f96c02349f2d79` | `0xb11e408ecb93d35d9dc8af45aac63a77bfdf018c29c9a482348f99452d0126ac` | `0x362e3193e0f7da8d70a18041290e6a9406798a99e0edca0d7cbe934c56e4f62e` | `0xae01433b9b73658a4fad5ad1a5a222baa95c2523edb90017cfd21c120c52bfb8` |
+| 5042 Arc | — | — | `0xaa26755f675bb2ae9c5a625e0e23b67c318e1715461d3eec88d2c472ee3fccda` | `0x8df21266074fdab63f173f8d752b2031794d318c1a4b3f31d9f8d435c196b370` |
+| 1 Ethereum | pending | pending | in progress at commit time | in progress at commit time |
+
+**At the time of this commit** pass 2 was still running on 1 Ethereum (Ethereum last, by design). Their transaction hashes are recorded in a follow-up records-only PR.
+
+Every completed chain's gate passed 12/12 (Arc's slow log census was still running at commit time; its direct `hasRole` checks confirmed the deployer holds nothing and the timelock + Council hold both roles), except Mantle (5000), where the gate's log census hit Mantle's historical-RPC DNS failure; its census was rebuilt from Etherscan V2 logs and nets to exactly {Council, timelock} ADMIN and {Council, timelock, AssetKindRegistry} MANAGER. Once pass 2 completes, the deployer EOA holds no role on the NAV on any of the 25 chains, nor on the Merkl adapter.
+

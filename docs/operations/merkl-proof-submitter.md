@@ -308,9 +308,12 @@ Which is correct: the user's true total is `cum_{N+1}`, the latest cumulative al
 
 - **Do NOT treat `clearAttestation` as manual-only.** An earlier revision of this guide said "do not call `clearAttestation` automatically"; that instruction is **withdrawn**, and following it walks an account into the `TooManyAttestations` outage described under Responsibilities. GC is automatic and runs on the submit cadence. It is safe to automate precisely because it is stale-gated: a call against a still-live entry reverts `AttestationStillLive`, so an automated pass cannot suppress real value.
 - **There IS something to hand over.** The adapter has no `Ownable`, but it DOES inherit `AccessControl`: the
-  constructor sets `DEFAULT_ADMIN_ROLE` to the security-council Safe, which is what grants and revokes the keeper's
-  `SUBMITTER_ROLE`. Hand over that admin, and confirm the grant survived any redeploy — the adapter is silent when
-  it is missing (submits revert, the cache stays empty, NAV reads zero).
+  constructor sets `DEFAULT_ADMIN_ROLE` to the deployer EOA (temporarily, so it can grant the keeper without a Safe
+  transaction; see `_deployMerklRewards` in `04_DeployBalanceAdapters.s.sol`), and that admin is then handed to the
+  security-council Safe by `grantRole` + `renounceRole`. It is the admin that grants and revokes the keeper's
+  `SUBMITTER_ROLE`. On the live deployment the hand-over is done: the security-council Safe is the only admin
+  (2026-10-09). Confirm the keeper's grant survived any redeploy — the adapter is silent when it is missing (submits
+  revert, the cache stays empty, NAV reads zero).
 - Do not submit proofs for accounts that aren't in the operator's tracked list. Submitting for arbitrary external accounts is harmless on the adapter (the proof still verifies), but inflates per-user storage and confuses NAV consumers — the adapter is intended only for accounts whose NAV is computed by the OIV.
 - Do not retry indefinitely on a single failed submission. One retry per cycle is enough; the next cycle will catch what was missed.
 

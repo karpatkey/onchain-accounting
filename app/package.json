@@ -13,7 +13,7 @@
   "dependencies": {
     "@karpatkey/design-system": "github:karpatkey/design-system",
     "@tanstack/react-query": "^5.80.2",
-    "next": "^15.3.2",
+    "next": "^15.5.27",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "viem": "^2.31.3",

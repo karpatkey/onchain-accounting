@@ -38,7 +38,9 @@ interface INavAdmin {
 ///      it inside a total where an offsetting error could cancel out.
 contract AdapterSwapParityForkTest is BalanceAdapterTestBase {
     address constant NAV_ADDR = 0x54EaD2A1dB7456cA917675Ea8908ec8A997c6214;
-    address constant MANAGER_HOLDER = 0xAa5A7C7Ea51F276301f881F9CCB501a1dFeF4F72;
+    /// @dev The NAV's long-term MANAGER: the TimelockController that took the role from the deployer EOA in the
+    ///      PR #338 handoff (the deployer holds no role since 2026-10-09). Pranking a contract is fine on a fork.
+    address constant MANAGER_HOLDER = 0xAB92EA75D07792915eB1f29259354866B880dFC2;
     bytes32 constant MANAGER = keccak256("MANAGER");
 
     /// @dev Meta-adapters only: a plain adapter has no instance set, so it cannot exhibit the failure this

@@ -2,7 +2,7 @@
   "chainId": 5042,
   "name": "arc",
   "rpc": "$ARC_RPC_URL",
-  "explorer": "https://arc-scan.org",
+  "explorer": "https://arc.etherscan.io",
   "explorerApiKey": "",
   "chainlinkSequencerFeed": "0x0000000000000000000000000000000000000000",
   "nativeTokenSymbol": "USDC",

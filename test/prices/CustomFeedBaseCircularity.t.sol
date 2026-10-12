@@ -225,7 +225,7 @@ contract CustomFeedBaseCircularityTest is SuperTest {
         // The normal path refuses it — that IS the fix, so go around it to observe the pre-fix behaviour.
         vm.prank(navCalculatorManager);
         vm.expectRevert(_circular(address(dai), address(circular)));
-        nav.addPriceFeed(address(dai), address(circular), IPrices.PriceType.Custom, type(uint256).max);
+        nav.addOrModifyPriceFeed(address(dai), address(circular), IPrices.PriceType.Custom, type(uint256).max);
 
         // Confirm the slot assumption against the live proxy rather than trusting it.
         assertEq(
@@ -273,7 +273,7 @@ contract CustomFeedBaseCircularityTest is SuperTest {
         NavSourcedFeed circular = new NavSourcedFeed(address(dai), address(nav), address(dai), 1e18);
         vm.prank(navCalculatorManager);
         vm.expectRevert(_circular(address(dai), address(circular)));
-        nav.addPriceFeed(address(dai), address(circular), IPrices.PriceType.Custom, type(uint256).max);
+        nav.addOrModifyPriceFeed(address(dai), address(circular), IPrices.PriceType.Custom, type(uint256).max);
         assertEq(nav.getPriceFeedCount(address(dai)), 1, "nothing written");
     }
 

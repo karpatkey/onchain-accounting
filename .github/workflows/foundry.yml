@@ -315,6 +315,15 @@ jobs:
           python3 -m unittest test_reset_deployment_records -v
           python3 -O -m unittest test_reset_deployment_records
 
+      - name: PR #338 migration tools (snapshot_and_clear_meta, ops_safe)
+        # The two tools that carry the in-place migration's live-NAV writes: the surgical record clear +
+        # `.pre-swap.json` producer that SwapMetaAdapter.plan() reads, and the ops-Safe MultiSend encoder
+        # that makes each chain's swap atomic. Pure-logic suites, no network; -O as well, as above.
+        working-directory: script/deploy/preflight
+        run: |
+          python3 -m unittest test_snapshot_and_clear_meta test_ops_safe -v
+          python3 -O -m unittest test_snapshot_and_clear_meta test_ops_safe
+
       - name: Published addresses match the deployment records
         # Added after DEPLOYED_ADDRESSES.md was found publishing 66 addresses that appear in NO deployment
         # record — contracts from a superseded generation. Stale entries still have code, so an integrator
@@ -328,6 +337,45 @@ jobs:
         run: |
           python3 published_addresses_guard.py --self-test
           python3 published_addresses_guard.py
+
+      - name: Residue-audit self-test (residue_audit --self-test)
+        # Pins the decoders in the audit that found ELEVEN dormant `_metaInstances` sets on mainnet —
+        # 51 coordinates, every one of them also held by a LIVE registered adapter, so each would
+        # double-count if its deregistered address were ever re-registered. Only one such set was known
+        # before (hardcoded in `ClearDormantMetaInstances`, and now cleared).
+        #
+        # Only the self-test runs here: the audit itself needs an archive RPC, and a gate that silently
+        # skips without one would be worse than no gate. The decoders are the part that can be wrong
+        # without network, and a wrong decoder reads as "no residue found".
+        run: python3 script/deploy/preflight/residue_audit.py --self-test
+
+      - name: Reclassification manifest self-test (diff_snapshots --self-test)
+        # The wallet-yield family moves 35 holdings from the generic wallet identity to their protocol's
+        # without changing an amount. To the redeploy comparison that is 35 inclusion flips, 17 new adapters
+        # and 70 position lines, indistinguishable from real breakage — so `reclassification.json` downgrades
+        # the intended moves to INFO.
+        #
+        # A manifest that can downgrade too much is worse than no manifest, so the self-test pins the cases
+        # that must STAY a DIFF: a different amount, a flipped isDebt, the wrong target kind, an asset absent
+        # from the manifest, a LOST leg that was not a Wallet leg, a genuinely vanished or new holding, and
+        # two identical holdings collapsing one-for-one rather than many-for-one. No network, no build.
+        run: python3 script/deploy/preflight/diff_snapshots.py --self-test
+
+      - name: Source gates (file:line refs; raw staticcall ratchet)
+        # Two classes nothing else catches. (1) A comment citing `Foo.sol:191` is correct the day it is
+        # written and silently wrong the next time a line is inserted above it — nothing recompiles a
+        # comment. When this gate was added, THREE of the four such references in `src/` were already stale
+        # or false, one of them asserting behaviour that had since been reversed. (2) An unmetered raw
+        # staticcall forwards 63/64 of the frame and absorbs its own out-of-gas as `ok == false`, so a
+        # caller that fails closed on it returns SUCCESSFULLY from a starved read and the holding leaves NAV
+        # with no health flag; one such read measured 1.05e9 gas before it was capped (#168).
+        #
+        # The staticcall half is a RATCHET with a per-file allowlist, not a ban: the 26 existing sites stay
+        # visible and unrewritten, but the class cannot grow. Self-test first, for the same reason as the
+        # steps above — a gate whose detector silently matches nothing is worse than no gate.
+        run: |
+          python3 script/deploy/preflight/source_comment_gates.py --self-test
+          python3 script/deploy/preflight/source_comment_gates.py
 
       - name: Heartbeat-guard self-test (declared_heartbeat_guard --self-test)
         # Wired for the same reason as the step below, and after the same failure: a scope change to

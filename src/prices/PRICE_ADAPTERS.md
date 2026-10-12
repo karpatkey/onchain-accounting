@@ -119,12 +119,12 @@ Defined in `IPrices`.
 
 Internal API (used by NAVCalculator):
 
-- `_addPriceFeed(asset, priceFeed, heartbeat, priceType)` — checks support via `checkPriceOracleSupport`, reads decimals from the feed, appends `PriceFeedConfig` to the array. Rejects duplicates (`PriceFeedAlreadyRegistered`). Heartbeat must be non-zero.
+- `_addPriceFeed(asset, priceFeed, heartbeat, priceType)` — checks support via `checkPriceOracleSupport`, then **upserts**: if the (asset, feed) pair is already registered it UPDATES `chainlinkHeartbeat` in place and emits `PriceFeedHeartbeatUpdated`; otherwise it reads decimals from the feed and appends a `PriceFeedConfig`. Re-registering with an *identical* heartbeat still reverts `PriceFeedAlreadyRegistered`, and a `priceType` differing from the stored one reverts `PriceFeedTypeImmutable`. Heartbeat must be non-zero.
 - `_removePriceFeedAt(asset, index)` — swap-with-last + pop. Reverts with `CannotRemoveLastFeed` when only one feed remains.
 - `_removePriceFeed(asset, priceFeed)` — locates feed by address, calls `_removePriceFeedAt`. Reverts with `PriceFeedNotFound` if not registered.
 - `_removeAllPriceFeeds(asset)` — `delete _priceOracles[asset]`, used by `unregisterAsset` only.
 - `_priceFeedCount(asset)` — returns array length.
-- `checkPriceOracleSupport(asset, priceFeed, priceType)` — public; for Custom: ERC165 check, **plus an asset-binding check** — the feed's own `underlyingAssetSupported()` must equal `asset`, else it reverts `CustomFeedAssetMismatch(asset, feed, feedAsset)` — **plus a circularity check** on `INavSourcedPriceFeed.BASE_ASSET()` (see §5.2); for Chainlink/Redstone/API3: rejects `ICustomPriceFeed`-shaped feeds and calls `latestRoundData()` as a sanity check. The same validator backs `registerAsset`, `addPriceFeed` and `addMonitorFeed`, so both checks are enforced everywhere a Custom feed can be attached to an asset — this view is the transaction-free way to pre-flight it.
+- `checkPriceOracleSupport(asset, priceFeed, priceType)` — public; for Custom: ERC165 check, **plus an asset-binding check** — the feed's own `underlyingAssetSupported()` must equal `asset`, else it reverts `CustomFeedAssetMismatch(asset, feed, feedAsset)` — **plus a circularity check** on `INavSourcedPriceFeed.BASE_ASSET()` (see §5.2); for Chainlink/Redstone/API3: rejects `ICustomPriceFeed`-shaped feeds and calls `latestRoundData()` as a sanity check. The same validator backs `registerAsset`, `addOrModifyPriceFeed` and `addMonitorFeed`, so both checks are enforced everywhere a Custom feed can be attached to an asset — this view is the transaction-free way to pre-flight it.
 
 External view API:
 
@@ -132,7 +132,7 @@ External view API:
 - `getPriceFeedAt(asset, index)` — `PriceFeedConfig` at that index (reverts with `PriceFeedIndexOutOfBounds`).
 - `getPriceFeeds(asset)` — full array.
 
-`NAVCalculator` exposes `registerAsset(asset, oracle, priceType, heartbeat)` (MANAGER) which combines `_addPriceFeed` with adding the asset to the Balances asset registry. Additional feeds are registered via `addPriceFeed(asset, oracle, priceType, heartbeat)`.
+`NAVCalculator` exposes `registerAsset(asset, oracle, priceType, heartbeat)` (MANAGER) which combines `_addPriceFeed` with adding the asset to the Balances asset registry. Additional feeds are registered via `addOrModifyPriceFeed(asset, oracle, priceType, heartbeat)`.
 
 ---
 
@@ -146,7 +146,7 @@ Every custom feed must implement this interface (and ERC165).
 | `latestRoundData()` | Returns `(roundId, answer, startedAt, updatedAt, answeredInRound)` — same shape as Chainlink's `AggregatorV3Interface`. **`Prices.sol` calls this** to obtain `updatedAt` for the heartbeat gate and freshness ranking among surviving Custom feeds. See §5.1 for what to return. |
 | `governingFeedFreshness()` | Returns `(uint256 updatedAt, uint256 heartbeat)` for the underlying Chainlink leg that GOVERNS this feed's staleness — the leg with the largest `age/heartbeat` ratio; `(0, 0)` when there is no trackable Chainlink dependency. Read by `NAVCalculator.getPriceData` so the two values are a real, matched pair from one oracle (unlike `latestRoundData().updatedAt`, which is the worst-case timestamp used for *selection* and carries no companion heartbeat). Advisory: it does not on its own determine staleness. |
 | `decimals()` | Returns the number of decimals the price is expressed in. Pinned at construction. |
-| `underlyingAssetSupported()` | Returns the asset address this feed prices. Single asset per feed (1:1 contract-to-asset). **Checked on-chain at registration:** `registerAsset` / `addPriceFeed` / `addMonitorFeed` all read this and revert `CustomFeedAssetMismatch` unless it equals the asset being registered. This is an *admission check, not a runtime invariant* — it is read once, at registration, and never again on any read path. **Back it with an `immutable` pinned in the constructor** (every in-repo feed does): a feed that can change its answer afterwards can break the binding post-registration, and by flipping between registrations one such feed can back two assets. That grants an attacker nothing a hostile feed could not already do by lying in `getLatestPrice()`, but it does mean the 1:1 property holds by feed convention, not by enforcement. |
+| `underlyingAssetSupported()` | Returns the asset address this feed prices. Single asset per feed (1:1 contract-to-asset). **Checked on-chain at registration:** `registerAsset` / `addOrModifyPriceFeed` / `addMonitorFeed` all read this and revert `CustomFeedAssetMismatch` unless it equals the asset being registered. This is an *admission check, not a runtime invariant* — it is read once, at registration, and never again on any read path. **Back it with an `immutable` pinned in the constructor** (every in-repo feed does): a feed that can change its answer afterwards can break the binding post-registration, and by flipping between registrations one such feed can back two assets. That grants an attacker nothing a hostile feed could not already do by lying in `getLatestPrice()`, but it does mean the 1:1 property holds by feed convention, not by enforcement. |
 | `supportsInterface(bytes4)` | Must return `true` for `type(ICustomPriceFeed).interfaceId` and `IERC165`. |
 
 Every custom feed must **additionally** implement `INavSourcedPriceFeed.BASE_ASSET()` — see §5.2. It is deliberately a separate interface: adding a member to `ICustomPriceFeed` would change `type(ICustomPriceFeed).interfaceId` and make every already-deployed feed fail the ERC165 gate.
@@ -428,7 +428,7 @@ Detailed walkthrough lives at [`docs/howto/add-price-feed.md`](../../docs/howto/
 
 ### 8.3 Registration
 
-Once deployed, register via `NAVCalculator.registerAsset(asset, customFeed, PriceType.Custom, heartbeat)` (MANAGER role). The asset config under `script/config/nav-config/assets-and-price-feeds/<chainId>.json` should hold the asset entry; `script/manage/RegisterAssets.s.sol` reads it and calls `registerAsset` (the first feed) plus `addPriceFeed` (any additional feeds). The custom feed contract itself is deployed earlier by `script/deploy/03_DeployPriceFeeds.s.sol`.
+Once deployed, register via `NAVCalculator.registerAsset(asset, customFeed, PriceType.Custom, heartbeat)` (MANAGER role). The asset config under `script/config/nav-config/assets-and-price-feeds/<chainId>.json` should hold the asset entry; `script/manage/RegisterAssets.s.sol` reads it and calls `registerAsset` (the first feed) plus `addOrModifyPriceFeed` (any additional feeds). The custom feed contract itself is deployed earlier by `script/deploy/03_DeployPriceFeeds.s.sol`.
 
 ---
 
@@ -453,7 +453,7 @@ Per-chain asset registration config lives at `script/config/nav-config/assets-an
 }
 ```
 
-`script/manage/RegisterAssets.s.sol` reads these and registers the first feed through `AssetKindRegistry.registerAsset` — which forwards to `NAVCalculator.registerAsset` in the same transaction, so the asset is registered, classified and labelled atomically — then calls `NAVCalculator.addPriceFeed` for any additional ones.
+`script/manage/RegisterAssets.s.sol` reads these and registers the first feed through `AssetKindRegistry.registerAsset` — which forwards to `NAVCalculator.registerAsset` in the same transaction, so the asset is registered, classified and labelled atomically — then calls `NAVCalculator.addOrModifyPriceFeed` for any additional ones.
 
 ### 9.2 Adding the same asset on multiple chains
 
@@ -461,9 +461,11 @@ Each chain has its own `priceFeed` deployment. L2 variants use `*_L2_Price` so t
 
 ### 9.3 Updating a feed / adding redundancy
 
-Custom feeds are immutable. To change inputs (e.g., new Chainlink feed address), redeploy the adapter, add it with `NAVCalculator.addPriceFeed(asset, newFeed, priceType, heartbeat)` (MANAGER), and remove the old one with `NAVCalculator.removePriceFeed(asset, oldFeed)`. Removal reverts if it would leave the asset with no feeds — add first, then remove.
+Custom feeds are immutable. To change inputs (e.g., new Chainlink feed address), redeploy the adapter, add it with `NAVCalculator.addOrModifyPriceFeed(asset, newFeed, priceType, heartbeat)` (MANAGER), and remove the old one with `NAVCalculator.removePriceFeed(asset, oldFeed)`. Removal reverts if it would leave the asset with no feeds — add first, then remove.
 
-To add a second (or third) feed for redundancy without removing the existing one, just call `addPriceFeed`. Both feeds participate in the freshest-wins selection from that point on.
+> **To change only the HEARTBEAT, do not swap feeds.** Call `addOrModifyPriceFeed` with the SAME feed address and the new heartbeat: it updates the registration in place, touching neither the feed address, nor `priceType`, nor decimals, nor array position. Re-registering with an unchanged heartbeat still reverts `PriceFeedAlreadyRegistered`, so the double-registration guard survives. Before this existed the heartbeat was effectively immutable — `removePriceFeed` refuses an asset's last feed and registration refused a duplicate address — and changing one number took a four-transaction mirror swap that briefly put an unaudited pass-through contract in the pricing path.
+
+To add a second (or third) feed for redundancy without removing the existing one, just call `addOrModifyPriceFeed`. Both feeds participate in the freshest-wins selection from that point on.
 
 ---
 
@@ -559,7 +561,7 @@ IApi3ReaderProxyV1Factory(0x1Fe170311Cb13e3bfB96DeC8FAadcf97BF843381)
 
 ```solidity
 // priceType = PriceType.API3; heartbeat = 86400 (confirm on the Market page first)
-nav.addPriceFeed(asset, proxyAddress, IPrices.PriceType.API3, 86400);
+nav.addOrModifyPriceFeed(asset, proxyAddress, IPrices.PriceType.API3, 86400);
 // The proxy must return 18 decimals; non-18-dec proxies revert with InvalidPriceOracle.
 ```
 

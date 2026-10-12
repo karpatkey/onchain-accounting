@@ -74,7 +74,7 @@ The repo no longer keeps a single `assets.json` or `balance-adapters.json` keyed
 
 ### 3.1 Assets and price feeds
 
-Edit `script/config/nav-config/assets-and-price-feeds/<newChainId>.json`. Add a top-level entry for every asset you want priced on this chain. Each asset has an `address`, an `accrualKind` and a `priceFeeds` array. Each feed entry has a `type` (`Chainlink` / `Custom` / `Redstone` / `API3`) and a `heartbeat`; Chainlink/Redstone/API3 feeds give an `address`, while a `Custom` feed references a deployed adapter by name (`"feed": "<name>"`). The **first** feed in the array registers the asset (`registerAsset`); any **additional** feeds are wired with `addPriceFeed`.
+Edit `script/config/nav-config/assets-and-price-feeds/<newChainId>.json`. Add a top-level entry for every asset you want priced on this chain. Each asset has an `address`, an `accrualKind` and a `priceFeeds` array. Each feed entry has a `type` (`Chainlink` / `Custom` / `Redstone` / `API3`) and a `heartbeat`; Chainlink/Redstone/API3 feeds give an `address`, while a `Custom` feed references a deployed adapter by name (`"feed": "<name>"`). The **first** feed in the array registers the asset (`registerAsset`); any **additional** feeds are wired with `addOrModifyPriceFeed`.
 
 ```json
 {
@@ -177,7 +177,7 @@ forge script script/deploy/03_DeployPriceFeeds.s.sol --chain-id $CHAIN_ID --acco
 #       (separate script; deployer-as-MANAGER broadcasts the batch). MUST run AFTER 08 and after 03: an unregistered
 #       asset's PRIMARY registration is routed through AssetKindRegistry.registerAsset (register + classify + label in
 #       one tx), so with no registry recorded the script reverts AssetKindRegistryNotDeployed; trailing feeds still go
-#       to NAVCalculator.addPriceFeed.
+#       to NAVCalculator.addOrModifyPriceFeed.
 forge script script/manage/RegisterAssets.s.sol --chain-id $CHAIN_ID --account $DEPLOYER_NAME --broadcast
 
 # 04 — deploy enabled balance adapters from contracts-deployment-config/balance-adapters/<chainId>.json + meta-balance-adapters/<chainId>.json

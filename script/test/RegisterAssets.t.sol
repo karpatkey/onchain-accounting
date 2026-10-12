@@ -171,7 +171,7 @@ contract RegisterAssetsTest is SuperTest {
     ///      one monitor feed. `accrualKind` and `labels` are both present and valid, so the only thing that can stop
     ///      the run is the registry's absence — which is the whole point of using one builder for both tests.
     ///
-    ///      Planned actions, in order: `registry.registerAsset` (primary), `nav.addPriceFeed` (second pricing feed),
+    ///      Planned actions, in order: `registry.registerAsset` (primary), `nav.addOrModifyPriceFeed` (second pricing feed),
     ///      `nav.setDivergenceTolerance`, `nav.addMonitorFeed`. That is a MIXED-TARGET batch with the registry at
     ///      index 0 and the NAV everywhere else, which is what {test_happyPath_batchIsMixedTarget_andLabelsLand}
     ///      asserts.
@@ -311,9 +311,13 @@ contract RegisterAssetsTest is SuperTest {
 
         // ---- the batch, as written for the Safe ----
         address[] memory targets = _batchTargets(batchJson);
-        assertEq(targets.length, 4, "TKA plans registerAsset + addPriceFeed + setDivergenceTolerance + addMonitorFeed");
+        assertEq(
+            targets.length,
+            4,
+            "TKA plans registerAsset + addOrModifyPriceFeed + setDivergenceTolerance + addMonitorFeed"
+        );
         assertEq(targets[0], address(registry), "primary registration must target AssetKindRegistry, not the NAV");
-        assertEq(targets[1], address(nav), "addPriceFeed must target the NAV");
+        assertEq(targets[1], address(nav), "addOrModifyPriceFeed must target the NAV");
         assertEq(targets[2], address(nav), "setDivergenceTolerance must target the NAV");
         assertEq(targets[3], address(nav), "addMonitorFeed must target the NAV");
 
@@ -324,8 +328,8 @@ contract RegisterAssetsTest is SuperTest {
         );
         assertEq(
             bytes32(_selectorOf(vm.parseJsonBytes(batchJson, ".transactions[1].data"))),
-            bytes32(NAVCalculator.addPriceFeed.selector),
-            "index 1 must be addPriceFeed"
+            bytes32(NAVCalculator.addOrModifyPriceFeed.selector),
+            "index 1 must be addOrModifyPriceFeed"
         );
         assertEq(
             bytes32(_selectorOf(vm.parseJsonBytes(batchJson, ".transactions[2].data"))),

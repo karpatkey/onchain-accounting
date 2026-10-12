@@ -18,7 +18,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
-TARGET="$REPO_ROOT/script/deploy/preflight/rehearse_fork.sh"
+TARGET="${TARGET:-$REPO_ROOT/script/deploy/preflight/rehearse_fork.sh}"   # override to test rehearse_inplace_fork.sh
 CHAINLIB="$REPO_ROOT/script/deploy/preflight/chainlib.py"
 [[ -f "$TARGET" ]] || { echo "cannot find $TARGET" >&2; exit 1; }
 

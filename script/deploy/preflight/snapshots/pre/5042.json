@@ -1,0 +1,95 @@
+{
+ "chainId": 5042,
+ "name": "arc",
+ "rpcSource": "env ARC_RPC_URL",
+ "block": 23408736,
+ "capturedAtUnix": 1790705228,
+ "proxy": "0x54EaD2A1dB7456cA917675Ea8908ec8A997c6214",
+ "errors": [],
+ "implementation": "0x40e4134849308d53f85a8b685324e2189b13ff7d",
+ "implementationRecorded": "0x40e4134849308d53F85A8B685324E2189b13ff7D",
+ "version": 1,
+ "usdDecimals": 8,
+ "erc20DefaultBalanceAdapter": "0x4bc39dce61245f5a63189d1fa03e6d76646f1ee6",
+ "erc20DefaultRecorded": "0x4Bc39Dce61245F5A63189d1FA03E6D76646f1EE6",
+ "erc20DefaultSupportedAssets": [
+  "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+  "0x0dc4f92879b7670e5f4e4e6e3c801d229129d90d"
+ ],
+ "roles": {
+  "securityCouncil": {
+   "address": "0x8b884f80B3B839F52b6cE168f133e7a5D1f0A537",
+   "DEFAULT_ADMIN_ROLE": false,
+   "MANAGER": false
+  },
+  "admin": {
+   "address": "0xAa5A7C7Ea51F276301f881F9CCB501a1dFeF4F72",
+   "DEFAULT_ADMIN_ROLE": true,
+   "MANAGER": true
+  },
+  "manager": {
+   "address": "0xAa5A7C7Ea51F276301f881F9CCB501a1dFeF4F72",
+   "DEFAULT_ADMIN_ROLE": true,
+   "MANAGER": true
+  }
+ },
+ "assetCount": 2,
+ "assets": [
+  {
+   "address": "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+   "symbol": "USDC",
+   "decimals": 18,
+   "priceFeeds": [
+    {
+     "priceFeed": "0x84ea90ac252dc437031461836db5164219147905",
+     "decimals": 8,
+     "priceType": "Chainlink",
+     "heartbeat": 86400
+    }
+   ],
+   "monitorFeeds": [],
+   "divergenceToleranceBps": 0,
+   "pegToleranceBps": 0,
+   "includedInDefaultAdapter": true
+  },
+  {
+   "address": "0x0dc4f92879b7670e5f4e4e6e3c801d229129d90d",
+   "symbol": "wARS",
+   "decimals": 18,
+   "priceFeeds": [
+    {
+     "priceFeed": "0xc67360b2cf8d23849ad2b7f3e79ab813d64a94c5",
+     "decimals": 8,
+     "priceType": "Custom",
+     "heartbeat": 86400
+    }
+   ],
+   "monitorFeeds": [],
+   "divergenceToleranceBps": 0,
+   "pegToleranceBps": 0,
+   "includedInDefaultAdapter": true
+  }
+ ],
+ "excludedFromDefaultAdapter": [],
+ "adapterCount": 2,
+ "adapters": [
+  {
+   "address": "0x4bc39dce61245f5a63189d1fa03e6d76646f1ee6",
+   "configKey": "ERC20Default",
+   "adapterType": "Default",
+   "metaInstanceCount": 0,
+   "metaInstances": []
+  },
+  {
+   "address": "0x64e1ba8b12ee2bfdbddfd4e0863edfaae824c86a",
+   "configKey": "MorphoVaultsMeta",
+   "adapterType": "Custom",
+   "metaInstanceCount": 1,
+   "metaInstances": [
+    "0x000000000000000000000000f0943081f646f21cf5bfba8e0f670c4248ab0ba5"
+   ]
+  }
+ ],
+ "metaInstanceTotal": 1,
+ "accounts": []
+}

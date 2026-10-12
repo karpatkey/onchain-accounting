@@ -263,7 +263,8 @@ def load_env(dotenv: Path | None = None) -> None:
 
 
 def all_chain_ids() -> list[int]:
-    return sorted(int(p.stem) for p in DEPLOY_DIR.glob("*.json"))
+    # Only `<chainId>.json`: sidecars such as `<chainId>.pre-swap.json` (snapshot_and_clear_meta) live here too.
+    return sorted(int(p.stem) for p in DEPLOY_DIR.glob("*.json") if p.stem.isdigit())
 
 
 def deployed_chain_ids() -> list[int]:

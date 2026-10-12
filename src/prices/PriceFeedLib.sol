@@ -1657,21 +1657,78 @@ library PriceFeedLib {
         uint256 heartbeat,
         IPrices.PriceType priceType
     ) external {
-        _validateFeedSupportInternal(asset, priceFeed, priceType);
-
         if (heartbeat == 0) revert IPrices.InvalidPriceOracle();
+
+        // IDENTITY checks stay above the loop; only the LIVE HEALTH check moves below it. A code-less feed
+        // must fail by name here — `_resolveFeedDecimals` would otherwise reach it first and revert with
+        // EMPTY returndata, which is how moving the whole validator broke
+        // test_RevertWhen_{addFeeds,registerAsset}_codelessPriceFeed.
+        if (priceFeed == address(0) || asset == address(0)) revert IPrices.InvalidPriceOracle();
+        AddressCheckLib.requireContract(priceFeed, "priceFeed");
 
         IPrices.PriceFeedConfig[] storage configs = priceOracles[asset];
         uint256 len = configs.length;
-        for (uint256 i; i < len; ++i) {
-            if (configs[i].priceFeed == priceFeed) revert IPrices.PriceFeedAlreadyRegistered(asset, priceFeed);
-        }
 
+        // Resolved BEFORE the dedup loop so the UPSERT path revalidates too, matching `addMonitorFeed`.
+        //
+        // The read path scales with the STORED value — `_scaleTo8(rawPrice, cfg.decimals)` — and never
+        // re-reads `decimals()`. So if a feed's decimals drift away from what was stored, every price for
+        // that asset is wrong by 10**delta, and a POSITIVE delta OVER-reports: the one direction this repo
+        // never licenses. Chainlink's `AggregatorProxy.decimals()` forwards to the swappable current
+        // aggregator rather than being immutable, so the drift is not structurally impossible.
+        //
+        // This was previously resolved only on the append path, below the loop. The 4-transaction mirror
+        // dance the upsert replaced ended in an `addPriceFeed` that ran this check, so the upsert quietly
+        // removed the one thing that would have caught the drift. Reverting is the safe direction: it
+        // surfaces the drift instead of preserving a stale scale.
         uint8 dec = _resolveFeedDecimals(priceFeed, priceType);
-
         if (len > 0 && configs[0].decimals != dec) {
             revert IPrices.PriceFeedDecimalsMismatch(asset, configs[0].decimals, dec);
         }
+
+        for (uint256 i; i < len; ++i) {
+            if (configs[i].priceFeed != priceFeed) continue;
+            // ALREADY REGISTERED -> UPDATE THE HEARTBEAT IN PLACE, do not revert.
+            //
+            // The heartbeat is registration CONFIGURATION and has to be changeable. Until now it was
+            // effectively immutable: `removeFeed` refuses an asset's LAST feed and this function refused a
+            // feed address the asset already carried, and every registered asset holds exactly one feed — so
+            // both orderings were closed. Changing one number meant registering a MIRROR of the incumbent
+            // feed to escape the last-feed guard, swapping through it, then removing it: four transactions
+            // per asset, with an unaudited pass-through contract transiently in the pricing path.
+            //
+            // Only the heartbeat moves. The feed address, priceType, decimals and array position are all
+            // untouched, so this cannot change WHICH oracle prices the asset — only when its answer is
+            // considered stale. `priceType`/decimals are deliberately NOT re-applied: a caller trying to
+            // change those is changing the feed's identity and must remove and re-add it explicitly.
+            // Reject a changed `priceType` rather than ignoring it. The comment above says a caller changing the
+            // feed's identity "must remove and re-add it explicitly" — but nothing enforced that, and the
+            // validator cannot: it groups Chainlink, Redstone and API3 into one branch, so submitting a
+            // Chainlink feed as Redstone passes validation, moves the heartbeat, and leaves the type untouched.
+            // The caller reads that as success for a change that never happened.
+            if (configs[i].priceType != priceType) revert IPrices.PriceFeedTypeImmutable(asset, priceFeed);
+
+            uint256 oldHeartbeat = configs[i].chainlinkHeartbeat;
+            if (oldHeartbeat == heartbeat) revert IPrices.PriceFeedAlreadyRegistered(asset, priceFeed);
+            configs[i].chainlinkHeartbeat = heartbeat;
+            // MONITORING NOTE: this is now the ONLY event a heartbeat change emits. The mirror-swap dance it
+            // replaced surfaced as a `PriceFeedAdded`/`PriceFeedRemoved` pair, so any alerting subscribed to
+            // that pair will no longer see staleness-window changes. Subscribe to this event instead.
+            emit IPrices.PriceFeedHeartbeatUpdated(asset, priceFeed, oldHeartbeat, heartbeat);
+            return;
+        }
+
+        // ADMISSION validation, deliberately BELOW the upsert loop. It calls latestRoundData() and reverts
+        // InvalidPriceOracle on answer <= 0 — which, run above the loop, made a heartbeat-only change
+        // impossible for exactly the feed needing one: TIGHTENING a window is the standard response to a feed
+        // reporting a non-positive answer, and that feed could not be touched. Blast radius was a whole chain,
+        // since RealignHeartbeats calls this inside its broadcast loop and forge script simulates end to end.
+        // It also froze any feed registered before the Custom guards (#199, #268) existed.
+        //
+        // The upsert path needs none of it: the feed is already admitted, its identity is pinned by the
+        // priceType equality check, and its SCALE is revalidated by _resolveFeedDecimals, which reads
+        // decimals() only and is unaffected by a bad answer.
+        _validateFeedSupportInternal(asset, priceFeed, priceType);
 
         configs.push(
             IPrices.PriceFeedConfig({
@@ -1724,8 +1781,10 @@ library PriceFeedLib {
     // Monitor feed registration / deregistration
     // -------------------------------------------------------------------------
 
-    /// @notice Adds a monitor (divergence-only) feed for an asset. Requires the divergence tolerance to be set
-    ///         first (>0) and the feed to report NAV_DECIMALS decimals. Reverts on duplicates.
+    /// @notice Adds a monitor (divergence-only) feed, or UPDATES the heartbeat of one already registered.
+    /// @dev A new monitor requires the divergence tolerance to be set first (>0); an in-place heartbeat update
+    ///      does not, since that check admits a monitor rather than validating an existing one. Both paths
+    ///      require the feed to report NAV_DECIMALS decimals — the read path scales by the stored value.
     function addMonitorFeed(
         mapping(address => IPrices.PriceFeedConfig[]) storage monitorFeeds,
         mapping(address => IPrices.AssetPricing) storage assetPricing,
@@ -1734,10 +1793,17 @@ library PriceFeedLib {
         uint256 heartbeat,
         IPrices.PriceType priceType
     ) external {
-        _validateFeedSupportInternal(asset, priceFeed, priceType);
+        // IDENTITY checks stay above the loop; the LIVE HEALTH check moves below it, for the same reason
+        // `addFeed` does it. `_validateFeedSupportInternal` calls `latestRoundData()` and reverts
+        // `InvalidPriceOracle` on a non-positive answer, so running it here made a heartbeat-only change
+        // impossible for exactly the monitor that needs one — and `RealignHeartbeats` batches every drifted
+        // monitor into one simulated broadcast, so that single monitor aborted the whole chain's realignment.
+        // The primary axis was fixed for this; leaving the monitor axis unfixed kept the same total blockage
+        // one axis over.
+        if (priceFeed == address(0) || asset == address(0)) revert IPrices.InvalidPriceOracle();
+        AddressCheckLib.requireContract(priceFeed, "priceFeed");
 
         if (heartbeat == 0) revert IPrices.InvalidPriceOracle();
-        if (assetPricing[asset].divergenceToleranceBps == 0) revert IPrices.DivergenceToleranceRequired(asset);
 
         uint8 dec = _resolveFeedDecimals(priceFeed, priceType);
         // Monitors must be USD-comparable to the primary (always NAV_DECIMALS).
@@ -1746,8 +1812,42 @@ library PriceFeedLib {
         IPrices.PriceFeedConfig[] storage monitors = monitorFeeds[asset];
         uint256 len = monitors.length;
         for (uint256 i; i < len; ++i) {
-            if (monitors[i].priceFeed == priceFeed) revert IPrices.MonitorFeedAlreadyRegistered(asset, priceFeed);
+            if (monitors[i].priceFeed != priceFeed) continue;
+            // ALREADY REGISTERED -> UPSERT THE HEARTBEAT, mirroring `addFeed`.
+            //
+            // Without this a monitor's heartbeat could only be changed by remove-then-add, which is TWO
+            // transactions with no atomicity: an interrupted run leaves the monitor removed and divergence
+            // detection silently degraded until someone notices. There is no last-monitor guard to work
+            // around, so unlike the primary-feed case this was never impossible — just unsafe.
+            //
+            // Same two guards as the primary path: an identical re-register still reverts, and the feed's
+            // type is identity rather than configuration, so a changed `priceType` is rejected.
+            if (monitors[i].priceType != priceType) revert IPrices.PriceFeedTypeImmutable(asset, priceFeed);
+            uint256 oldHeartbeat = monitors[i].chainlinkHeartbeat;
+            if (oldHeartbeat == heartbeat) revert IPrices.MonitorFeedAlreadyRegistered(asset, priceFeed);
+            monitors[i].chainlinkHeartbeat = heartbeat;
+            emit IPrices.MonitorFeedHeartbeatUpdated(asset, priceFeed, oldHeartbeat, heartbeat);
+            return;
         }
+
+        // ADMISSION check, deliberately below the upsert loop: a zero tolerance means a NEW monitor would have
+        // nothing to compare against, which says nothing about one already admitted.
+        //
+        // This is ordering hygiene, NOT a bug fix, and the distinction is worth recording. A review argued the
+        // check above the loop would lock out a heartbeat update on an asset whose tolerance had been zeroed
+        // "operationally". It would — but that state is unreachable: `setDivergenceTolerance` rejects zero with
+        // `InvalidTolerance` (pinned by `test_divergenceToleranceCannotBeZeroed`), and admitting a monitor at
+        // all requires a non-zero tolerance, so every monitored asset has one. Keeping the check here because
+        // an admission check belongs on the admission path, not because it was reachable from below.
+        //
+        // The decimals guard above the loop is a different matter and stays there: it protects the read path,
+        // which scales by the STORED value and never re-reads.
+        if (assetPricing[asset].divergenceToleranceBps == 0) revert IPrices.DivergenceToleranceRequired(asset);
+
+        // LIVE HEALTH check, below the loop for the same reason the admission check is: a monitor that is
+        // currently reporting a non-positive answer must still be able to have its window changed, and only a
+        // NEW monitor needs to prove it answers at all.
+        _validateFeedSupportInternal(asset, priceFeed, priceType);
 
         monitors.push(
             IPrices.PriceFeedConfig({
@@ -1806,7 +1906,7 @@ library PriceFeedLib {
         // `extcodesize` precheck fires in this frame before the call and reverts with empty returndata — no
         // selector for the MANAGER to read. The zero-address check above does not cover it; an EOA or a mistyped
         // address is non-zero and code-less. Placed in the shared validator rather than at each entry point so
-        // `registerAsset`, `addPriceFeed` and `addMonitorFeed` all answer the same way.
+        // `registerAsset`, `addOrModifyPriceFeed` and `addMonitorFeed` all answer the same way.
         AddressCheckLib.requireContract(priceFeed, "priceFeed");
         if (priceType == IPrices.PriceType.Custom) {
             if (!priceFeed.supportsInterface(type(ICustomPriceFeed).interfaceId)) revert IPrices.InvalidPriceOracle();

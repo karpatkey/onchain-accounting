@@ -122,6 +122,12 @@ contract BalancesHarness is Balances {
         _removeMetaInstances(adapter, instances);
     }
 
+    /// @dev The PLURAL path. `NAVCalculator` exposes only `removeBalanceAdapters`, so this — not the singular
+    ///      helper above — is the route production takes and the one issue #335's fix has to hold on.
+    function removeBalanceAdaptersDirect(address[] calldata adapters) public {
+        _removeBalanceAdapters(adapters);
+    }
+
     function metaInstanceTotalForTest() public view returns (uint256) {
         return _metaInstanceTotal;
     }
@@ -584,18 +590,32 @@ contract BalancesTest is Test {
         balances.removeMetaInstancesDirect(address(meta), empty);
     }
 
-    function test_meta_instanceTotal_tracksAddAndRemove() public {
+    /// @notice The per-adapter SET tracks add and remove — and `_metaInstanceTotal` deliberately does not.
+    /// @dev This test used to assert the running total. The total is RETIRED: it had no consumer (every
+    ///      `PriceFeedLib` signature taking it left the parameter unused, so it sized no buffer and fed no
+    ///      computation) while three call sites maintained it. Its slot and label survive because a live UUPS
+    ///      proxy's layout is pinned, but the arithmetic is gone. Asserting it stays 0 is the point HERE, on a
+    ///      fresh deploy where the slot was never written: it pins
+    ///      the retirement, so a future author who rewires the arithmetic "to fix the inconsistency" — which
+    ///      two long comments used to exist to discourage — gets a red test naming the decision instead.
+    function test_meta_instanceSetTracksAddAndRemove_totalIsRetired() public {
         Mock_MetaAdapter meta = _registerMeta();
         bytes32[] memory two = new bytes32[](2);
         two[0] = bytes32(uint256(1));
         two[1] = bytes32(uint256(2));
         balances.addMetaInstancesDirect(address(meta), two);
-        assertEq(balances.metaInstanceTotalForTest(), 2);
+        assertEq(balances.getMetaInstances(address(meta)).length, 2, "set reflects the add");
 
         bytes32[] memory one = new bytes32[](1);
         one[0] = bytes32(uint256(1));
         balances.removeMetaInstancesDirect(address(meta), one);
-        assertEq(balances.metaInstanceTotalForTest(), 1, "running total reflects removal");
+        assertEq(balances.getMetaInstances(address(meta)).length, 1, "set reflects the removal");
+
+        assertEq(
+            balances.metaInstanceTotalForTest(),
+            0,
+            "_metaInstanceTotal is retired: no arithmetic, so it stays 0 on a FRESH deploy (a live proxy freezes instead)"
+        );
     }
 
     function test_meta_addInstances_onUnregisteredReverts() public {
@@ -604,6 +624,47 @@ contract BalancesTest is Test {
         instances[0] = bytes32(uint256(1));
         vm.expectRevert(IBalances.InvalidBalanceAdapter.selector);
         balances.addMetaInstancesDirect(address(meta), instances);
+    }
+
+    // --- issue #335: removal clears the instance set ------------------------------------------------
+
+    /// @notice Deregistering a meta adapter CLEARS its instance set, on the plural path production uses.
+    /// @dev The direct regression test issue #335 did not have. `DormantInstanceCleanup.fork.t.sol` looks like
+    ///      coverage but is vacuous with respect to this fix: it calls `removeMetaInstances` at step 3, so the
+    ///      set is already empty by the time `removeBalanceAdapters` runs at step 4, and it passes unchanged
+    ///      with the clearing deleted. This one seeds a coordinate and never clears it by hand.
+    function test_removeBalanceAdapters_clearsMetaInstances() public {
+        Mock_MetaAdapter meta = new Mock_MetaAdapter();
+        bytes32[] memory instances = new bytes32[](1);
+        instances[0] = bytes32(uint256(uint160(address(usdc))));
+        balances.addMetaBalanceAdapterDirect(address(meta), instances);
+        assertEq(balances.getMetaInstances(address(meta)).length, 1, "precondition: one governed coordinate");
+
+        address[] memory rm = new address[](1);
+        rm[0] = address(meta);
+        balances.removeBalanceAdaptersDirect(rm);
+
+        assertEq(balances.getMetaInstances(address(meta)).length, 0, "removal must clear the instance set");
+    }
+
+    /// @notice And re-registering the removed adapter cannot revive the old set.
+    /// @dev This is the actual +$11,375.92 mechanism: `addMetaBalanceAdapter` APPENDS and accepts an empty
+    ///      list, so before the fix one re-registration of a superseded adapter brought its whole set back
+    ///      alongside the live successor, and NAV summed both with no health flag because both are well-formed.
+    function test_removeBalanceAdapters_reRegistrationCannotRevive() public {
+        Mock_MetaAdapter meta = new Mock_MetaAdapter();
+        bytes32[] memory instances = new bytes32[](1);
+        instances[0] = bytes32(uint256(uint160(address(usdc))));
+        balances.addMetaBalanceAdapterDirect(address(meta), instances);
+
+        address[] memory rm = new address[](1);
+        rm[0] = address(meta);
+        balances.removeBalanceAdaptersDirect(rm);
+
+        // The revival step, verbatim: re-register with an EMPTY list and see what comes back.
+        balances.addMetaBalanceAdapterDirect(address(meta), new bytes32[](0));
+
+        assertEq(balances.getMetaInstances(address(meta)).length, 0, "re-registration must not resurrect the old set");
     }
 
     // --- meta/non-meta split (addMetaBalanceAdapter) ---
@@ -619,7 +680,12 @@ contract BalancesTest is Test {
 
         assertTrue(balances.isAdapterRegistered(address(meta)), "meta-adapter registered");
         assertEq(balances.getMetaInstances(address(meta)).length, 2, "instances seeded");
-        assertEq(balances.metaInstanceTotalForTest(), 2, "running total reflects seed");
+        // `_metaInstanceTotal` is retired — see test_meta_instanceSetTracksAddAndRemove_totalIsRetired.
+        assertEq(
+            balances.metaInstanceTotalForTest(),
+            0,
+            "_metaInstanceTotal is retired: no arithmetic, so it stays 0 on a FRESH deploy (a live proxy freezes instead)"
+        );
     }
 
     function test_addBalanceAdapters_rejectsMetaAdapter() public {

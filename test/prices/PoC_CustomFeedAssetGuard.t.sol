@@ -184,7 +184,7 @@ contract PoC_CustomFeedAssetGuard is SuperTest {
 
         vm.prank(navCalculatorManager);
         vm.expectRevert(_mismatch(address(tokenA), address(feedForB), address(tokenB)));
-        nav.addPriceFeed(address(tokenA), address(feedForB), IPrices.PriceType.Custom, type(uint256).max);
+        nav.addOrModifyPriceFeed(address(tokenA), address(feedForB), IPrices.PriceType.Custom, type(uint256).max);
 
         assertEq(nav.getPriceFeedCount(address(tokenA)), 1, "still exactly one feed");
     }
@@ -337,7 +337,7 @@ contract PoC_CustomFeedAssetGuard is SuperTest {
 
         vm.startPrank(navCalculatorManager);
         nav.registerAsset(address(tokenA), address(hostile), IPrices.PriceType.Custom, type(uint256).max);
-        nav.addPriceFeed(address(tokenA), address(backup), IPrices.PriceType.Chainlink, 86_400);
+        nav.addOrModifyPriceFeed(address(tokenA), address(backup), IPrices.PriceType.Chainlink, 86_400);
         vm.stopPrank();
 
         hostile.setUnderlying(address(0xdead));
@@ -366,7 +366,7 @@ contract PoC_CustomFeedAssetGuard is SuperTest {
         // A correctly-bound replacement still passes the guard, so recovery is never blocked.
         Mock_PriceOracleChainlink good = new Mock_PriceOracleChainlink("TKA", 2000e8, 8);
         vm.startPrank(navCalculatorManager);
-        nav.addPriceFeed(address(tokenA), address(good), IPrices.PriceType.Chainlink, 86_400);
+        nav.addOrModifyPriceFeed(address(tokenA), address(good), IPrices.PriceType.Chainlink, 86_400);
         nav.removePriceFeed(address(tokenA), address(hostile));
         vm.stopPrank();
 
@@ -381,7 +381,7 @@ contract PoC_CustomFeedAssetGuard is SuperTest {
 
         vm.startPrank(navCalculatorManager);
         nav.registerAsset(address(tokenA), address(hostile), IPrices.PriceType.Custom, type(uint256).max);
-        nav.addPriceFeed(address(tokenA), address(backup), IPrices.PriceType.Chainlink, 86_400);
+        nav.addOrModifyPriceFeed(address(tokenA), address(backup), IPrices.PriceType.Chainlink, 86_400);
         vm.stopPrank();
 
         hostile.setUnderlying(address(0xdead));

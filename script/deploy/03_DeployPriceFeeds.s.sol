@@ -54,7 +54,7 @@ import {RateFeedGuard} from "../utils/RateFeedGuard.sol";
 
 /// @title DeployPriceFeeds
 /// @notice Deploys custom price feed adapters for NAVCalculator
-/// @dev Price feeds are NOT upgradeable — add new ones via addPriceFeed, remove old via removePriceFeed
+/// @dev Price feeds are NOT upgradeable — add new ones via addOrModifyPriceFeed, remove old via removePriceFeed
 contract DeployPriceFeeds is BaseDeployScript {
     /// @notice An inverted feed's config declares a non-zero `baseAsset`, which the constructor cannot honour.
     /// @dev {InvertedChainlinkCustomPriceFeed.BASE_ASSET} is a compile-time `constant address(0)` — a `USD / X`

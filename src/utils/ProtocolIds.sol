@@ -39,6 +39,23 @@ pragma solidity ^0.8;
 ///        LIDO_WITHDRAWAL                → (address withdrawalQueue)        — static coordinate
 ///        ETHENA_COOLDOWN                → (address sUSDe)                  — static coordinate
 ///        ETHERFI_WITHDRAWAL             → (address withdrawRequestNFT)     — static coordinate
+///        LIDO_STAKED_ETH                → (address token: wstETH | stETH)  — wallet-held, one leg per token
+///        ETHERFI_STAKED_ETH             → (address token: eETH | weETH)
+///        ROCKET_POOL_STAKED_ETH         → (address token: rETH)
+///        RENZO_RESTAKED_ETH             → (address token: ezETH)
+///        KELP_RESTAKED_ETH              → (address token: rsETH)
+///        STADER_STAKED_ETH              → (address token: ETHx)
+///        STAKEWISE_V3_OS_TOKENS         → (address token: osETH | osGNO)
+///        LIQUID_COLLECTIVE_STAKED_ETH   → (address token: lsETH)
+///        ANKR_STAKED_ETH                → (address token: ankrETH)
+///        COINBASE_STAKED_ETH            → (address token: cbETH)
+///        RESERVE_BASKETS                → (address token: ETH+)
+///        ETHENA_SAVINGS                 → (address token: sUSDe)
+///        SKY_SAVINGS                    → (address token: sDAI | sUSDS)
+///        AAVE_V3_SAVINGS                → (address token: sGHO)
+///        SPARK_SAVINGS                  → (address token: spUSDC | spUSDT | spETH)
+///        MAPLE_SAVINGS                  → (address token: syrupUSDC)
+///        NEXUS_MUTUAL_VAULTS            → (address token: RWIV)
 ///        STAKEWISE_V3_EXIT              → (address vault)                 — static, per vault
 ///          (for these: a static positionId with up to two legs — claimable (isLocked=false) + locked
 ///           (isLocked=true) — sharing it, told apart by isLocked; owed asset is in balanceAsset. isLocked
@@ -91,6 +108,14 @@ library ProtocolIds {
     bytes32 internal constant ETHERFI = keccak256("etherfi");
     bytes32 internal constant ETHENA = keccak256("ethena");
     bytes32 internal constant SPARK = keccak256("spark");
+    bytes32 internal constant ROCKET_POOL = keccak256("rocket-pool");
+    bytes32 internal constant RENZO = keccak256("renzo");
+    bytes32 internal constant LIQUID_COLLECTIVE = keccak256("liquid-collective");
+    bytes32 internal constant ANKR = keccak256("ankr");
+    bytes32 internal constant COINBASE = keccak256("coinbase");
+    bytes32 internal constant RESERVE = keccak256("reserve");
+    bytes32 internal constant SKY = keccak256("sky");
+    bytes32 internal constant MAPLE = keccak256("maple");
     bytes32 internal constant NEXUS_MUTUAL = keccak256("nexus-mutual");
     // (CURVE below doubles as the Curve ecosystem id for CURVE_POOLS/CURVE_GAUGES.)
 
@@ -170,6 +195,28 @@ library ProtocolIds {
     bytes32 internal constant LIDO_WITHDRAWAL = keccak256("lido-withdrawal");
     bytes32 internal constant ETHENA_COOLDOWN = keccak256("ethena-cooldown");
     bytes32 internal constant ETHERFI_WITHDRAWAL = keccak256("etherfi-withdrawal");
+
+    // Wallet-held yield-bearing tokens (WalletTokenMetaBalanceAdapterBase family). The token is itself the
+    // registered, priced NAV asset, so every positionId here is `abi.encode(address token)` and the
+    // balanceAsset is that same token. One subId per PROTOCOL, not per token: several tokens share a subId
+    // (wstETH + stETH under Lido) because they are the same product, and the positionId separates them.
+    bytes32 internal constant LIDO_STAKED_ETH = keccak256("lido-staked-eth");
+    bytes32 internal constant ETHERFI_STAKED_ETH = keccak256("etherfi-staked-eth");
+    bytes32 internal constant ROCKET_POOL_STAKED_ETH = keccak256("rocket-pool-staked-eth");
+    bytes32 internal constant RENZO_RESTAKED_ETH = keccak256("renzo-restaked-eth");
+    bytes32 internal constant KELP_RESTAKED_ETH = keccak256("kelp-restaked-eth");
+    bytes32 internal constant STADER_STAKED_ETH = keccak256("stader-staked-eth");
+    bytes32 internal constant STAKEWISE_V3_OS_TOKENS = keccak256("stakewise-v3-os-tokens");
+    bytes32 internal constant LIQUID_COLLECTIVE_STAKED_ETH = keccak256("liquid-collective-staked-eth");
+    bytes32 internal constant ANKR_STAKED_ETH = keccak256("ankr-staked-eth");
+    bytes32 internal constant COINBASE_STAKED_ETH = keccak256("coinbase-staked-eth");
+    bytes32 internal constant RESERVE_BASKETS = keccak256("reserve-baskets");
+    bytes32 internal constant ETHENA_SAVINGS = keccak256("ethena-savings");
+    bytes32 internal constant SKY_SAVINGS = keccak256("sky-savings");
+    bytes32 internal constant AAVE_V3_SAVINGS = keccak256("aave-v3-savings");
+    bytes32 internal constant SPARK_SAVINGS = keccak256("spark-savings");
+    bytes32 internal constant MAPLE_SAVINGS = keccak256("maple-savings");
+    bytes32 internal constant NEXUS_MUTUAL_VAULTS = keccak256("nexus-mutual-vaults");
     bytes32 internal constant STAKEWISE_V3_EXIT = keccak256("stakewise-v3-exit");
 
     // Merkl rewards distributor

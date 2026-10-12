@@ -281,7 +281,7 @@ There is **no `callbackSelector` field** as of [ADR 0012](../../docs/decisions/0
 
 ## nav-config/assets-and-price-feeds/{chainId}.json
 
-**Assets to register on NAVCalculator.** Keyed by symbol; each has a token `address`, an `accrualKind`, and an ordered `priceFeeds[]` array. Read by `script/manage/RegisterAssets.s.sol`. The first feed becomes the asset's primary feed (`registerAsset`); subsequent feeds are added via `addPriceFeed` (see [ADR 0009](../../docs/decisions/0009-multi-feed-price-redundancy.md)). An asset with no oracle uses an empty `priceFeeds: []`. Top-level keys are symbols — no chainId wrapper.
+**Assets to register on NAVCalculator.** Keyed by symbol; each has a token `address`, an `accrualKind`, and an ordered `priceFeeds[]` array. Read by `script/manage/RegisterAssets.s.sol`. The first feed becomes the asset's primary feed (`registerAsset`); subsequent feeds are added via `addOrModifyPriceFeed` (see [ADR 0009](../../docs/decisions/0009-multi-feed-price-redundancy.md)). An asset with no oracle uses an empty `priceFeeds: []`. Top-level keys are symbols — no chainId wrapper.
 
 ### Template
 
@@ -319,7 +319,7 @@ There is **no `callbackSelector` field** as of [ADR 0012](../../docs/decisions/0
 |-------|------|-------------|
 | `address` | string | Token contract address on that chain |
 | `accrualKind` | string | `"None"` \| `"Rebasing"` \| `"Appreciating"`. **Required** for any asset `RegisterAssets` will newly register (not yet on-chain, primary feed resolvable) — that registration routes through `AssetKindRegistry.registerAsset`, which carries the classification, and there is deliberately no default: an absent or unrecognized value reverts `AssetAccrualKindMissingOrInvalid(symbol)` and aborts the batch. |
-| `priceFeeds` | array | Ordered list of feed entries (see below). First → `registerAsset`, rest → `addPriceFeed`. Empty `[]` for an asset with no oracle. |
+| `priceFeeds` | array | Ordered list of feed entries (see below). First → `registerAsset`, rest → `addOrModifyPriceFeed`. Empty `[]` for an asset with no oracle. |
 
 **Feed entry (`priceFeeds[]`)**
 
@@ -847,7 +847,7 @@ MANAGER (keccak256("MANAGER"))
 ├─ NAVCalculator:
 │  ├─ registerAsset()
 │  ├─ unregisterAsset()
-│  ├─ addPriceFeed()
+│  ├─ addOrModifyPriceFeed()
 │  ├─ removePriceFeedAt()
 │  ├─ removePriceFeed()
 │  ├─ addBalanceAdapters()

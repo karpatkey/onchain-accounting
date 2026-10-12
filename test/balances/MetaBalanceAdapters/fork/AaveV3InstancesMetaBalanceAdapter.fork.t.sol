@@ -65,7 +65,7 @@ contract AaveV3InstancesMetaBalanceAdapterForkTest is BalanceAdapterTestBase {
 
         // Register the account's reserves with mock feeds + native ETH for getAccountNav.
         vm.startPrank(manager);
-        nav.addPriceFeed(
+        nav.addOrModifyPriceFeed(
             nav.NATIVE_ADDRESS(),
             address(new Mock_CustomPriceFeed("ETH", nav.NATIVE_ADDRESS(), 3000e8, 8)),
             IPrices.PriceType.Custom,

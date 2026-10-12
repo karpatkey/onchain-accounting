@@ -42,6 +42,26 @@ interface IPrices {
         uint256 chainlinkHeartbeat;
     }
 
+    /// @notice Emitted when an already-registered price feed's staleness heartbeat is changed in place.
+    /// @param underlyingAsset The asset whose registration was updated.
+    /// @param priceFeed The registered feed the heartbeat applies to.
+    /// @param oldHeartbeat The previous heartbeat, in seconds.
+    /// @param newHeartbeat The new heartbeat, in seconds.
+    event PriceFeedHeartbeatUpdated(
+        address indexed underlyingAsset, address indexed priceFeed, uint256 oldHeartbeat, uint256 newHeartbeat
+    );
+
+    /// @notice A registered MONITOR feed's heartbeat changed in place.
+    /// @dev Mirrors {PriceFeedHeartbeatUpdated}. Emitted instead of a `MonitorFeedRemoved`/`MonitorFeedAdded`
+    ///      pair, so alerting subscribed to that pair will not see monitor staleness-window changes.
+    /// @param underlyingAsset The asset whose monitor feed changed.
+    /// @param priceFeed The monitor feed whose staleness window moved.
+    /// @param oldHeartbeat The previous staleness window, in seconds.
+    /// @param newHeartbeat The new staleness window, in seconds.
+    event MonitorFeedHeartbeatUpdated(
+        address indexed underlyingAsset, address indexed priceFeed, uint256 oldHeartbeat, uint256 newHeartbeat
+    );
+
     /// @notice Emitted when a price feed is added for a token.
     /// @param underlyingAsset The address of the token.
     /// @param priceFeed The address of the price feed.
@@ -137,6 +157,14 @@ interface IPrices {
 
     /// @notice Error when attempting to add a feed that is already registered for an asset
     error PriceFeedAlreadyRegistered(address asset, address feed);
+
+    /// @notice The upsert path was given a `priceType` differing from the one the feed is registered with.
+    /// @dev A feed's type is part of its IDENTITY, not its configuration — it selects the read path and the
+    ///      decimals convention. Changing it means removing and re-adding the feed. Rejected rather than
+    ///      ignored because `_validateFeedSupportInternal` puts Chainlink, Redstone and API3 in ONE branch, so a
+    ///      mismatch inside that group passes validation and the caller would otherwise be told a request
+    ///      succeeded that was never applied.
+    error PriceFeedTypeImmutable(address asset, address feed);
 
     /// @notice Error when the feed index is out of bounds
     error PriceFeedIndexOutOfBounds(address asset, uint256 index);

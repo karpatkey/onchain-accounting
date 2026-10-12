@@ -74,7 +74,7 @@ contract ArbitrumForkNAVCalculator is NAVCalculatorForkHarness {
         nav.registerAsset(usdt, ChainlinkPriceFeeds.usdtUsdArbitrum(), IPrices.PriceType.Chainlink, heartbeat);
         nav.registerAsset(wbtc, ChainlinkPriceFeeds.wbtcUsdArbitrum(), IPrices.PriceType.Chainlink, heartbeat);
         nav.registerAsset(arb, ChainlinkPriceFeeds.arbUsdArbitrum(), IPrices.PriceType.Chainlink, heartbeat);
-        nav.addPriceFeed(native, ChainlinkPriceFeeds.ethUsdArbitrum(), IPrices.PriceType.Chainlink, heartbeat);
+        nav.addOrModifyPriceFeed(native, ChainlinkPriceFeeds.ethUsdArbitrum(), IPrices.PriceType.Chainlink, heartbeat);
         nav.registerAsset(weth, ChainlinkPriceFeeds.ethUsdArbitrum(), IPrices.PriceType.Chainlink, heartbeat);
         nav.registerAsset(compound, ChainlinkPriceFeeds.compUsdArbitrum(), IPrices.PriceType.Chainlink, heartbeat);
     }

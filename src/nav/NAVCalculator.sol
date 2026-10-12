@@ -29,16 +29,32 @@ import "src/constants.sol";
 ///      it and drifted into three mutually contradictory figures; they now point here instead. If you cite a
 ///      margin, cite this one — and re-measure it, because a number in a comment is never evidence.
 ///
-///      As of {getAdapterDisplayInfo}, measured by `forge build --sizes`:
-///        - `NAVCalculator`        24,475 / 24,576 -> **101 bytes** free
-///        - `NAVCalculatorV2`      24,567 / 24,576 -> **9 bytes** free
+///      As of the heartbeat upsert, measured by `forge build --sizes`:
+///        - `NAVCalculator`        24,511 / 24,576 -> **65 bytes** free
+///        - `NAVCalculatorUpgradeTarget`  24,511 / 24,576 -> **65 bytes** free  (identical: empty subclass)
 ///
-///      ⚠️ **9, not 101, is the number that gates a change.** `NAVCalculatorV2` is the UUPS upgrade fixture in
-///      `test/nav/NAVCalculator.upgrade.t.sol` — this contract plus one `foo()` function, never deployed — and
-///      CI's Build step is literally `forge build --sizes`, which **exits 1** on ANY contract over the limit,
+///      This number moved TWICE during this PR and both moves are worth knowing, because 65 is tight enough
+///      that the next change has to be sized against it deliberately:
+///        - 24,481 / 95 -> 24,403 / 173: fusing the claim guard with the `addSupportedAsset` it protects into
+///          one library call removed an external-call encoding from two call sites, returning 78 bytes.
+///        - 24,403 / 173 -> 24,511 / 65: splitting that fused call by caller (`revertIfClaimed`) cost 108.
+///          `registerAsset` passes false and `includeAssetInDefaultAdapter` true, because reverting the whole
+///          registration made a claimed token un-re-registerable — a review finding, not a preference.
+///      Re-measured with `forge build --sizes` on a clean tree. A new external selector is ~220 bytes and does
+///      NOT fit; a reviewer previously caught a script citing 173 against this block's then-stale 95, so if
+///      you cite a margin, cite this one and re-measure it.
+///
+///      ⚠️ CI's Build step is literally `forge build --sizes`, which **exits 1** on ANY contract over the limit,
 ///      `test/` included. Verified by probe: an oversized contract under `test/` produces
-///      `Error: some contracts exceed the runtime size limit (EIP-170: 24576 bytes)` and exit code 1. So a change
-///      that fits this contract but pushes the fixture over still fails CI, naming a file nobody edited.
+///      `Error: some contracts exceed the runtime size limit (EIP-170: 24576 bytes)` and exit code 1.
+///
+///      `NAVCalculatorUpgradeTarget` is the UUPS upgrade fixture in `test/nav/NAVCalculator.upgrade.t.sol`. It used to be
+///      this contract PLUS a marker member, which made the FIXTURE the binding limit rather than this contract —
+///      9 bytes of headroom against the 101 here — so a change that fit this contract could still fail CI naming
+///      a file nobody edited. That is not hypothetical: it happened, and it is what motivated emptying the
+///      fixture. The test now proves the swap by reading the proxy's ERC-1967 implementation slot before and
+///      after, so V2 needs no member, compiles to exactly this size, and the two margins moved back into lockstep.
+///      **If anyone re-adds a member to that fixture, the 92-byte tax and the confusing CI failure both return.**
 ///
 ///      **Treat this contract as FULL.** For scale: one minimal external getter has measured at 122 B — more than
 ///      the fixture's whole remaining budget — and {getAdapterDisplayInfo} cost 354 B. The next addition here needs
@@ -172,16 +188,21 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
         // Register first price feed as part of asset registration
         _addPriceFeed(asset, priceFeed, chainlinkHeartbeat, priceType);
 
-        // Add asset to default adapter's inclusion list so wallet balances are reported
-        ERC20DefaultBalanceAdapter(erc20DefaultBalanceAdapter).addSupportedAsset(asset);
+        // Add asset to default adapter's inclusion list so wallet balances are reported — unless a meta
+        // adapter already claims it. Claiming a coordinate does not require the token to be a registered
+        // asset yet, so claim-then-register would otherwise end with two reporters.
+        _includeAssetIfUnclaimed(asset, false);
 
         emit AssetRegistered(asset, _getRegisteredAsset(asset).decimals);
     }
 
     /// @inheritdoc INAVCalculator
-    function addPriceFeed(address asset, address priceFeed, IPrices.PriceType priceType, uint256 chainlinkHeartbeat)
-        external
-    {
+    function addOrModifyPriceFeed(
+        address asset,
+        address priceFeed,
+        IPrices.PriceType priceType,
+        uint256 chainlinkHeartbeat
+    ) external {
         _requireManager();
         if (priceFeed == address(0)) {
             revert InvalidArguments();
@@ -363,7 +384,8 @@ contract NAVCalculator is Initializable, UUPSUpgradeable, AccessControlUpgradeab
     function includeAssetInDefaultAdapter(address asset) external {
         _requireManager();
         _requireAssetExists(asset);
-        ERC20DefaultBalanceAdapter(erc20DefaultBalanceAdapter).addSupportedAsset(asset);
+        // A meta adapter may already govern this token; including it would make TWO reporters.
+        _includeAssetIfUnclaimed(asset, true);
     }
 
     /// @inheritdoc INAVCalculator

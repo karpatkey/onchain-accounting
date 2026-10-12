@@ -1,17 +1,17 @@
 {
  "chainId": 137,
  "name": "polygon",
- "rpcSource": "env POLYGON_URL",
- "block": 90977293,
- "capturedAtUnix": 1785170941,
- "proxy": "0x80eD5cc6cEbAe4fEE1eD8687279aa492A50afa8d",
+ "rpcSource": "alchemy",
+ "block": 94666723,
+ "capturedAtUnix": 1790705228,
+ "proxy": "0x54EaD2A1dB7456cA917675Ea8908ec8A997c6214",
  "errors": [],
- "implementation": "0x07bd077cfb40bbda8a67d0d33ce41b974ab0f8a8",
- "implementationRecorded": "0x07bd077cFB40bBDa8A67d0D33ce41b974aB0F8a8",
+ "implementation": "0x40e4134849308d53f85a8b685324e2189b13ff7d",
+ "implementationRecorded": "0x40e4134849308d53F85A8B685324E2189b13ff7D",
  "version": 1,
  "usdDecimals": 8,
- "erc20DefaultBalanceAdapter": "0x41967559d0a20ad102f6e27b7723b1963390ad75",
- "erc20DefaultRecorded": "0x41967559D0a20Ad102F6e27b7723b1963390aD75",
+ "erc20DefaultBalanceAdapter": "0x4bc39dce61245f5a63189d1fa03e6d76646f1ee6",
+ "erc20DefaultRecorded": "0x4Bc39Dce61245F5A63189d1FA03E6D76646f1EE6",
  "erc20DefaultSupportedAssets": [
   "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
   "0x0d500b1d8e8ef31e21c99d1db9a6444d3adf1270",
@@ -47,7 +47,7 @@
      "priceFeed": "0xab594600376ec9fd91f8e885dadf0ce036862de0",
      "decimals": 8,
      "priceType": "Chainlink",
-     "heartbeat": 86400
+     "heartbeat": 27
     }
    ],
    "monitorFeeds": [],
@@ -64,7 +64,7 @@
      "priceFeed": "0xab594600376ec9fd91f8e885dadf0ce036862de0",
      "decimals": 8,
      "priceType": "Chainlink",
-     "heartbeat": 86400
+     "heartbeat": 27
     }
    ],
    "monitorFeeds": [],
@@ -81,7 +81,7 @@
      "priceFeed": "0xf9680d99d6c9589e2a93a78a04a279e509205945",
      "decimals": 8,
      "priceType": "Chainlink",
-     "heartbeat": 86400
+     "heartbeat": 27
     }
    ],
    "monitorFeeds": [],
@@ -98,7 +98,7 @@
      "priceFeed": "0xfe4a8cc5b5b2366c1b58bea3858e81843581b2f7",
      "decimals": 8,
      "priceType": "Chainlink",
-     "heartbeat": 86400
+     "heartbeat": 27
     }
    ],
    "monitorFeeds": [],
@@ -115,7 +115,7 @@
      "priceFeed": "0x0a6513e40db6eb1b165753ad52e80663aea50545",
      "decimals": 8,
      "priceType": "Chainlink",
-     "heartbeat": 86400
+     "heartbeat": 27
     }
    ],
    "monitorFeeds": [],
@@ -125,17 +125,17 @@
   }
  ],
  "excludedFromDefaultAdapter": [],
- "adapterCount": 2,
+ "adapterCount": 3,
  "adapters": [
   {
-   "address": "0x41967559d0a20ad102f6e27b7723b1963390ad75",
+   "address": "0x4bc39dce61245f5a63189d1fa03e6d76646f1ee6",
    "configKey": "ERC20Default",
    "adapterType": "Default",
    "metaInstanceCount": 0,
    "metaInstances": []
   },
   {
-   "address": "0x2182ec30eff0f213c6662e5b45d6799ff7de5793",
+   "address": "0x0c312178e10ad15a9dc847d664786146f2c88dcf",
    "configKey": "FluidFTokensMeta",
    "adapterType": "Custom",
    "metaInstanceCount": 4,
@@ -145,6 +145,13 @@
     "0x000000000000000000000000d3154535e4d0e179583ad694859e4e876eb12d24",
     "0x00000000000000000000000041b8b33a413681cb7d869d287e99c30c6df775b9"
    ]
+  },
+  {
+   "address": "0xff2d5a8bf801191ed1292e6dd6792f5d03c5afbf",
+   "configKey": "MerklRewards",
+   "adapterType": "Custom",
+   "metaInstanceCount": 0,
+   "metaInstances": []
   }
  ],
  "metaInstanceTotal": 4,

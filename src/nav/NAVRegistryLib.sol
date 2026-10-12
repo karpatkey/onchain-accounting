@@ -21,7 +21,7 @@ import "src/errors.sol";
 ///      CREATE2 address (see `foundry.toml`) and deployed by `01_2_DeployNAVImplementation.s.sol` before NAVCalculator.
 ///      The heavier registry work lives here: the ERC20Default factory, asset register/unregister, single + batch
 ///      adapter add/remove, meta-adapter registration, and meta-instance add/remove (several return a per-call count),
-///      plus two read helpers (getAdaptersForAsset, extractUniqueAssets). The running totals stay inline in the caller,
+///      plus one read helper (getAdaptersForAsset). The running totals stay inline in the caller,
 ///      as do the trivial getters and the single add/remove paths' event emission (the batch and meta paths emit their
 ///      events here) — keeping that work in the caller is cheaper than crossing the DELEGATECALL boundary.
 /// @author KPK
@@ -155,12 +155,34 @@ library NAVRegistryLib {
         address[] storage globalAdapters,
         mapping(address => IBalances.AdapterType) storage adapterTypes,
         mapping(address => bytes32[]) storage metaInstances,
+        mapping(bytes32 => address) storage claimant,
         address adapter,
-        bytes32[] memory instances
+        bytes32[] memory instances,
+        address erc20DefaultBalanceAdapter
     ) external returns (uint256 added) {
         _registerAdapter(isAdapterRegistered, globalAdapters, adapterTypes, adapter, true);
         emit IBalances.BalanceAdapterAdded(address(0), adapter, IBalances.AdapterType.Custom);
-        added = _appendInstances(metaInstances[adapter], instances);
+
+        // REGISTRATION IMPLIES AN EMPTY SET. Wiping here makes residue revival UNREPRESENTABLE rather than
+        // merely detected: there is no state in which a freshly registered adapter carries coordinates nobody
+        // asked it to carry.
+        //
+        // The guard this replaces scanned the incoming batch, so an EMPTY list skipped it entirely — and an
+        // empty list is exactly how issue #335 residue revives: addMetaBalanceAdapter(superseded, []) brings
+        // back dormant coordinates written by the PRE-UPGRADE implementation, which this PR clearing cannot
+        // reach retroactively. Measured against mainnet 2026-09-24 with `residue_audit.py`: the RESIDUE
+        // 0x59039882... this was originally written about is now CLEARED, but ELEVEN other deregistered
+        // adapters still carry dormant sets totalling 51 coordinates, and EVERY ONE of those coordinates is
+        // also held by a live registered adapter — so each would double-count if its stale address were ever
+        // re-registered. This wipe is what closes that, fleet-wide, without needing them cleaned first.
+        // A scan could only reject a CONFLICTING residue; an unconflicting dormant set still revived silently.
+        //
+        // Releasing first keeps registration consistent: the wipe clears any stale claim before the re-seed, so a
+        // re-registered adapter never carries coordinates nobody asked it to. NOTE: `_release` deliberately does
+        // NOT re-arm ERC20DefaultBalanceAdapter (see its own comment below) — a wiped registered-asset coordinate is
+        // left reported by nobody (under-report) until an operator re-arms it, which is the licensed direction.
+        _releaseInstances(claimant, metaInstances, adapter, erc20DefaultBalanceAdapter);
+        added = _appendInstances(claimant, metaInstances, adapter, instances, erc20DefaultBalanceAdapter);
     }
 
     /// @notice Removes an adapter from the global registry (swap-remove). Reverts on the ERC20Default singleton or an
@@ -175,9 +197,11 @@ library NAVRegistryLib {
         mapping(address => bool) storage isAdapterRegistered,
         address[] storage globalAdapters,
         mapping(address => IBalances.AdapterType) storage adapterTypes,
+        mapping(address => bytes32[]) storage metaInstances,
+        mapping(bytes32 => address) storage claimant,
         address adapter,
         address erc20DefaultBalanceAdapter
-    ) external {
+    ) external returns (uint256 clearedInstances) {
         if (adapter == erc20DefaultBalanceAdapter) {
             revert InvalidArguments(); // Cannot remove ERC20DefaultBalanceAdapter
         }
@@ -193,6 +217,24 @@ library NAVRegistryLib {
                 break;
             }
         }
+
+        // REMOVAL CLEARS THE META-INSTANCE SET. Leaving it populated was the defect behind issue #335: a
+        // deregistered adapter kept advertising its coordinates, and `addMetaBalanceAdapter` APPENDS and
+        // accepts an empty list — so one re-registration of a superseded address revived the whole set
+        // alongside the live successor and NAV summed both (+$11,375.92 measured on ACCOUNT_11, with no
+        // health flag because both readings are well-formed). The residue was also unreachable without
+        // first re-registering the adapter, which is the very act that double-counts; that circularity is
+        // what forced a five-transaction cleanup dance. Clearing here removes the state at the only moment
+        // it is both reachable and safe to touch.
+        //
+        // `clearedInstances` is returned for callers that want it; `Balances` deliberately DISCARDS it.
+        // `_metaInstanceTotal` is RETIRED — it had no consumer (every `PriceFeedLib` signature taking it left
+        // the parameter unused), so its arithmetic is gone; only its slot and label survive. NOTE it does NOT
+        // become 0 on an upgraded LIVE proxy — removing the arithmetic FREEZES the slot at whatever the old
+        // implementation last wrote, and nothing zeroes it. Only a fresh deploy reads 0. Its slot and label
+        // survive, because a live UUPS proxy's layout is pinned. Do not wire a subtraction back in: see the
+        // declaration of `_metaInstanceTotal` in `Balances`, and the test that pins it at zero.
+        clearedInstances = _releaseInstances(claimant, metaInstances, adapter, erc20DefaultBalanceAdapter);
 
         delete isAdapterRegistered[adapter];
         delete adapterTypes[adapter];
@@ -235,9 +277,11 @@ library NAVRegistryLib {
         mapping(address => bool) storage isAdapterRegistered,
         address[] storage globalAdapters,
         mapping(address => IBalances.AdapterType) storage adapterTypes,
+        mapping(address => bytes32[]) storage metaInstances,
+        mapping(bytes32 => address) storage claimant,
         address erc20DefaultBalanceAdapter,
         address[] calldata adapters
-    ) external returns (uint256 count) {
+    ) external returns (uint256 count, uint256 clearedInstances) {
         count = adapters.length;
         if (count == 0) revert InvalidArguments();
         for (uint256 i = 0; i < count; i++) {
@@ -254,6 +298,10 @@ library NAVRegistryLib {
             }
             delete isAdapterRegistered[adapter];
             delete adapterTypes[adapter];
+            // Clear the meta-instance set here too (issue #335). This is the path 06_Configure and
+            // SwapMetaAdapter actually take, so a fix that only covered the singular variant would have
+            // left the real deregistration route still leaking dormant coordinates.
+            clearedInstances += _releaseInstances(claimant, metaInstances, adapter, erc20DefaultBalanceAdapter);
             emit IBalances.BalanceAdapterRemoved(address(0), adapter);
         }
     }
@@ -291,29 +339,6 @@ library NAVRegistryLib {
         return ArrayLib.copySliceAddress(temp, count);
     }
 
-    /// @notice Returns the de-duplicated set of assets referenced by a list of position balances. Extracted from
-    ///         NAVCalculator (hot read path) to keep it under EIP-170; NAV reads are off-chain eth_call so the
-    ///         DELEGATECALL overhead is immaterial.
-    /// @dev    Currently UNCALLED: PR #73 moved NAVCalculator's read engine into `PriceFeedLib`, which does its
-    ///         own dedup (`PriceFeedLib._extractUniqueAssets`). Retained here rather than removed because deleting
-    ///         it would change `NAVRegistryLib`'s bytecode and force a second CREATE2-pin regeneration (foundry.toml
-    ///         + LibraryPins + ~15 etch sites) for no functional gain; safe to drop in any future change that
-    ///         already touches `NAVRegistryLib`.
-    /// @param positions The position balances to scan
-    /// @return uniqueAssets The distinct asset addresses
-    function extractUniqueAssets(INAVCalculator.PositionBalance[] memory positions)
-        external
-        pure
-        returns (address[] memory uniqueAssets)
-    {
-        uint256 length = positions.length;
-        address[] memory allAssets = new address[](length);
-        for (uint256 i = 0; i < length; i++) {
-            allAssets[i] = positions[i].balanceAsset.asset;
-        }
-        uniqueAssets = ArrayLib.deduplicateAddresses(allAssets);
-    }
-
     // -------------------------------------------------------------------------
     // Meta-adapter instance registry (ADR 0010)
     // -------------------------------------------------------------------------
@@ -330,8 +355,10 @@ library NAVRegistryLib {
     function addMetaInstances(
         mapping(address => bool) storage isAdapterRegistered,
         mapping(address => bytes32[]) storage metaInstances,
+        mapping(bytes32 => address) storage claimant,
         address adapter,
-        bytes32[] memory instances
+        bytes32[] memory instances,
+        address erc20DefaultBalanceAdapter
     ) external returns (uint256 added) {
         if (!isAdapterRegistered[adapter]) {
             revert IBalances.InvalidBalanceAdapter();
@@ -342,7 +369,7 @@ library NAVRegistryLib {
         if (instances.length == 0) {
             revert InvalidArguments();
         }
-        added = _appendInstances(metaInstances[adapter], instances);
+        added = _appendInstances(claimant, metaInstances, adapter, instances, erc20DefaultBalanceAdapter);
     }
 
     /// @notice Removes instance coordinates from a meta-adapter's set (all-or-nothing, swap-and-pop). Reverts
@@ -357,8 +384,10 @@ library NAVRegistryLib {
     function removeMetaInstances(
         mapping(address => bool) storage isAdapterRegistered,
         mapping(address => bytes32[]) storage metaInstances,
+        mapping(bytes32 => address) storage claimant,
         address adapter,
-        bytes32[] memory instances
+        bytes32[] memory instances,
+        address erc20DefaultBalanceAdapter
     ) external returns (uint256 removed) {
         if (!isAdapterRegistered[adapter]) {
             revert IBalances.InvalidBalanceAdapter();
@@ -380,6 +409,7 @@ library NAVRegistryLib {
                 if (set[j] == instance) {
                     set[j] = set[len - 1];
                     set.pop();
+                    _release(claimant, adapter, instance, erc20DefaultBalanceAdapter);
                     found = true;
                     break;
                 }
@@ -420,21 +450,195 @@ library NAVRegistryLib {
         isAdapterRegistered[adapter] = true;
     }
 
-    /// @notice Appends `instances` to a meta-adapter's set, rejecting duplicates (DuplicateMetaInstance) against the
-    ///         live set — which already includes coordinates pushed earlier in this batch, so an in-batch repeat is
-    ///         caught too. Empty input is a no-op (returns 0); callers that forbid empty check before calling.
+    /// @dev Takes ownership of `instance` for `adapter`: the only writer that adds a coordinate, to BOTH
+    ///      stores — it sets the claim and pushes onto `metaInstances`, so the two cannot diverge on add.
+    /// @dev One SLOAD plus a scan of this adapter's OWN set — see the body for why the SLOAD alone is not
+    ///      enough on an upgraded proxy. `DuplicateMetaInstance` when
+    ///      this adapter already holds it (a within-adapter duplicate is a real over-report —
+    ///      `MetaBalanceAdapter` does not dedupe on read); `MetaInstanceClaimedByAnotherAdapter` naming the
+    ///      holder otherwise, because "already yours" and "already someone else's" are different operator
+    ///      problems. Taking a coordinate also DISARMS the default adapter (`_excludeIfAsset`): once a meta adapter
+    ///      governs a coordinate the default adapter must not also report that token, or the two double-count.
+    ///      (`_release` no longer re-arms the default — see its body — so disarming on take is what keeps a governed
+    ///      token reported by exactly one adapter.)
+    function _claim(
+        mapping(bytes32 => address) storage claimant,
+        mapping(address => bytes32[]) storage metaInstances,
+        address adapter,
+        bytes32 instance,
+        address erc20DefaultBalanceAdapter
+    ) private {
+        address holder = claimant[instance];
+        if (holder != address(0)) {
+            if (holder == adapter) revert IBalances.DuplicateMetaInstance();
+            revert IBalances.MetaInstanceClaimedByAnotherAdapter(instance, holder);
+        }
+
+        // AND the adapter's own set, because the claim map alone is not sufficient on an UPGRADED proxy.
+        // `_claimant` is new storage: it starts EMPTY while `_metaInstances` is already full, so
+        // `claimant[instance] == 0` does NOT prove this adapter is not already holding the coordinate. The
+        // scan this map replaced read `_metaInstances` directly and so covered that case; without this loop,
+        // re-adding a coordinate an adapter already holds would PUSH A SECOND COPY instead of reverting, and
+        // `MetaBalanceAdapter._positionsForInstances` iterates the raw array without de-duplicating — an
+        // immediate double-count, the #335 species, in a window the backfill script is the only other guard
+        // against. Cheap enough to be unconditional: O(one adapter's set), not the O(adapters x instances)
+        // the map exists to delete.
+        bytes32[] storage own = metaInstances[adapter];
+        uint256 ownLen = own.length;
+        for (uint256 i; i < ownLen; ++i) {
+            if (own[i] == instance) revert IBalances.DuplicateMetaInstance();
+        }
+
+        claimant[instance] = adapter;
+        metaInstances[adapter].push(instance);
+        _excludeIfAsset(erc20DefaultBalanceAdapter, instance);
+    }
+
+    /// @dev Gives up `instance`: the only writer that clears a coordinate's CLAIM. It does NOT remove the
+    ///      coordinate from `metaInstances` — the caller owns that, by swap-and-pop in `removeMetaInstances` or
+    ///      by `delete` in `_releaseInstances` — so the two must stay in step. Does NOT re-arm the default adapter
+    ///      (deliberate — see the body): a released registered asset is left reported by nobody (under-report, the
+    ///      licensed direction) until an operator re-arms it via `includeAssetInDefaultAdapter`.
+    function _release(
+        mapping(bytes32 => address) storage claimant,
+        address adapter,
+        bytes32 instance,
+        address erc20DefaultBalanceAdapter
+    ) private {
+        // OWNERSHIP GATE. Releasing used to be unconditional, which let one adapter delete another's claim.
+        // The condition is "we own it": on a backfilled or freshly deployed proxy `holder == adapter` for every
+        // legitimately held coordinate, and in the un-backfilled window `holder == 0` for every pre-existing
+        // one, so a wipe of a dormant residue array cannot clear a live adapter's claim.
+        address holder = claimant[instance];
+        if (holder != adapter) return;
+
+        delete claimant[instance];
+
+        // **RELEASING DOES NOT RE-ARM THE DEFAULT ADAPTER, and that is a deliberate reversal.** An earlier
+        // revision handed a released coordinate back to `ERC20DefaultBalanceAdapter` when it was a registered
+        // asset, so that retiring an adapter could not make a token vanish from NAV. The repo owner recorded
+        // that as intended ("retirement no longer means deletion") and has now reversed it, because the
+        // re-arm could not be made safe:
+        //
+        //   `_claimant` tracks META coordinates only, so at this point the code cannot see a PLAIN adapter
+        //   that reports the same token's wallet balance. Three do — `CapStablecoinBalanceAdapter` (reads
+        //   cUSD, reports USDC), `AaveV3SafetyModuleBalanceAdapter` and `AaveUmbrellaBalanceAdapter` (read a
+        //   stake token, report the underlying) — and each reports under a DIFFERENT asset than the one whose
+        //   balance it read, so nothing records that the wrapper is already accounted for. Re-arming over one
+        //   of them is two well-formed non-debt legs for a single balance with no health flag: an OVER-report,
+        //   which this repo never licenses.
+        //
+        // Two ways to keep the re-arm safely were implemented and rejected on evidence: asking every adapter
+        // via `underlyingAssetsSupported()` (that is a VALUATION surface — `AaveV3InstancesMetaBalanceAdapter`
+        // declares every reserve token, ~67 on mainnet — so it refused legitimate re-arms and broke the
+        // rollback path), and packing an "was armed at claim time" flag into `claimant`'s unused bytes (it
+        // changes the meaning of every read of this map, including the one `BackfillMetaInstanceClaimants`
+        // performs with `vm.load`). A correct predicate would be "does this adapter read THIS token's
+        // `balanceOf`", which no interface answers.
+        //
+        // **So the trade is made explicitly in the licensed direction: releasing under-reports rather than
+        // risking a double count.** `includeAssetInDefaultAdapter` is the repair, it is one MANAGER call, and
+        // it is guarded by {includeAssetIfUnclaimed} so it cannot itself create a second reporter. The
+        // operational consequence is that retiring a meta adapter leaves its registered tokens reported by
+        // nobody until an operator re-arms them — **re-arm first, deregister second**, which the migration
+        // runbook now states as a rule rather than advice.
+    }
+
+    /// @dev Appends `instances` to `adapter`'s set via `_claim`, which is the only writer that adds.
     /// @return added The number of coordinates appended (== instances.length).
-    function _appendInstances(bytes32[] storage set, bytes32[] memory instances) private returns (uint256 added) {
+    function _appendInstances(
+        mapping(bytes32 => address) storage claimant,
+        mapping(address => bytes32[]) storage metaInstances,
+        address adapter,
+        bytes32[] memory instances,
+        address erc20DefaultBalanceAdapter
+    ) private returns (uint256 added) {
         added = instances.length;
         for (uint256 i = 0; i < added; i++) {
-            bytes32 instance = instances[i];
-            uint256 len = set.length;
-            for (uint256 j = 0; j < len; j++) {
-                if (set[j] == instance) {
-                    revert IBalances.DuplicateMetaInstance();
-                }
-            }
-            set.push(instance);
+            _claim(claimant, metaInstances, adapter, instances[i], erc20DefaultBalanceAdapter);
         }
+    }
+
+    /// @notice Arms the default adapter for `asset`, refusing if a meta adapter already governs it — i.e. the
+    ///         single gate through which a token may become a wallet-reported holding.
+    /// @dev One SLOAD decides it, replacing an O(adapters x instances) scan; that collapse is what let the
+    ///      guard fit the calculator's byte budget at all. Guards BOTH inclusion entry points:
+    ///      `includeAssetInDefaultAdapter`, and `registerAsset`, which included unconditionally and so turned
+    ///      claim-then-register into two reporters.
+    ///
+    ///      The check and the `addSupportedAsset` it guards live in ONE library function rather than two
+    ///      statements in the caller, for two reasons. Bytes: `NAVCalculator` was 60 over EIP-170 with them
+    ///      split, because each call site paid for an external-call encoding on top of the DELEGATECALL, and
+    ///      the libraries have four-figure headroom while the calculator has none. Correctness: a guard that
+    ///      the caller must remember to place before a separate call is exactly the seven-writers shape this
+    ///      PR exists to remove — fused, there is no way to reach the inclusion without passing the gate.
+    ///
+    ///      NOT fail-open: this runs where the asset is known-registered, so a
+    ///      revert from `addSupportedAsset` is a real fault and must reach the MANAGER rather than be
+    ///      swallowed.
+    /// @dev `revertIfClaimed` splits the two callers, and collapsing them was a trap.
+    ///
+    ///      `includeAssetInDefaultAdapter` is an operator ASKING for a second reporter, so refusing loudly is
+    ///      the right answer: true.
+    ///
+    ///      `registerAsset` is not asking for anything — arming the default adapter is an incidental
+    ///      convenience on the way to registering an asset. Reverting there made a claimed token permanently
+    ///      UN-RE-REGISTERABLE: `unregisterAsset` does not release the claim, so the documented
+    ///      unregister-then-register repair for a wrong feed died on the second half, and `RegisterAssets`
+    ///      planned it for any unregistered asset with no claimant check — so a whole chain's Safe MultiSend
+    ///      reverted at execution, after the batch file had been written. With `false` the asset registers and
+    ///      simply is not armed, which is the correct end state anyway: its meta adapter reports it.
+    function includeAssetIfUnclaimed(
+        mapping(bytes32 => address) storage claimant,
+        address erc20DefaultBalanceAdapter,
+        address asset,
+        bool revertIfClaimed
+    ) external {
+        bytes32 coord = bytes32(uint256(uint160(asset)));
+        address holder = claimant[coord];
+        if (holder != address(0)) {
+            if (revertIfClaimed) revert IBalances.MetaInstanceClaimedByAnotherAdapter(coord, holder);
+            return; // already governed: registering the asset is fine, arming the default adapter is not
+        }
+        ERC20DefaultBalanceAdapter(erc20DefaultBalanceAdapter).addSupportedAsset(asset);
+    }
+
+    /// @dev Removes a taken coordinate from the default adapter's inclusion list — the mirror of
+    ///      self-limiting: `removeSupportedAsset` is idempotent and
+    ///      unguarded on membership, so a coordinate that is not a registered asset is simply absent and the
+    ///      call is a no-op.
+    function _excludeIfAsset(address erc20DefaultBalanceAdapter, bytes32 instance) private {
+        if (erc20DefaultBalanceAdapter == address(0)) return;
+        address token = address(uint160(uint256(instance)));
+        if (token == address(0)) return;
+        // NOT fail-open, and that is deliberate. `addSupportedAsset`
+        // genuinely reverts `AssetNotFound` for a coordinate that is not a registered asset, so swallowing
+        // that is correct. `removeSupportedAsset` has no such case: it reverts only for a caller that is not
+        // its pinned `NAV_CALCULATOR`, which cannot happen for a correctly deployed pair — the library runs by
+        // DELEGATECALL so `msg.sender` is the proxy, the adapter pins its NAV in an immutable, and
+        // `_setErc20DefaultBalanceAdapter` is set-once, so the pairing is fixed at deploy — and
+        // `EnumerableSet.remove` is unguarded on membership, so a non-asset coordinate is simply a no-op.
+        // A catch here could therefore absorb nothing legitimate and only a real fault, leaving the token
+        // STILL ARMED on the default adapter while a meta adapter claims it: two reporters, no health flag.
+        // Failing loudly is the safe polarity on the exclude side.
+        ERC20DefaultBalanceAdapter(erc20DefaultBalanceAdapter).removeSupportedAsset(token);
+    }
+
+    /// @dev Releases every coordinate in `adapter`'s set (clears each claim — `_release` does NOT re-arm the
+    ///      default adapter, so a registered token is left reported by nobody until an operator re-includes it),
+    ///      then deletes the array. Registration wipes too, so a dormant residue can never ride back in on a
+    ///      re-registration.
+    function _releaseInstances(
+        mapping(bytes32 => address) storage claimant,
+        mapping(address => bytes32[]) storage metaInstances,
+        address adapter,
+        address erc20DefaultBalanceAdapter
+    ) private returns (uint256 cleared) {
+        bytes32[] storage set = metaInstances[adapter];
+        cleared = set.length;
+        for (uint256 i = 0; i < cleared; i++) {
+            _release(claimant, adapter, set[i], erc20DefaultBalanceAdapter);
+        }
+        if (cleared != 0) delete metaInstances[adapter];
     }
 }

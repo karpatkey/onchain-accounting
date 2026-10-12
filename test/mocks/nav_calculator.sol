@@ -155,6 +155,21 @@ contract Mock_NAVCalculator is INAVCalculator {
     ///      governed instance set that `MetaBalanceAdapter.positionIds()` enumerates.
     mapping(address => bytes32[]) private _metaInstances;
 
+    /// @dev Mirrors `Balances.erc20DefaultBalanceAdapter`, which `INAVCalculator` does not declare.
+    ///
+    ///      Seeded with a live stub rather than left at `address(0)`, because a REAL NAV always has one:
+    ///      `initialize` deploys `ERC20DefaultBalanceAdapter` and `_setErc20DefaultBalanceAdapter` is a
+    ///      zero -> non-zero transition that happens once. A zero here is a state production never reaches,
+    ///      and adapters that cache this address in an `immutable` would bake in the disarmed configuration —
+    ///      which is how a whole unit suite came to run against a shape it was meant to be testing.
+    ///
+    ///      The stub reports nothing as included, i.e. the post-exclusion steady state.
+    address public erc20DefaultBalanceAdapter = address(new Mock_DefaultAdapterInclusion());
+
+    function setErc20DefaultBalanceAdapter(address a) external {
+        erc20DefaultBalanceAdapter = a;
+    }
+
     function setMetaInstances(address adapter, bytes32[] memory instances) external {
         _metaInstances[adapter] = instances;
     }
@@ -215,7 +230,7 @@ contract Mock_NAVCalculator is INAVCalculator {
         revert("Not implemented in mock");
     }
 
-    function addPriceFeed(address, address, IPrices.PriceType, uint256) external pure override {
+    function addOrModifyPriceFeed(address, address, IPrices.PriceType, uint256) external pure override {
         revert("Not implemented in mock");
     }
 
@@ -403,5 +418,19 @@ contract Mock_NAVCalculator is INAVCalculator {
 
     function setChainlinkL2SequencerGracePeriod(uint256) external pure override {
         revert("Not implemented in mock");
+    }
+}
+
+/// @notice The one member the wallet-yield de-dup guard reads off `ERC20DefaultBalanceAdapter`.
+/// @dev Separate contract so `Mock_NAVCalculator` can seed a non-zero default adapter at construction.
+contract Mock_DefaultAdapterInclusion {
+    mapping(address => bool) public included;
+
+    function setIncluded(address a, bool v) external {
+        included[a] = v;
+    }
+
+    function isSupportedByDefault(address a) external view returns (bool) {
+        return included[a];
     }
 }

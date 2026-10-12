@@ -60,7 +60,7 @@ Rules:
 - Each entry's `type` ∈ `{Chainlink, Custom, Redstone, API3}`.
 - `address` is the feed's on-chain address — for Chainlink, the **proxy** (not the aggregator).
 - `heartbeat` is in seconds. Use the value from the feed page.
-- The **first** entry in `priceFeeds[]` is used for `registerAsset`; every additional entry is applied via `addPriceFeed` (see [ADR 0009](../decisions/0009-multi-feed-price-redundancy.md) and §C).
+- The **first** entry in `priceFeeds[]` is used for `registerAsset`; every additional entry is applied via `addOrModifyPriceFeed` (see [ADR 0009](../decisions/0009-multi-feed-price-redundancy.md) and §C).
 
 ### A.3 No symbol list to edit
 
@@ -78,9 +78,9 @@ Check for an existing entry before adding. The constant is used in fork tests an
 
 ### A.5 Register via deploy script
 
-No new contract to deploy. The `RegisterAssets.s.sol` script reads each chain's assets from `nav-config/assets-and-price-feeds/<chainId>.json` (`getAssetSymbols`) and routes the first feed through `AssetKindRegistry.registerAsset(token, feed, PriceType.Chainlink, heartbeat, accrualKind, labels)` — which forwards to `NAVCalculator.registerAsset` in the same transaction, so the asset is registered, classified and labelled atomically — then calls `NAVCalculator.addPriceFeed(...)` for the rest. `08_DeployAssetKindRegistry` must have run first: with no registry recorded for the chain the script reverts `AssetKindRegistryNotDeployed` rather than falling back to the NAV. Run it as part of the next deployment cycle or management TX.
+No new contract to deploy. The `RegisterAssets.s.sol` script reads each chain's assets from `nav-config/assets-and-price-feeds/<chainId>.json` (`getAssetSymbols`) and routes the first feed through `AssetKindRegistry.registerAsset(token, feed, PriceType.Chainlink, heartbeat, accrualKind, labels)` — which forwards to `NAVCalculator.registerAsset` in the same transaction, so the asset is registered, classified and labelled atomically — then calls `NAVCalculator.addOrModifyPriceFeed(...)` for the rest. `08_DeployAssetKindRegistry` must have run first: with no registry recorded for the chain the script reverts `AssetKindRegistryNotDeployed` rather than falling back to the NAV. Run it as part of the next deployment cycle or management TX.
 
-To add a **second or third feed** for an already-registered asset (redundancy), call `NAVCalculator.addPriceFeed(asset, feed, PriceType.Chainlink, heartbeat)` via the MANAGER Safe. This appends the feed to the asset's array; both participate in the freshest-wins selection. See §C below.
+To add a **second or third feed** for an already-registered asset (redundancy), call `NAVCalculator.addOrModifyPriceFeed(asset, feed, PriceType.Chainlink, heartbeat)` via the MANAGER Safe. This appends the feed to the asset's array; both participate in the freshest-wins selection. See §C below.
 
 ### A.6 Verify
 
@@ -324,7 +324,7 @@ After deploy, register the asset on `NAVCalculator` (MANAGER-gated) by running `
 forge script script/manage/RegisterAssets.s.sol --rpc-url <RPC>
 ```
 
-This plans `AssetKindRegistry.registerAsset(asset, customFeed, PriceType.Custom, heartbeat, accrualKind, labels)` (first feed) plus `NAVCalculator.addPriceFeed(asset, feed, priceType, heartbeat)` for any additional feeds (or for a pre-registered asset that only needs a feed added), followed by `setDivergenceTolerance` / `setPegTolerance` / `addMonitorFeed` for the asset's `divergenceToleranceBps`, `pegToleranceBps` and `monitorFeeds` config. It writes a Safe-TX batch to `safe-transactions/<chainId>-register-assets.json`; during the initial deploy flow the deployer EOA (which still holds `MANAGER`) broadcasts it directly with `--broadcast`, while after handoff the same batch is signed and executed on the security-council Safe.
+This plans `AssetKindRegistry.registerAsset(asset, customFeed, PriceType.Custom, heartbeat, accrualKind, labels)` (first feed) plus `NAVCalculator.addOrModifyPriceFeed(asset, feed, priceType, heartbeat)` for any additional feeds (or for a pre-registered asset that only needs a feed added), followed by `setDivergenceTolerance` / `setPegTolerance` / `addMonitorFeed` for the asset's `divergenceToleranceBps`, `pegToleranceBps` and `monitorFeeds` config. It writes a Safe-TX batch to `safe-transactions/<chainId>-register-assets.json`; during the initial deploy flow the deployer EOA (which still holds `MANAGER`) broadcasts it directly with `--broadcast`, while after handoff the same batch is signed and executed on the security-council Safe.
 
 Verify:
 
@@ -363,7 +363,7 @@ Use this path when an asset is already registered and you want to add a second (
 ### C.2 Add the feed via Safe TX
 
 ```solidity
-NAVCalculator.addPriceFeed(asset, feedAddress, PriceType.Redstone /* or API3 */, heartbeat)
+NAVCalculator.addOrModifyPriceFeed(asset, feedAddress, PriceType.Redstone /* or API3 */, heartbeat)
 ```
 
 This appends the feed to the asset's array. On the next read, `Prices._selectFeed` picks the freshest non-stale survivor across all feeds.

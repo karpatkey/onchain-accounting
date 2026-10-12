@@ -1,0 +1,26 @@
+{
+  "PriceFeedLib": "0x713e69954e11c2eD19dBB84950674D6a68DBfebc",
+  "NavRegistryLib": "0x55b6AA29D296Eb2Ee0e7b76686eaA2e479CA3511",
+  "NAVCalculatorImplementation": "0x40e4134849308d53F85A8B685324E2189b13ff7D",
+  "BridgeEscrowImplementation": "0xe2237d9776041514b1AC66856407Ed344b480De0",
+  "balanceAdapters": {
+    "ERC20Default": "0x4Bc39Dce61245F5A63189d1FA03E6D76646f1EE6",
+    "AaveV3InstancesMeta": "0x04Ba6789B4AD5D6CF63Ec9cc301c13F6a8A0210b",
+    "StakeWiseV3VaultsMeta": "0x8cbAFEC5745AF6727b7be0829e507f58b3b3ce0d",
+    "StakeWiseV3ExitQueueAssisted": "0xE1e163663961237C0955b665188864f0fD281020",
+    "UniswapV3PoolsMeta": "0xA336f7171B9CE77de13451419B3254099beF2C24",
+    "MerklRewards": "0xFf2D5A8bf801191eD1292E6DD6792F5D03c5aFBF"
+  },
+  "NAVCalculatorProxy": "0x54EaD2A1dB7456cA917675Ea8908ec8A997c6214",
+  "customPriceFeeds": {
+    "sXDAI": "0x513F159f9a2a65fec8AC61d16203450fDC7cA893",
+    "wstETH_L2": "0x2A0Fa71f5923f720c4a622cD4Da0b7837C466612",
+    "osGNO": "0xd0e852a932490290B5bAACe8DafF04D9ec19c164"
+  },
+  "StakeWiseV3ExitQueueAssistant": "0xB111B929f443Fd48bD40a6e1e4E064a878096B6C",
+  "AssetKindRegistry": "0xf60467a88C2b4d0f46C0c41C3Ba0C74da3d3CCD0",
+  "$preSwap": {
+    "capturedAtUnix": 1790707108,
+    "note": "written by snapshot_and_clear_meta.py; OLD addresses for SwapMetaAdapter.plan()"
+  }
+}

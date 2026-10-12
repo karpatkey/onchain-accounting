@@ -17,7 +17,7 @@ import {console2} from "forge-std/console2.sol";
 ///         in `deployments/<id>.json`.
 /// @dev Per asset, reconciled to the config target and emitted as ONE atomic batch in two global passes so no asset
 ///      is ever left without a valid pricing feed:
-///        Pass A (adds/sets): addPriceFeed(target primary, if absent on-chain); setDivergenceTolerance;
+///        Pass A (adds/sets): addOrModifyPriceFeed(target primary, if absent on-chain); setDivergenceTolerance;
 ///                            setPegTolerance; addMonitorFeed(each target monitor not already present).
 ///        Pass B (removes):   removePriceFeed(each on-chain PRICING feed whose address != the target primary) —
 ///                            i.e. the old (swapped-out) primary and every redundancy feed now living in monitorFeeds;
@@ -114,6 +114,11 @@ contract MigrateToMonitorFeeds is BaseDeployScript {
         p.asset = asset;
 
         IPrices.PriceFeedConfig[] memory pricing = IPrices(navProxy).getPriceFeeds(asset);
+        // PRESENCE only, deliberately: a drifted HEARTBEAT on an already-present primary is NOT planned here.
+        // `addOrModifyPriceFeed` upserts, so emitting it would realign the heartbeat too — which is why this
+        // guard now reads like an oversight and did not before the rename. It is scope, not omission:
+        // heartbeat realignment belongs to `RealignHeartbeats`, which plans against the same config and is
+        // idempotent, and duplicating it here would give two scripts authority over one field.
         if (!_containsFeed(pricing, prim)) {
             p.addPrimary = prim;
             p.addPrimaryType = primType;
@@ -295,7 +300,7 @@ contract MigrateToMonitorFeeds is BaseDeployScript {
                     navProxy,
                     0,
                     abi.encodeCall(
-                        NAVCalculator.addPriceFeed, (p.asset, p.addPrimary, p.addPrimaryType, p.addPrimaryHb)
+                        NAVCalculator.addOrModifyPriceFeed, (p.asset, p.addPrimary, p.addPrimaryType, p.addPrimaryHb)
                     )
                 );
             }

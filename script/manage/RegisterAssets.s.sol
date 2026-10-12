@@ -13,16 +13,16 @@ import {console2} from "forge-std/console2.sol";
 
 /// @title RegisterAssets
 /// @notice Registers each asset from `script/config/nav-config/assets-and-price-feeds/<id>.json` on NAVCalculator, wiring ALL of the asset's
-///         configured price feeds: the first via `registerAsset`, any additional via `addPriceFeed` (ADR 0009
-///         multi-feed redundancy). Generates a Safe tx batch and (when the signer is MANAGER) can broadcast.
+///         configured price feeds: the first via `registerAsset`, any additional via `addOrModifyPriceFeed` (ADR
+///         0009 multi-feed redundancy). Generates a Safe tx batch and (when the signer is MANAGER) can broadcast.
 /// @dev
 ///   - Asset list per chain comes from `assets.json` keys (no hardcoded list).
 ///   - Each asset's `priceFeeds[]` drives the feeds. `Custom` feeds resolve their on-chain address from the
 ///     deployments file (`deployments/<id>.json .customPriceFeeds.<name>`), so 03_DeployPriceFeeds must run first.
 ///   - Idempotent: feeds already present on-chain are skipped, so an asset already registered with all its
-///     configured feeds is a no-op, while any new trailing feeds are topped up via addPriceFeed (ADR-0009
+///     configured feeds is a no-op, while any new trailing feeds are topped up via addOrModifyPriceFeed (ADR-0009
 ///     redundancy). A pre-registered asset with no feed (the NATIVE_ADDRESS sentinel from initialize) gets its
-///     first feed via addPriceFeed too (registerAsset is used only for an unregistered asset's primary feed).
+///     first feed via addOrModifyPriceFeed too (registerAsset is used only for an unregistered asset's primary feed).
 ///   - Idempotent on TOLERANCES too: `setDivergenceTolerance` / `setPegTolerance` are emitted only when the
 ///     configured value differs from what the NAV already holds. Before that check existed, registering ONE asset
 ///     planned 27 transactions — 24 of them rewriting tolerances that already equalled config. They changed no
@@ -101,6 +101,25 @@ contract RegisterAssets is BaseDeployScript {
     ///      discovered later by `08`. There is deliberately no default — see `ConfigReader.accrualKindFromString`.
     error AssetAccrualKindMissingOrInvalid(string symbol);
 
+    /// @notice `getPriceFeedAt` could not be read while verifying a positional skip.
+    error FeedPositionUnreadable(address asset, uint256 index);
+
+    /// @notice The config declares a different `priceType` than the feed is registered with.
+    /// @dev Caught at PLAN time. `addOrModifyPriceFeed` would reject it at execution, after the Safe batch
+    ///      file has already been written and possibly signed.
+    error FeedTypeMismatch(address asset, uint256 index, IPrices.PriceType onChainType, IPrices.PriceType configType);
+
+    /// @notice The on-chain feed at this index is not the config feed — the append-only assumption is broken.
+    /// @dev Loud on purpose. Since the heartbeat upsert, silently continuing would rewrite the WRONG feed's
+    ///      staleness window instead of reverting the batch.
+    error FeedOrderMismatch(address asset, uint256 index, address onChainFeed, address configFeed);
+
+    /// @notice A registered monitor's `priceType` differs from config, which `addMonitorFeed` will refuse.
+    /// @dev Raised at PLAN time. The feed's type is identity, not configuration, so the NAV reverts
+    ///      `PriceFeedTypeImmutable` on an attempt to change it — and without this check that revert landed at
+    ///      Safe EXECUTION, after the batch file had been written and signed.
+    error MonitorFeedTypeDrift(address asset, address feed, uint8 onChainType, uint8 configType);
+
     function run() public override {
         setUp();
 
@@ -137,7 +156,7 @@ contract RegisterAssets is BaseDeployScript {
             return;
         }
 
-        // Pass 1: count actions (registerAsset + addPriceFeed) across all assets.
+        // Pass 1: count actions (registerAsset + addOrModifyPriceFeed) across all assets.
         uint256 total;
         for (uint256 i = 0; i < symbols.length; i++) {
             total += _planAsset(symbols[i], navProxy).length;
@@ -196,8 +215,9 @@ contract RegisterAssets is BaseDeployScript {
         if (registered) {
             (bool okc, bytes memory cd) =
                 navProxy.staticcall(abi.encodeWithSelector(IPrices.getPriceFeedCount.selector, asset));
-            // If the on-chain feed count can't be read, skip rather than risk re-adding existing feeds (a duplicate
-            // addPriceFeed reverts and would abort the whole batch).
+            // If the on-chain feed count can't be read, skip rather than risk re-adding existing feeds: under the
+            // upsert a re-add is no longer a guaranteed revert — `addOrModifyPriceFeed` reverts on an IDENTICAL
+            // heartbeat but silently rewrites a registered feed's heartbeat when it differs.
             if (!(okc && cd.length == 32)) return acts;
             onChainFeeds = abi.decode(cd, (uint256));
         }
@@ -212,12 +232,12 @@ contract RegisterAssets is BaseDeployScript {
 
         // Pricing feeds and monitor/tolerance actions are each built in their own frame, then concatenated — this
         // keeps _planAsset under the via_ir stack limit.
-        bytes[] memory feedActs = _planFeedActs(symbol, asset, registered, onChainFeeds, feedCount);
+        bytes[] memory feedActs = _planFeedActs(symbol, asset, registered, onChainFeeds, feedCount, navProxy);
         bytes[] memory monActs = _planMonitorActs(symbol, asset, registered, navProxy);
         acts = _concat(feedActs, monActs);
     }
 
-    /// @notice Plans an asset's pricing-feed actions (registerAsset for the primary; addPriceFeed for trailing new
+    /// @notice Plans an asset's pricing-feed actions (registerAsset for the primary; addOrModifyPriceFeed for trailing new
     ///         feeds). The first `onChainFeeds` resolvable feeds are already present (feeds are appended, never
     ///         reordered) and skipped.
     function _planFeedActs(
@@ -225,7 +245,8 @@ contract RegisterAssets is BaseDeployScript {
         address asset,
         bool registered,
         uint256 onChainFeeds,
-        uint256 feedCount
+        uint256 feedCount,
+        address navProxy
     ) private view returns (bytes[] memory acts) {
         bytes[] memory tmp = new bytes[](feedCount);
         uint256 n;
@@ -255,10 +276,48 @@ contract RegisterAssets is BaseDeployScript {
                     (asset, feed, pt, hb, accrual, ConfigReader.readAssetLabels(vm, currentChainId, symbol))
                 );
             } else if (registered && resolvableIdx < onChainFeeds) {
-                // Already present on-chain (added in a prior run) — skip to avoid a duplicate addPriceFeed.
+                // Already present on-chain (added in a prior run) — skip, but verify by ADDRESS first.
+                //
+                // This branch used to skip on POSITION alone, resting on "feeds are appended, never reordered"
+                // with the revert from a duplicate `addPriceFeed` as the backstop if that assumption ever broke.
+                // The upsert removed that backstop: `addOrModifyPriceFeed` now SUCCEEDS on an already-registered
+                // feed whenever the heartbeat differs. So a config reordered from [A, B] to [B, A] against an
+                // on-chain [A] would skip index 0 as "already present", then quietly rewrite A's staleness
+                // window and never add B — where before it aborted the whole batch loudly.
+                //
+                // Reverting here restores that loudness. This runs during `forge script` simulation, so a
+                // mismatch is caught before anything is broadcast.
+                // The inline staticcall this replaced was dead: `_existingFeedAct` repeats it immediately with
+                // the STRICTER `fd.length < 128` (a `PriceFeedConfig` is four words), so the outer
+                // `fd.length == 0` could not reject anything the inner check accepts — while doubling the RPC
+                // calls in the hottest loop of a script that already needs `FOUNDRY_PROFILE=slow` to avoid OOM.
+                bytes memory act = _existingFeedAct(navProxy, asset, resolvableIdx, feed, pt, symbol, i);
+                if (act.length != 0) tmp[n++] = act;
             } else {
+                // Trailing feed (config lists more than the chain carries). Check MEMBERSHIP first: the upsert
+                // replaced the duplicate-address revert that used to abort the batch loudly, so a duplicated
+                // config address here would silently rewrite the incumbent feed staleness window instead.
                 uint256 hb = vm.parseUint(ConfigReader.readAssetFeedHeartbeat(vm, currentChainId, symbol, i));
-                tmp[n++] = abi.encodeCall(NAVCalculator.addPriceFeed, (asset, feed, pt, hb));
+                // Both addresses ARE the same here — that is what a duplicate means — but the index must be
+                // the on-chain slot holding the incumbent, not the config position, or the operator cannot
+                // tell which registered feed the config collides with.
+                (bool dup, uint256 dupAt) = _feedAlreadyRegistered(navProxy, asset, onChainFeeds, feed);
+                if (registered && dup) {
+                    revert FeedOrderMismatch(asset, dupAt, feed, feed);
+                }
+                // AND against the CONFIG's own earlier entries, which the on-chain scan cannot see. It only
+                // searches the first `onChainFeeds` live slots and is gated on `registered`, so a config
+                // listing the same address twice at positions >= onChainFeeds — [A, B, B'] with B == B'
+                // against a live [A] — planned two upserts and the second silently rewrote the first's
+                // staleness window. Same hole for an unregistered asset, where `registered == false`
+                // suppressed the check even though `registerAsset` in the SAME batch registers the primary.
+                // Pre-upsert both aborted loudly on `PriceFeedAlreadyRegistered`; this restores that.
+                for (uint256 pIdx; pIdx < i; ++pIdx) {
+                    string memory prior = ConfigReader.readAssetFeedAddress(vm, currentChainId, symbol, pIdx);
+                    if (bytes(prior).length == 0) continue;
+                    if (vm.parseAddress(prior) == feed) revert FeedOrderMismatch(asset, pIdx, feed, feed);
+                }
+                tmp[n++] = abi.encodeCall(NAVCalculator.addOrModifyPriceFeed, (asset, feed, pt, hb));
             }
             resolvableIdx++;
         }
@@ -269,6 +328,69 @@ contract RegisterAssets is BaseDeployScript {
     }
 
     /// @notice Concatenates two calldata-action arrays.
+    /// @notice For a feed already present on-chain: verify it is the config-declared one, and return an
+    ///         `addOrModifyPriceFeed` action if its heartbeat has drifted from config. Empty when aligned.
+    /// @dev Extracted so its locals do not live in `_planFeedActs`' frame, which was one stack slot over
+    ///      solc's limit with them inlined.
+    ///
+    ///      Skipping on ADDRESS alone made this a silent no-op for a changed configured heartbeat — the one
+    ///      operation `addOrModifyPriceFeed` was added to perform — and stranded TRAILING feeds entirely,
+    ///      since `RealignHeartbeats` only ever touches index 0.
+    /// @dev Whether `feed` is already registered for `asset` at any index below `count`.
+    /// @dev Guards the trailing-feed branch. Pre-upsert, a duplicate address reverted
+    ///      `PriceFeedAlreadyRegistered` and aborted the batch; now it would succeed and rewrite a live
+    ///      staleness window, so the membership test has to be explicit.
+    /// @dev Returns the ON-CHAIN index the duplicate sits at, not just whether it exists: that index is the
+    ///      one fact an operator needs to fix the config, and it used to be computed here and discarded — the
+    ///      revert reported the CONFIG position instead, which is never where the incumbent lives.
+    function _feedAlreadyRegistered(address navProxy, address asset, uint256 count, address feed)
+        private
+        view
+        returns (bool found, uint256 atIndex)
+    {
+        for (uint256 k = 0; k < count; k++) {
+            (bool ok, bytes memory d) =
+                navProxy.staticcall(abi.encodeWithSelector(IPrices.getPriceFeedAt.selector, asset, k));
+            if (!ok || d.length < 128) continue;
+            if (abi.decode(d, (IPrices.PriceFeedConfig)).priceFeed == feed) return (true, k);
+        }
+        return (false, 0);
+    }
+
+    function _existingFeedAct(
+        address navProxy,
+        address asset,
+        uint256 idx,
+        address feed,
+        IPrices.PriceType pt,
+        string memory symbol,
+        uint256 i
+    ) private view returns (bytes memory) {
+        (bool okf, bytes memory fd) = navProxy.staticcall(
+            abi.encodeWithSelector(IPrices.getPriceFeedAt.selector, asset, idx)
+        );
+        if (!okf || fd.length < 128) revert FeedPositionUnreadable(asset, idx);
+
+        IPrices.PriceFeedConfig memory onChain = abi.decode(fd, (IPrices.PriceFeedConfig));
+        if (onChain.priceFeed != feed) revert FeedOrderMismatch(asset, idx, onChain.priceFeed, feed);
+
+        // A feed's TYPE is identity, and `addOrModifyPriceFeed` rejects a changed one
+        // (`PriceFeedLib.PriceFeedTypeImmutable`). Compare it here, where the value is already decoded,
+        // because this is the only failure in this script that would otherwise get PAST planning:
+        // `FeedOrderMismatch` and `AssetKindRegistryNotDeployed` both abort before `writeSafeTx`, but a
+        // `priceType` drift plans cleanly, the Safe batch is WRITTEN TO DISK (`vm.writeJson` is a filesystem
+        // cheatcode, not rolled back by a later revert), and only then does execution die — leaving a
+        // fully-formed, signable batch that the script itself already proved cannot execute, and taking the
+        // whole chain's MultiSend with it. The sibling `RealignHeartbeats` passes the STORED type read back
+        // from chain, so it is correct by construction; this is the only caller sourcing it from config for a
+        // feed that is already registered.
+        if (onChain.priceType != pt) revert FeedTypeMismatch(asset, idx, onChain.priceType, pt);
+
+        uint256 cfgHb = vm.parseUint(ConfigReader.readAssetFeedHeartbeat(vm, currentChainId, symbol, i));
+        if (onChain.chainlinkHeartbeat == cfgHb) return "";
+        return abi.encodeCall(NAVCalculator.addOrModifyPriceFeed, (asset, feed, pt, cfgHb));
+    }
+
     function _concat(bytes[] memory a, bytes[] memory b) private pure returns (bytes[] memory out) {
         out = new bytes[](a.length + b.length);
         uint256 w;
@@ -354,7 +476,30 @@ contract RegisterAssets is BaseDeployScript {
             string memory maddr = ConfigReader.readAssetMonitorFeedAddress(vm, currentChainId, symbol, i);
             if (bytes(maddr).length == 0) continue; // unresolved (e.g. Custom monitor not deployed yet)
             address feed = vm.parseAddress(maddr);
-            if (feed == address(0) || _containsFeed(onChain, feed)) continue; // skip already-registered monitors
+            if (feed == address(0)) continue;
+            // Already registered? Compare the HEARTBEAT before skipping. Skipping on address alone made this
+            // a silent no-op for a changed monitor heartbeat — the identical defect fixed on the primary axis
+            // in `_existingFeedAct`, left behind here. `addMonitorFeed` upserts now, so an edited heartbeat
+            // has a path; without this, config and chain diverge with a green run and no signal.
+            if (_containsFeed(onChain, feed)) {
+                uint256 want = vm.parseUint(ConfigReader.readAssetMonitorFeedHeartbeat(vm, currentChainId, symbol, i));
+                bool drifted;
+                for (uint256 k = 0; k < onChain.length; k++) {
+                    if (onChain[k].priceFeed != feed) continue;
+                    // PLAN-TIME `priceType` CHECK, the monitor-axis twin of `_existingFeedAct`'s. That one was
+                    // added because a type drift "plans cleanly, the Safe batch is WRITTEN TO DISK … and only
+                    // then does execution die". This loop reused the CONFIG `pt` for an already-registered
+                    // monitor and never compared it to the stored one, so editing a monitor's `type` in config
+                    // while its heartbeat also drifted produced a fully-formed, signable MultiSend that
+                    // `addMonitorFeed` rejects with `PriceFeedTypeImmutable` — the identical defect, one axis
+                    // over. Fail here, before anything is written.
+                    if (onChain[k].priceType != pt) {
+                        revert MonitorFeedTypeDrift(asset, feed, uint8(onChain[k].priceType), uint8(pt));
+                    }
+                    if (onChain[k].chainlinkHeartbeat != want) drifted = true;
+                }
+                if (!drifted) continue;
+            }
 
             uint256 hb = vm.parseUint(ConfigReader.readAssetMonitorFeedHeartbeat(vm, currentChainId, symbol, i));
             tmp[n++] = abi.encodeCall(NAVCalculator.addMonitorFeed, (asset, feed, pt, hb));

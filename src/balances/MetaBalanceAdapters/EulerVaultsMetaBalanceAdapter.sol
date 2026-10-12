@@ -58,7 +58,7 @@ interface IEVC {
 ///      trustlessly from the vault (`balanceOf`→`convertToAssets`, `debtOf`), auto-including factory output would let
 ///      an attacker deploy a vault that reports a fabricated balance in a NAV-registered asset and inflate NAV; the
 ///      registered-asset filter does not help (the attack is denominated in a registered asset). Iterating ~850
-///      vaults per account read is also impractical (the read path sizes buffers by `_metaInstanceTotal`). Use the
+///      vaults per account read is also impractical (every governed instance is visited on each read). Use the
 ///      factory off-chain to *propose* instances; governance approves each into the allowlist. See
 ///      BALANCE_ADAPTERS.md §6.1.
 contract EulerVaultsMetaBalanceAdapter is MetaBalanceAdapter {

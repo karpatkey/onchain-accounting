@@ -66,6 +66,7 @@ CANONICAL_LAYER = {
     "PriceFeedLib",
     "NavRegistryLib",
     "AssetKindRegistry",
+    "TimelockController",
 }
 
 # Maps of contracts that are deployed but SUPERSEDED. These must never be published: a reader scanning for
@@ -148,7 +149,8 @@ def published_by_chain(doc_text: str) -> dict[str, dict[str, str]]:
 
 def all_recorded_chains() -> list[str]:
     """Every chainId that has a deployment record on disk."""
-    return [p.stem for p in sorted(RECORDS.glob("*.json"))]
+    # `<chainId>.json` only — sidecars like `<chainId>.pre-swap.json` (snapshot_and_clear_meta) live here too.
+    return [p.stem for p in sorted(RECORDS.glob("*.json")) if p.stem.isdigit()]
 
 
 def check() -> list[str]:
@@ -191,6 +193,23 @@ def check() -> list[str]:
             if name in CANONICAL_LAYER:
                 continue
             problems.append(f"chain {chain}: `{name}` is deployed at {addr} but appears in no table")
+
+    # Canonical-layer names are exempt from the per-chain tables, so check them here instead: each must be ONE
+    # address across every record that carries it, and that address must be published somewhere in the doc.
+    # Without this, a chain recording a different (e.g. stale or misdeployed) canonical address would pass.
+    doc_addrs = {a.lower() for a in ADDRESS_IN_CELL.findall(DOC.read_text())}
+    for name in sorted(CANONICAL_LAYER):
+        seen: dict[str, list[str]] = {}
+        for chain in all_recorded_chains():
+            addr = recorded_addresses(chain).get(name)
+            if addr:
+                seen.setdefault(addr.lower(), []).append(chain)
+        if len(seen) > 1:
+            problems.append(f"canonical `{name}` has {len(seen)} different recorded addresses: "
+                            + "; ".join(f"{a} on {sorted(cs, key=int)}" for a, cs in seen.items()))
+        for addr in seen:
+            if addr not in doc_addrs:
+                problems.append(f"canonical `{name}` {addr} (recorded on {len(seen[addr])} chain(s)) is not published in the doc")
 
     # A chain with deployments but NO section at all was invisible to the loop above, which iterates the
     # chains the DOC mentions. That blind spot let BNB (56) carry an undocumented MorphoMarketsMeta while the

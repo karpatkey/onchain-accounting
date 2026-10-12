@@ -1,0 +1,507 @@
+{
+  "$comment": "Holdings deliberately RECLASSIFIED by the wallet-yield adapter family: the same token, the same amount, reported under a protocol identity instead of the generic wallet one. diff_snapshots.py uses this to downgrade the intended before/after churn to INFO, so a redeploy comparison shows the reclassification as expected rather than as ~120 lines of apparent breakage. It downgrades NOTHING on value OR on identity: a LOST/GAINED pair is collapsed only when the asset, the isDebt flag AND the exact amount all match, the LOST side is positionKind Wallet, and the GAINED side carries the positionKind AND the protocolBrand/protocolId/protocolSubId named here. Any pair failing one of those stays a DIFF.",
+  "$identity_comment": "The three hashes per row are keccak256 of the kebab-case slugs in src/utils/ProtocolIds.sol, which is what a snapshot stores. They are declared because the migration's whole purpose is changing these fields: without them a Wallet row reappearing under the WRONG protocol's slugs (wstETH attributed to Sky, say) was accepted as RECLASSIFIED with no DIFF. Regenerate if a slug changes.",
+  "$generated": "From script/config/nav-config/meta-balance-adapters/<chainId>.json; regenerate if that changes.",
+  "reclassifications": {
+    "1": [
+      {
+        "asset": "0xE95A203B1a91a908F9B9CE46459d101078c2c3cb",
+        "symbol": "ankrETH",
+        "adapter": "AnkrStakedEthWalletMeta",
+        "toPositionKind": "Staking",
+        "toProtocolBrand": "0xdadd67f7e8e4dfc56f02113abcea30682a957db2c231541dfda8f31341f6a89d",
+        "toProtocolId": "0xdadd67f7e8e4dfc56f02113abcea30682a957db2c231541dfda8f31341f6a89d",
+        "toProtocolSubId": "0xd6c57a8ccfb340455e496a59c63086f72ef4f243435b81f5c18397b1d37d98f6",
+        "$slugs": [
+          "ankr",
+          "ankr",
+          "ankr-staked-eth"
+        ]
+      },
+      {
+        "asset": "0x35fA164735182de50811E8e2E824cFb9B6118ac2",
+        "symbol": "eETH",
+        "adapter": "EtherFiStakedEthWalletMeta",
+        "toPositionKind": "Staking",
+        "toProtocolBrand": "0x9ed682ab063e39bdebd1d4192ad9adc4cab7e77a19e842400e6efc8e9e6696ea",
+        "toProtocolId": "0x9ed682ab063e39bdebd1d4192ad9adc4cab7e77a19e842400e6efc8e9e6696ea",
+        "toProtocolSubId": "0x028d132dc0119f3e5a5e1c37aa019ada816f4b764340e038cf044edffa296e30",
+        "$slugs": [
+          "etherfi",
+          "etherfi",
+          "etherfi-staked-eth"
+        ]
+      },
+      {
+        "asset": "0xE72B141DF173b999AE7c1aDcbF60Cc9833Ce56a8",
+        "symbol": "ETH+",
+        "adapter": "ReserveBasketsWalletMeta",
+        "toPositionKind": "Supplied",
+        "toProtocolBrand": "0xf712c2fa585715e22c7fcc833629ce4482ad96496ecd08f3a14847183c4ef4ee",
+        "toProtocolId": "0xf712c2fa585715e22c7fcc833629ce4482ad96496ecd08f3a14847183c4ef4ee",
+        "toProtocolSubId": "0xc73a58077f3e3b83fb1db3ab1957c68194ca8a9a60375dc01103c9871b73d4ef",
+        "$slugs": [
+          "reserve",
+          "reserve",
+          "reserve-baskets"
+        ]
+      },
+      {
+        "asset": "0xA35b1B31Ce002FBF2058D22F30f95D405200A15b",
+        "symbol": "ETHx",
+        "adapter": "StaderStakedEthWalletMeta",
+        "toPositionKind": "Staking",
+        "toProtocolBrand": "0x894a126f6f83fcbfcace896c5d3e8e779f14813a354f4d6f1b615b3af355d880",
+        "toProtocolId": "0x894a126f6f83fcbfcace896c5d3e8e779f14813a354f4d6f1b615b3af355d880",
+        "toProtocolSubId": "0x895255ffceba9f44e7a497d84ffb2d273b078095f5922dd8320c69986aef1d3d",
+        "$slugs": [
+          "stader",
+          "stader",
+          "stader-staked-eth"
+        ]
+      },
+      {
+        "asset": "0xbf5495Efe5DB9ce00f80364C8B423567e58d2110",
+        "symbol": "ezETH",
+        "adapter": "RenzoRestakedEthWalletMeta",
+        "toPositionKind": "Staking",
+        "toProtocolBrand": "0xcfeece387fccf305e3566498f4f1eb1ddcb15da221825fe7fd365a6be5bc3082",
+        "toProtocolId": "0xcfeece387fccf305e3566498f4f1eb1ddcb15da221825fe7fd365a6be5bc3082",
+        "toProtocolSubId": "0x9101454c5327209d235062dfbc65e43548fda48d31d0acc69abb5a96af1c7a5a",
+        "$slugs": [
+          "renzo",
+          "renzo",
+          "renzo-restaked-eth"
+        ]
+      },
+      {
+        "asset": "0x8c1BEd5b9a0928467c9B1341Da1D7BD5e10b6549",
+        "symbol": "lsETH",
+        "adapter": "LiquidCollectiveStakedEthWalletMeta",
+        "toPositionKind": "Staking",
+        "toProtocolBrand": "0x844835881b76d05e4a23387eb509da46743c15d1bc28f6e4f08484bb4a1b1f8f",
+        "toProtocolId": "0x844835881b76d05e4a23387eb509da46743c15d1bc28f6e4f08484bb4a1b1f8f",
+        "toProtocolSubId": "0x436cd028ecb2e2770a4f115577862837cf0d0bb50ae0e4dc1894703f77a38fe0",
+        "$slugs": [
+          "liquid-collective",
+          "liquid-collective",
+          "liquid-collective-staked-eth"
+        ]
+      },
+      {
+        "asset": "0xf1C9acDc66974dFB6dEcB12aA385b9cD01190E38",
+        "symbol": "osETH",
+        "adapter": "StakeWiseV3OsTokenWalletMeta",
+        "toPositionKind": "Staking",
+        "toProtocolBrand": "0xfe3b2a895332b8242cd2560c675b8e02c13237de2293c0214f7ebf6eaa2fe33a",
+        "toProtocolId": "0x451366e086bb6f9d048e42dc216fadef8149e706b6b713b5843a298e125531ff",
+        "toProtocolSubId": "0xb51f7e5999327dcc16ecf779e4beb42893473038b2afba91d5cb47d79aa91c64",
+        "$slugs": [
+          "stakewise",
+          "stakewise-v3",
+          "stakewise-v3-os-tokens"
+        ]
+      },
+      {
+        "asset": "0xae78736Cd615f374D3085123A210448E74Fc6393",
+        "symbol": "rETH",
+        "adapter": "RocketPoolStakedEthWalletMeta",
+        "toPositionKind": "Staking",
+        "toProtocolBrand": "0x0cc49244b36af2928bdff5d95bc680fc33224764c52b1e324bfadd02c3ca2ff3",
+        "toProtocolId": "0x0cc49244b36af2928bdff5d95bc680fc33224764c52b1e324bfadd02c3ca2ff3",
+        "toProtocolSubId": "0x7326ecdfbcfe5bbf3fb8e9b0c61c6d7e043068aada31d70ff4eec344715c5849",
+        "$slugs": [
+          "rocket-pool",
+          "rocket-pool",
+          "rocket-pool-staked-eth"
+        ]
+      },
+      {
+        "asset": "0xA1290d69c65A6Fe4DF752f95823fae25cB99e5A7",
+        "symbol": "rsETH",
+        "adapter": "KelpRestakedEthWalletMeta",
+        "toPositionKind": "Staking",
+        "toProtocolBrand": "0x7f47515a101b58c7fd23dc6e3309e9cf46d47758d14ddf4cb1122a495361851e",
+        "toProtocolId": "0x7f47515a101b58c7fd23dc6e3309e9cf46d47758d14ddf4cb1122a495361851e",
+        "toProtocolSubId": "0x154b3ff58e88e18720d482e5c123ac47555c42493ffaf03289b15723dcb04cc6",
+        "$slugs": [
+          "kelp",
+          "kelp",
+          "kelp-restaked-eth"
+        ]
+      },
+      {
+        "asset": "0xcAFeAA466736ac01e0AC9Ca72644beF348694731",
+        "symbol": "RWIV",
+        "adapter": "NexusMutualVaultsWalletMeta",
+        "toPositionKind": "Supplied",
+        "toProtocolBrand": "0x959d2b604a242bcd82c5e1d6e28b7c630e3796e354c5b012c9701f659af41d0c",
+        "toProtocolId": "0x959d2b604a242bcd82c5e1d6e28b7c630e3796e354c5b012c9701f659af41d0c",
+        "toProtocolSubId": "0x498df34f395d111faf117c3b39ce6fb878e7cb7c563ca8be234e53c2c6daa97f",
+        "$slugs": [
+          "nexus-mutual",
+          "nexus-mutual",
+          "nexus-mutual-vaults"
+        ]
+      },
+      {
+        "asset": "0x83F20F44975D03b1b09e64809B757c47f942BEeA",
+        "symbol": "sDAI",
+        "adapter": "SkySavingsWalletMeta",
+        "toPositionKind": "Supplied",
+        "toProtocolBrand": "0xf5d9fefe885be11b6a81fe460839b72a9ebc77efe3d85b9898b57bfd842944d8",
+        "toProtocolId": "0xf5d9fefe885be11b6a81fe460839b72a9ebc77efe3d85b9898b57bfd842944d8",
+        "toProtocolSubId": "0x95da541ecee9b7d999695681cc8dab2d9ee4558828b86f1549b4df48a1451999",
+        "$slugs": [
+          "sky",
+          "sky",
+          "sky-savings"
+        ]
+      },
+      {
+        "asset": "0xE1753F2e00940cC31213dd92013cF019DFE4ca1d",
+        "symbol": "sGHO",
+        "adapter": "AaveSavingsWalletMeta",
+        "toPositionKind": "Supplied",
+        "toProtocolBrand": "0xe0a39fef8aa5887c76606e7a14a5db8dc6676191e4866b2a609a3aa003b18329",
+        "toProtocolId": "0xbbbf88eb3aaea499bd8961e51ce38087d4dda7879001b87ead64f8a7a3d0b2da",
+        "toProtocolSubId": "0x580a35338044aad892a01ee02cb5175cd584277288be4d1c2a9ace68afc070ce",
+        "$slugs": [
+          "aave",
+          "aave-v3",
+          "aave-v3-savings"
+        ]
+      },
+      {
+        "asset": "0xfE6eb3b609a7C8352A241f7F3A21CEA4e9209B8f",
+        "symbol": "spETH",
+        "adapter": "SparkSavingsWalletMeta",
+        "toPositionKind": "Supplied",
+        "toProtocolBrand": "0xf5145e320dddfef2c56c12716203dabb13746018e7100a5f2bd876e5eec97e4b",
+        "toProtocolId": "0xf5145e320dddfef2c56c12716203dabb13746018e7100a5f2bd876e5eec97e4b",
+        "toProtocolSubId": "0x58bb0a24f4f68ab41a471986b8846df7634d0d226e289f2a6d04a9a51c4a05c9",
+        "$slugs": [
+          "spark",
+          "spark",
+          "spark-savings"
+        ]
+      },
+      {
+        "asset": "0x28B3a8fb53B741A8Fd78c0fb9A6B2393d896a43d",
+        "symbol": "spUSDC",
+        "adapter": "SparkSavingsWalletMeta",
+        "toPositionKind": "Supplied",
+        "toProtocolBrand": "0xf5145e320dddfef2c56c12716203dabb13746018e7100a5f2bd876e5eec97e4b",
+        "toProtocolId": "0xf5145e320dddfef2c56c12716203dabb13746018e7100a5f2bd876e5eec97e4b",
+        "toProtocolSubId": "0x58bb0a24f4f68ab41a471986b8846df7634d0d226e289f2a6d04a9a51c4a05c9",
+        "$slugs": [
+          "spark",
+          "spark",
+          "spark-savings"
+        ]
+      },
+      {
+        "asset": "0xe2e7a17dFf93280dec073C995595155283e3C372",
+        "symbol": "spUSDT",
+        "adapter": "SparkSavingsWalletMeta",
+        "toPositionKind": "Supplied",
+        "toProtocolBrand": "0xf5145e320dddfef2c56c12716203dabb13746018e7100a5f2bd876e5eec97e4b",
+        "toProtocolId": "0xf5145e320dddfef2c56c12716203dabb13746018e7100a5f2bd876e5eec97e4b",
+        "toProtocolSubId": "0x58bb0a24f4f68ab41a471986b8846df7634d0d226e289f2a6d04a9a51c4a05c9",
+        "$slugs": [
+          "spark",
+          "spark",
+          "spark-savings"
+        ]
+      },
+      {
+        "asset": "0xae7ab96520DE3A18E5e111B5EaAb095312D7fE84",
+        "symbol": "stETH",
+        "adapter": "LidoStakedEthWalletMeta",
+        "toPositionKind": "Staking",
+        "toProtocolBrand": "0x8ca84c05e743ec4aa81b7149831bbc822389ff48eadb040bb205a5747b0330de",
+        "toProtocolId": "0x8ca84c05e743ec4aa81b7149831bbc822389ff48eadb040bb205a5747b0330de",
+        "toProtocolSubId": "0x3fc1804ffafa981e011b7217c846bdd81ad5f25c9ef82ddce2822c0679703f44",
+        "$slugs": [
+          "lido",
+          "lido",
+          "lido-staked-eth"
+        ]
+      },
+      {
+        "asset": "0x9D39A5DE30e57443BfF2A8307A4256c8797A3497",
+        "symbol": "sUSDe",
+        "adapter": "EthenaSavingsWalletMeta",
+        "toPositionKind": "Staking",
+        "toProtocolBrand": "0x22b18eafb661159afa44a89476e35b763dc9ccda6b628e951d2c07cc125daa8d",
+        "toProtocolId": "0x22b18eafb661159afa44a89476e35b763dc9ccda6b628e951d2c07cc125daa8d",
+        "toProtocolSubId": "0x951d23367d778e65e97593e2402bca923c5dd0f53a579c66e9e63e722d01116c",
+        "$slugs": [
+          "ethena",
+          "ethena",
+          "ethena-savings"
+        ]
+      },
+      {
+        "asset": "0xa3931d71877C0E7a3148CB7Eb4463524FEc27fbD",
+        "symbol": "sUSDS",
+        "adapter": "SkySavingsWalletMeta",
+        "toPositionKind": "Supplied",
+        "toProtocolBrand": "0xf5d9fefe885be11b6a81fe460839b72a9ebc77efe3d85b9898b57bfd842944d8",
+        "toProtocolId": "0xf5d9fefe885be11b6a81fe460839b72a9ebc77efe3d85b9898b57bfd842944d8",
+        "toProtocolSubId": "0x95da541ecee9b7d999695681cc8dab2d9ee4558828b86f1549b4df48a1451999",
+        "$slugs": [
+          "sky",
+          "sky",
+          "sky-savings"
+        ]
+      },
+      {
+        "asset": "0x80ac24aA929eaF5013f6436cdA2a7ba190f5Cc0b",
+        "symbol": "syrupUSDC",
+        "adapter": "MapleSavingsWalletMeta",
+        "toPositionKind": "Supplied",
+        "toProtocolBrand": "0xfd2b5ba2ec3b45ef52dd670060a5d6a0a6dcd169165ce4d8faaf1e576d9536e1",
+        "toProtocolId": "0xfd2b5ba2ec3b45ef52dd670060a5d6a0a6dcd169165ce4d8faaf1e576d9536e1",
+        "toProtocolSubId": "0x8b9d20eb3168a65384c1087bd27a0d9d1b381e9c2a288c051bd1a881116689b8",
+        "$slugs": [
+          "maple",
+          "maple",
+          "maple-savings"
+        ]
+      },
+      {
+        "asset": "0x87b65C4aAFFA76881f9E96F3e7ED945ddFC3Cd7A",
+        "symbol": "syrupUSDG",
+        "adapter": "MapleSavingsWalletMeta",
+        "toPositionKind": "Supplied",
+        "toProtocolBrand": "0xfd2b5ba2ec3b45ef52dd670060a5d6a0a6dcd169165ce4d8faaf1e576d9536e1",
+        "toProtocolId": "0xfd2b5ba2ec3b45ef52dd670060a5d6a0a6dcd169165ce4d8faaf1e576d9536e1",
+        "toProtocolSubId": "0x8b9d20eb3168a65384c1087bd27a0d9d1b381e9c2a288c051bd1a881116689b8",
+        "$slugs": [
+          "maple",
+          "maple",
+          "maple-savings"
+        ]
+      },
+      {
+        "asset": "0x356B8d89c1e1239Cbbb9dE4815c39A1474d5BA7D",
+        "symbol": "syrupUSDT",
+        "adapter": "MapleSavingsWalletMeta",
+        "toPositionKind": "Supplied",
+        "toProtocolBrand": "0xfd2b5ba2ec3b45ef52dd670060a5d6a0a6dcd169165ce4d8faaf1e576d9536e1",
+        "toProtocolId": "0xfd2b5ba2ec3b45ef52dd670060a5d6a0a6dcd169165ce4d8faaf1e576d9536e1",
+        "toProtocolSubId": "0x8b9d20eb3168a65384c1087bd27a0d9d1b381e9c2a288c051bd1a881116689b8",
+        "$slugs": [
+          "maple",
+          "maple",
+          "maple-savings"
+        ]
+      },
+      {
+        "asset": "0xCd5fE23C85820F7B72D0926FC9b05b43E359b7ee",
+        "symbol": "weETH",
+        "adapter": "EtherFiStakedEthWalletMeta",
+        "toPositionKind": "Staking",
+        "toProtocolBrand": "0x9ed682ab063e39bdebd1d4192ad9adc4cab7e77a19e842400e6efc8e9e6696ea",
+        "toProtocolId": "0x9ed682ab063e39bdebd1d4192ad9adc4cab7e77a19e842400e6efc8e9e6696ea",
+        "toProtocolSubId": "0x028d132dc0119f3e5a5e1c37aa019ada816f4b764340e038cf044edffa296e30",
+        "$slugs": [
+          "etherfi",
+          "etherfi",
+          "etherfi-staked-eth"
+        ]
+      },
+      {
+        "asset": "0x7f39C581F595B53c5cb19bD0b3f8dA6c935E2Ca0",
+        "symbol": "wstETH",
+        "adapter": "LidoStakedEthWalletMeta",
+        "toPositionKind": "Staking",
+        "toProtocolBrand": "0x8ca84c05e743ec4aa81b7149831bbc822389ff48eadb040bb205a5747b0330de",
+        "toProtocolId": "0x8ca84c05e743ec4aa81b7149831bbc822389ff48eadb040bb205a5747b0330de",
+        "toProtocolSubId": "0x3fc1804ffafa981e011b7217c846bdd81ad5f25c9ef82ddce2822c0679703f44",
+        "$slugs": [
+          "lido",
+          "lido",
+          "lido-staked-eth"
+        ]
+      }
+    ],
+    "10": [
+      {
+        "asset": "0x1F32b1c2345538c0c6f582fCB022739c4A194Ebb",
+        "symbol": "wstETH",
+        "adapter": "LidoStakedEthWalletMeta",
+        "toPositionKind": "Staking",
+        "toProtocolBrand": "0x8ca84c05e743ec4aa81b7149831bbc822389ff48eadb040bb205a5747b0330de",
+        "toProtocolId": "0x8ca84c05e743ec4aa81b7149831bbc822389ff48eadb040bb205a5747b0330de",
+        "toProtocolSubId": "0x3fc1804ffafa981e011b7217c846bdd81ad5f25c9ef82ddce2822c0679703f44",
+        "$slugs": [
+          "lido",
+          "lido",
+          "lido-staked-eth"
+        ]
+      }
+    ],
+    "100": [
+      {
+        "asset": "0xF490c80aAE5f2616d3e3BDa2483E30C4CB21d1A0",
+        "symbol": "osGNO",
+        "adapter": "StakeWiseV3OsTokenWalletMeta",
+        "toPositionKind": "Staking",
+        "toProtocolBrand": "0xfe3b2a895332b8242cd2560c675b8e02c13237de2293c0214f7ebf6eaa2fe33a",
+        "toProtocolId": "0x451366e086bb6f9d048e42dc216fadef8149e706b6b713b5843a298e125531ff",
+        "toProtocolSubId": "0xb51f7e5999327dcc16ecf779e4beb42893473038b2afba91d5cb47d79aa91c64",
+        "$slugs": [
+          "stakewise",
+          "stakewise-v3",
+          "stakewise-v3-os-tokens"
+        ]
+      },
+      {
+        "asset": "0xaf204776c7245bF4147c2612BF6e5972Ee483701",
+        "symbol": "sDAI",
+        "adapter": "SkySavingsWalletMeta",
+        "toPositionKind": "Supplied",
+        "toProtocolBrand": "0xf5d9fefe885be11b6a81fe460839b72a9ebc77efe3d85b9898b57bfd842944d8",
+        "toProtocolId": "0xf5d9fefe885be11b6a81fe460839b72a9ebc77efe3d85b9898b57bfd842944d8",
+        "toProtocolSubId": "0x95da541ecee9b7d999695681cc8dab2d9ee4558828b86f1549b4df48a1451999",
+        "$slugs": [
+          "sky",
+          "sky",
+          "sky-savings"
+        ]
+      },
+      {
+        "asset": "0x6C76971f98945AE98dD7d4DFcA8711ebea946eA6",
+        "symbol": "wstETH",
+        "adapter": "LidoStakedEthWalletMeta",
+        "toPositionKind": "Staking",
+        "toProtocolBrand": "0x8ca84c05e743ec4aa81b7149831bbc822389ff48eadb040bb205a5747b0330de",
+        "toProtocolId": "0x8ca84c05e743ec4aa81b7149831bbc822389ff48eadb040bb205a5747b0330de",
+        "toProtocolSubId": "0x3fc1804ffafa981e011b7217c846bdd81ad5f25c9ef82ddce2822c0679703f44",
+        "$slugs": [
+          "lido",
+          "lido",
+          "lido-staked-eth"
+        ]
+      }
+    ],
+    "8453": [
+      {
+        "asset": "0x2Ae3F1Ec7F1F5012CFEab0185bfc7aa3cf0DEc22",
+        "symbol": "cbETH",
+        "adapter": "CoinbaseStakedEthWalletMeta",
+        "toPositionKind": "Staking",
+        "toProtocolBrand": "0x76ec948a9207fdea26dcba91086bcdd181920ff52a539b0d1eb28e73b4cd92af",
+        "toProtocolId": "0x76ec948a9207fdea26dcba91086bcdd181920ff52a539b0d1eb28e73b4cd92af",
+        "toProtocolSubId": "0xb414a79f4c3e47f7901ba99258913660d23a455a872f18d198050092a9ea7c2b",
+        "$slugs": [
+          "coinbase",
+          "coinbase",
+          "coinbase-staked-eth"
+        ]
+      },
+      {
+        "asset": "0x04C0599Ae5A44757c0af6F9eC3b93da8976c150A",
+        "symbol": "weETH",
+        "adapter": "EtherFiStakedEthWalletMeta",
+        "toPositionKind": "Staking",
+        "toProtocolBrand": "0x9ed682ab063e39bdebd1d4192ad9adc4cab7e77a19e842400e6efc8e9e6696ea",
+        "toProtocolId": "0x9ed682ab063e39bdebd1d4192ad9adc4cab7e77a19e842400e6efc8e9e6696ea",
+        "toProtocolSubId": "0x028d132dc0119f3e5a5e1c37aa019ada816f4b764340e038cf044edffa296e30",
+        "$slugs": [
+          "etherfi",
+          "etherfi",
+          "etherfi-staked-eth"
+        ]
+      },
+      {
+        "asset": "0xc1CBa3fCea344f92D9239c08C0568f6F2F0ee452",
+        "symbol": "wstETH",
+        "adapter": "LidoStakedEthWalletMeta",
+        "toPositionKind": "Staking",
+        "toProtocolBrand": "0x8ca84c05e743ec4aa81b7149831bbc822389ff48eadb040bb205a5747b0330de",
+        "toProtocolId": "0x8ca84c05e743ec4aa81b7149831bbc822389ff48eadb040bb205a5747b0330de",
+        "toProtocolSubId": "0x3fc1804ffafa981e011b7217c846bdd81ad5f25c9ef82ddce2822c0679703f44",
+        "$slugs": [
+          "lido",
+          "lido",
+          "lido-staked-eth"
+        ]
+      }
+    ],
+    "42161": [
+      {
+        "asset": "0x2416092f143378750bb29b79eD961ab195CcEea5",
+        "symbol": "ezETH",
+        "adapter": "RenzoRestakedEthWalletMeta",
+        "toPositionKind": "Staking",
+        "toProtocolBrand": "0xcfeece387fccf305e3566498f4f1eb1ddcb15da221825fe7fd365a6be5bc3082",
+        "toProtocolId": "0xcfeece387fccf305e3566498f4f1eb1ddcb15da221825fe7fd365a6be5bc3082",
+        "toProtocolSubId": "0x9101454c5327209d235062dfbc65e43548fda48d31d0acc69abb5a96af1c7a5a",
+        "$slugs": [
+          "renzo",
+          "renzo",
+          "renzo-restaked-eth"
+        ]
+      },
+      {
+        "asset": "0x4186BFC76E2E237523CBC30FD220FE055156b41F",
+        "symbol": "rsETH",
+        "adapter": "KelpRestakedEthWalletMeta",
+        "toPositionKind": "Staking",
+        "toProtocolBrand": "0x7f47515a101b58c7fd23dc6e3309e9cf46d47758d14ddf4cb1122a495361851e",
+        "toProtocolId": "0x7f47515a101b58c7fd23dc6e3309e9cf46d47758d14ddf4cb1122a495361851e",
+        "toProtocolSubId": "0x154b3ff58e88e18720d482e5c123ac47555c42493ffaf03289b15723dcb04cc6",
+        "$slugs": [
+          "kelp",
+          "kelp",
+          "kelp-restaked-eth"
+        ]
+      },
+      {
+        "asset": "0x41CA7586cC1311807B4605fBB748a3B8862b42b5",
+        "symbol": "syrupUSDC",
+        "adapter": "MapleSavingsWalletMeta",
+        "toPositionKind": "Supplied",
+        "toProtocolBrand": "0xfd2b5ba2ec3b45ef52dd670060a5d6a0a6dcd169165ce4d8faaf1e576d9536e1",
+        "toProtocolId": "0xfd2b5ba2ec3b45ef52dd670060a5d6a0a6dcd169165ce4d8faaf1e576d9536e1",
+        "toProtocolSubId": "0x8b9d20eb3168a65384c1087bd27a0d9d1b381e9c2a288c051bd1a881116689b8",
+        "$slugs": [
+          "maple",
+          "maple",
+          "maple-savings"
+        ]
+      },
+      {
+        "asset": "0x35751007a407ca6FEFfE80b3cB397736D2cf4dbe",
+        "symbol": "weETH",
+        "adapter": "EtherFiStakedEthWalletMeta",
+        "toPositionKind": "Staking",
+        "toProtocolBrand": "0x9ed682ab063e39bdebd1d4192ad9adc4cab7e77a19e842400e6efc8e9e6696ea",
+        "toProtocolId": "0x9ed682ab063e39bdebd1d4192ad9adc4cab7e77a19e842400e6efc8e9e6696ea",
+        "toProtocolSubId": "0x028d132dc0119f3e5a5e1c37aa019ada816f4b764340e038cf044edffa296e30",
+        "$slugs": [
+          "etherfi",
+          "etherfi",
+          "etherfi-staked-eth"
+        ]
+      },
+      {
+        "asset": "0x5979d7b546e38e414f7e9822514be443a4800529",
+        "symbol": "wstETH",
+        "adapter": "LidoStakedEthWalletMeta",
+        "toPositionKind": "Staking",
+        "toProtocolBrand": "0x8ca84c05e743ec4aa81b7149831bbc822389ff48eadb040bb205a5747b0330de",
+        "toProtocolId": "0x8ca84c05e743ec4aa81b7149831bbc822389ff48eadb040bb205a5747b0330de",
+        "toProtocolSubId": "0x3fc1804ffafa981e011b7217c846bdd81ad5f25c9ef82ddce2822c0679703f44",
+        "$slugs": [
+          "lido",
+          "lido",
+          "lido-staked-eth"
+        ]
+      }
+    ]
+  }
+}

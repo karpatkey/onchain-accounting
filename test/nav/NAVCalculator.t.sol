@@ -345,7 +345,7 @@ contract NAVCalculatorTest is SuperTest {
         nav.registerAsset(address(usdc), address(usdcAdapter), IPrices.PriceType.Custom, type(uint256).max);
 
         Mock_PriceOracleChainlink secondAdapter = new Mock_PriceOracleChainlink("Second", 1, 8);
-        nav.addPriceFeed(address(usdc), address(secondAdapter), IPrices.PriceType.Chainlink, type(uint256).max);
+        nav.addOrModifyPriceFeed(address(usdc), address(secondAdapter), IPrices.PriceType.Chainlink, type(uint256).max);
         nav.removePriceFeedAt(address(usdc), 0);
         vm.stopPrank();
     }
@@ -359,7 +359,7 @@ contract NAVCalculatorTest is SuperTest {
         vm.startPrank(navCalculatorManager);
         nav.registerAsset(address(usdc), address(usdcAdapter), IPrices.PriceType.Custom, type(uint256).max);
         Mock_PriceOracleChainlink secondAdapter = new Mock_PriceOracleChainlink("Second", 1, 8);
-        nav.addPriceFeed(address(usdc), address(secondAdapter), IPrices.PriceType.Chainlink, type(uint256).max);
+        nav.addOrModifyPriceFeed(address(usdc), address(secondAdapter), IPrices.PriceType.Chainlink, type(uint256).max);
         vm.stopPrank();
 
         vm.startPrank(alice);
@@ -654,7 +654,7 @@ contract NAVCalculatorTest is SuperTest {
         // Create a stale price oracle with short heartbeat
         Mock_PriceOracleChainlink staleAdapter = new Mock_PriceOracleChainlink("Stale", 1, 8);
         vm.startPrank(navCalculatorManager);
-        nav.addPriceFeed(address(usdc), address(staleAdapter), IPrices.PriceType.Chainlink, 1); // 1 second heartbeat
+        nav.addOrModifyPriceFeed(address(usdc), address(staleAdapter), IPrices.PriceType.Chainlink, 1); // 1 second heartbeat
         nav.removePriceFeed(address(usdc), address(usdcAdapter));
         vm.stopPrank();
 
@@ -890,14 +890,14 @@ contract NAVCalculatorTest is SuperTest {
 
         vm.startPrank(navCalculatorManager);
         vm.expectRevert(AssetNotFound.selector);
-        nav.addPriceFeed(unregisteredAsset, address(usdcAdapter), IPrices.PriceType.Custom, type(uint256).max);
+        nav.addOrModifyPriceFeed(unregisteredAsset, address(usdcAdapter), IPrices.PriceType.Custom, type(uint256).max);
         vm.stopPrank();
     }
 
     function test_addPriceFeed_zeroOracle() public {
         vm.startPrank(navCalculatorManager);
         vm.expectRevert(InvalidArguments.selector);
-        nav.addPriceFeed(address(usdc), address(0), IPrices.PriceType.Custom, type(uint256).max);
+        nav.addOrModifyPriceFeed(address(usdc), address(0), IPrices.PriceType.Custom, type(uint256).max);
         vm.stopPrank();
     }
 
@@ -990,7 +990,7 @@ contract NAVCalculatorTest is SuperTest {
                 address(nav.NATIVE_ADDRESS()), address(ethAdapter), IPrices.PriceType.Chainlink, type(uint256).max
             );
         } else if (nav.getPriceFeedCount(address(nav.NATIVE_ADDRESS())) == 0) {
-            nav.addPriceFeed(
+            nav.addOrModifyPriceFeed(
                 address(nav.NATIVE_ADDRESS()), address(ethAdapter), IPrices.PriceType.Chainlink, type(uint256).max
             );
         }
@@ -1014,7 +1014,7 @@ contract NAVCalculatorTest is SuperTest {
                 address(nav.NATIVE_ADDRESS()), address(ethAdapter), IPrices.PriceType.Chainlink, type(uint256).max
             );
         } else if (nav.getPriceFeedCount(address(nav.NATIVE_ADDRESS())) == 0) {
-            nav.addPriceFeed(
+            nav.addOrModifyPriceFeed(
                 address(nav.NATIVE_ADDRESS()), address(ethAdapter), IPrices.PriceType.Chainlink, type(uint256).max
             );
         }
@@ -1541,7 +1541,7 @@ contract NAVCalculatorTest is SuperTest {
                 address(nav.NATIVE_ADDRESS()), address(ethAdapter), IPrices.PriceType.Chainlink, type(uint256).max
             );
         } else if (nav.getPriceFeedCount(address(nav.NATIVE_ADDRESS())) == 0) {
-            nav.addPriceFeed(
+            nav.addOrModifyPriceFeed(
                 address(nav.NATIVE_ADDRESS()), address(ethAdapter), IPrices.PriceType.Chainlink, type(uint256).max
             );
         }
@@ -1585,7 +1585,7 @@ contract NAVCalculatorTest is SuperTest {
                 address(nav.NATIVE_ADDRESS()), address(ethAdapter), IPrices.PriceType.Chainlink, type(uint256).max
             );
         } else if (nav.getPriceFeedCount(address(nav.NATIVE_ADDRESS())) == 0) {
-            nav.addPriceFeed(
+            nav.addOrModifyPriceFeed(
                 address(nav.NATIVE_ADDRESS()), address(ethAdapter), IPrices.PriceType.Chainlink, type(uint256).max
             );
         }
@@ -1741,7 +1741,7 @@ contract NAVCalculatorTest is SuperTest {
         Mock_PriceOracleChainlink staleAdapter = new Mock_PriceOracleChainlink("Stale", 1, 8);
         vm.startPrank(navCalculatorManager);
         // USDC is already registered, just update the price oracle with short heartbeat
-        nav.addPriceFeed(address(usdc), address(staleAdapter), IPrices.PriceType.Chainlink, 1); // 1 second heartbeat
+        nav.addOrModifyPriceFeed(address(usdc), address(staleAdapter), IPrices.PriceType.Chainlink, 1); // 1 second heartbeat
         nav.removePriceFeed(address(usdc), address(usdcAdapter));
         vm.stopPrank();
 
@@ -1879,7 +1879,7 @@ contract NAVCalculatorTest is SuperTest {
                 address(nav.NATIVE_ADDRESS()), address(ethAdapter), IPrices.PriceType.Chainlink, type(uint256).max
             );
         } else if (nav.getPriceFeedCount(address(nav.NATIVE_ADDRESS())) == 0) {
-            nav.addPriceFeed(
+            nav.addOrModifyPriceFeed(
                 address(nav.NATIVE_ADDRESS()), address(ethAdapter), IPrices.PriceType.Chainlink, type(uint256).max
             );
         }

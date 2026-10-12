@@ -18,6 +18,60 @@ import {Mock_ERC20} from "test/mocks/tokens.sol";
 // The whole meta family, for the cross-adapter advertised-shape census below. Constructor argument lists are
 // copied 1:1 from `test_everyMetaAdapterReportsItsProtocolName`; the stubs are reused from that same file.
 import {CodeStub, FluidVaultResolverStub, SparkDataProviderStub} from "test/ProtocolNameConsistency.t.sol";
+
+// The wallet-held yield-token family (ADR: yield tokens as protocol positions). All take (navCalculator) and
+// all inherit the base `_instancePositionId`, so every one of them belongs in the address-keyed default group.
+import {
+    AaveSavingsWalletMetaBalanceAdapter
+} from "src/balances/MetaBalanceAdapters/walletYield/AaveSavingsWalletMetaBalanceAdapter.sol";
+import {
+    AnkrStakedEthWalletMetaBalanceAdapter
+} from "src/balances/MetaBalanceAdapters/walletYield/AnkrStakedEthWalletMetaBalanceAdapter.sol";
+import {
+    CoinbaseStakedEthWalletMetaBalanceAdapter
+} from "src/balances/MetaBalanceAdapters/walletYield/CoinbaseStakedEthWalletMetaBalanceAdapter.sol";
+import {
+    EthenaSavingsWalletMetaBalanceAdapter
+} from "src/balances/MetaBalanceAdapters/walletYield/EthenaSavingsWalletMetaBalanceAdapter.sol";
+import {
+    EtherFiStakedEthWalletMetaBalanceAdapter
+} from "src/balances/MetaBalanceAdapters/walletYield/EtherFiStakedEthWalletMetaBalanceAdapter.sol";
+import {
+    KelpRestakedEthWalletMetaBalanceAdapter
+} from "src/balances/MetaBalanceAdapters/walletYield/KelpRestakedEthWalletMetaBalanceAdapter.sol";
+import {
+    LidoStakedEthWalletMetaBalanceAdapter
+} from "src/balances/MetaBalanceAdapters/walletYield/LidoStakedEthWalletMetaBalanceAdapter.sol";
+import {
+    LiquidCollectiveStakedEthWalletMetaBalanceAdapter
+} from "src/balances/MetaBalanceAdapters/walletYield/LiquidCollectiveStakedEthWalletMetaBalanceAdapter.sol";
+import {
+    MapleSavingsWalletMetaBalanceAdapter
+} from "src/balances/MetaBalanceAdapters/walletYield/MapleSavingsWalletMetaBalanceAdapter.sol";
+import {
+    NexusMutualVaultsWalletMetaBalanceAdapter
+} from "src/balances/MetaBalanceAdapters/walletYield/NexusMutualVaultsWalletMetaBalanceAdapter.sol";
+import {
+    RenzoRestakedEthWalletMetaBalanceAdapter
+} from "src/balances/MetaBalanceAdapters/walletYield/RenzoRestakedEthWalletMetaBalanceAdapter.sol";
+import {
+    ReserveBasketsWalletMetaBalanceAdapter
+} from "src/balances/MetaBalanceAdapters/walletYield/ReserveBasketsWalletMetaBalanceAdapter.sol";
+import {
+    RocketPoolStakedEthWalletMetaBalanceAdapter
+} from "src/balances/MetaBalanceAdapters/walletYield/RocketPoolStakedEthWalletMetaBalanceAdapter.sol";
+import {
+    SkySavingsWalletMetaBalanceAdapter
+} from "src/balances/MetaBalanceAdapters/walletYield/SkySavingsWalletMetaBalanceAdapter.sol";
+import {
+    SparkSavingsWalletMetaBalanceAdapter
+} from "src/balances/MetaBalanceAdapters/walletYield/SparkSavingsWalletMetaBalanceAdapter.sol";
+import {
+    StaderStakedEthWalletMetaBalanceAdapter
+} from "src/balances/MetaBalanceAdapters/walletYield/StaderStakedEthWalletMetaBalanceAdapter.sol";
+import {
+    StakeWiseV3OsTokenWalletMetaBalanceAdapter
+} from "src/balances/MetaBalanceAdapters/walletYield/StakeWiseV3OsTokenWalletMetaBalanceAdapter.sol";
 import {
     AaveV3InstancesMetaBalanceAdapter
 } from "src/balances/MetaBalanceAdapters/AaveV3InstancesMetaBalanceAdapter.sol";
@@ -442,7 +496,7 @@ contract MetaBalanceAdapterAdvertisedShapeTest is PositionIdJoinAsserts {
 
     /// @dev Pinned so adding an adapter fails `test_metaAdapterEnumerationCensus` until the author also adds it to
     ///      `test_everyMetaAdapter_advertisesItsCoordinateUnlessItDeclaresOtherwise`.
-    uint256 internal constant META_ADAPTER_COUNT = 24;
+    uint256 internal constant META_ADAPTER_COUNT = 41;
 
     /// @dev A coordinate with dirty high bits, for the two adapters whose instance is a raw `bytes32` rather than
     ///      an address. Deliberately un-address-like: it proves those adapters really do override
@@ -531,6 +585,31 @@ contract MetaBalanceAdapterAdvertisedShapeTest is PositionIdJoinAsserts {
         i += _assertAdvertisesCoordinate(new PancakeSwapV3PoolsMetaBalanceAdapter(stub, n), "PancakeSwapV3Pools");
         i += _assertAdvertisesCoordinate(new UniswapV2PoolsMetaBalanceAdapter(n), "UniswapV2Pools");
         i += _assertAdvertisesCoordinate(new UniswapV3PoolsMetaBalanceAdapter(stub, n), "UniswapV3Pools");
+
+        // --- Wallet-held yield tokens ------------------------------------------------------------------------
+        // The instance coordinate is the token address and the base `_instancePositionId` is not overridden,
+        // so each must advertise plain `abi.encode(token)` exactly like the group above.
+        i += _assertAdvertisesCoordinate(new AaveSavingsWalletMetaBalanceAdapter(n), "AaveSavingsWallet");
+        i += _assertAdvertisesCoordinate(new AnkrStakedEthWalletMetaBalanceAdapter(n), "AnkrStakedEthWallet");
+        i += _assertAdvertisesCoordinate(new CoinbaseStakedEthWalletMetaBalanceAdapter(n), "CoinbaseStakedEthWallet");
+        i += _assertAdvertisesCoordinate(new EthenaSavingsWalletMetaBalanceAdapter(n), "EthenaSavingsWallet");
+        i += _assertAdvertisesCoordinate(new EtherFiStakedEthWalletMetaBalanceAdapter(n), "EtherFiStakedEthWallet");
+        i += _assertAdvertisesCoordinate(new KelpRestakedEthWalletMetaBalanceAdapter(n), "KelpRestakedEthWallet");
+        i += _assertAdvertisesCoordinate(new LidoStakedEthWalletMetaBalanceAdapter(n), "LidoStakedEthWallet");
+        i += _assertAdvertisesCoordinate(
+            new LiquidCollectiveStakedEthWalletMetaBalanceAdapter(n), "LiquidCollectiveStakedEthWallet"
+        );
+        i += _assertAdvertisesCoordinate(new MapleSavingsWalletMetaBalanceAdapter(n), "MapleSavingsWallet");
+        i += _assertAdvertisesCoordinate(new NexusMutualVaultsWalletMetaBalanceAdapter(n), "NexusMutualVaultsWallet");
+        i += _assertAdvertisesCoordinate(new RenzoRestakedEthWalletMetaBalanceAdapter(n), "RenzoRestakedEthWallet");
+        i += _assertAdvertisesCoordinate(new ReserveBasketsWalletMetaBalanceAdapter(n), "ReserveBasketsWallet");
+        i += _assertAdvertisesCoordinate(
+            new RocketPoolStakedEthWalletMetaBalanceAdapter(n), "RocketPoolStakedEthWallet"
+        );
+        i += _assertAdvertisesCoordinate(new SkySavingsWalletMetaBalanceAdapter(n), "SkySavingsWallet");
+        i += _assertAdvertisesCoordinate(new SparkSavingsWalletMetaBalanceAdapter(n), "SparkSavingsWallet");
+        i += _assertAdvertisesCoordinate(new StaderStakedEthWalletMetaBalanceAdapter(n), "StaderStakedEthWallet");
+        i += _assertAdvertisesCoordinate(new StakeWiseV3OsTokenWalletMetaBalanceAdapter(n), "StakeWiseV3OsTokenWallet");
 
         assertEq(i, META_ADAPTER_COUNT, "exercised count must equal META_ADAPTER_COUNT");
     }

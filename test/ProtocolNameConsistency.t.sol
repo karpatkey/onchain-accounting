@@ -5,6 +5,57 @@ import {Test} from "forge-std/Test.sol";
 import {Vm} from "forge-std/Vm.sol";
 
 import {ProtocolNames} from "src/utils/ProtocolNames.sol";
+import {
+    LidoStakedEthWalletMetaBalanceAdapter
+} from "src/balances/MetaBalanceAdapters/walletYield/LidoStakedEthWalletMetaBalanceAdapter.sol";
+import {
+    EtherFiStakedEthWalletMetaBalanceAdapter
+} from "src/balances/MetaBalanceAdapters/walletYield/EtherFiStakedEthWalletMetaBalanceAdapter.sol";
+import {
+    RocketPoolStakedEthWalletMetaBalanceAdapter
+} from "src/balances/MetaBalanceAdapters/walletYield/RocketPoolStakedEthWalletMetaBalanceAdapter.sol";
+import {
+    RenzoRestakedEthWalletMetaBalanceAdapter
+} from "src/balances/MetaBalanceAdapters/walletYield/RenzoRestakedEthWalletMetaBalanceAdapter.sol";
+import {
+    KelpRestakedEthWalletMetaBalanceAdapter
+} from "src/balances/MetaBalanceAdapters/walletYield/KelpRestakedEthWalletMetaBalanceAdapter.sol";
+import {
+    StaderStakedEthWalletMetaBalanceAdapter
+} from "src/balances/MetaBalanceAdapters/walletYield/StaderStakedEthWalletMetaBalanceAdapter.sol";
+import {
+    StakeWiseV3OsTokenWalletMetaBalanceAdapter
+} from "src/balances/MetaBalanceAdapters/walletYield/StakeWiseV3OsTokenWalletMetaBalanceAdapter.sol";
+import {
+    LiquidCollectiveStakedEthWalletMetaBalanceAdapter
+} from "src/balances/MetaBalanceAdapters/walletYield/LiquidCollectiveStakedEthWalletMetaBalanceAdapter.sol";
+import {
+    AnkrStakedEthWalletMetaBalanceAdapter
+} from "src/balances/MetaBalanceAdapters/walletYield/AnkrStakedEthWalletMetaBalanceAdapter.sol";
+import {
+    CoinbaseStakedEthWalletMetaBalanceAdapter
+} from "src/balances/MetaBalanceAdapters/walletYield/CoinbaseStakedEthWalletMetaBalanceAdapter.sol";
+import {
+    ReserveBasketsWalletMetaBalanceAdapter
+} from "src/balances/MetaBalanceAdapters/walletYield/ReserveBasketsWalletMetaBalanceAdapter.sol";
+import {
+    EthenaSavingsWalletMetaBalanceAdapter
+} from "src/balances/MetaBalanceAdapters/walletYield/EthenaSavingsWalletMetaBalanceAdapter.sol";
+import {
+    SkySavingsWalletMetaBalanceAdapter
+} from "src/balances/MetaBalanceAdapters/walletYield/SkySavingsWalletMetaBalanceAdapter.sol";
+import {
+    AaveSavingsWalletMetaBalanceAdapter
+} from "src/balances/MetaBalanceAdapters/walletYield/AaveSavingsWalletMetaBalanceAdapter.sol";
+import {
+    SparkSavingsWalletMetaBalanceAdapter
+} from "src/balances/MetaBalanceAdapters/walletYield/SparkSavingsWalletMetaBalanceAdapter.sol";
+import {
+    MapleSavingsWalletMetaBalanceAdapter
+} from "src/balances/MetaBalanceAdapters/walletYield/MapleSavingsWalletMetaBalanceAdapter.sol";
+import {
+    NexusMutualVaultsWalletMetaBalanceAdapter
+} from "src/balances/MetaBalanceAdapters/walletYield/NexusMutualVaultsWalletMetaBalanceAdapter.sol";
 
 import {AaveUmbrellaBalanceAdapter} from "src/balances/BalanceAdapters/AaveUmbrellaBalanceAdapter.sol";
 import {AaveV3SafetyModuleBalanceAdapter} from "src/balances/BalanceAdapters/AaveV3SafetyModuleBalanceAdapter.sol";
@@ -182,7 +233,7 @@ contract ProtocolNameConsistencyTest is Test {
 
     /// @dev Number of concrete meta adapters. Pinned so adding one fails `test_metaAdapterCensus` until the
     ///      author also adds it to `test_everyMetaAdapterReportsItsProtocolName`.
-    uint256 internal constant META_ADAPTER_COUNT = 24;
+    uint256 internal constant META_ADAPTER_COUNT = 41;
 
     /// @dev Number of concrete plain + assisted adapters, i.e. the family whose name is a bytecode LITERAL rather
     ///      than derived. Pinned so adding one fails `test_hardcodedAdapterCensus` until the author also adds it to
@@ -420,6 +471,70 @@ contract ProtocolNameConsistencyTest is Test {
             new UniswapV3PoolsMetaBalanceAdapter(stub, n).protocolName(), ProtocolNames.UNISWAP_V3, "UniswapV3Pools"
         );
 
+        // Wallet-held yield-token family: `protocolName()` derives from `_protocolId()` via forProtocolId —
+        // NOT from `_protocolBrand()`, which differs from the id for adapters like StakeWise V3 and Aave V3.
+        // A missing ProtocolNames branch would revert UnknownProtocolId rather than return an empty string.
+        i += _expectName(
+            new LidoStakedEthWalletMetaBalanceAdapter(n).protocolName(), ProtocolNames.LIDO, "LidoStakedEthWall"
+        );
+        i += _expectName(
+            new EtherFiStakedEthWalletMetaBalanceAdapter(n).protocolName(),
+            ProtocolNames.ETHERFI,
+            "EtherFiStakedEthWall"
+        );
+        i += _expectName(
+            new RocketPoolStakedEthWalletMetaBalanceAdapter(n).protocolName(),
+            ProtocolNames.ROCKET_POOL,
+            "RocketPoolStakedEthWall"
+        );
+        i += _expectName(
+            new RenzoRestakedEthWalletMetaBalanceAdapter(n).protocolName(), ProtocolNames.RENZO, "RenzoRestakedEthWall"
+        );
+        i += _expectName(
+            new KelpRestakedEthWalletMetaBalanceAdapter(n).protocolName(), ProtocolNames.KELP, "KelpRestakedEthWall"
+        );
+        i += _expectName(
+            new StaderStakedEthWalletMetaBalanceAdapter(n).protocolName(), ProtocolNames.STADER, "StaderStakedEthWall"
+        );
+        i += _expectName(
+            new StakeWiseV3OsTokenWalletMetaBalanceAdapter(n).protocolName(),
+            ProtocolNames.STAKEWISE_V3,
+            "StakeWiseV3OsTokenWall"
+        );
+        i += _expectName(
+            new LiquidCollectiveStakedEthWalletMetaBalanceAdapter(n).protocolName(),
+            ProtocolNames.LIQUID_COLLECTIVE,
+            "LiquidCollectiveStakedEthWall"
+        );
+        i += _expectName(
+            new AnkrStakedEthWalletMetaBalanceAdapter(n).protocolName(), ProtocolNames.ANKR, "AnkrStakedEthWall"
+        );
+        i += _expectName(
+            new CoinbaseStakedEthWalletMetaBalanceAdapter(n).protocolName(),
+            ProtocolNames.COINBASE,
+            "CoinbaseStakedEthWall"
+        );
+        i += _expectName(
+            new ReserveBasketsWalletMetaBalanceAdapter(n).protocolName(), ProtocolNames.RESERVE, "ReserveBasketsWall"
+        );
+        i += _expectName(
+            new EthenaSavingsWalletMetaBalanceAdapter(n).protocolName(), ProtocolNames.ETHENA, "EthenaSavingsWall"
+        );
+        i += _expectName(new SkySavingsWalletMetaBalanceAdapter(n).protocolName(), ProtocolNames.SKY, "SkySavingsWall");
+        i += _expectName(
+            new AaveSavingsWalletMetaBalanceAdapter(n).protocolName(), ProtocolNames.AAVE_V3, "AaveSavingsWall"
+        );
+        i += _expectName(
+            new SparkSavingsWalletMetaBalanceAdapter(n).protocolName(), ProtocolNames.SPARK, "SparkSavingsWall"
+        );
+        i += _expectName(
+            new MapleSavingsWalletMetaBalanceAdapter(n).protocolName(), ProtocolNames.MAPLE, "MapleSavingsWall"
+        );
+        i += _expectName(
+            new NexusMutualVaultsWalletMetaBalanceAdapter(n).protocolName(),
+            ProtocolNames.NEXUS_MUTUAL,
+            "NexusMutualVaultsWall"
+        );
         assertEq(i, META_ADAPTER_COUNT, "exercised count must equal META_ADAPTER_COUNT");
     }
 

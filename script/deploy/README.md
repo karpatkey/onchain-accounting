@@ -57,7 +57,7 @@ forge script script/deploy/02_DeployProxies.s.sol --chain-id 1 --broadcast --acc
 > action is already enough to trip it (measured at 1, 2, 4, 8, 12 and 17), because the config scan alone sits just
 > under the ceiling; see the script's docstring for the measured cause.
 
-Deploys the custom price-feed adapter contracts only (chain-branched, enabled per `contracts-deployment-config/custom-price-feeds/<chainId>.json`). It does **not** register assets/feeds on `NAVCalculator` — that is a separate EOA step run by the deployer-as-MANAGER via `script/manage/RegisterAssets.s.sol` (first feed per asset through **`AssetKindRegistry.registerAsset`**, which forwards to the NAV and carries the asset's kind and labels; any additional feeds through `addPriceFeed` on the NAV directly, so the batch is mixed-target by design).
+Deploys the custom price-feed adapter contracts only (chain-branched, enabled per `contracts-deployment-config/custom-price-feeds/<chainId>.json`). It does **not** register assets/feeds on `NAVCalculator` — that is a separate EOA step run by the deployer-as-MANAGER via `script/manage/RegisterAssets.s.sol` (first feed per asset through **`AssetKindRegistry.registerAsset`**, which forwards to the NAV and carries the asset's kind and labels; any additional feeds through `addOrModifyPriceFeed` on the NAV directly, so the batch is mixed-target by design).
 
 ## 04_DeployBalanceAdapters.s.sol
 

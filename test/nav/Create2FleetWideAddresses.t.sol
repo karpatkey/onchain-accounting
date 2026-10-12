@@ -109,7 +109,7 @@ contract Create2FleetWideAddressesTest is Test {
                 "UniswapV3PoolsMetaBalanceAdapter",
                 DeploySalts.UNISWAP_V3_POOLS_META
             ),
-            0xACdC33b6a453F629d1ab10A14d3513817F492de7,
+            0x2F7e8f78FD8EE977F6D53752b03A79c77012Ba52,
             "UniswapV3PoolsMeta address moved - see DEPLOYED_ADDRESSES.md"
         );
 
@@ -135,11 +135,11 @@ contract Create2FleetWideAddressesTest is Test {
         );
         assertEq(
             univ3OnGnosis,
-            0xA336f7171B9CE77de13451419B3254099beF2C24,
+            0xaC47D9Cbe8B3EDc9c9d1a6c8092054299bBC1adE,
             "UniswapV3PoolsMeta (Gnosis) address moved - see DEPLOYED_ADDRESSES.md"
         );
         assertTrue(
-            univ3OnGnosis != 0xACdC33b6a453F629d1ab10A14d3513817F492de7,
+            univ3OnGnosis != 0x2F7e8f78FD8EE977F6D53752b03A79c77012Ba52,
             "Gnosis must bind its OWN NonfungiblePositionManager, not the canonical one"
         );
 
@@ -153,7 +153,7 @@ contract Create2FleetWideAddressesTest is Test {
                 "FluidVaultsMetaBalanceAdapter",
                 DeploySalts.FLUID_VAULTS_META
             ),
-            0x32E94eE2276a2eb4873a68676e1250212b3433fC,
+            0x161EB6952Ffc4319a05bd8FEBB1B90283F267005,
             "FluidVaultsMeta address moved - see DEPLOYED_ADDRESSES.md"
         );
 
@@ -162,9 +162,9 @@ contract Create2FleetWideAddressesTest is Test {
         address onBase = _deriveForChain(code, 8453);
         address onArb = _deriveForChain(code, 42161);
 
-        assertEq(onEth, 0x5C951CF5C596BC4908A5fd846710070553830b06, "MorphoMarketsMeta (Ethereum) address moved");
+        assertEq(onEth, 0x08e590BcFc753fC6383aFE327253558C962D3EB6, "MorphoMarketsMeta (Ethereum) address moved");
         assertEq(onEth, onBase, "MorphoMarketsMeta must share one address across Ethereum and Base");
-        assertEq(onArb, 0x1a33a8eAE2F927A05e3eaDC87a348323060Ab2a4, "MorphoMarketsMeta (Arbitrum) address moved");
+        assertEq(onArb, 0xCFf47e28B51a7f4599150f73c348E1a155A93437, "MorphoMarketsMeta (Arbitrum) address moved");
         assertTrue(onArb != onEth, "Arbitrum must bind its OWN Morpho deployment, not Ethereum's address");
     }
 
@@ -200,7 +200,7 @@ contract Create2FleetWideAddressesTest is Test {
                 "AaveV3InstancesMetaBalanceAdapter",
                 DeploySalts.AAVE_V3_INSTANCES_META
             ),
-            0x04Ba6789B4AD5D6CF63Ec9cc301c13F6a8A0210b,
+            0xa1b3c695A768A6Ce571fF699F463224CB32260C1,
             "AaveV3InstancesMeta moved"
         );
         // GENERATION 2. Version 1 (`0x79cad958…`) is superseded: it left `positionInstanceId` at zero, so the two
@@ -214,7 +214,7 @@ contract Create2FleetWideAddressesTest is Test {
                 "AaveV4SpokesMetaBalanceAdapter",
                 DeploySalts.AAVE_V4_SPOKES_META
             ),
-            0xdF1B9d57A40D3866F9EFc9d391EDf9dF51325B59,
+            0xAd5b905ad5BB13909aE658a1910bC4cdFcD81dE3,
             "AaveV4SpokesMeta moved"
         );
         assertEq(
@@ -232,7 +232,7 @@ contract Create2FleetWideAddressesTest is Test {
                 "BalancerV3PoolsMetaBalanceAdapter",
                 DeploySalts.BALANCER_V3_POOLS_META
             ),
-            0xbF1785E519067f0471eb5C50A634A7eeE0140A21,
+            0x8AE70624CB7729B0408C8f0ce8ffdac9974FE33A,
             "BalancerV3PoolsMeta moved"
         );
         assertEq(
@@ -241,7 +241,7 @@ contract Create2FleetWideAddressesTest is Test {
                 "CurvePoolsMetaBalanceAdapter",
                 DeploySalts.CURVE_POOLS_META
             ),
-            0xCf200111050Bc5FFbd5c3e675c598995906c3945,
+            0x4c25B00401d28d5F6FC65a7Af8386b239FA5e735,
             "CurvePoolsMeta moved"
         );
         assertEq(
@@ -250,7 +250,7 @@ contract Create2FleetWideAddressesTest is Test {
                 "EulerVaultsMetaBalanceAdapter",
                 DeploySalts.EULER_VAULTS_META
             ),
-            0xCb28C7d1A27e8FB5ea0e1c75Ef62c80722388135,
+            0x331566e8F7b48Fa683fE865403Cf4311b50A7710,
             "EulerVaultsMeta moved"
         );
         assertEq(
@@ -259,7 +259,7 @@ contract Create2FleetWideAddressesTest is Test {
                 "FluidFTokensMetaBalanceAdapter",
                 DeploySalts.FLUID_FTOKENS_META
             ),
-            0x0c312178e10ad15a9DC847d664786146f2C88dcf,
+            0xb1a03cDD28cAA91f409C417C9f56ab53bc9d7ae9,
             "FluidFTokensMeta moved"
         );
         assertEq(
@@ -268,7 +268,7 @@ contract Create2FleetWideAddressesTest is Test {
                 "GearboxV3MarketsMetaBalanceAdapter",
                 DeploySalts.GEARBOX_V3_MARKETS_META
             ),
-            0x160017c8d50D44A8fA3667419a89BA1183daaF38,
+            0xE338E5d4F7adF34107239D59828DEAD2fa2cfD86,
             "GearboxV3MarketsMeta moved"
         );
         assertEq(
@@ -277,7 +277,7 @@ contract Create2FleetWideAddressesTest is Test {
                 "MorphoVaultsMetaBalanceAdapter",
                 DeploySalts.MORPHO_VAULTS_META
             ),
-            0x64e1ba8B12ee2bFdBDdFd4E0863EdfaaE824C86a,
+            0x72a012B30b240458C3f79fd20E5c2A907d77e54f,
             "MorphoVaultsMeta moved"
         );
         assertEq(
@@ -286,7 +286,7 @@ contract Create2FleetWideAddressesTest is Test {
                 "SymbioticVaultsMetaBalanceAdapter",
                 DeploySalts.SYMBIOTIC_VAULTS_META
             ),
-            0x599C72cbd3bDe6D992366130009962B4c2Ec5B23,
+            0x320699dE0693d71C28f5559a68635495AdA0826c,
             "SymbioticVaultsMeta moved"
         );
     }

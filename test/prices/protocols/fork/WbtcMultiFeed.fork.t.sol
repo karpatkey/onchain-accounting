@@ -48,7 +48,7 @@ contract WbtcMultiFeedForkTest is NAVCalculatorForkHarness {
 
     function setupRegisterAssets() internal override {
         nav.registerAsset(WBTC, CHAINLINK_BTC_USD, IPrices.PriceType.Chainlink, CHAINLINK_HEARTBEAT);
-        nav.addPriceFeed(WBTC, REDSTONE_BTC_USD, IPrices.PriceType.Redstone, REDSTONE_HEARTBEAT);
+        nav.addOrModifyPriceFeed(WBTC, REDSTONE_BTC_USD, IPrices.PriceType.Redstone, REDSTONE_HEARTBEAT);
     }
 
     function setupBalanceAdapter() internal override {}
@@ -154,7 +154,7 @@ contract WbtcMultiFeedForkTest is NAVCalculatorForkHarness {
     function test_cannotAddDuplicateFeed() public {
         vm.prank(admin);
         vm.expectRevert();
-        nav.addPriceFeed(WBTC, CHAINLINK_BTC_USD, IPrices.PriceType.Chainlink, CHAINLINK_HEARTBEAT);
+        nav.addOrModifyPriceFeed(WBTC, CHAINLINK_BTC_USD, IPrices.PriceType.Chainlink, CHAINLINK_HEARTBEAT);
     }
 
     function test_cannotRemoveLastFeed() public {

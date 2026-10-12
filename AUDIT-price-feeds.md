@@ -199,7 +199,7 @@ Worth noting on the 4626 side: `sUSDe`'s `totalAssets` is inflatable by a direct
 
 **Direction.** Arbitrary — depends entirely on which two feeds got crossed.
 
-**Reachable.** Only via a deploy/config mistake, not chain state. But the imminent redeploy **re-registers all 39 instances by string key across 4 chains**, which is precisely when this guard earns its cost. A single line in `_validateFeedSupportInternal` — `if (ICustomPriceFeed(priceFeed).underlyingAssetSupported() != token) revert …` — closes it for `registerAsset`, `addPriceFeed` and `addMonitorFeed` at once, and it also subsumes call-out A above for every non-4626 feed.
+**Reachable.** Only via a deploy/config mistake, not chain state. But the imminent redeploy **re-registers all 39 instances by string key across 4 chains**, which is precisely when this guard earns its cost. A single line in `_validateFeedSupportInternal` — `if (ICustomPriceFeed(priceFeed).underlyingAssetSupported() != token) revert …` — closes it for `registerAsset`, `addOrModifyPriceFeed` and `addMonitorFeed` at once, and it also subsumes call-out A above for every non-4626 feed.
 
 ### 5. Rate-feed *pair identity* is asserted nowhere, and the fork tests are tautological
 
@@ -467,7 +467,7 @@ address feedAsset = ICustomPriceFeed(priceFeed).underlyingAssetSupported();
 if (feedAsset != token) revert IPrices.CustomFeedAssetMismatch(token, priceFeed, feedAsset);
 ```
 
-Covers all three registration entry points at once, since they share the validator: `registerAsset`, `addPriceFeed`,
+Covers all three registration entry points at once, since they share the validator: `registerAsset`, `addOrModifyPriceFeed`,
 `addMonitorFeed` — plus the read-only `checkPriceOracleSupport`, so tooling can pre-flight without a transaction.
 
 **Deliberately a direct high-level call, not `try`/`catch`.** A feed that claims `ICustomPriceFeed` via

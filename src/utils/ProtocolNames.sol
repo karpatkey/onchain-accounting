@@ -43,6 +43,14 @@ library ProtocolNames {
     string internal constant AAVE_V4 = "Aave V4";
     /// @dev `ProtocolIds.SPARK`.
     string internal constant SPARK = "Spark";
+    string internal constant ROCKET_POOL = "Rocket Pool";
+    string internal constant RENZO = "Renzo";
+    string internal constant LIQUID_COLLECTIVE = "Liquid Collective";
+    string internal constant ANKR = "Ankr";
+    string internal constant COINBASE = "Coinbase";
+    string internal constant RESERVE = "Reserve";
+    string internal constant SKY = "Sky";
+    string internal constant MAPLE = "Maple";
     /// @dev `ProtocolIds.MORPHO` — shared by vaults and markets. "Morpho", never "Morpho Blue" (see CLAUDE.md).
     string internal constant MORPHO = "Morpho";
     /// @dev `ProtocolIds.EULER`.
@@ -165,6 +173,18 @@ library ProtocolNames {
         if (protocolId == ProtocolIds.ETHERFI) return ETHERFI;
         if (protocolId == ProtocolIds.ETHENA) return ETHENA;
         if (protocolId == ProtocolIds.NEXUS_MUTUAL) return NEXUS_MUTUAL;
+
+        // Wallet-held yield-bearing token protocols. A MISSING branch here is not cosmetic: `forProtocolId`
+        // reverts UnknownProtocolId, so a new adapter whose PROTOCOL ID is absent would have no display name.
+        // Keyed on protocolId, not protocolBrand — the two differ for adapters like StakeWise V3 and Aave V3.
+        if (protocolId == ProtocolIds.ROCKET_POOL) return ROCKET_POOL;
+        if (protocolId == ProtocolIds.RENZO) return RENZO;
+        if (protocolId == ProtocolIds.LIQUID_COLLECTIVE) return LIQUID_COLLECTIVE;
+        if (protocolId == ProtocolIds.ANKR) return ANKR;
+        if (protocolId == ProtocolIds.COINBASE) return COINBASE;
+        if (protocolId == ProtocolIds.RESERVE) return RESERVE;
+        if (protocolId == ProtocolIds.SKY) return SKY;
+        if (protocolId == ProtocolIds.MAPLE) return MAPLE;
 
         if (protocolId == ProtocolIds.MERKL) return MERKL;
 

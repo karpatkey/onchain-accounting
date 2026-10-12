@@ -63,11 +63,42 @@ abstract contract Balances is IBalances, Initializable {
     mapping(address adapter => bytes32[] instances) private _metaInstances;
 
     /// @notice Running total of configured meta instances across all adapters (cheap NAV buffer sizing).
+    /// @dev RETIRED — arithmetic removed, NAME AND SLOT DELIBERATELY UNCHANGED. Still SLOADed, but by nothing
+    ///      that uses it: `NAVCalculator` forwards it at six call sites and all five `PriceFeedLib` signatures
+    ///      taking it leave the parameter
+    ///      unused, so it sized no buffer and fed no computation. It was maintained by three call sites and
+    ///      defended by two long comments in two files telling future authors not to "fix" its inconsistency —
+    ///      a standing prose-drift generator for a number with no consumer. The arithmetic is gone; the SLOT
+    ///      and its LABEL stay exactly as they were: the committed baseline under
+    ///      `script/upgrade/storage-layout/` pins this label, and editing a drift-detection baseline to match
+    ///      my own change is the move this repo forbids. A retired counter is worth a stale-looking name; a
+    ///      silenced layout guard is not.
     uint256 internal _metaInstanceTotal;
 
-    /// @dev Reserved storage gap for future Balances expansions (48 slots; 2 consumed by meta-adapter registry).
+    /// @dev Reserved storage gap for future Balances expansions (47 slots; 3 consumed by meta-adapter registry).
     // solhint-disable-next-line var-name-mixedcase
-    uint256[48] private __balancesGap;
+    uint256[47] private __balancesGap;
+
+    /// @notice Which meta adapter currently governs a coordinate, or address(0) if unclaimed.
+    /// @dev DECLARED AFTER THE GAP DELIBERATELY. Shrinking `__balancesGap` from 48 and putting the new
+    ///      variable BEFORE it moves the gap itself from slot 62 to 63, which
+    ///      `script/upgrade/check_storage_layout.py` rejects as MOVED. Declared after, `_claimant` takes the
+    ///      slot the gap gave up (its old last slot) and nothing in the layout moves at all — the same shape
+    ///      `assetKindRegistry` uses against `_gap`.
+    /// @dev THE ownership relation, materialised. Before this, ownership was the emergent product of three
+    ///      independently mutable stores — this map, `_supportedAssets` on the default adapter, and
+    ///      `_isAdapterRegistered` — with no place it could be read, so every mutator had to re-establish it
+    ///      by performing the right compensating writes on the others. Seven writers accumulated that way, and
+    ///      six review rounds each found one of them missing a write. Adding writers could not converge,
+    ///      because each fix was itself a new writer to get wrong.
+    ///
+    ///      One slot per coordinate, written only by `_claim` / `_release`. Dual claim stops being something
+    ///      a scan must detect and becomes something the storage shape cannot represent — and the nested
+    ///      O(adapters x instances) scans that approximated it are deleted, taking with them the "guard loops
+    ///      over the wrong set" defect shape that a vacuous empty-batch loop produced.
+    ///
+    ///      Consumes one gap slot, so the layout of everything after it is unchanged on a live proxy.
+    mapping(bytes32 coordinate => address adapter) private _claimant;
 
     //
     // Constructor
@@ -172,8 +203,15 @@ abstract contract Balances is IBalances, Initializable {
     /// @param instances The instance coordinates to seed (may be empty).
     function _addMetaBalanceAdapter(address adapter, bytes32[] memory instances) internal {
         // Storage mutation + BalanceAdapterAdded event delegated to NAVRegistryLib; only the running counts inline.
-        _metaInstanceTotal += NAVRegistryLib.addMetaBalanceAdapter(
-            _isAdapterRegistered, _globalAdapters, _adapterTypes, _metaInstances, adapter, instances
+        NAVRegistryLib.addMetaBalanceAdapter(
+            _isAdapterRegistered,
+            _globalAdapters,
+            _adapterTypes,
+            _metaInstances,
+            _claimant,
+            adapter,
+            instances,
+            erc20DefaultBalanceAdapter
         );
         balanceAdapterTotalCount++;
     }
@@ -182,15 +220,31 @@ abstract contract Balances is IBalances, Initializable {
     /// @param adapter The address of the adapter.
     function _removeBalanceAdapter(address adapter) internal {
         // Storage mutation + guards delegated to NAVRegistryLib (see _addBalanceAdapter); count + event stay inline.
+        // Removal CLEARS the adapter's meta-instance set (issue #335). It used to be left dormant, and this
+        // comment used to explain why that was survivable — it was not: `addMetaBalanceAdapter` APPENDS and
+        // accepts an empty list, so one re-registration of a superseded adapter revived the whole set
+        // alongside its live successor and NAV summed both (+$11,375.92 measured on ACCOUNT_11, with no
+        // health flag, because both readings are well-formed).
+        //
+        // `_metaInstanceTotal` is RETIRED: the arithmetic is gone entirely rather than made consistent. It
+        // sized nothing — every `PriceFeedLib` signature taking it left the parameter unused — so three call
+        // sites and two long comments were maintaining a number with no consumer. Its slot and label survive
+        // untouched because the storage layout of a live UUPS proxy is pinned.
+        //
+        // NOTE: this singular path currently has NO CALLER in `src/` — `NAVCalculator` exposes only the plural
+        // `removeBalanceAdapters`. The clearing below is correct but unreachable today; the plural variant in
+        // `NAVRegistryLib` is the one that does the real work for issue #335. Kept in step so the two cannot
+        // diverge if a caller is ever added.
         NAVRegistryLib.removeBalanceAdapter(
-            _isAdapterRegistered, _globalAdapters, _adapterTypes, adapter, erc20DefaultBalanceAdapter
+            _isAdapterRegistered,
+            _globalAdapters,
+            _adapterTypes,
+            _metaInstances,
+            _claimant,
+            adapter,
+            erc20DefaultBalanceAdapter
         );
         balanceAdapterTotalCount--;
-
-        // Note: a removed adapter's configured meta-instance set (if any) is left dormant — it is no longer
-        // queried since the adapter is out of the registry. _metaInstanceTotal only sizes read buffers (an
-        // overestimate is harmless); the stale set persists, so re-registering an adapter then removing the
-        // leftover coordinates (removeMetaInstances) is the way to reset it.
 
         // Emit event with address(0) for underlyingAsset since adapters are global
         emit BalanceAdapterRemoved(address(0), adapter);
@@ -209,9 +263,16 @@ abstract contract Balances is IBalances, Initializable {
     /// @notice Batch-removes balance adapters. Loop + guards + per-adapter event delegated to NAVRegistryLib.
     /// @param adapters The adapters to remove.
     function _removeBalanceAdapters(address[] calldata adapters) internal {
-        balanceAdapterTotalCount -= NAVRegistryLib.removeBalanceAdapters(
-            _isAdapterRegistered, _globalAdapters, _adapterTypes, erc20DefaultBalanceAdapter, adapters
+        (uint256 removedCount,) = NAVRegistryLib.removeBalanceAdapters(
+            _isAdapterRegistered,
+            _globalAdapters,
+            _adapterTypes,
+            _metaInstances,
+            _claimant,
+            erc20DefaultBalanceAdapter,
+            adapters
         );
+        balanceAdapterTotalCount -= removedCount;
     }
 
     //
@@ -221,6 +282,15 @@ abstract contract Balances is IBalances, Initializable {
     /// @inheritdoc IBalances
     function getMetaInstances(address adapter) public view override returns (bytes32[] memory) {
         return _metaInstances[adapter];
+    }
+
+    /// @dev THE only route by which a token becomes a wallet-reported holding: arms the default adapter for
+    ///      `asset`, reverting if a meta adapter already governs it. Check and inclusion are fused inside the
+    ///      library so no caller can perform one without the other.
+    /// @param revertIfClaimed true for an explicit operator inclusion (refuse a second reporter loudly),
+    ///        false for `registerAsset` (register the asset, just do not arm the default adapter for it).
+    function _includeAssetIfUnclaimed(address asset, bool revertIfClaimed) internal {
+        NAVRegistryLib.includeAssetIfUnclaimed(_claimant, erc20DefaultBalanceAdapter, asset, revertIfClaimed);
     }
 
     /// @notice Appends instance coordinates to a meta-adapter's set (ADR 0010). All-or-nothing: reverts with
@@ -233,7 +303,9 @@ abstract contract Balances is IBalances, Initializable {
     function _addMetaInstances(address adapter, bytes32[] memory instances) internal {
         // Loop + validation delegated to NAVRegistryLib (external library, DELEGATECALL) to keep NAVCalculator
         // under EIP-170; only the running total stays inline.
-        _metaInstanceTotal += NAVRegistryLib.addMetaInstances(_isAdapterRegistered, _metaInstances, adapter, instances);
+        NAVRegistryLib.addMetaInstances(
+            _isAdapterRegistered, _metaInstances, _claimant, adapter, instances, erc20DefaultBalanceAdapter
+        );
     }
 
     /// @notice Removes instance coordinates from a meta-adapter's set (ADR 0010). All-or-nothing: reverts with
@@ -244,8 +316,8 @@ abstract contract Balances is IBalances, Initializable {
     /// @param instances The instance coordinates to remove.
     function _removeMetaInstances(address adapter, bytes32[] memory instances) internal {
         // Loop + validation delegated to NAVRegistryLib (see _addMetaInstances); only the running total stays inline.
-        _metaInstanceTotal -= NAVRegistryLib.removeMetaInstances(
-            _isAdapterRegistered, _metaInstances, adapter, instances
+        NAVRegistryLib.removeMetaInstances(
+            _isAdapterRegistered, _metaInstances, _claimant, adapter, instances, erc20DefaultBalanceAdapter
         );
     }
 }

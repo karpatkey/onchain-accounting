@@ -6,26 +6,60 @@ import "test/SuperTest.sol";
 import {Upgrades} from "openzeppelin-foundry-upgrades/Upgrades.sol";
 import {Options} from "openzeppelin-foundry-upgrades/Options.sol";
 
+/// @dev A throwaway SECOND IMPLEMENTATION for the upgrade test to repoint the proxy at. It is not a version
+///      of anything and is never deployed outside the test VM — there is exactly one NAVCalculator.
+///
+///      Named `NAVCalculatorV2` until it wasn't: "V2" reads as though a version 2 exists somewhere in `src/`
+///      or in a deployment record, and that name is what surfaced in a CI size failure, pointing a reader at
+///      a file nobody had edited. `UpgradeTarget` says what it actually is.
+///
+/// @dev Deliberately EMPTY, and that is the whole point.
+///
+///      This fixture exists only to be a *second implementation* for the proxy to point at. It used to carry a
+///      distinguishing member — first a `uint256 public foo` storage var, then an `external pure foo()` — so the
+///      test could prove the swap by calling something that only V2 has. Both forms cost bytecode: a subclass of
+///      an EIP-170-bound contract inherits its entire size, so ANY added external selector (~223 B measured) has
+///      to fit in whatever margin `NAVCalculator` has left. That made the fixture, not the contract, the binding
+///      limit — 9 bytes of headroom against the contract's 101 — and a change that fits `NAVCalculator` could
+///      still fail CI here, in a file nobody edited. It did exactly that.
+///
+///      Proving the swap does not require a new member. The proxy already records its implementation in the
+///      ERC-1967 slot, so the test reads that slot before and after instead. An empty subclass compiles to the
+///      same size as `NAVCalculator`, the fixture stops taxing the contract's budget, and the assertion now
+///      checks the actual upgrade mechanism rather than a stand-in for it.
+///
+///      Keep it empty. Adding a member here re-imposes the tax and re-breaks CI from an unexpected file.
 /// @custom:oz-upgrades-from NAVCalculator
-contract NAVCalculatorV2 is NAVCalculator {
-    // A distinguishing member proving the upgrade swapped the implementation. Implemented as a pure function
-    // rather than a `uint256 public foo` storage var: the storage-var form perturbs the via_ir optimizer into a
-    // pathologically larger contract (~320 bytes over EIP-170 on the CI toolchain, while NAVCalculator itself
-    // fits). A pure function adds no storage slot and keeps the same surface the test asserts (`foo() == 0`).
-    function foo() external pure returns (uint256) {
-        return 0;
-    }
-}
+contract NAVCalculatorUpgradeTarget is NAVCalculator {}
 
 contract NAVCalculatorUpgradeTest is SuperTest {
     function setUp() public {
         setupAll();
     }
 
+    /// @notice The proxy points at a different implementation after the upgrade.
+    /// @dev Reads the ERC-1967 implementation slot rather than calling a marker member on the new
+    ///      implementation. `NAVCalculatorUpgradeTarget` is bytecode-identical to `NAVCalculator`, so a fresh deployment is
+    ///      what distinguishes it — hence the assertion is on the ADDRESS changing, not on any behaviour. Also
+    ///      asserts the new implementation actually has code, so the test cannot pass by pointing the proxy at an
+    ///      empty address.
     function test_upgrade() public {
+        address implBefore = Upgrades.getImplementationAddress(address(nav));
+        assertNotEq(implBefore, address(0), "proxy must start with an implementation");
+
         this.t_upgrade(admin, address(nav));
 
-        assertEq(NAVCalculatorV2(address(nav)).foo(), 0);
+        address implAfter = Upgrades.getImplementationAddress(address(nav));
+        assertNotEq(implAfter, implBefore, "upgrade must repoint the proxy");
+        assertGt(implAfter.code.length, 0, "new implementation must have code");
+
+        // And the proxy still ANSWERS through the new implementation. Both assertions above are properties of
+        // `upgradeToAndCall`'s SSTORE, not of a working proxy: a regression in `_authorizeUpgrade`, the UUPS
+        // `proxiableUUID` check, or the initializer could leave the proxy pointing at code that reverts on
+        // every call and still satisfy them. The emptied fixture removed the old `foo()` call that covered
+        // this; one read back through the proxy restores it at zero fixture bytecode, which was the whole
+        // point of emptying it.
+        assertEq(NAVCalculator(address(nav)).getPriceFeedCount(address(weth)), 1, "proxy must still answer");
     }
 
     function test_upgrade_notAuthorized() public {
@@ -41,7 +75,7 @@ contract NAVCalculatorUpgradeTest is SuperTest {
         Options memory opts;
         opts.unsafeSkipAllChecks = true;
         vm.startPrank(from);
-        Upgrades.upgradeProxy(target, "NAVCalculator.upgrade.t.sol:NAVCalculatorV2", "", opts, from);
+        Upgrades.upgradeProxy(target, "NAVCalculator.upgrade.t.sol:NAVCalculatorUpgradeTarget", "", opts, from);
         vm.stopPrank();
     }
 }

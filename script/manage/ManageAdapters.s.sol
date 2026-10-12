@@ -102,7 +102,7 @@ contract ManageAdapters is BaseDeployScript {
 
         SafeTxBuilder.Transaction[] memory transactions = new SafeTxBuilder.Transaction[](1);
         transactions[0] = SafeTxBuilder.call(
-            navProxy, 0, abi.encodeCall(NAVCalculator.addPriceFeed, (asset, priceFeed, priceType, heartbeat))
+            navProxy, 0, abi.encodeCall(NAVCalculator.addOrModifyPriceFeed, (asset, priceFeed, priceType, heartbeat))
         );
 
         string memory filename = string(abi.encodePacked(vm.toString(currentChainId), "-add-price-feed.json"));

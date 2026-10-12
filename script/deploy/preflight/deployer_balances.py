@@ -54,7 +54,7 @@ import chainlib as c
 GAS_SHELL = 14_000_000        # 01 + 01_2 (2 libs + impl) + 02_2 (proxy + initialize + ERC20Default)
 GAS_PER_FEED = 1_200_000      # one custom price feed deploy
 GAS_PER_ADAPTER = 3_500_000   # one balance/meta adapter deploy (meta adapters are large)
-GAS_PER_ASSET = 350_000       # registerAsset / addPriceFeed
+GAS_PER_ASSET = 350_000       # registerAsset / addOrModifyPriceFeed
 GAS_PER_META_INSTANCE = 120_000
 GAS_CONFIG_BASE = 800_000
 

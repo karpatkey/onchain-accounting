@@ -1661,6 +1661,35 @@ touched at all by this step, not merely touched idempotently.
 > *config*, so it cannot tell you the config itself named the wrong DataProvider. That judgement stays
 > human.
 
+> **`_claimant` and this deploy: NOTHING to do here, and the reason matters for the upgrade path.**
+> Meta-instance ownership is now materialised as `Balances._claimant` (coordinate → governing adapter),
+> and `NAVRegistryLib._claim` / `_release` keep it in step with `_metaInstances`. On a **NEW PROXY** —
+> which is what this runbook does, see "Why this is a NEW PROXY and not an implementation upgrade" —
+> both stores start empty and `06_Configure` fills them together, so there is no migration step and no
+> backfill to run. Do not run `BackfillMetaInstanceClaimants` here; it would find nothing to do and
+> revert `NothingToDo`.
+>
+> **An IN-PLACE upgrade is different, and this is the case to remember.** `UpgradeNAVCalculator.s.sol`
+> keeps the proxy's storage, so `_claimant` arrives EMPTY while `_metaInstances` is already full. Every
+> pre-existing coordinate then reads as unclaimed. Two consequences, of different severity:
+>
+> - The **same-adapter** duplicate is guarded structurally regardless: `_claim` also scans the adapter's
+>   own instance set, so re-adding a coordinate an adapter already holds still reverts
+>   `DuplicateMetaInstance` on an un-backfilled proxy. Pinned by
+>   `test_unbackfilledProxy_cannotReAddACoordinateItAlreadyHolds`.
+> - The **cross-adapter** guard and the default-adapter inclusion gate DO depend on the map, and are
+>   therefore inert for pre-existing coordinates until the backfill runs. So after any in-place upgrade,
+>   run it once per chain before any meta-instance or asset-registration transaction:
+>
+> ```bash
+> FOUNDRY_PROFILE=slow forge script script/manage/BackfillMetaInstanceClaimants.s.sol \
+>   --rpc-url "$RPC" --slow $BROADCAST
+> ```
+>
+> It is idempotent, resumable, uses only existing selectors, and refuses to broadcast if two adapters
+> already hold one coordinate. Verify with its own post-condition — it reverts `BackfillIncomplete`
+> naming the coordinate if any governed coordinate still fails to name its adapter.
+
 ### 1.9 DECISION — does the security council keep `MANAGER` on the NAV?
 
 **This is a choice, not a step. Nothing in the deploy makes it for you, and it is easiest to make here** —
@@ -1719,7 +1748,7 @@ A revoked council cannot call any of these without first re-granting itself the 
 | area | functions |
 |---|---|
 | assets | `registerAsset` · `unregisterAsset` |
-| price feeds | `addPriceFeed` · `removePriceFeed` · `removePriceFeedAt` |
+| price feeds | `addOrModifyPriceFeed` · `removePriceFeed` · `removePriceFeedAt` |
 | monitors | `addMonitorFeed` · `removeMonitorFeed` · `removeMonitorFeedAt` |
 | tolerances | `setDivergenceTolerance` · `setPegTolerance` |
 | balance adapters | `addBalanceAdapters` · `removeBalanceAdapters` |
@@ -1727,6 +1756,20 @@ A revoked council cannot call any of these without first re-granting itself the 
 | default adapter | `excludeAssetFromDefaultAdapter` · `includeAssetInDefaultAdapter` |
 | wiring | `setAssetKindRegistry` |
 | L2 | `setChainlinkL2SequencerGracePeriod` |
+
+> **⚠️ BREAKING, from the heartbeat-upsert upgrade: `addPriceFeed` no longer exists.**
+> It was RENAMED to `addOrModifyPriceFeed` — not added alongside — so the old selector
+> `addPriceFeed(address,address,uint8,uint256)` is gone. Anything holding that selector reverts
+> against the upgraded proxy: pre-signed Safe batches, keeper scripts, and any off-chain ABI copy
+> (`app/src/config/abis.ts` among them). Re-encode before executing a batch prepared prior to this
+> upgrade.
+>
+> The new function UPSERTS. Re-registering an already-registered (asset, feed) pair now UPDATES its
+> heartbeat in place instead of reverting, which is what makes a heartbeat changeable at all — it
+> was previously immutable, because `removePriceFeed` refuses an asset's last feed and every asset
+> holds exactly one. Two guards remain: an identical re-register still reverts
+> `PriceFeedAlreadyRegistered`, and a `priceType` differing from the stored one reverts
+> `PriceFeedTypeImmutable` (the feed's type is identity, not configuration).
 
 Note `registerAsset` is the only one the facade covers. **Everything else in that table is ordinary NAV
 operations with no facade equivalent** — routine feed and adapter maintenance goes through `MANAGER` directly.

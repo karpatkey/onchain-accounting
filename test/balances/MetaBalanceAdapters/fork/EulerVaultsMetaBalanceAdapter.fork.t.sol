@@ -97,7 +97,7 @@ contract EulerVaultsMetaBalanceAdapterForkTest is BalanceAdapterTestBase {
         nav.registerAsset(address(USDC), address(usdcFeed), IPrices.PriceType.Custom, type(uint256).max);
         // NATIVE_ADDRESS is pre-registered (feedless) by initialize(); SAFE holds native ETH, so attach a feed via
         // addPriceFeed (registerAsset would revert on the already-registered native asset) to keep getAccountNav whole.
-        nav.addPriceFeed(NATIVE_ADDRESS, address(ethFeed), IPrices.PriceType.Custom, type(uint256).max);
+        nav.addOrModifyPriceFeed(NATIVE_ADDRESS, address(ethFeed), IPrices.PriceType.Custom, type(uint256).max);
         vm.stopPrank();
 
         // Give SAFE a position in the real kpk_RWA_USDC eVault so the USDC instance is non-zero too.

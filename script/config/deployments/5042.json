@@ -1,14 +1,15 @@
 {
-  "PriceFeedLib": "0x713e69954e11c2eD19dBB84950674D6a68DBfebc",
-  "NavRegistryLib": "0x55b6AA29D296Eb2Ee0e7b76686eaA2e479CA3511",
-  "NAVCalculatorImplementation": "0x40e4134849308d53F85A8B685324E2189b13ff7D",
+  "PriceFeedLib": "0x0f913658d70BB19b7B42eF9926c3df7c70fafCf2",
+  "NavRegistryLib": "0x3D5369B0b2044d62a8f643bf9a2b8CC03775934D",
+  "NAVCalculatorImplementation": "0xA7243DCDF7e4D6f8FA20A9F022186C0d0778C2b6",
   "balanceAdapters": {
     "ERC20Default": "0x4Bc39Dce61245F5A63189d1FA03E6D76646f1EE6",
-    "MorphoVaultsMeta": "0x64e1ba8B12ee2bFdBDdFd4E0863EdfaaE824C86a"
+    "MorphoVaultsMeta": "0x72a012B30b240458C3f79fd20E5c2A907d77e54f"
   },
   "NAVCalculatorProxy": "0x54EaD2A1dB7456cA917675Ea8908ec8A997c6214",
   "customPriceFeeds": {
     "wARS": "0xC67360B2Cf8d23849ad2b7F3E79AB813D64A94C5"
   },
-  "AssetKindRegistry": "0xf60467a88C2b4d0f46C0c41C3Ba0C74da3d3CCD0"
+  "AssetKindRegistry": "0xf60467a88C2b4d0f46C0c41C3Ba0C74da3d3CCD0",
+  "TimelockController": "0xAB92EA75D07792915eB1f29259354866B880dFC2"
 }

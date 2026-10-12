@@ -4,6 +4,7 @@ pragma solidity ^0.8;
 import {BaseDeployScript} from "../utils/BaseDeployScript.sol";
 import {ConfigReader} from "../utils/ConfigReader.sol";
 import {IMetaBalanceAdapter} from "../../src/balances/IMetaBalanceAdapter.sol";
+import {SafeTxBuilder} from "../utils/SafeTxBuilder.sol";
 import {console2} from "forge-std/console2.sol";
 
 interface IMetaAdapterAssets {
@@ -19,6 +20,7 @@ interface INavAdmin {
     function removeBalanceAdapters(address[] calldata adapters) external;
     function getMetaInstances(address adapter) external view returns (bytes32[] memory);
     function isAdapterRegistered(address adapter) external view returns (bool);
+    function hasRole(bytes32 role, address account) external view returns (bool);
 }
 
 interface IHasProtocolName {
@@ -47,13 +49,18 @@ interface IPinnedToNav {
 ///      window, where the position is briefly missing, which is an under-report and the direction this repo
 ///      prefers everywhere else.
 ///
-///      **The instance set is read first, then EXPLICITLY CLEARED, and only then is the adapter removed.** An
-///      earlier version of this file claimed `removeBalanceAdapters` "wipes" the instance set. That is FALSE, and
-///      the correction is the reason for the ordering below. `Balances.sol` says so outright: *"a removed
-///      adapter's configured meta-instance set (if any) is left dormant … the stale set persists"*, and
-///      `NAVRegistryLib.removeBalanceAdapter` takes no `_metaInstances` reference at all. Verified on mainnet
-///      after the first swap this script performed: `getMetaInstances(<deregistered predecessor>)` still returned
-///      the carried coordinate.
+///      **⚠️ SUPERSEDED — `removeBalanceAdapters` now CLEARS the instance set itself (issue #335).** This file
+///      previously stated in bold that it does not, quoting a `Balances.sol` comment that has since been
+///      deleted and asserting that `NAVRegistryLib.removeBalanceAdapter` takes no `_metaInstances`
+///      reference — it now does, in both the singular and plural variants. That claim was true when written
+///      and was verified on mainnet at the time; it is left visible here rather than deleted so a reader who
+///      remembers the old behaviour can see exactly what changed and when.
+///
+///      Consequence for this script: the explicit clear-before-remove step below is now REDUNDANT rather
+///      than load-bearing. It remains harmless — `removeMetaInstances` on a still-registered adapter is
+///      valid, and clearing an already-empty set is a no-op — so it is kept as belt-and-braces until this
+///      script is next exercised against a live swap. The five-transaction ordering described below is no
+///      longer required for NEW removals.
 ///
 ///      **Why the residue is not merely untidy.** `addMetaBalanceAdapter` APPENDS
 ///      (`NAVRegistryLib._appendInstances`) and never clears, and `removeMetaInstances` reverts
@@ -130,6 +137,11 @@ contract SwapMetaAdapter is BaseDeployScript {
     ///      instances — a silent under-report of everything the plain adapter reported.
     error PredecessorNotMetaAdapter(address old);
 
+    /// @notice The asset comparison could not distinguish the two adapters, so nothing was verified.
+    /// @dev Raised for the wallet-yield family, whose `_instanceAssets` returns the coordinate itself.
+    ///      Re-run with `SWAP_IDENTITY_CONFIRMED=true` after checking the two protocol names by eye.
+    error IdentityCheckVacuous(address oldAdapter, address newAdapter);
+
     /// @notice Thrown when predecessor and successor do not report the same underlying assets for the carried
     ///         instance set — i.e. they are not the same protocol, and the addresses were probably transposed.
     error AdapterMismatch(address old, address newAdapter);
@@ -138,6 +150,54 @@ contract SwapMetaAdapter is BaseDeployScript {
     /// @dev It would read `getMetaInstances(address(this))` from the WRONG contract and silently report nothing.
     ///      The MetaBalanceAdapter constructor probe does not cover this — it only checks the NAV answers at all.
     error SuccessorPinnedToDifferentNav(address newAdapter, address pinned, address expected);
+
+    /// @notice `plan()` found no registered meta adapter whose address moved — nothing to swap on this chain.
+    error NoMetaAdaptersToSwap(uint256 chainId);
+
+    /// @dev Predecessor and successor must be the same protocol. `isAdapterRegistered(old)` is true for ANY
+    ///      registered adapter, and `protocolName()` cannot be compared — a RENAME is a legitimate reason to swap,
+    ///      and this script's first real use was exactly that. Comparing the underlying assets each reports for the
+    ///      carried coordinates catches a transposed address (say SymbioticVaultsMeta pasted as the predecessor)
+    ///      without forbidding a rename: a different protocol answers with different assets, or reverts. Shared by
+    ///      `run()` (single swap) and `plan()` (batch emitter) so the two integrity checks cannot drift apart —
+    ///      `plan()` omitting this is exactly how a stale/mislabeled `.pre-swap.json` could pair a wrong old<->new.
+    ///      No-op for an empty instance set.
+    function _assertSameProtocol(address old, address newAdapter, bytes32[] memory instances) internal {
+        if (instances.length == 0) return;
+        address[] memory oldAssets = IMetaAdapterAssets(old).underlyingAssetsSupportedForInstances(instances);
+        address[] memory newAssets = IMetaAdapterAssets(newAdapter).underlyingAssetsSupportedForInstances(instances);
+        if (oldAssets.length != newAssets.length) revert AdapterMismatch(old, newAdapter);
+        for (uint256 i = 0; i < oldAssets.length; i++) {
+            if (oldAssets[i] != newAssets[i]) revert AdapterMismatch(old, newAdapter);
+        }
+
+        // THE CHECK ABOVE IS VACUOUS FOR A WHOLE FAMILY. The wallet-yield adapters' `_instanceAssets` returns the
+        // INSTANCE ITSELF — the coordinate is the token — so every one answers `[coordinate]` for any coordinate,
+        // and comparing their answers cannot distinguish Lido from Sky. A transposed successor inside that family
+        // passes silently and re-labels the holding's protocol identity: not a value error, but exactly the
+        // misattribution this guard exists to catch. Detected structurally: if the reported assets ARE the
+        // coordinates, nothing was verified, so the operator must confirm (both names are logged by the caller).
+        // Bounded on `oldAssets.length`, not `instances.length`: `underlyingAssetsSupportedForInstances` returns
+        // the CONCATENATION of per-instance asset lists, so it is SHORTER whenever an instance yields no asset (a
+        // reverting `instanceAssets` stores a zero-length list; Curve's `getPool -> address(0)` does exactly that).
+        // A length mismatch means the one-asset-per-instance shape does not hold, so the comparison above is not a
+        // tautology — treat it as NOT vacuous and let the asset comparison stand on its own. BUT an entirely EMPTY
+        // asset list (`oldAssets.length == 0`: every carried instance yielded no asset — e.g. all-delisted Curve
+        // pools, `getPool -> address(0)`) means the comparison verified NOTHING, so it is vacuous too and must be
+        // operator-confirmed rather than passing silently (Vigilo LOW-01: without this, a transposed pair whose
+        // instances resolve empty on both sides slips the guard with no revert).
+        bool vacuous = oldAssets.length == 0 || oldAssets.length == instances.length;
+        for (uint256 i = 0; vacuous && i < oldAssets.length; i++) {
+            if (bytes32(uint256(uint160(oldAssets[i]))) != instances[i]) vacuous = false;
+        }
+        if (vacuous && !vm.envOr("SWAP_IDENTITY_CONFIRMED", false)) {
+            console2.log("The asset comparison cannot tell these two adapters apart:");
+            console2.log("  outgoing:", IHasProtocolName(old).protocolName());
+            console2.log("  incoming:", IHasProtocolName(newAdapter).protocolName());
+            console2.log("Confirm the protocols match, then re-run with SWAP_IDENTITY_CONFIRMED=true.");
+            revert IdentityCheckVacuous(old, newAdapter);
+        }
+    }
 
     function run() public override {
         uint256 chainId = block.chainid;
@@ -163,19 +223,8 @@ contract SwapMetaAdapter is BaseDeployScript {
         // Read the set before touching it; the clear below consumes exactly these coordinates.
         bytes32[] memory instances = navAdmin.getMetaInstances(old);
 
-        // Predecessor and successor must be the same protocol. `isAdapterRegistered(old)` is true for ANY
-        // registered adapter, and `protocolName()` cannot be compared — a RENAME is a legitimate reason to swap,
-        // and this script's first real use was exactly that. Comparing the underlying assets each reports for the
-        // carried coordinates catches a transposed address (say SymbioticVaultsMeta pasted as OLD_ADAPTER) without
-        // forbidding a rename: a different protocol answers with different assets, or reverts and is caught below.
-        if (instances.length > 0) {
-            address[] memory oldAssets = IMetaAdapterAssets(old).underlyingAssetsSupportedForInstances(instances);
-            address[] memory newAssets = IMetaAdapterAssets(newAdapter).underlyingAssetsSupportedForInstances(instances);
-            if (oldAssets.length != newAssets.length) revert AdapterMismatch(old, newAdapter);
-            for (uint256 i = 0; i < oldAssets.length; i++) {
-                if (oldAssets[i] != newAssets[i]) revert AdapterMismatch(old, newAdapter);
-            }
-        }
+        // Predecessor and successor must be the same protocol (transposition guard). Shared with `plan()`.
+        _assertSameProtocol(old, newAdapter, instances);
 
         console2.log("NAV:", nav);
         console2.log("  outgoing:", old, IHasProtocolName(old).protocolName());
@@ -285,5 +334,132 @@ contract SwapMetaAdapter is BaseDeployScript {
         } else {
             console2.log("  ADAPTER_KEY unset - deployment record NOT updated; set it and re-run verify()");
         }
+    }
+
+    /// @notice PR #338 Phase 2: emit ONE atomic ops-Safe MultiSend that swaps EVERY moved meta adapter old->new,
+    ///         carrying each instance set across. This is the PRODUCTION path for the 24-adapter redeploy; {run}
+    ///         is the per-adapter EOA fallback, which has a transient under-report window (since `_release` no
+    ///         longer re-arms the default adapter, each token is reported by nobody between an adapter's remove
+    ///         and add). Keeping every adapter's calls adjacent inside one MultiSend closes that window.
+    /// @dev Maps old->new by adapter NAME, never by `protocolName()` (which collides — Morpho vaults vs markets,
+    ///      Balancer pools vs gauges, Curve pools vs gauges, Uniswap/Pancake v2 vs v3):
+    ///        - names    = keys of `contracts-deployment-config/meta-balance-adapters/<chainId>.json`
+    ///        - NEW addr = `deployments/<chainId>.json` `.balanceAdapters.<name>`          (written by `04`)
+    ///        - OLD addr = `deployments/<chainId>.pre-swap.json` `.balanceAdapters.<name>` (snapshotted by the
+    ///                     preflight BEFORE the meta keys were cleared and `04` ran)
+    ///      Per moved+registered pair it emits, ADJACENT and in this order (mirroring {run}):
+    ///      `removeMetaInstances(old,set)` [belt-and-braces, skipped when empty] + `removeBalanceAdapters([old])`
+    ///      + `addMetaBalanceAdapter(new,set)`. Fails CLOSED on any pair-integrity doubt. Safe defaults to
+    ///      `securityCouncil`; set `OPS_SAFE` to stamp the throwaway ops Safe instead.
+    ///      **Regenerate immediately before signing** — a stale batch dies whole on `MetaInstanceNotFound` /
+    ///      `DuplicateMetaInstance` / an address that already swapped.
+    function plan() external {
+        uint256 chainId = block.chainid;
+        address nav = ConfigReader.readDeployedAddress(vm, chainId, "NAVCalculatorProxy");
+        ConfigReader.ChainConfig memory cfg = ConfigReader.readChainConfig(vm, chainId);
+        address safe = vm.envOr("OPS_SAFE", cfg.securityCouncil);
+        INavAdmin navAdmin = INavAdmin(nav);
+
+        string memory idStr = vm.toString(chainId);
+        string memory metaCfg = vm.readFile(
+            string.concat("script/config/contracts-deployment-config/meta-balance-adapters/", idStr, ".json")
+        );
+        string[] memory names = vm.parseJsonKeys(metaCfg, "$");
+
+        string memory record = vm.readFile(string.concat("script/config/deployments/", idStr, ".json"));
+        string memory preSwap = vm.readFile(string.concat("script/config/deployments/", idStr, ".pre-swap.json"));
+
+        // Upper bound of 3 calls per moved adapter; trimmed to `k` below.
+        SafeTxBuilder.Transaction[] memory batch = new SafeTxBuilder.Transaction[](names.length * 3);
+        uint256 k;
+        uint256 swapped;
+
+        for (uint256 i; i < names.length; ++i) {
+            string memory ptr = string.concat(".balanceAdapters.", names[i]);
+            address newA = vm.keyExistsJson(record, ptr) ? vm.parseJsonAddress(record, ptr) : address(0);
+            address old = vm.keyExistsJson(preSwap, ptr) ? vm.parseJsonAddress(preSwap, ptr) : address(0);
+
+            // Skip anything this swap does not touch: absent in either file, address unchanged, or the
+            // predecessor is no longer registered (already swapped, or never live). Log every skip with its
+            // reason — a silently omitted adapter (esp. `newA==0`, i.e. `04` has not redeployed it yet) must be
+            // visible so an incomplete batch is never signed unnoticed (audit L-2).
+            if (newA == address(0)) {
+                console2.log("  skip (successor not in deployments record - 04 not run yet?):", names[i]);
+                continue;
+            }
+            if (old == address(0)) {
+                console2.log("  skip (no pre-swap address - nothing to supersede):", names[i]);
+                continue;
+            }
+            if (old == newA) {
+                console2.log("  skip (address unchanged - adapter did not move):", names[i]);
+                continue;
+            }
+            if (!navAdmin.isAdapterRegistered(old)) {
+                console2.log("  skip (predecessor not registered - already swapped or never live):", names[i]);
+                continue;
+            }
+
+            // Fail CLOSED on pair integrity — a wrong old/new corrupts NAV, so stop the whole batch.
+            if (!_isMetaAdapter(old)) revert PredecessorNotMetaAdapter(old);
+            if (newA.code.length == 0) revert SuccessorHasNoCode(newA);
+            if (!IPinnedToNav(newA).supportsInterface(type(IMetaBalanceAdapter).interfaceId)) {
+                revert SuccessorNotMetaAdapter(newA);
+            }
+            address pinned = IPinnedToNav(newA).NAV_CALCULATOR();
+            if (pinned != nav) revert SuccessorPinnedToDifferentNav(newA, pinned, nav);
+
+            bytes32[] memory set = navAdmin.getMetaInstances(old);
+
+            // Same protocol on both ends — the transposition guard `run()` enforces, now shared, so a stale or
+            // mislabeled `.pre-swap.json` cannot pair a wrong old<->new under one config name (audit M-1).
+            _assertSameProtocol(old, newA, set);
+
+            // ADJACENT. `removeBalanceAdapters` clears the set itself now, so the leading `removeMetaInstances`
+            // is belt-and-braces and skipped when the set is empty.
+            if (set.length > 0) {
+                batch[k++] = SafeTxBuilder.call(nav, 0, abi.encodeCall(INavAdmin.removeMetaInstances, (old, set)));
+            }
+            address[] memory one = new address[](1);
+            one[0] = old;
+            batch[k++] = SafeTxBuilder.call(nav, 0, abi.encodeCall(INavAdmin.removeBalanceAdapters, (one)));
+            batch[k++] = SafeTxBuilder.call(nav, 0, abi.encodeCall(INavAdmin.addMetaBalanceAdapter, (newA, set)));
+
+            swapped++;
+            console2.log("  swap", names[i]);
+            console2.log("    old:", old, IHasProtocolName(old).protocolName());
+            console2.log("    new:", newA, IHasProtocolName(newA).protocolName());
+            console2.log("    instances carried:", set.length);
+        }
+
+        if (swapped == 0) revert NoMetaAdaptersToSwap(chainId);
+        assembly {
+            mstore(batch, k)
+        }
+
+        console2.log("=== swap meta adapters: ops-Safe batch ===");
+        console2.log("chain       :", chainId);
+        console2.log("nav         :", nav);
+        console2.log("safe        :", safe);
+        console2.log("adapters    :", swapped);
+        console2.log("transactions:", k);
+        // Not a revert: the MANAGER grant may be a later, separate step, and refusing here would block preparing
+        // the batch in advance.
+        if (!navAdmin.hasRole(keccak256("MANAGER"), safe)) {
+            console2.log("WARNING: the Safe does NOT hold MANAGER yet - grant it before executing this batch");
+        }
+
+        SafeTxBuilder.writeSafeTx(
+            vm,
+            chainId,
+            string.concat(idStr, "-swap-meta-adapters.json"),
+            "Swap moved meta adapters (PR #338)",
+            "Deregisters each moved meta adapter and re-registers its redeployed successor, carrying the instance "
+            "set across. Per adapter: [removeMetaInstances] + removeBalanceAdapters([old]) + "
+            "addMetaBalanceAdapter(new, set), kept ADJACENT so the MultiSend import makes them atomic - no window "
+            "in which a token is reported by two adapters (over-report) or by none (under-report).",
+            safe,
+            batch
+        );
     }
 }

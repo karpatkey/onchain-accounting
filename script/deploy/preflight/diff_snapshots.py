@@ -10,9 +10,20 @@ ERC20Default, every feed and adapter address — are reported as informational m
 What must NOT change is the shape: the same assets with the same feed types and heartbeats, the same
 adapters registered, the same meta-instance coordinates, the same positions per account.
 
+RECLASSIFICATION. The wallet-yield adapter family moves 35 holdings from the generic wallet identity
+to their protocol's, without changing a single amount. To this script that is 35 assets flipping
+`includedInDefaultAdapter`, 17 adapters appearing, and 70 position lines — indistinguishable from real
+breakage. `reclassification.json` names the intended moves so they report as INFO instead.
+
+It is deliberately hard for that manifest to hide a real problem. A LOST/GAINED pair is collapsed only
+when the asset, the `isDebt` flag AND the EXACT amount all match, the LOST side is `positionKind`
+Wallet, and the GAINED side carries the kind the manifest names for that asset. A pair failing any one
+of those stays a DIFF, so a reclassification that also moved value still fails the gate.
+
 usage:
   python3 diff_snapshots.py pre post
   python3 diff_snapshots.py pre post --tolerance 0.02 --json diff.json
+  python3 diff_snapshots.py --self-test
 """
 from __future__ import annotations
 
@@ -22,6 +33,81 @@ import sys
 from pathlib import Path
 
 import chainlib as c
+
+
+MANIFEST = Path(__file__).resolve().parent / "reclassification.json"
+
+
+def coord_to_address(coord: str) -> str:
+    """A bytes32 meta-instance coordinate narrowed to its low 20 bytes, lowercased.
+
+    Coordinates are stored as full bytes32 (`0x` + 64 hex). For the address-keyed families the address sits in
+    the low 20 bytes; for Morpho marketIds / Balancer poolIds the whole word is meaningful and this produces a
+    value that simply will not be in the manifest, which is the correct outcome."""
+    h = coord.lower()
+    return "0x" + h[-40:] if h.startswith("0x") and len(h) == 66 else h
+
+
+def load_reclassifications(path: Path = MANIFEST) -> dict[int, dict[str, dict]]:
+    """{chainId: {asset_lower: row}}. Absent file means no reclassification is expected."""
+    if not path.exists():
+        return {}
+    raw = json.loads(path.read_text())
+    return {int(cid): {r["asset"].lower(): r for r in rows}
+            for cid, rows in raw.get("reclassifications", {}).items()}
+
+
+def _identity_matches(gained: dict, row: dict) -> bool:
+    """Whether the gained leg carries the protocol identity the manifest declares for this asset.
+
+    Load-bearing, not belt-and-braces. Changing these three fields IS the migration, so a pairing that
+    ignored them accepted a Wallet row reappearing under the WRONG protocol's slugs — wstETH attributed to
+    Sky's, say — as RECLASSIFIED with no DIFF. A row that predates the identity fields is treated as NOT
+    matching, so an un-regenerated manifest fails loudly instead of silently widening what it downgrades."""
+    for field, key in (("protocolBrand", "toProtocolBrand"),
+                       ("protocolId", "toProtocolId"),
+                       ("protocolSubId", "toProtocolSubId")):
+        want = row.get(key)
+        if not want:
+            return False
+        if (gained.get(field) or "").lower() != want.lower():
+            return False
+    return True
+
+
+def split_reclassified(lost: list[dict], gained: list[dict], expect: dict[str, dict]):
+    """Collapse intended wallet -> protocol moves. Returns (still_lost, still_gained, info_lines).
+
+    Value-preserving by construction: a pair is only collapsed when asset, isDebt and the exact
+    amount all match. Amount is compared as a STRING because the snapshot stores it as one — the
+    values exceed 2^53 and float would silently equate different balances."""
+    info, used = [], set()
+    remaining_lost = []
+    for lp in lost:
+        addr = lp["balanceAsset"]["address"].lower()
+        row = expect.get(addr)
+        if row is None or lp["positionKind"] != "Wallet":
+            remaining_lost.append(lp)
+            continue
+        match = None
+        for j, gp in enumerate(gained):
+            if j in used:
+                continue
+            if (gp["balanceAsset"]["address"].lower() == addr
+                    and gp["isDebt"] == lp["isDebt"]
+                    and str(gp["amount"]) == str(lp["amount"])
+                    and gp["positionKind"] == row["toPositionKind"]
+                    and _identity_matches(gp, row)):
+                match = j
+                break
+        if match is None:
+            remaining_lost.append(lp)
+            continue
+        used.add(match)
+        info.append(f"INFO  RECLASSIFIED {row['symbol']} {lp['amount']} "
+                    f"Wallet -> {row['toPositionKind']} ({row['adapter']})")
+    remaining_gained = [g for j, g in enumerate(gained) if j not in used]
+    return remaining_lost, remaining_gained, info
 
 
 def load(tag: str) -> dict[int, dict]:
@@ -61,8 +147,9 @@ def position_key(p: dict) -> tuple:
             p["protocolSubId"], p["positionId"], p["positionKind"], p["isDebt"])
 
 
-def diff_chain(a: dict, b: dict, tol: float) -> list[str]:
+def diff_chain(a: dict, b: dict, tol: float, expect: dict[str, dict] | None = None) -> list[str]:
     out: list[str] = []
+    expect = expect or {}
 
     def moved(label, x, y):
         if (x or "").lower() != (y or "").lower():
@@ -96,8 +183,17 @@ def diff_chain(a: dict, b: dict, tol: float) -> list[str]:
         sa, sb = asset_shape(am[addr]), asset_shape(bm[addr])
         if sa != sb:
             for k in sa:
-                if sa[k] != sb[k]:
-                    out.append(f"DIFF  asset {am[addr]['symbol']} {k}: {sa[k]} -> {sb[k]}")
+                if sa[k] == sb[k]:
+                    continue
+                # A reclassified asset is EXPECTED to stop being armed on the default adapter — that is
+                # precisely what stops it being reported twice. Only True -> False is downgraded; the
+                # reverse would mean a meta adapter lost a coordinate and the wallet leg came back.
+                if (k == "includedInDefaultAdapter" and sa[k] is True and sb[k] is False
+                        and addr in expect):
+                    out.append(f"INFO  asset {am[addr]['symbol']} disarmed on the default adapter"
+                               f" (reclassified to {expect[addr]['adapter']})")
+                    continue
+                out.append(f"DIFF  asset {am[addr]['symbol']} {k}: {sa[k]} -> {sb[k]}")
 
     # --- adapters + meta instances -----------------------------------------
     # Adapter addresses all move, so key on the deployment-record config key.
@@ -105,7 +201,29 @@ def diff_chain(a: dict, b: dict, tol: float) -> list[str]:
     ba = {x["configKey"] or x["address"].lower(): x for x in b["adapters"]}
     for k in sorted(set(aa) - set(ba)):
         out.append(f"DIFF  adapter MISSING in new: {k} ({aa[k]['address']})")
+    expected_adapters = {r["adapter"] for r in expect.values()}
+    # Coordinates the manifest expects for each newly-added adapter, so an ADDED adapter is checked against
+    # what it should govern rather than merely recognised by name. Without this the per-adapter coordinate
+    # diff below never ran for any of the 17 (they are in `ba` only), so not one of the 35 coordinates was
+    # compared and the whole reclassification rested on a cardinality check.
+    want_by_adapter: dict[str, set[str]] = {}
+    for addr, row in expect.items():
+        want_by_adapter.setdefault(row["adapter"], set()).add(addr)
+    reclassified_ok = 0
     for k in sorted(set(ba) - set(aa)):
+        if k in expected_adapters:
+            got = {coord_to_address(x) for x in ba[k]["metaInstances"]}
+            want = want_by_adapter.get(k, set())
+            if got == want:
+                out.append(f"INFO  adapter ADDED in new:   {k} ({ba[k]['address']}) - reclassification,"
+                           f" {len(want)} expected coordinate(s)")
+                reclassified_ok += len(want)
+                continue
+            for x in sorted(want - got):
+                out.append(f"DIFF  adapter {k} MISSING expected reclassified coordinate {x}")
+            for x in sorted(got - want):
+                out.append(f"DIFF  adapter {k} governs UNEXPECTED coordinate {x}")
+            continue
         out.append(f"DIFF  adapter ADDED in new:   {k} ({ba[k]['address']})")
     for k in sorted(set(aa) & set(ba)):
         if aa[k]["adapterType"] != ba[k]["adapterType"]:
@@ -114,14 +232,58 @@ def diff_chain(a: dict, b: dict, tol: float) -> list[str]:
         for x in sorted(ia - ib):
             out.append(f"DIFF  adapter {k} LOST meta instance {x}")
         for x in sorted(ib - ia):
+            # A coordinate is a bytes32 in the snapshot (66 chars, address left-padded), while the manifest is
+            # keyed on the 42-char address — comparing them directly made this branch DEAD, which is why the
+            # first version of this gate downgraded nothing here. Narrow to the low 20 bytes.
+            # ADAPTER-CHECKED, not just membership. An earlier revision asked only whether the coordinate is
+            # SOMEWHERE in the manifest, so a coordinate registered on the WRONG adapter was downgraded to INFO
+            # and counted toward `reclassified_ok` — the exact class the ADDED branch records as measured and
+            # fixed above ("substituting WETH for ankrETH still printed matches"), reopened on this path.
+            if k in expected_adapters and expect.get(coord_to_address(x), {}).get("adapter") == k:
+                out.append(f"INFO  adapter {k} GAINED meta instance {x} - reclassification")
+                # COUNTED HERE TOO, and leaving it out made the `metaInstanceTotal` downgrade below fire on
+                # the FIRST comparison only. `reclassified_ok` was incremented solely in the adapter-ADDED
+                # branch, so once a `pre/` snapshot already contains the wallet-yield adapters they are in
+                # BOTH sets, their coordinates arrive through this branch instead, and a correct run reported
+                # `DIFF metaInstanceTotal` — the gate failing on exactly the change the manifest exists to
+                # whitelist, but only on the re-run, which is the run nobody tests.
+                reclassified_ok += 1
+                continue
             out.append(f"DIFF  adapter {k} GAINED meta instance {x}")
 
     if a["metaInstanceTotal"] != b["metaInstanceTotal"]:
-        out.append(f"DIFF  metaInstanceTotal {a['metaInstanceTotal']} -> {b['metaInstanceTotal']}")
+        # Not read from the contract — `snapshot_production.py` derives it as sum(metaInstanceCount). A
+        # reclassification therefore RAISES it by exactly the number of coordinates the manifest names for this
+        # chain, so that exact delta is expected and anything else is not. Without this the gate failed on the
+        # very change the manifest exists to whitelist.
+        delta = b["metaInstanceTotal"] - a["metaInstanceTotal"]
+        # Backed by the coordinates actually verified above, not by `len(expect)` alone. A pure cardinality
+        # rule was satisfied by ANY set of the right size — measured: substituting WETH for ankrETH on
+        # `AnkrStakedEthWalletMeta` still printed "matches the reclassified coordinate(s)" and exited 0.
+        if expect and delta == reclassified_ok and reclassified_ok > 0:
+            out.append(f"INFO  metaInstanceTotal {a['metaInstanceTotal']} -> {b['metaInstanceTotal']}"
+                       f" (+{delta}, matches the {len(expect)} reclassified coordinate(s))")
+        else:
+            out.append(f"DIFF  metaInstanceTotal {a['metaInstanceTotal']} -> {b['metaInstanceTotal']}")
 
     # --- accounts -----------------------------------------------------------
     acc_a = {x["label"]: x for x in a["accounts"]}
     acc_b = {x["label"]: x for x in b["accounts"]}
+    # The VALUE half of this gate is the half that matters, and it was silently skippable: the loop below
+    # iterates the INTERSECTION, so a snapshot captured without accounts on either side meant NAV and every
+    # position line went unchecked while the chain still reported "0 structural difference(s)". An account
+    # dropped between captures disappeared the same way.
+    for label in sorted(set(acc_a) ^ set(acc_b)):
+        side = "new" if label in acc_b else "old"
+        out.append(f"DIFF  account {label} present only in the {side} snapshot - not compared")
+    if not (set(acc_a) & set(acc_b)):
+        # INFO, not DIFF, when BOTH sides are equally empty: that is a property of how the snapshots were
+        # captured, not a difference between them, and making it a DIFF meant comparing a snapshot to ITSELF
+        # reported 19 problems on the 16 chains whose baselines carry no accounts. It still has to be said
+        # out loud, because it means this run's value half checked nothing. An ASYMMETRIC account set is a
+        # real difference and is flagged above.
+        out.append("INFO  no account is present in BOTH snapshots - the NAV and position comparison did"
+                   " NOT run for this chain; its value half is unverified")
     for label in sorted(set(acc_a) & set(acc_b)):
         xa, xb = acc_a[label], acc_b[label]
         if "nav" not in xa or "nav" not in xb:
@@ -137,12 +299,16 @@ def diff_chain(a: dict, b: dict, tol: float) -> list[str]:
         flag = "DIFF " if rel > tol else "ok   "
         out.append(f"{flag} account {label} nav {va} -> {vb} ({rel * 100:.2f}%)")
 
-        pa = {position_key(p["position"]) for p in xa["positions"]}
-        pb = {position_key(p["position"]) for p in xb["positions"]}
-        for k in sorted(pa - pb):
-            out.append(f"DIFF  account {label} LOST position {k}")
-        for k in sorted(pb - pa):
-            out.append(f"DIFF  account {label} GAINED position {k}")
+        by_key_a = {position_key(p["position"]): p["position"] for p in xa["positions"]}
+        by_key_b = {position_key(p["position"]): p["position"] for p in xb["positions"]}
+        lost = [by_key_a[k] for k in sorted(set(by_key_a) - set(by_key_b))]
+        gained = [by_key_b[k] for k in sorted(set(by_key_b) - set(by_key_a))]
+        lost, gained, recl = split_reclassified(lost, gained, expect)
+        out.extend(f"{ln} [{label}]" for ln in recl)
+        for p in lost:
+            out.append(f"DIFF  account {label} LOST position {position_key(p)}")
+        for p in gained:
+            out.append(f"DIFF  account {label} GAINED position {position_key(p)}")
 
         # Labels are display-only, so a change is expected from the label wave — report, don't fail.
         la = {position_key(p["position"]): (p["protocolName"], tuple(p["labels"]))
@@ -155,14 +321,202 @@ def diff_chain(a: dict, b: dict, tol: float) -> list[str]:
     return out
 
 
+def self_test() -> int:
+    """Pin the pairing logic. The manifest's whole safety claim is that it downgrades identity churn and
+    NEVER value churn, so the cases that must STAY a DIFF matter more than the one that collapses."""
+    expect = {"0xaaa": {"asset": "0xAAA", "symbol": "wstETH",
+                        "adapter": "LidoStakedEthWalletMeta", "toPositionKind": "Staking",
+                        "toProtocolBrand": "0xbrand", "toProtocolId": "0xid", "toProtocolSubId": "0xsub"}}
+    # Same row with the identity fields stripped, for the "un-regenerated manifest" case.
+    expect_no_ident = {"0xaaa": {k: v for k, v in expect["0xaaa"].items() if not k.startswith("toProtocol")}}
+
+    GOOD = ("0xbrand", "0xid", "0xsub")
+
+    def pos(kind, amount="100", debt=False, asset="0xAAA", ident=GOOD):
+        return {"balanceAsset": {"address": asset}, "amount": amount,
+                "positionKind": kind, "isDebt": debt,
+                "protocolBrand": ident[0], "protocolId": ident[1], "protocolSubId": ident[2]}
+
+    cases = [
+        ("the intended move collapses",
+         [pos("Wallet")], [pos("Staking")], 0, 0, 1),
+        ("a DIFFERENT AMOUNT stays a diff",
+         [pos("Wallet", "100")], [pos("Staking", "101")], 1, 1, 0),
+        ("a flipped isDebt stays a diff",
+         [pos("Wallet", "100", False)], [pos("Staking", "100", True)], 1, 1, 0),
+        ("the wrong target kind stays a diff",
+         [pos("Wallet")], [pos("Supplied")], 1, 1, 0),
+        ("an asset absent from the manifest stays a diff",
+         [pos("Wallet", "100", False, "0xBBB")], [pos("Staking", "100", False, "0xBBB")], 1, 1, 0),
+        ("a LOST leg that was not a Wallet leg stays a diff",
+         [pos("Supplied")], [pos("Staking")], 1, 1, 0),
+        ("a genuinely vanished holding stays a diff",
+         [pos("Wallet")], [], 1, 0, 0),
+        ("a genuinely new holding stays a diff",
+         [], [pos("Staking")], 0, 1, 0),
+        ("two identical holdings collapse one-for-one, not many-for-one",
+         [pos("Wallet"), pos("Wallet")], [pos("Staking")], 1, 0, 1),
+        ("the WRONG protocol identity stays a diff",
+         [pos("Wallet")], [pos("Staking", ident=("0xbad", "0xbad", "0xbad"))], 1, 1, 0),
+        ("a manifest row with no declared identity downgrades nothing",
+         [pos("Wallet")], [pos("Staking")], 1, 1, 0, True),
+    ]
+    failures = []
+    for case in cases:
+        why, lost, gained, want_l, want_g, want_i = case[:6]
+        exp = expect_no_ident if (len(case) > 6 and case[6]) else expect
+        l, g, i = split_reclassified(lost, gained, exp)
+        if (len(l), len(g), len(i)) != (want_l, want_g, want_i):
+            failures.append(f"  {why}: expected lost/gained/info {want_l}/{want_g}/{want_i}, "
+                            f"got {len(l)}/{len(g)}/{len(i)}")
+
+    # The coordinate narrowing, which the first version of this gate got wrong: the manifest is keyed on
+    # 42-char addresses while snapshots store 66-char bytes32, so a missing narrowing silently made the
+    # gained-meta-instance downgrade unreachable. The self-test did not cover that branch, which is why the
+    # dead code shipped — these cases exist so it cannot happen again.
+    coord_cases = [
+        ("0x" + "0" * 24 + "a" * 40, "0x" + "a" * 40, "a bytes32 coordinate narrows to its address"),
+        ("0x" + "0" * 24 + "A" * 40, "0x" + "a" * 40, "and lowercases"),
+        ("0x" + "b" * 40, "0x" + "b" * 40, "an address is already narrow"),
+        ("0x" + "c" * 64, "0x" + "c" * 40, "a raw bytes32 marketId narrows to something not in any manifest"),
+    ]
+    for given, want, why in coord_cases:
+        got = coord_to_address(given)
+        if got != want:
+            failures.append(f"  coord narrowing: expected {want} got {got} - {why}")
+
+    # THROUGH diff_chain, not just the helper: the helper cases above stay green if the CALL SITE forgets to
+    # narrow, which is precisely the defect that shipped. This one fails unless the production path narrows.
+    coord32 = "0x" + "0" * 24 + "d" * 40
+    exp_one = {"0x" + "d" * 40: {"symbol": "wstETH", "adapter": "LidoStakedEthWalletMeta",
+                                 "toPositionKind": "Staking"}}
+    base = {"assets": [], "accounts": [], "proxy": "", "implementation": "",
+            "erc20DefaultBalanceAdapter": "", "roles": {}, "version": 1, "usdDecimals": 8,
+            "metaInstanceTotal": 0}
+    a_one = dict(base, adapters=[{"configKey": "LidoStakedEthWalletMeta", "address": "0x1",
+                                  "adapterType": "Custom", "metaInstances": []}])
+    b_one = dict(base, adapters=[{"configKey": "LidoStakedEthWalletMeta", "address": "0x1",
+                                  "adapterType": "Custom", "metaInstances": [coord32]}])
+    gained = [ln for ln in diff_chain(a_one, b_one, 0.01, exp_one) if "GAINED meta instance" in ln]
+    if not gained or not gained[0].startswith("INFO"):
+        failures.append("  gained-instance downgrade did not fire through diff_chain "
+                        f"(got {gained or 'no line'}) - the call site must narrow the bytes32 coordinate")
+
+    # And the metaInstanceTotal downgrade: only the EXACT manifest count is expected.
+    total_cases = [(3, 3, True, "the exact manifest count is expected"),
+                   (3, 4, False, "one more than the manifest is not"),
+                   (3, 2, False, "one fewer is not"),
+                   (3, 0, False, "no change with a non-empty manifest is not reached")]
+    for manifest_n, delta, want_info, why in total_cases:
+        exp = {f"0x{i:040x}": {"symbol": "T", "adapter": "A", "toPositionKind": "Staking",
+                               "toProtocolBrand": "0xb", "toProtocolId": "0xi", "toProtocolSubId": "0xs"}
+               for i in range(manifest_n)}
+        # The adapter must actually be ADDED and governing exactly the manifest's coordinates, because the
+        # delta rule is now backed by verified coordinates rather than by len(expect).
+        coords = ["0x" + "0" * 24 + f"{i:040x}"[-40:] for i in range(manifest_n)]
+        a = {"metaInstanceTotal": 10, "assets": [], "adapters": [], "accounts": [],
+             "proxy": "", "implementation": "", "erc20DefaultBalanceAdapter": "",
+             "roles": {}, "version": 1, "usdDecimals": 8}
+        b = dict(a, metaInstanceTotal=10 + delta,
+                 adapters=[{"configKey": "A", "address": "0x1", "adapterType": "Custom",
+                            "metaInstances": coords}])
+        if delta == 0:
+            continue  # no line is emitted at all when the totals match
+        lines = [ln for ln in diff_chain(a, b, 0.01, exp) if "metaInstanceTotal" in ln]
+        is_info = bool(lines) and lines[0].startswith("INFO")
+        if is_info != want_info:
+            failures.append(f"  metaInstanceTotal: expected {'INFO' if want_info else 'DIFF'} - {why}")
+
+    # THE RE-RUN SHAPE, which the four cases above structurally cannot reach: every one of them builds `a`
+    # with `adapters: []`, so the adapter is always newly ADDED and the coordinates always arrive through the
+    # ADDED branch. Once a `pre/` snapshot already contains the wallet-yield adapters, they are in BOTH sets
+    # and their coordinates arrive through the GAINED branch instead. That branch did not increment
+    # `reclassified_ok`, so the downgrade fired on the first comparison only and a correct re-run reported
+    # DIFF. Untested shape, live defect - this case is the positive control for it.
+    recl_n = 3
+    exp_rerun = {f"0x{i:040x}": {"symbol": "T", "adapter": "A", "toPositionKind": "Staking",
+                                 "toProtocolBrand": "0xb", "toProtocolId": "0xi", "toProtocolSubId": "0xs"}
+                 for i in range(recl_n)}
+    coords_all = ["0x" + "0" * 24 + f"{i:040x}"[-40:] for i in range(recl_n)]
+    base_rerun = {"assets": [], "accounts": [], "proxy": "", "implementation": "",
+                  "erc20DefaultBalanceAdapter": "", "roles": {}, "version": 1, "usdDecimals": 8}
+    # Adapter A present in BOTH, holding none of the reclassified coordinates yet, then holding all of them.
+    a_rr = dict(base_rerun, metaInstanceTotal=10,
+                adapters=[{"configKey": "A", "address": "0x1", "adapterType": "Custom", "metaInstances": []}])
+    b_rr = dict(base_rerun, metaInstanceTotal=10 + recl_n,
+                adapters=[{"configKey": "A", "address": "0x1", "adapterType": "Custom",
+                           "metaInstances": coords_all}])
+    rr_lines = [ln for ln in diff_chain(a_rr, b_rr, 0.01, exp_rerun) if "metaInstanceTotal" in ln]
+    if not (rr_lines and rr_lines[0].startswith("INFO")):
+        failures.append("  metaInstanceTotal on the RE-RUN shape (adapter in both snapshots, coordinates"
+                        f" GAINED): expected INFO, got {rr_lines or 'no line'}")
+
+    # A CROSS-ASSIGNED coordinate must stay a DIFF. PoC'd as passing before the adapter check was added: with
+    # manifest C1->A and C2->B, adapter A GAINING C2 printed "INFO ... reclassification" and counted it, so a
+    # coordinate registered on the WRONG adapter was whitelisted. Membership in the manifest is not enough; the
+    # coordinate has to belong to the adapter that gained it.
+    cross = {
+        "0x" + "1" * 40: {"symbol": "T1", "adapter": "A", "toPositionKind": "Staking",
+                          "toProtocolBrand": "0xb", "toProtocolId": "0xi", "toProtocolSubId": "0xs"},
+        "0x" + "2" * 40: {"symbol": "T2", "adapter": "B", "toPositionKind": "Staking",
+                          "toProtocolBrand": "0xb", "toProtocolId": "0xi", "toProtocolSubId": "0xs"},
+    }
+    c2_coord = "0x" + "0" * 24 + "2" * 40
+    base_x = {"assets": [], "accounts": [], "proxy": "", "implementation": "",
+              "erc20DefaultBalanceAdapter": "", "roles": {}, "version": 1, "usdDecimals": 8}
+    a_x = dict(base_x, metaInstanceTotal=0,
+               adapters=[{"configKey": "A", "address": "0x1", "adapterType": "Custom", "metaInstances": []}])
+    # Adapter A gains C2, which the manifest assigns to B.
+    b_x = dict(base_x, metaInstanceTotal=1,
+               adapters=[{"configKey": "A", "address": "0x1", "adapterType": "Custom",
+                          "metaInstances": [c2_coord]}])
+    x_lines = [ln for ln in diff_chain(a_x, b_x, 0.01, cross) if "GAINED meta instance" in ln]
+    if not (x_lines and x_lines[0].startswith("DIFF")):
+        failures.append("  a coordinate GAINED by an adapter the manifest assigns to ANOTHER adapter must stay"
+                        f" a DIFF, got {x_lines or 'no line'}")
+
+    # The committed manifest must be loadable and internally consistent.
+    recl = load_reclassifications()
+    for cid, rows in recl.items():
+        for addr, r in rows.items():
+            if not addr.startswith("0x") or len(addr) != 42:
+                failures.append(f"  chain {cid}: bad asset address {addr!r}")
+            if r["toPositionKind"] not in ("Staking", "Supplied"):
+                failures.append(f"  chain {cid} {r['symbol']}: unexpected kind {r['toPositionKind']!r}")
+            for key in ("toProtocolBrand", "toProtocolId", "toProtocolSubId"):
+                v = r.get(key)
+                if not v or not v.startswith("0x") or len(v) != 66:
+                    failures.append(f"  chain {cid} {r['symbol']}: {key} missing or not a bytes32 ({v!r})")
+
+    if failures:
+        print("SELF-TEST FAILED:\n" + "\n".join(failures))
+        return 1
+    print(f"self-test OK: {len(cases)} pairing + {len(coord_cases)} narrowing + {len(total_cases)} total cases; manifest has "
+          f"{sum(len(v) for v in recl.values())} row(s) across {len(recl)} chain(s)")
+    return 0
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("before")
-    ap.add_argument("after")
+    ap.add_argument("before", nargs="?")
+    ap.add_argument("after", nargs="?")
     ap.add_argument("--tolerance", type=float, default=0.01,
                     help="max relative NAV drift treated as price movement (default 1%%)")
     ap.add_argument("--json")
+    ap.add_argument("--no-reclassification", action="store_true",
+                    help="ignore reclassification.json and report every move as a DIFF")
+    ap.add_argument("--self-test", action="store_true", help="pin the reclassification pairing logic")
     args = ap.parse_args()
+
+    if args.self_test:
+        return self_test()
+    if not args.before or not args.after:
+        ap.error("before and after are required unless --self-test is given")
+
+    recl = {} if args.no_reclassification else load_reclassifications()
+    if recl:
+        print(f"reclassification manifest: {sum(len(v) for v in recl.values())} expected move(s) "
+              f"across {len(recl)} chain(s)")
 
     A, B = load(args.before), load(args.after)
     report, n_diff = {}, 0
@@ -176,7 +530,7 @@ def main() -> int:
             print(f"  {cid:8} {name:16} MISSING from '{args.before}'")
             n_diff += 1
             continue
-        lines = diff_chain(A[cid], B[cid], args.tolerance)
+        lines = diff_chain(A[cid], B[cid], args.tolerance, recl.get(cid))
         diffs = [ln for ln in lines if ln.startswith("DIFF")]
         n_diff += len(diffs)
         report[str(cid)] = lines

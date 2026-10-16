@@ -113,10 +113,10 @@ contract UniswapV4SicklePoolsMetaBalanceAdapter is MetaBalanceAdapter, SickleHel
     V4PositionIndex public immutable POSITION_INDEX;
 
     /// @notice ERC-7528 convention for ETH address representation
-    /// @dev This is the identifier the NAV knows native ether by: the same literal `Balances` declares at
-    ///      `src/balances/Balances.sol:30` and registers for the chain's native token, mirrored here exactly as
-    ///      `ERC20DefaultBalanceAdapter` mirrors it. Every V4 `Currency` of `address(0)` is mapped onto it by
-    ///      {_asNavAsset} before it is stored or emitted, for the reason in the contract note.
+    /// @dev This is the identifier the NAV knows native ether by: the same literal `Balances.NATIVE_ADDRESS`
+    ///      declares and registers for the chain's native token, mirrored here exactly as
+    ///      `ERC20DefaultBalanceAdapter.NATIVE_ADDRESS` mirrors it. Every V4 `Currency` of `address(0)` is mapped
+    ///      onto it by {_asNavAsset} before it is stored or emitted, for the reason in the contract note.
     address public constant NATIVE_ADDRESS = address(0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE);
 
     /// @dev poolId -> the pool's two currencies, learned from a self-validating PoolKey preimage. `[1] == address(0)`

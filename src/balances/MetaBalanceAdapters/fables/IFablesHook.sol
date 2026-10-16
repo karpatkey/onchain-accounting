@@ -31,7 +31,7 @@ struct FablesRangeState {
 /// @author KPK
 /// @dev `owed0`/`owed1` are ALREADY NET of both the staked cut and the claim fee: both are taken at accrual
 ///      in the hook's `LedgerLib._split`, and `claimFees` takes nothing further ("No cut here: it was
-///      already taken at accrual" — the hook's own comment at `FablesLedger.sol:524`). Discounting them a
+///      already taken at accrual" — the hook's own comment in `FablesLedger.claimFees`). Discounting them a
 ///      second time in a valuer would under-report.
 ///
 ///      `forgone0`/`forgone1` are fees staked shares gave up. They are an offchain emission claim, never a

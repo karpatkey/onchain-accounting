@@ -2,6 +2,8 @@
 
 Verified against `src/balances/` emission code on 2026-07-10 (includes the Nexus, Ethena cooldown, ether.fi and StakeWise V3 exit-queue adapters and the Gearbox V3 credit-accounts adapter; Aura and the ERC-4626 wrap adapter removed; the Merkl rewards adapter RE-ADDED as the attested family, row below; reflects the 3-level `protocolBrand`/`protocolId`/`protocolSubId` taxonomy and the typed `positionInstanceId` field that replaced inline labels). Companion to [`docs/howto/position-identity-schema.md`](../howto/position-identity-schema.md), which defines the schema; this file enumerates the **actual value space** each adapter populates.
 
+Amended 2026-10-16 for the chain-4663 (Robinhood Chain) adapters: the vfat Sickle family — `UniswapV3SicklePoolsMeta`, `UniswapV4SicklePoolsMeta` and `FablesSickleRangesMeta` — plus the `uniswap-v4` and `fables` slugs. Those three are the first adapters in this repo that report positions held by an address other than the queried account; see the last section for what that does and does not change.
+
 ## How a position is identified
 
 Identity is the tuple `(chainId, protocolSubId, positionId, balanceAsset.asset, positionKind)`. The identity-key protocol component is `protocolSubId` (the most specific per-product slug); the broader `protocolBrand` and `protocolId` fields are display/grouping only and are **not** part of the key. `isLocked` is **excluded** from the key: it is a mutable per-leg attribute — the withdrawal-queue / cooldown adapters split a holding into a claimable leg (`isLocked=false`) and a locked leg (`isLocked=true`) that share the same static `positionId`, and a leg flips `true→false` as its portion finalizes, so keying on it would split one economic position into two keys over its lifetime. The two legs therefore share one key and are **summed** in reconciliation (read `isLocked` per leg for the claimable-vs-locked split; see [ADR 0016](../decisions/0016-islocked-position-status.md)). `balanceAdapter` (provenance), `positionInstanceId` (the ephemeral per-item coordinate), and `isDebt` (the canonical NAV-sign signal per `PositionKind.sol` — read directly, not inferred from kind) are likewise excluded by design. `Position` adds only pricing fields (`quoteAsset`, `value`, `price`, `priceDecimals`, `stale`, `quoteAssetStale`, `irregular`, `quoteAssetIrregular`) on top of `PositionBalance` — none participate in identity, so this matrix covers both structs.
@@ -59,6 +61,14 @@ Identity is the tuple `(chainId, protocolSubId, positionId, balanceAsset.asset, 
 | | | | unclaimed fees, token0 | `Fees` | false | token0 |
 | | | | unclaimed fees, token1 | `Fees` | false | token1 |
 | PancakeSwapV3PoolsMeta | `pancakeswap-v3` | `abi.encode(address pool)` (NFT id in `positionInstanceId`) | same 4 legs as Uniswap V3 | `Supplied`/`Fees` | false | token0/token1 |
+| UniswapV3SicklePoolsMeta | `uniswap-v3` | `abi.encode(address pool)` (NFT id in `positionInstanceId`) | same 4 legs as Uniswap V3, for NFTs held by the account **or** by its vfat Sickle | `Supplied`/`Fees` | false | token0/token1 |
+| UniswapV4SicklePoolsMeta | `uniswap-v4` | `abi.encode(bytes32 poolId)` (position NFT id in `positionInstanceId`) | in-range principal, currency0 | `Supplied` | false | currency0 |
+| | | | in-range principal, currency1 | `Supplied` | false | currency1 |
+| | | | unclaimed fees, currency0 (LP fee growth is already net: the v4 protocol fee is taken on swap input, before `lpFee`) | `Fees` | false | currency0 |
+| | | | unclaimed fees, currency1 | `Fees` | false | currency1 |
+| FablesSickleRangesMeta | `fables` | `abi.encode(bytes32 poolId)` (hook `rangeId` in `positionInstanceId`) | unstaked range principal, per currency | `Supplied` | false | currency0 / currency1 |
+| | | | staked range principal, per currency (the hook's `withdraw` auto-unstakes, so it stays withdrawable and `isLocked` is false) | `Staking` | false | currency0 / currency1 |
+| | | | claimable fees, per currency — **unstaked ranges only** (staked accrual is an offchain emissions claim), already net of the staked-share cut and the claim fee, both taken by the hook at accrual | `Fees` | false | currency0 / currency1 |
 | BalancerV2PoolsMeta | `balancer-v2-pools` | `abi.encode(bytes32 poolId)` | per-token principal (wallet BPT) | `Supplied` | false | pool token |
 | BalancerV3PoolsMeta | `balancer-v3-pools` | `abi.encode(address pool)` | per-token principal (wallet BPT) | `Supplied` | false | pool token |
 | CurvePoolsMeta | `curve-pools` | `abi.encode(address pool)` | per-coin principal (wallet LP) | `Supplied` | false | pool coin |
@@ -93,12 +103,12 @@ split legs of the withdrawal-queue / cooldown adapters, which each emit a `Suppl
 | `PositionKind` | Emission sites | Emitting adapters |
 |---|---|---|
 | `Wallet` | 1 | ERC20DefaultBalanceAdapter |
-| `Supplied` | 22 | lending supply, vaults, Cap cUSD, unstaked LP, withdrawal/exit queues (claimable + locked legs), Ethena cooldown, Euler vaults |
+| `Supplied` | 26 | lending supply, vaults, Cap cUSD, unstaked LP, withdrawal/exit queues (claimable + locked legs), Ethena cooldown, Euler vaults, Uniswap V4 ×2 (currency0 + currency1), Fables ×2 (unstaked range principal, per currency) |
 | `Borrowed` | 8 | Aave V3, Spark, Compound V3, Morpho Markets, Fluid Vaults, StakeWise V3, Euler vaults, Gearbox credit accounts |
 | `Collateral` | 7 | Aave V3, Spark, Compound V3, Morpho Markets, Fluid Vaults, Euler vaults, Gearbox credit accounts |
-| `Staking` | 13 | Safety Module (locked + unlocked stake), Umbrella (locked + unlocked stake), StakeWise V3, Cap stcUSD, Nexus staked NXM, Balancer gauges ×2, Curve gauge ×2, Convex ×2 (each: per-coin split + undecomposable-pool LP fallback) |
+| `Staking` | 15 | Safety Module (locked + unlocked stake), Umbrella (locked + unlocked stake), StakeWise V3, Cap stcUSD, Nexus staked NXM, Balancer gauges ×2, Curve gauge ×2, Convex ×2 (each: per-coin split + undecomposable-pool LP fallback), Fables ×2 (staked range principal, per currency) |
 | `Rewards` | 11 | SM, Umbrella, Nexus staked NXM, Compound V3, Balancer gauges ×2, Curve gauge, Convex |
-| `Fees` | 2 | Uniswap V3 (PancakeSwap V3 inherits) |
+| `Fees` | 6 | Uniswap V3 ×2 (PancakeSwap V3 and the V3 Sickle subclass inherit), Uniswap V4 ×2, Fables ×2 (unstaked side only) |
 
 ## Other observable invariants
 
@@ -108,3 +118,5 @@ split legs of the withdrawal-queue / cooldown adapters, which each emit a `Suppl
 - One `protocolSubId` slug ⇒ exactly one `positionId` decode schema, as required by the slug rules — no adapter violates this.
 - Multi-leg adapters reuse the **same** `positionId` across their legs; legs are distinguished by `positionKind`, `balanceAsset` (for per-token legs), and `isLocked` (claimable vs locked legs). The per-request withdrawal-queue adapters and the per-NFT adapters go further — they emit **multiple legs that share the full key** and differ only in the typed `positionInstanceId` (request id / NFT id); those legs must be summed (not deduplicated) when reconciling by key.
 - The wallet-LP vs gauge-staked-LP pairing (Curve/Balancer pools metas vs gauges metas) is now distinguishable by kind alone: `Supplied` = liquid LP, `Staking` = behind an unstake.
+- **The holder may not be the account.** The vfat Sickle family (`UniswapV3SicklePoolsMeta`, `UniswapV4SicklePoolsMeta`, `FablesSickleRangesMeta`, chain 4663) reports positions held by the account's Sickle alongside the account's own, admitted only when `SickleFactory.sickles(account) == sickle` **and** `ISickle(sickle).owner() == account`. Holder resolution is **not** part of identity and leaves no trace in any emitted field: a Sickle-held leg is byte-identical to an account-held one. Reconciliation is unaffected; what changes is only which positions appear under the account at all. See [ADR 0026](../decisions/0026-sickle-held-positions.md).
+- **Two `positionId` schemas are raw `bytes32` pool ids that no address can be recovered from.** `uniswap-v4` and `fables` both encode a v4 `poolId` = `keccak256(abi.encode(PoolKey))`. Unlike Balancer V2's poolId, whose top 160 bits are the pool address, a v4 poolId is a pure one-way hash: a consumer that wants the currencies must read them from the adapter's registered `PoolKey` preimage, not parse them out of the id.

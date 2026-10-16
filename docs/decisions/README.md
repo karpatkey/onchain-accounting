@@ -40,3 +40,6 @@ Short, numbered records of *why* the codebase looks the way it does. Read these 
 | 0023 | [Asset classification on two orthogonal axes (`PegKind` × `AccrualKind`), surfaced by a standalone `AssetKindRegistry`](0023-asset-classification-two-axes.md) | accepted |
 | 0024 | [Drop oversized submodules; vendor single-file dependencies](0024-dependency-size-vendor-single-file-deps.md) | accepted |
 | 0025 | [A registered heartbeat MUST equal the provider's declared heartbeat](0025-heartbeat-equals-declared.md) | accepted |
+| 0026 | [Adapters may report positions held by an account's vfat Sickle, admitted by a two-way check](0026-sickle-held-positions.md) | proposed |
+| 0027 | [Standalone, permissionless, ownership-validated position indexes for non-enumerable position managers](0027-ownership-validated-position-index.md) | proposed |
+| 0028 | [Calendar-gated oracles: holdover is a named policy in the custom feed (amends 0025)](0028-session-gapped-feed-holdover.md) | proposed |

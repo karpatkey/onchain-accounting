@@ -97,10 +97,11 @@ every other adapter. "Partial = locked": any not-yet-withdrawable amount lands o
 
 **`positionInstanceId`** — `bytes32`
 
-The **sole ephemeral** identity field: a per-item coordinate — a Uniswap V3 / PancakeSwap V3 / Nexus
-Mutual NFT id, a withdrawal / exit request id, or a StakeWise exit ticket — each a `uint256` widened
-to `bytes32`. `bytes32(0)` for adapters with no per-item granularity. It is **excluded** from the
-reconciliation key by design, so the legs of one anchor sum and identity survives item churn. A
+The **sole ephemeral** identity field: a per-item coordinate — a Uniswap V3 / V4 / PancakeSwap V3 /
+Nexus Mutual NFT id, a Fables ERC-6909 `rangeId`, a withdrawal / exit request id, or a StakeWise exit
+ticket — each a `uint256` widened to `bytes32`. `bytes32(0)` for adapters with no per-item
+granularity. It is **excluded** from the reconciliation key by design, so the legs of one anchor sum
+and identity survives item churn. A
 consumer that wants per-item granularity MAY append it to the key, at the cost of an ephemeral key
 (it blinks in/out as items are minted / burned / claimed). Never use it for stable identity.
 
@@ -610,6 +611,68 @@ Thin subclasses of the UniswapV3/V2 adapters with different factory/`pair` addre
 `pancakeswap-v3` / `pancakeswap-v2` protocol slugs. All field schemas are identical (V3 positionId = pool
 address, NFT id in `positionInstanceId`; V2 positionId = pair address).
 
+#### `UniswapV3SicklePoolsMeta` — Uniswap V3 NFT held by a vfat Sickle
+
+```solidity
+// Subclass of UniswapV3PoolsMeta: identical slugs, identical positionId, identical four legs. The only
+// difference is WHO holds the NFT. A vfat deposit moves the tokens into the account's Sickle (a per-owner
+// proxy the vfat factory deploys), and the Sickle is what owns the LP NFT, so this adapter answers each
+// pool for the account AND for `SickleFactory.sickles(account)` — admitted only when `ISickle(sickle).owner()`
+// attests the account back. Chain 4663 (Robinhood Chain) today.
+PositionBalance({
+    balanceAsset:       Asset({ asset: 0x<USDG>, symbol: "USDG", decimals: 6 }),
+    balanceAdapter:     0x<UniswapV3SicklePoolsMeta>,
+    amount:             600_000_000,            // 600 USDG in-range liquidity, NFT held by the Sickle
+    isDebt:             false,
+    protocolSubId:      keccak256("uniswap-v3"), // protocolId = protocolSubId; protocolBrand = keccak256("uniswap")
+    positionId:         abi.encode(0x<pool>),   // the CRCL/USDG-style pool address
+    positionKind:       PositionKind.Supplied,
+    positionInstanceId: bytes32(uint256(1306886)) // ephemeral NFT token id (per-item only)
+})
+```
+
+#### `UniswapV4SicklePoolsMeta` — Uniswap V4 position
+
+```solidity
+// V4 has no per-pool contract to widen, so the instance coordinate IS the bytes32 poolId and positionId
+// encodes it raw. Two Supplied legs (currency0, currency1 in-range liquidity) + two Fees legs share it.
+// Enumeration cannot come from the PositionManager — it is a Solmate ERC721 whose `tokenOfOwnerByIndex`
+// REVERTS on 4663 (measured) — so tokenIds come from the permissionless `V4PositionIndex` and every one of
+// them is re-checked against `positionManager.ownerOf(tokenId)` before a wei is valued (ADR 0027).
+PositionBalance({
+    balanceAsset:       Asset({ asset: 0x<USDG>, symbol: "USDG", decimals: 6 }),
+    balanceAdapter:     0x<UniswapV4SicklePoolsMeta>,
+    amount:             1_250_000_000,          // 1 250 USDG in-range liquidity (tokenId 2268430)
+    isDebt:             false,
+    protocolSubId:      keccak256("uniswap-v4"), // protocolId = protocolSubId; protocolBrand = keccak256("uniswap")
+    positionId:         abi.encode(bytes32(0x<poolId>)), // raw v4 poolId — keccak256 of the PoolKey
+    positionKind:       PositionKind.Supplied,
+    positionInstanceId: bytes32(uint256(2268430)) // ephemeral NFT token id (per-item only)
+})
+```
+
+#### `FablesSickleRangesMeta` — Fables hook-pooled range
+
+```solidity
+// A Fables position is an ERC-6909 share in a range the HOOK owns, not a Uniswap position — hence its own
+// brand, not a Uniswap sub-id. Instance = the v4 poolId; positionId encodes it raw; the hook's rangeId is
+// the ephemeral positionInstanceId. Principal is `Supplied` when unstaked and `Staking` when staked (the
+// hook's `withdraw` auto-unstakes, so staked principal is still withdrawable); fees are reported only for
+// the unstaked side — staked accrual goes to the emissions distributor against an offchain claim, so
+// booking it would record revenue the fund can never receive. Enumeration is the permissionless
+// `FablesRangeIndex` (ERC-6909 has no enumeration and no per-holder count), re-validated per read.
+PositionBalance({
+    balanceAsset:       Asset({ asset: 0x<USDG>, symbol: "USDG", decimals: 6 }),
+    balanceAdapter:     0x<FablesSickleRangesMeta>,
+    amount:             500_000_000,            // 500 USDG of range principal, unstaked
+    isDebt:             false,
+    protocolSubId:      keccak256("fables"),    // protocolId = protocolSubId = protocolBrand
+    positionId:         abi.encode(bytes32(0x<poolId>)), // raw v4 poolId recovered from `hook.rangeKey(id)`
+    positionKind:       PositionKind.Supplied,
+    positionInstanceId: bytes32(uint256(<rangeId>)) // ephemeral ERC-6909 range id (per-item only)
+})
+```
+
 #### `walletYield` family — wallet-held yield-bearing tokens (17 adapters)
 
 Each adapter reclassifies a wallet-held yield token: it values the raw `balanceOf` (`balanceAsset` = the token
@@ -1007,6 +1070,53 @@ Scenario: wallet holds USDC/WETH V2 pair LP representing 700 USDC + 0.28 WETH.
 
 Same structure as UniswapV3/V2 respectively; `protocolName` = `"PancakeSwap V3"` / `"PancakeSwap V2"`.
 
+#### `UniswapV3SicklePoolsMeta`
+
+Scenario: the same NFT position as above, except the NFT is owned by the account's vfat Sickle rather than by the
+account. The rows are indistinguishable from `UniswapV3PoolsMeta`'s by design — the holder indirection is resolution,
+not identity.
+
+| asset | amount  | value (USD) | positionKind | positionInstanceId | protocolName   | labels  |
+|-------|---------|-------------|--------------|--------------------|----------------|----------------|
+| USDG  | 600     | +600        | `Supplied`   | `1306886`          | `"Uniswap V3"` | `["AMM Liquidity Pool", "CRCL/USDG 0.30%"]` |
+| CRCL  | 2.4     | +600        | `Supplied`   | `1306886`          | `"Uniswap V3"` | `["AMM Liquidity Pool", "CRCL/USDG 0.30%"]` |
+| USDG  | 20      | +20         | `Fees`       | `1306886`          | `"Uniswap V3"` | `["AMM Liquidity Pool", "CRCL/USDG 0.30%"]` |
+| CRCL  | 0.08    | +20         | `Fees`       | `1306886`          | `"Uniswap V3"` | `["AMM Liquidity Pool", "CRCL/USDG 0.30%"]` |
+| **NAV** | | **+1 240** | | | | |
+
+#### `UniswapV4SicklePoolsMeta`
+
+Scenario: one V4 position (tokenId 2268430) in the ETH/USDG pool, in-range, with accrued fees on both currencies.
+
+| asset | amount  | value (USD) | positionKind | positionInstanceId | protocolName   | labels  |
+|-------|---------|-------------|--------------|--------------------|----------------|----------------|
+| USDG  | 1 250   | +1 250      | `Supplied`   | `2268430`          | `"Uniswap V4"` | `["AMM Liquidity Pool", "ETH/USDG"]` |
+| ETH   | 0.5     | +1 250      | `Supplied`   | `2268430`          | `"Uniswap V4"` | `["AMM Liquidity Pool", "ETH/USDG"]` |
+| USDG  | 12      | +12         | `Fees`       | `2268430`          | `"Uniswap V4"` | `["AMM Liquidity Pool", "ETH/USDG"]` |
+| ETH   | 0.0048  | +12         | `Fees`       | `2268430`          | `"Uniswap V4"` | `["AMM Liquidity Pool", "ETH/USDG"]` |
+| **NAV** | | **+2 524** | | | | |
+
+(positionId for all four legs = `abi.encode(bytes32 poolId)`; the NFT id lives only in the typed `positionInstanceId`.
+The leaf `"ETH/USDG"` exists only because the pool's `PoolKey` preimage was registered on the adapter — a v4 poolId is
+a one-way hash, so an unregistered pool degrades to `["AMM Liquidity Pool"]`.)
+
+#### `FablesSickleRangesMeta`
+
+Scenario: one Fables range in the ETH/USDG pool — 500 USDG + 0.2 ETH of principal left unstaked, plus claimable fees.
+A staked portion of the same range would add `Staking` legs beside these (up to 6 legs per range in total) and carry
+no fee of its own: staked accrual leaves the range entirely.
+
+| asset | amount  | value (USD) | positionKind | positionInstanceId | protocolName | labels  |
+|-------|---------|-------------|--------------|--------------------|--------------|----------------|
+| USDG  | 500     | +500        | `Supplied`   | `<rangeId>`        | `"Fables"`   | `["AMM Liquidity Pool", "ETH/USDG"]` |
+| ETH   | 0.2     | +500        | `Supplied`   | `<rangeId>`        | `"Fables"`   | `["AMM Liquidity Pool", "ETH/USDG"]` |
+| USDG  | 6       | +6          | `Fees`       | `<rangeId>`        | `"Fables"`   | `["AMM Liquidity Pool", "ETH/USDG"]` |
+| ETH   | 0.0024  | +6          | `Fees`       | `<rangeId>`        | `"Fables"`   | `["AMM Liquidity Pool", "ETH/USDG"]` |
+| **NAV** | | **+1 012** | | | | |
+
+(Fee legs are already net of the hook's staked-share cut and its claim fee, both taken at accrual — 10% on 8 of 10
+candidate pools, measured 24 Sep 2026 — so they are reported as read, never discounted a second time.)
+
 ---
 
 ## `protocolSubId` — which protocol
@@ -1051,10 +1161,12 @@ schemas are in the next section and in the per-adapter table above.)
 | `curve-pools` | `CURVE_POOLS` | `CurvePoolsMetaBalanceAdapter` — wallet-held Curve LP |
 | `curve-gauges` | `CURVE_GAUGES` | `CurveGaugesMetaBalanceAdapter` — gauge-staked Curve LP + rewards |
 | `convex-curve-lp-staking` | `CONVEX_CURVE_LP_STAKING` | `ConvexCurveLPStakingMetaBalanceAdapter` — Convex-staked Curve LP + CRV/CVX/extra rewards |
-| `uniswap-v3` | `UNISWAP_V3` | `UniswapV3PoolsMetaBalanceAdapter` — Uniswap V3 LP NFT liquidity + fees |
+| `uniswap-v3` | `UNISWAP_V3` | `UniswapV3PoolsMetaBalanceAdapter` — Uniswap V3 LP NFT liquidity + fees; `UniswapV3SicklePoolsMetaBalanceAdapter` (subclass) reports the same shape for NFTs held by the account's vfat Sickle |
 | `uniswap-v2` | `UNISWAP_V2` | `UniswapV2PoolsMetaBalanceAdapter` — Uniswap V2 LP |
 | `pancakeswap-v3` | `PANCAKESWAP_V3` | `PancakeSwapV3PoolsMetaBalanceAdapter` — PancakeSwap V3 LP NFT liquidity + fees |
 | `pancakeswap-v2` | `PANCAKESWAP_V2` | `PancakeSwapV2PoolsMetaBalanceAdapter` — PancakeSwap V2 LP |
+| `uniswap-v4` | `UNISWAP_V4` | `UniswapV4SicklePoolsMetaBalanceAdapter` — Uniswap V4 position liquidity + fees, one instance per `poolId` (chain 4663 today) |
+| `fables` | `FABLES` | `FablesSickleRangesMetaBalanceAdapter` — Fables hook-pooled range principal (unstaked or staked) + claimable fees, one instance per `poolId` (chain 4663 today) |
 | `stakewise-v3-vaults` | `STAKEWISE_V3_VAULTS` | `StakeWiseV3VaultsMetaBalanceAdapter` — StakeWise V3 vault stake + osToken debt |
 | `polygon-staking` | `POLYGON_STAKING` | `PolygonStakingMetaBalanceAdapter` — Polygon PoS delegation principal + unclaimed rewards (settles on Ethereum L1) |
 | `nexus-mutual-staking-pools` | `NEXUS_MUTUAL_STAKING_POOLS` | `NexusMutualStakingPoolsAssistedBalanceAdapter` — Nexus Mutual StakingNFT stake + rewards |
@@ -1107,6 +1219,8 @@ rather than overloading an existing one.
 | `uniswap-v2` | `(address pair)` |
 | `pancakeswap-v3` | `(address pool)` — NFT id in `positionInstanceId` |
 | `pancakeswap-v2` | `(address pair)` |
+| `uniswap-v4` | `(bytes32 poolId)` — raw v4 pool id (`keccak256` of the `PoolKey`), **not an address**; NFT id in `positionInstanceId` |
+| `fables` | `(bytes32 poolId)` — raw v4 pool id of the hook's pool, **not an address**; the hook's `rangeId` in `positionInstanceId` |
 | `stakewise-v3-vaults` | `(address vault)` |
 | `polygon-staking` | `(address validatorShare)` |
 | `cap` | `(address token)` — cUSD or stcUSD |
@@ -1270,6 +1384,9 @@ decodes use `AbiCoder.defaultAbiCoder()` from ethers.js. Protocol ID constants c
 | `ConvexCurveLPStakingMeta` | `convex-curve-lp-staking` | `Staking`, `Rewards` |
 | `UniswapV3PoolsMeta` / `PancakeSwapV3PoolsMeta` | `uniswap-v3` / `pancakeswap-v3` | `Supplied`, `Fees` |
 | `UniswapV2PoolsMeta` / `PancakeSwapV2PoolsMeta` | `uniswap-v2` / `pancakeswap-v2` | `Supplied` |
+| `UniswapV3SicklePoolsMeta` | `uniswap-v3` | `Supplied`, `Fees` (same legs and same positionId as `UniswapV3PoolsMeta`; the NFT may be held by the account or by its vfat Sickle) |
+| `UniswapV4SicklePoolsMeta` | `uniswap-v4` | `Supplied`, `Fees` |
+| `FablesSickleRangesMeta` | `fables` | `Supplied` (unstaked principal), `Staking` (staked principal), `Fees` (unstaked side only) |
 | `Cap` | `cap` | `Supplied` (cUSD), `Staking` (stcUSD) |
 | `NexusMutualStakingPoolsAssistedBalanceAdapter` | `nexus-mutual-staking-pools` | `Staking`, `Rewards` |
 | `LidoWithdrawalQueue` | `lido-withdrawal` | `Supplied` (one leg per request; `isLocked` = pending; request id in `positionInstanceId`) |
@@ -1511,6 +1628,39 @@ const [pair] = abi.decode(["address"], pos.positionId);
 // Supplied → two legs: token0 and token1 pro-rata from wallet-held LP
 ```
 
+#### Uniswap V4 — `uniswap-v4`
+
+Per-pool positionId, but the coordinate is the raw `bytes32` poolId, not an address: v4 holds every pool in the
+PoolManager singleton, so there is no per-pool contract to encode. An account's multiple v4 positions in the same
+pool share this positionId; the tokenId is the typed, ephemeral `pos.positionInstanceId`.
+
+```typescript
+const [poolId] = abi.decode(["bytes32"], pos.positionId);
+// poolId — keccak256(abi.encode(PoolKey)); a one-way hash, so currencies/fee/tickSpacing/hooks are NOT
+// recoverable from it. The adapter keeps a registered PoolKey preimage per poolId for labels and assets.
+// The NFT id is the typed pos.positionInstanceId (a uint256 widened to bytes32), not in positionId.
+// Supplied → in-range liquidity (currency0 and currency1 legs)
+// Fees     → unclaimed fee legs (currency0 and currency1)
+
+// To act on a specific position, recover the tokenId from positionInstanceId:
+const tokenId = BigInt(pos.positionInstanceId);
+```
+
+#### Fables — `fables`
+
+```typescript
+const [poolId] = abi.decode(["bytes32"], pos.positionId);
+// poolId — the v4 poolId of the pool the Fables hook runs; the hook, not the account, owns the v4 position.
+// The account's claim on it is an ERC-6909 share balance in a RANGE; that rangeId is the typed, ephemeral
+// pos.positionInstanceId (a uint256 widened to bytes32, the same shape as an NFT id).
+// Supplied → unstaked range principal (currency0 and currency1 legs)
+// Staking  → the staked portion of that principal (withdraw auto-unstakes, so it is still withdrawable:
+//            isLocked stays false). A range can report both kinds at once.
+// Fees     → claimable fees, already net of the staked-share cut and the claim fee, which the hook takes at
+//            accrual. Staked ranges report no fee legs: their accrual is an offchain emissions claim.
+const rangeId = pos.positionInstanceId;
+```
+
 #### Cap — `cap`
 
 ```typescript
@@ -1682,6 +1832,9 @@ the same on every chain. Default `positionId` = base `_instancePositionId` (inst
 | `UniswapV3PoolsMetaBalanceAdapter` | `uniswap-v3` | `"Uniswap V3"` | `["AMM Liquidity Pool", "<sym0>/<sym1> <fee>%"]` (derived) | `abi.encode(address pool)` | Supplied / Fees | `["Uniswap V3","AMM Liquidity Pool","USDC/WETH 0.05%"]` |
 | `PancakeSwapV2PoolsMetaBalanceAdapter` | `pancakeswap-v2` | `"PancakeSwap V2"` | `["AMM Liquidity Pool", "<sym0>/<sym1>"]` (derived, inherited) | `abi.encode(address pair)` | Supplied | `["PancakeSwap V2","AMM Liquidity Pool","WBNB/BUSD"]` |
 | `PancakeSwapV3PoolsMetaBalanceAdapter` | `pancakeswap-v3` | `"PancakeSwap V3"` | `["AMM Liquidity Pool", "<sym0>/<sym1> <fee>%"]` (derived, inherited) | `abi.encode(address pool)` | Supplied / Fees | `["PancakeSwap V3","AMM Liquidity Pool","CAKE/WBNB 0.25%"]` |
+| `UniswapV3SicklePoolsMetaBalanceAdapter` | `uniswap-v3` | `"Uniswap V3"` | `["AMM Liquidity Pool", "<sym0>/<sym1> <fee>%"]` (derived, inherited) | `abi.encode(address pool)` | Supplied / Fees | `["Uniswap V3","AMM Liquidity Pool","CRCL/USDG 0.30%"]` |
+| `UniswapV4SicklePoolsMetaBalanceAdapter` | `uniswap-v4` | `"Uniswap V4"` | `["AMM Liquidity Pool", "<sym0>/<sym1>"]` (derived from the registered `PoolKey` preimage; no `<fee>%` segment — a v4 pool may carry the dynamic-fee flag) | **override** `abi.encode(bytes32 poolId)` (raw) | Supplied / Fees | `["Uniswap V4","AMM Liquidity Pool","ETH/USDG"]` |
+| `FablesSickleRangesMetaBalanceAdapter` | `fables` | `"Fables"` | `["AMM Liquidity Pool", "<sym0>/<sym1>"]` (derived from the registered `PoolKey` preimage) | **override** `abi.encode(bytes32 poolId)` (raw) | Supplied / Staking / Fees | `["Fables","AMM Liquidity Pool","ETH/USDG"]` |
 
 #### Assisted adapters (`src/balances/AssistedBalanceAdapters/`)
 
@@ -1729,6 +1882,8 @@ what each argument refers to:
 | `address gauge` | The staking **gauge** contract (Balancer V2/V3 or Curve) the LP is staked into. Staked principal and claimable reward legs share it. |
 | `address rewarder` (Convex) | The Convex `BaseRewardPool` ("rewarder") for that Curve LP. The underlying Curve pool, its coins and the CRV/CVX/extra rewards are derived from it. |
 | `address pool` (Uniswap V3 / PancakeSwap V3) | The Uniswap/PancakeSwap **V3 pool contract** (`factory.getPool(token0, token1, fee)`) — each fee tier is its own deployed pool, so the address identifies the token pair + fee tier. Keyed per pool; an account's NFTs in the same pool share it, and the four legs (token0/token1 × liquidity/fees) share it. The specific NFT id is **not** in positionId — it is the typed `positionInstanceId`. |
+| `bytes32 poolId` (Uniswap V4) | Uniswap V4's pool id — `keccak256(abi.encode(PoolKey))`, where the key is `(currency0, currency1, fee, tickSpacing, hooks)`. **Raw `bytes32`, not an address**: v4 holds every pool inside the PoolManager singleton, so there is no per-pool contract. The hash is one-way, so the adapter keeps a self-validating registered preimage per poolId (a key is accepted only under the id it hashes to) for labels and `underlyingAssetsSupported`. The four legs (currency0/currency1 × liquidity/fees) share it; the position NFT id is the typed `positionInstanceId`. |
+| `bytes32 poolId` (Fables) | The v4 pool id of the pool a Fables **hook** runs. The hook is the v4 position owner; the account holds an ERC-6909 share in one of the hook's ranges, and that `rangeId` is the typed `positionInstanceId`, not part of positionId. **Raw `bytes32`, not an address.** Principal (`Supplied` or `Staking`) and `Fees` legs of a range share it. Instance granularity is the pool, not the range, deliberately: per-range instances would put every re-centre behind the MANAGER key and make the NAV go quiet exactly when the book moves. |
 | `address stakingPool` (Nexus) | The Nexus Mutual **staking-pool contract** (`StakingViewer.stakingPool(poolId)`, deterministic per poolId). Staking and reward legs (both NXM) share it. The `StakingNFT` id is the typed `positionInstanceId`, not in positionId. |
 | `address DISTRIBUTOR` (Merkl) | The Merkl `Distributor` (Angle Labs) — the claim target / trust anchor. All reward tokens claimed from it share this id and are told apart by `balanceAsset`. |
 | `address withdrawalQueue` (Lido) | Lido's `WithdrawalQueueERC721` — the contract that escrows stETH withdrawal requests and pays out ETH on claim. Static; claimable + locked legs share it. |

@@ -88,6 +88,10 @@ library ProtocolNames {
     string internal constant UNISWAP_V2 = "Uniswap V2";
     /// @dev `ProtocolIds.UNISWAP_V3`.
     string internal constant UNISWAP_V3 = "Uniswap V3";
+    /// @dev `ProtocolIds.UNISWAP_V4`.
+    string internal constant UNISWAP_V4 = "Uniswap V4";
+    /// @dev `ProtocolIds.FABLES`.
+    string internal constant FABLES = "Fables";
     /// @dev `ProtocolIds.PANCAKESWAP_V2`.
     string internal constant PANCAKESWAP_V2 = "PancakeSwap V2";
     /// @dev `ProtocolIds.PANCAKESWAP_V3`.
@@ -162,6 +166,8 @@ library ProtocolNames {
         if (protocolId == ProtocolIds.CONVEX) return CONVEX;
         if (protocolId == ProtocolIds.UNISWAP_V2) return UNISWAP_V2;
         if (protocolId == ProtocolIds.UNISWAP_V3) return UNISWAP_V3;
+        if (protocolId == ProtocolIds.UNISWAP_V4) return UNISWAP_V4;
+        if (protocolId == ProtocolIds.FABLES) return FABLES;
         if (protocolId == ProtocolIds.PANCAKESWAP_V2) return PANCAKESWAP_V2;
         if (protocolId == ProtocolIds.PANCAKESWAP_V3) return PANCAKESWAP_V3;
 

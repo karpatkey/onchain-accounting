@@ -3,6 +3,9 @@
 **Status:** Accepted (2026-08-28)
 **Supersedes:** the `declared + 1 h` convention encoded in `script/deploy/preflight/declared_heartbeat_guard.py`
 and applied by `f047d350`.
+**Amended by:** [0028](0028-session-gapped-feed-holdover.md), for calendar-gated oracles only (feeds whose
+publication follows a trading calendar, so silence is a closed tape rather than a fault). The equality rule
+below is unchanged for every other feed.
 
 ## Decision
 

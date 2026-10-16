@@ -171,6 +171,25 @@ library DeploySalts {
     uint256 internal constant FLUID_VAULTS_META = 2;
 
     //
+    // vfat Sickle-held venues and their discovery indexes (ADR 0026, ADR 0027)
+    //
+    // **Version 1, unlike the groups above**, because there is no generation 0 to disambiguate from on this path:
+    // the contracts live on chain 4663 today, but they were deployed from the separate `kpk-labs/APE-robinhood`
+    // build against a different base class, so their addresses can never collide with a CREATE2 address derived
+    // here, and nothing deployed by this repo is being superseded.
+    //
+    // These are NOT fleet-identical addresses and are not meant to be: every constructor takes per-chain
+    // protocol arguments (position manager, pool manager, Sickle factory, and for the two pooled venues the
+    // discovery index deployed alongside them), so the init code differs per chain by construction. The salt
+    // buys determinism WITHIN a chain — a redeploy from the same config lands on the same address — which is
+    // what makes a re-run of `04` idempotent.
+    uint256 internal constant UNISWAP_V3_SICKLE_POOLS_META = 1;
+    uint256 internal constant UNISWAP_V4_SICKLE_POOLS_META = 1;
+    uint256 internal constant FABLES_SICKLE_RANGES_META = 1;
+    uint256 internal constant V4_POSITION_INDEX = 1;
+    uint256 internal constant FABLES_RANGE_INDEX = 1;
+
+    //
     // Attested balance adapters (ADR 0022) — CREATE2 same-address across chains
     //
     // `MerklRewardsAttestedBalanceAdapter` takes (distributor, navCalculator, admin), and all three are

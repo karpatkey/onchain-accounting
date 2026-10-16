@@ -153,6 +153,17 @@ import {
     UniswapV3PoolsMetaBalanceAdapter
 } from "../../src/balances/MetaBalanceAdapters/uniswap/UniswapV3PoolsMetaBalanceAdapter.sol";
 import {
+    UniswapV3SicklePoolsMetaBalanceAdapter
+} from "../../src/balances/MetaBalanceAdapters/vfat/UniswapV3SicklePoolsMetaBalanceAdapter.sol";
+import {
+    UniswapV4SicklePoolsMetaBalanceAdapter
+} from "../../src/balances/MetaBalanceAdapters/vfat/UniswapV4SicklePoolsMetaBalanceAdapter.sol";
+import {
+    FablesSickleRangesMetaBalanceAdapter
+} from "../../src/balances/MetaBalanceAdapters/vfat/FablesSickleRangesMetaBalanceAdapter.sol";
+import {V4PositionIndex} from "../../src/balances/MetaBalanceAdapters/uniswap/v4/V4PositionIndex.sol";
+import {FablesRangeIndex} from "../../src/balances/MetaBalanceAdapters/fables/FablesRangeIndex.sol";
+import {
     UniswapV2PoolsMetaBalanceAdapter
 } from "../../src/balances/MetaBalanceAdapters/uniswap/UniswapV2PoolsMetaBalanceAdapter.sol";
 import {
@@ -300,6 +311,13 @@ contract DeployBalanceAdapters is BaseDeployScript {
 
         // --- Uniswap V3 (meta-adapter: on-chain NFT enumeration; ADR 0010) ---
         _deployIfEnabled("UniswapV3PoolsMeta"); // Meta-adapter: all configured Uniswap V3 pools; NFTs enumerated on-chain
+
+        // --- vfat Sickle-held venues (ADR 0026) + their discovery indexes (ADR 0027) ---
+        // Chain 4663 (Robinhood) today. Each reports the account's own positions AND its vfat Sickle's; the V3
+        // one supersedes `UniswapV3PoolsMeta` on a chain that uses vfat, it does not sit beside it.
+        _deployIfEnabled("UniswapV3SicklePoolsMeta");
+        _deployIfEnabled("UniswapV4SicklePoolsMeta"); // deploys V4PositionIndex first when none is configured
+        _deployIfEnabled("FablesSickleRangesMeta"); // deploys FablesRangeIndex first when none is configured
 
         // --- PancakeSwap V2 (meta-adapter) ---
         _deployIfEnabled("PancakeSwapV2PoolsMeta"); // BSC — meta-adapter: all PancakeSwap V2 pairs
@@ -579,6 +597,17 @@ contract DeployBalanceAdapters is BaseDeployScript {
         // Uniswap/PancakeSwap V3 meta-adapters (on-chain NFT enumeration; ADR 0010)
         if (_equals(adapterName, "UniswapV3PoolsMeta")) {
             return _deployUniswapV3PoolsMeta(adapterName, navCalculator);
+        }
+
+        // vfat Sickle-held venues (ADR 0026); the two pooled ones deploy their discovery index first (ADR 0027)
+        if (_equals(adapterName, "UniswapV3SicklePoolsMeta")) {
+            return _deployUniswapV3SicklePoolsMeta(adapterName, navCalculator);
+        }
+        if (_equals(adapterName, "UniswapV4SicklePoolsMeta")) {
+            return _deployUniswapV4SicklePoolsMeta(adapterName, navCalculator);
+        }
+        if (_equals(adapterName, "FablesSickleRangesMeta")) {
+            return _deployFablesSickleRangesMeta(adapterName, navCalculator);
         }
         if (_equals(adapterName, "PancakeSwapV3PoolsMeta")) {
             return _deployPancakeSwapV3PoolsMeta(adapterName, navCalculator);
@@ -1124,6 +1153,112 @@ contract DeployBalanceAdapters is BaseDeployScript {
             "UniswapV3PoolsMetaBalanceAdapter",
             DeploySalts.UNISWAP_V3_POOLS_META
         );
+    }
+
+    /// @notice Deploys the vfat Sickle-held Uniswap V3 pools meta-adapter (ADR 0026): the pools adapter above plus
+    ///         holder resolution, so a portfolio whose NFTs are owned by its Sickle is priced.
+    /// @dev Same `positionManager` key as its base, plus `sickleFactory`. Deploying BOTH this and the plain
+    ///      `UniswapV3PoolsMeta` on one chain would double-count an account that holds V3 NFTs directly, since the
+    ///      Sickle variant already reports those: configure exactly one of the two per chain.
+    function _deployUniswapV3SicklePoolsMeta(string memory adapterName, address navCalculator)
+        internal
+        returns (address)
+    {
+        address positionManager = vm.parseAddress(
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionManager")
+        );
+        address sickleFactory = vm.parseAddress(
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "sickleFactory")
+        );
+
+        return _create2WithArgs(
+            type(UniswapV3SicklePoolsMetaBalanceAdapter).creationCode,
+            abi.encode(positionManager, navCalculator, sickleFactory),
+            "UniswapV3SicklePoolsMetaBalanceAdapter",
+            DeploySalts.UNISWAP_V3_SICKLE_POOLS_META
+        );
+    }
+
+    /// @notice Deploys the vfat Sickle-held Uniswap V4 pools meta-adapter, and its {V4PositionIndex} first.
+    /// @dev The index is a constructor argument, so unlike the ADR 0018 assistants (deployed AFTER their adapter)
+    ///      it must exist before the adapter's init code is assembled. It is deployed here rather than in a
+    ///      separate step so that the pair can never be registered half-configured, and recorded under its own
+    ///      name so operator tooling and monitoring read the same address the adapter was pinned to. A configured
+    ///      `positionIndex` wins, for a chain that already has one (chain 4663 does — see ADR 0027).
+    function _deployUniswapV4SicklePoolsMeta(string memory adapterName, address navCalculator)
+        internal
+        returns (address)
+    {
+        address positionManager = vm.parseAddress(
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "positionManager")
+        );
+        address poolManager = vm.parseAddress(
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "poolManager")
+        );
+        address sickleFactory = vm.parseAddress(
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "sickleFactory")
+        );
+
+        address positionIndex = _configuredAddressOrZero(adapterName, "positionIndex");
+        if (positionIndex == address(0)) {
+            positionIndex = readDeployedAddress("V4PositionIndex");
+        }
+        if (positionIndex == address(0)) {
+            positionIndex = _create2WithArgs(
+                type(V4PositionIndex).creationCode,
+                abi.encode(positionManager),
+                "V4PositionIndex",
+                DeploySalts.V4_POSITION_INDEX
+            );
+            saveDeployedAddress("V4PositionIndex", positionIndex);
+        }
+
+        return _create2WithArgs(
+            type(UniswapV4SicklePoolsMetaBalanceAdapter).creationCode,
+            abi.encode(positionManager, poolManager, positionIndex, navCalculator, sickleFactory),
+            "UniswapV4SicklePoolsMetaBalanceAdapter",
+            DeploySalts.UNISWAP_V4_SICKLE_POOLS_META
+        );
+    }
+
+    /// @notice Deploys the vfat Sickle-held Fables ranges meta-adapter, and its {FablesRangeIndex} first.
+    /// @dev Same index-before-adapter ordering as the V4 sibling, and for the same reason. A Fables range is an
+    ///      ERC-6909 balance with no on-chain count, so the index is the only discovery path there is (ADR 0027).
+    function _deployFablesSickleRangesMeta(string memory adapterName, address navCalculator)
+        internal
+        returns (address)
+    {
+        address poolManager = vm.parseAddress(
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "poolManager")
+        );
+        address sickleFactory = vm.parseAddress(
+            ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "sickleFactory")
+        );
+
+        address rangeIndex = _configuredAddressOrZero(adapterName, "rangeIndex");
+        if (rangeIndex == address(0)) {
+            rangeIndex = readDeployedAddress("FablesRangeIndex");
+        }
+        if (rangeIndex == address(0)) {
+            rangeIndex = _create2WithArgs(
+                type(FablesRangeIndex).creationCode, "", "FablesRangeIndex", DeploySalts.FABLES_RANGE_INDEX
+            );
+            saveDeployedAddress("FablesRangeIndex", rangeIndex);
+        }
+
+        return _create2WithArgs(
+            type(FablesSickleRangesMetaBalanceAdapter).creationCode,
+            abi.encode(poolManager, rangeIndex, sickleFactory, navCalculator),
+            "FablesSickleRangesMetaBalanceAdapter",
+            DeploySalts.FABLES_SICKLE_RANGES_META
+        );
+    }
+
+    /// @dev An optional address parameter: the configured value, or `address(0)` when the key is absent or empty.
+    function _configuredAddressOrZero(string memory adapterName, string memory key) internal view returns (address) {
+        string memory raw = ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, key);
+        if (bytes(raw).length == 0) return address(0);
+        return vm.parseAddress(raw);
     }
 
     /// @notice Deploys the PancakeSwap V3 pools meta-adapter (subclass of the Uniswap V3 meta-adapter, differs only

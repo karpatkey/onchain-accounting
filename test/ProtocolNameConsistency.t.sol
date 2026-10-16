@@ -135,6 +135,15 @@ import {
 import {
     UniswapV3PoolsMetaBalanceAdapter
 } from "src/balances/MetaBalanceAdapters/uniswap/UniswapV3PoolsMetaBalanceAdapter.sol";
+import {
+    UniswapV3SicklePoolsMetaBalanceAdapter
+} from "src/balances/MetaBalanceAdapters/vfat/UniswapV3SicklePoolsMetaBalanceAdapter.sol";
+import {
+    UniswapV4SicklePoolsMetaBalanceAdapter
+} from "src/balances/MetaBalanceAdapters/vfat/UniswapV4SicklePoolsMetaBalanceAdapter.sol";
+import {
+    FablesSickleRangesMetaBalanceAdapter
+} from "src/balances/MetaBalanceAdapters/vfat/FablesSickleRangesMetaBalanceAdapter.sol";
 import {BalancesHarness} from "test/balances/Balances.t.sol";
 
 /// @dev Minimal deployed-bytecode stub. Several adapter constructors assert `code.length > 0` on their pinned
@@ -233,7 +242,7 @@ contract ProtocolNameConsistencyTest is Test {
 
     /// @dev Number of concrete meta adapters. Pinned so adding one fails `test_metaAdapterCensus` until the
     ///      author also adds it to `test_everyMetaAdapterReportsItsProtocolName`.
-    uint256 internal constant META_ADAPTER_COUNT = 41;
+    uint256 internal constant META_ADAPTER_COUNT = 44;
 
     /// @dev Number of concrete plain + assisted adapters, i.e. the family whose name is a bytecode LITERAL rather
     ///      than derived. Pinned so adding one fails `test_hardcodedAdapterCensus` until the author also adds it to
@@ -469,6 +478,24 @@ contract ProtocolNameConsistencyTest is Test {
         );
         i += _expectName(
             new UniswapV3PoolsMetaBalanceAdapter(stub, n).protocolName(), ProtocolNames.UNISWAP_V3, "UniswapV3Pools"
+        );
+
+        // vfat Sickle-held family (ADR 0026): the V3 member subclasses the pools adapter and must keep reporting
+        // the SAME name — a holder indirection is not a protocol. V4 and Fables carry the two new slugs.
+        i += _expectName(
+            new UniswapV3SicklePoolsMetaBalanceAdapter(stub, n, stub).protocolName(),
+            ProtocolNames.UNISWAP_V3,
+            "UniswapV3SicklePools"
+        );
+        i += _expectName(
+            new UniswapV4SicklePoolsMetaBalanceAdapter(stub, stub, stub, n, stub).protocolName(),
+            ProtocolNames.UNISWAP_V4,
+            "UniswapV4SicklePools"
+        );
+        i += _expectName(
+            new FablesSickleRangesMetaBalanceAdapter(stub, stub, stub, n).protocolName(),
+            ProtocolNames.FABLES,
+            "FablesSickleRanges"
         );
 
         // Wallet-held yield-token family: `protocolName()` derives from `_protocolId()` via forProtocolId —

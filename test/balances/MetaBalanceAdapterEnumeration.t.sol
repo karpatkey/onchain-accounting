@@ -126,6 +126,16 @@ import {
 import {
     UniswapV3PoolsMetaBalanceAdapter
 } from "src/balances/MetaBalanceAdapters/uniswap/UniswapV3PoolsMetaBalanceAdapter.sol";
+import {
+    UniswapV3SicklePoolsMetaBalanceAdapter
+} from "src/balances/MetaBalanceAdapters/vfat/UniswapV3SicklePoolsMetaBalanceAdapter.sol";
+import {
+    UniswapV4SicklePoolsMetaBalanceAdapter
+} from "src/balances/MetaBalanceAdapters/vfat/UniswapV4SicklePoolsMetaBalanceAdapter.sol";
+import {
+    FablesSickleRangesMetaBalanceAdapter
+} from "src/balances/MetaBalanceAdapters/vfat/FablesSickleRangesMetaBalanceAdapter.sol";
+import {MockSickleFactory, MockSickle} from "test/balances/MetaBalanceAdapters/vfat/SickleMocks.sol";
 
 // Protocol mocks for the emitted-side join, reused from each adapter's own suite rather than re-written.
 import {TickMath} from "src/balances/MetaBalanceAdapters/uniswap/lib/TickMath.sol";
@@ -496,9 +506,9 @@ contract MetaBalanceAdapterAdvertisedShapeTest is PositionIdJoinAsserts {
 
     /// @dev Pinned so adding an adapter fails `test_metaAdapterEnumerationCensus` until the author also adds it to
     ///      `test_everyMetaAdapter_advertisesItsCoordinateUnlessItDeclaresOtherwise`.
-    uint256 internal constant META_ADAPTER_COUNT = 41;
+    uint256 internal constant META_ADAPTER_COUNT = 44;
 
-    /// @dev A coordinate with dirty high bits, for the two adapters whose instance is a raw `bytes32` rather than
+    /// @dev A coordinate with dirty high bits, for the four adapters whose instance is a raw `bytes32` rather than
     ///      an address. Deliberately un-address-like: it proves those adapters really do override
     ///      `_instancePositionId`, because the base default would push it through `_toAddress`, revert, and get
     ///      dropped — which the length assertion in `_assertAdvertisedId` then catches. `abi.encode(bytes32)` and
@@ -556,6 +566,23 @@ contract MetaBalanceAdapterAdvertisedShapeTest is PositionIdJoinAsserts {
         i += _assertAdvertisedId(
             nav, new BalancerV2PoolsMetaBalanceAdapter(stub, n), RAW_COORD, abi.encode(RAW_COORD), "BalancerV2Pools"
         );
+        // The two vfat Sickle-held venues keyed by a Uniswap V4 pool id: same raw-coordinate rule, reached through
+        // their own `_instancePositionId` override because the base default would reject a word with dirty upper
+        // bits — which every pool id has by construction.
+        i += _assertAdvertisedId(
+            nav,
+            new UniswapV4SicklePoolsMetaBalanceAdapter(stub, stub, stub, n, stub),
+            RAW_COORD,
+            abi.encode(RAW_COORD),
+            "UniswapV4SicklePools"
+        );
+        i += _assertAdvertisedId(
+            nav,
+            new FablesSickleRangesMetaBalanceAdapter(stub, stub, stub, n),
+            RAW_COORD,
+            abi.encode(RAW_COORD),
+            "FablesSickleRanges"
+        );
 
         // --- Address-keyed, base default ---------------------------------------------------------------------
         // Aave V4's coordinate is the Spoke, which is already the contract users transact against, so unlike v3
@@ -585,6 +612,11 @@ contract MetaBalanceAdapterAdvertisedShapeTest is PositionIdJoinAsserts {
         i += _assertAdvertisesCoordinate(new PancakeSwapV3PoolsMetaBalanceAdapter(stub, n), "PancakeSwapV3Pools");
         i += _assertAdvertisesCoordinate(new UniswapV2PoolsMetaBalanceAdapter(n), "UniswapV2Pools");
         i += _assertAdvertisesCoordinate(new UniswapV3PoolsMetaBalanceAdapter(stub, n), "UniswapV3Pools");
+        // Holder indirection must leave the coordinate alone: the Sickle subclass advertises the same pool-address
+        // id as its base, because WHO holds the NFT is not part of a position's identity (ADR 0026).
+        i += _assertAdvertisesCoordinate(
+            new UniswapV3SicklePoolsMetaBalanceAdapter(stub, n, stub), "UniswapV3SicklePools"
+        );
 
         // --- Wallet-held yield tokens ------------------------------------------------------------------------
         // The instance coordinate is the token address and the base `_instancePositionId` is not overridden,
@@ -719,13 +751,16 @@ contract MetaBalanceAdapterAdvertisedShapeTest is PositionIdJoinAsserts {
 ///        - `UniswapV3PoolsMetaBalanceAdapter` builds `abi.encode(pool)` inline and assigns it through `_row`,
 ///          a SECOND positionId assignment site that exists because Uniswap needs a per-NFT `positionInstanceId`.
 ///        - `PancakeSwapV3PoolsMetaBalanceAdapter` inherits that path unchanged.
+///        - `UniswapV3SicklePoolsMetaBalanceAdapter` inherits it too, and reaches it with a SECOND caller — the
+///          vfat holder loop runs it once per holder, so the join has to hold for the Sickle's legs as well as
+///          the account's.
 ///        - `GearboxV3CreditAccountsMetaBalanceAdapter` builds `abi.encode(ca)` inline at both leg sites.
-///      For those three the two sides agree TODAY by coincidence, not by construction — that coincidence is
+///      For those four the two sides agree TODAY by coincidence, not by construction — that coincidence is
 ///      exactly what is worth pinning, because nothing in the code forces it to stay true.
 ///
-///      `AaveV3Instances` is exercised here as a **fourth** case for a different reason: it is the only adapter
+///      `AaveV3Instances` is exercised here as a **fifth** case for a different reason: it is the only adapter
 ///      whose id is legitimately not its coordinate, so running the join over it documents that the derived id
-///      still reconciles. It is NOT here because it can drift. Hence 19 + 3 = 22 adapters, 4 cases in this suite.
+///      still reconciles. It is NOT here because it can drift.
 ///
 ///      **This suite does NOT guard the Aave `_instancePositionId` override, and must not be assumed to.** Aave's
 ///      `_instancePositions` derives its id from the hook (`bytes memory pid = _instancePositionId(instance)`), so
@@ -735,7 +770,7 @@ contract MetaBalanceAdapterAdvertisedShapeTest is PositionIdJoinAsserts {
 contract MetaBalanceAdapterEmittedJoinTest is PositionIdJoinAsserts {
     /// @dev Pinned alongside the adapters listed in this suite's NatSpec. If an adapter starts computing its
     ///      positionId independently of the hook, it belongs here and this count moves with it.
-    uint256 internal constant DRIFT_CAPABLE_COUNT = 4;
+    uint256 internal constant DRIFT_CAPABLE_COUNT = 5;
 
     address internal alice = makeAddr("alice");
 
@@ -802,6 +837,53 @@ contract MetaBalanceAdapterEmittedJoinTest is PositionIdJoinAsserts {
         // Emitted through `_row`, not `_leg` -- the second assignment site, and the reason this case exists.
         uint256 legs = _assertJoin(a, alice, _one(coord), "UniswapV3Pools");
         assertEq(legs, 4, "liq0 + liq1 + fee0 + fee1");
+        return 1;
+    }
+
+    /// @dev The Sickle subclass inherits that same `_row` assignment site, and reaches it through a DIFFERENT
+    ///      caller: the mixin's per-holder loop, with the Sickle as the holder rather than the account. The join
+    ///      must survive that, or the account's own legs and its Sickle's legs would advertise different ids for
+    ///      one position. The NFT is minted to the Sickle, never to `alice`, so a broken holder resolution shows
+    ///      up here as zero legs rather than as a silently weaker assertion.
+    function _caseUniswapV3Sickle() internal returns (uint256) {
+        Mock_NAVCalculator nav = new Mock_NAVCalculator();
+        MockPositionManager npm = new MockPositionManager();
+        MockToken wbtc = new MockToken("WBTC", 8);
+        MockToken weth = new MockToken("WETH", 18);
+        nav.registerAsset(address(wbtc), 8, "WBTC");
+        nav.registerAsset(address(weth), 18, "WETH");
+
+        MockUniswapV3Pool pool = new MockUniswapV3Pool(address(wbtc), address(weth), 3000, 60);
+        pool.setSlot0(TickMath.getSqrtRatioAtTick(0), 0);
+
+        MockSickleFactory factory = new MockSickleFactory();
+        MockSickle sickle = new MockSickle(alice);
+        factory.setSickle(alice, address(sickle));
+
+        npm.mint(
+            address(sickle),
+            1,
+            MockPositionManager.PositionData({
+                token0: address(wbtc),
+                token1: address(weth),
+                fee: 3000,
+                tickLower: -100,
+                tickUpper: 100,
+                liquidity: 1_000_000,
+                feeGrowthInside0LastX128: 0,
+                feeGrowthInside1LastX128: 0,
+                tokensOwed0: 42,
+                tokensOwed1: 1337
+            })
+        );
+
+        UniswapV3SicklePoolsMetaBalanceAdapter a =
+            new UniswapV3SicklePoolsMetaBalanceAdapter(address(npm), address(nav), address(factory));
+        bytes32 coord = bytes32(uint256(uint160(address(pool))));
+        nav.setMetaInstances(address(a), _one(coord));
+
+        uint256 legs = _assertJoin(a, alice, _one(coord), "UniswapV3SicklePools");
+        assertEq(legs, 4, "the Sickle's liq0 + liq1 + fee0 + fee1, reported for the account");
         return 1;
     }
 
@@ -876,6 +958,10 @@ contract MetaBalanceAdapterEmittedJoinTest is PositionIdJoinAsserts {
         _caseUniswapV3();
     }
 
+    function test_uniswapV3Sickle_emitsTheAdvertisedPositionId() public {
+        _caseUniswapV3Sickle();
+    }
+
     function test_pancakeSwapV3_emitsTheAdvertisedPositionId() public {
         _casePancakeSwapV3();
     }
@@ -895,6 +981,7 @@ contract MetaBalanceAdapterEmittedJoinTest is PositionIdJoinAsserts {
         uint256 i;
         i += _caseAaveV3();
         i += _caseUniswapV3();
+        i += _caseUniswapV3Sickle();
         i += _casePancakeSwapV3();
         i += _caseGearboxV3CreditAccounts();
         assertEq(i, DRIFT_CAPABLE_COUNT, "exercised emitted-side cases must equal DRIFT_CAPABLE_COUNT");

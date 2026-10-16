@@ -110,9 +110,13 @@ contract UniswapV3PoolsMetaBalanceAdapter is MetaBalanceAdapter {
     /// @dev `instance` is the pool address. Enumerates the account's NPM NFTs on-chain, keeps those in this pool,
     ///      and emits up to 4 legs per NFT: `Supplied` x2 (in-range split) + `Fees` x2 (full unclaimed) — dropping
     ///      zeros and honoring `assetFilter`. positionId = abi.encode(pool); the NFT id rides in positionInstanceId.
+    /// @dev `virtual` for the same reason the identity hooks and `_slot0` are: a variant that keeps this valuation
+    ///      verbatim but changes WHO is enumerated reuses it rather than copying it. The one in-tree case is
+    ///      `UniswapV3SicklePoolsMetaBalanceAdapter`, which calls this twice — once per holder.
     function _instancePositions(address account, bytes32 instance, address assetFilter)
         internal
         view
+        virtual
         override
         returns (INAVCalculator.PositionBalance[] memory)
     {

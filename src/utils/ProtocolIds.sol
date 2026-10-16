@@ -30,6 +30,8 @@ pragma solidity ^0.8;
 ///        CURVE_GAUGES                             → (address gauge)
 ///        BALANCER_V2_POOLS                → (bytes32 poolId)
 ///        UNISWAP_V3 / PANCAKESWAP_V3     → (address pool); NFT tokenId in positionInstanceId (bytes32(tokenId))
+///        UNISWAP_V4                      → (bytes32 poolId); NFT tokenId in positionInstanceId (bytes32(tokenId))
+///        FABLES                          → (bytes32 poolId); hook rangeId in positionInstanceId (bytes32(rangeId))
 ///        UNISWAP_V2 / PANCAKESWAP_V2     → (address pair)
 ///        COMPOUND_V3_COMETS / FLUID_FTOKENS     → (address comet / fToken)
 ///        MERKL                           → (address distributor) — reward token is in balanceAsset, not positionId
@@ -140,8 +142,15 @@ library ProtocolIds {
     // Uniswap / PancakeSwap
     bytes32 internal constant UNISWAP_V3 = keccak256("uniswap-v3");
     bytes32 internal constant UNISWAP_V2 = keccak256("uniswap-v2");
+    bytes32 internal constant UNISWAP_V4 = keccak256("uniswap-v4");
     bytes32 internal constant PANCAKESWAP_V3 = keccak256("pancakeswap-v3");
     bytes32 internal constant PANCAKESWAP_V2 = keccak256("pancakeswap-v2");
+
+    // Fables — hook-pooled ranges on Uniswap V4. Its own brand, NOT a Uniswap sub-id: the account holds an
+    // ERC-6909 share in a range the HOOK owns, never a Uniswap position, and the fee split, the claim fee and
+    // the staking behaviour are the hook's own. Filing these rows under `UNISWAP` would make a portfolio view
+    // claim Uniswap liquidity the account cannot touch.
+    bytes32 internal constant FABLES = keccak256("fables");
 
     // StakeWise
     bytes32 internal constant STAKEWISE_V3_VAULTS = keccak256("stakewise-v3-vaults");

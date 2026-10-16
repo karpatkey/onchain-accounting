@@ -48,6 +48,7 @@ import {ETHx_CrossRateCustomPriceFeed} from "../../src/prices/protocols/ETHx_Cro
 import {osETH_CrossRateCustomPriceFeed} from "../../src/prices/protocols/osETH_CrossRateCustomPriceFeed.sol";
 import {CrossRateCustomPriceFeed} from "../../src/prices/protocols/CrossRateCustomPriceFeed.sol";
 import {InvertedChainlinkCustomPriceFeed} from "src/prices/protocols/InvertedChainlinkCustomPriceFeed.sol";
+import {RobinhoodEquity_CustomPriceFeed} from "src/prices/protocols/RobinhoodEquity_CustomPriceFeed.sol";
 import {ankrETH_CustomPriceFeed} from "../../src/prices/protocols/ankrETH_CustomPriceFeed.sol";
 import {NXM_CustomPriceFeed} from "../../src/prices/protocols/NXM_CustomPriceFeed.sol";
 import {RateFeedGuard} from "../utils/RateFeedGuard.sol";
@@ -335,6 +336,11 @@ contract DeployPriceFeeds is BaseDeployScript {
         if (ConfigReader.isPriceFeedEnabled(vm, currentChainId, "wARS")) {
             _deployInvertedFeed("wARS");
         }
+
+        // Deploy the Robinhood tokenised-equity wrappers (chain 4663): one instance per ticker, each a
+        // `PriceType.Custom` wrapper around that ticker's `us_equities_24/5` aggregator with the ADR 0028
+        // off-hours holdover. Enumerated from config by key prefix, so a new ticker is a config-only change.
+        _deployRobinhoodEquityFeeds();
 
         // Deploy NXM / wNXM Price Oracle (price = RAMM.getInternalPrice() [ETH/NXM] * ETH/USD)
         if (ConfigReader.isAdapterEnabled(vm, currentChainId, "priceFeeds", "NXM")) {
@@ -860,6 +866,56 @@ contract DeployPriceFeeds is BaseDeployScript {
                 revert InvertedFeedBaseAssetMustBeZero(names[i], vm.parseAddress(declaredBase));
             }
         }
+    }
+
+    /// @notice Deploys every enabled `RobinhoodEquity_<TICKER>` wrapper on this chain.
+    /// @dev Enumerated rather than listed one `if` per ticker: there is one wrapper INSTANCE per tokenised equity
+    ///      (26 on chain 4663 as of 2026-10-16) and the universe grows with every ticker Robinhood lists, so a
+    ///      hand-maintained call list here would be a second place for that set to drift from the config that
+    ///      already enumerates it. The key prefix is the dispatch: `RobinhoodEquity_SPY`, `RobinhoodEquity_META`.
+    function _deployRobinhoodEquityFeeds() internal {
+        string[] memory names = ConfigReader.getEnabledAdapters(vm, currentChainId, "deployPriceFeeds");
+        for (uint256 i; i < names.length; ++i) {
+            if (!_startsWithPrefix(names[i], "RobinhoodEquity_")) continue;
+            if (!ConfigReader.isPriceFeedEnabled(vm, currentChainId, names[i])) continue;
+            _deployRobinhoodEquityFeed(names[i]);
+        }
+    }
+
+    /// @notice Deploys one {RobinhoodEquity_CustomPriceFeed} from its config entry, by feed key.
+    /// @dev Config keys: `aggregator`, `underlyingAsset`, `heartbeat` (the provider's DECLARED cadence, 86,400 s
+    ///      for `us_equities_24/5`) and `maxHoldover` (the ADR 0028 policy, recommended 432,000 s). The NAV-side
+    ///      registered heartbeat must then EQUAL `maxHoldover` — the deployed wrapper reports the value to use as
+    ///      `requiredRegistrationHeartbeat()`, which is what `nav-config` must carry and what a registration guard
+    ///      should compare against.
+    function _deployRobinhoodEquityFeed(string memory name) internal {
+        address deployed = _readAdapterDeployed("priceFeeds", name);
+        if (deployed != address(0)) {
+            console2.log("RobinhoodEquity feed already deployed:", name, deployed);
+            return;
+        }
+        address aggregator = vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, name, "aggregator"));
+        address underlying =
+            vm.parseAddress(ConfigReader.readPriceFeedParam(vm, currentChainId, name, "underlyingAsset"));
+        uint256 heartbeat = vm.parseUint(ConfigReader.readPriceFeedParam(vm, currentChainId, name, "heartbeat"));
+        uint256 maxHoldover = vm.parseUint(ConfigReader.readPriceFeedParam(vm, currentChainId, name, "maxHoldover"));
+
+        RobinhoodEquity_CustomPriceFeed adapter =
+            new RobinhoodEquity_CustomPriceFeed(aggregator, underlying, heartbeat, maxHoldover);
+        ConfigReader.writeAdapterAddress(vm, currentChainId, "priceFeeds", name, address(adapter));
+        console2.log("RobinhoodEquity_CustomPriceFeed deployed:", name, address(adapter));
+    }
+
+    /// @dev `bytes`-level prefix test; Solidity has no `startsWith` and the only alternative here would be a
+    ///      hand-written call list, which is the thing {_deployRobinhoodEquityFeeds} exists to avoid.
+    function _startsWithPrefix(string memory value, string memory prefix) internal pure returns (bool) {
+        bytes memory v = bytes(value);
+        bytes memory p = bytes(prefix);
+        if (v.length < p.length) return false;
+        for (uint256 i; i < p.length; ++i) {
+            if (v[i] != p[i]) return false;
+        }
+        return true;
     }
 
     /// @notice Deploys a generic {InvertedChainlinkCustomPriceFeed} from config, by feed key.

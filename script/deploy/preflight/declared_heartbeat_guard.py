@@ -17,8 +17,9 @@ This is a SECOND, independent axis from `preflight_config.heartbeat_findings`, w
 
 WHY AT-OR-BELOW IS A DEFECT, measured not assumed. A provider's declared heartbeat is a *target*; publication
 lands tens of seconds PAST it (block granularity + trigger latency). So a feed registered at EXACTLY the declared
-value has zero margin and goes stale at the end of essentially every publish cycle — the asset is valued $0 and
-listed in `stalePriceAssets`. Two independent proofs:
+value has zero margin and goes stale at the end of essentially every publish cycle — the asset is listed in
+`stalePriceAssets` (since ADR 0029 it keeps its last-known price; before it, the asset was valued $0).
+Two independent proofs:
 
   * USDS/USD declared 82800, sUSDS registered 82800 -> 59/61 intervals overshot (median +24 s). Fixed by PR #211.
   * OETH/ETH declared 86400, registered 86400       -> 29/29 intervals overshot, max gap 86,448. Fixed by PR #236.
@@ -59,8 +60,8 @@ most one of them:
     inside the feed (TwoFeedChainlinkPriceFeed: `block.timestamp - effRate >= RATE_HEARTBEAT`). CHECKED here,
     as a `rate leg (...)` row.
   * the NAV-SIDE heartbeat, `priceFeeds[i].heartbeat` on the nav-config entry, applied by
-    PriceFeedLib (`block.timestamp - effectiveTime >= cfg.chainlinkHeartbeat` -> the feed is dropped; if it
-    is the only primary the asset is stale and valued $0). NOT CHECKED here. It is gated against the same
+    PriceFeedLib (`block.timestamp - effectiveTime >= cfg.chainlinkHeartbeat` -> the feed is no longer fresh;
+    if no primary is fresh the asset is flagged stale and keeps its last usable price, ADR 0029). NOT CHECKED here. It is gated against the same
     provider cadence because a custom feed propagates its rate leg's timestamp, `min(rate, base)`.
 
 Concretely, the named-custom nav entries across the configured chains split two ways:
@@ -99,6 +100,11 @@ SNAPSHOT = HERE / "chainlink_declared_heartbeats.json"
 
 ERROR = "ERROR"
 WARN = "WARN"
+
+# Mirrors src/constants.sol MAX_STALE_PRICE_AGE (ADR 0029): every finite PRIMARY heartbeat must be below it.
+MAX_STALE_PRICE_AGE = 7 * 24 * 3600
+# `type(uint256).max` disables the NAV-side heartbeat gate; it is exempt from the cap check.
+UINT256_MAX = 2**256 - 1
 
 # Refuse to trust a snapshot older than this without saying so. Chainlink can re-tune a feed's heartbeat.
 SNAPSHOT_STALE_DAYS = 180
@@ -483,22 +489,25 @@ def _hb_key(r: dict) -> str:
 def _consequence(role: str) -> str:
     """The consequence of going stale is NOT the same for a pricing feed and a monitor feed.
 
-    A PRIMARY feed going stale values the asset at $0 and lists it in `stalePriceAssets`. A MONITOR feed
+    A PRIMARY feed going stale lists the asset in `stalePriceAssets`; if no primary is fresh the asset keeps
+    its last-known price (ADR 0029) until that price is `MAX_STALE_PRICE_AGE` old. A MONITOR feed
     never prices — `getPriceDataNoDivergence` selects over the primary mapping only — so its staleness
     surfaces as an unhealthy-monitor signal instead. Stating the pricing consequence for a monitor row
     would overstate the impact, and overstated findings are how a guard loses its credibility.
     """
     if role.startswith("monitorFeeds"):
-        return (" This is a MONITOR feed, so it does not price the asset: staleness here does not zero "
+        return (" This is a MONITOR feed, so it does not price the asset: staleness here does not touch "
                 "the valuation, it degrades the divergence check and surfaces as an unhealthy monitor.")
     if role.startswith("rate leg"):
         # A custom feed's rate leg may back a PRIMARY or a MONITOR registration — which one is not
         # visible from this row. State the conditional rather than asserting the pricing consequence,
         # because asserting it for a monitor-only feed would overstate the impact.
-        return (" This is a custom feed's RATE LEG: if that feed is registered as a primary it zeroes "
-                "the asset, and if it is registered only as a monitor it degrades the divergence check "
-                "instead. Check which the feed is registered as before triaging.")
-    return " The asset is valued $0 and listed in `stalePriceAssets`."
+        return (" This is a custom feed's RATE LEG: if that feed is registered as a primary it flags "
+                "the asset stale (it keeps its last-known price, ADR 0029), and if it is registered only as "
+                "a monitor it degrades the divergence check instead. Check which the feed is registered as "
+                "before triaging.")
+    return (" The asset is listed in `stalePriceAssets` and, if no other primary is fresh, keeps its "
+            "last-known price flagged stale (ADR 0029).")
 
 
 def _row_findings(chain_id: str, r: dict, declared: dict) -> list[tuple[str, str]]:
@@ -537,6 +546,16 @@ def _row_findings(chain_id: str, r: dict, declared: dict) -> list[tuple[str, str
                        f"`heartbeat` in config (found {r.get('heartbeat_raw')!r}), so this feed is NOT "
                        f"covered by the declared-margin guard. Fix the config value; until then this "
                        f"feed is unchecked, not clean.{off}")]
+    hb = int(r["heartbeat"])
+    if str(r["role"]).startswith("priceFeeds") and hb != UINT256_MAX and hb >= MAX_STALE_PRICE_AGE:
+        # Independent of the declared value, so it runs before the snapshot lookup: a RedStone/API3 primary
+        # with no declared entry is bound by the cap too. At or above the cap the stale-but-usable window is
+        # empty — the feed goes from fresh straight to unusable and the asset prices at 0 (ADR 0029).
+        return [(ERROR, f"asset '{r['asset']}' {r['role']} {r['address']} registers heartbeat {hb} s, at or "
+                        f"above MAX_STALE_PRICE_AGE ({MAX_STALE_PRICE_AGE} s = 7 days, src/constants.sol, "
+                        f"ADR 0029). Past its heartbeat a primary keeps pricing only while it is younger than "
+                        f"the cap, so this feed would go from fresh straight to unusable and the asset would "
+                        f"price at 0. Register a heartbeat below 7 days.{off}")]
     if rec is None:
         # Not a Chainlink-catalogue feed (RedStone/API3), or the snapshot predates this address.
         # Reported as actionable rather than passing silently — the two cases look identical here.
@@ -1040,6 +1059,31 @@ def self_test() -> int:
     case("BELOW declared is an ERROR (manufactured staleness)", "1", snap,
          [{"asset": "T", "role": "priceFeeds[0]", "address": A, "heartbeat": 3600, "where": "x"}],
          ERROR, "BELOW declared")
+    # ADR 0029: a primary at or above the 7-day stale cap would go from fresh straight to unusable. The
+    # cap is independent of the declared value, so it must fire even with no snapshot entry, and it must
+    # NOT fire for a monitor row or for the `type(uint256).max` "gate disabled" sentinel.
+    B = "0xBBB0000000000000000000000000000000000002"
+    case("primary heartbeat at the 7-day cap is an ERROR (ADR 0029)", "1", snap,
+         [{"asset": "T", "role": "priceFeeds[0]", "address": B, "heartbeat": 604800, "where": "x"}],
+         ERROR, "MAX_STALE_PRICE_AGE")
+    for label, row in (
+        ("monitor heartbeat at the cap is not a cap ERROR",
+         {"asset": "T", "role": "monitorFeeds[0]", "address": B, "heartbeat": 604800, "where": "x"}),
+        ("uint256.max primary is exempt from the cap",
+         {"asset": "T", "role": "priceFeeds[0]", "address": B, "heartbeat": 2**256 - 1, "where": "x"}),
+        ("primary just below the cap is not a cap ERROR",
+         {"asset": "T", "role": "priceFeeds[0]", "address": B, "heartbeat": 604799, "where": "x"}),
+    ):
+        orig = registered_feeds
+        registered_feeds = lambda cid, row=row: [row]  # noqa: E731
+        try:
+            got = findings("1", snap)
+        finally:
+            registered_feeds = orig
+        bad = [m for lvl, m in got if "MAX_STALE_PRICE_AGE" in m]
+        if bad:
+            ok = False
+        print(f"  [{'FAIL' if bad else 'PASS'}] {label}")
     # The hint used to advertise an allowlist entry as a second way to satisfy this finding. It is not:
     # an exemption answers the cadence question and does not waive equality, and the allowlist branch
     # ERRORs on a non-equal registration. The hint must say so rather than point at the silencing edit.
@@ -1315,13 +1359,13 @@ def self_test() -> int:
          [{"asset": "D", "role": "priceFeeds[0]", "address": _A2, "heartbeat": 3600, "where": "x"}],
          WARN, "deviation-only feed with no heartbeat cadence")
 
-    # A monitor feed does not price the asset, so it must not be told it will be valued $0.
+    # A monitor feed does not price the asset, so it must not be told it will be valued $0 or flagged stale.
     # The heartbeat must DIFFER from declared for a finding to exist at all under the equality rule;
     # at 86400 == declared this row is silent and the assertion would pass vacuously.
     _mon = case("a monitorFeeds row states the MONITOR consequence, not the $0 one", "1", _snap2,
                 [{"asset": "T", "role": "monitorFeeds[0]", "address": _A2, "heartbeat": 90000,
                   "where": "x"}],
-                ERROR, "does not zero the valuation")
+                ERROR, "does not touch the valuation")
     print(f"  [{'PASS' if not [m for lvl, m in _mon if 'valued $0' in m] else 'FAIL'}] "
           f"...and does NOT claim the asset is valued $0")
     ok = ok and not [m for lvl, m in _mon if "valued $0" in m]

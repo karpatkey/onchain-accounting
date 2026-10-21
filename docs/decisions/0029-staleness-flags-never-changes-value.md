@@ -80,8 +80,9 @@ feeds register 518,400 s).
   holdover, `irregular` additionally fires if the stale price has drifted from the monitors.
 - **A stale debt now lowers the NAV** instead of vanishing.
 - **Callers converting into a non-USD quote must handle `QuoteAssetUnpriceable`**, typically by falling back
-  to the USD quote. `computeAccountPositions` returns an empty list for an account with no positions in the
-  filtered asset before it reads the quote, so it does not revert in that case.
+  to the USD quote. The revert does not depend on the account holding anything: an unfiltered read of an empty
+  account reverts too. The one exception is the asset-filtered `computeAccountPositions` path, which returns an
+  empty list before it reads the quote when the account holds nothing in the filtered asset.
 - **`calculateValue` has no per-asset staleness output.** It values stale assets at their last-known price;
   callers check `healthCheck` or `getPriceData`.
 - **`getPriceData` / `getPriceDivergence` report the stale winner:** its price, feed address and heartbeat, with

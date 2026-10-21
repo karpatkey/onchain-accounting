@@ -1359,7 +1359,7 @@ library PriceFeedLib {
                 // want of MONITOR data, which is the only thing this flag is entitled to claim.
                 //
                 // `primaryPrice8 > 0` is the exact negation of the other half of {_monitorDivergence}'s own guard
-                // (`n > 0 && !primaryStale && primaryPrice8 > 0`), and it is deliberately used INSTEAD of
+                // (`n > 0 && !suppressed && primaryPrice8 > 0`), and it is deliberately used INSTEAD of
                 // `!sequencerDown`: it subsumes it (`primaryPrice8` is forced to 0 whenever the sequencer is down,
                 // and is 0 whenever no primary feed is usable; a stale-but-usable primary keeps its price and its
                 // monitors are still checked, ADR 0029) AND it additionally
@@ -1677,6 +1677,12 @@ library PriceFeedLib {
         IPrices.PriceType priceType
     ) external {
         if (heartbeat == 0) revert IPrices.InvalidPriceOracle();
+        // A primary at or above the stale cap would go from fresh straight to unusable, and would count as fresh
+        // past the 7-day bound consumers rely on (ADR 0029). `type(uint256).max` stays allowed: it disables the
+        // heartbeat gate for a Custom feed that reports its own staleness. Monitors (addMonitorFeed) never price.
+        if (heartbeat >= MAX_STALE_PRICE_AGE && heartbeat != type(uint256).max) {
+            revert IPrices.HeartbeatNotBelowStaleCap(heartbeat);
+        }
 
         // IDENTITY checks stay above the loop; only the LIVE HEALTH check moves below it. A code-less feed
         // must fail by name here — `_resolveFeedDecimals` would otherwise reach it first and revert with

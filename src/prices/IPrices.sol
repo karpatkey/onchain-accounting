@@ -150,6 +150,12 @@ interface IPrices {
     /// @notice Error when the price feed is invalid
     error InvalidPriceOracle();
 
+    /// @notice A primary feed's heartbeat is at or above MAX_STALE_PRICE_AGE (7 days) and is not the
+    ///         `type(uint256).max` "gate disabled" value. Such a feed would go from fresh straight to unusable
+    ///         (ADR 0029).
+    /// @param heartbeat The rejected heartbeat, in seconds.
+    error HeartbeatNotBelowStaleCap(uint256 heartbeat);
+
     /// @notice Error when the price feed type is not valid
     error InvalidPriceOracleType();
 

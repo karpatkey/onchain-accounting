@@ -82,11 +82,14 @@ interface INAVCalculator is IBalances {
 
     /// @notice A non-USD quote asset has no usable price at all, so no value can be expressed in it.
     /// @dev Raised by every read that converts into a quote asset (`getAccountNav`, `getAccountNavVerbose`,
-    ///      `getAccountPositions`, `getAccountPositionsVerbose`, `getAccountNavForAdapters`, `calculateValue`) when
+    ///      `getAccountPositions`, `getAccountPositionsVerbose`, `getAccountPositionsForAsset`,
+    ///      `getAccountPositionsForAssetVerbose`, `getAccountNavForAdapters`, `calculateValue`) when
     ///      every one of the quote asset's feeds is unusable: reverting or non-positive answers, or a last update
     ///      older than {MAX_STALE_PRICE_AGE}. A quote asset that is merely STALE does not revert: values are converted
     ///      at its last-known price and `quoteAssetStale` is set (ADR 0029). Callers that must always get a number
-    ///      can fall back to the USD quote, `address(0)`, which never raises this.
+    ///      can fall back to the USD quote, `address(0)`, which never raises this. The asset-filtered
+    ///      `getAccountPositionsForAsset(/Verbose)` return an empty list without reading the quote when the account
+    ///      holds nothing in that asset.
     /// @param quoteAsset The quote asset with no usable price.
     error QuoteAssetUnpriceable(address quoteAsset);
 
@@ -295,10 +298,11 @@ interface INAVCalculator is IBalances {
     ///        non-zero tolerance, and an AND-recipe would silently never flag it. The tolerance only returns to 0
     ///        via full asset unregistration (`_removeAllMonitorFeeds`), by which point the asset is gone anyway.
     ///
-    ///        Assets whose own primary is unusable are also excluded — stale feed, sequencer down, or a primary whose
-    ///        8-decimal normalisation degenerates to zero. In all of those the check was suppressed by the PRIMARY
-    ///        rather than by the monitors, `stalePriceAssets` already reports the staleness cases, and naming the
-    ///        monitors would point an operator at the wrong contract. Stablecoins with a non-zero `pegToleranceBps`
+    ///        Assets whose own primary is unusable are also excluded — no usable primary feed, sequencer down, or a
+    ///        primary whose 8-decimal normalisation degenerates to zero. In all of those the check was suppressed by
+    ///        the PRIMARY rather than by the monitors, and naming the monitors would point an operator at the wrong
+    ///        contract. A stale-but-usable primary is still checked (ADR 0029), so such an asset can appear here AND
+    ///        in `stalePriceAssets`. Stablecoins with a non-zero `pegToleranceBps`
     ///        may appear here and still be peg-checked — the peg guard is monitor-independent — so this flags the
     ///        loss of the *divergence* check, not necessarily of all checks.
     ///

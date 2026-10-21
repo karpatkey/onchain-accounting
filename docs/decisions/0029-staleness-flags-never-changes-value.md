@@ -28,7 +28,10 @@ usable price at all", and only then does the asset contribute 0.
 Three further rules:
 
 1. **`MAX_STALE_PRICE_AGE = 7 days`** (`src/constants.sol`), absolute, measured from the feed's `effectiveTime`.
-   Every registered finite primary heartbeat must be below it, which the preflight heartbeat guard enforces.
+   Every registered finite primary heartbeat must be below it. `PriceFeedLib.addFeed` rejects one at or above it
+   (`IPrices.HeartbeatNotBelowStaleCap`) on add and on modify, and the preflight heartbeat guard checks the config.
+   `type(uint256).max` stays allowed: it disables the heartbeat gate for a Custom feed that reports its own
+   staleness.
 2. **A non-USD quote asset with no usable price reverts** `INAVCalculator.QuoteAssetUnpriceable(quoteAsset)`
    from every read that converts into it. A merely stale quote converts at its last-known price, with
    `quoteAssetStale` set, and the value stays in quote units. The USD quote, `address(0)`, never reverts.
@@ -87,9 +90,15 @@ feeds register 518,400 s).
   callers check `healthCheck` or `getPriceData`.
 - **`getPriceData` / `getPriceDivergence` report the stale winner:** its price, feed address and heartbeat, with
   `healthyFeedCount == 0`.
-- **Old feeds and the new library are compatible in both directions**, so the feeds and the library can be
-  swapped in any order. An old feed that zeroes on base-staleness is simply unusable (today's behaviour for that
-  asset); a new feed under the old library reports `internalStale` and is skipped (today's behaviour).
+- **Rollout order: feeds first, then the library (or both in one batch).** A NEW feed under the OLD library is
+  safe: the old library prices a stale base at 0, so the new feed returns `(0, true)` exactly as today. An OLD feed
+  under the NEW library is NOT safe on an L2: the deployed feeds' `NavBaseUsdLib` flags a base stale only when
+  `pd.stale && !pd.sequencerDown`, which relied on a stale base having price 0. Under the new library a stale
+  base keeps its price, so while the L2 sequencer is down an old feed reports a stale base as FRESH and the
+  derived asset drops out of `stalePriceAssets`. So on every chain the feed swap must land before the
+  implementation upgrade, or in the same Safe batch. On L1 (no sequencer) an old feed under the new library is
+  merely unusable when its base is stale, which is today's behaviour. The new `NavBaseUsdLib` keys staleness on
+  `healthyFeedCount == 0`, which does not depend on the sequencer.
 - **Rate-only stale Custom feeds become unusable.** None is registered on any chain today.
 
 ## Alternatives considered

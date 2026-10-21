@@ -14,14 +14,15 @@ import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 /// @title BaseCustomPriceFeed
 /// @author KPK
 /// @notice Shared skeleton for the "exchange-rate × base/USD" custom price feeds: it reads the base asset's USD price
-///         from the **NAV** (`getPriceData(BASE_ASSET)` — the NAV's own selector, typically ETH/USD), applies the
-///         staleness gate, multiplies by a protocol-supplied 18-decimal exchange rate, and returns the result in
+///         from the **NAV** (`getPriceData(BASE_ASSET)` — the NAV's own selector, typically ETH/USD), carries its
+///         staleness flag, multiplies by a protocol-supplied 18-decimal exchange rate, and returns the result in
 ///         `NAV_DECIMALS` (8). Concrete feeds implement only `_rate()` — the protocol's exchange rate as 18-decimal
 ///         base-token units per 1 `UNDERLYING` (e.g. ETH per rETH), the orientation the multiply expects.
 /// @dev Sourcing base/USD from the NAV (rather than a hardcoded Chainlink oracle) makes the base term identical to the
 ///      one the NAV prices the base asset's own legs with — so it cancels cleanly when NAV is quoted in the base.
 ///      See {NavBaseUsdLib} (incl. the circularity invariant) and `docs/decisions`. Math: `price = rate · base8 / 1e18`
-///      (Floor); stale when the NAV reports the base feed stale (all-feeds-stale; NOT L2 sequencer-down alone) or `_rate()` is 0.
+///      (Floor). Stale, keeping the computed price, when the NAV reports the base feed stale (no base feed fresh; NOT L2
+///      sequencer-down alone); `(0, true)` when the NAV has no usable base price or `_rate()` is 0 (ADR 0029).
 abstract contract BaseCustomPriceFeed is ICustomPriceFeed, INavSourcedPriceFeed {
     using Math for uint256;
 

@@ -24,8 +24,8 @@ import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IER
 ///      i.e. `(asset/USD) · (assets per share)`, returned in `NAV_DECIMALS` (8). `convertToAssets(10**shareDecimals)`
 ///      returns the assets for one whole share denominated in the **underlying asset's** decimals, so the divisor is
 ///      `10**assetDecimals` (NOT `10**shareDecimals` — those differ when the vault uses a decimals offset, e.g.
-///      18-decimal shares over 6-decimal USDC); the asset decimals then cancel to leave the base/USD decimals. Stale when the NAV reports the base feed
-///      stale (all-feeds-stale; NOT L2 sequencer-down alone). Sourcing base/USD from the NAV (rather than a hardcoded Chainlink
+///      18-decimal shares over 6-decimal USDC); the asset decimals then cancel to leave the base/USD decimals. Stale, keeping the computed price, when the NAV
+///      reports the base feed stale (no base feed fresh; NOT L2 sequencer-down alone; ADR 0029). Sourcing base/USD from the NAV (rather than a hardcoded Chainlink
 ///      oracle) makes the base term identical to the one the NAV prices the base asset's own legs with — so it
 ///      cancels cleanly when NAV is quoted in the base (see {NavBaseUsdLib}, incl. the circularity invariant). The
 ///      5 `ICustomPriceFeed` thunks, the immutables, and the constructor validation live here once instead of being

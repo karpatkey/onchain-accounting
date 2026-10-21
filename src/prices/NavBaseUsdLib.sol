@@ -48,7 +48,8 @@ library NavBaseUsdLib {
             // `healthyFeedCount` counts FRESH feeds independently of the sequencer, so it stays correct when the base
             // is genuinely stale AND the sequencer is down (`pd.stale && !pd.sequencerDown` would drop the flag there,
             // now that a stale base keeps a positive price).
-            bool baseStale = pd.healthyFeedCount == 0;
+            // The second term is defence in depth: it is the pre-ADR-0029 rule, and can only add a stale verdict.
+            bool baseStale = pd.healthyFeedCount == 0 || (pd.stale && !pd.sequencerDown);
             if (pd.price <= 0) return (0, true, pd.updatedAt);
             uint256 raw = uint256(pd.price);
             if (pd.decimals == NAV_DECIMALS) {

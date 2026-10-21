@@ -395,6 +395,20 @@ contract PricesTest is Test {
         manager.setPriceFeed(buidl, address(zeroPriceOracle), type(uint256).max, IPrices.PriceType.Chainlink);
     }
 
+    /// @dev ADR 0029: a primary heartbeat at or above MAX_STALE_PRICE_AGE is rejected on-chain, on add AND on
+    ///      modify; just below it and the `type(uint256).max` sentinel are accepted.
+    function test_addFeed_heartbeatAtStaleCap_reverts() public {
+        Mock_PriceOracleChainlink feed = new Mock_PriceOracleChainlink("Cap", 1e8, 8);
+        vm.expectRevert(abi.encodeWithSelector(IPrices.HeartbeatNotBelowStaleCap.selector, MAX_STALE_PRICE_AGE));
+        manager.setPriceFeed(buidl, address(feed), MAX_STALE_PRICE_AGE, IPrices.PriceType.Chainlink);
+
+        manager.setPriceFeed(buidl, address(feed), MAX_STALE_PRICE_AGE - 1, IPrices.PriceType.Chainlink);
+        vm.expectRevert(abi.encodeWithSelector(IPrices.HeartbeatNotBelowStaleCap.selector, 30 days));
+        manager.setPriceFeed(buidl, address(feed), 30 days, IPrices.PriceType.Chainlink);
+
+        manager.setPriceFeed(buidl, address(feed), type(uint256).max, IPrices.PriceType.Chainlink);
+    }
+
     function test_checkL2SequencerUptime_noFeed() public view {
         // manager has no uptime feed (L1 scenario)
         bool stale = manager.checkL2SequencerUptime();
@@ -1026,8 +1040,8 @@ contract PricesTest is Test {
     ///      stale ⇒ healthyFeedCount == 0; !stale ⇒ healthyFeedCount ≥ 1; price == 0 ⇔ winnerIdx == max;
     ///      a non-zero price is one of the two feeds' prices; nothing older than the cap is ever used.
     function testFuzz_staleImpliesNoHealthyFeed(uint32 ageA, uint32 ageB, uint32 hbA, uint32 hbB) public {
-        hbA = uint32(bound(hbA, 1, 10 days));
-        hbB = uint32(bound(hbB, 1, 10 days));
+        hbA = uint32(bound(hbA, 1, MAX_STALE_PRICE_AGE - 1));
+        hbB = uint32(bound(hbB, 1, MAX_STALE_PRICE_AGE - 1));
         ageA = uint32(bound(ageA, 0, 20 days));
         ageB = uint32(bound(ageB, 0, 20 days));
         vm.warp(30 days);

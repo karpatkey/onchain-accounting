@@ -45,7 +45,10 @@ library NavBaseUsdLib {
     {
         try nav.getPriceDataNoDivergence(baseAsset) returns (INAVCalculator.PriceFeedData memory pd) {
             // Flag genuine feed staleness, but NOT sequencer-down alone; zero only when there is no price at all.
-            bool baseStale = pd.stale && !pd.sequencerDown;
+            // `healthyFeedCount` counts FRESH feeds independently of the sequencer, so it stays correct when the base
+            // is genuinely stale AND the sequencer is down (`pd.stale && !pd.sequencerDown` would drop the flag there,
+            // now that a stale base keeps a positive price).
+            bool baseStale = pd.healthyFeedCount == 0;
             if (pd.price <= 0) return (0, true, pd.updatedAt);
             uint256 raw = uint256(pd.price);
             if (pd.decimals == NAV_DECIMALS) {

@@ -200,8 +200,9 @@ interface INAVCalculator is IBalances {
         int256 price;
         uint8 priceDecimals;
         bool stale;
-        // True if the quote asset's own price feed was stale. When true, `value` is in USD (8dp) even though
-        // `quoteAsset` is non-zero — the quote conversion was skipped. Mirrors NAV.quoteAssetStale ([9]/S2).
+        // True if the quote asset's own price feed was stale. `value` is still in the quote asset, converted at its
+        // last-known price (ADR 0029); a quote with no usable price reverts QuoteAssetUnpriceable instead.
+        // Mirrors NAV.quoteAssetStale ([9]/S2).
         bool quoteAssetStale;
         bytes32 protocolBrand;
         bytes32 protocolId;
@@ -273,9 +274,9 @@ interface INAVCalculator is IBalances {
     ///        (or, for stablecoins, from the $1 peg) at query time. A pricing-quality signal, not a staleness flag —
     ///        `value` is still computed from the primary prices. Consumers decide how to react.
     /// @param sequencerDown True if the L2 sequencer was down or in grace period (L2 only).
-    /// @param quoteAssetStale True if the quote asset's own price feed was stale. When true the value field
-    ///        is in USD (fallback) even though quoteAsset is non-zero — callers must check this flag before
-    ///        interpreting value as being in the requested quote currency.
+    /// @param quoteAssetStale True if the quote asset's own price feed was stale. `value` is still in the quote
+    ///        asset, converted at its last-known price (ADR 0029) — callers must check this flag before trusting the
+    ///        conversion. A quote with no usable price reverts QuoteAssetUnpriceable rather than setting this.
     /// @param monitorsUnhealthyPriceAssets Assets that **have monitor feeds configured but where none of them was
     ///        readable** at query time — every monitor stale, reverting, or reporting a non-positive price. For these
     ///        the divergence check silently did not run: `divergenceBps` is 0 because the arithmetic never executed,
@@ -424,11 +425,10 @@ interface INAVCalculator is IBalances {
     ///        contract's sequencer config, not from the slice, so it is the same in every slice — but it is still
     ///        per-slice data and a caller that reads it on only one slice is relying on that invariant rather than
     ///        checking it. OR it across slices.
-    /// @param quoteAssetStale True if the quote asset's own price feed was stale, in which case `value` is in USD
-    ///        (8dp) despite `quoteAsset` being non-zero. Also invariant across slices (it depends on the quote
-    ///        asset, not the adapters) — which makes it *more* dangerous to ignore, not less: if it is true, every
-    ///        slice's `value` is in USD, and a reassembler that never looked will label a USD total with the
-    ///        requested quote currency. OR it across slices.
+    /// @param quoteAssetStale True if the quote asset's own price feed was stale, in which case `value` was
+    ///        converted at the quote's last-known price (ADR 0029). Also invariant across slices (it depends on the
+    ///        quote asset, not the adapters) — which makes it *more* dangerous to ignore, not less: if it is true,
+    ///        every slice's conversion used that stale price. OR it across slices.
     /// @param irregularPriceAssets Assets whose primary price diverged from their monitor feeds beyond tolerance
     ///        (or, for stablecoins, from the $1 peg), **restricted to the assets this slice touched**. Same
     ///        per-slice restriction and same union-and-dedupe requirement as `stalePriceAssets`. This is the depeg
@@ -473,12 +473,13 @@ interface INAVCalculator is IBalances {
         Asset[] monitorsUnhealthyPriceAssets;
     }
 
-    /// @notice Price data for the freshest non-stale feed selected for an asset.
-    /// @dev When multiple feeds are registered, these fields describe the winning (freshest) feed.
-    /// When all feeds are stale, fields describe the first registered feed and stale == true.
+    /// @notice Price data for the feed selected for an asset: the freshest fresh feed, else the freshest usable
+    ///         stale feed (ADR 0029).
+    /// @dev When multiple feeds are registered, these fields describe the winning feed (a stale winner included).
+    /// When no feed is usable, fields describe the first registered feed, price == 0 and stale == true.
     /// @param priceFeed Address of the selected price feed contract.
     /// @param priceType Feed type (Chainlink, Custom, Redstone, or API3).
-    /// @param price Current price (e.g. USD per unit); 0 when stale.
+    /// @param price Current price (e.g. USD per unit). A stale winner keeps its price; 0 only when no feed is usable.
     /// @param decimals Decimals of the selected feed's output.
     /// @param chainlinkHeartbeat Staleness window (seconds) of the reported feed. For Chainlink/Redstone/API3 this is
     ///        the selected feed's configured heartbeat. For Custom feeds it is the GOVERNING leg's heartbeat — the
@@ -494,7 +495,7 @@ interface INAVCalculator is IBalances {
     ///      validity, the L2 sequencer state, and the feed's own configured heartbeat gate — none of which the pair
     ///      can express, so the pair can read "fresh" (age < heartbeat) while `stale` is true. Consumers MUST gate on
     ///      `stale`; never recompute a fresh/stale decision from `(updatedAt, chainlinkHeartbeat)` alone.
-    /// @param stale True if all feeds are stale or the L2 sequencer is down.
+    /// @param stale True if no feed is fresh (the price may still be a usable stale one) or the L2 sequencer is down.
     /// @param sequencerDown True if L2 sequencer is down (L2 only).
     /// @param healthyFeedCount Number of registered feeds that passed all staleness gates on this read.
     ///        A value below the total registered feed count signals partial redundancy collapse and
@@ -502,7 +503,8 @@ interface INAVCalculator is IBalances {
     /// @param irregular True if the primary price diverged from the worst-case (furthest) healthy monitor feed
     ///        beyond the configured divergence tolerance, or (stablecoins) from the $1 peg beyond the peg tolerance.
     /// @param divergenceBps Worst-case basis-point gap between the primary price and any single healthy monitor
-    ///        price (0 when there are no healthy monitors or the primary is stale).
+    ///        price (0 when there are no healthy monitors, no usable primary, or the L2 sequencer is down; a stale
+    ///        primary is still compared).
     /// @param monitorFeedCount Number of healthy monitor feeds that contributed to the divergence computation.
     struct PriceFeedData {
         address priceFeed;
@@ -964,10 +966,11 @@ interface INAVCalculator is IBalances {
 
     /// @notice Returns the divergence between an asset's primary price and its monitor feeds.
     /// @param underlyingAsset Registered asset address.
-    /// @return primaryPrice The primary feed's price, normalized to NAV_DECIMALS (0 if the primary is stale).
+    /// @return primaryPrice The primary feed's price, normalized to NAV_DECIMALS. A stale-but-usable primary reports
+    ///         its price (ADR 0029); 0 when no primary feed is usable or the L2 sequencer is down.
     /// @return monitorMedian The median of the healthy monitor prices, NAV_DECIMALS (0 if no healthy monitors).
     /// @return divergenceBps Worst-case basis-point gap between the primary and any single healthy monitor — the
-    ///         value `irregular` is thresholded on (0 if no monitors / primary stale).
+    ///         value `irregular` is thresholded on (0 if no monitors, no usable primary, or sequencer down).
     /// @return irregular True if divergenceBps exceeds the divergence tolerance, or (stablecoins) the primary
     ///         deviates from $1 beyond the peg tolerance.
     /// @return monitorFeedCount Number of healthy monitor feeds that contributed.
@@ -1012,10 +1015,11 @@ interface INAVCalculator is IBalances {
     /// @param assets Asset addresses.
     /// @param amounts Corresponding amounts (same length as assets).
     /// @param quoteAsset Quote currency; address(0) for USD.
-    /// @return value Sum of values in quote asset (non-negative for valid inputs). When `quoteAssetStale` is
-    ///         true, this is denominated in USD (8dp) instead of the requested quote ([9]/S2).
-    /// @return quoteAssetStale True if the requested non-USD quote asset's own feed was stale, so `value` fell
-    ///         back to USD rather than the quote currency. Always false for a USD quote (address(0)).
+    /// @return value Sum of values in quote asset (non-negative for valid inputs). Stale assets are valued at
+    ///         their last-known price (ADR 0029); this read has no per-asset staleness output, so check healthCheck
+    ///         or getPriceData. Reverts QuoteAssetUnpriceable if the non-USD quote has no usable price.
+    /// @return quoteAssetStale True if the requested non-USD quote asset's own feed was stale, so `value` was
+    ///         converted at its last-known price ([9]/S2). Always false for a USD quote (address(0)).
     function calculateValue(address[] memory assets, uint256[] memory amounts, address quoteAsset)
         external
         view

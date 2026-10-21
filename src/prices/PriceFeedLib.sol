@@ -242,10 +242,11 @@ library PriceFeedLib {
 
     /// @notice Computes the divergence between an asset's primary price and its monitor feeds.
     /// @dev External wrapper over `_selectFeedCore` (primary) + `_monitorDivergence` (monitors). Read-only.
-    /// @return primaryPrice The primary feed's price normalized to NAV_DECIMALS (0 if the primary is stale).
+    /// @return primaryPrice The primary feed's price normalized to NAV_DECIMALS; a stale-but-usable primary reports
+    ///         its price (ADR 0029). 0 when no primary feed is usable or the L2 sequencer is down.
     /// @return monitorMedian Median of the healthy monitor prices, NAV_DECIMALS (0 if no healthy monitors).
     /// @return divergenceBps Worst-case |primary - monitor| * 1e4 / primary over the healthy monitors — the value
-    ///         the `irregular` flag is thresholded on (0 if no monitors / primary stale).
+    ///         the `irregular` flag is thresholded on (0 if no monitors, no usable primary, or sequencer down).
     /// @return irregular True if divergenceBps exceeds the divergence tolerance, or (stablecoins) the primary
     ///         deviates from $1 beyond the peg tolerance.
     /// @return monitorFeedCount Number of healthy monitor feeds that contributed.
@@ -253,8 +254,8 @@ library PriceFeedLib {
     /// @return primaryAboveMonitors True if the primary is above the monitor median (a premium); false if
     ///         below/equal (for claim assets, below = the depeg direction). Meaningful only when monitorFeedCount > 0.
     /// @param sequencerDown Whether the L2 sequencer is currently down/in grace (false on L1); folded into
-    ///        `primaryStale` so divergence is suppressed on an unusable price — parity with buildPriceData /
-    ///        healthCheck.
+    ///        `primaryStale`, and the only condition that suppresses the divergence check (a stale primary is still
+    ///        checked) — parity with buildPriceData / healthCheck.
     function computeDivergence(
         mapping(address => IPrices.PriceFeedConfig[]) storage priceOracles,
         mapping(address => IPrices.PriceFeedConfig[]) storage monitorFeeds,
@@ -307,7 +308,7 @@ library PriceFeedLib {
 
     /// @notice Shared divergence prologue used by every read path (getPriceData / latestPrice /
     ///         NAV.irregularPriceAssets / healthCheck / Position.irregular). Folds sequencer-down into staleness,
-    ///         scales the primary to 8-dec (0 when stale), then runs `_monitorDivergence`. Centralizing it keeps the
+    ///         scales the primary to 8-dec (0 when the sequencer is down), then runs `_monitorDivergence`. Centralizing it keeps the
     ///         normalization + staleness folding identical across all call sites (the parity the comments demand).
     function _divergenceFor(
         mapping(address => IPrices.PriceFeedConfig[]) storage monitorFeeds,
@@ -384,8 +385,8 @@ library PriceFeedLib {
 
         // Inter-feed divergence (all asset types): primary vs the WORST single monitor; median + sign exposed.
         // `healthyMonitorCount` (surfaced as `monitorFeedCount`) is set ONLY inside this guard, so it counts monitors
-        // that actually CONTRIBUTED to the divergence check — it stays 0 when the check was suppressed (stale /
-        // sequencer-down / unusable primary), rather than reporting count>0 alongside divergenceBps=0.
+        // that actually CONTRIBUTED to the divergence check — it stays 0 when the check was skipped (sequencer-down /
+        // unusable primary), rather than reporting count>0 alongside divergenceBps=0.
         if (n > 0 && !suppressed && primaryPrice8 > 0) {
             healthyMonitorCount = n;
             _sortInPlace(prices, n);
@@ -508,7 +509,7 @@ library PriceFeedLib {
     ///         config, folds in sequencer status, and fetches `updatedAt` for AggregatorV3-shaped feeds.
     /// @dev Mirrors the body of the former NAVCalculator.getPriceData. The caller is expected to have already
     ///      validated that the asset is registered and has at least one feed; `sequencerDown` is computed by the
-    ///      caller (it depends on the caller's sequencer-feed config). When all feeds are stale the selected
+    ///      caller (it depends on the caller's sequencer-feed config). When no feed is usable the selected
     ///      winner index is sentinel `type(uint256).max`; this falls back to feed 0 for the reported config.
     /// @param priceOracles The per-asset feed-config storage map (caller's storage via DELEGATECALL).
     /// @param asset The asset to report.
@@ -525,8 +526,8 @@ library PriceFeedLib {
         (int256 price, uint8 decimals, bool stale, uint256 winnerIdx, uint256 healthyFeedCount) =
             _selectFeedCore(priceOracles, asset);
 
-        // Report the selected (freshest non-stale) feed's config.
-        // When all feeds are stale winnerIdx == type(uint256).max; fall back to the first feed for config.
+        // Report the selected feed's config: the freshest fresh feed, else the freshest usable stale one (ADR 0029).
+        // When no feed is usable winnerIdx == type(uint256).max; fall back to the first feed for config.
         uint256 configIdx = winnerIdx == type(uint256).max ? 0 : winnerIdx;
         IPrices.PriceFeedConfig storage config = priceOracles[asset][configIdx];
 
@@ -1041,8 +1042,8 @@ library PriceFeedLib {
 
         QuoteAssetInfo memory quoteInfo =
             _getQuoteAssetInfo(priceOracles, assetIndex, registeredAssets, quoteAsset, nativeTokenSymbol);
-        // [9]/S2: surface that a stale non-USD quote made `_priceConversion` fall back to USD, instead of a
-        // silent unit switch. (quoteInfo.stale is always false for a USD quote.)
+        // [9]/S2: surface that a non-USD quote was converted at a stale (last-known) price (ADR 0029); a quote with
+        // no usable price already reverted in _getQuoteAssetInfo. (quoteInfo.stale is always false for a USD quote.)
         quoteAssetStale = quoteInfo.stale;
 
         value = 0;
@@ -1303,7 +1304,7 @@ library PriceFeedLib {
     /// @notice Builds the selected-feed price cache for a list of assets — the per-asset `irregular` divergence flag
     ///         AND the `monitorsUnhealthy` flag (monitors configured, none readable, primary usable).
     /// @dev Divergence folds the NAV-level `sequencerDown` into the primary's staleness (see {_divergenceFor}), so
-    ///      both flags are suppressed while the sequencer is down; `sequencerDown` itself is surfaced separately on
+    ///      both flags are suppressed while the sequencer is down (a stale-but-usable primary is still checked); `sequencerDown` itself is surfaced separately on
     ///      the NAV struct. (An earlier version of this note claimed the primary is treated as stale "exactly when
     ///      its feed is stale", which understated the fold.)
     function _buildPriceFeedCache(
@@ -1319,7 +1320,7 @@ library PriceFeedLib {
             address asset = assets[i];
             // [8]/S1 — A feedless asset that still has a live position must NOT revert the whole NAV/positions
             // read. `_selectFeedCore` reverts PriceFeedNotSet when len == 0; here in the value-aggregation path we
-            // instead treat it exactly like the all-feeds-stale case: price 0, stale = true. The asset is then
+            // instead treat it exactly like the no-usable-feed case: price 0, stale = true. The asset is then
             // surfaced in `nav.stalePriceAssets` and summed as a zero-value (stale) leg rather than DoS-reverting
             // the entire read. The explicit query paths (selectFeed/buildPriceData/calculateValue) keep reverting
             // PriceFeedNotSet so MANAGER tooling still sees the misconfiguration.
@@ -1359,8 +1360,9 @@ library PriceFeedLib {
                 //
                 // `primaryPrice8 > 0` is the exact negation of the other half of {_monitorDivergence}'s own guard
                 // (`n > 0 && !primaryStale && primaryPrice8 > 0`), and it is deliberately used INSTEAD of
-                // `!stale && !sequencerDown`: it subsumes both (`primaryPrice8` is forced to 0 whenever
-                // `primaryStale`, i.e. whenever the feed is stale OR the sequencer is down) AND it additionally
+                // `!sequencerDown`: it subsumes it (`primaryPrice8` is forced to 0 whenever the sequencer is down,
+                // and is 0 whenever no primary feed is usable; a stale-but-usable primary keeps its price and its
+                // monitors are still checked, ADR 0029) AND it additionally
                 // covers the case those two miss — {_scaleTo8} returning 0 for a NON-stale primary, which it does
                 // for a primary whose `decimals != 8` when the exponent is unusable, when `price` truncates to 0
                 // scaling down, or when scaling up would overflow. In that state `healthyMonitors` is 0 for a reason
@@ -1590,8 +1592,9 @@ library PriceFeedLib {
         position.quoteAssetStale = quoteAssetStale;
     }
 
-    /// @notice Converts an amount of one asset to value in quote (USD when quotePrice is non-positive). Mirrors the
-    ///         former NAVCalculator._priceConversion.
+    /// @notice Converts an amount of one asset to value in quote (USD when quotePrice is 0, i.e. the USD quote; a
+    ///         non-USD quote with no usable price reverts earlier, in _getQuoteAssetInfo). Mirrors the former
+    ///         NAVCalculator._priceConversion.
     function _priceConversion(
         uint256 amount,
         bool isDebt,

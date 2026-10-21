@@ -22,8 +22,10 @@ import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 ///         only the rate feed + its heartbeat plus the NAV and base asset, and keep their own named contract.
 /// @dev Price is `rate · base8 / 10**rateDecimals` (Math.Rounding.Floor) — i.e. `(asset/base) · (base/USD)`, with the
 ///      rate feed's decimals cancelled out — returned in `NAV_DECIMALS` (8). The rate feed is read each call and the
-///      base/USD term is read from the NAV; the result is stale when the rate answer is non-positive, the rate feed is
-///      past its own heartbeat, or the NAV reports the base feed stale (all-base-feeds-stale; L2 sequencer-down alone does not — it surfaces via the NAV's top-level `sequencerDown` flag). Rate-leg freshness uses
+///      base/USD term is read from the NAV. The result is `(0, true)` when the rate answer is non-positive or the NAV
+///      has no usable base price. It keeps its computed price, flagged stale (ADR 0029), when the rate feed is past its
+///      own heartbeat or the NAV reports the base feed stale (no base feed fresh; L2 sequencer-down alone does not —
+///      it surfaces via the NAV's top-level `sequencerDown` flag). Rate-leg freshness uses
 ///      `effectiveUpdatedAt = min(updatedAt, block.timestamp)` to avoid upstream-clock bias; the returned `updatedAt`
 ///      is the more conservative `min(rateLegUpdatedAt, baseUpdatedAt)`. Sourcing base/USD from the NAV (rather than a
 ///      hardcoded Chainlink oracle) makes the base term identical to the one the NAV prices the base asset's own legs
@@ -93,7 +95,7 @@ abstract contract TwoFeedChainlinkPriceFeed is ICustomPriceFeed, INavSourcedPric
         (roundId, rate, startedAt, rateUpdatedAt, answeredInRound) = RATE_FEED.latestRoundData();
 
         // Base/USD from the NAV's selector (normalized to NAV_DECIMALS = 8); it marks the base stale on
-        // all-base-feeds-stale only (L2 sequencer-down alone does NOT — NavBaseUsdLib un-folds pd.sequencerDown; ADR 0019).
+        // no-base-feed-fresh only (L2 sequencer-down alone does NOT — NavBaseUsdLib un-folds pd.sequencerDown; ADR 0019).
         (uint256 base8, bool baseStale, uint256 baseUpdatedAt) = NavBaseUsdLib.baseUsd(NAV, BASE_ASSET);
 
         // Report the more conservative (older) updatedAt across the rate leg and the NAV base read.

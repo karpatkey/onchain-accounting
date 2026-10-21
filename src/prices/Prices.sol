@@ -11,10 +11,10 @@ import {PriceFeedLib} from "./PriceFeedLib.sol";
 import "src/errors.sol";
 
 /// @title Prices
-/// @notice Manages multiple price feeds per asset, returning the freshest non-stale value on each read.
-/// @dev The read path applies a per-feed staleness gate and then picks the feed with the largest
-/// effectiveUpdatedAt (clamped to block.timestamp to avoid upstream-clock bias). stale=true
-/// is returned only when every registered feed fails the staleness gate.
+/// @notice Manages multiple price feeds per asset, returning the best-available value on each read.
+/// @dev The read path prefers a fresh feed and picks the one with the largest effectiveUpdatedAt (clamped to
+/// block.timestamp to avoid upstream-clock bias). When no feed is fresh it returns the freshest usable stale price
+/// with stale=true; the price is 0 only when no feed is usable (ADR 0029).
 /// @author KPK
 abstract contract Prices is IPrices, Initializable {
     //
@@ -70,7 +70,7 @@ abstract contract Prices is IPrices, Initializable {
         // Divergence-vs-monitors signal (parity with getPriceData / NAV.irregularPriceAssets), computed from the
         // primary we JUST selected — irregularForSelected reuses (price, decimals) instead of re-running feed
         // selection, so this hot view reads the primary feed once, not twice. It internally skips the monitor
-        // reads when the asset has no divergence check, and suppresses the flag when stale/sequencer-down.
+        // reads when the asset has no divergence check, and suppresses the flag only when the sequencer is down or no feed is usable (a stale primary is still checked).
         irregular = PriceFeedLib.irregularForSelected(
             _monitorFeeds, _assetPricing, token, price, decimals, feedStale, sequencerDown
         );
@@ -112,7 +112,7 @@ abstract contract Prices is IPrices, Initializable {
         (price, decimals, stale,,) = _selectFeed(token);
     }
 
-    /// @notice Selects the freshest non-stale feed for an asset.
+    /// @notice Selects the price for an asset: the freshest fresh feed, else the freshest usable stale feed.
     /// @dev Delegates to PriceFeedLib.selectFeed via DELEGATECALL to keep NAVCalculator under EIP-170.
     /// See PriceFeedLib.selectFeed for full semantics.
     function _selectFeed(address token)

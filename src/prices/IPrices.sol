@@ -30,11 +30,12 @@ interface IPrices {
     /// @param decimals The number of decimal places the price feed uses.
     /// @param priceType The type of the price feed.
     /// @param chainlinkHeartbeat Staleness window in seconds (non-zero for all types). For Chainlink/Redstone/API3
-    /// feeds this gates participation: block.timestamp - effectiveUpdatedAt >= chainlinkHeartbeat → skip feed.
-    /// For Custom feeds the internal stale signal from getLatestPrice() is the primary gate; updatedAt from
-    /// latestRoundData() then applies the same heartbeat gate (updatedAt==0 is treated as block.timestamp-1
-    /// so rate-only feeds participate but yield to any feed with a real push timestamp), and among survivors
-    /// the largest effectiveUpdatedAt wins.
+    /// feeds this gates freshness: block.timestamp - effectiveUpdatedAt >= chainlinkHeartbeat → the feed is stale.
+    /// For Custom feeds the feed is fresh only if getLatestPrice() reports not-stale AND updatedAt from
+    /// latestRoundData() passes the same heartbeat gate (updatedAt==0 is treated as block.timestamp-1 so rate-only
+    /// feeds participate but yield to any feed with a real push timestamp). A fresh feed beats a stale one; then the
+    /// largest effectiveUpdatedAt wins. A stale feed still prices until it is MAX_STALE_PRICE_AGE old (ADR 0029),
+    /// so a finite primary heartbeat must be below it.
     struct PriceFeedConfig {
         address priceFeed;
         uint8 decimals;
@@ -221,15 +222,16 @@ interface IPrices {
     error InvalidTolerance(uint32 toleranceBps);
 
     /// @notice Returns the latest price for a given token while checking if the price is stale.
-    /// @dev Reverts PriceFeedNotSet if the asset has no registered feeds. When at least one feed is registered
-    /// but all are stale, returns price 0 with stale = true rather than reverting.
+    /// @dev Reverts PriceFeedNotSet if the asset has no registered feeds. When no feed is fresh, returns the
+    /// freshest usable stale price with stale = true (ADR 0029); price 0 only when no feed is usable.
     /// @param underlyingAsset The address of the token.
-    /// @return price The latest price of the token (int256; positive for all valid prices, 0 when stale).
+    /// @return price The latest price of the token (int256; positive when any feed is usable, else 0).
     /// @return decimals The amount of decimal places the price is represented with.
-    /// @return stale True if all registered feeds are stale, the L2 sequencer is down, or within grace period.
+    /// @return stale True if no registered feed is fresh, the L2 sequencer is down, or within grace period.
     /// @return irregular True if the primary price diverged from its monitor feeds beyond the divergence tolerance,
     /// or (stablecoins) from the $1 peg beyond the peg tolerance. A pricing-quality signal, not a validity flag;
-    /// `price` is still populated. Always false when `stale` (divergence is undefined for an unusable price).
+    /// `price` is still populated. Evaluated on a stale-but-usable price too; always false when the L2 sequencer is
+    /// down or no feed is usable (divergence is undefined for an unusable price).
     function latestPrice(address underlyingAsset)
         external
         view

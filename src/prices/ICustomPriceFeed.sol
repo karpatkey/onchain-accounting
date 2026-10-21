@@ -9,7 +9,9 @@ import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 interface ICustomPriceFeed is IERC165 {
     /// @notice Returns the latest price for the underlying asset, and whether the price is stale
     /// (only relevant when this custom price feed makes use of an external oracle)
-    /// @return price The latest price of the underlying asset.
+    /// @return price The latest price of the underlying asset. When an input is only stale, return the computed price
+    ///         with `stale = true` (the NAV keeps using it, flagged, up to MAX_STALE_PRICE_AGE; ADR 0029). Return 0
+    ///         only on a structural failure (zero rate, non-positive answer, decimals or band violation).
     /// @return stale If the price returned is stale.
     function getLatestPrice() external view returns (uint256 price, bool stale);
 

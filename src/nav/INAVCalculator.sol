@@ -80,6 +80,16 @@ interface INAVCalculator is IBalances {
     /// @param adapter The supplied address that is not a registered balance adapter.
     error AdapterNotRegistered(address adapter);
 
+    /// @notice A non-USD quote asset has no usable price at all, so no value can be expressed in it.
+    /// @dev Raised by every read that converts into a quote asset (`getAccountNav`, `getAccountNavVerbose`,
+    ///      `getAccountPositions`, `getAccountPositionsVerbose`, `getAccountNavForAdapters`, `calculateValue`) when
+    ///      every one of the quote asset's feeds is unusable: reverting or non-positive answers, or a last update
+    ///      older than {MAX_STALE_PRICE_AGE}. A quote asset that is merely STALE does not revert: values are converted
+    ///      at its last-known price and `quoteAssetStale` is set (ADR 0029). Callers that must always get a number
+    ///      can fall back to the USD quote, `address(0)`, which never raises this.
+    /// @param quoteAsset The quote asset with no usable price.
+    error QuoteAssetUnpriceable(address quoteAsset);
+
     /// @notice {getAccountNavForAdapters} was given the same adapter twice in one slice.
     /// @dev A repeated adapter is queried twice and its positions summed twice, so the slice over-reports by that
     ///      adapter's whole value. Rejected rather than deduplicated, because a duplicate means the caller's

@@ -73,6 +73,25 @@ library PriceFeedLib {
         bool monitorsUnhealthy;
     }
 
+    /// @notice One primary/monitor feed read ({_readPrimaryFeed}). Memory struct so feed selection keeps a single
+    ///         stack slot per read (the library compiles under via_ir close to the stack limit).
+    struct FeedRead {
+        int256 price; // in the feed's own decimals (API3 already scaled to 8)
+        uint256 time; // effectiveTime: update time clamped to block.timestamp (sentinel for rate-only feeds)
+        bool rateOnly; // Custom feed with no push timestamp
+        bool internalStale; // Custom feed reports itself stale
+        bool usable; // false = the feed gives no price at all
+    }
+
+    /// @notice The feed-selection winner so far ({_selectFeedCore}); memory for the same stack reason.
+    struct FeedWinner {
+        int256 price;
+        uint256 time;
+        uint8 decimals;
+        bool rateOnly;
+        bool fresh;
+    }
+
     /// @notice Quote-asset info (struct + price data); address(0) = USD.
     struct QuoteAssetInfo {
         INAVCalculator.Asset assetStruct;
@@ -86,7 +105,8 @@ library PriceFeedLib {
     // Feed selection
     // -------------------------------------------------------------------------
 
-    /// @notice Selects the freshest non-stale feed for an asset.
+    /// @notice Selects the price an asset is valued at: the freshest fresh feed, else the freshest usable stale
+    ///         feed (ADR 0029).
     /// @dev Mirrors Prices._selectFeed — see that function's NatSpec for full semantics.
     function selectFeed(mapping(address => IPrices.PriceFeedConfig[]) storage priceOracles, address token)
         external
@@ -99,6 +119,22 @@ library PriceFeedLib {
     /// @notice Feed-selection core, shared by the external `selectFeed` wrapper and the library's internal compute
     ///         paths (`buildPriceData`, `healthCheck`, `calculateValue`, `_getQuoteAssetInfo`, `_buildPriceFeedCache`)
     ///         so they reuse the logic via an internal jump rather than a second DELEGATECALL.
+    /// @dev Staleness flags, it never changes the value (ADR 0029). Each feed is one of:
+    ///        - UNUSABLE (never selected): the read reverts, the price is non-positive or out of range, an API3 answer
+    ///          scales to 0, a rate-only Custom feed reports itself stale (it has no timestamp to age), or the feed is
+    ///          not fresh and its last update is at least {MAX_STALE_PRICE_AGE} old.
+    ///        - FRESH: not self-reported stale, and younger than its heartbeat. Counted in `healthyFeedCount`.
+    ///        - USABLE-STALE: every other feed with a positive price.
+    ///      Ranking ({_outranks}): any fresh feed beats any stale one; within a tier a real-timestamp feed beats a
+    ///      rate-only one; then the larger `effectiveTime`; ties keep the earliest-registered feed. So a fresh feed
+    ///      always wins exactly as before, and only when NO feed is fresh does the freshest usable stale feed supply
+    ///      the price, with `stale = true` and its real `winnerIdx`.
+    /// @return price The selected price in the winning feed's decimals; 0 only when no feed is usable.
+    /// @return decimals The winning feed's decimals (feed 0's when none is usable).
+    /// @return stale True unless the winner is fresh. `stale && price > 0` = best-available fallback;
+    ///         `stale && price == 0` = nothing usable.
+    /// @return winnerIdx Index of the winning feed in the asset's config array; type(uint256).max when none is usable.
+    /// @return healthyFeedCount Number of FRESH feeds; therefore 0 whenever `stale`.
     function _selectFeedCore(mapping(address => IPrices.PriceFeedConfig[]) storage priceOracles, address token)
         private
         view
@@ -109,78 +145,30 @@ library PriceFeedLib {
 
         if (len == 0) revert IPrices.PriceFeedNotSet(token);
 
-        int256 bestPrice;
-        uint256 bestTime;
-        uint8 bestDecimals;
-        bool bestRateOnly; // winner so far is a rate-only feed (no push timestamp); a real-timestamp feed outranks it
+        FeedWinner memory best;
         winnerIdx = type(uint256).max;
 
         for (uint256 i; i < len; ++i) {
             IPrices.PriceFeedConfig storage cfg = configs[i];
-            int256 rawPrice;
-            uint256 updatedAt;
-            bool rateOnly; // Custom feed with no push timestamp (latestRoundData.updatedAt == 0)
+            FeedRead memory r = _readPrimaryFeed(cfg);
+            if (!r.usable) continue;
 
-            if (cfg.priceType == IPrices.PriceType.Custom) {
-                uint256 customPrice;
-                bool internalStale;
-                try ICustomPriceFeed(cfg.priceFeed).getLatestPrice() returns (uint256 p, bool s) {
-                    customPrice = p;
-                    internalStale = s;
-                } catch {
-                    continue;
-                }
-                if (internalStale || customPrice == 0) continue;
-                if (customPrice > uint256(type(int256).max)) continue;
-                rawPrice = int256(customPrice);
-                uint256 lrdUpdatedAt;
-                try ICustomPriceFeed(cfg.priceFeed).latestRoundData() returns (
-                    uint80, int256, uint256, uint256 u, uint80
-                ) {
-                    lrdUpdatedAt = u;
-                } catch {} // reverted: treat as no-timestamp oracle; sentinel updatedAt applied below
-                // A rate-only feed (no push timestamp) PARTICIPATES — the block.timestamp-1 sentinel clears the
-                // heartbeat gate below — but YIELDS to any feed with a real push timestamp (see the tiering at the
-                // winner check, per IPrices.PriceFeedConfig). The sentinel is only for gate-passing, not ranking.
-                rateOnly = lrdUpdatedAt == 0;
-                updatedAt = lrdUpdatedAt == 0 ? (block.timestamp > 0 ? block.timestamp - 1 : 0) : lrdUpdatedAt;
-            } else {
-                int256 answer;
-                uint256 lrdUpdatedAt;
-                try AggregatorV3Interface(cfg.priceFeed).latestRoundData() returns (
-                    uint80, int256 a, uint256, uint256 u, uint80
-                ) {
-                    answer = a;
-                    lrdUpdatedAt = u;
-                } catch {
-                    continue;
-                }
-                if (answer <= 0) continue;
-                rawPrice = answer;
-                if (cfg.priceType == IPrices.PriceType.API3) {
-                    rawPrice = rawPrice / 1e10; // 18-dec → 8-dec
-                    if (rawPrice == 0) continue;
-                }
-                updatedAt = lrdUpdatedAt;
+            uint256 age = block.timestamp - r.time;
+            bool fresh = !r.internalStale && age < cfg.chainlinkHeartbeat;
+            if (fresh) {
+                ++healthyFeedCount;
+            } else if (r.rateOnly || age >= MAX_STALE_PRICE_AGE) {
+                // A stale rate-only feed carries no timestamp, so the age cap could not bound it; a stale feed past
+                // the cap is too old to stand for a fair value. Both are unusable.
+                continue;
             }
 
-            uint256 effectiveTime = updatedAt > block.timestamp ? block.timestamp : updatedAt;
-
-            if (block.timestamp - effectiveTime >= cfg.chainlinkHeartbeat) continue;
-
-            ++healthyFeedCount;
-
-            // Tiering (IPrices.PriceFeedConfig): a real-timestamp feed always outranks a rate-only one; within
-            // the same class the largest effectiveTime wins. So a rate-only custom feed can never override a fresh
-            // Chainlink feed merely via the block.timestamp-1 sentinel.
-            bool wins = winnerIdx == type(uint256).max // first healthy feed
-                || (bestRateOnly && !rateOnly) // a real-timestamp feed beats the current rate-only leader
-                || (bestRateOnly == rateOnly && effectiveTime > bestTime); // same class: freshest wins
-            if (wins) {
-                bestTime = effectiveTime;
-                bestPrice = rawPrice;
-                bestDecimals = cfg.decimals;
-                bestRateOnly = rateOnly;
+            if (winnerIdx == type(uint256).max || _outranks(best, r, fresh)) {
+                best.price = r.price;
+                best.time = r.time;
+                best.decimals = cfg.decimals;
+                best.rateOnly = r.rateOnly;
+                best.fresh = fresh;
                 winnerIdx = i;
             }
         }
@@ -189,7 +177,63 @@ library PriceFeedLib {
             return (0, configs[0].decimals, true, type(uint256).max, 0);
         }
 
-        return (bestPrice, bestDecimals, false, winnerIdx, healthyFeedCount);
+        return (best.price, best.decimals, !best.fresh, winnerIdx, healthyFeedCount);
+    }
+
+    /// @notice Ranking used by {_selectFeedCore}: does a candidate feed beat the current winner?
+    /// @dev Tiering (IPrices.PriceFeedConfig): fresh beats stale; within a freshness tier a real-timestamp feed beats
+    ///      a rate-only one (so a rate-only Custom feed can never override a real feed merely via its
+    ///      block.timestamp-1 sentinel); within the same class the larger effectiveTime wins. Strict comparison, so
+    ///      ties keep the earlier-registered feed. The caller handles "no winner yet".
+    function _outranks(FeedWinner memory best, FeedRead memory r, bool fresh) private pure returns (bool) {
+        if (fresh != best.fresh) return fresh;
+        if (best.rateOnly != r.rateOnly) return best.rateOnly;
+        return r.time > best.time;
+    }
+
+    /// @notice Reads one feed's raw price and timing. Shared by primary selection and the monitor gate.
+    /// @dev Never reverts. `usable == false` means the feed gives no price at all (reverting read, non-positive or
+    ///      out-of-range price, API3 answer scaling to 0); freshness and the age cap are NOT applied here, each caller
+    ///      applies its own gate. A Custom feed whose `latestRoundData` reverts or reports `updatedAt == 0` is
+    ///      rate-only: `effectiveTime` is the block.timestamp-1 sentinel so it clears a heartbeat gate.
+    /// @return r The read; `r.usable == false` (and everything else zero) when the feed gives no usable price.
+    function _readPrimaryFeed(IPrices.PriceFeedConfig storage cfg) private view returns (FeedRead memory r) {
+        uint256 updatedAt;
+        if (cfg.priceType == IPrices.PriceType.Custom) {
+            uint256 customPrice;
+            try ICustomPriceFeed(cfg.priceFeed).getLatestPrice() returns (uint256 p, bool s) {
+                customPrice = p;
+                r.internalStale = s;
+            } catch {
+                return r;
+            }
+            if (customPrice == 0 || customPrice > uint256(type(int256).max)) return r;
+            r.price = int256(customPrice);
+            uint256 lrdUpdatedAt;
+            try ICustomPriceFeed(cfg.priceFeed).latestRoundData() returns (uint80, int256, uint256, uint256 u, uint80) {
+                lrdUpdatedAt = u;
+            } catch {} // reverted: treat as no-timestamp oracle; sentinel updatedAt applied below
+            r.rateOnly = lrdUpdatedAt == 0;
+            updatedAt = lrdUpdatedAt == 0 ? (block.timestamp > 0 ? block.timestamp - 1 : 0) : lrdUpdatedAt;
+        } else {
+            int256 answer;
+            try AggregatorV3Interface(cfg.priceFeed).latestRoundData() returns (
+                uint80, int256 a, uint256, uint256 u, uint80
+            ) {
+                answer = a;
+                updatedAt = u;
+            } catch {
+                return r;
+            }
+            if (answer <= 0) return r;
+            r.price = answer;
+            if (cfg.priceType == IPrices.PriceType.API3) {
+                r.price = r.price / 1e10; // 18-dec → 8-dec
+                if (r.price == 0) return r;
+            }
+        }
+        r.time = updatedAt > block.timestamp ? block.timestamp : updatedAt;
+        r.usable = true;
     }
 
     // -------------------------------------------------------------------------
@@ -240,8 +284,13 @@ library PriceFeedLib {
     /// @notice `irregular` flag for a primary that the caller has ALREADY selected (raw `price` in the feed's own
     ///         `decimals`). Lets a hot view that already ran feed selection (Prices.latestPrice) obtain the
     ///         divergence signal WITHOUT a second `_selectFeedCore` pass + re-read of the primary feed. Returns false
-    ///         (no monitor reads) when the asset has no divergence checks. `sequencerDown` folds into staleness so
-    ///         divergence is suppressed on an unusable price — parity with buildPriceData / computeDivergence.
+    ///         (no monitor reads) when the asset has no divergence checks. Divergence runs against the selected
+    ///         price even when it is stale (ADR 0029); only `sequencerDown` suppresses it — parity with buildPriceData
+    ///         / computeDivergence.
+    /// @dev `public`, not `internal`: an internal library function is compiled INTO each calling contract, and this
+    ///      one pulls the whole monitor-divergence chain with it, which `NAVCalculator` (via `Prices.latestPrice`)
+    ///      cannot afford under EIP-170. As `public`, `Prices` reaches it by DELEGATECALL and the library's own
+    ///      callers keep an internal jump.
     function irregularForSelected(
         mapping(address => IPrices.PriceFeedConfig[]) storage monitorFeeds,
         mapping(address => IPrices.AssetPricing) storage assetPricing,
@@ -250,7 +299,7 @@ library PriceFeedLib {
         uint8 decimals,
         bool feedStale,
         bool sequencerDown
-    ) internal view returns (bool irregular) {
+    ) public view returns (bool irregular) {
         if (!_hasDivergenceChecks(monitorFeeds, assetPricing, asset)) return false;
         (,,,, irregular,,) =
             _divergenceFor(monitorFeeds, assetPricing, asset, price, decimals, feedStale, sequencerDown);
@@ -282,9 +331,13 @@ library PriceFeedLib {
         )
     {
         primaryStale = stale || sequencerDown;
-        primaryPrice8 = primaryStale ? int256(0) : _scaleTo8(price, decimals);
+        // A STALE primary that still has a price is still used for valuation (ADR 0029), so it is still checked
+        // against the fresh monitors: a frozen feed drifting away from the market then raises `irregular` while
+        // `stale` is set. Only a sequencer outage suppresses the check, because then every L2 read (monitors
+        // included) is untrustworthy. With no usable price at all, `price` is 0 and so is `primaryPrice8`.
+        primaryPrice8 = sequencerDown ? int256(0) : _scaleTo8(price, decimals);
         (monitorMedian, divergenceBps, irregular, monitorFeedCount, primaryAboveMonitors) =
-            _monitorDivergence(monitorFeeds, assetPricing, asset, primaryPrice8, primaryStale);
+            _monitorDivergence(monitorFeeds, assetPricing, asset, primaryPrice8, sequencerDown);
     }
 
     /// @notice Core divergence computation given an already-selected (8-dec) primary price.
@@ -305,7 +358,7 @@ library PriceFeedLib {
         mapping(address => IPrices.AssetPricing) storage assetPricing,
         address asset,
         int256 primaryPrice8,
-        bool primaryStale
+        bool suppressed
     )
         private
         view
@@ -333,7 +386,7 @@ library PriceFeedLib {
         // `healthyMonitorCount` (surfaced as `monitorFeedCount`) is set ONLY inside this guard, so it counts monitors
         // that actually CONTRIBUTED to the divergence check — it stays 0 when the check was suppressed (stale /
         // sequencer-down / unusable primary), rather than reporting count>0 alongside divergenceBps=0.
-        if (n > 0 && !primaryStale && primaryPrice8 > 0) {
+        if (n > 0 && !suppressed && primaryPrice8 > 0) {
             healthyMonitorCount = n;
             _sortInPlace(prices, n);
             // Midpoint via the sorted difference (prices ascending) so the two-element sum can't overflow int256.
@@ -358,7 +411,7 @@ library PriceFeedLib {
         // NOTE: `pegToleranceBps` has a SECOND consumer off this path — `AssetKindRegistry` derives `PegKind` from it
         // (non-zero => Pegged). So it is not purely a local pricing knob any more; zeroing it also reclassifies the
         // asset. See the warning on `NAVCalculator.setPegTolerance`.
-        if (ap.pegToleranceBps > 0 && !primaryStale && primaryPrice8 > 0) {
+        if (ap.pegToleranceBps > 0 && !suppressed && primaryPrice8 > 0) {
             int256 one = int256(10 ** uint256(NAV_DECIMALS));
             int256 pegDiff = primaryPrice8 - one;
             if (pegDiff < 0) pegDiff = -pegDiff;
@@ -391,54 +444,14 @@ library PriceFeedLib {
         return monitorFeeds[asset].length > 0 || assetPricing[asset].pegToleranceBps > 0;
     }
 
-    /// @notice Reads a single feed's price applying the same validity + heartbeat gate as `_selectFeedCore`, and
-    ///         normalizes the result to NAV_DECIMALS. Returns ok=false when the feed is stale, reverting, or
-    ///         reports a non-positive/zero price. Used by the monitor-divergence loop.
+    /// @notice Reads a single MONITOR feed's price, normalized to NAV_DECIMALS. Returns ok=false when the feed gives
+    ///         no usable price, reports itself stale, or is older than its heartbeat: a monitor only counts while it
+    ///         is fresh. Uses the same raw read as primary selection ({_readPrimaryFeed}).
     function _readFeedPrice(IPrices.PriceFeedConfig storage cfg) private view returns (int256 price8, bool ok) {
-        int256 rawPrice;
-        uint256 updatedAt;
-
-        if (cfg.priceType == IPrices.PriceType.Custom) {
-            uint256 customPrice;
-            bool internalStale;
-            try ICustomPriceFeed(cfg.priceFeed).getLatestPrice() returns (uint256 p, bool s) {
-                customPrice = p;
-                internalStale = s;
-            } catch {
-                return (0, false);
-            }
-            if (internalStale || customPrice == 0) return (0, false);
-            if (customPrice > uint256(type(int256).max)) return (0, false);
-            rawPrice = int256(customPrice);
-            uint256 lrdUpdatedAt;
-            try ICustomPriceFeed(cfg.priceFeed).latestRoundData() returns (uint80, int256, uint256, uint256 u, uint80) {
-                lrdUpdatedAt = u;
-            } catch {} // reverted: treat as no-timestamp oracle; sentinel applied below
-            updatedAt = lrdUpdatedAt == 0 ? (block.timestamp > 0 ? block.timestamp - 1 : 0) : lrdUpdatedAt;
-        } else {
-            int256 answer;
-            uint256 lrdUpdatedAt;
-            try AggregatorV3Interface(cfg.priceFeed).latestRoundData() returns (
-                uint80, int256 a, uint256, uint256 u, uint80
-            ) {
-                answer = a;
-                lrdUpdatedAt = u;
-            } catch {
-                return (0, false);
-            }
-            if (answer <= 0) return (0, false);
-            rawPrice = answer;
-            if (cfg.priceType == IPrices.PriceType.API3) {
-                rawPrice = rawPrice / 1e10; // 18-dec → 8-dec
-                if (rawPrice == 0) return (0, false);
-            }
-            updatedAt = lrdUpdatedAt;
-        }
-
-        uint256 effectiveTime = updatedAt > block.timestamp ? block.timestamp : updatedAt;
-        if (block.timestamp - effectiveTime >= cfg.chainlinkHeartbeat) return (0, false);
-
-        return (_scaleTo8(rawPrice, cfg.decimals), true);
+        FeedRead memory r = _readPrimaryFeed(cfg);
+        if (!r.usable || r.internalStale) return (0, false);
+        if (block.timestamp - r.time >= cfg.chainlinkHeartbeat) return (0, false);
+        return (_scaleTo8(r.price, cfg.decimals), true);
     }
 
     /// @notice Scales a price from `decimals` to NAV_DECIMALS. NEVER reverts: a pathological `decimals` (or a price
@@ -1505,6 +1518,9 @@ library PriceFeedLib {
             // _selectFeedCore reverts PriceFeedNotSet(quoteAsset) when the quote asset has no feeds (same selector
             // as a separate guard would), so no extra length check is needed here.
             (info.price, info.priceDecimals, info.stale,,) = _selectFeedCore(priceOracles, quoteAsset);
+            // A stale quote converts at its last-known price (ADR 0029); a quote with NO usable price cannot express
+            // any value, so the read reverts instead of returning a USD amount labelled as the quote asset.
+            if (info.price <= 0) revert INAVCalculator.QuoteAssetUnpriceable(quoteAsset);
             INAVCalculator.Asset memory reg = _getRegisteredAsset(assetIndex, registeredAssets, quoteAsset);
             info.assetStruct = INAVCalculator.Asset({
                 asset: quoteAsset,

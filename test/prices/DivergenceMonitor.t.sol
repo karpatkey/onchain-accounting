@@ -228,12 +228,10 @@ contract DivergenceMonitorTest is SuperTest {
         assertTrue(pd.irregular, "the healthy monitor is still out of band");
     }
 
-    /// @dev A STALE PRIMARY suppresses the divergence check entirely: with no usable primary price there is nothing to
-    ///      compare the monitors against, so `irregular` stays false and `monitorFeedCount`/`divergenceBps` stay 0
-    ///      (rather than flagging on a comparison against a zeroed primary). Regression for the `!primaryStale`
-    ///      guard in `_monitorDivergence`.
-    function test_stalePrimary_suppressesIrregular() public {
-        // Swap weth's primary to a stale feed (it becomes the only pricing feed, so selection returns stale/price 0).
+    /// @dev An UNUSABLE primary suppresses the divergence check: with no primary price at all there is nothing to
+    ///      compare the monitors against, so `irregular` stays false and `monitorFeedCount`/`divergenceBps` stay 0.
+    ///      (Mock_CustomPriceFeedStaled is stale AND rate-only, which ADR 0029 classes as unusable.)
+    function test_unusablePrimary_suppressesIrregular() public {
         Mock_CustomPriceFeedStaled stalePrimary =
             new Mock_CustomPriceFeedStaled("weth-stale-primary", address(weth), 324_057_000_000, 8);
         Mock_CustomPriceFeed monitor = new Mock_CustomPriceFeed("weth-mon", address(weth), 340_000_000_000, 8);
@@ -241,15 +239,90 @@ contract DivergenceMonitorTest is SuperTest {
         nav.addOrModifyPriceFeed(address(weth), address(stalePrimary), IPrices.PriceType.Custom, type(uint256).max);
         nav.removePriceFeed(address(weth), address(wethAdapter));
         nav.setDivergenceTolerance(address(weth), 250);
-        // Out of band ($3400 vs $3240.57 ~492 bps) — would flag irregular against a healthy primary.
+        // Out of band ($3400 vs $3240.57 ~492 bps) — would flag irregular against a usable primary.
         nav.addMonitorFeed(address(weth), address(monitor), IPrices.PriceType.Custom, type(uint256).max);
         vm.stopPrank();
 
         INAVCalculator.PriceFeedData memory pd = nav.getPriceData(address(weth));
         assertTrue(pd.stale, "primary is stale");
-        assertFalse(pd.irregular, "divergence must be suppressed when the primary is stale");
-        assertEq(pd.monitorFeedCount, 0, "no monitor contributes against a stale primary");
+        assertEq(pd.price, 0, "and unusable: no price");
+        assertFalse(pd.irregular, "divergence must be suppressed when the primary has no price");
+        assertEq(pd.monitorFeedCount, 0, "no monitor contributes against an unusable primary");
         assertEq(pd.divergenceBps, 0);
+        (int256 primaryPrice,,, bool irregular,, bool primaryStale,) = nav.getPriceDivergence(address(weth));
+        assertEq(primaryPrice, 0);
+        assertTrue(primaryStale);
+        assertFalse(irregular);
+    }
+
+    /// @dev Test 8 (ADR 0029) — a USABLE STALE primary is still compared against the fresh monitors: a frozen feed
+    ///      that drifted from the market raises `irregular` alongside `stale`, and every surface reports the stale
+    ///      price (not 0) as the primary. Was: suppressed, `primaryPrice == 0`.
+    function test_stalePrimary_stillCheckedAgainstMonitors() public {
+        Mock_PriceOracleChainlink primary = new Mock_PriceOracleChainlink("weth-cl", 324_057_000_000, 8);
+        Mock_CustomPriceFeed monitor = new Mock_CustomPriceFeed("weth-mon", address(weth), 340_000_000_000, 8);
+        vm.startPrank(navCalculatorManager);
+        nav.addOrModifyPriceFeed(address(weth), address(primary), IPrices.PriceType.Chainlink, 100);
+        nav.removePriceFeed(address(weth), address(wethAdapter));
+        nav.setDivergenceTolerance(address(weth), 250);
+        nav.addMonitorFeed(address(weth), address(monitor), IPrices.PriceType.Custom, type(uint256).max);
+        vm.stopPrank();
+        vm.warp(block.timestamp + 200); // primary 200 s old > 100 s heartbeat → usable-stale
+
+        INAVCalculator.PriceFeedData memory pd = nav.getPriceData(address(weth));
+        assertTrue(pd.stale, "primary is stale");
+        assertEq(pd.price, 324_057_000_000, "stale primary keeps its price");
+        assertEq(pd.healthyFeedCount, 0);
+        assertTrue(pd.irregular, "a stale primary that drifted from the monitors is irregular");
+        assertEq(pd.monitorFeedCount, 1);
+        assertGt(pd.divergenceBps, 250);
+
+        (
+            int256 primaryPrice,
+            int256 monitorMedian,
+            uint256 divergenceBps,
+            bool irregular,
+            uint256 monitorFeedCount,
+            bool primaryStale,
+            bool primaryAboveMonitors
+        ) = nav.getPriceDivergence(address(weth));
+        assertEq(primaryPrice, 324_057_000_000, "primaryPrice is the stale price, not 0");
+        assertEq(monitorMedian, 340_000_000_000);
+        assertEq(divergenceBps, pd.divergenceBps);
+        assertTrue(irregular);
+        assertEq(monitorFeedCount, 1);
+        assertTrue(primaryStale);
+        assertFalse(primaryAboveMonitors);
+
+        (int256 lp,, bool lpStale, bool lpIrregular) = nav.latestPrice(address(weth));
+        assertEq(lp, 324_057_000_000);
+        assertTrue(lpStale);
+        assertTrue(lpIrregular, "latestPrice parity");
+
+        weth.mint(address(safe), 1 ether);
+        INAVCalculator.NAV memory r = nav.getAccountNav(address(safe), address(0));
+        assertTrue(_contains(r.stalePriceAssets, address(weth)), "listed stale");
+        assertTrue(_contains(r.irregularPriceAssets, address(weth)), "AND listed irregular");
+        assertEq(r.value, 324_057_000_000, "valued at the stale price");
+    }
+
+    /// @dev A stale primary still IN band with its monitors is stale but not irregular (the check ran and passed).
+    function test_stalePrimary_inBand_notIrregular() public {
+        Mock_PriceOracleChainlink primary = new Mock_PriceOracleChainlink("weth-cl", 324_057_000_000, 8);
+        Mock_CustomPriceFeed monitor = new Mock_CustomPriceFeed("weth-mon", address(weth), 325_000_000_000, 8);
+        vm.startPrank(navCalculatorManager);
+        nav.addOrModifyPriceFeed(address(weth), address(primary), IPrices.PriceType.Chainlink, 100);
+        nav.removePriceFeed(address(weth), address(wethAdapter));
+        nav.setDivergenceTolerance(address(weth), 250);
+        nav.addMonitorFeed(address(weth), address(monitor), IPrices.PriceType.Custom, type(uint256).max);
+        vm.stopPrank();
+        vm.warp(block.timestamp + 200);
+
+        INAVCalculator.PriceFeedData memory pd = nav.getPriceData(address(weth));
+        assertTrue(pd.stale);
+        assertFalse(pd.irregular);
+        assertEq(pd.monitorFeedCount, 1, "the check ran against the stale primary");
+        assertGt(pd.divergenceBps, 0);
     }
 
     /// @dev SEQUENCER DOWN suppresses the divergence check: `buildPriceData` folds `sequencerDown` into the primary's
@@ -428,14 +501,14 @@ contract DivergenceMonitorTest is SuperTest {
         );
     }
 
-    /// @dev The primary-usable conjunct must exclude a STALE primary, not just a downed sequencer. Only the sequencer
-    ///      path was covered; this is the L1 case, which is the one that actually occurs. DAI is the only asset with
-    ///      a finite heartbeat, so warping ages DAI out and leaves the others fresh.
-    function test_stalePrimaryWithSequencerUp_notListedHere() public {
-        Mock_PriceOracleChainlink deadMonitor = new Mock_PriceOracleChainlink("DAI-monitor", 100_000_000, 8);
+    /// @dev ADR 0029: a STALE-but-priced primary is checked against its monitors, so a healthy monitor contributes
+    ///      and the asset is NOT monitors-unhealthy. (Was: the check was suppressed for any stale primary.) DAI is the
+    ///      only asset with a finite heartbeat, so warping ages DAI out and leaves the others fresh.
+    function test_stalePrimaryWithHealthyMonitor_checkRuns_notListed() public {
+        Mock_PriceOracleChainlink monitor = new Mock_PriceOracleChainlink("DAI-monitor", 100_000_000, 8);
         vm.startPrank(navCalculatorManager);
         nav.setDivergenceTolerance(address(dai), 100);
-        nav.addMonitorFeed(address(dai), address(deadMonitor), IPrices.PriceType.Chainlink, type(uint256).max);
+        nav.addMonitorFeed(address(dai), address(monitor), IPrices.PriceType.Chainlink, type(uint256).max);
         vm.stopPrank();
         dai.mint(address(safe), 1000e18);
 
@@ -443,9 +516,44 @@ contract DivergenceMonitorTest is SuperTest {
 
         INAVCalculator.NAV memory r = nav.getAccountNav(address(safe), address(0));
         assertTrue(_contains(r.stalePriceAssets, address(dai)), "precondition: DAI's primary is stale");
+        assertEq(nav.getPriceData(address(dai)).monitorFeedCount, 1, "the check ran against the stale primary");
+        assertFalse(_contains(r.monitorsUnhealthyPriceAssets, address(dai)), "a healthy monitor answered");
+        assertEq(r.value, 1000e8, "valued at the stale $1");
+    }
+
+    /// @dev ADR 0029: `monitorsUnhealthy` can now be set for a STALE-but-priced primary — the check would have run,
+    ///      and only the monitors' silence stopped it. So a stale DAI whose only monitor is dead is in BOTH arrays.
+    function test_stalePricedPrimaryWithDeadMonitors_isListed() public {
+        Mock_CustomPriceFeedStaled deadMonitor = new Mock_CustomPriceFeedStaled("DAI-dead", address(dai), 1e8, 8);
+        vm.startPrank(navCalculatorManager);
+        nav.setDivergenceTolerance(address(dai), 100);
+        nav.addMonitorFeed(address(dai), address(deadMonitor), IPrices.PriceType.Custom, type(uint256).max);
+        vm.stopPrank();
+        dai.mint(address(safe), 1000e18);
+        vm.warp(block.timestamp + 2 days);
+
+        INAVCalculator.NAV memory r = nav.getAccountNav(address(safe), address(0));
+        assertTrue(_contains(r.stalePriceAssets, address(dai)));
+        assertTrue(_contains(r.monitorsUnhealthyPriceAssets, address(dai)), "stale-but-priced: monitors blamed");
+    }
+
+    /// @dev An UNUSABLE primary (past MAX_STALE_PRICE_AGE) with dead monitors is NOT blamed on the monitors: the
+    ///      check could not have run for want of a primary price. Keeps the "unusable primary" case disjoint.
+    function test_unusablePrimaryWithDeadMonitors_notListedHere() public {
+        Mock_CustomPriceFeedStaled deadMonitor = new Mock_CustomPriceFeedStaled("DAI-dead", address(dai), 1e8, 8);
+        vm.startPrank(navCalculatorManager);
+        nav.setDivergenceTolerance(address(dai), 100);
+        nav.addMonitorFeed(address(dai), address(deadMonitor), IPrices.PriceType.Custom, type(uint256).max);
+        vm.stopPrank();
+        dai.mint(address(safe), 1000e18);
+        vm.warp(block.timestamp + MAX_STALE_PRICE_AGE + 1);
+
+        INAVCalculator.NAV memory r = nav.getAccountNav(address(safe), address(0));
+        assertTrue(_contains(r.stalePriceAssets, address(dai)), "precondition: DAI flagged");
+        assertEq(nav.getPriceData(address(dai)).price, 0, "precondition: DAI unusable");
         assertFalse(
             _contains(r.monitorsUnhealthyPriceAssets, address(dai)),
-            "a primary-suppressed check must not be blamed on the monitors (sequencer path is not the only one)"
+            "an unusable-primary check must not be blamed on the monitors"
         );
     }
 

@@ -65,7 +65,7 @@ contract ERC4626VaultRatePriceFeedTest is Test {
         assertEq(price, 1.122e8, "1.1 assets/share * $1.02 = $1.122 at 8 decimals");
     }
 
-    /// @dev Base-stale propagates to the feed (fail-to-stale, price 0).
+    /// @dev Base-stale propagates to the feed as a FLAG (ADR 0029): the share is still priced off the stale base.
     function test_baseStale_propagates() public {
         Mock_ERC20 usdc = new Mock_ERC20("USDC", 6);
         nav.setAssetPrice(address(usdc), 1e8, 8);
@@ -75,7 +75,31 @@ contract ERC4626VaultRatePriceFeedTest is Test {
         nav.setAssetStale(address(usdc), true);
         (uint256 price, bool stale) = feed.getLatestPrice();
         assertTrue(stale, "stale when base stale");
-        assertEq(price, 0, "price 0 when base stale");
+        assertEq(price, 1.05e8, "priced off the last base price when the base is stale");
+    }
+
+    /// @dev No usable base price at all (the NAV returns price 0) is the structural case that still returns 0.
+    function test_baseUnpriced_returnsZero() public {
+        Mock_ERC20 usdc = new Mock_ERC20("USDC", 6);
+        nav.setAssetPrice(address(usdc), 1e8, 8);
+        Mock_ERC4626 vault = new Mock_ERC4626("v", 18, address(usdc), 1.05e6);
+        _ExposedERC4626Feed feed = new _ExposedERC4626Feed(address(vault), address(nav), address(usdc));
+
+        nav.setAssetPrice(address(usdc), 0, 8, true); // stale with no usable price
+        (uint256 price, bool stale) = feed.getLatestPrice();
+        assertTrue(stale);
+        assertEq(price, 0, "no base price => 0");
+    }
+
+    /// @dev A zero share rate is structural and still returns 0, even with a fresh base.
+    function test_zeroShareRate_returnsZero() public {
+        Mock_ERC20 usdc = new Mock_ERC20("USDC", 6);
+        nav.setAssetPrice(address(usdc), 1e8, 8);
+        Mock_ERC4626 vault = new Mock_ERC4626("v", 18, address(usdc), 0);
+        _ExposedERC4626Feed feed = new _ExposedERC4626Feed(address(vault), address(nav), address(usdc));
+        (uint256 price, bool stale) = feed.getLatestPrice();
+        assertTrue(stale);
+        assertEq(price, 0);
     }
 
     /// @dev Constructor rejects a baseAsset that isn't the vault's own underlying (would price against the wrong asset).
@@ -111,22 +135,20 @@ contract ERC4626VaultRatePriceFeedTest is Test {
         assertEq(price, 1.05e8, "price restored after recovery");
     }
 
-    /// @dev Sequencer-down while the base feed is ALSO genuinely stale: the feed IS stale. A genuinely-stale base is
-    ///      NOT rescued by the sequencer-unfold. This holds because of a cross-file invariant in `PriceFeedLib`: a
-    ///      stale FEED selection always returns `price == 0` (sequencer-down alone never zeroes the price). So even
-    ///      though `pd.stale && !pd.sequencerDown` is false here, `NavBaseUsdLib`'s `pd.price <= 0` guard fires. Only a
-    ///      FRESH base during an outage keeps its last price (see `test_sequencerDown_doesNotZero`). The mock mirrors
-    ///      the `stale => price 0` invariant so this asserts real engine behavior, not an unreachable mock state.
+    /// @dev Sequencer-down while the base feed is ALSO genuinely stale: the feed IS stale, and (ADR 0029) still priced
+    ///      off the last base price. The sequencer-unfold in `NavBaseUsdLib` must not rescue a genuinely-stale base:
+    ///      before ADR 0029 that held only because a stale selection returned price 0; now the price is kept, so the
+    ///      flag must come from the base's own freshness (`healthyFeedCount == 0`), not from `stale && !sequencerDown`.
     function test_sequencerDown_withStaleFeed_isStale() public {
         Mock_ERC20 usdc = new Mock_ERC20("USDC", 6);
         nav.setAssetPrice(address(usdc), 1e8, 8);
         Mock_ERC4626 vault = new Mock_ERC4626("v", 18, address(usdc), 1.05e6);
         _ExposedERC4626Feed feed = new _ExposedERC4626Feed(address(vault), address(nav), address(usdc));
 
-        nav.setAssetStale(address(usdc), true); // feed genuinely stale -> price reads 0 (as in PriceFeedLib)
+        nav.setAssetStale(address(usdc), true); // feed genuinely stale -> price kept, healthyFeedCount 0
         nav.setSequencerDown(address(usdc), true); // AND sequencer down
         (uint256 price, bool stale) = feed.getLatestPrice();
         assertTrue(stale, "genuinely-stale base is stale even during a sequencer outage");
-        assertEq(price, 0, "price 0 when the base feed is genuinely stale");
+        assertEq(price, 1.05e8, "still priced off the last base price");
     }
 }

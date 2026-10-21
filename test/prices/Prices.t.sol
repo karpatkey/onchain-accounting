@@ -6,6 +6,7 @@ import {Test} from "forge-std/Test.sol";
 
 import {Prices} from "src/prices/Prices.sol";
 import {IPrices} from "src/prices/IPrices.sol";
+import {MAX_STALE_PRICE_AGE} from "src/constants.sol";
 import {
     Mock_ChainlinkL2SequencerUptimeFeed,
     Mock_ChainlinkL2SequencerUptimeFeedAt,
@@ -30,6 +31,27 @@ contract Mock_CustomPriceFeedZeroUpdatedAt is Mock_CustomPriceFeed {
     }
 }
 
+/// @dev A Custom feed whose self-reported staleness, price and `latestRoundData.updatedAt` are all settable, so a
+///      test can build every class `_selectFeedCore` distinguishes (ADR 0029): fresh, usable-stale with a real
+///      timestamp, stale rate-only (`updatedAt == 0`), and the pre-ADR-0029 "old shape" that zeroes when stale.
+contract Mock_CustomPriceFeedSettable is Mock_CustomPriceFeed {
+    bool internal _stale;
+
+    constructor(address asset_, uint256 price_) Mock_CustomPriceFeed("settable", asset_, price_, 8) {}
+
+    function setStale(bool stale_) external {
+        _stale = stale_;
+    }
+
+    function setUpdatedAt(uint256 updatedAt_) external {
+        _updatedAt = updatedAt_;
+    }
+
+    function getLatestPrice() external view override returns (uint256, bool) {
+        return (price, _stale);
+    }
+}
+
 contract PricesHarness is Prices {
     constructor(address chainlinkUptimeFeed) initializer {
         __Prices_init(chainlinkUptimeFeed);
@@ -45,6 +67,16 @@ contract PricesHarness is Prices {
         public
     {
         _addPriceFeed(token, oracle, chainlinkHeartbeat, oracleType);
+    }
+
+    /// @dev The full selection tuple (price, decimals, stale, winnerIdx, healthyFeedCount); `latestPrice` drops the
+    ///      last two.
+    function selectFeedFull(address token)
+        public
+        view
+        returns (int256 price, uint8 decimals, bool stale, uint256 winnerIdx, uint256 healthyFeedCount)
+    {
+        return _selectFeed(token);
     }
 
     function removePriceOracle(address token) public {
@@ -163,10 +195,10 @@ contract PricesTest is Test {
         assertEq(decimals, 8);
         assertFalse(stale);
 
-        // Chainlink feed: updatedAt is stale after warp past heartbeat=1.
-        // New multi-feed behaviour: all feeds stale → price=0 (not the stale value).
+        // Chainlink feed: updatedAt is stale after warp past heartbeat=1. ADR 0029: the stale feed still supplies its
+        // last price (2 s old, far below MAX_STALE_PRICE_AGE); staleness is only the flag.
         (value, decimals, stale,) = manager.latestPrice(buidl);
-        assertEq(value, 0);
+        assertEq(value, 1000, "stale feed keeps its last price");
         assertEq(decimals, 8);
         assertTrue(stale);
 
@@ -181,9 +213,11 @@ contract PricesTest is Test {
         vm.warp(2);
 
         vm.startPrank(alice);
-        // New multi-feed behaviour: all feeds stale → price=0 (not the stale value).
+        // Mock_CustomPriceFeedStaled is stale AND rate-only (latestRoundData.updatedAt == 0): it has no timestamp the
+        // MAX_STALE_PRICE_AGE cap could bound, so it is UNUSABLE (ADR 0029) and, as the only feed, prices at 0.
+        // The sibling test_latestPrice_CustomOracleStaleWithTimestamp_keepsPrice covers a stale feed that CAN be aged.
         (int256 value, uint8 decimals, bool stale,) = manager.latestPrice(usdc);
-        assertEq(value, 0);
+        assertEq(value, 0, "stale rate-only custom feed is unusable");
         assertEq(decimals, 8);
         assertTrue(stale); // stale: getLatestPrice() returns stale=true
 
@@ -193,6 +227,21 @@ contract PricesTest is Test {
         assertFalse(stale);
 
         vm.stopPrank();
+    }
+
+    /// @dev Sibling of test_latestPrice_CustomOracleStaled: a Custom feed that reports itself stale but carries a real
+    ///      push timestamp is USABLE-STALE (ADR 0029) — it keeps its price, flagged stale, with healthyFeedCount 0.
+    function test_latestPrice_CustomOracleStaleWithTimestamp_keepsPrice() public {
+        Mock_CustomPriceFeedSettable feed = new Mock_CustomPriceFeedSettable(usdc, 100_000_000);
+        manager.setPriceFeed(usdc, address(feed), type(uint256).max, IPrices.PriceType.Custom);
+        feed.setStale(true);
+
+        (int256 value, uint8 decimals, bool stale, uint256 winnerIdx, uint256 healthy) = manager.selectFeedFull(usdc);
+        assertEq(value, 100_000_000, "self-reported stale feed with a timestamp keeps its price");
+        assertEq(decimals, 8);
+        assertTrue(stale);
+        assertEq(winnerIdx, 0, "the stale feed is the real winner");
+        assertEq(healthy, 0, "stale => no healthy feed");
     }
 
     function test_RevertIf_OracleNotSet() public {
@@ -705,7 +754,8 @@ contract PricesTest is Test {
         assertFalse(stale);
     }
 
-    function test_multiFeed_allStale_returnsZeroAndStale() public {
+    /// @dev ADR 0029: with no fresh feed, the FRESHEST usable stale feed supplies the price (was: price 0).
+    function test_multiFeed_allStale_freshestStaleWins() public {
         vm.warp(100);
         Mock_PriceOracleChainlink oracle1 = new Mock_PriceOracleChainlink("a", 111, 8); // updatedAt=100
         vm.warp(200);
@@ -716,10 +766,17 @@ contract PricesTest is Test {
         h.setPriceFeed(buidl, address(oracle1), 50, IPrices.PriceType.Chainlink); // 400-100=300 > 50 → stale
         h.setPriceFeed(buidl, address(oracle2), 50, IPrices.PriceType.Chainlink); // 400-200=200 > 50 → stale
 
-        (int256 price, uint8 decimals, bool stale,) = h.latestPrice(buidl);
-        assertEq(price, 0); // all stale → zero
-        assertEq(decimals, 8); // first feed's decimals for unit consistency
+        (int256 price, uint8 decimals, bool stale, uint256 winnerIdx, uint256 healthy) = h.selectFeedFull(buidl);
+        assertEq(price, 222, "freshest stale feed (updatedAt=200) supplies the price");
+        assertEq(decimals, 8);
         assertTrue(stale);
+        assertEq(winnerIdx, 1, "real winner index, not the none-usable sentinel");
+        assertEq(healthy, 0);
+
+        // latestPrice agrees.
+        (int256 lp,, bool lpStale,) = h.latestPrice(buidl);
+        assertEq(lp, 222);
+        assertTrue(lpStale);
     }
 
     function test_multiFeed_customFeed_zeroUpdatedAt_survivesAsSentinel() public {
@@ -802,5 +859,204 @@ contract PricesTest is Test {
         (int256 price,, bool stale,) = h.latestPrice(buidl);
         assertFalse(stale);
         assertEq(price, 111); // normalOracle wins; futureOracle clamped, no longer beats it
+    }
+
+    // ============================================
+    // Best-available stale pricing (ADR 0029)
+    // ============================================
+
+    /// @dev A single Chainlink feed with heartbeat 1 whose `updatedAt` is `age` seconds before now.
+    function _singleAgedFeed(uint256 age) internal returns (PricesHarness h, Mock_PriceOracleChainlink feed) {
+        vm.warp(30 days);
+        feed = new Mock_PriceOracleChainlink("aged", 777, 8);
+        h = new PricesHarness(address(0));
+        h.setPriceFeed(buidl, address(feed), 1, IPrices.PriceType.Chainlink);
+        feed.setUpdatedAt(block.timestamp - age);
+    }
+
+    /// @dev Test 6a — the age cap boundary: `MAX_STALE_PRICE_AGE - 1` old is still usable-stale.
+    function test_staleCap_justBelowCap_usable() public {
+        (PricesHarness h,) = _singleAgedFeed(MAX_STALE_PRICE_AGE - 1);
+        (int256 price, uint8 decimals, bool stale, uint256 winnerIdx, uint256 healthy) = h.selectFeedFull(buidl);
+        assertEq(price, 777, "7d - 1s old: still priced");
+        assertEq(decimals, 8);
+        assertTrue(stale);
+        assertEq(winnerIdx, 0);
+        assertEq(healthy, 0);
+    }
+
+    /// @dev Test 6b / 4 — at exactly `MAX_STALE_PRICE_AGE` the feed is unusable; as the only feed there is no usable
+    ///      answer at all: price 0, feed 0's decimals, stale, winnerIdx sentinel, healthy 0.
+    function test_staleCap_atCap_unusable_noUsableAnswer() public {
+        assertEq(MAX_STALE_PRICE_AGE, 7 days, "cap is 7 days");
+        (PricesHarness h,) = _singleAgedFeed(MAX_STALE_PRICE_AGE);
+        (int256 price, uint8 decimals, bool stale, uint256 winnerIdx, uint256 healthy) = h.selectFeedFull(buidl);
+        assertEq(price, 0, "7d old: unusable");
+        assertEq(decimals, 8, "feed 0's decimals when nothing is usable");
+        assertTrue(stale);
+        assertEq(winnerIdx, type(uint256).max, "none-usable sentinel");
+        assertEq(healthy, 0);
+    }
+
+    /// @dev Test 6c — the `type(uint256).max` "gate disabled" heartbeat: a feed older than the cap is still FRESH,
+    ///      because the cap applies only to non-fresh feeds (and cannot overflow on the sentinel).
+    function test_staleCap_sentinelHeartbeat_neverStale() public {
+        vm.warp(60 days);
+        Mock_PriceOracleChainlink feed = new Mock_PriceOracleChainlink("sentinel", 555, 8);
+        PricesHarness h = new PricesHarness(address(0));
+        h.setPriceFeed(buidl, address(feed), type(uint256).max, IPrices.PriceType.Chainlink);
+        feed.setUpdatedAt(block.timestamp - 30 days);
+        (int256 price,, bool stale, uint256 winnerIdx, uint256 healthy) = h.selectFeedFull(buidl);
+        assertEq(price, 555);
+        assertFalse(stale, "a max heartbeat never goes stale, whatever the age");
+        assertEq(winnerIdx, 0);
+        assertEq(healthy, 1);
+    }
+
+    /// @dev Test 6d — a stale RATE-ONLY Custom feed cannot be aged, so it is unusable: a stale real-timestamp feed
+    ///      registered after it supplies the price instead.
+    function test_staleRateOnlyUnusable_staleChainlinkWins() public {
+        vm.warp(1000);
+        Mock_PriceOracleChainlink cl = new Mock_PriceOracleChainlink("cl", 333, 8);
+        PricesHarness h = new PricesHarness(address(0));
+        h.setPriceFeed(usdc, address(customStaled), type(uint256).max, IPrices.PriceType.Custom); // idx 0, rate-only
+        h.setPriceFeed(usdc, address(cl), 10, IPrices.PriceType.Chainlink); // idx 1
+        vm.warp(1100); // cl 100 s old > 10 s heartbeat → stale but usable
+        (int256 price,, bool stale, uint256 winnerIdx, uint256 healthy) = h.selectFeedFull(usdc);
+        assertEq(price, 333, "the agable stale feed wins; the stale rate-only one is unusable");
+        assertTrue(stale);
+        assertEq(winnerIdx, 1);
+        assertEq(healthy, 0);
+    }
+
+    /// @dev Test 7a — fresh beats stale even when the stale feed is NEWER (fresh tier outranks recency).
+    function test_ranking_freshOlderBeatsStaleNewer() public {
+        vm.warp(100);
+        Mock_PriceOracleChainlink oldFresh = new Mock_PriceOracleChainlink("oldFresh", 111, 8); // updatedAt 100
+        vm.warp(350);
+        Mock_PriceOracleChainlink newStale = new Mock_PriceOracleChainlink("newStale", 222, 8); // updatedAt 350
+        vm.warp(400);
+        PricesHarness h = new PricesHarness(address(0));
+        h.setPriceFeed(buidl, address(newStale), 10, IPrices.PriceType.Chainlink); // idx 0: age 50 ≥ 10 → stale
+        h.setPriceFeed(buidl, address(oldFresh), 1000, IPrices.PriceType.Chainlink); // idx 1: age 300 < 1000 → fresh
+        (int256 price,, bool stale, uint256 winnerIdx, uint256 healthy) = h.selectFeedFull(buidl);
+        assertEq(price, 111);
+        assertFalse(stale);
+        assertEq(winnerIdx, 1);
+        assertEq(healthy, 1, "only the fresh feed is counted");
+    }
+
+    /// @dev Test 7b — a FRESH rate-only Custom feed beats a STALE real-timestamp feed (freshness is the first tier;
+    ///      the real-timestamp preference only applies within a tier).
+    function test_ranking_freshRateOnlyBeatsStaleReal() public {
+        vm.warp(1000);
+        Mock_PriceOracleChainlink cl = new Mock_PriceOracleChainlink("cl", 333, 8);
+        Mock_CustomPriceFeedZeroUpdatedAt rateOnly = new Mock_CustomPriceFeedZeroUpdatedAt(buidl); // 1e8, fresh
+        PricesHarness h = new PricesHarness(address(0));
+        h.setPriceFeed(buidl, address(cl), 10, IPrices.PriceType.Chainlink); // idx 0
+        h.setPriceFeed(buidl, address(rateOnly), type(uint256).max, IPrices.PriceType.Custom); // idx 1
+        vm.warp(1100);
+        (int256 price,, bool stale, uint256 winnerIdx, uint256 healthy) = h.selectFeedFull(buidl);
+        assertEq(price, 100_000_000);
+        assertFalse(stale);
+        assertEq(winnerIdx, 1);
+        assertEq(healthy, 1);
+    }
+
+    /// @dev Test 7c — two stale feeds with the same effectiveTime: strict comparison keeps the earliest-registered.
+    function test_ranking_staleTie_earliestRegisteredWins() public {
+        vm.warp(500);
+        Mock_PriceOracleChainlink a = new Mock_PriceOracleChainlink("a", 111, 8);
+        Mock_PriceOracleChainlink b = new Mock_PriceOracleChainlink("b", 222, 8);
+        PricesHarness h = new PricesHarness(address(0));
+        h.setPriceFeed(buidl, address(a), 10, IPrices.PriceType.Chainlink);
+        h.setPriceFeed(buidl, address(b), 10, IPrices.PriceType.Chainlink);
+        vm.warp(600);
+        (int256 price,, bool stale, uint256 winnerIdx,) = h.selectFeedFull(buidl);
+        assertEq(price, 111);
+        assertTrue(stale);
+        assertEq(winnerIdx, 0);
+    }
+
+    /// @dev Test 7d — within the stale tier a real-timestamp Custom feed beats an OLDER stale Chainlink feed by
+    ///      recency, regardless of registration order and type.
+    function test_ranking_staleCustomNewerBeatsStaleChainlinkOlder() public {
+        vm.warp(1000);
+        Mock_PriceOracleChainlink cl = new Mock_PriceOracleChainlink("cl", 333, 8); // updatedAt 1000
+        Mock_CustomPriceFeedSettable custom = new Mock_CustomPriceFeedSettable(buidl, 444);
+        PricesHarness h = new PricesHarness(address(0));
+        h.setPriceFeed(buidl, address(cl), 10, IPrices.PriceType.Chainlink); // idx 0
+        h.setPriceFeed(buidl, address(custom), type(uint256).max, IPrices.PriceType.Custom); // idx 1
+        custom.setStale(true);
+        custom.setUpdatedAt(1050);
+        vm.warp(1100);
+        (int256 price,, bool stale, uint256 winnerIdx, uint256 healthy) = h.selectFeedFull(buidl);
+        assertEq(price, 444, "newer stale (1050) beats older stale (1000)");
+        assertTrue(stale);
+        assertEq(winnerIdx, 1);
+        assertEq(healthy, 0);
+    }
+
+    /// @dev Test 9 — an OLD-SHAPE custom feed (pre-ADR-0029: zeroes its price when its base is stale, `(0, true)`) is
+    ///      UNUSABLE under the new library: alone it prices at 0; next to a usable stale feed, the latter wins.
+    function test_oldShapeFeed_zeroStale_isUnusable() public {
+        vm.warp(1000);
+        Mock_CustomPriceFeedSettable oldShape = new Mock_CustomPriceFeedSettable(buidl, 444);
+        PricesHarness h = new PricesHarness(address(0));
+        h.setPriceFeed(buidl, address(oldShape), type(uint256).max, IPrices.PriceType.Custom);
+        oldShape.setStale(true);
+        oldShape.setPrice(0);
+
+        (int256 price,, bool stale, uint256 winnerIdx, uint256 healthy) = h.selectFeedFull(buidl);
+        assertEq(price, 0, "(0, true) gives no price at all");
+        assertTrue(stale);
+        assertEq(winnerIdx, type(uint256).max);
+        assertEq(healthy, 0);
+
+        Mock_PriceOracleChainlink cl = new Mock_PriceOracleChainlink("cl", 333, 8); // updatedAt 1000
+        h.setPriceFeed(buidl, address(cl), 10, IPrices.PriceType.Chainlink);
+        vm.warp(1100);
+        (price,, stale, winnerIdx,) = h.selectFeedFull(buidl);
+        assertEq(price, 333, "the usable stale feed wins over the old-shape one");
+        assertTrue(stale);
+        assertEq(winnerIdx, 1);
+    }
+
+    /// @dev Test 11 — invariant over two Chainlink feeds of arbitrary age/heartbeat:
+    ///      stale ⇒ healthyFeedCount == 0; !stale ⇒ healthyFeedCount ≥ 1; price == 0 ⇔ winnerIdx == max;
+    ///      a non-zero price is one of the two feeds' prices; nothing older than the cap is ever used.
+    function testFuzz_staleImpliesNoHealthyFeed(uint32 ageA, uint32 ageB, uint32 hbA, uint32 hbB) public {
+        hbA = uint32(bound(hbA, 1, 10 days));
+        hbB = uint32(bound(hbB, 1, 10 days));
+        ageA = uint32(bound(ageA, 0, 20 days));
+        ageB = uint32(bound(ageB, 0, 20 days));
+        vm.warp(30 days);
+        Mock_PriceOracleChainlink a = new Mock_PriceOracleChainlink("a", 111, 8);
+        Mock_PriceOracleChainlink b = new Mock_PriceOracleChainlink("b", 222, 8);
+        PricesHarness h = new PricesHarness(address(0));
+        h.setPriceFeed(buidl, address(a), hbA, IPrices.PriceType.Chainlink);
+        h.setPriceFeed(buidl, address(b), hbB, IPrices.PriceType.Chainlink);
+        a.setUpdatedAt(block.timestamp - ageA);
+        b.setUpdatedAt(block.timestamp - ageB);
+
+        (int256 price,, bool stale, uint256 winnerIdx, uint256 healthy) = h.selectFeedFull(buidl);
+        if (stale) assertEq(healthy, 0, "stale => healthy == 0");
+        else assertGe(healthy, 1, "fresh => healthy >= 1");
+        assertEq(price == 0, winnerIdx == type(uint256).max, "price 0 <=> no winner");
+        if (winnerIdx == 0) {
+            assertEq(price, 111);
+            assertTrue(stale || ageA < hbA);
+            assertTrue(!stale || ageA < MAX_STALE_PRICE_AGE, "a stale winner is younger than the cap");
+        } else if (winnerIdx == 1) {
+            assertEq(price, 222);
+            assertTrue(stale || ageB < hbB);
+            assertTrue(!stale || ageB < MAX_STALE_PRICE_AGE, "a stale winner is younger than the cap");
+        } else {
+            assertTrue(ageA >= MAX_STALE_PRICE_AGE && ageA >= hbA, "a unusable only past the cap");
+            assertTrue(ageB >= MAX_STALE_PRICE_AGE && ageB >= hbB, "b unusable only past the cap");
+        }
+        bool freshA = ageA < hbA;
+        bool freshB = ageB < hbB;
+        assertEq(stale, !(freshA || freshB), "stale exactly when no feed is fresh");
     }
 }

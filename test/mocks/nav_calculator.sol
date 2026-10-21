@@ -355,20 +355,20 @@ contract Mock_NAVCalculator is INAVCalculator {
     function getPriceData(address asset) external view override returns (PriceFeedData memory pd) {
         if (_priceReverts[asset]) revert PriceFeedNotSet(asset);
         pd = _priceData[asset];
-        // Faithfully mirror PriceFeedLib: a stale FEED selection returns price 0 (`_selectFeedCore` only sets
-        // stale=true via the all-feeds-stale branch, which returns price 0). Sequencer-down alone does NOT zero the
-        // price — `buildPriceData` only ORs it into `stale`. So zero the price from the STORED feed-stale first, then
-        // fold sequencer-down into the returned flag. This keeps the mock from producing the (stale=true, price>0)
-        // state the real engine can never emit — which `NavBaseUsdLib`'s `pd.price <= 0` guard relies on.
-        if (pd.stale) pd.price = 0;
+        // Mirror PriceFeedLib (ADR 0029): a stale FEED selection keeps its best-available price (`_selectFeedCore`
+        // returns the freshest usable stale feed's price with stale=true), so the stored price is returned as-is;
+        // "no usable feed at all" is emulated by setting price 0. Sequencer-down never changes the price either —
+        // `buildPriceData` only ORs it into `stale` — so fold it into the returned flag at read time.
+        // `healthyFeedCount` counts FRESH feeds and is independent of the sequencer: 0 iff the stored feed is stale.
+        pd.healthyFeedCount = pd.stale ? 0 : 1;
         pd.stale = pd.stale || pd.sequencerDown;
     }
 
     function getPriceDataNoDivergence(address asset) external view override returns (PriceFeedData memory pd) {
         if (_priceReverts[asset]) revert PriceFeedNotSet(asset);
         pd = _priceData[asset];
-        if (pd.stale) pd.price = 0;
-        pd.stale = pd.stale || pd.sequencerDown;
+        pd.healthyFeedCount = pd.stale ? 0 : 1; // see getPriceData
+        pd.stale = pd.stale || pd.sequencerDown; // price kept when stale (ADR 0029), see getPriceData
         // No-divergence variant: leave the divergence signal at defaults (mirrors buildPriceData(..., false)).
         pd.irregular = false;
         pd.divergenceBps = 0;

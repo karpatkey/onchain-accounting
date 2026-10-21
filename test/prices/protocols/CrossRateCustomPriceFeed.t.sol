@@ -139,4 +139,61 @@ contract CrossRateCustomPriceFeedTest is Test {
         assertEq(updatedAt, 950_000, "base leg governs (rate ratio ~0)");
         assertEq(heartbeat, BASE_HEARTBEAT);
     }
+
+    // --- ADR 0029: TwoFeedChainlinkPriceFeed carries a stale leg instead of zeroing ---
+
+    uint256 constant EXPECTED = 3300e8; // 1.1 Y/X * $3000
+
+    function test_getLatestPrice_fresh() public {
+        CrossRateCustomPriceFeed oracle = _feed();
+        (uint256 price, bool stale) = oracle.getLatestPrice();
+        assertFalse(stale);
+        assertEq(price, EXPECTED);
+    }
+
+    /// @dev The rate leg past RATE_HEARTBEAT (base fresh): priced, flagged stale; `latestRoundData().answer` is 0.
+    function test_rateLegStale_keepsPrice() public {
+        CrossRateCustomPriceFeed oracle = _feed();
+        vm.warp(1_000_000);
+        yToXFeed.setUpdatedAt(1_000_000 - HEARTBEAT); // age == heartbeat => stale (>=)
+        nav.setAssetFreshness(address(baseAsset), 1_000_000, BASE_HEARTBEAT);
+        (uint256 price, bool stale) = oracle.getLatestPrice();
+        assertTrue(stale, "rate leg past its heartbeat => stale");
+        assertEq(price, EXPECTED, "still priced off the stale rate");
+        (, int256 answer,,,) = oracle.latestRoundData();
+        assertEq(answer, 0, "latestRoundData keeps stale ? 0 : price");
+
+        yToXFeed.setUpdatedAt(1_000_000 - HEARTBEAT + 1);
+        (price, stale) = oracle.getLatestPrice();
+        assertFalse(stale, "one second inside the window is fresh");
+        assertEq(price, EXPECTED);
+    }
+
+    /// @dev A stale base (rate fresh): priced off the last base price, flagged stale.
+    function test_baseStale_keepsPrice() public {
+        CrossRateCustomPriceFeed oracle = _feed();
+        nav.setAssetStale(address(baseAsset), true);
+        (uint256 price, bool stale) = oracle.getLatestPrice();
+        assertTrue(stale);
+        assertEq(price, EXPECTED);
+    }
+
+    /// @dev Structural failures still return (0, true): no base price, or a non-positive rate.
+    function test_structuralFailures_returnZero() public {
+        CrossRateCustomPriceFeed oracle = _feed();
+        nav.setAssetPrice(address(baseAsset), 0, 8, true);
+        (uint256 price, bool stale) = oracle.getLatestPrice();
+        assertTrue(stale);
+        assertEq(price, 0, "no base price => 0");
+
+        nav.setAssetPrice(address(baseAsset), 3000e8, 8);
+        vm.mockCall(
+            address(yToXFeed),
+            abi.encodeWithSignature("latestRoundData()"),
+            abi.encode(uint80(1), int256(0), uint256(0), block.timestamp, uint80(1))
+        );
+        (price, stale) = oracle.getLatestPrice();
+        assertTrue(stale);
+        assertEq(price, 0, "zero rate => 0");
+    }
 }

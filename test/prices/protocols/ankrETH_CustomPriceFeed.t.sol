@@ -44,4 +44,42 @@ contract ankrETH_CustomPriceFeedTest is Test {
         vm.expectRevert();
         new ankrETH_CustomPriceFeed(address(ankrEth), address(nav), address(nav));
     }
+
+    // --- ADR 0029: a stale base carries its price, flagged stale ---
+
+    /// @dev ratio() = 0.8 ankrETH per ETH -> 1.25 ETH per ankrETH -> $3750 at $3000/ETH.
+    function _mockRatio(uint256 ratio) internal {
+        vm.mockCall(address(ankrEth), abi.encodeWithSignature("ratio()"), abi.encode(ratio));
+    }
+
+    function test_getLatestPrice_fresh() public {
+        _mockRatio(0.8e18);
+        ankrETH_CustomPriceFeed oracle = new ankrETH_CustomPriceFeed(address(ankrEth), address(nav), address(weth));
+        (uint256 price, bool stale) = oracle.getLatestPrice();
+        assertFalse(stale);
+        assertEq(price, 3750e8);
+    }
+
+    function test_getLatestPrice_staleBaseKeepsPrice() public {
+        _mockRatio(0.8e18);
+        ankrETH_CustomPriceFeed oracle = new ankrETH_CustomPriceFeed(address(ankrEth), address(nav), address(weth));
+        nav.setAssetStale(address(weth), true);
+        (uint256 price, bool stale) = oracle.getLatestPrice();
+        assertTrue(stale, "stale base => stale");
+        assertEq(price, 3750e8, "priced off the last base price");
+    }
+
+    function test_getLatestPrice_structuralZeros() public {
+        _mockRatio(0);
+        ankrETH_CustomPriceFeed oracle = new ankrETH_CustomPriceFeed(address(ankrEth), address(nav), address(weth));
+        (uint256 price, bool stale) = oracle.getLatestPrice();
+        assertTrue(stale);
+        assertEq(price, 0, "zero ratio => 0");
+
+        _mockRatio(0.8e18);
+        nav.setAssetPrice(address(weth), 0, 8, true);
+        (price, stale) = oracle.getLatestPrice();
+        assertTrue(stale);
+        assertEq(price, 0, "no base price => 0");
+    }
 }

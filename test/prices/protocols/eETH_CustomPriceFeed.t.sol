@@ -36,8 +36,18 @@ contract eETH_CustomPriceFeedTest is Test {
         assertEq(price, 3000e8); // eETH ≡ ETH → $3000
     }
 
+    /// @dev ADR 0029: a stale base still prices the asset, flagged stale (was: price 0).
     function test_getLatestPrice_staleWhenBaseStale() public {
         nav.setAssetStale(address(weth), true);
+        eETH_CustomPriceFeed oracle = new eETH_CustomPriceFeed(address(eEth), address(nav), address(weth));
+        (uint256 price, bool stale) = oracle.getLatestPrice();
+        assertTrue(stale);
+        assertEq(price, 3000e8, "priced off the last (stale) base price");
+    }
+
+    /// @dev A base with no usable price at all is the structural case that still returns (0, true).
+    function test_getLatestPrice_zeroWhenBaseUnpriced() public {
+        nav.setAssetPrice(address(weth), 0, 8, true);
         eETH_CustomPriceFeed oracle = new eETH_CustomPriceFeed(address(eEth), address(nav), address(weth));
         (uint256 price, bool stale) = oracle.getLatestPrice();
         assertTrue(stale);

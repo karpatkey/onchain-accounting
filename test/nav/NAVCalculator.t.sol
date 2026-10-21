@@ -663,6 +663,10 @@ contract NAVCalculatorTest is SuperTest {
 
         INAVCalculator.PriceFeedData memory priceFeed = nav.getPriceData(address(usdc));
         assertTrue(priceFeed.stale);
+        // ADR 0029: the stale feed still supplies its last price, and is reported as the winner.
+        assertEq(priceFeed.price, 1, "stale feed keeps its last price");
+        assertEq(priceFeed.priceFeed, address(staleAdapter));
+        assertEq(priceFeed.healthyFeedCount, 0);
     }
 
     function test_getPriceData_sequencerDown() public {
@@ -1753,18 +1757,23 @@ contract NAVCalculatorTest is SuperTest {
         INAVCalculator.NAV memory r = nav.getAccountNav(safe, address(0));
         assertTrue(r.stalePriceAssets.length > 0);
         assertEq(r.stalePriceAssets[0].asset, address(usdc));
+        // ADR 0029: the stale asset is valued at its last price (1 USDC x raw price 1 at 8 decimals = 1), not 0.
+        assertEq(r.value, 1, "stale asset valued at its last-known price");
 
         INAVCalculator.Position[] memory positions = nav.getAccountPositions(safe, address(0));
         INAVCalculator.NAV memory navTotal = nav.getAccountNav(safe, address(0));
         assertEq(navTotal.stalePriceAssets.length, 1);
         assertEq(navTotal.stalePriceAssets[0].asset, address(usdc));
 
-        // All positions for stale asset should be marked stale
+        // All positions for stale asset should be marked stale, and still carry the last price and value.
         for (uint256 i = 0; i < positions.length; i++) {
             if (positions[i].balanceAsset.asset == address(usdc)) {
                 assertTrue(positions[i].stale, "Position not marked stale");
+                assertEq(positions[i].price, 1, "stale position keeps its last price");
+                assertEq(positions[i].value, 1, "stale position keeps its value");
             }
         }
+        assertEq(sumPositionValues(positions), navTotal.value, "sum of positions == NAV");
     }
 
     // Test 20: getAccountPositions_assetWithoutPriceFeed
@@ -2283,6 +2292,241 @@ contract NAVCalculatorTest is SuperTest {
 
         // Should be very cheap (just helper call + early return)
         assertTrue(gasUsed < 100000, "Empty account should be very cheap");
+    }
+
+    // ============================================
+    // ADR 0029 — staleness flags, it never changes the value
+    // ============================================
+    //
+    // DAI is the only SuperTest asset with a finite heartbeat (86,400 s); USDC, WETH and native ETH use
+    // type(uint256).max. So warping 2 days makes DAI usable-stale (age < MAX_STALE_PRICE_AGE), and warping past
+    // MAX_STALE_PRICE_AGE makes it UNUSABLE, leaving every other asset fresh.
+
+    function _wireAdapter(address asset, uint256 amount, bool debt) internal returns (Mock_CustomBalanceAdapter a) {
+        a = new Mock_CustomBalanceAdapter();
+        address[] memory assets = new address[](1);
+        assets[0] = asset;
+        a.setUnderlyingAssetsSupported(assets);
+        a.setBalance(asset, safe, amount, debt);
+        vm.prank(navCalculatorManager);
+        nav.addBalanceAdapters(aa(address(a)));
+    }
+
+    function _hasAsset(INAVCalculator.Asset[] memory list, address asset) internal pure returns (bool) {
+        for (uint256 i = 0; i < list.length; i++) {
+            if (list[i].asset == asset) return true;
+        }
+        return false;
+    }
+
+    function _staleDai() internal {
+        vm.warp(block.timestamp + 2 days);
+        assertTrue(nav.getPriceData(address(dai)).stale, "precondition: DAI stale");
+        assertEq(nav.getPriceData(address(dai)).price, 100_000_000, "precondition: DAI still priced at $1");
+    }
+
+    function _unpriceableDai() internal {
+        vm.warp(block.timestamp + MAX_STALE_PRICE_AGE + 1);
+        assertEq(nav.getPriceData(address(dai)).price, 0, "precondition: DAI has no usable price");
+    }
+
+    /// @dev Test 1 — a STALE non-USD quote converts at its last price: `value` stays in QUOTE units (here DAI, 18
+    ///      decimals), `quoteAssetStale` is set on the NAV and on every position. Was: value silently in USD.
+    function test_staleQuote_valueStaysInQuoteUnits() public {
+        usdc.mint(safe, 1000e6); // $1,000
+        INAVCalculator.NAV memory fresh = nav.getAccountNav(safe, address(dai));
+        assertFalse(fresh.quoteAssetStale);
+        assertEq(fresh.value, 1000e18, "control: $1,000 = 1,000 DAI");
+
+        _staleDai();
+        INAVCalculator.NAV memory r = nav.getAccountNav(safe, address(dai));
+        assertTrue(r.quoteAssetStale, "quote is stale");
+        assertEq(r.quoteAsset.asset, address(dai));
+        assertEq(r.value, 1000e18, "still 1,000 DAI (quote units), not 1000e8 USD");
+        assertFalse(_hasAsset(r.stalePriceAssets, address(dai)), "DAI is the quote, not a held asset");
+
+        INAVCalculator.Position[] memory ps = nav.getAccountPositions(safe, address(dai));
+        assertEq(ps.length, 1);
+        assertTrue(ps[0].quoteAssetStale);
+        assertEq(ps[0].value, 1000e18);
+        assertEq(sumPositionValues(ps), r.value);
+
+        INAVCalculator.VerboseNAV memory v = nav.getAccountNavVerbose(safe, address(dai));
+        assertEq(v.nav.value, 1000e18);
+        assertTrue(v.nav.quoteAssetStale);
+
+        (int256 cv, bool cvQuoteStale) = nav.calculateValue(_addrs(address(usdc)), _amts(1000e6), address(dai));
+        assertEq(cv, 1000e18, "calculateValue converts at the stale quote price too");
+        assertTrue(cvQuoteStale);
+    }
+
+    /// @dev Test 2 — a STALE debt still subtracts (was: it vanished, over-reporting the account).
+    function test_staleDebt_stillSubtracts() public {
+        usdc.mint(safe, 1000e6); // +$1,000 (fresh)
+        _wireAdapter(address(dai), 300e18, true); // -$300 (DAI debt)
+        assertEq(nav.getAccountNav(safe, address(0)).value, 700e8, "control: fresh NAV = $700");
+
+        _staleDai();
+        INAVCalculator.NAV memory r = nav.getAccountNav(safe, address(0));
+        assertTrue(_hasAsset(r.stalePriceAssets, address(dai)), "DAI flagged stale");
+        assertEq(r.value, 700e8, "the stale debt still lowers the NAV by its last-known value");
+
+        INAVCalculator.Position[] memory ps = nav.getAccountPositions(safe, address(0));
+        assertEq(sumPositionValues(ps), r.value, "sum of positions == NAV");
+        bool sawDebt;
+        for (uint256 i = 0; i < ps.length; i++) {
+            if (ps[i].balanceAsset.asset == address(dai)) {
+                assertTrue(ps[i].isDebt);
+                assertTrue(ps[i].stale);
+                assertEq(ps[i].value, -300e8, "stale debt keeps its (negative) value");
+                sawDebt = true;
+            }
+        }
+        assertTrue(sawDebt);
+    }
+
+    /// @dev Test 4 — no usable answer at all (every feed past the cap): price 0, stale, listed, healthy 0, and
+    ///      `getPriceData` falls back to feed 0's config. The asset contributes 0.
+    function test_noUsableAnswer_pricesAtZeroAndListed() public {
+        usdc.mint(safe, 1000e6);
+        dai.mint(safe, 500e18);
+        _unpriceableDai();
+
+        INAVCalculator.PriceFeedData memory pd = nav.getPriceData(address(dai));
+        assertEq(pd.price, 0);
+        assertTrue(pd.stale);
+        assertEq(pd.healthyFeedCount, 0);
+        assertEq(pd.priceFeed, address(daiAdapter), "feed 0's config when nothing is usable");
+
+        (int256 price,, bool stale,) = nav.latestPrice(address(dai));
+        assertEq(price, 0);
+        assertTrue(stale);
+
+        INAVCalculator.NAV memory r = nav.getAccountNav(safe, address(0));
+        assertTrue(_hasAsset(r.stalePriceAssets, address(dai)));
+        assertEq(r.value, 1000e8, "an unusable asset contributes 0");
+        assertEq(sumPositionValues(nav.getAccountPositions(safe, address(0))), r.value);
+    }
+
+    function _addrs(address a) internal pure returns (address[] memory out) {
+        out = new address[](1);
+        out[0] = a;
+    }
+
+    function _amts(uint256 a) internal pure returns (uint256[] memory out) {
+        out = new uint256[](1);
+        out[0] = a;
+    }
+
+    /// @dev Test 5 — a non-USD quote with NO usable price reverts `QuoteAssetUnpriceable(quote)` on every entrypoint
+    ///      that converts into it; the USD quote is unaffected.
+    function test_quoteAssetUnpriceable_revertsOnEveryEntrypoint() public {
+        usdc.mint(safe, 1000e6);
+        _unpriceableDai();
+        bytes memory err = abi.encodeWithSelector(INAVCalculator.QuoteAssetUnpriceable.selector, address(dai));
+        address[] memory all = nav.getAllAdapters(); // hoisted: expectRevert binds to the NEXT call
+
+        vm.expectRevert(err);
+        nav.getAccountNav(safe, address(dai));
+        vm.expectRevert(err);
+        nav.getAccountNavVerbose(safe, address(dai));
+        vm.expectRevert(err);
+        nav.getAccountPositions(safe, address(dai));
+        vm.expectRevert(err);
+        nav.getAccountPositionsForAsset(safe, address(usdc), address(dai));
+        vm.expectRevert(err);
+        nav.getAccountPositionsVerbose(safe, address(dai));
+        vm.expectRevert(err);
+        nav.getAccountPositionsForAssetVerbose(safe, address(usdc), address(dai));
+        vm.expectRevert(err);
+        nav.getAccountNavForAdapters(safe, address(dai), all);
+        vm.expectRevert(err);
+        nav.calculateValue(_addrs(address(usdc)), _amts(1000e6), address(dai));
+
+        // USD is unaffected.
+        assertEq(nav.getAccountNav(safe, address(0)).value, 1000e8);
+        assertEq(nav.getAccountPositions(safe, address(0)).length, 1);
+        assertEq(nav.getAccountNavForAdapters(safe, address(0), all).value, 1000e8);
+        (int256 cv,) = nav.calculateValue(_addrs(address(usdc)), _amts(1000e6), address(0));
+        assertEq(cv, 1000e8);
+
+        // A different, priced quote is unaffected too.
+        assertGt(nav.getAccountNav(safe, nav.NATIVE_ADDRESS()).value, 0);
+    }
+
+    /// @dev Test 5 (asymmetry) — with an ASSET FILTER, `computeAccountPositions` returns [] BEFORE reading the quote
+    ///      when the account holds none of that asset, so `getAccountPositionsForAsset(Verbose)` does not revert there.
+    ///      Every unfiltered read (positions or NAV) reads the quote and reverts, even for an empty account.
+    function test_quoteAssetUnpriceable_emptyPositionsAsymmetry() public {
+        usdc.mint(safe, 1000e6); // safe holds USDC only
+        address empty = makeAddr("emptyAccount");
+        _unpriceableDai();
+        bytes memory err = abi.encodeWithSelector(INAVCalculator.QuoteAssetUnpriceable.selector, address(dai));
+
+        assertEq(nav.getAccountPositionsForAsset(safe, address(weth), address(dai)).length, 0, "no WETH: [] not revert");
+        assertEq(nav.getAccountPositionsForAssetVerbose(safe, address(weth), address(dai)).length, 0);
+        assertEq(nav.getAccountPositionsForAsset(empty, address(usdc), address(dai)).length, 0);
+
+        vm.expectRevert(err);
+        nav.getAccountPositionsForAsset(safe, address(usdc), address(dai)); // holds USDC -> reads the quote
+        vm.expectRevert(err);
+        nav.getAccountPositions(empty, address(dai)); // unfiltered: reads the quote even when empty
+        vm.expectRevert(err);
+        nav.getAccountNav(empty, address(dai));
+        vm.expectRevert(err);
+        nav.getAccountNavVerbose(empty, address(dai));
+    }
+
+    /// @dev Test 7 — `getPriceData` reports the STALE WINNER's feed, price, updatedAt and heartbeat (not feed 0's).
+    function test_getPriceData_reportsStaleWinner() public {
+        Mock_PriceOracleChainlink daiFeed2 = new Mock_PriceOracleChainlink("DAI-2", 99_000_000, 8);
+        vm.prank(navCalculatorManager);
+        nav.addOrModifyPriceFeed(address(dai), address(daiFeed2), IPrices.PriceType.Chainlink, 43_200);
+        uint256 t0 = block.timestamp;
+        daiFeed2.setUpdatedAt(t0 + 1 hours); // newer than daiAdapter (updatedAt ~t0 - setup)
+        vm.warp(t0 + 3 days); // both past their heartbeats, both younger than the cap
+
+        INAVCalculator.PriceFeedData memory pd = nav.getPriceData(address(dai));
+        assertTrue(pd.stale);
+        assertEq(pd.healthyFeedCount, 0);
+        assertEq(pd.priceFeed, address(daiFeed2), "the freshest stale feed is reported");
+        assertEq(pd.price, 99_000_000);
+        assertEq(pd.updatedAt, t0 + 1 hours, "its own updatedAt");
+        assertEq(pd.chainlinkHeartbeat, 43_200, "its own heartbeat, not feed 0's 86,400");
+    }
+
+    /// @dev Test 10 — parity with a stale asset: Σ positions == NAV == verbose NAV == full-registry slice; and the
+    ///      stale value equals the value just before the feed went stale (staleness never changes the value).
+    function test_parity_staleAsset() public {
+        usdc.mint(safe, 1000e6);
+        weth.mint(safe, 2e18);
+        dai.mint(safe, 400e18);
+        _wireAdapter(address(dai), 150e18, true);
+        int256 freshValue = nav.getAccountNav(safe, address(0)).value;
+
+        _staleDai();
+        INAVCalculator.NAV memory r = nav.getAccountNav(safe, address(0));
+        assertEq(r.stalePriceAssets.length, 1);
+        assertEq(r.stalePriceAssets[0].asset, address(dai));
+        assertEq(r.value, freshValue, "a stale price never changes the value");
+        assertEq(sumPositionValues(nav.getAccountPositions(safe, address(0))), r.value, "sum(positions) == NAV");
+        assertEq(nav.getAccountNavVerbose(safe, address(0)).nav.value, r.value, "verbose == NAV");
+        assertEq(nav.getAccountNavForAdapters(safe, address(0), nav.getAllAdapters()).value, r.value, "slice == NAV");
+    }
+
+    /// @dev L3 — `healthCheck` lists a usable-stale asset, and `calculateValue` (which has no per-asset staleness
+    ///      output) values it at its last price.
+    function test_healthCheckAndCalculateValue_staleAsset() public {
+        _staleDai();
+        (, address[] memory stale,) = nav.healthCheck();
+        bool listed;
+        for (uint256 i = 0; i < stale.length; i++) {
+            if (stale[i] == address(dai)) listed = true;
+        }
+        assertTrue(listed, "healthCheck lists the stale asset");
+        (int256 v, bool quoteStale) = nav.calculateValue(_addrs(address(dai)), _amts(100e18), address(0));
+        assertEq(v, 100e8, "valued at the last price");
+        assertFalse(quoteStale, "USD quote is never stale");
     }
 }
 

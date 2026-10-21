@@ -380,6 +380,23 @@ contract NAVCalculatorHandlerTest is SuperTest {
         }
     }
 
+    /// @notice Invariant (ADR 0029): `stale` ⇒ `healthyFeedCount == 0`; not stale ⇒ ≥ 1 healthy feed and a price > 0.
+    ///         (Feedless assets revert `getPriceData` and are skipped.)
+    function invariant_staleImpliesNoHealthyFeed() external view {
+        INAVCalculator.Asset[] memory registered = nav.getRegisteredAssets();
+        for (uint256 i = 0; i < registered.length; i++) {
+            try nav.getPriceData(registered[i].asset) returns (INAVCalculator.PriceFeedData memory pd) {
+                if (pd.sequencerDown) continue;
+                if (pd.stale) {
+                    assertEq(pd.healthyFeedCount, 0, "stale => healthyFeedCount == 0");
+                } else {
+                    assertGe(pd.healthyFeedCount, 1, "fresh => healthyFeedCount >= 1");
+                    assertGt(pd.price, 0, "fresh => price > 0");
+                }
+            } catch {}
+        }
+    }
+
     /// @notice Invariant: ERC20DefaultBalanceAdapter always registered
     function invariant_erc20DefaultBalanceAdapterAlwaysRegistered() external view {
         address[] memory allAdapters = nav.getAllAdapters();

@@ -73,7 +73,9 @@ abstract contract TwoFeedChainlinkPriceFeed is ICustomPriceFeed, INavSourcedPric
         _rateUnit = 10 ** uint256(AggregatorV3Interface(rateFeed_).decimals());
     }
 
-    /// @notice Reads the rate feed + the NAV base/USD, applies staleness, and composes `rate · base8 / 10**rateDecimals`.
+    /// @notice Reads the rate feed + the NAV base/USD and composes `rate · base8 / 10**rateDecimals`. A stale base or
+    ///         a rate leg past `RATE_HEARTBEAT` still prices the asset, flagged stale (ADR 0029); only a missing base
+    ///         price or a non-positive rate returns 0.
     function _compute()
         internal
         view
@@ -97,12 +99,10 @@ abstract contract TwoFeedChainlinkPriceFeed is ICustomPriceFeed, INavSourcedPric
         // Report the more conservative (older) updatedAt across the rate leg and the NAV base read.
         updatedAt = rateUpdatedAt <= baseUpdatedAt ? rateUpdatedAt : baseUpdatedAt;
 
-        if (baseStale || rate <= 0) return (0, true, roundId, startedAt, updatedAt, answeredInRound);
+        if (base8 == 0 || rate <= 0) return (0, true, roundId, startedAt, updatedAt, answeredInRound);
 
         uint256 effRate = rateUpdatedAt > block.timestamp ? block.timestamp : rateUpdatedAt;
-        if (block.timestamp - effRate >= RATE_HEARTBEAT) {
-            return (0, true, roundId, startedAt, updatedAt, answeredInRound);
-        }
+        stale = baseStale || block.timestamp - effRate >= RATE_HEARTBEAT;
 
         // asset/USD = (asset/base) * (base/USD) / 10^rateDecimals
         price = uint256(rate).mulDiv(base8, _rateUnit, Math.Rounding.Floor);

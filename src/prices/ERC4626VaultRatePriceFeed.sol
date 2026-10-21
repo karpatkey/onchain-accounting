@@ -75,7 +75,8 @@ abstract contract ERC4626VaultRatePriceFeed is ICustomPriceFeed, INavSourcedPric
         _assetUnit = 10 ** uint256(IERC20Metadata(underlying).decimals());
     }
 
-    /// @notice Reads the NAV base/USD, applies staleness, and scales it by the vault's live per-share rate.
+    /// @notice Reads the NAV base/USD and scales it by the vault's live per-share rate. A stale base still prices the
+    ///         share, flagged stale (ADR 0029); only a missing base price or a zero share rate returns 0.
     function _compute()
         internal
         view
@@ -92,10 +93,11 @@ abstract contract ERC4626VaultRatePriceFeed is ICustomPriceFeed, INavSourcedPric
         // all-base-feeds-stale only (L2 sequencer-down alone does NOT — NavBaseUsdLib un-folds pd.sequencerDown; ADR 0019). roundId/startedAt/answeredInRound have no meaning for a NAV read.
         uint256 base8;
         (base8, stale, updatedAt) = NavBaseUsdLib.baseUsd(NAV, BASE_ASSET);
-        if (stale) return (0, true, 0, 0, updatedAt, 0);
+        if (base8 == 0) return (0, true, 0, 0, updatedAt, 0);
         // convertToAssets(1 whole share) is denominated in the underlying asset's decimals, so divide by _assetUnit
         // (10**assetDecimals), not _shareUnit — the two differ when the vault uses a decimals offset.
         uint256 assetsPerShare = IERC4626(VAULT).convertToAssets(_shareUnit);
+        if (assetsPerShare == 0) return (0, true, 0, 0, updatedAt, 0);
         price = assetsPerShare.mulDiv(base8, _assetUnit, Math.Rounding.Floor);
     }
 

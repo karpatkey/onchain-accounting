@@ -129,9 +129,11 @@ contract osETH_CrossRateCustomPriceFeedForkTest is TestEnvConfigurator {
     ///      Mocking only the rate feed's `updatedAt` keeps the base leg fresh, so `stale == true` here can only have
     ///      come from the rate gate. The two cases straddle the boundary (`>=` in `_compute`).
     function test_staleRateLegAloneMarksPriceStale() public {
+        (uint256 freshPrice,) = oracle.getLatestPrice();
+        assertGt(freshPrice, 0, "control: priced while fresh");
         _mockRateUpdatedAt(block.timestamp - configuredHeartbeat);
         (uint256 price, bool stale) = oracle.getLatestPrice();
-        assertEq(price, 0, "Stale rate leg returns 0");
+        assertEq(price, freshPrice, "a stale leg keeps the last price, flagged stale (ADR 0029)");
         assertTrue(stale, "Rate leg exactly at its heartbeat is stale (>= comparison)");
     }
 

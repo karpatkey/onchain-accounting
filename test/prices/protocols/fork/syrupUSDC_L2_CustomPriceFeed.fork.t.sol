@@ -56,6 +56,8 @@ contract syrupUSDC_L2_CustomPriceFeedForkTest_Arbitrum is TestEnvConfigurator {
     ///      Mutation-verified: deleting the rate-heartbeat gate in `TwoFeedChainlinkPriceFeed._compute` makes
     ///      this FAIL. Passing unmutated is not evidence.
     function test_getLatestPriceStale() public {
+        (uint256 freshPrice,) = oracle.getLatestPrice();
+        assertGt(freshPrice, 0, "control: priced while fresh");
         address baseFeed = INAVCalculator(NAV).getPriceData(BASE).priceFeed;
         (uint80 rid, int256 ans,,, uint80 air) = AggregatorV3Interface(baseFeed).latestRoundData();
 
@@ -73,7 +75,7 @@ contract syrupUSDC_L2_CustomPriceFeedForkTest_Arbitrum is TestEnvConfigurator {
         assertEq(INAVCalculator(NAV).getPriceData(BASE).stale, false, "base must be fresh via the real NAV path");
 
         (uint256 price, bool stale) = oracle.getLatestPrice();
-        assertEq(price, 0, "Stale price returns 0 (I-1)");
+        assertEq(price, freshPrice, "a stale leg keeps the last price, flagged stale (ADR 0029)");
         assertEq(stale, true, "RATE leg past its heartbeat must mark it stale while the base is fresh");
     }
 

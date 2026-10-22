@@ -61,8 +61,10 @@ most one of them:
     as a `rate leg (...)` row.
   * the NAV-SIDE heartbeat, `priceFeeds[i].heartbeat` on the nav-config entry, applied by
     PriceFeedLib (`block.timestamp - effectiveTime >= cfg.chainlinkHeartbeat` -> the feed is no longer fresh;
-    if no primary is fresh the asset is flagged stale and keeps its last usable price, ADR 0029). NOT CHECKED here. It is gated against the same
-    provider cadence because a custom feed propagates its rate leg's timestamp, `min(rate, base)`.
+    if no primary is fresh the asset is flagged stale and keeps its last usable price, ADR 0029). NOT CHECKED
+    here against the declared cadence. (It IS checked against the ADR 0029 7-day cap, by `stale_cap_findings`,
+    which scans every primary.) It is gated against the same provider cadence because a custom feed propagates
+    its rate leg's timestamp, `min(rate, base)`.
 
 Concretely, the named-custom nav entries across the configured chains split two ways:
   * those with a Chainlink rate leg -> their CONSTRUCTOR heartbeat is checked, their NAV-SIDE heartbeat is NOT.
@@ -754,7 +756,8 @@ def stale_cap_findings(chain_id: str) -> list[tuple[str, str]]:
                 # An absent heartbeat defaults to 3600 on the deploy path, so only a PRESENT unreadable one is a
                 # gap. Reported for named Custom rows only: `registered_feeds` omits them, so nothing else would
                 # surface it, while an addressed row's bad heartbeat is already a `_row_findings` WARN.
-                if raw is not None and not fd.get("address"):
+                # A present `null` counts too: the deploy path's `vm.keyExists` is true for it and the read reverts.
+                if "heartbeat" in fd and not fd.get("address"):
                     out.append((WARN, f"chain {chain_id} asset '{sym}' priceFeeds[{i}] {ident}: heartbeat "
                                       f"{raw!r} is not a non-negative integer, so it is NOT checked against "
                                       f"MAX_STALE_PRICE_AGE."))
@@ -1144,6 +1147,7 @@ def self_test() -> int:
         "JUNK": {"priceFeeds": [{"type": "Custom", "feed": "j", "heartbeat": "7d"}]},
         "ZEROS": {"priceFeeds": [{"type": "Custom", "feed": "k", "heartbeat": "0700000"}]},
         "NEG": {"priceFeeds": [{"type": "Custom", "feed": "n", "heartbeat": "-1"}]},
+        "NULL": {"priceFeeds": [{"type": "Custom", "feed": "u", "heartbeat": None}]},
         "ADDRJUNK": {"priceFeeds": [{"address": "0xBBB0000000000000000000000000000000000004",
                                      "type": "Chainlink", "heartbeat": "7d"}]},
         "$comment": "top-level note keys are skipped",
@@ -1175,9 +1179,10 @@ def self_test() -> int:
         ok = ok and good
         print(f"  [{'PASS' if good else 'FAIL'}] {label}")
     _junk = (sum("asset 'JUNK'" in m for m in _cap_warn) == 1 and sum("asset 'NEG'" in m for m in _cap_warn) == 1
+             and sum("asset 'NULL'" in m for m in _cap_warn) == 1
              and not any("asset 'ADDRJUNK'" in m for m in _cap_warn))
     ok = ok and _junk
-    print(f"  [{'PASS' if _junk else 'FAIL'}] an unparseable or negative named-Custom heartbeat is ONE cap WARN; "
+    print(f"  [{'PASS' if _junk else 'FAIL'}] an unparseable, negative or null named-Custom heartbeat is ONE cap WARN; "
           f"an addressed one is left to the existing row WARN (no double report)")
     _wired = len(_via_findings) == 5
     ok = ok and _wired

@@ -912,6 +912,32 @@ contract PricesTest is Test {
         assertEq(healthy, 0);
     }
 
+    /// @dev The 7-day cap on a CUSTOM feed with a real timestamp: a self-reported stale Custom feed is aged by its own
+    ///      `latestRoundData().updatedAt` (for TwoFeed that is `min(rate, base)`), so it stays usable one second
+    ///      below the cap and is unusable at it — even under the `type(uint256).max` heartbeat, because a feed that
+    ///      reports itself stale is never fresh.
+    function test_staleCap_customRealTimestamp_boundary() public {
+        vm.warp(30 days);
+        Mock_CustomPriceFeedSettable custom = new Mock_CustomPriceFeedSettable(buidl, 888);
+        PricesHarness h = new PricesHarness(address(0));
+        h.setPriceFeed(buidl, address(custom), type(uint256).max, IPrices.PriceType.Custom);
+        custom.setStale(true);
+
+        custom.setUpdatedAt(block.timestamp - (MAX_STALE_PRICE_AGE - 1));
+        (int256 price,, bool stale, uint256 winnerIdx, uint256 healthy) = h.selectFeedFull(buidl);
+        assertEq(price, 888, "self-stale Custom, 7d - 1s old: still priced");
+        assertTrue(stale);
+        assertEq(winnerIdx, 0);
+        assertEq(healthy, 0);
+
+        custom.setUpdatedAt(block.timestamp - MAX_STALE_PRICE_AGE);
+        (price,, stale, winnerIdx, healthy) = h.selectFeedFull(buidl);
+        assertEq(price, 0, "self-stale Custom, 7d old: unusable");
+        assertTrue(stale);
+        assertEq(winnerIdx, type(uint256).max);
+        assertEq(healthy, 0);
+    }
+
     /// @dev Test 6c — the `type(uint256).max` "gate disabled" heartbeat: a feed older than the cap is still FRESH,
     ///      because the cap applies only to non-fresh feeds (and cannot overflow on the sentinel).
     function test_staleCap_sentinelHeartbeat_neverStale() public {

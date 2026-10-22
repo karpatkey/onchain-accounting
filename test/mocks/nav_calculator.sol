@@ -360,14 +360,15 @@ contract Mock_NAVCalculator is INAVCalculator {
         // "no usable feed at all" is emulated by setting price 0. Sequencer-down never changes the price either —
         // `buildPriceData` only ORs it into `stale` — so fold it into the returned flag at read time.
         // `healthyFeedCount` counts FRESH feeds and is independent of the sequencer: 0 iff the stored feed is stale.
-        pd.healthyFeedCount = pd.stale ? 0 : 1;
+        // A never-priced (price 0) asset has no usable feed, so no healthy one either — as in production.
+        pd.healthyFeedCount = (pd.stale || pd.price <= 0) ? 0 : 1;
         pd.stale = pd.stale || pd.sequencerDown;
     }
 
     function getPriceDataNoDivergence(address asset) external view override returns (PriceFeedData memory pd) {
         if (_priceReverts[asset]) revert PriceFeedNotSet(asset);
         pd = _priceData[asset];
-        pd.healthyFeedCount = pd.stale ? 0 : 1; // see getPriceData
+        pd.healthyFeedCount = (pd.stale || pd.price <= 0) ? 0 : 1; // see getPriceData
         pd.stale = pd.stale || pd.sequencerDown; // price kept when stale (ADR 0029), see getPriceData
         // No-divergence variant: leave the divergence signal at defaults (mirrors buildPriceData(..., false)).
         pd.irregular = false;

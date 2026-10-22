@@ -272,7 +272,11 @@ interface INAVCalculator is IBalances {
     /// @param value Total portfolio value in quoteAsset (can be negative if net debt).
     /// @param quoteAsset Quote currency; address(0) denotes USD.
     /// @param timestamp Block timestamp of the reading.
-    /// @param stalePriceAssets Assets whose prices were stale at query time.
+    /// @param stalePriceAssets Assets whose prices were stale at query time. Since ADR 0029 a listed asset is
+    ///        normally still valued, at its freshest usable stale price; it contributed 0 only when NO feed was usable
+    ///        (no feed registered, every read failed, or the last update is at least MAX_STALE_PRICE_AGE old). The two
+    ///        cases share this list: tell them apart by the position's `price` (or `getPriceData(asset).price`), which
+    ///        is 0 only in the latter.
     /// @param irregularPriceAssets Assets whose primary price diverged from their monitor feeds beyond tolerance
     ///        (or, for stablecoins, from the $1 peg) at query time. A pricing-quality signal, not a staleness flag —
     ///        `value` is still computed from the primary prices. Consumers decide how to react.
@@ -301,10 +305,12 @@ interface INAVCalculator is IBalances {
     ///        Assets whose own primary is unusable are also excluded — no usable primary feed, sequencer down, or a
     ///        primary whose 8-decimal normalisation degenerates to zero. In all of those the check was suppressed by
     ///        the PRIMARY rather than by the monitors, and naming the monitors would point an operator at the wrong
-    ///        contract. A stale-but-usable primary is still checked (ADR 0029), so such an asset can appear here AND
-    ///        in `stalePriceAssets`. Stablecoins with a non-zero `pegToleranceBps`
-    ///        may appear here and still be peg-checked — the peg guard is monitor-independent — so this flags the
-    ///        loss of the *divergence* check, not necessarily of all checks.
+    ///        contract. A stale primary is excluded too, for every asset: it is still priced and divergence-checked
+    ///        (ADR 0029), but the Custom monitors share its base and go stale with it, and `stalePriceAssets` already
+    ///        reports that event. An independent direct monitor that is also dead while the primary is stale shows
+    ///        here only once the primary is fresh again (an accepted trade-off against hourly noise). Stablecoins
+    ///        with a non-zero `pegToleranceBps` may appear here and still be peg-checked — the peg guard is
+    ///        monitor-independent — so this flags the loss of the *divergence* check, not necessarily of all checks.
     ///
     ///        **Scope: assets this account holds positions in**, like `stalePriceAssets` and `irregularPriceAssets`.
     ///        It is built from the assets the account's positions touched, NOT from the whole registry, so absence
@@ -978,7 +984,9 @@ interface INAVCalculator is IBalances {
     /// @return irregular True if divergenceBps exceeds the divergence tolerance, or (stablecoins) the primary
     ///         deviates from $1 beyond the peg tolerance.
     /// @return monitorFeedCount Number of healthy monitor feeds that contributed.
-    /// @return primaryStale True if the primary feed is stale (divergence undefined).
+    /// @return primaryStale True if no primary feed is fresh or the L2 sequencer is down. Divergence is still computed
+    ///         on a stale-but-usable primary (ADR 0029); it is undefined only when the sequencer is down or the primary
+    ///         price is 0.
     /// @return primaryAboveMonitors True if the primary sits above the monitor median (a premium); false if
     ///         below/equal — for a claim asset, below is the depeg direction. Meaningful only when
     ///         monitorFeedCount > 0.

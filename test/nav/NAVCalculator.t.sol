@@ -2355,6 +2355,10 @@ contract NAVCalculatorTest is SuperTest {
         assertEq(v.nav.value, 1000e18);
         assertTrue(v.nav.quoteAssetStale);
 
+        INAVCalculator.PartialNAV memory slice = nav.getAccountNavForAdapters(safe, address(dai), nav.getAllAdapters());
+        assertEq(slice.value, 1000e18, "the full slice also stays in quote units");
+        assertTrue(slice.quoteAssetStale);
+
         (int256 cv, bool cvQuoteStale) = nav.calculateValue(_addrs(address(usdc)), _amts(1000e6), address(dai));
         assertEq(cv, 1000e18, "calculateValue converts at the stale quote price too");
         assertTrue(cvQuoteStale);

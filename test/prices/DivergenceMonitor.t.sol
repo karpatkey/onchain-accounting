@@ -521,9 +521,10 @@ contract DivergenceMonitorTest is SuperTest {
         assertEq(r.value, 1000e8, "valued at the stale $1");
     }
 
-    /// @dev ADR 0029: `monitorsUnhealthy` can now be set for a STALE-but-priced primary — the check would have run,
-    ///      and only the monitors' silence stopped it. So a stale DAI whose only monitor is dead is in BOTH arrays.
-    function test_stalePricedPrimaryWithDeadMonitors_isListed() public {
+    /// @dev A STALE-but-priced primary with dead monitors is NOT in `monitorsUnhealthy`: the custom monitors share the
+    ///      primary's base and go stale with it (roughly hourly at the heartbeat edge), and `stalePriceAssets` already
+    ///      reports that event. Blaming the monitors would page an operator for every base-feed holdover.
+    function test_stalePricedPrimaryWithDeadMonitors_notListedHere() public {
         Mock_CustomPriceFeedStaled deadMonitor = new Mock_CustomPriceFeedStaled("DAI-dead", address(dai), 1e8, 8);
         vm.startPrank(navCalculatorManager);
         nav.setDivergenceTolerance(address(dai), 100);
@@ -533,8 +534,12 @@ contract DivergenceMonitorTest is SuperTest {
         vm.warp(block.timestamp + 2 days);
 
         INAVCalculator.NAV memory r = nav.getAccountNav(address(safe), address(0));
-        assertTrue(_contains(r.stalePriceAssets, address(dai)));
-        assertTrue(_contains(r.monitorsUnhealthyPriceAssets, address(dai)), "stale-but-priced: monitors blamed");
+        assertTrue(_contains(r.stalePriceAssets, address(dai)), "precondition: DAI flagged stale");
+        assertGt(nav.getPriceData(address(dai)).price, 0, "precondition: DAI still priced (holdover)");
+        assertFalse(
+            _contains(r.monitorsUnhealthyPriceAssets, address(dai)),
+            "a stale primary's dead monitors are not blamed: stalePriceAssets already reports the event"
+        );
     }
 
     /// @dev An UNUSABLE primary (past MAX_STALE_PRICE_AGE) with dead monitors is NOT blamed on the monitors: the

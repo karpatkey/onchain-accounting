@@ -43,9 +43,15 @@ Three further rules:
    computes its price from it and reports `stale = true`. Structural failures (a zero rate, a non-positive
    answer, a decimals or band violation) still return 0.
 
-Divergence keeps working while a price is stale: a usable stale primary is still compared against the fresh
-monitor feeds, so a frozen feed that drifts from the market raises `irregular` alongside `stale`. Only an L2
-sequencer outage suppresses the divergence check, as before.
+Divergence keeps working while a price is stale, as far as the monitors allow: a usable stale primary is still
+compared against every monitor that is fresh, so a frozen feed that drifts from the market raises `irregular`
+alongside `stale`. Only an L2 sequencer outage suppresses the check, as before. This catches a frozen feed only
+where a fresh monitor exists: the configured Custom monitors are NAV-sourced off the same base as their primary,
+so when that base crosses its heartbeat they go stale together and no comparison runs. For the same reason a
+stale primary is not listed in `monitorsUnhealthyPriceAssets` (its monitors are not to blame, and
+`stalePriceAssets` already reports the event). The rule applies to every asset, including those whose monitors
+are independent direct feeds: if such a monitor is also dead while the primary is stale, that surfaces in
+`monitorsUnhealthyPriceAssets` only once the primary is fresh again. An accepted trade-off against hourly noise.
 
 ## Why
 
@@ -75,14 +81,21 @@ of the heartbeat ties that point to a liveness number: registered heartbeats dif
 feeds for the same question ("is this still a fair value?"), and a small multiple would bring back the value cliff
 after a two-hour outage on hourly feeds, which is exactly the case this ADR fixes. A fixed cap is one sentence
 for consumers ("the NAV never uses a price older than 7 days"), cannot overflow on the `type(uint256).max`
-"gate disabled" heartbeat, and exceeds every registered heartbeat (the largest is 90,000 s; Robinhood equity
-feeds register 518,400 s).
+"gate disabled" heartbeat, and exceeds every registered heartbeat (the largest in this repo's configs is 90,000 s;
+Robinhood's equity feeds, configured outside this repo, use 518,400 s — six days — which the rollout must confirm
+on-chain, see `script/deploy/ADR0029_ROLLOUT.md`).
 
 ## Consequences
 
 - **Consumers gate on the flags, not on the value.** Anything that relied on a stale asset dropping to 0 must
   read `stalePriceAssets`, `quoteAssetStale` and `healthyFeedCount` instead. `stale` is the alert key; during a
-  holdover, `irregular` additionally fires if the stale price has drifted from the monitors.
+  holdover, `irregular` additionally fires if the stale price has drifted from a fresh monitor.
+- **`stalePriceAssets` mixes two cases.** A listed asset was normally still valued, at its stale price; it
+  contributed 0 only when no feed was usable at all (every read failed, or the last update is 7 days old). The
+  position's `price` (or `getPriceData(asset).price`) is 0 only in the second case, and that is how to tell them
+  apart. A consumer that alerts on the cliff should alert on `price == 0`, not on the flag alone.
+- **Over-report window, accepted.** During a crash a frozen-but-positive primary is used for up to 7 days; only
+  the `stale` flag (and `irregular`, where a fresh monitor exists) signals it.
 - **A stale debt now lowers the NAV** instead of vanishing.
 - **Callers converting into a non-USD quote must handle `QuoteAssetUnpriceable`**, typically by falling back
   to the USD quote. The revert does not depend on the account holding anything: an unfiltered read of an empty

@@ -406,9 +406,10 @@ jobs:
         #
         # Runs offline against the committed snapshot, so it needs no network and no build.
         run: |
-          for c in 1 10 56 100 137 8453 42161; do
-            python3 script/deploy/preflight/declared_heartbeat_guard.py "$c" || exit 1
-          done
+          # No chain arguments: scope comes from the configs (configured_chain_ids), so a chain added later — e.g.
+          # Arc (5042), missing from the old hardcoded list — is covered by the declared-heartbeat AND the ADR 0029
+          # 7-day cap checks without editing this step.
+          python3 script/deploy/preflight/declared_heartbeat_guard.py
 
       - name: RedStone declared heartbeats match ADR 0025 (real config, not a self-test)
         # WIRED AS A REAL-CONFIG RUN ON PURPOSE. `declared_heartbeat_guard` resolves CHAINLINK feeds only,

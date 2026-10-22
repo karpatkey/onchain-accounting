@@ -342,7 +342,8 @@ library PriceFeedLib {
     }
 
     /// @notice Core divergence computation given an already-selected (8-dec) primary price.
-    /// @dev Reads every monitor feed for `asset`, skips stale/reverting ones (same per-feed gate as selection), and
+    /// @dev Reads every monitor feed for `asset`, skips stale/reverting ones (stricter than primary selection, which
+    ///      keeps a usable stale feed — a monitor must be fresh to vouch for anything; ADR 0029), and
     ///      flags `irregular` on inter-feed divergence (all types) or absolute peg deviation (stablecoins only).
     ///      The inter-feed flag is driven by the WORST single-monitor deviation (max), not an average — so a real
     ///      split can't be masked by two monitors straddling the primary. `monitorMedian` (central tendency) and
@@ -564,8 +565,8 @@ library PriceFeedLib {
 
         priceFeedData.sequencerDown = sequencerDown;
 
-        // Divergence signal vs the asset's monitor feeds. Primary is treated as stale when the feed is stale or
-        // the sequencer is down (either way the primary price is untrustworthy, so divergence is undefined). Skipped
+        // Divergence signal vs the asset's monitor feeds. It still runs on a stale-but-usable primary (ADR 0029); it is
+        // undefined only while the sequencer is down or when no primary feed is usable (price 0). Skipped
         // (fields stay 0/false) when `withDivergence` is false (callers that only need the price — e.g. the
         // NAV-sourced base/USD term for custom feeds — avoid the monitor reads + sort) or the asset has no monitors
         // and no peg tolerance.
@@ -1368,7 +1369,13 @@ library PriceFeedLib {
                 // scaling down, or when scaling up would overflow. In that state `healthyMonitors` is 0 for a reason
                 // that has nothing to do with the monitors, and blaming them would send an operator to the wrong
                 // contract. Not reachable with today's uniformly-8-decimal primaries, but `addFeed` permits others.
-                monitorsUnhealthy = healthyMonitors == 0 && primaryPrice8 > 0 && monitorFeeds[asset].length > 0;
+                //
+                // `!stale`: a stale primary (ADR 0029: still priced, still divergence-checked) is NOT blamed on its
+                // monitors either. The configured Custom monitors are NAV-sourced off the same base as their primary,
+                // so one base feed crossing its heartbeat makes both stale at once — roughly hourly — and flagging the
+                // monitors then would page an operator for an event `stalePriceAssets` already reports.
+                monitorsUnhealthy =
+                    !stale && healthyMonitors == 0 && primaryPrice8 > 0 && monitorFeeds[asset].length > 0;
             }
             priceFeeds[i] = PriceFeedCache({
                 asset: asset,

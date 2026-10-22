@@ -95,7 +95,11 @@ contract NAVCalculatorHandler is Test {
         } else {
             priceDecimals = uint8(bound(priceSeed % 100, 0, maxPriceDecimals));
         }
-        Mock_CustomPriceFeed priceOracle = new Mock_CustomPriceFeed("TOKEN", address(token), price, priceDecimals);
+        // One asset in three gets a self-reported-stale feed, so `invariant_staleImpliesNoHealthyFeed` exercises its
+        // stale branch too (a stale rate-only Custom feed is unusable: price 0, stale, no healthy feed — ADR 0029).
+        Mock_CustomPriceFeed priceOracle = priceSeed % 3 == 0
+            ? Mock_CustomPriceFeed(new Mock_CustomPriceFeedStaled("TOKEN", address(token), price, priceDecimals))
+            : new Mock_CustomPriceFeed("TOKEN", address(token), price, priceDecimals);
         priceOracles.push(priceOracle);
 
         // Register asset

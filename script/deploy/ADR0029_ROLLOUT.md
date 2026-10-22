@@ -10,9 +10,11 @@ rollout is prepared.
   contracts match the tree, as PR #338 did. Merging earlier turns the bytecode-drift gate
   (`.github/workflows/bytecode-drift.yml`, which runs on every push to `main` that touches `src/**`) red on every
   live custom feed, `PriceFeedLib` and the NAV implementation.
-  - **Expected red window:** the drift gate also runs nightly against `main`. Between the first deploy and the merge,
-    `main`'s tree matches neither the new contracts nor (lacking this PR's retired-feed exemption) the retired
-    ones, so that nightly run is red by construction. Read it against the rollout log; it is not a new finding.
+  - **The window between deploy and merge:** the drift gate also runs nightly against `main`, but it audits only the
+    addresses in `main`'s deployment records. Those keep pointing at the old contracts (still deployed, still
+    reproduced by `main`'s tree) until the merge, so the nightly run stays green and does not watch the new
+    contracts yet. A red nightly run in that window is a real finding. Audit the new contracts from the branch
+    (`bytecode_audit.py <chainId>` on this tree) after each chain's deploy.
 - **Redeploy all 50 custom feeds**, not only the 39 primaries. The 11 monitor feeds use the same changed classes
   (`TwoFeedChainlinkPriceFeed` cross-rate feeds), so leaving them in place would keep them permanently drifted.
   - Primaries (39): chain 1 (27) wstETH, eETH, weETH, rETH, ezETH, rsETH, ETHx, osETH, stETHFundamental, lsETH,

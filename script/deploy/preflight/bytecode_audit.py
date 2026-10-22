@@ -494,7 +494,13 @@ def check_retired_registration(chain_id: int, url: str, res: dict) -> None:
         try:
             if not c.is_address(proxy):
                 raise ValueError("no NAVCalculatorProxy in the deployment record")
-            asset = "0x" + c.eth_call(url, e["address"], _sel("underlyingAssetSupported()"))[-40:]
+            word = c.eth_call(url, e["address"], _sel("underlyingAssetSupported()"))
+            # Strict, like verify_step's address reads: exactly one clean, non-zero address word. A short reply or a
+            # catch-all fallback returning junk would otherwise name some other asset, whose empty feed lists would
+            # wrongly pass the exemption.
+            if not (isinstance(word, str) and len(word) == 66 and 0 < int(word, 16) < 2**160):
+                raise ValueError(f"underlyingAssetSupported() returned {word!r}, not one address word")
+            asset = "0x" + word[-40:]
             arg = asset[2:].rjust(64, "0")
             live = _feed_addresses(c.eth_call(url, proxy, _sel("getPriceFeeds(address)") + arg))
             live |= _feed_addresses(c.eth_call(url, proxy, _sel("getMonitorFeeds(address)") + arg))

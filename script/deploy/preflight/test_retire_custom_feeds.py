@@ -62,6 +62,22 @@ class Retire(unittest.TestCase):
         self.assertEqual(arch["wstETH@2026-10-21"], "0x9999999999999999999999999999999999999999")
         self.assertEqual(arch["$wstETH@2026-10-21"], "old")
 
+    def test_same_day_retirements_keep_every_address(self):
+        # Copilot on #354: retiring deployments A, B and C of one key on the same date used to keep only B under
+        # `<key>@<date>` (A was overwritten). Every retired address must survive, in order.
+        a, b, c = "0x" + "a" * 40, "0x" + "b" * 40, "0x" + "c" * 40
+        r = record()
+        for addr in (a, b, c):
+            r["customPriceFeeds"]["wstETH"] = addr
+            r = rcf.apply(r, rcf.plan(r, ["wstETH"]), "retry.", "2026-10-23")
+        arch = r["retiredCustomPriceFeeds"]
+        self.assertEqual(arch["wstETH"], c)
+        self.assertEqual(arch["wstETH@2026-10-23"], a)
+        self.assertEqual(arch["wstETH@2026-10-23#2"], b)
+        self.assertIn("$wstETH@2026-10-23", arch)
+        self.assertIn("$wstETH@2026-10-23#2", arch)
+        self.assertEqual({v for k, v in arch.items() if not k.startswith("$")}, {a, b, c})
+
     def test_cli_dry_run_writes_nothing_and_apply_writes(self):
         with tempfile.TemporaryDirectory() as d:
             p = Path(d) / "1.json"

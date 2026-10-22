@@ -16,7 +16,8 @@ WHAT IT DOES, PER KEY
 ---------------------
 1. Moves the current address to `retiredCustomPriceFeeds.<key>` with a dated `$<key>` note (the record keeps
    every address it ever deployed, the same pattern as the OETH entry). If `<key>` was already retired before,
-   the older entry is kept under `<key>@<date>` rather than overwritten.
+   the older entry is kept under `<key>@<date>` (then `<key>@<date>#2`, `#3`, ... for further retirements on the
+   same date) rather than overwritten. `<date>` is the day it was displaced; its `$` note keeps its own date.
 2. Blanks `customPriceFeeds.<key>` to "" (the key is kept, never deleted).
 
 Refuses: a key that is not in `customPriceFeeds`, a key that is already blank, and any key that names a
@@ -70,15 +71,30 @@ def plan(record: dict, keys: list[str]) -> list[tuple[str, str]]:
     return out
 
 
+def _free_slot(archive: dict, key: str, today: str) -> str:
+    """The first unused dated slot for an older retirement of `key`: `<key>@<today>`, then `<key>@<today>#2`, ...
+
+    The date is the day the older entry was DISPLACED (today), not the day it was retired; its moved `$` note
+    keeps the original "RETIRED <date>". Retiring the same key more than once on one day (a redeploy that is
+    retried) must not overwrite the earlier dated entry, or that deployment's address would vanish.
+    """
+    slot, n = f"{key}@{today}", 1
+    while slot in archive or f"${slot}" in archive:
+        n += 1
+        slot = f"{key}@{today}#{n}"
+    return slot
+
+
 def apply(record: dict, retire: list[tuple[str, str]], reason: str, today: str) -> dict:
     """Return a NEW record with the keys retired. Only customPriceFeeds and retiredCustomPriceFeeds change."""
     new = json.loads(json.dumps(record))
     archive = new.setdefault(ARCHIVE, {"$comment": ARCHIVE_COMMENT})
     for key, addr in retire:
         if key in archive:
-            archive[f"{key}@{today}"] = archive.pop(key)
+            slot = _free_slot(archive, key, today)
+            archive[slot] = archive.pop(key)
             if f"${key}" in archive:
-                archive[f"${key}@{today}"] = archive.pop(f"${key}")
+                archive[f"${slot}"] = archive.pop(f"${key}")
         archive[key] = addr
         archive[f"${key}"] = f"RETIRED {today}. {reason} The contract is still deployed at the address above."
         new[SECTION][key] = ""

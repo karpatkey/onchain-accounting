@@ -41,7 +41,9 @@ import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 ///      NAV ages a Custom feed by it and stops using the feed once it is `MAX_STALE_PRICE_AGE` old, so it is never
 ///      `block.timestamp`. Only STRUCTURAL failures return `(0, true)`: a non-positive answer on either leg, a
 ///      live `decimals()` on either leg that differs from (or cannot be read as) the value pinned at
-///      construction, or a rate answer outside `[MIN_RATE, MAX_RATE]`.
+///      construction, or a rate answer outside `[MIN_RATE, MAX_RATE]`. A leg whose `latestRoundData()` REVERTS
+///      makes the whole read revert (as in {TwoFeedChainlinkPriceFeed}); the NAV's read path catches that and
+///      treats the feed as unusable, which for a monitor means it is simply not counted.
 /// @dev **BOTH cached decimals are re-asserted on every read**, as {InvertedChainlinkCustomPriceFeed} does for its
 ///      one leg. Here the rate decimals DIVIDE (a decrease under-reports) but the base decimals set the
 ///      normalisation — a base feed migrating from 8 to 6 decimals while the cached denominator still assumed 8

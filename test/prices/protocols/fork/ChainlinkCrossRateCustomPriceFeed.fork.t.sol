@@ -26,6 +26,8 @@ contract ChainlinkCrossRateCustomPriceFeedForkTest is TestEnvConfigurator {
     address constant WBTC_BTC = 0xfdFD9C85aD200c506Cf9e21F1FD8dd01932FBB23;
     /// @dev Chainlink `BTC / USD` proxy — 8 decimals, declared heartbeat 3600. WBTC's NAV primary.
     address constant BTC_USD = 0xF4030086522a5bEEa4988F8cA5B36dbC97BeE88c;
+    /// @dev RedStone WBTC/BTC push feed — the rate leg of the second WBTC monitor, `WBTCCrossRateRedstone`.
+    address constant RS_WBTC_BTC = 0xD260596f85C6D91Ccd40f7076eEb62ACb3B2ad53;
     /// @dev The live NAVCalculator proxy (fleet-wide since the 2026-08-18 redeploy).
     address constant NAV = 0x54EaD2A1dB7456cA917675Ea8908ec8A997c6214;
     /// @dev The timelock that holds MANAGER on the live NAV (asserted in the test, not assumed).
@@ -129,5 +131,33 @@ contract ChainlinkCrossRateCustomPriceFeedForkTest is TestEnvConfigurator {
         INAVCalculator.PriceFeedData memory depeg = INAVCalculator(NAV).getPriceData(WBTC);
         assertTrue(depeg.irregular, "a 3% WBTC depeg is flagged irregular");
         assertEq(depeg.price, calm.price, "the monitor never moves the primary's price");
+    }
+
+    /// @dev The second WBTC monitor (`WBTCCrossRateRedstone`): the same class on RedStone's WBTC/BTC. Pins the leg's
+    ///      identity and the arithmetic, and that its 86400 s heartbeat is consistent with the feed's own cadence at
+    ///      the pinned block (RedStone's default push trigger is 0.5% deviation or 86400 s).
+    function test_redstoneLeg_isTheExpectedPair_andPrices() public {
+        assertEq(AggregatorV3Interface(RS_WBTC_BTC).description(), "RedStone Price Feed for WBTC/BTC");
+        assertEq(AggregatorV3Interface(RS_WBTC_BTC).decimals(), 8);
+        ChainlinkCrossRateCustomPriceFeed rs =
+            new ChainlinkCrossRateCustomPriceFeed(WBTC, RS_WBTC_BTC, RATE_HB, BTC_USD, BASE_HB, MIN_R, MAX_R);
+
+        (, int256 rate,, uint256 rateAt,) = AggregatorV3Interface(RS_WBTC_BTC).latestRoundData();
+        (, int256 btc,, uint256 btcAt,) = AggregatorV3Interface(BTC_USD).latestRoundData();
+        assertGe(uint256(rate), MIN_R, "inside the band");
+        assertLe(uint256(rate), MAX_R, "inside the band");
+        assertLt(block.timestamp - rateAt, RATE_HB, "the RedStone leg is younger than its 86400 s heartbeat");
+
+        (uint256 price, bool stale) = rs.getLatestPrice();
+        assertFalse(stale);
+        assertEq(price, (uint256(rate) * uint256(btc)) / 1e8, "RedStone WBTC/BTC x BTC/USD / 1e8");
+        (,,, uint256 updatedAt,) = rs.latestRoundData();
+        assertEq(updatedAt, rateAt < btcAt ? rateAt : btcAt, "updatedAt == the older leg");
+
+        // Past the RedStone leg's heartbeat: the price is carried, flagged stale (ADR 0029).
+        vm.warp(rateAt + RATE_HB + 1);
+        (uint256 later, bool laterStale) = rs.getLatestPrice();
+        assertTrue(laterStale);
+        assertEq(later, price);
     }
 }

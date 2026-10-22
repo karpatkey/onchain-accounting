@@ -1486,8 +1486,10 @@ Chains 1 (26 enabled, of 27 entries), 42161 (8), 8453 (4), 100 (3) only. Each fe
 address, held as `INAVCalculator public immutable NAV` (ADR 0019) — which is precisely why a new
 proxy invalidates every existing feed.
 
-> **ONE EXCEPTION, and step 1.5 will show it to you.** `wARS` (`InvertedChainlinkCustomPriceFeed`, a `USD / X`
-> inverter) reads no base price out of the NAV, so it takes no proxy address and exposes **no `NAV()` at all**.
+> **THE EXCEPTIONS, and step 1.5 will show them to you.** `wARS` (`InvertedChainlinkCustomPriceFeed`, a `USD / X`
+> inverter) and, since issue #356, the two WBTC monitors `WBTCCrossRate` / `WBTCCrossRateRedstone`
+> (`ChainlinkCrossRateCustomPriceFeed`, both legs read from Chainlink-ABI feeds) read no base price out of the NAV,
+> so they take no proxy address and expose **no `NAV()` at all**.
 > An unreadable `NAV()` on that one feed is CORRECT, not the leftover-feed failure this step hunts — which is why
 > `verify_step` exempts it on its own `BASE_ASSET() == 0` answer and substitutes `underlyingAssetSupported()` as
 > the per-address evidence. Do not redeploy it chasing a pointer that does not exist.
@@ -1539,7 +1541,8 @@ proxy invalidates every existing feed.
   That last one is the check that matters: a feed is otherwise indistinguishable from a correct one
   while still pricing against the abandoned NAV.
 
-  **EXCEPTION, and it is one feed today: `wARS`.** `InvertedChainlinkCustomPriceFeed` reads no base
+  **EXCEPTION: `wARS`, and since issue #356 the two WBTC monitors (`ChainlinkCrossRateCustomPriceFeed`), which
+  likewise answer `BASE_ASSET() == 0`.** `InvertedChainlinkCustomPriceFeed` reads no base
   price out of the NAV, so it has **no `NAV` immutable to point anywhere** — it answers
   `BASE_ASSET() == 0` instead. `verify_step` 1.5 and `bytecode_audit` both read `BASE_ASSET()` first and
   record `BASE_ASSET() == 0, no NAV dependency` as a CLASSIFICATION rather than a failure, so wARS is

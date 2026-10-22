@@ -38,10 +38,12 @@ Three further rules:
    from every read that converts into it. A merely stale quote converts at its last-known price, with
    `quoteAssetStale` set, and the value stays in quote units. The USD quote, `address(0)`, never reverts.
 3. **Custom feeds carry a stale input instead of zeroing.** `NavBaseUsdLib.baseUsd` returns the base price with
-   `stale = true` when the base is stale, and each feed class (`BaseCustomPriceFeed`,
-   `ERC4626VaultRatePriceFeed`, `TwoFeedChainlinkPriceFeed`, `ankrETH`, `InvertedChainlinkCustomPriceFeed`,
-   `ChainlinkCrossRateCustomPriceFeed`) computes its price from it and reports `stale = true`. Structural failures (a zero rate, a non-positive
-   answer, a decimals or band violation) still return 0.
+   `stale = true` when the base is stale, and each NAV-sourced feed class (`BaseCustomPriceFeed`,
+   `ERC4626VaultRatePriceFeed`, `TwoFeedChainlinkPriceFeed`, `ankrETH`) computes its price from it and reports
+   `stale = true`. The feeds that read their own Chainlink legs instead of the NAV
+   (`InvertedChainlinkCustomPriceFeed`, `ChainlinkCrossRateCustomPriceFeed`) apply the same rule to each leg: a leg
+   past its heartbeat keeps the price and sets `stale`. Structural failures (a zero rate, a non-positive answer, a
+   decimals or band violation) still return 0.
 
 Divergence keeps working while a price is stale, as far as the monitors allow: a usable stale primary is still
 compared against every monitor that is fresh, so a frozen feed that drifts from the market raises `irregular`

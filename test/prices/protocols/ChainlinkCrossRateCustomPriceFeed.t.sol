@@ -427,6 +427,18 @@ contract ChainlinkCrossRateCustomPriceFeedTest is Test {
         assertEq(hb, BASE_HB);
     }
 
+    /// @dev A leg whose `latestRoundData()` reverts makes the read revert (no silent 0, no stale price); the NAV's
+    ///      try/catch around `getLatestPrice` then treats the feed as unusable.
+    function test_revertingLeg_revertsRead() public {
+        rateFeed.setRoundDataReverts(true);
+        vm.expectRevert();
+        oracle.getLatestPrice();
+        rateFeed.setRoundDataReverts(false);
+        baseFeed.setRoundDataReverts(true);
+        vm.expectRevert();
+        oracle.getLatestPrice();
+    }
+
     function test_governing_rateUnreadableReportsBase() public {
         baseFeed.setUpdatedAt(block.timestamp - 7);
         rateFeed.setRoundDataReverts(true);

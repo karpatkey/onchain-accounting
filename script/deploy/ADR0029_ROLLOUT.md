@@ -23,6 +23,10 @@ rollout is prepared.
     syrupUSDC_L2; 8453: wstETH_L2, weETH_L2, cbETH_L2; 5042: wARS.
   - Monitors (11): chain 1 rETH, ezETH, ezETHMarket, ETHx, osETH and stETH cross-rate feeds plus
     LBTCCrossRateMarket; 42161: weETH, ezETH and rsETH cross-rate feeds; 8453: weETHCrossRate.
+  - With issue #356 (stacked PR): two NEW mainnet monitors, `WBTCCrossRate` and `WBTCCrossRateRedstone`, deployed by
+    `03` alongside the redeploy, and cbBTC's primary moves from Chainlink cbBTC/USD to Chainlink BTC/USD on 1 and 8453
+    (a Chainlink-to-Chainlink swap, no ADR 0029 ordering hazard). `MigrateToMonitorFeeds` performs both: it adds the
+    new primary/monitors and removes the old ones (cbBTC/USD; WBTC's RedStone BTC monitor) in the same run.
   - Run `script/manage/SwapCustomPriceFeeds.s.sol` first (primaries), then
     `script/manage/MigrateToMonitorFeeds.s.sol` (monitors). The second also reconciles each asset's primary to the
     config (it adds `priceFeeds[0]` when absent and removes any other pricing feed), so after the first its primary

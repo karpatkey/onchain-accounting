@@ -191,7 +191,7 @@
     "divergenceToleranceBps": 50,
     "priceFeeds": [
       {
-        "$comment": "Priced on Chainlink BTC/USD, like every BTC wrapper (issue #356), using the STANDARD Base BTC/USD proxy 0x64c911996D3c6aC71f9b455B1E8E7266BcbD848F (8 decimals, heartbeat 1200, 0.1%). Not the SVR variants Chainlink's catalogue lists as proxies: one lagged the standard feed by up to ~2% for minutes. The previous primary, Chainlink cbBTC/USD 0x07DA0E54543a844a80ABE69c8A12F22B3aA59f9D, had no lag problem on Base; this is for uniform valuation across chains.",
+        "$comment": "Priced on Chainlink BTC/USD, like every BTC wrapper (issue #356), using the STANDARD Base BTC/USD proxy 0x64c911996D3c6aC71f9b455B1E8E7266BcbD848F (8 decimals, heartbeat 1200, 0.1%; Chainlink's catalogue lists it only as the secondaryProxyAddress of record btc-usd-shared-svr-2, and its aggregator() is that record's contract 0xe5ec…9Df1 — do not 'correct' it to the record's proxyAddress, which is an SVR proxy). Not the SVR variants Chainlink's catalogue lists as proxies: one lagged the standard feed by up to ~2% for minutes. The previous primary, Chainlink cbBTC/USD 0x07DA0E54543a844a80ABE69c8A12F22B3aA59f9D, had no lag problem on Base; this is for uniform valuation across chains.",
         "type": "Chainlink",
         "address": "0x64c911996D3c6aC71f9b455B1E8E7266BcbD848F",
         "heartbeat": 1200

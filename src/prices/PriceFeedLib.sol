@@ -1678,8 +1678,9 @@ library PriceFeedLib {
     ) external {
         if (heartbeat == 0) revert IPrices.InvalidPriceOracle();
         // A primary at or above the stale cap would go from fresh straight to unusable, and would count as fresh
-        // past the 7-day bound consumers rely on (ADR 0029). `type(uint256).max` stays allowed: it disables the
-        // heartbeat gate for a Custom feed that reports its own staleness. Monitors (addMonitorFeed) never price.
+        // past the 7-day bound consumers rely on (ADR 0029). `type(uint256).max` stays allowed for any feed type:
+        // it disables the heartbeat gate, so such a feed is never stale by age and the 7-day cap never applies to
+        // it. Use it only for a feed that reports its own staleness. Monitors (addMonitorFeed) never price.
         if (heartbeat >= MAX_STALE_PRICE_AGE && heartbeat != type(uint256).max) {
             revert IPrices.HeartbeatNotBelowStaleCap(heartbeat);
         }

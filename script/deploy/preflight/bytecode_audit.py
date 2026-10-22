@@ -178,6 +178,13 @@ def self_test(index: Index, artifacts: list[dict]) -> int:
     bl_ok, unacc, hits = evaluate_drift([_res(1, (A, "CURRENT", "K"))], {"1:0xzzzz": {"reason": "r"}})
     check("a baseline entry for an un-audited address fails (dangling)", len(bl_ok) == 1)
 
+    # A RETIRED feed's drift is expected (an older generation can never match this tree): reported, not failed.
+    bl_ok, unacc, hits = evaluate_drift([_res(1, (A, "STALE", "retiredCustomPriceFeeds.OETH"))], {})
+    check("a STALE retired feed is reported but is not a failure", unacc == [] and len(hits) == 1)
+    bl_ok, unacc, hits = evaluate_drift([_res(1, (A, "NO_CODE", "retiredCustomPriceFeeds.OETH"))], {})
+    check("a retired feed with NO code still fails (the record is wrong)", len(unacc) == 1)
+    bl_ok, unacc, hits = evaluate_drift([_res(1, (A, "STALE", "customPriceFeeds.retiredCustomPriceFeedsX"))], {})
+    check("the retired exemption is anchored to the section, not a substring", len(unacc) == 1)
     # A status that is neither CURRENT nor STALE must be treated as a failure, not silently ignored.
     bl_ok, unacc, hits = evaluate_drift([_res(1, (A, "UNKNOWN", "K"))], {})
     check("a non-CURRENT status other than STALE also fails", len(unacc) == 1)
@@ -476,6 +483,11 @@ def audit_chain(chain_id: int, index: Index) -> dict:
     return res
 
 
+# Deployment-record section holding retired custom feeds (see `retire_custom_feeds.py`); its STALE verdicts are
+# expected and never fail the gate.
+RETIRED_SECTION = "retiredCustomPriceFeeds"
+
+
 def evaluate_drift(results: list[dict], accepted: dict) -> tuple[list[str], list[str], list[str]]:
     """Decide, from audit results plus the accepted-drift map, what fails.
 
@@ -519,7 +531,13 @@ def evaluate_drift(results: list[dict], accepted: dict) -> tuple[list[str], list
             if e["status"] == "CURRENT":
                 continue
             ref = f"{r['chainId']}:{e['address'].lower()}"
-            if ref in accepted:
+            if e["status"] == "STALE" and str(e.get("key", "")).startswith(f"{RETIRED_SECTION}."):
+                # A retired feed is kept in the record as history and is, by definition, an older generation:
+                # once its feed class changes it can never match a build of this tree again. Its drift is
+                # therefore expected, reported, and never a failure. Only STALE is exempt: NO_CODE or an RPC
+                # error on a retired address still fails, because those mean the record itself is wrong.
+                accepted_hits.append(f"{ref} {e['key']} — retired feed (older generation, expected drift)")
+            elif ref in accepted:
                 accepted_hits.append(f"{ref} {e['key']} — {accepted[ref].get('reason', 'no reason given')}")
             else:
                 unaccepted.append(f"{ref} {e['key']} [{e['status']}]")

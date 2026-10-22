@@ -4,6 +4,27 @@ What must hold when the best-available stale pricing ([ADR 0029](../../docs/deci
 goes live. This file holds the rules. The full per-chain command sequence and the Safe batches are added when the
 rollout is prepared.
 
+## Decisions (2026-10-23)
+
+- **Deploy first, merge after.** The rollout runs from the PR branch, and PR #354 merges only once the live
+  contracts match the tree, as PR #338 did. Merging earlier turns the bytecode-drift gate
+  (`.github/workflows/bytecode-drift.yml`, which runs on every push to `main` that touches `src/**`) red on every
+  live custom feed, `PriceFeedLib` and the NAV implementation.
+- **Redeploy all 50 custom feeds**, not only the 39 primaries. The 11 monitor feeds use the same changed classes
+  (`TwoFeedChainlinkPriceFeed` cross-rate feeds), so leaving them in place would keep them permanently drifted.
+  - Primaries (39): chain 1 (27) wstETH, eETH, weETH, rETH, ezETH, rsETH, ETHx, osETH, stETHFundamental, lsETH,
+    sUSDe, sUSDS, syrupUSDC, spUSDC, spUSDT, spETH, sDAI, RWIV, sGHO, LDO, ankrETH, NXM, wNXM, wARS, LBTC,
+    syrupUSDG, syrupUSDT; 100: osGNO, wstETH_L2, sXDAI; 42161: wstETH_L2, weETH_L2, rsETH_L2, ezETH_L2,
+    syrupUSDC_L2; 8453: wstETH_L2, weETH_L2, cbETH_L2; 5042: wARS.
+  - Monitors (11): chain 1 rETH, ezETH, ezETHMarket, ETHx, osETH and stETH cross-rate feeds plus
+    LBTCCrossRateMarket; 42161: weETH, ezETH and rsETH cross-rate feeds; 8453: weETHCrossRate.
+  - Primaries swap with `script/manage/SwapCustomPriceFeeds.s.sol`; monitors with
+    `script/manage/MigrateToMonitorFeeds.s.sol`, which reconciles each asset's monitor set to the config.
+- **Retired feeds are exempt from the drift gate.** `retire_custom_feeds.py` moves each replaced address to
+  `retiredCustomPriceFeeds`, and `bytecode_audit.evaluate_drift` reports a STALE retired entry without failing
+  on it (an older generation can never match the tree). Missing code or an RPC error on a retired address still
+  fails.
+
 ## Rule 1 — swap the custom feeds before the implementation upgrade (or in the same batch)
 
 Never upgrade the NAV implementation first on a chain that still has a pre-ADR-0029 NAV-sourced custom feed
@@ -18,8 +39,10 @@ registered as a primary.
   So the feeds can go first, on their own.
 - **How:** per chain, either execute the feed swap and confirm it on-chain before the upgrade, or put the feed
   swap and `upgradeToAndCall` in one Safe batch with the swaps first.
-- **Before the upgrade, check:** every primary `Custom` feed registered on the chain is one of the newly deployed
-  feeds. A primary `Custom` feed still at a retired address blocks the upgrade on that chain.
+- **Before the upgrade, check:** every primary `Custom` feed AND every monitor feed registered on the chain is one
+  of the newly deployed feeds. A feed still at a retired address blocks the upgrade on that chain. (An old monitor
+  under the new library cannot mis-flag a price, since divergence is suppressed while the sequencer is down, but
+  it would keep the chain drifted.)
 
 ## Rule 2 — sweep the heartbeats already on-chain
 

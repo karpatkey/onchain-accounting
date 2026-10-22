@@ -29,7 +29,18 @@ rollout is prepared.
     ezETH/osETH `monitorFeeds`, so `03` skips them and `MigrateToMonitorFeeds` deregisters them on-chain. AFTER that
     deregistration, retire their recorded addresses with `retire_custom_feeds.py --keys
     ezETHCrossRateMarket,osETHCrossRate` (the drift gate exempts a retired feed only once the live NAV no longer uses
-    it). ezETH keeps its fundamental monitor; osETH has none until #357 registers a replacement.
+    it), and drop their two rows from `script/deploy/DEPLOYED_ADDRESSES.md` in the same commit — CI's "Published
+    addresses match the deployment records" step fails on a published address that is no longer a live record.
+    ezETH keeps its fundamental monitor; osETH has none until #357 registers a replacement.
+  - **Expected `MigrateToMonitorFeeds` removals on chain 1**, so the post-run census reads none as a surprise: cbBTC's
+    Chainlink cbBTC/USD primary `0x2665…`; WBTC's RedStone BTC monitor `0xAB7f…`; the dead monitors above; and
+    EIGEN's dead RedStone monitor `0x2ee5Ce6556599E16c226579BA14F94926d8Cb86d`, which config dropped on 2026-09-16 but is
+    still registered on-chain (its `latestRoundData()` reverts). On 8453: cbBTC's cbBTC/USD primary `0x07DA…`.
+  - **Swap cbBTC's primary in the same batch as the implementation upgrade (or right before it), not days ahead.**
+    Chainlink BTC/USD's hourly rounds overshoot 3600 s by up to ~60 s (~520 s a day past heartbeat, measured), and
+    under the LIVE pre-ADR-0029 library a stale primary prices the asset at 0 — so cbBTC on BTC/USD before the upgrade
+    would be zero-priced for those seconds instead of ~10 s a day today. After the upgrade the same seconds are only a
+    `stalePriceAssets` flag. (Base improves either way.)
   - With issue #356 (stacked PR): two NEW mainnet monitors, `WBTCCrossRate` and `WBTCCrossRateRedstone`, deployed by
     `03` alongside the redeploy, and cbBTC's primary moves from Chainlink cbBTC/USD to Chainlink BTC/USD on 1 and 8453
     (a Chainlink-to-Chainlink swap, no ADR 0029 ordering hazard). `MigrateToMonitorFeeds` performs both: it adds the

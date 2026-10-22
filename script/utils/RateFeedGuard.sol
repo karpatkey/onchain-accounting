@@ -137,6 +137,10 @@ library RateFeedGuard {
     function checkAll(Vm vm, uint256 chainId) internal view returns (uint256 checked) {
         string[] memory names = ConfigReader.getEnabledAdapters(vm, chainId, "deployPriceFeeds");
         for (uint256 i; i < names.length; ++i) {
+            // `getEnabledAdapters` does NOT filter on `enabled` (see its NatSpec). A disabled entry is not deployed,
+            // and its rate feed may be dead — checking it would abort `03` before anything deploys (issue #357:
+            // osETHCrossRate's RedStone leg reverts). Same gate `03` applies per feed.
+            if (!ConfigReader.isPriceFeedEnabled(vm, chainId, names[i])) continue;
             string memory param = _guardField(vm, chainId, names[i], "param");
             if (bytes(param).length == 0) {
                 // No guard declared. Only legitimate if this instance takes no rate feed at all AND declares no

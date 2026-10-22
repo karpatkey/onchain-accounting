@@ -155,7 +155,10 @@ def custom_feed_legs(chain: str) -> list[dict]:
     for name, entry in json.loads(p.read_text()).items():
         if not isinstance(entry, dict) or entry.get("enabled") is not True:
             continue
-        ctor = entry.get("constructor") or {}
+        # Merge as `declared_heartbeat_guard` does and as `ConfigReader.readAdapterParam` resolves: a top-level
+        # `.<feed>.<key>` wins over `constructor`, which wins over `initialize`.
+        ctor = {**(entry.get("initialize") or {}), **(entry.get("constructor") or {}),
+                **{k: x for k, x in entry.items() if not isinstance(x, dict) and not k.startswith("$")}}
         for hk, hv in ctor.items():
             if not hk.endswith("Heartbeat"):
                 continue
@@ -186,8 +189,10 @@ def findings(chain: str, fetch=_fetch) -> list[tuple[str, str]]:
     cl = chainlink_catalogued(chain)
     for r in registered_redstone(chain):
         if r.get("unpaired"):
-            out.append((WARN, f"custom feed '{r['asset']}' {r['role']}: {r['unpaired']}, so no rate-leg address could "
-                              f"be identified and this heartbeat is NOT checked against any declared cadence."))
+            # ERROR, not WARN: only ENABLED entries are read, and an enabled leg the guard cannot pair is unchecked —
+            # unchecked must not pass. Name the leg `<stem><Something>` beside `<stem>Heartbeat`.
+            out.append((ERROR, f"custom feed '{r['asset']}' {r['role']}: {r['unpaired']}, so no rate-leg address could "
+                               f"be identified and this heartbeat is NOT checked against any declared cadence."))
             continue
         addr = (r["address"] or "").lower()
         rh, dh = r["heartbeat"], decl.get(addr)
@@ -214,7 +219,12 @@ def findings(chain: str, fetch=_fetch) -> list[tuple[str, str]]:
 
 
 def main(argv: list[str]) -> int:
-    chains = [a for a in argv[1:] if a.isdigit()] or list(MANIFESTS)
+    # Default scope: every chain with RedStone manifests AND every chain with a config file, so a RedStone row or
+    # custom-feed leg added on a chain without manifests is reported (as uncatalogued) instead of never examined.
+    cfg = {p.stem for d in ("script/config/nav-config/assets-and-price-feeds",
+                            "script/config/contracts-deployment-config/custom-price-feeds")
+           for p in (REPO / d).glob("*.json") if p.stem.isdigit()}
+    chains = [a for a in argv[1:] if a.isdigit()] or sorted(set(MANIFESTS) | cfg, key=int)
     total = 0
     for c in chains:
         f = findings(c)

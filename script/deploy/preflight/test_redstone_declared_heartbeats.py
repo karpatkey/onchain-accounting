@@ -92,12 +92,18 @@ class CustomFeedLegs(unittest.TestCase):
 
     def test_unpaired_heartbeat_is_reported(self):
         got = self._feeds({"F": {"enabled": True, "constructor": {"oddHeartbeat": "86400", "otherFeed": RS}}})
-        self.assertTrue(any(lvl == rdh.WARN and "NOT checked" in m for lvl, m in got))
+        self.assertTrue(any(lvl == rdh.ERROR and "NOT checked" in m for lvl, m in got))
 
     def test_ambiguous_stem_is_reported(self):
         got = self._feeds({"F": {"enabled": True, "constructor": {
             "rateHeartbeat": "43200", "rateA": RS, "rateB": GHOST}}})
-        self.assertTrue(any(lvl == rdh.WARN and "2 address keys" in m for lvl, m in got))
+        self.assertTrue(any(lvl == rdh.ERROR and "2 address keys" in m for lvl, m in got))
+
+    def test_top_level_key_wins_over_constructor(self):
+        # The deployer resolves `.<feed>.<key>` before `.<feed>.constructor.<key>`; the guard must check that value.
+        got = self._feeds({"F": {"enabled": True, "yToXHeartbeat": "86400",
+                                 "constructor": {"yToXFeed": RS, "yToXHeartbeat": "43200"}}})
+        self.assertTrue(any("MISMATCH" in m for m in self._errs(got)))
 
     def test_missing_custom_feed_file_is_fine(self):
         (self.root / "script/config/contracts-deployment-config/custom-price-feeds").rmdir()

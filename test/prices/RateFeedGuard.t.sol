@@ -156,7 +156,8 @@ contract RateFeedGuardTest is Test {
         for (uint256 i; i < chains.length; ++i) {
             total += _countGuarded(chains[i]);
         }
-        // 24 rate-feed-bearing instances: 12 mainnet, 7 Arbitrum, 4 Base, 1 Gnosis. Each verified on-chain.
+        // 22 ENABLED rate-feed-bearing instances: 10 mainnet, 7 Arbitrum, 4 Base, 1 Gnosis. Each verified on-chain.
+        // (Counts ENABLED entries since issue #357; it used to count every entry, enabled or not.)
         // (Census header kept in step with the assertion below: it read 20 / 8 mainnet after #302's OETH
         // removal and was not updated when wARS took mainnet back to 9 — see the 2026-08-15 note.)
         //
@@ -231,7 +232,10 @@ contract RateFeedGuardTest is Test {
         // 2026-10-22: 23 -> 24. Mainnet `WBTCCrossRateRedstone` (issue #356), the second WBTC monitor: rate leg
         // RedStone WBTC/BTC `0xD260596f85C6D91Ccd40f7076eEb62ACb3B2ad53`, description() "RedStone Price Feed for
         // WBTC/BTC", 8 decimals, 99816289 at block 26240000 (inside the 0.5 .. 1.5 band).
-        assertEq(total, 24, "rate-feed instance count changed - re-verify description() on the new set");
+        // 2026-10-22: 24 -> 22 (issue #357). `ezETHCrossRateMarket` and `osETHCrossRate` are `enabled: false` (their
+        // RedStone legs are dead: no update since 2026-08-20, and reverting, respectively), and the census now counts
+        // enabled entries only, matching `checkAll`. A REMOVAL, so no new pair identity needed confirming.
+        assertEq(total, 22, "rate-feed instance count changed - re-verify description() on the new set");
     }
 
     function _countGuarded(uint256 chainId) internal view returns (uint256 n) {
@@ -267,6 +271,7 @@ contract RateFeedGuardTest is Test {
     uint256 constant SYNTH_TOPPARAM = 999_904;
     uint256 constant SYNTH_INITPARAM = 999_905;
     uint256 constant SYNTH_BANDONLY = 999_906;
+    uint256 constant SYNTH_DISABLED = 999_907;
     address constant SYNTH_FEED = 0x00000000000000000000000000000000DeaDBeef;
 
     function _synthPath(uint256 chainId) internal view returns (string memory) {
@@ -302,6 +307,38 @@ contract RateFeedGuardTest is Test {
     /// @notice External wrapper so `vm.expectRevert` can observe a revert out of the internal library.
     function exposedCheckAll(uint256 chainId) external view {
         RateFeedGuard.checkAll(vm, chainId);
+    }
+
+    /// @notice External wrapper returning how many instances `checkAll` checked.
+    function exposedCheckAllCount(uint256 chainId) external view returns (uint256) {
+        return RateFeedGuard.checkAll(vm, chainId);
+    }
+
+    /// @notice **A DISABLED entry is skipped by `checkAll`, even when its rate feed reverts** (issue #357). The guard
+    ///         runs before `03` deploys anything, so reading a dead, disabled feed would abort the whole deploy; the
+    ///         enabled sibling is still checked.
+    function test_checkAll_skipsDisabledEntries() public {
+        address dead = 0x000000000000000000000000000000000000dEaD;
+        vm.etch(dead, hex"00");
+        vm.mockCallRevert(dead, abi.encodeWithSignature("latestRoundData()"), "dead");
+        vm.mockCallRevert(dead, abi.encodeWithSignature("description()"), "dead");
+        vm.mockCallRevert(dead, abi.encodeWithSignature("decimals()"), "dead");
+        _writeSynth(
+            SYNTH_DISABLED,
+            '{"Dead":{"enabled":false,'
+            '"constructor":{"usdToAssetChainlinkAddress":"0x000000000000000000000000000000000000dEaD"},'
+            '"rateFeedGuard":{"param":"usdToAssetChainlinkAddress","description":"USD / ARS",'
+            '"minRate1e18":"100000000000000000000","maxRate1e18":"999000000000000000000000"}},'
+            '"Live":{"enabled":true,'
+            '"constructor":{"usdToAssetChainlinkAddress":"0x00000000000000000000000000000000DeaDBeeF"},'
+            '"rateFeedGuard":{"param":"usdToAssetChainlinkAddress","description":"USD / ARS",'
+            '"minRate1e18":"100000000000000000000","maxRate1e18":"999000000000000000000000"}}}'
+        );
+        (bool ok, bytes memory ret) =
+            address(this).staticcall(abi.encodeWithSelector(this.exposedCheckAllCount.selector, SYNTH_DISABLED));
+        _removeSynth(SYNTH_DISABLED);
+        assertTrue(ok, "a disabled entry with a dead feed must not abort checkAll");
+        assertEq(abi.decode(ret, (uint256)), 1, "only the enabled sibling is checked");
     }
 
     /// @notice **A band declared OUTSIDE `constructor` must still be reconciled.**
@@ -408,8 +445,19 @@ contract RateFeedGuardTest is Test {
 
 /// @dev Thin shim so the test above reads config through exactly the same reader the deploy script uses.
 library ConfigReaderShim {
-    function enabledPriceFeeds(Vm vm, uint256 chainId) internal view returns (string[] memory) {
-        return ConfigReader.getEnabledAdapters(vm, chainId, "deployPriceFeeds");
+    /// @dev ENABLED entries only, as `RateFeedGuard.checkAll` and `03` see them (`getEnabledAdapters` does not
+    ///      filter on `enabled`).
+    function enabledPriceFeeds(Vm vm, uint256 chainId) internal view returns (string[] memory names) {
+        string[] memory all = ConfigReader.getEnabledAdapters(vm, chainId, "deployPriceFeeds");
+        uint256 n;
+        for (uint256 i; i < all.length; ++i) {
+            if (ConfigReader.isPriceFeedEnabled(vm, chainId, all[i])) ++n;
+        }
+        names = new string[](n);
+        uint256 j;
+        for (uint256 i; i < all.length; ++i) {
+            if (ConfigReader.isPriceFeedEnabled(vm, chainId, all[i])) names[j++] = all[i];
+        }
     }
 
     function hasGuard(Vm vm, uint256 chainId, string memory name) internal view returns (bool) {

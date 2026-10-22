@@ -85,7 +85,7 @@ interface INAVCalculator is IBalances {
     ///      `getAccountPositions`, `getAccountPositionsVerbose`, `getAccountPositionsForAsset`,
     ///      `getAccountPositionsForAssetVerbose`, `getAccountNavForAdapters`, `calculateValue`) when
     ///      every one of the quote asset's feeds is unusable: reverting or non-positive answers, or a last update
-    ///      older than {MAX_STALE_PRICE_AGE}. A quote asset that is merely STALE does not revert: values are converted
+    ///      at least {MAX_STALE_PRICE_AGE} old. A quote asset that is merely STALE does not revert: values are converted
     ///      at its last-known price and `quoteAssetStale` is set (ADR 0029). Callers that must always get a number
     ///      can fall back to the USD quote, `address(0)`, which never raises this. The asset-filtered
     ///      `getAccountPositionsForAsset(/Verbose)` return an empty list without reading the quote when the account
@@ -1005,7 +1005,9 @@ interface INAVCalculator is IBalances {
 
     /// @notice Returns health status: sequencer down flag and lists of stale-price and irregular-price assets.
     /// @return sequencerDown True if L2 sequencer is down or in grace period (false on L1).
-    /// @return stalePriceAssets Addresses of assets with stale prices.
+    /// @return stalePriceAssets Addresses of assets with stale prices. Since ADR 0029 such an asset is normally still
+    ///         valued at its freshest usable stale price; it is valued at 0 only when no feed is usable — tell the two
+    ///         apart with `getPriceData(asset).price`, which is 0 only in the latter.
     /// @return irregularPriceAssets Addresses of assets flagged irregular (primary diverged from monitors / peg).
     function healthCheck()
         external

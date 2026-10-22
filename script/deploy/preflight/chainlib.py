@@ -666,6 +666,8 @@ CANONICAL_KEYS = {
 # anchored and does not match `retiredCustomPriceFeeds.OETH`. So the address is bytecode-audited like
 # every other deployed contract, while being exempt from the pointer check that a deliberately
 # un-redeployed feed can never pass. Both properties were verified by running the enumeration.
+# Its bytecode verdict is still reported, but a STALE one never fails the drift gate: a retired feed is an
+# older generation by definition (`bytecode_audit.evaluate_drift`, RETIRED_SECTION).
 NESTED_KEYS = ("balanceAdapters", "customPriceFeeds", "retiredCustomPriceFeeds", "bridgeAdapters")
 
 

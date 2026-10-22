@@ -95,7 +95,11 @@ contract NAVCalculatorHandler is Test {
         } else {
             priceDecimals = uint8(bound(priceSeed % 100, 0, maxPriceDecimals));
         }
-        Mock_CustomPriceFeed priceOracle = new Mock_CustomPriceFeed("TOKEN", address(token), price, priceDecimals);
+        // One asset in three gets a self-reported-stale feed, so `invariant_staleImpliesNoHealthyFeed` exercises its
+        // stale branch too (a stale rate-only Custom feed is unusable: price 0, stale, no healthy feed — ADR 0029).
+        Mock_CustomPriceFeed priceOracle = priceSeed % 3 == 0
+            ? Mock_CustomPriceFeed(new Mock_CustomPriceFeedStaled("TOKEN", address(token), price, priceDecimals))
+            : new Mock_CustomPriceFeed("TOKEN", address(token), price, priceDecimals);
         priceOracles.push(priceOracle);
 
         // Register asset
@@ -377,6 +381,23 @@ contract NAVCalculatorHandlerTest is SuperTest {
             assertEq(price1, price2, "Price should be consistent within block");
             assertEq(decimals1, decimals2, "Decimals should be consistent");
             assertEq(stale1, stale2, "Staleness should be consistent");
+        }
+    }
+
+    /// @notice Invariant (ADR 0029): `stale` ⇒ `healthyFeedCount == 0`; not stale ⇒ ≥ 1 healthy feed and a price > 0.
+    ///         (Feedless assets revert `getPriceData` and are skipped.)
+    function invariant_staleImpliesNoHealthyFeed() external view {
+        INAVCalculator.Asset[] memory registered = nav.getRegisteredAssets();
+        for (uint256 i = 0; i < registered.length; i++) {
+            try nav.getPriceData(registered[i].asset) returns (INAVCalculator.PriceFeedData memory pd) {
+                if (pd.sequencerDown) continue;
+                if (pd.stale) {
+                    assertEq(pd.healthyFeedCount, 0, "stale => healthyFeedCount == 0");
+                } else {
+                    assertGe(pd.healthyFeedCount, 1, "fresh => healthyFeedCount >= 1");
+                    assertGt(pd.price, 0, "fresh => price > 0");
+                }
+            } catch {}
         }
     }
 

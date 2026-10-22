@@ -3,6 +3,7 @@
 **Status:** Accepted (2026-08-28)
 **Supersedes:** the `declared + 1 h` convention encoded in `script/deploy/preflight/declared_heartbeat_guard.py`
 and applied by `f047d350`.
+**Amended by:** [0029](0029-staleness-flags-never-changes-value.md): `H = declared` stands, but a feed past its heartbeat now keeps its last price, flagged stale, instead of being valued at 0. Staleness is a flag, never a change to the value.
 
 ## Decision
 

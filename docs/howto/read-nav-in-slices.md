@@ -113,7 +113,7 @@ This is the dangerous one.
 | `irregularPriceAssets` | **union, de-duplicated** | Same restriction. This is the depeg signal. |
 | `monitorsUnhealthyPriceAssets` | **union, de-duplicated** | Same restriction. Assets with monitor feeds configured where **none was readable**, so the divergence check did not run — `irregularPriceAssets` being empty says nothing about them. Dropping this one under-reports monitor failure, the falsely-reassuring direction. |
 | `sequencerDown` | **OR** | Derived from the sequencer config, so invariant across slices — but reading it on one slice relies on that invariant rather than checking it. |
-| `quoteAssetStale` | **OR** | Invariant across slices, and *more* dangerous to skip for it: if true, **every** slice's `value` is in USD (8dp) rather than the requested quote. |
+| `quoteAssetStale` | **OR** | Invariant across slices, and *more* dangerous to skip for it: if true, **every** slice's `value` was converted at the quote's last-known (stale) price. A quote with no usable price at all reverts `QuoteAssetUnpriceable` on every slice instead ([ADR 0029](../decisions/0029-staleness-flags-never-changes-value.md)). |
 | `quoteAssetIrregular` | **OR** | Invariant across slices; always false for a USD quote. |
 | `timestamp`, `quoteAsset` | **assert equal** | Differing values mean the slices are not comparable. Necessary but **not sufficient** for `timestamp` — see obligation 2. |
 

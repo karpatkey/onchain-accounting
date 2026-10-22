@@ -58,8 +58,19 @@ contract wstETH_CustomPriceFeedTest is Test {
         assertEq(price, 0);
     }
 
+    /// @dev ADR 0029: a stale base still prices the asset (rate × last base price), flagged stale (was: price 0).
     function test_getLatestPrice_staleWhenBaseStale() public {
         nav.setAssetStale(address(weth), true);
+        wstETH_CustomPriceFeed oracle = new wstETH_CustomPriceFeed(address(wstEth), address(nav), address(weth));
+        (uint256 price, bool stale) = oracle.getLatestPrice();
+        assertTrue(stale);
+        assertEq(price, 3300e8, "1.1 x last base price");
+    }
+
+    /// @dev A zero rate is structural: still 0 even when the base is merely stale.
+    function test_getLatestPrice_zeroWhenBaseStaleAndRateZero() public {
+        nav.setAssetStale(address(weth), true);
+        wstEth.setRate(0);
         wstETH_CustomPriceFeed oracle = new wstETH_CustomPriceFeed(address(wstEth), address(nav), address(weth));
         (uint256 price, bool stale) = oracle.getLatestPrice();
         assertTrue(stale);

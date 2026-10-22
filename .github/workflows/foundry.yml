@@ -324,6 +324,15 @@ jobs:
           python3 -m unittest test_snapshot_and_clear_meta test_ops_safe -v
           python3 -O -m unittest test_snapshot_and_clear_meta test_ops_safe
 
+      - name: ADR 0029 feed retirement (retire_custom_feeds)
+        # The record tool for the ADR 0029 subset redeploy: it may blank ONLY the named customPriceFeeds keys
+        # (archived under retiredCustomPriceFeeds) and must leave the proxy, implementation, libraries and
+        # every balance adapter byte-identical. Pure logic, no network; -O as well, as above.
+        working-directory: script/deploy/preflight
+        run: |
+          python3 -m unittest test_retire_custom_feeds -v
+          python3 -O -m unittest test_retire_custom_feeds
+
       - name: Published addresses match the deployment records
         # Added after DEPLOYED_ADDRESSES.md was found publishing 66 addresses that appear in NO deployment
         # record — contracts from a superseded generation. Stale entries still have code, so an integrator
@@ -397,9 +406,10 @@ jobs:
         #
         # Runs offline against the committed snapshot, so it needs no network and no build.
         run: |
-          for c in 1 10 56 100 137 8453 42161; do
-            python3 script/deploy/preflight/declared_heartbeat_guard.py "$c" || exit 1
-          done
+          # No chain arguments: scope comes from the configs (configured_chain_ids), so a chain added later — e.g.
+          # Arc (5042), missing from the old hardcoded list — is covered by the declared-heartbeat AND the ADR 0029
+          # 7-day cap checks without editing this step.
+          python3 script/deploy/preflight/declared_heartbeat_guard.py
 
       - name: RedStone declared heartbeats match ADR 0025 (real config, not a self-test)
         # WIRED AS A REAL-CONFIG RUN ON PURPOSE. `declared_heartbeat_guard` resolves CHAINLINK feeds only,

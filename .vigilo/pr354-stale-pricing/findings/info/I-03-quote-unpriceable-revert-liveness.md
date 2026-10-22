@@ -1,0 +1,2 @@
+# I-03 — QuoteAssetUnpriceable turns a dead non-USD quote into a revert on every quote-converting read (including empty accounts)
+- src/prices/PriceFeedLib.sol:1525. Intended (ADR 0029 rule 2), and it removes the unit-mismatch (USD labelled as quote) path; the old fallback is fully gone (_priceConversion's `quotePrice <= 0` branch is now reached only for address(0)). No in-repo on-chain caller (balances/, bridge/ do not read prices). Off-chain or share-layer consumers that quote in WETH/WBTC must catch this and fall back to address(0). Informational.

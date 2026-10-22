@@ -1,0 +1,3 @@
+# I-01 — New custom feeds: latestRoundData().answer is 0 when stale while getLatestPrice() returns the price
+- Location: BaseCustomPriceFeed.sol:109, ERC4626VaultRatePriceFeed.sol:130, TwoFeedChainlinkPriceFeed.sol:139, InvertedChainlinkCustomPriceFeed.sol:222, ankrETH_CustomPriceFeed.sol:117 (`answer = stale ? 0 : price`).
+- The NAV ignores `answer` for Custom feeds (_readPrimaryFeed uses getLatestPrice plus the updatedAt only), so NAV values are unaffected. An external integrator reading these feeds as AggregatorV3 sees 0 during a holdover, while the NAV uses the price. That is conservative, but it is an undocumented divergence between the two read surfaces. Document it in ICustomPriceFeed, or deliberately keep it as the fail-closed AggregatorV3 view.

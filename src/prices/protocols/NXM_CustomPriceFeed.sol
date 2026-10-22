@@ -16,7 +16,7 @@ import "src/errors.sol";
 ///      itself, and/or wNXM — the transferable wrapper a Nexus member can unwrap 1:1 to NXM, so book value is
 ///      realizable for a member holder (matching how data aggregators price wNXM).
 /// @dev Thin {BaseCustomPriceFeed} subclass: `_rate()` is `RAMM.getInternalPrice()` (ETH-per-NXM, 18 decimals) and
-///      the base composes it with the NAV's ETH/USD and applies the staleness gate. The constructor additionally fails fast if
+///      the base composes it with the NAV's ETH/USD and carries its staleness flag. The constructor additionally fails fast if
 ///      RAMM is not a live Nexus RAMM (a non-contract / wrong contract makes `getInternalPrice()` revert or return 0,
 ///      which would otherwise only surface as a silently-skipped feed).
 /// @author KPK

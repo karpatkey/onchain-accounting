@@ -45,9 +45,11 @@ contract rsETH_CrossRateMonitorArbitrumForkTest is TestEnvConfigurator {
     }
 
     function test_getLatestPriceStale() public {
+        (uint256 freshPrice,) = oracle.getLatestPrice();
+        assertGt(freshPrice, 0, "control: priced while fresh");
         vm.warp(block.timestamp + RATE_HEARTBEAT + 1);
         (uint256 price, bool stale) = oracle.getLatestPrice();
-        assertEq(price, 0, "Stale price returns 0");
+        assertEq(price, freshPrice, "a stale leg keeps the last price, flagged stale (ADR 0029)");
         assertEq(stale, true, "Price marked stale past the rate heartbeat");
     }
 

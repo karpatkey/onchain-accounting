@@ -78,6 +78,7 @@ import {
     SymbioticVaultsMetaBalanceAdapter
 } from "src/balances/MetaBalanceAdapters/SymbioticVaultsMetaBalanceAdapter.sol";
 import {InvertedChainlinkCustomPriceFeed} from "src/prices/protocols/InvertedChainlinkCustomPriceFeed.sol";
+import {ChainlinkCrossRateCustomPriceFeed} from "src/prices/protocols/ChainlinkCrossRateCustomPriceFeed.sol";
 import {MorphoMarketsMetaBalanceAdapter} from "src/balances/MetaBalanceAdapters/MorphoMarketsMetaBalanceAdapter.sol";
 import {
     AaveV3InstancesMetaBalanceAdapter
@@ -291,6 +292,7 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
             _tryDeployPriceFeed("sUSDe", _deploySUsde);
             _tryDeployPriceFeed("sGHO", _deploySgho);
             _tryDeployPriceFeed("wARS", _deployWars);
+            _tryDeployPriceFeed("WBTCCrossRate", _deployWbtcCrossRate);
             _tryDeployPriceFeed("syrupUSDC", _deploySyrupUsdc);
             _tryDeployPriceFeed("spUSDC", _deploySpUsdc);
             _tryDeployPriceFeed("spUSDT", _deploySpUsdt);
@@ -412,6 +414,25 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         uint256 maxAnswer = vm.parseUint(ConfigReader.readPriceFeedParam(vm, _chainId, "wARS", "maxAnswer"));
         return
             address(new InvertedChainlinkCustomPriceFeed(underlying, usdToAssetFeed, heartbeat, minAnswer, maxAnswer));
+    }
+
+    /// @dev WBTC divergence MONITOR via {ChainlinkCrossRateCustomPriceFeed} (both legs read from Chainlink; no NAV
+    ///      dependency). Dispatched for the same reason as wARS above: a Custom feed missing here is skipped in
+    ///      silence, so a nav-config monitor naming it would never be wired and WBTC's depeg signal would be absent
+    ///      from every integration run with nothing failing.
+    function _deployWbtcCrossRate() internal returns (address) {
+        string memory k = "WBTCCrossRate";
+        return address(
+            new ChainlinkCrossRateCustomPriceFeed(
+                vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, k, "underlyingAsset")),
+                vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, k, "rateChainlink")),
+                vm.parseUint(ConfigReader.readPriceFeedParam(vm, _chainId, k, "rateHeartbeat")),
+                vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, k, "baseUsdChainlink")),
+                vm.parseUint(ConfigReader.readPriceFeedParam(vm, _chainId, k, "baseUsdHeartbeat")),
+                vm.parseUint(ConfigReader.readPriceFeedParam(vm, _chainId, k, "minAnswer")),
+                vm.parseUint(ConfigReader.readPriceFeedParam(vm, _chainId, k, "maxAnswer"))
+            )
+        );
     }
 
     function _deploySyrupUsdc() internal returns (address) {

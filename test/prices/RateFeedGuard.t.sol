@@ -156,7 +156,7 @@ contract RateFeedGuardTest is Test {
         for (uint256 i; i < chains.length; ++i) {
             total += _countGuarded(chains[i]);
         }
-        // 21 rate-feed-bearing instances: 9 mainnet, 7 Arbitrum, 4 Base, 1 Gnosis. Each verified on-chain.
+        // 23 rate-feed-bearing instances: 11 mainnet, 7 Arbitrum, 4 Base, 1 Gnosis. Each verified on-chain.
         // (Census header kept in step with the assertion below: it read 20 / 8 mainnet after #302's OETH
         // removal and was not updated when wARS took mainnet back to 9 — see the 2026-08-15 note.)
         //
@@ -215,7 +215,20 @@ contract RateFeedGuardTest is Test {
         // The band is tighter than its neighbours' on purpose: LBTC is 1:1 BTC-backed, so anything far from
         // parity is a wiring error. A BTC/USD feed swapped in here would answer ~7.6e22 at 1e18 scale and miss
         // the band by four orders of magnitude.
-        assertEq(total, 22, "rate-feed instance count changed - re-verify description() on the new set");
+        //
+        // 2026-10-22: 22 -> 23. Mainnet `WBTCCrossRate` added (issue #356) — the WBTC depeg MONITOR,
+        // ChainlinkCrossRateCustomPriceFeed: WBTC / BTC x BTC / USD, both legs read from Chainlink. Population
+        // grew by one real instance; its guarded leg's pair identity WAS confirmed on-chain first —
+        // `0xfdFD9C85aD200c506Cf9e21F1FD8dd01932FBB23` measured 2026-10-22 (block 26240000):
+        //
+        //   description()     "WBTC / BTC"
+        //   decimals()        8
+        //   latestRoundData() 99816000  ->  0.99816e18, inside the configured 0.5-1.5e18 band
+        //
+        // Its second leg (`baseUsdChainlink`, Chainlink BTC / USD `0xF403…E88c`, description "BTC / USD")
+        // is not counted here: the guard pins ONE param per instance, and that leg's identity is asserted in
+        // the feed's fork test instead.
+        assertEq(total, 23, "rate-feed instance count changed - re-verify description() on the new set");
     }
 
     function _countGuarded(uint256 chainId) internal view returns (uint256 n) {

@@ -59,7 +59,18 @@ ERROR, WARN = "ERROR", "WARN"
 # CI, so an uncatalogued feed would be reported as unverified and permitted in the same breath, which is
 # indistinguishable from not checking at all. That is precisely how 31 RedStone registrations sat
 # unverified while seven of them were wrong.
-UNCATALOGUED_EXCEPTIONS: dict[tuple[str, str], str] = {}
+UNCATALOGUED_EXCEPTIONS: dict[tuple[str, str], str] = {
+    ("1", "0xf4a3e183f59d2599ee3df213ff78b1b3b1923696"): (
+        "ezETHCrossRateMarket's rate leg: RedStone's Classic Push ezETH/ETH market feed, SUNSET by RedStone (in none of "
+        "the ethereum manifests). Its last push was 2026-08-20 (updatedAt 1787220311), so this monitor has reported "
+        "stale and been excluded since then: ezETH has NO live market-based monitor today. Open item — replace or "
+        "remove the monitor; do not redeploy it unchanged."),
+    ("1", "0x66ac817f997efd114edfcccdce99f3268557b32c"): (
+        "osETHCrossRate's rate leg: RedStone 'osETH/ETH' push feed, in none of the ethereum manifests. latestRoundData() "
+        "now REVERTS (custom error 0x4f319ffe, dataFeedId 'osETH/ETH' — the same signature as the delisted EIGEN feed), "
+        "so this monitor's read reverts and it is excluded: osETH has NO live market-based monitor today. Open item — "
+        "replace or remove the monitor; do not redeploy it unchanged."),
+}
 
 
 def _fetch(path: str) -> dict:
@@ -128,29 +139,42 @@ def _is_address(v) -> bool:
     return isinstance(v, str) and v.startswith("0x") and len(v) == 42
 
 
+def chainlink_catalogued(chain: str) -> set[str]:
+    """Addresses the committed Chainlink snapshot records for `chain` (lowercased): legs the Chainlink guard checks."""
+    p = REPO / "script/deploy/preflight/chainlink_declared_heartbeats.json"
+    if not p.exists():
+        return set()
+    return {a.lower() for a in ((json.loads(p.read_text()).get("chains") or {}).get(str(chain)) or {})}
+
+
 def custom_feed_legs(chain: str) -> list[dict]:
     """Every (address, heartbeat) pair inside an ENABLED custom feed's constructor, as a candidate RedStone leg.
 
     A custom feed can read a RedStone push feed directly (issue #356: `WBTCCrossRateRedstone` reads RedStone WBTC/BTC
     as its rate leg). That address never appears as a `type: Redstone` nav-config row, so without this it was checked
     by neither heartbeat guard. Pairs `<stem>Heartbeat` with the one sibling address key starting with `<stem>`, the
-    same pairing `declared_heartbeat_guard` uses for Chainlink legs. Rows are marked `leg: True`: `findings` checks
-    only those whose address IS in a RedStone manifest, and leaves the rest (Chainlink legs) to the Chainlink guard.
+    same convention `declared_heartbeat_guard` uses for Chainlink legs. Rows are marked `leg: True`. `findings` holds a
+    leg found in a RedStone manifest to its declared cadence, leaves a leg in the Chainlink snapshot to the Chainlink
+    guard, and reports a leg in NEITHER as an ERROR unless recorded in UNCATALOGUED_EXCEPTIONS (a sunset RedStone feed
+    looks exactly like that). A heartbeat key with no unique address sibling is reported as `unpaired`, never dropped.
+    Only entries with `enabled: true` are read, as the deployer does.
     """
     p = REPO / f"script/config/contracts-deployment-config/custom-price-feeds/{chain}.json"
     if not p.exists():
         return []
     rows = []
     for name, entry in json.loads(p.read_text()).items():
-        if not isinstance(entry, dict) or entry.get("enabled") is False:
+        if not isinstance(entry, dict) or entry.get("enabled") is not True:
             continue
         ctor = entry.get("constructor") or {}
         for hk, hv in ctor.items():
             if not hk.endswith("Heartbeat"):
                 continue
             stem = hk[: -len("Heartbeat")]
-            sibs = [k for k, v in ctor.items() if k != hk and k.startswith(stem) and _is_address(v)]
+            sibs = [k for k, v in ctor.items() if stem and k != hk and k.startswith(stem) and _is_address(v)]
             if len(sibs) != 1:
+                rows.append({"asset": name, "role": f"constructor.{hk}", "address": None, "heartbeat": hv,
+                             "leg": True, "unpaired": f"{len(sibs)} address keys start with '{stem}'"})
                 continue
             try:
                 hb = int(hv)
@@ -170,11 +194,16 @@ def findings(chain: str, fetch=_fetch) -> list[tuple[str, str]]:
         out.append((ERROR, f"chain {chain}: manifest {f} could NOT be fetched, so its feeds were not "
                            f"verified against RedStone's declared cadences. Failing closed — re-run, or "
                            f"snapshot the manifests if this endpoint is unreliable."))
+    cl = chainlink_catalogued(chain)
     for r in registered_redstone(chain):
+        if r.get("unpaired"):
+            out.append((WARN, f"custom feed '{r['asset']}' {r['role']}: {r['unpaired']}, so no rate-leg address could "
+                              f"be identified and this heartbeat is NOT checked against any declared cadence."))
+            continue
         addr = (r["address"] or "").lower()
         rh, dh = r["heartbeat"], decl.get(addr)
-        if dh is None and r.get("leg"):
-            continue  # not a RedStone feed: a Chainlink leg, covered by declared_heartbeat_guard
+        if dh is None and r.get("leg") and addr in cl:
+            continue  # a Chainlink leg: checked by declared_heartbeat_guard against the Chainlink snapshot
         if dh is None:
             note = UNCATALOGUED_EXCEPTIONS.get((chain, addr))
             if note:

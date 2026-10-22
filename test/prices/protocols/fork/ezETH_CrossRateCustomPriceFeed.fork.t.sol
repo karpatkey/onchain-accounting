@@ -124,6 +124,10 @@ contract ezETH_CrossRateCustomPriceFeedForkTest is TestEnvConfigurator {
         assertEq(oracle.underlyingAssetSupported(), configuredAsset, "Underlying asset is the configured ezETH token");
     }
 
+    // Block-sensitive since the rate heartbeat became 43,200 s (ADR 0025): at the pinned block the RedStone leg is
+    // ~40,000 s old, so tests that expect a fresh feed hold only for a block mid-way through RedStone's 12 h cycle.
+    // Re-pin with that in mind.
+
     /// @notice The rate leg's own heartbeat gate fires, attributed to the rate leg alone.
     /// @dev Deliberately NOT done by warping past `RATE_HEARTBEAT`. This rate heartbeat is 43,200s while the NAV's
     ///      WETH leg is registered at 3,600s, so any warp large enough to stale the rate leg stales the base leg

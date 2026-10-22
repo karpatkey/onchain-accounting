@@ -333,6 +333,15 @@ jobs:
           python3 -m unittest test_retire_custom_feeds -v
           python3 -O -m unittest test_retire_custom_feeds
 
+      - name: RedStone heartbeat guard logic (redstone_declared_heartbeats, offline)
+        # The real-config step below hits RedStone's manifests; this one pins the guard's VERDICTS offline, notably
+        # the custom-feed-leg path (issue #356): a leg in neither catalogue must fail loudly, which is how a sunset
+        # RedStone feed looks. -O as well, as above.
+        working-directory: script/deploy/preflight
+        run: |
+          python3 -m unittest test_redstone_declared_heartbeats -v
+          python3 -O -m unittest test_redstone_declared_heartbeats
+
       - name: Published addresses match the deployment records
         # Added after DEPLOYED_ADDRESSES.md was found publishing 66 addresses that appear in NO deployment
         # record — contracts from a superseded generation. Stale entries still have code, so an integrator

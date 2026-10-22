@@ -105,6 +105,11 @@ class CustomFeedLegs(unittest.TestCase):
                                  "constructor": {"yToXFeed": RS, "yToXHeartbeat": "43200"}}})
         self.assertTrue(any("MISMATCH" in m for m in self._errs(got)))
 
+    def test_missing_nav_config_still_checks_custom_legs(self):
+        (self.root / "script/config/nav-config/assets-and-price-feeds/1.json").unlink()
+        got = self._feeds({"F": {"enabled": True, "constructor": {"yToXFeed": RS, "yToXHeartbeat": "86400"}}})
+        self.assertTrue(any("MISMATCH" in m for m in self._errs(got)))
+
     def test_missing_custom_feed_file_is_fine(self):
         (self.root / "script/config/contracts-deployment-config/custom-price-feeds").rmdir()
         self.assertEqual(rdh.findings("1", fetch=_manifest), [])

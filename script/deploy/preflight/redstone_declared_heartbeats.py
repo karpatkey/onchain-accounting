@@ -110,7 +110,8 @@ def declared_map(chain: str, fetch=_fetch) -> tuple[dict[str, int], list[str]]:
 def registered_redstone(chain: str) -> list[dict]:
     """Every RedStone registration in this chain's nav-config, primary and monitor alike."""
     p = REPO / f"script/config/nav-config/assets-and-price-feeds/{chain}.json"
-    cfg = json.loads(p.read_text())
+    # A chain may have custom-feed config before (or without) a nav-config file; its legs are still checked below.
+    cfg = json.loads(p.read_text()) if p.exists() else {}
     rows = []
     for asset, v in cfg.items():
         if not isinstance(v, dict):

@@ -352,6 +352,28 @@
     "$noNavDependencyReason": "This feed reads NO base/USD price out of the NAV. It derives WBTC/USD wholly from two Chainlink legs (WBTC / BTC x BTC / USD), so there is no base asset to read and BASE_ASSET is a compile-time constant address(0) on the contract, not a configurable argument. The zero here MIRRORS the contract rather than opting out of a dependency that exists - and a NAV-sourced base is not possible for this asset at all, because the NAV's BTC/USD base is WBTC itself.",
     "$bandComment": "minAnswer/maxAnswer are the RUNTIME pin on the rate leg, in WBTC / BTC's own 8 decimals: 0.5e8 .. 1.5e8 vs a live ~0.998e8. RateFeedGuard pins the same band pre-deploy and reconciles these two keys against rateFeedGuard.minRate1e18/maxRate1e18 (RateFeedBandMismatch), so they cannot drift."
   },
+  "WBTCCrossRateRedstone": {
+    "enabled": true,
+    "$comment": "Second WBTC depeg MONITOR (issue #356): the same ChainlinkCrossRateCustomPriceFeed class as WBTCCrossRate, with RedStone's WBTC/BTC push feed 0xD260596f85C6D91Ccd40f7076eEb62ACb3B2ad53 as the rate leg (description() 'RedStone Price Feed for WBTC/BTC', 8 decimals, verified on-chain 2026-10-22; RedStone default trigger 0.5% / 86400 s) and Chainlink BTC/USD as the base. Source redundancy for the WBTC-specific price, and with two monitors WBTC is not reported monitorsUnhealthy during the ~30 s a day the Chainlink WBTC/BTC round overshoots its heartbeat. Over 88 days |RedStone WBTC/BTC - 1| peaked at ~32 bps, below the 50 bps tolerance. The constructor param is named rateChainlink only because the deploy helper is shared; the feed is any AggregatorV3-compatible rate feed.",
+    "$noNavDependencyReason": "Same as WBTCCrossRate: both legs are read directly from AggregatorV3 feeds (RedStone WBTC/BTC x Chainlink BTC/USD) and multiplied in the feed; nothing is read back out of the NAV, so BASE_ASSET() returns address(0). A NAV-sourced base is impossible here: WBTC IS the NAV's BTC/USD asset, and registration rejects a feed whose base is the asset itself (CustomFeedBaseCircular).",
+    "constructor": {
+      "underlyingAsset": "0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599",
+      "rateChainlink": "0xD260596f85C6D91Ccd40f7076eEb62ACb3B2ad53",
+      "rateHeartbeat": "86400",
+      "baseUsdChainlink": "0xF4030086522a5bEEa4988F8cA5B36dbC97BeE88c",
+      "baseUsdHeartbeat": "3600",
+      "baseAsset": "0x0000000000000000000000000000000000000000",
+      "minAnswer": "50000000",
+      "maxAnswer": "150000000"
+    },
+    "rateFeedGuard": {
+      "$comment": "Pair identity + plausibility band for the RedStone WBTC/BTC rate leg; description() verified live on-chain 2026-10-22. Same 0.5 .. 1.5 band and reasoning as WBTCCrossRate.",
+      "param": "rateChainlink",
+      "description": "RedStone Price Feed for WBTC/BTC",
+      "minRate1e18": "500000000000000000",
+      "maxRate1e18": "1500000000000000000"
+    }
+  },
   "syrupUSDG": {
     "enabled": true,
     "$comment": "syrupUSDG primary (syrupUSDG_CustomPriceFeed, a thin ERC4626VaultRatePriceFeed subclass - sibling of syrupUSDC, same Maple `MaplePool` code over a different underlying). Price = (USDG/USD) x convertToAssets(1 share), the USDG/USD leg read from the NAV (ADR 0019).\n\nTHIS FEED COULD NOT HAVE EXISTED BEFORE 2026-09-16: its base asset is USDG, which was registered that day. The base's BaseAssetMismatch check enforces the pairing (baseAsset_ must equal the vault's asset()), so a copy-paste of the syrupUSDC block would revert at construction rather than price USDG shares against USDC.\n\nMANIPULATION GATE (docs/howto/add-price-feed.md): MaplePool.totalAssets() forwards to IPoolManagerLike(manager).totalAssets() - cash plus loan principal plus accrued interest - NOT balanceOf(vault). Measured live 2026-09-16: totalAssets 168,376,875.642470 USDG against a vault USDG balance of 8,060,166.467433, so cash is ~4.8% of assets and the share rate is not donation-spikeable the way a naive balance-of vault is.\n\nKNOWN LATENT PROPERTY, shared with the LIVE syrupUSDC feed: MaplePool.convertToAssets divides the RAW totalAssets() by supply while the pool's own convertToExitAssets first subtracts unrealizedLosses(). The base prices with convertToAssets, so on a loan default this over-reports until Maple realises the loss. Both Maple vaults read unrealizedLosses() == 0 on 2026-09-16, so the two paths agree exactly today; this is recorded so it is not rediscovered as a surprise.\n\nRegistered to make the Aave V4 UsdgMapleE Spoke (0x774b9655413c34809c1f1b16b654465A89EBE989) usable: syrupUSDG is its r1 COLLATERAL-ONLY reserve, with USDG (r0/r3) and USDC (r2) borrowable and already registered.",

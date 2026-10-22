@@ -28,12 +28,6 @@
         "threshold": 0.3,
         "feedCategory": "low"
       },
-      "0x2665701293fcbeb223d11a08d826563edcce423a": {
-        "name": "cbBTC / USD",
-        "declaredHeartbeat": 86400,
-        "threshold": 2,
-        "feedCategory": "low"
-      },
       "0x26c46b7ad0012ca71f2298ada567dc9af14e7f2a": {
         "name": "RLUSD / USD",
         "declaredHeartbeat": 86400,
@@ -380,12 +374,6 @@
       }
     },
     "8453": {
-      "0x07da0e54543a844a80abe69c8a12f22b3aa59f9d": {
-        "name": "cbBTC / USD",
-        "declaredHeartbeat": 1200,
-        "threshold": 0.3,
-        "feedCategory": "low"
-      },
       "0x35e9d7001819ea3b39da906ae6b06a62cfe2c181": {
         "name": "weETH / eETH Exchange Rate",
         "declaredHeartbeat": 86400,
@@ -403,6 +391,12 @@
         "declaredHeartbeat": 86400,
         "threshold": 0.5,
         "feedCategory": "medium"
+      },
+      "0x64c911996d3c6ac71f9b455b1e8e7266bcbd848f": {
+        "name": "BTC / USD",
+        "declaredHeartbeat": 1200,
+        "threshold": 0.1,
+        "feedCategory": "low"
       },
       "0x71041dddad3595f9ced3dccfbe3d1f4b0a16bb70": {
         "name": "ETH / USD",

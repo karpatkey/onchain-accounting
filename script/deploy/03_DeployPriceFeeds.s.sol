@@ -348,6 +348,10 @@ contract DeployPriceFeeds is BaseDeployScript {
         if (ConfigReader.isPriceFeedEnabled(vm, currentChainId, "WBTCCrossRate")) {
             _deployChainlinkCrossRateFeed("WBTCCrossRate");
         }
+        // Second WBTC monitor, same class with RedStone's WBTC/BTC as the rate leg (source redundancy). Own gate.
+        if (ConfigReader.isPriceFeedEnabled(vm, currentChainId, "WBTCCrossRateRedstone")) {
+            _deployChainlinkCrossRateFeed("WBTCCrossRateRedstone");
+        }
 
         // Deploy NXM / wNXM Price Oracle (price = RAMM.getInternalPrice() [ETH/NXM] * ETH/USD)
         if (ConfigReader.isAdapterEnabled(vm, currentChainId, "priceFeeds", "NXM")) {

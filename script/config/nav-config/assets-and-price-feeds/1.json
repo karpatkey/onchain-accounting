@@ -790,8 +790,15 @@
     ],
     "monitorFeeds": [
       {
-        "type": "Redstone",
-        "address": "0xAB7f623fb2F6fea6601D4350FA0E2290663C28Fc",
+        "$comment": "WBTC-specific price (issue #356): Chainlink WBTC/BTC x Chainlink BTC/USD, both read directly (ChainlinkCrossRateCustomPriceFeed). Replaces the RedStone BTC monitor 0xAB7f623fb2F6fea6601D4350FA0E2290663C28Fc, which priced BTC, not WBTC, so the NAV could not see a WBTC depeg. 88 days to 2026-10-22: |WBTC/BTC - 1| <= ~21 bps, so no false irregular at 50 bps.",
+        "type": "Custom",
+        "feed": "WBTCCrossRate",
+        "heartbeat": 86400
+      },
+      {
+        "$comment": "Second WBTC-specific monitor: the same class on RedStone's WBTC/BTC (source redundancy; also keeps WBTC out of monitorsUnhealthyPriceAssets while the Chainlink WBTC/BTC round overshoots its heartbeat). 88 days: |RedStone WBTC/BTC - 1| <= ~32 bps.",
+        "type": "Custom",
+        "feed": "WBTCCrossRateRedstone",
         "heartbeat": 86400
       }
     ]
@@ -868,9 +875,10 @@
     "divergenceToleranceBps": 50,
     "priceFeeds": [
       {
+        "$comment": "Priced on Chainlink BTC/USD, like WBTC (issue #356): BTC/USD primary for every BTC wrapper, the wrapper-specific price as the monitor. The previous primary, Chainlink cbBTC/USD 0x2665701293fCbEB223D11A08D826563EDcCE423A, only updates on a 2% move or every 24 h; against the RedStone cbBTC monitor it was irregular ~46% of the time over 88 days and mispriced deposits by the lag. It is dropped, not kept as a monitor (against BTC/USD it is above 50 bps ~47% of the time).",
         "type": "Chainlink",
-        "address": "0x2665701293fCbEB223D11A08D826563EDcCE423A",
-        "heartbeat": 86400
+        "address": "0xF4030086522a5bEEa4988F8cA5B36dbC97BeE88c",
+        "heartbeat": 3600
       }
     ],
     "monitorFeeds": [
@@ -881,7 +889,7 @@
         "heartbeat": 86400
       }
     ],
-    "$comment": "Coinbase Wrapped BTC. Registered so its Morpho collateral leg (MorphoMarket_cbBTC_USDC) is valued \u2014 was previously unregistered, dropping the collateral leg from NAV. Chainlink cbBTC/USD, 8 decimals."
+    "$comment": "Coinbase Wrapped BTC. Registered so its Morpho collateral leg (MorphoMarket_cbBTC_USDC) is valued \u2014 was previously unregistered, dropping the collateral leg from NAV. Priced on Chainlink BTC/USD since issue #356 (see priceFeeds[0].$comment); RedStone cbBTC/USD monitors the wrapper."
   },
   "wARS": {
     "address": "0x0DC4F92879B7670e5f4e4e6e3c801D229129D90D",

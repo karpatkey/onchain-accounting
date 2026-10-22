@@ -293,6 +293,7 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
             _tryDeployPriceFeed("sGHO", _deploySgho);
             _tryDeployPriceFeed("wARS", _deployWars);
             _tryDeployPriceFeed("WBTCCrossRate", _deployWbtcCrossRate);
+            _tryDeployPriceFeed("WBTCCrossRateRedstone", _deployWbtcCrossRateRedstone);
             _tryDeployPriceFeed("syrupUSDC", _deploySyrupUsdc);
             _tryDeployPriceFeed("spUSDC", _deploySpUsdc);
             _tryDeployPriceFeed("spUSDT", _deploySpUsdt);
@@ -421,7 +422,15 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
     ///      silence, so a nav-config monitor naming it would never be wired and WBTC's depeg signal would be absent
     ///      from every integration run with nothing failing.
     function _deployWbtcCrossRate() internal returns (address) {
-        string memory k = "WBTCCrossRate";
+        return _deployChainlinkCrossRate("WBTCCrossRate");
+    }
+
+    /// @dev The second WBTC monitor: the same class with RedStone's WBTC/BTC as the rate leg.
+    function _deployWbtcCrossRateRedstone() internal returns (address) {
+        return _deployChainlinkCrossRate("WBTCCrossRateRedstone");
+    }
+
+    function _deployChainlinkCrossRate(string memory k) internal returns (address) {
         return address(
             new ChainlinkCrossRateCustomPriceFeed(
                 vm.parseAddress(ConfigReader.readPriceFeedParam(vm, _chainId, k, "underlyingAsset")),

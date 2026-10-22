@@ -970,7 +970,10 @@ def refresh(allow_shrink: bool = False, fetch=None) -> int:
             continue
         idx: dict[str, dict] = {}
         for rec in cat:
-            for k in ("proxyAddress", "contractAddress"):
+            # `secondaryProxyAddress` too: Chainlink lists some STANDARD feeds only there (Base BTC/USD
+            # 0x64c9…848F, whose `proxyAddress` slot holds an SVR variant). `setdefault` keeps a primary
+            # `proxyAddress` match first if an address ever appears in both roles.
+            for k in ("proxyAddress", "contractAddress", "secondaryProxyAddress"):
                 a = rec.get(k)
                 if isinstance(a, str):
                     idx.setdefault(a.lower(), rec)

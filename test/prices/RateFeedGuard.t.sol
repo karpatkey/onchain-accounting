@@ -156,7 +156,7 @@ contract RateFeedGuardTest is Test {
         for (uint256 i; i < chains.length; ++i) {
             total += _countGuarded(chains[i]);
         }
-        // 23 rate-feed-bearing instances: 11 mainnet, 7 Arbitrum, 4 Base, 1 Gnosis. Each verified on-chain.
+        // 24 rate-feed-bearing instances: 12 mainnet, 7 Arbitrum, 4 Base, 1 Gnosis. Each verified on-chain.
         // (Census header kept in step with the assertion below: it read 20 / 8 mainnet after #302's OETH
         // removal and was not updated when wARS took mainnet back to 9 — see the 2026-08-15 note.)
         //
@@ -228,7 +228,10 @@ contract RateFeedGuardTest is Test {
         // Its second leg (`baseUsdChainlink`, Chainlink BTC / USD `0xF403…E88c`, description "BTC / USD")
         // is not counted here: the guard pins ONE param per instance, and that leg's identity is asserted in
         // the feed's fork test instead.
-        assertEq(total, 23, "rate-feed instance count changed - re-verify description() on the new set");
+        // 2026-10-22: 23 -> 24. Mainnet `WBTCCrossRateRedstone` (issue #356), the second WBTC monitor: rate leg
+        // RedStone WBTC/BTC `0xD260596f85C6D91Ccd40f7076eEb62ACb3B2ad53`, description() "RedStone Price Feed for
+        // WBTC/BTC", 8 decimals, 99816289 at block 26240000 (inside the 0.5 .. 1.5 band).
+        assertEq(total, 24, "rate-feed instance count changed - re-verify description() on the new set");
     }
 
     function _countGuarded(uint256 chainId) internal view returns (uint256 n) {

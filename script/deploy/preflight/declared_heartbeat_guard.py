@@ -91,6 +91,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -105,6 +106,28 @@ WARN = "WARN"
 MAX_STALE_PRICE_AGE = 7 * 24 * 3600
 # `type(uint256).max` disables the NAV-side heartbeat gate; it is exempt from the cap check.
 UINT256_MAX = 2**256 - 1
+
+
+_UINT_STR = re.compile(r"0[xX][0-9a-fA-F]+|[0-9]+")
+
+
+def _parse_heartbeat(v):
+    """A config heartbeat as the deploy path reads it, or None if it cannot be read.
+
+    Mirrors `ConfigReader.readAssetFeedHeartbeat` + `vm.parseUint`: a JSON integer, or a string of decimal digits
+    (leading zeros allowed) or `0x` hex. Rejects booleans, negatives and anything else (`"7d"`, `"86_400"`,
+    `" 86400"`, `"0o..."`), so one parser serves every check in this module and none can disagree with another.
+    A JSON float is truncated, which is stricter than the deploy path (it would revert) and never hides a breach.
+    """
+    if isinstance(v, bool) or v is None:
+        return None
+    if isinstance(v, int):
+        return v if v >= 0 else None
+    if isinstance(v, float):
+        return int(v) if v >= 0 else None
+    if isinstance(v, str) and _UINT_STR.fullmatch(v):
+        return int(v, 16) if v[:2].lower() == "0x" else int(v, 10)
+    return None
 
 # Refuse to trust a snapshot older than this without saying so. Chainlink can re-tune a feed's heartbeat.
 SNAPSHOT_STALE_DAYS = 180
@@ -317,13 +340,8 @@ def registered_feeds(chain_id: str) -> list[dict]:
     def _int_or_none(v):
         """Never raise while ENUMERATING. A row this cannot parse is emitted with heartbeat=None and
         reported by `_row_findings`; raising here would lose the whole chain's rows at once, which is
-        the same failure `findings` contains per row."""
-        if isinstance(v, bool) or v is None:
-            return None
-        try:
-            return int(v)
-        except (TypeError, ValueError):
-            return None
+        the same failure `findings` contains per row. Parses exactly like the stale-cap scan."""
+        return _parse_heartbeat(v)
 
     out: list[dict] = []
     nav = REPO / f"script/config/nav-config/assets-and-price-feeds/{chain_id}.json"
@@ -731,17 +749,17 @@ def stale_cap_findings(chain_id: str) -> list[tuple[str, str]]:
                 continue
             raw = fd.get("heartbeat")
             ident = fd.get("address") or (f"Custom feed '{fd['feed']}'" if fd.get("feed") else "(no address)")
-            try:
-                # Base 0 for strings, matching the deploy path (`vm.parseUint` accepts a 0x prefix).
-                hb = None if isinstance(raw, bool) or raw is None else (
-                    int(raw, 0) if isinstance(raw, str) else int(raw))
-            except (TypeError, ValueError):
-                # Reported, never skipped: `registered_feeds` omits named Custom primaries, so nothing else
-                # would surface this row, and a heartbeat the cap cannot read is unchecked, not clean.
-                out.append((WARN, f"chain {chain_id} asset '{sym}' priceFeeds[{i}] {ident}: heartbeat {raw!r} "
-                                  f"is not an integer, so it is NOT checked against MAX_STALE_PRICE_AGE."))
+            hb = _parse_heartbeat(raw)
+            if hb is None:
+                # An absent heartbeat defaults to 3600 on the deploy path, so only a PRESENT unreadable one is a
+                # gap. Reported for named Custom rows only: `registered_feeds` omits them, so nothing else would
+                # surface it, while an addressed row's bad heartbeat is already a `_row_findings` WARN.
+                if raw is not None and not fd.get("address"):
+                    out.append((WARN, f"chain {chain_id} asset '{sym}' priceFeeds[{i}] {ident}: heartbeat "
+                                      f"{raw!r} is not a non-negative integer, so it is NOT checked against "
+                                      f"MAX_STALE_PRICE_AGE."))
                 continue
-            if hb is None or hb == UINT256_MAX or hb < MAX_STALE_PRICE_AGE:
+            if hb == UINT256_MAX or hb < MAX_STALE_PRICE_AGE:
                 continue
             out.append((ERROR, f"chain {chain_id} asset '{sym}' priceFeeds[{i}] {ident} registers heartbeat "
                                f"{hb} s, at or above MAX_STALE_PRICE_AGE ({MAX_STALE_PRICE_AGE} s = 7 days, "
@@ -1124,6 +1142,10 @@ def self_test() -> int:
         "BELOW": {"priceFeeds": [{"type": "Custom", "feed": "w", "heartbeat": 604799}]},
         "HEX": {"priceFeeds": [{"type": "Custom", "feed": "h", "heartbeat": "0x93a80"}]},
         "JUNK": {"priceFeeds": [{"type": "Custom", "feed": "j", "heartbeat": "7d"}]},
+        "ZEROS": {"priceFeeds": [{"type": "Custom", "feed": "k", "heartbeat": "0700000"}]},
+        "NEG": {"priceFeeds": [{"type": "Custom", "feed": "n", "heartbeat": "-1"}]},
+        "ADDRJUNK": {"priceFeeds": [{"address": "0xBBB0000000000000000000000000000000000004",
+                                     "type": "Chainlink", "heartbeat": "7d"}]},
         "$comment": "top-level note keys are skipped",
     }
     with tempfile.TemporaryDirectory() as _tdc:
@@ -1146,18 +1168,21 @@ def self_test() -> int:
         ("a uint256.max primary is exempt from the cap", False, "'MAX'"),
         ("a primary just below the cap is not a cap ERROR", False, "'BELOW'"),
         ("a hex-string heartbeat (0x93a80 = 604800) is caught like the deploy path parses it", True, "'HEX'"),
+        ("a leading-zero decimal string (\"0700000\") is caught like vm.parseUint reads it", True, "'ZEROS'"),
     ):
         hit = any(f"asset {sym}" in m for m in _cap)
         good = hit == want
         ok = ok and good
         print(f"  [{'PASS' if good else 'FAIL'}] {label}")
-    _junk = any("asset 'JUNK'" in m and "NOT checked" in m for m in _cap_warn)
+    _junk = (sum("asset 'JUNK'" in m for m in _cap_warn) == 1 and sum("asset 'NEG'" in m for m in _cap_warn) == 1
+             and not any("asset 'ADDRJUNK'" in m for m in _cap_warn))
     ok = ok and _junk
-    print(f"  [{'PASS' if _junk else 'FAIL'}] an unparseable named-Custom heartbeat is a WARN, not silently skipped")
-    _wired = len(_via_findings) == 4
+    print(f"  [{'PASS' if _junk else 'FAIL'}] an unparseable or negative named-Custom heartbeat is ONE cap WARN; "
+          f"an addressed one is left to the existing row WARN (no double report)")
+    _wired = len(_via_findings) == 5
     ok = ok and _wired
     print(f"  [{'PASS' if _wired else 'FAIL'}] findings() reports the cap verdicts exactly once each "
-          f"(got {len(_via_findings)}, want 4)")
+          f"(got {len(_via_findings)}, want 5)")
     # The hint used to advertise an allowlist entry as a second way to satisfy this finding. It is not:
     # an exemption answers the cadence question and does not waive equality, and the allowlist branch
     # ERRORs on a non-equal registration. The hint must say so rather than point at the silencing edit.

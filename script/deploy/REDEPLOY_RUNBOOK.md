@@ -1490,9 +1490,9 @@ proxy invalidates every existing feed.
 > inverter) and, since issue #356, the two WBTC monitors `WBTCCrossRate` / `WBTCCrossRateRedstone`
 > (`ChainlinkCrossRateCustomPriceFeed`, both legs read from Chainlink-ABI feeds) read no base price out of the NAV,
 > so they take no proxy address and expose **no `NAV()` at all**.
-> An unreadable `NAV()` on that one feed is CORRECT, not the leftover-feed failure this step hunts — which is why
-> `verify_step` exempts it on its own `BASE_ASSET() == 0` answer and substitutes `underlyingAssetSupported()` as
-> the per-address evidence. Do not redeploy it chasing a pointer that does not exist.
+> An unreadable `NAV()` on those feeds is CORRECT, not the leftover-feed failure this step hunts — which is why
+> `verify_step` exempts each on its own `BASE_ASSET() == 0` answer and substitutes `underlyingAssetSupported()` as
+> the per-address evidence. Do not redeploy them chasing a pointer that does not exist.
 
 > **THE COUNT IS 41 AS OF PR #308 (2026-08-15).** Re-derived from config, not carried forward:
 > **mainnet 26, arbitrum 8, base 4, gnosis 3 = 41.**
@@ -1557,7 +1557,8 @@ proxy invalidates every existing feed.
   expected name/count set, and it declares `BASE_ASSET() == 0`. The residual exposure is a wrong-address
   or accidentally-carried-over wARS, which nothing in this step would catch. That exposure is narrow for
   a reason worth stating rather than assuming — the failure this step hunts is a feed pricing against
-  the ABANDONED NAV, and a feed that reads no price out of any NAV cannot have it. Any OTHER feed reporting `no NAV dependency` is NOT expected and should be
+  the ABANDONED NAV, and a feed that reads no price out of any NAV cannot have it. The same holds for the two
+  WBTC monitors, which are likewise NEW (issue #356) with no prior generation. Any OTHER feed reporting `no NAV dependency` is NOT expected and should be
   treated as the stale-pointer signal this step hunts.
 
 ### 1.6 `RegisterAssets` — assets + feeds on the new NAV

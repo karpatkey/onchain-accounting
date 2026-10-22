@@ -135,7 +135,9 @@ contract ChainlinkCrossRateCustomPriceFeedForkTest is TestEnvConfigurator {
 
     /// @dev The second WBTC monitor (`WBTCCrossRateRedstone`): the same class on RedStone's WBTC/BTC. Pins the leg's
     ///      identity and the arithmetic, and that its 86400 s heartbeat is consistent with the feed's own cadence at
-    ///      the pinned block (RedStone's default push trigger is 0.5% deviation or 86400 s).
+    ///      the pinned block (RedStone's default push trigger is 0.5% deviation or 86400 s). Block-sensitive: RedStone
+    ///      pushes this feed a few seconds after each 24 h, so a re-pinned block inside that overshoot would fail the
+    ///      age assertion; pick a block mid-interval.
     function test_redstoneLeg_isTheExpectedPair_andPrices() public {
         assertEq(AggregatorV3Interface(RS_WBTC_BTC).description(), "RedStone Price Feed for WBTC/BTC");
         assertEq(AggregatorV3Interface(RS_WBTC_BTC).decimals(), 8);
@@ -154,10 +156,20 @@ contract ChainlinkCrossRateCustomPriceFeedForkTest is TestEnvConfigurator {
         (,,, uint256 updatedAt,) = rs.latestRoundData();
         assertEq(updatedAt, rateAt < btcAt ? rateAt : btcAt, "updatedAt == the older leg");
 
-        // Past the RedStone leg's heartbeat: the price is carried, flagged stale (ADR 0029).
+        // Past the RedStone leg's heartbeat, with BTC/USD kept FRESH (mocked to the warped time) so the stale verdict
+        // can only come from the RedStone leg: the price is carried, flagged stale (ADR 0029).
+        (uint80 bid,, uint256 bStarted,, uint80 bAir) = AggregatorV3Interface(BTC_USD).latestRoundData();
         vm.warp(rateAt + RATE_HB + 1);
+        vm.mockCall(
+            BTC_USD,
+            abi.encodeWithSelector(AggregatorV3Interface.latestRoundData.selector),
+            abi.encode(bid, btc, bStarted, block.timestamp, bAir)
+        );
         (uint256 later, bool laterStale) = rs.getLatestPrice();
-        assertTrue(laterStale);
+        assertTrue(laterStale, "the RedStone leg alone is past its heartbeat");
         assertEq(later, price);
+        (uint256 gu, uint256 ghb) = rs.governingFeedFreshness();
+        assertEq(gu, rateAt, "the stale RedStone leg governs");
+        assertEq(ghb, RATE_HB);
     }
 }

@@ -60,7 +60,8 @@ interface IRateFeedIdentity {
 ///      very param-name-guessing escape it existed to close, because the narrowed test is just another
 ///      guessable name list. So: a feed that declares a band AND names its rate leg outside the allowlist
 ///      above receives neither a pair check nor a band reconciliation. No committed config has that shape
-///      (the banded feeds, mainnet `wARS` and `WBTCCrossRate`, each declare a recognised param and a guard).
+///      (the banded feeds, mainnet `wARS`, `WBTCCrossRate` and `WBTCCrossRateRedstone`, each declare a recognised param
+///      and a guard).
 ///      Closing it needs an explicit config assertion, not a third heuristic.
 library RateFeedGuard {
     /// @notice The configured address is an aggregator, but for the wrong pair.

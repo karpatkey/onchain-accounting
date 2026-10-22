@@ -121,6 +121,43 @@ def registered_redstone(chain: str) -> list[dict]:
                     continue
                 rows.append({"asset": asset, "role": f"{arr}[{i}]",
                              "address": f.get("address"), "heartbeat": f.get("heartbeat")})
+    return rows + custom_feed_legs(chain)
+
+
+def _is_address(v) -> bool:
+    return isinstance(v, str) and v.startswith("0x") and len(v) == 42
+
+
+def custom_feed_legs(chain: str) -> list[dict]:
+    """Every (address, heartbeat) pair inside an ENABLED custom feed's constructor, as a candidate RedStone leg.
+
+    A custom feed can read a RedStone push feed directly (issue #356: `WBTCCrossRateRedstone` reads RedStone WBTC/BTC
+    as its rate leg). That address never appears as a `type: Redstone` nav-config row, so without this it was checked
+    by neither heartbeat guard. Pairs `<stem>Heartbeat` with the one sibling address key starting with `<stem>`, the
+    same pairing `declared_heartbeat_guard` uses for Chainlink legs. Rows are marked `leg: True`: `findings` checks
+    only those whose address IS in a RedStone manifest, and leaves the rest (Chainlink legs) to the Chainlink guard.
+    """
+    p = REPO / f"script/config/contracts-deployment-config/custom-price-feeds/{chain}.json"
+    if not p.exists():
+        return []
+    rows = []
+    for name, entry in json.loads(p.read_text()).items():
+        if not isinstance(entry, dict) or entry.get("enabled") is False:
+            continue
+        ctor = entry.get("constructor") or {}
+        for hk, hv in ctor.items():
+            if not hk.endswith("Heartbeat"):
+                continue
+            stem = hk[: -len("Heartbeat")]
+            sibs = [k for k, v in ctor.items() if k != hk and k.startswith(stem) and _is_address(v)]
+            if len(sibs) != 1:
+                continue
+            try:
+                hb = int(hv)
+            except (TypeError, ValueError):
+                hb = hv
+            rows.append({"asset": name, "role": f"constructor.{sibs[0]}", "address": ctor[sibs[0]],
+                         "heartbeat": hb, "leg": True})
     return rows
 
 
@@ -136,6 +173,8 @@ def findings(chain: str, fetch=_fetch) -> list[tuple[str, str]]:
     for r in registered_redstone(chain):
         addr = (r["address"] or "").lower()
         rh, dh = r["heartbeat"], decl.get(addr)
+        if dh is None and r.get("leg"):
+            continue  # not a RedStone feed: a Chainlink leg, covered by declared_heartbeat_guard
         if dh is None:
             note = UNCATALOGUED_EXCEPTIONS.get((chain, addr))
             if note:

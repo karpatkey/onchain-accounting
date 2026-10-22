@@ -125,7 +125,7 @@ contract ezETH_CrossRateCustomPriceFeedForkTest is TestEnvConfigurator {
     }
 
     /// @notice The rate leg's own heartbeat gate fires, attributed to the rate leg alone.
-    /// @dev Deliberately NOT done by warping past `RATE_HEARTBEAT`. This rate heartbeat is 86,400s while the NAV's
+    /// @dev Deliberately NOT done by warping past `RATE_HEARTBEAT`. This rate heartbeat is 43,200s while the NAV's
     ///      WETH leg is registered at 3,600s, so any warp large enough to stale the rate leg stales the base leg
     ///      first — the test would pass with the rate-leg gate deleted entirely and could not say which leg fired.
     ///      Mocking only the rate feed's `updatedAt` keeps the base leg fresh, so `stale == true` here can only have

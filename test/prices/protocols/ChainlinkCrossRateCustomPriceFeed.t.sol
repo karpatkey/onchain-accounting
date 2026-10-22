@@ -431,12 +431,16 @@ contract ChainlinkCrossRateCustomPriceFeedTest is Test {
     ///      try/catch around `getLatestPrice` then treats the feed as unusable.
     function test_revertingLeg_revertsRead() public {
         rateFeed.setRoundDataReverts(true);
-        vm.expectRevert();
+        vm.expectRevert(bytes("latestRoundData: boom"));
         oracle.getLatestPrice();
+        vm.expectRevert(bytes("latestRoundData: boom"));
+        oracle.latestRoundData();
         rateFeed.setRoundDataReverts(false);
         baseFeed.setRoundDataReverts(true);
-        vm.expectRevert();
+        vm.expectRevert(bytes("latestRoundData: boom"));
         oracle.getLatestPrice();
+        vm.expectRevert(bytes("latestRoundData: boom"));
+        oracle.latestRoundData();
     }
 
     function test_governing_rateUnreadableReportsBase() public {

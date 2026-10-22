@@ -4,12 +4,15 @@ What must hold when the best-available stale pricing ([ADR 0029](../../docs/deci
 goes live. This file holds the rules. The full per-chain command sequence and the Safe batches are added when the
 rollout is prepared.
 
-## Decisions (2026-10-23)
+## Decisions (2026-10-22)
 
 - **Deploy first, merge after.** The rollout runs from the PR branch, and PR #354 merges only once the live
   contracts match the tree, as PR #338 did. Merging earlier turns the bytecode-drift gate
   (`.github/workflows/bytecode-drift.yml`, which runs on every push to `main` that touches `src/**`) red on every
   live custom feed, `PriceFeedLib` and the NAV implementation.
+  - **Expected red window:** the drift gate also runs nightly against `main`. Between the first deploy and the merge,
+    `main`'s tree matches neither the new contracts nor (lacking this PR's retired-feed exemption) the retired
+    ones, so that nightly run is red by construction. Read it against the rollout log; it is not a new finding.
 - **Redeploy all 50 custom feeds**, not only the 39 primaries. The 11 monitor feeds use the same changed classes
   (`TwoFeedChainlinkPriceFeed` cross-rate feeds), so leaving them in place would keep them permanently drifted.
   - Primaries (39): chain 1 (27) wstETH, eETH, weETH, rETH, ezETH, rsETH, ETHx, osETH, stETHFundamental, lsETH,
@@ -22,8 +25,10 @@ rollout is prepared.
     `script/manage/MigrateToMonitorFeeds.s.sol`, which reconciles each asset's monitor set to the config.
 - **Retired feeds are exempt from the drift gate.** `retire_custom_feeds.py` moves each replaced address to
   `retiredCustomPriceFeeds`, and `bytecode_audit.evaluate_drift` reports a STALE retired entry without failing
-  on it (an older generation can never match the tree). Missing code or an RPC error on a retired address still
-  fails.
+  on it (an older generation can never match the tree). The exemption holds only while the live NAV no longer
+  uses the feed: `check_retired_registration` reads the feed's asset and the NAV's primary and monitor feeds, and
+  a retired address that is still registered (its swap never executed) fails as `RETIRED_BUT_REGISTERED`. Missing
+  code, an RPC error, or an unverifiable registration on a retired address also fails.
 
 ## Rule 1 — swap the custom feeds before the implementation upgrade (or in the same batch)
 

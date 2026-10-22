@@ -178,6 +178,23 @@ def self_test(index: Index, artifacts: list[dict]) -> int:
     bl_ok, unacc, hits = evaluate_drift([_res(1, (A, "CURRENT", "K"))], {"1:0xzzzz": {"reason": "r"}})
     check("a baseline entry for an un-audited address fails (dangling)", len(bl_ok) == 1)
 
+    # The hand decoder behind the retired-registration check: offset, length, 4-word tuples, address first.
+    _a1, _a2 = "11" * 20, "22" * 20
+    _arr = ("20".rjust(64, "0") + "2".rjust(64, "0")
+            + _a1.rjust(64, "0") + "8".rjust(64, "0") + "3".rjust(64, "0") + "e10".rjust(64, "0")
+            + _a2.rjust(64, "0") + "8".rjust(64, "0") + "0".rjust(64, "0") + "15180".rjust(64, "0"))
+    check("PriceFeedConfig[] decodes to its feed addresses", _feed_addresses("0x" + _arr) == {"0x" + _a1, "0x" + _a2})
+    check("an empty PriceFeedConfig[] decodes to no addresses",
+          _feed_addresses("0x" + "20".rjust(64, "0") + "0".rjust(64, "0")) == set())
+    try:
+        _feed_addresses("0x" + "20".rjust(64, "0") + "2".rjust(64, "0"))
+        _trunc = False
+    except ValueError:
+        _trunc = True
+    check("a truncated PriceFeedConfig[] raises instead of reading as unregistered", _trunc)
+    # A retired feed still registered on the live NAV is NOT exempt.
+    bl_ok, unacc, hits = evaluate_drift([_res(1, (A, "RETIRED_BUT_REGISTERED", "retiredCustomPriceFeeds.OETH"))], {})
+    check("a retired feed still registered on the live NAV fails", len(unacc) == 1)
     # A RETIRED feed's drift is expected (an older generation can never match this tree): reported, not failed.
     bl_ok, unacc, hits = evaluate_drift([_res(1, (A, "STALE", "retiredCustomPriceFeeds.OETH"))], {})
     check("a STALE retired feed is reported but is not a failure", unacc == [] and len(hits) == 1)
@@ -443,6 +460,54 @@ def check_immutable_pointers(chain_id: int, url: str, res: dict) -> None:
             e["status"] = "CURRENT_CODE_STALE_POINTER"
 
 
+def _feed_addresses(ret_hex: str) -> set[str]:
+    """Decode a `PriceFeedConfig[]` return (static tuples of 4 words; priceFeed is the first) to its addresses.
+
+    Decoded by hand because the drift job installs no ABI library. Raises on a malformed payload, so a reply this
+    cannot read is never mistaken for an empty (unregistered) list.
+    """
+    raw = bytes.fromhex(ret_hex[2:] if ret_hex.startswith("0x") else ret_hex)
+    if len(raw) < 64:
+        raise ValueError(f"short PriceFeedConfig[] return ({len(raw)} bytes)")
+    off = int.from_bytes(raw[0:32], "big")
+    n = int.from_bytes(raw[off:off + 32], "big")
+    start = off + 32
+    if len(raw) < start + n * 128:
+        raise ValueError(f"truncated PriceFeedConfig[] return ({n} elements, {len(raw)} bytes)")
+    return {"0x" + raw[start + i * 128 + 12:start + i * 128 + 32].hex() for i in range(n)}
+
+
+def check_retired_registration(chain_id: int, url: str, res: dict) -> None:
+    """A STALE `retiredCustomPriceFeeds` entry is exempt from the drift gate ONLY if the live NAV no longer uses it.
+
+    The exemption trusts the record's section label, and the record can run ahead of the chain: a feed retired in
+    the record whose swap never executed (or reverted) is still a primary or monitor on the live NAV, which is
+    exactly the drift this gate exists for. So for each such entry read the feed's `underlyingAssetSupported()`,
+    then the NAV's `getPriceFeeds` and `getMonitorFeeds` for that asset (both return an empty array for an
+    unregistered asset, never revert). Still registered -> `RETIRED_BUT_REGISTERED`; any read that fails ->
+    `RETIRED_REGISTRATION_UNKNOWN`. Both are non-STALE statuses, so neither is exempt.
+    """
+    proxy = (c.deployment(chain_id).get("NAVCalculatorProxy") or "").lower()
+    for e in res["entries"]:
+        if e["status"] != "STALE" or not e["key"].startswith(f"{RETIRED_SECTION}."):
+            continue
+        try:
+            if not c.is_address(proxy):
+                raise ValueError("no NAVCalculatorProxy in the deployment record")
+            asset = "0x" + c.eth_call(url, e["address"], _sel("underlyingAssetSupported()"))[-40:]
+            arg = asset[2:].rjust(64, "0")
+            live = _feed_addresses(c.eth_call(url, proxy, _sel("getPriceFeeds(address)") + arg))
+            live |= _feed_addresses(c.eth_call(url, proxy, _sel("getMonitorFeeds(address)") + arg))
+        except Exception as exc:  # noqa: BLE001 - an unverifiable exemption must not pass
+            e["status"] = "RETIRED_REGISTRATION_UNKNOWN"
+            e["detail"] = f"could not confirm the retired feed is unregistered: {exc}"
+            continue
+        if e["address"].lower() in live:
+            e["status"] = "RETIRED_BUT_REGISTERED"
+            e["detail"] = (f"retired in the record but still a feed of asset {asset} on the live NAV — the swap "
+                           f"has not executed")
+
+
 def audit_chain(chain_id: int, index: Index) -> dict:
     url, note, _rejected = c.probe_rpc(chain_id)
     name = c.chain_config(chain_id).get("name", "?")
@@ -480,6 +545,7 @@ def audit_chain(chain_id: int, index: Index) -> dict:
                 entry["ambiguous"] = True
         res["entries"].append(entry)
     check_immutable_pointers(chain_id, url, res)
+    check_retired_registration(chain_id, url, res)
     return res
 
 

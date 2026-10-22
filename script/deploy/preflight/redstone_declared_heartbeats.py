@@ -59,18 +59,7 @@ ERROR, WARN = "ERROR", "WARN"
 # CI, so an uncatalogued feed would be reported as unverified and permitted in the same breath, which is
 # indistinguishable from not checking at all. That is precisely how 31 RedStone registrations sat
 # unverified while seven of them were wrong.
-UNCATALOGUED_EXCEPTIONS: dict[tuple[str, str], str] = {
-    ("1", "0xf4a3e183f59d2599ee3df213ff78b1b3b1923696"): (
-        "ezETHCrossRateMarket's rate leg: RedStone's Classic Push ezETH/ETH market feed, SUNSET by RedStone (in none of "
-        "the ethereum manifests). Its last push was 2026-08-20 (updatedAt 1787220311), so this monitor has reported "
-        "stale and been excluded since then: ezETH has NO live market-based monitor today. Open item — replace or "
-        "remove the monitor; do not redeploy it unchanged."),
-    ("1", "0x66ac817f997efd114edfcccdce99f3268557b32c"): (
-        "osETHCrossRate's rate leg: RedStone 'osETH/ETH' push feed, in none of the ethereum manifests. latestRoundData() "
-        "now REVERTS (custom error 0x4f319ffe, dataFeedId 'osETH/ETH' — the same signature as the delisted EIGEN feed), "
-        "so this monitor's read reverts and it is excluded: osETH has NO live market-based monitor today. Open item — "
-        "replace or remove the monitor; do not redeploy it unchanged."),
-}
+UNCATALOGUED_EXCEPTIONS: dict[tuple[str, str], str] = {}
 
 
 def _fetch(path: str) -> dict:

@@ -163,18 +163,13 @@
         "heartbeat": 3600
       }
     ],
-    "$comment": "Finding #2: ezETH's primary is fundamental (Renzo RestakeManager) and its only monitor, ezETHCrossRate, is ALSO fundamental after the 2026-07-22 migration to RedStone's ezETH_FUNDAMENTAL feed - so the 250 bps tolerance could not fire on a market depeg. ezETHCrossRateMarket adds a genuine MARKET leg (RedStone Classic Push ezETH/ETH). Both monitors are kept: divergenceBps is primary-vs-the-WORST-single-monitor (not the median), so the market monitor DOMINATES rather than being diluted by the fundamental one sitting near 0 bps. Its 46800 heartbeat is derived from the feed's measured 12 h cadence (max gap 43224 s + 3576 s margin), NOT copied from ezETHCrossRate's heartbeat; the registered value must cover the slower leg because TwoFeedChainlinkPriceFeed reports updatedAt = min(rateUpdatedAt, baseUpdatedAt), and the 12 h rate leg is slower than WETH's 3600 s ETH/USD. See custom-price-feeds/1.json.ezETHCrossRateMarket for the full measurement and the deprecated-feed rationale. ⚠ 2026-10-22: that market leg (RedStone Classic 0xF4a3e183…) has not updated since 2026-08-20, so ezETHCrossRateMarket is stale and excluded — ezETH currently has NO live market monitor (recorded in redstone_declared_heartbeats.py UNCATALOGUED_EXCEPTIONS). With ezETHCrossRate's own ~12 s overshoot every 12 h, ezETH is listed in monitorsUnhealthyPriceAssets for those seconds until a live market monitor exists.",
+    "$comment": "Finding #2: ezETH's primary is fundamental (Renzo RestakeManager) and its only monitor, ezETHCrossRate, is ALSO fundamental after the 2026-07-22 migration to RedStone's ezETH_FUNDAMENTAL feed - so the 250 bps tolerance could not fire on a market depeg. ezETHCrossRateMarket adds a genuine MARKET leg (RedStone Classic Push ezETH/ETH). Both monitors are kept: divergenceBps is primary-vs-the-WORST-single-monitor (not the median), so the market monitor DOMINATES rather than being diluted by the fundamental one sitting near 0 bps. Its 46800 heartbeat is derived from the feed's measured 12 h cadence (max gap 43224 s + 3576 s margin), NOT copied from ezETHCrossRate's heartbeat; the registered value must cover the slower leg because TwoFeedChainlinkPriceFeed reports updatedAt = min(rateUpdatedAt, baseUpdatedAt), and the 12 h rate leg is slower than WETH's 3600 s ETH/USD. See custom-price-feeds/1.json.ezETHCrossRateMarket for the full measurement and the deprecated-feed rationale. ⚠ 2026-10-22: that market leg (RedStone Classic 0xF4a3e183…) has not updated since 2026-08-20, so ezETHCrossRateMarket was removed for the ADR 0029 rollout (issue #357): ezETH has NO market monitor until a live replacement is registered, only the fundamental ezETHCrossRate. With that monitor's ~12 s overshoot every 12 h, ezETH is listed in monitorsUnhealthyPriceAssets for those seconds.",
     "monitorFeeds": [
       {
         "$comment": "Heartbeat 43200 = RedStone's declared cadence for this monitor's ezETH_FUNDAMENTAL rate leg, the value its constructor now carries too (ADR 0025: both gates equal declared; was 86400 under the margin policy). The feed overshoots its 12 h by ~12 s, so it drops out for those seconds each cycle.",
         "type": "Custom",
         "feed": "ezETHCrossRate",
         "heartbeat": 43200
-      },
-      {
-        "type": "Custom",
-        "feed": "ezETHCrossRateMarket",
-        "heartbeat": 46800
       }
     ]
   },
@@ -235,13 +230,8 @@
         "heartbeat": 3600
       }
     ],
-    "monitorFeeds": [
-      {
-        "type": "Custom",
-        "feed": "osETHCrossRate",
-        "heartbeat": 86400
-      }
-    ],
+    "$monitorComment": "No monitor until issue #357 is closed. The market monitor osETHCrossRate (RedStone osETH/ETH 0x66ac817f…) was removed for the ADR 0029 rollout: that RedStone feed's latestRoundData() reverts, so the monitor was excluded anyway. divergenceToleranceBps is kept for its replacement (preflight WARNs: tolerance without a monitor).",
+    "monitorFeeds": [],
     "note": "Priced via osToken_CustomPriceFeed (priceFeeds.osETH.1): convertToAssets(1e18) [osETH/ETH] * ETH/USD. Held osETH is reported by ERC20DefaultBalanceAdapter (wallet balance). The pricefeed address is filled by 03_DeployPriceFeeds. Separate from the StakeWiseV3Vault osToken-debt leg (denominated in ETH)."
   },
   "USDC": {

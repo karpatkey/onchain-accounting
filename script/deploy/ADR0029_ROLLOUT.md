@@ -23,6 +23,13 @@ rollout is prepared.
     syrupUSDC_L2; 8453: wstETH_L2, weETH_L2, cbETH_L2; 5042: wARS.
   - Monitors (11): chain 1 rETH, ezETH, ezETHMarket, ETHx, osETH and stETH cross-rate feeds plus
     LBTCCrossRateMarket; 42161: weETH, ezETH and rsETH cross-rate feeds; 8453: weETHCrossRate.
+  - **Amended by issue #357: 48, not 50.** Two of the 11 monitors are dead and are NOT redeployed:
+    `ezETHCrossRateMarket` (its RedStone Classic leg `0xF4a3e183…` has not updated since 2026-08-20) and
+    `osETHCrossRate` (its RedStone osETH/ETH leg `0x66ac817f…` reverts). Both are `enabled: false` and absent from the
+    ezETH/osETH `monitorFeeds`, so `03` skips them and `MigrateToMonitorFeeds` deregisters them on-chain. AFTER that
+    deregistration, retire their recorded addresses with `retire_custom_feeds.py --keys
+    ezETHCrossRateMarket,osETHCrossRate` (the drift gate exempts a retired feed only once the live NAV no longer uses
+    it). ezETH keeps its fundamental monitor; osETH has none until #357 registers a replacement.
   - With issue #356 (stacked PR): two NEW mainnet monitors, `WBTCCrossRate` and `WBTCCrossRateRedstone`, deployed by
     `03` alongside the redeploy, and cbBTC's primary moves from Chainlink cbBTC/USD to Chainlink BTC/USD on 1 and 8453
     (a Chainlink-to-Chainlink swap, no ADR 0029 ordering hazard). `MigrateToMonitorFeeds` performs both: it adds the

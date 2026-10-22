@@ -33,7 +33,7 @@ rollout is prepared.
     addresses match the deployment records" step fails on a published address that is no longer a live record.
     ezETH keeps its fundamental monitor; osETH has none until #357 registers a replacement.
   - **Expected `MigrateToMonitorFeeds` removals on chain 1**, so the post-run census reads none as a surprise: cbBTC's
-    Chainlink cbBTC/USD primary `0x2665…`; WBTC's RedStone BTC monitor `0xAB7f…`; the dead monitors above; and
+    Chainlink cbBTC/USD primary `0x2665…`; the dead monitors above; and
     EIGEN's dead RedStone monitor `0x2ee5Ce6556599E16c226579BA14F94926d8Cb86d`, which config dropped on 2026-09-16 but is
     still registered on-chain (its `latestRoundData()` reverts). On 8453: cbBTC's cbBTC/USD primary `0x07DA…`.
   - **Swap cbBTC's primary in the same batch as the implementation upgrade (or right before it), not days ahead.**
@@ -44,7 +44,9 @@ rollout is prepared.
   - With issue #356 (stacked PR): two NEW mainnet monitors, `WBTCCrossRate` and `WBTCCrossRateRedstone`, deployed by
     `03` alongside the redeploy, and cbBTC's primary moves from Chainlink cbBTC/USD to Chainlink BTC/USD on 1 and 8453
     (a Chainlink-to-Chainlink swap, no ADR 0029 ordering hazard). `MigrateToMonitorFeeds` performs both: it adds the
-    new primary/monitors and removes the old ones (cbBTC/USD; WBTC's RedStone BTC monitor) in the same run.
+    new primary/monitors and removes cbBTC/USD in the same run. WBTC's RedStone BTC monitor `0xAB7f…` is KEPT: it is
+    the only WBTC monitor that does not read the Chainlink BTC/USD primary, so it is what still raises `irregular`
+    when that primary freezes (both new monitors multiply by it and go stale with it).
   - Run `script/manage/SwapCustomPriceFeeds.s.sol` first (primaries), then
     `script/manage/MigrateToMonitorFeeds.s.sol` (monitors). The second also reconciles each asset's primary to the
     config (it adds `priceFeeds[0]` when absent and removes any other pricing feed), so after the first its primary

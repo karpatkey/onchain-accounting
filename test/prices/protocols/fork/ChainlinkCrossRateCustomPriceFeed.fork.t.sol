@@ -7,6 +7,7 @@ import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {IPrices} from "src/prices/IPrices.sol";
 import {AggregatorV3Interface} from "@chainlink/src/v0.8/shared/interfaces/AggregatorV3Interface.sol";
 import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol";
+import {ConfigReader} from "script/utils/ConfigReader.sol";
 
 // forge-lint: disable-next-line(unaliased-plain-import)
 import "src/constants.sol";
@@ -28,6 +29,8 @@ contract ChainlinkCrossRateCustomPriceFeedForkTest is TestEnvConfigurator {
     address constant BTC_USD = 0xF4030086522a5bEEa4988F8cA5B36dbC97BeE88c;
     /// @dev RedStone WBTC/BTC push feed — the rate leg of the second WBTC monitor, `WBTCCrossRateRedstone`.
     address constant RS_WBTC_BTC = 0xD260596f85C6D91Ccd40f7076eEb62ACb3B2ad53;
+    /// @dev RedStone BTC/USD — WBTC's live monitor, KEPT as the one monitor that shares no feed with the primary.
+    address constant RS_BTC_USD = 0xAB7f623fb2F6fea6601D4350FA0E2290663C28Fc;
     /// @dev The live NAVCalculator proxy (fleet-wide since the 2026-08-18 redeploy).
     address constant NAV = 0x54EaD2A1dB7456cA917675Ea8908ec8A997c6214;
     /// @dev The timelock that holds MANAGER on the live NAV (asserted in the test, not assumed).
@@ -171,5 +174,183 @@ contract ChainlinkCrossRateCustomPriceFeedForkTest is TestEnvConfigurator {
         (uint256 gu, uint256 ghb) = rs.governingFeedFreshness();
         assertEq(gu, rateAt, "the stale RedStone leg governs");
         assertEq(ghb, RATE_HB);
+    }
+
+    /// @dev Why WBTC keeps the RedStone BTC monitor next to the two WBTC-specific ones: both of those multiply by the
+    ///      Chainlink BTC/USD primary, so when the primary FREEZES past its heartbeat they go stale with it and no
+    ///      comparison runs (negative control). With the RedStone BTC monitor registered too, the same freeze during a
+    ///      3% market move raises `irregular` (ADR 0029 runs divergence on a usable stale primary).
+    function test_liveNav_frozenPrimary_onlyTheIndependentMonitorRaisesIrregular() public {
+        ChainlinkCrossRateCustomPriceFeed rs =
+            new ChainlinkCrossRateCustomPriceFeed(WBTC, RS_WBTC_BTC, RATE_HB, BTC_USD, BASE_HB, MIN_R, MAX_R);
+        vm.startPrank(TIMELOCK);
+        // Start from the two WBTC-specific monitors only (the live RedStone BTC monitor is removed for the control).
+        IPrices.PriceFeedConfig[] memory live = IPrices(NAV).getMonitorFeeds(WBTC);
+        for (uint256 i; i < live.length; ++i) {
+            INAVCalculator(NAV).removeMonitorFeed(WBTC, live[i].priceFeed);
+        }
+        INAVCalculator(NAV).setDivergenceTolerance(WBTC, DIVERGENCE_BPS);
+        INAVCalculator(NAV).addMonitorFeed(WBTC, address(feed), IPrices.PriceType.Custom, RATE_HB);
+        INAVCalculator(NAV).addMonitorFeed(WBTC, address(rs), IPrices.PriceType.Custom, RATE_HB);
+        vm.stopPrank();
+
+        // Freeze the primary past its 3600 s heartbeat; keep both WBTC/BTC legs FRESH at parity, so the only reason
+        // the two WBTC-specific monitors can go stale is the primary feed they multiply by.
+        (,,, uint256 btcAt,) = AggregatorV3Interface(BTC_USD).latestRoundData();
+        vm.warp(btcAt + BASE_HB + 1);
+        _mockFresh(WBTC_BTC, 1e8);
+        _mockFresh(RS_WBTC_BTC, 1e8);
+        (, int256 btcFrozen,,,) = AggregatorV3Interface(BTC_USD).latestRoundData();
+        // The market (RedStone BTC) has moved 3% below the frozen primary.
+        _mockFresh(RS_BTC_USD, (btcFrozen * 97) / 100);
+
+        (, bool clStale) = feed.getLatestPrice();
+        (, bool rsStale) = rs.getLatestPrice();
+        assertTrue(clStale && rsStale, "both WBTC-specific monitors go stale with the primary");
+        INAVCalculator.PriceFeedData memory blind = INAVCalculator(NAV).getPriceData(WBTC);
+        assertTrue(blind.stale, "the frozen primary is flagged stale");
+        assertFalse(blind.irregular, "control: with only those two monitors the 3% move is invisible");
+        assertEq(blind.monitorFeedCount, 0, "control: no monitor contributed");
+
+        vm.prank(TIMELOCK);
+        INAVCalculator(NAV).addMonitorFeed(WBTC, RS_BTC_USD, IPrices.PriceType.Redstone, RATE_HB);
+        INAVCalculator.PriceFeedData memory seen = INAVCalculator(NAV).getPriceData(WBTC);
+        assertTrue(seen.stale, "still stale");
+        assertTrue(seen.irregular, "the independent RedStone BTC monitor raises irregular");
+        assertEq(seen.monitorFeedCount, 1, "exactly the RedStone BTC monitor contributed");
+        assertEq(seen.price, blind.price, "a monitor never moves the price");
+    }
+
+    /// @dev The rollout END STATE, built from the committed config rather than hand-picked constants: both Custom
+    ///      monitors deployed from `custom-price-feeds/1.json`, WBTC's monitor list and tolerance from
+    ///      `nav-config/assets-and-price-feeds/1.json`, reconciled onto the live NAV the way `MigrateToMonitorFeeds`
+    ///      does (add config monitors not yet registered, then remove registered monitors absent from config). Pins
+    ///      that the end state is exactly three monitors, that the live RedStone BTC monitor is KEPT with its existing
+    ///      registration, that WBTC reads healthy and not irregular at the pinned block, and that both a WBTC depeg
+    ///      and a frozen primary during a BTC move raise `irregular`.
+    function test_configEndState_threeMonitors_healthy_andAlarmed() public {
+        uint256 cid = 1;
+        address clMon = _deployCrossRateFromConfig("WBTCCrossRate");
+        address rsMon = _deployCrossRateFromConfig("WBTCCrossRateRedstone");
+
+        // The live RedStone BTC monitor is registered today with exactly the type and heartbeat config now names.
+        IPrices.PriceFeedConfig[] memory before = IPrices(NAV).getMonitorFeeds(WBTC);
+        bool liveRs;
+        for (uint256 i; i < before.length; ++i) {
+            if (before[i].priceFeed == RS_BTC_USD) {
+                liveRs = true;
+                assertEq(uint256(before[i].priceType), uint256(IPrices.PriceType.Redstone), "live type");
+                assertEq(before[i].chainlinkHeartbeat, 86_400, "live heartbeat");
+            }
+        }
+        assertTrue(liveRs, "premise: RedStone BTC is WBTC's live monitor");
+
+        uint256 n = ConfigReader.assetMonitorFeedCount(vm, cid, "WBTC");
+        assertEq(n, 3, "config: three WBTC monitors");
+        assertEq(ConfigReader.readAssetDivergenceToleranceBps(vm, cid, "WBTC"), DIVERGENCE_BPS, "config: 50 bps");
+        address[] memory target = new address[](n);
+        vm.startPrank(TIMELOCK);
+        // Pass A of MigrateToMonitorFeeds sets the configured tolerance before adding monitors.
+        INAVCalculator(NAV)
+            .setDivergenceTolerance(WBTC, uint32(ConfigReader.readAssetDivergenceToleranceBps(vm, cid, "WBTC")));
+        for (uint256 i; i < n; ++i) {
+            (IPrices.PriceType pt, bool ok) = ConfigReader.readAssetMonitorFeedPriceType(vm, cid, "WBTC", i);
+            assertTrue(ok, "config: known monitor type");
+            uint256 hb = vm.parseUint(ConfigReader.readAssetMonitorFeedHeartbeat(vm, cid, "WBTC", i));
+            if (pt == IPrices.PriceType.Custom) {
+                string memory name = ConfigReader.readAssetMonitorFeedName(vm, cid, "WBTC", i);
+                if (keccak256(bytes(name)) == keccak256("WBTCCrossRate")) {
+                    target[i] = clMon;
+                } else {
+                    assertEq(name, "WBTCCrossRateRedstone", "config: unexpected Custom monitor");
+                    target[i] = rsMon;
+                }
+            } else {
+                target[i] = vm.parseAddress(ConfigReader.readAssetMonitorFeedAddress(vm, cid, "WBTC", i));
+                assertEq(target[i], RS_BTC_USD, "config: the static monitor is RedStone BTC");
+                assertEq(uint256(pt), uint256(IPrices.PriceType.Redstone), "config type == live type");
+                assertEq(hb, 86_400, "config heartbeat == live heartbeat");
+            }
+            if (!_registered(target[i])) INAVCalculator(NAV).addMonitorFeed(WBTC, target[i], pt, hb);
+        }
+        for (uint256 i; i < before.length; ++i) {
+            bool keep;
+            for (uint256 j; j < n; ++j) {
+                if (target[j] == before[i].priceFeed) keep = true;
+            }
+            if (!keep) INAVCalculator(NAV).removeMonitorFeed(WBTC, before[i].priceFeed);
+        }
+        vm.stopPrank();
+
+        IPrices.PriceFeedConfig[] memory after_ = IPrices(NAV).getMonitorFeeds(WBTC);
+        assertEq(after_.length, 3, "end state: exactly three monitors");
+        assertTrue(_registered(clMon) && _registered(rsMon) && _registered(RS_BTC_USD), "end state: the three");
+        for (uint256 i; i < after_.length; ++i) {
+            if (after_[i].priceFeed == RS_BTC_USD) {
+                assertEq(uint256(after_[i].priceType), uint256(IPrices.PriceType.Redstone), "kept: type unchanged");
+                assertEq(after_[i].chainlinkHeartbeat, 86_400, "kept: heartbeat unchanged");
+            }
+        }
+        assertEq(IPrices(NAV).getAssetPricing(WBTC).divergenceToleranceBps, DIVERGENCE_BPS, "on-chain tolerance 50");
+
+        // Block-sensitive: RedStone BTC/USD pushes on 0.5% or 24 h, so a re-pinned block inside its heartbeat
+        // overshoot would read 2 healthy monitors here; pick a block mid-interval.
+
+        INAVCalculator.PriceFeedData memory calm = INAVCalculator(NAV).getPriceData(WBTC);
+        assertFalse(calm.stale, "fresh at the pinned block");
+        assertFalse(calm.irregular, "no false irregular at the pinned block");
+        assertEq(calm.monitorFeedCount, 3, "all three monitors healthy");
+
+        // A 3% WBTC depeg (both WBTC/BTC legs at 0.97): the WBTC-specific monitors raise irregular.
+        uint256 snap = vm.snapshotState();
+        _mockFresh(WBTC_BTC, 0.97e8);
+        _mockFresh(RS_WBTC_BTC, 0.97e8);
+        INAVCalculator.PriceFeedData memory depeg = INAVCalculator(NAV).getPriceData(WBTC);
+        assertTrue(depeg.irregular, "WBTC depeg -> irregular");
+        assertEq(depeg.price, calm.price, "a monitor never moves the price");
+        vm.revertToState(snap);
+
+        // Primary frozen past its heartbeat while BTC moves 3%: only RedStone BTC can see it, and it does.
+        (,,, uint256 btcAt,) = AggregatorV3Interface(BTC_USD).latestRoundData();
+        vm.warp(btcAt + BASE_HB + 1);
+        _mockFresh(WBTC_BTC, 1e8);
+        _mockFresh(RS_WBTC_BTC, 1e8);
+        (, int256 btcFrozen,,,) = AggregatorV3Interface(BTC_USD).latestRoundData();
+        _mockFresh(RS_BTC_USD, (btcFrozen * 97) / 100);
+        INAVCalculator.PriceFeedData memory frozen = INAVCalculator(NAV).getPriceData(WBTC);
+        assertTrue(frozen.stale, "frozen primary -> stale");
+        assertTrue(frozen.irregular, "frozen primary + 3% move -> irregular");
+        assertEq(frozen.monitorFeedCount, 1, "only RedStone BTC is still healthy");
+    }
+
+    function _deployCrossRateFromConfig(string memory k) internal returns (address) {
+        return address(
+            new ChainlinkCrossRateCustomPriceFeed(
+                vm.parseAddress(ConfigReader.readPriceFeedParam(vm, 1, k, "underlyingAsset")),
+                vm.parseAddress(ConfigReader.readPriceFeedParam(vm, 1, k, "rateChainlink")),
+                vm.parseUint(ConfigReader.readPriceFeedParam(vm, 1, k, "rateHeartbeat")),
+                vm.parseAddress(ConfigReader.readPriceFeedParam(vm, 1, k, "baseUsdChainlink")),
+                vm.parseUint(ConfigReader.readPriceFeedParam(vm, 1, k, "baseUsdHeartbeat")),
+                vm.parseUint(ConfigReader.readPriceFeedParam(vm, 1, k, "minAnswer")),
+                vm.parseUint(ConfigReader.readPriceFeedParam(vm, 1, k, "maxAnswer"))
+            )
+        );
+    }
+
+    function _registered(address f) internal view returns (bool) {
+        IPrices.PriceFeedConfig[] memory m = IPrices(NAV).getMonitorFeeds(WBTC);
+        for (uint256 i; i < m.length; ++i) {
+            if (m[i].priceFeed == f) return true;
+        }
+        return false;
+    }
+
+    function _mockFresh(address aggregator, int256 answer) internal {
+        (uint80 r,, uint256 started,, uint80 air) = AggregatorV3Interface(aggregator).latestRoundData();
+        vm.mockCall(
+            aggregator,
+            abi.encodeWithSelector(AggregatorV3Interface.latestRoundData.selector),
+            abi.encode(r, answer, started, block.timestamp, air)
+        );
     }
 }

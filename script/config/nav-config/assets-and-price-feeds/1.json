@@ -781,7 +781,7 @@
     ],
     "monitorFeeds": [
       {
-        "$comment": "WBTC-specific price (issue #356): Chainlink WBTC/BTC x Chainlink BTC/USD, both read directly (ChainlinkCrossRateCustomPriceFeed). Replaces the RedStone BTC monitor 0xAB7f623fb2F6fea6601D4350FA0E2290663C28Fc, which priced BTC, not WBTC, so the NAV could not see a WBTC depeg. 88 days to 2026-10-22: |WBTC/BTC - 1| <= ~21 bps, so no false irregular at 50 bps.",
+        "$comment": "WBTC-specific price (issue #356): Chainlink WBTC/BTC x Chainlink BTC/USD, both read directly (ChainlinkCrossRateCustomPriceFeed). Added next to the RedStone BTC monitor 0xAB7f623fb2F6fea6601D4350FA0E2290663C28Fc, which prices BTC, not WBTC, so on its own the NAV could not see a WBTC depeg. 88 days to 2026-10-22: |WBTC/BTC - 1| <= ~21 bps, so no false irregular at 50 bps.",
         "type": "Custom",
         "feed": "WBTCCrossRate",
         "heartbeat": 86400
@@ -790,6 +790,12 @@
         "$comment": "Second WBTC-specific monitor: the same class on RedStone's WBTC/BTC (source redundancy; also keeps WBTC out of monitorsUnhealthyPriceAssets while the Chainlink WBTC/BTC round overshoots its heartbeat). 88 days: |RedStone WBTC/BTC - 1| <= ~32 bps.",
         "type": "Custom",
         "feed": "WBTCCrossRateRedstone",
+        "heartbeat": 86400
+      },
+      {
+        "$comment": "KEPT (today's live WBTC monitor): RedStone BTC/USD, the one monitor that shares no feed with the Chainlink BTC/USD primary. Both WBTC-specific monitors above multiply by that primary feed, so when the primary freezes past its 3600 s heartbeat they go stale with it and drop out; this one stays fresh and still raises irregular on a frozen primary (ADR 0029). It cannot see a WBTC depeg (it prices BTC), which is what the two monitors above are for. Cost unchanged from today: over 88 days to 2026-10-22, 104 short episodes above 50 bps (79 min total, longest 7 min, sharp BTC moves). Measured alternative, rejected: RedStone WBTC/BTC x RedStone BTC/USD as one independent WBTC-specific monitor gave 179 episodes / 916 min / longest 98 min at 50 bps, because WBTC's standing discount to BTC adds to the RedStone-vs-Chainlink lag.",
+        "type": "Redstone",
+        "address": "0xAB7f623fb2F6fea6601D4350FA0E2290663C28Fc",
         "heartbeat": 86400
       }
     ]

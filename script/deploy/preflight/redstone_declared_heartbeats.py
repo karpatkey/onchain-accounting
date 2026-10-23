@@ -32,6 +32,8 @@ import sys
 import urllib.request
 from pathlib import Path
 
+from declared_heartbeat_guard import _parse_heartbeat
+
 REPO = Path(__file__).resolve().parents[3]
 SNAPSHOT = Path(__file__).with_name("redstone_declared_heartbeats.json")
 BASE = ("https://raw.githubusercontent.com/redstone-finance/redstone-oracles-monorepo/main/"
@@ -120,8 +122,10 @@ def registered_redstone(chain: str) -> list[dict]:
             for i, f in enumerate(v.get(arr) or []):
                 if not isinstance(f, dict) or f.get("type") != "Redstone":
                     continue
+                # An absent heartbeat registers at 3600 on the deploy path (ConfigReader.readAssetFeedHeartbeat /
+                # readAssetMonitorFeedHeartbeat), so check that value rather than report it as unreadable.
                 rows.append({"asset": asset, "role": f"{arr}[{i}]",
-                             "address": f.get("address"), "heartbeat": f.get("heartbeat")})
+                             "address": f.get("address"), "heartbeat": f["heartbeat"] if "heartbeat" in f else 3600})
     return rows + custom_feed_legs(chain)
 
 
@@ -169,12 +173,8 @@ def custom_feed_legs(chain: str) -> list[dict]:
                 rows.append({"asset": name, "role": f"constructor.{hk}", "address": None, "heartbeat": hv,
                              "leg": True, "unpaired": f"{len(sibs)} address keys start with '{stem}'"})
                 continue
-            try:
-                hb = int(hv)
-            except (TypeError, ValueError):
-                hb = hv
             rows.append({"asset": name, "role": f"constructor.{sibs[0]}", "address": ctor[sibs[0]],
-                         "heartbeat": hb, "leg": True})
+                         "heartbeat": hv, "leg": True})
     return rows
 
 
@@ -211,10 +211,17 @@ def findings(chain: str, fetch=_fetch) -> list[tuple[str, str]]:
                                f"manifest that carries it to MANIFESTS, or record it in "
                                f"UNCATALOGUED_EXCEPTIONS with the evidence."))
             continue
-        if not isinstance(rh, int) or rh != dh:
+        # Parsed as the deploy path reads it (`vm.parseUint`: a JSON integer, or a decimal or `0x` hex string), by
+        # the same parser the Chainlink guard uses, so `"0xa8c0"` and `43200` are the same heartbeat to both.
+        hb = _parse_heartbeat(rh)
+        if hb is None:
+            out.append((ERROR, f"asset '{r['asset']}' {r['role']} ({r['address']}): heartbeat {rh!r} is not a decimal "
+                               f"or `0x` hex heartbeat this guard can read, so it is NOT checked against RedStone's declared "
+                               f"{dh}s."))
+        elif hb != dh:
             out.append((ERROR, f"declared-heartbeat MISMATCH: asset '{r['asset']}' {r['role']} "
-                               f"({r['address']}) is registered at {rh} but RedStone declares {dh} "
-                               f"({(rh - dh):+d}s). ADR 0025 requires exact equality; above declared is a "
+                               f"({r['address']}) is registered at {hb} but RedStone declares {dh} "
+                               f"({(hb - dh):+d}s). ADR 0025 requires exact equality; above declared is a "
                                f"window in which a dead feed still reads fresh."))
     return out
 

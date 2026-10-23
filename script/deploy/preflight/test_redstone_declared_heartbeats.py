@@ -70,6 +70,33 @@ class CustomFeedLegs(unittest.TestCase):
         got = self._feeds({"F": {"enabled": True, "constructor": {"yToXFeed": RS, "yToXHeartbeat": "86400"}}})
         self.assertTrue(any("MISMATCH" in m and "43200" in m for m in self._errs(got)))
 
+    def test_hex_heartbeat_reads_as_the_deploy_path_does(self):
+        # `vm.parseUint` accepts `0x` hex: "0xa8c0" == 43200, so it is clean, and "0x15180" (86400) is a mismatch
+        # reported in seconds, not a TypeError.
+        self.assertEqual(self._feeds({"F": {"enabled": True, "constructor": {
+            "yToXFeed": RS, "yToXHeartbeat": "0xa8c0"}}}), [])
+        got = self._feeds({"F": {"enabled": True, "constructor": {"yToXFeed": RS, "yToXHeartbeat": "0x15180"}}})
+        self.assertTrue(any("MISMATCH" in m and "86400" in m for m in self._errs(got)))
+
+    def test_nav_config_row_hex_and_string_heartbeats(self):
+        nav = self.root / "script/config/nav-config/assets-and-price-feeds/1.json"
+        for hb, clean in (("0xa8c0", True), ("43200", True), (43200, True), (86400, False)):
+            nav.write_text(json.dumps({"A": {"monitorFeeds": [{"type": "Redstone", "address": RS, "heartbeat": hb}]}}))
+            errs = self._errs(self._feeds({}))
+            self.assertEqual(errs == [], clean, msg=f"heartbeat={hb!r}: {errs}")
+
+    def test_nav_config_row_without_heartbeat_is_checked_at_3600(self):
+        # The deploy path registers an absent heartbeat at 3600, so that is the value held to the declared 43200.
+        nav = self.root / "script/config/nav-config/assets-and-price-feeds/1.json"
+        nav.write_text(json.dumps({"A": {"monitorFeeds": [{"type": "Redstone", "address": RS}]}}))
+        errs = self._errs(self._feeds({}))
+        self.assertTrue(any("MISMATCH" in m and "registered at 3600" in m for m in errs), msg=errs)
+
+    def test_unreadable_heartbeat_is_an_error_not_a_crash(self):
+        for hb in ("7d", True, None):
+            got = self._feeds({"F": {"enabled": True, "constructor": {"yToXFeed": RS, "yToXHeartbeat": hb}}})
+            self.assertTrue(any("NOT checked" in m for m in self._errs(got)), msg=f"heartbeat={hb!r}")
+
     def test_chainlink_leg_is_left_to_the_chainlink_guard(self):
         got = self._feeds({"F": {"enabled": True, "constructor": {"rateChainlink": CL, "rateHeartbeat": "3600"}}})
         self.assertEqual(got, [])

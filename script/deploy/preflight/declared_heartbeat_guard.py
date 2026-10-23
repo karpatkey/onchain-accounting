@@ -117,9 +117,11 @@ def _parse_heartbeat(v):
     """A config heartbeat as the deploy path reads it, or None if it cannot be read.
 
     Mirrors `ConfigReader.readAssetFeedHeartbeat` + `vm.parseUint`: a JSON integer, or a string of decimal digits
-    (leading zeros allowed) or `0x` hex. Rejects booleans, negatives and anything else (`"7d"`, `"86_400"`,
-    `" 86400"`, `"0o..."`), so one parser serves every check in this module and none can disagree with another.
-    A JSON float is truncated, which is stricter than the deploy path (it would revert) and never hides a breach.
+    (leading zeros allowed) or `0x` hex. Returns None for booleans, negatives and anything else (`"7d"`,
+    `"86_400"`, `" 86400"`, `"0o..."`), so one parser serves every check in this module (and
+    `redstone_declared_heartbeats.py`) and none can disagree with another. `vm.parseUint` also accepts a few forms
+    this rejects (`"0o10"`, `"0b11"`, `"1e3"`, a trailing space); those fail closed here. A JSON float is truncated,
+    which is more lenient than the deploy path (it reverts on a float), so it never lets a breach reach the chain.
     """
     if isinstance(v, bool) or v is None:
         return None

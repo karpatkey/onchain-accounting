@@ -350,6 +350,15 @@ jobs:
           python3 -m unittest test_adr0029_census -v
           python3 -O -m unittest test_adr0029_census
 
+      - name: ADR 0029 batch builder + Council fork executor logic (adr0029_batch, council_fork_exec, offline)
+        # Pins that the removal batch is refused unless what is derived from live state equals what the operator
+        # expected, the hand-encoded calldata (pinned `cast` vectors; the live `cast` cross-check is skipped here: no Foundry in this job) and the
+        # Safe signature ordering. -O as well, as above.
+        working-directory: script/deploy/preflight
+        run: |
+          python3 -m unittest test_adr0029_batch -v
+          python3 -O -m unittest test_adr0029_batch
+
       - name: Published addresses match the deployment records
         # Added after DEPLOYED_ADDRESSES.md was found publishing 66 addresses that appear in NO deployment
         # record — contracts from a superseded generation. Stale entries still have code, so an integrator

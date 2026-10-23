@@ -124,6 +124,31 @@ calls do not depend on the redeploy or the upgrade: if the rollout cannot execut
 stops (2026-10-28), they can be signed on their own first. On Robinhood (4663), check `getRegisteredAssets()` for
 ezETH/EIGEN before building its batch.
 
+## Building and rehearsing the Council batches
+
+One Security Council batch per chain, executed directly by the Council Safe (5-of-8). Tools, all in
+`script/deploy/preflight/`:
+
+- `adr0029_batch.py removals` (always writes its part, empty when there is nothing to remove; `assemble` refuses a missing part or one whose transactions no longer match its checksum, and `removals` refuses a registered adapter that config neither enables nor disables) derives the removal calls from the live NAV against this tree's config and refuses
+  unless they equal `--expect-assets` / `--expect-adapters` (1: ezETH + EIGEN + the Renzo adapter; 42161: ezETH +
+  the Renzo adapter; every other chain: none). `adr0029_batch.py assemble` concatenates removals +
+  `MigrateToMonitorFeeds`'s batch + `upgradeToAndCall(newImpl, "")` into one Transaction-Builder file for the
+  Council.
+- `rehearse_adr0029_fork.sh <chainId> [block]` runs the whole sequence on a local anvil fork: `01_2`, retire, `03`,
+  census (every live Custom feed must show PRE-ROLLOUT), the batch built as above, executed through the REAL Council
+  Safe as one MultiSend (`council_fork_exec.py`: impersonated owners `approveHash`, then one `execTransaction`),
+  census again (0 ERRORs), then a snapshot diff. Forge steps run under `FOUNDRY_PROFILE=slow` (EVM caps only; the
+  default caps MemoryOOG on mainnet's config).
+- **Generate the real batches the same way, on a fresh fork at the latest block, after the EOA deploys:**
+  `MigrateToMonitorFeeds` must be simulated with the Council as `--sender`, and on several L2s the Council Safe
+  holds no native token, so forge refuses to simulate against the live chain. The fork funds it.
+- `MigrateToMonitorFeeds` re-emits `setDivergenceTolerance` / `setPegTolerance` for every configured asset even
+  when the live value already matches (seen on Optimism: 6 such no-op calls). Harmless; signers will see them.
+
+Rehearsed 2026-10-23 (all PASS): mainnet (95 calls, 2.95M gas), Arbitrum (25 calls, 0.77M), Base (21 calls,
+0.54M), Optimism impl-only (7 calls). Mainnet's diff showed only the planned changes (ezETH/EIGEN/Renzo removed,
+WBTC +2 monitors, cbBTC on BTC/USD, osETH's dead monitor removed); the only account that moved was the test Safe ACCOUNT_3, by its 0.005 aEzETH (issue #357), and no production account moved.
+
 ## Rule 2 — sweep the heartbeats already on-chain
 
 `PriceFeedLib.addFeed` rejects a primary heartbeat at or above `MAX_STALE_PRICE_AGE` (7 days), but only when a

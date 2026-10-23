@@ -147,32 +147,6 @@
       }
     ]
   },
-  "ezETH": {
-    "address": "0xbf5495Efe5DB9ce00f80364C8B423567e58d2110",
-    "$kindComment": "Renzo ezETH; rate from RestakeManager (per feed config).",
-    "accrualKind": "Appreciating",
-    "labels": [
-      "Renzo",
-      "LRT"
-    ],
-    "divergenceToleranceBps": 250,
-    "priceFeeds": [
-      {
-        "type": "Custom",
-        "feed": "ezETH",
-        "heartbeat": 3600
-      }
-    ],
-    "$comment": "Finding #2: ezETH's primary is fundamental (Renzo RestakeManager) and its only monitor, ezETHCrossRate, is ALSO fundamental after the 2026-07-22 migration to RedStone's ezETH_FUNDAMENTAL feed - so the 250 bps tolerance could not fire on a market depeg. ezETHCrossRateMarket adds a genuine MARKET leg (RedStone Classic Push ezETH/ETH). Both monitors are kept: divergenceBps is primary-vs-the-WORST-single-monitor (not the median), so the market monitor DOMINATES rather than being diluted by the fundamental one sitting near 0 bps. Its 46800 heartbeat is derived from the feed's measured 12 h cadence (max gap 43224 s + 3576 s margin), NOT copied from ezETHCrossRate's heartbeat; the registered value must cover the slower leg because TwoFeedChainlinkPriceFeed reports updatedAt = min(rateUpdatedAt, baseUpdatedAt), and the 12 h rate leg is slower than WETH's 3600 s ETH/USD. See custom-price-feeds/1.json.ezETHCrossRateMarket for the full measurement and the deprecated-feed rationale. ⚠ 2026-10-22: that market leg (RedStone Classic 0xF4a3e183…) has not updated since 2026-08-20, so ezETHCrossRateMarket was removed for the ADR 0029 rollout (issue #357): ezETH has NO market monitor until a live replacement is registered, only the fundamental ezETHCrossRate. With that monitor's ~12 s overshoot every 12 h, ezETH is listed in monitorsUnhealthyPriceAssets for those seconds.",
-    "monitorFeeds": [
-      {
-        "$comment": "Heartbeat 43200 = RedStone's declared cadence for this monitor's ezETH_FUNDAMENTAL rate leg, the value its constructor now carries too (ADR 0025: both gates equal declared; was 86400 under the margin policy). The feed overshoots its 12 h by ~12 s, so it drops out for those seconds each cycle.",
-        "type": "Custom",
-        "feed": "ezETHCrossRate",
-        "heartbeat": 43200
-      }
-    ]
-  },
   "rsETH": {
     "address": "0xA1290d69c65A6Fe4DF752f95823fae25cB99e5A7",
     "$kindComment": "Kelp rsETH; rate from rateProvider (per feed config).",
@@ -732,23 +706,6 @@
       }
     ]
   },
-  "EIGEN": {
-    "address": "0xec53bF9167f50cDEB3Ae105f56099aaaB9061F83",
-    "accrualKind": "None",
-    "labels": [
-      "EigenLayer",
-      "Governance"
-    ],
-    "divergenceToleranceBps": 50,
-    "priceFeeds": [
-      {
-        "type": "Chainlink",
-        "address": "0xf2917e602C2dCa458937fad715bb1E465305A4A1",
-        "heartbeat": 86400
-      }
-    ],
-    "note": "MONITOR FEED REMOVED 2026-09-16 for RedStone's EIGEN delisting, the same shape as ETHx's 2026-07-27 sunset above. The RedStone push feed 0x2ee5Ce6556599E16c226579BA14F94926d8Cb86d was dropped from main/relayer-manifests-multi-feed/ethereumMultiFeed.json upstream: present at redstone-oracles-monorepo 8234070c (2026-08-31), absent at 48452b66 (2026-09-08, 'Changes from PR #12917'), and the EIGEN key appears in NONE of the 116 manifests under relayer-remote-config/main today. The contract itself now REVERTS on latestRoundData() (custom error 0x4f319ffe, dataFeedId 'EIGEN'; decimals() still answers 8), so it was already contributing nothing: NAVCalculator.getPriceData(EIGEN) on the live proxy reads monitorFeedCount 0, divergenceBps 0, irregular false, while the Chainlink primary 0xf2917e60…A4A1 stays healthy. Keeping the registration cost the ADR 0025 guard its only honest verdict (cadence UNCHECKED) while advertising a monitor that cannot answer. divergenceToleranceBps is retained deliberately: EIGEN gets no divergence signal until a live monitor exists (preflight_config WARN, exactly as ETHx carries), and Chainlink has no second EIGEN/USD feed to promote. TO CLOSE: register a replacement monitor when one is published, or drop the tolerance. On-chain the dead monitor is STILL registered -> deregister with NAVCalculator.removeMonitorFeed(0xec53bF91…1F83, 0x2ee5Ce65…b86d) from the MANAGER EOA."
-  },
   "COMP": {
     "address": "0xc00e94Cb662C3520282E6f5717214004A7f26888",
     "accrualKind": "None",
@@ -974,7 +931,7 @@
   "LINK": {
     "address": "0x514910771AF9Ca656af840dff83E8264EcF986CA",
     "accrualKind": "None",
-    "$kindComment": "ChainLink Token, 18-dp. NOT $1-pegged, so NO pegToleranceBps -> pegKind derives Floating. Labelled Governance to match the file's existing use of that segment for a protocol's own token (AAVE, UNI, COMP, ENS, EIGEN); LINK is a work/payment token rather than a governance one, and the taxonomy has no better segment today.",
+    "$kindComment": "ChainLink Token, 18-dp. NOT $1-pegged, so NO pegToleranceBps -> pegKind derives Floating. Labelled Governance to match the file's existing use of that segment for a protocol's own token (AAVE, UNI, COMP, ENS); LINK is a work/payment token rather than a governance one, and the taxonomy has no better segment today.",
     "labels": [
       "Chainlink",
       "Governance"

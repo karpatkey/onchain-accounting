@@ -172,7 +172,8 @@
     "constructor": {}
   },
   "RenzoRestakedEthWalletMeta": {
-    "enabled": true,
+    "enabled": false,
+    "$removedComment": "DISABLED 2026-10-23 (issue #357): its only instance, ezETH, is removed from the NAV on this chain. The adapter is deregistered in the ADR 0029 rollout batch (NAVCalculator.removeBalanceAdapters, which also releases the ezETH claim) before ezETH is unregistered; its deployment record is removed after that executes. Source kept (wallet-yield family census).",
     "$comment": "Wallet-held yield tokens (ADR 0010 meta family). Reports the RAW balanceOf of a token that is itself a registered, priced NAV asset, so the reported amount is bit-identical to what ERC20DefaultBalanceAdapter reported for the same holding - this reclassifies ezETH (Renzo) from a generic wallet holding to a Staking position and changes NO value. Constructor takes only the NAV proxy, so the CREATE2 address is identical on every chain. The governed token set lives on NAVCalculator (see nav-config); claiming a token there automatically disarms the default adapter for it, so the two can never both report the same holding.",
     "constructor": {}
   },

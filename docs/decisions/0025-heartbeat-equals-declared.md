@@ -95,7 +95,7 @@ what `irregular` / `divergenceBps` / `healthyFeedCount` exist for.
   custom-feed constructors. It found `ezETHCrossRate.yToXHeartbeat` at 86 400 against RedStone's declared
   43 200 for `ezETH_FUNDAMENTAL` (corrected in config, effective with that monitor's ADR 0029 redeploy, together
   with its nav-config monitor heartbeat), and two dead RedStone legs (`ezETHCrossRateMarket`, `osETHCrossRate`); both
-  monitors are now `enabled: false` and dropped from their assets' `monitorFeeds` (issue #357). The paragraph below predates that check and is kept as history.
+  monitors are now `enabled: false` and dropped from their assets' `monitorFeeds` (issue #357). On 2026-10-23 ezETH itself was removed from config (deregistered on-chain by the ADR 0029 rollout batch), so the `ezETHCrossRate` correction never takes effect. The paragraph below predates that check and is kept as history.
 - **Custom-feed constructor legs are immutable, but none of them is currently misaligned.** An earlier
   draft of this ADR listed eight `yToXHeartbeat` legs as "deferred", describing an 86 400 → 86 400 change
   and a 300 s delta — two claims that cannot both be true, and neither of which was right. Measured: every

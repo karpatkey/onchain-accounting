@@ -156,7 +156,7 @@ contract RateFeedGuardTest is Test {
         for (uint256 i; i < chains.length; ++i) {
             total += _countGuarded(chains[i]);
         }
-        // 22 ENABLED rate-feed-bearing instances: 10 mainnet, 7 Arbitrum, 4 Base, 1 Gnosis. Each verified on-chain.
+        // 20 ENABLED rate-feed-bearing instances: 9 mainnet, 6 Arbitrum, 4 Base, 1 Gnosis. Each verified on-chain.
         // (Counts ENABLED entries since issue #357; it used to count every entry, enabled or not.)
         // (Census header kept in step with the assertion below: it read 20 / 8 mainnet after #302's OETH
         // removal and was not updated when wARS took mainnet back to 9 — see the 2026-08-15 note.)
@@ -235,7 +235,9 @@ contract RateFeedGuardTest is Test {
         // 2026-10-22: 24 -> 22 (issue #357). `ezETHCrossRateMarket` and `osETHCrossRate` are `enabled: false` (their
         // RedStone legs are dead: no update since 2026-08-20, and reverting, respectively), and the census now counts
         // enabled entries only, matching `checkAll`. A REMOVAL, so no new pair identity needed confirming.
-        assertEq(total, 22, "rate-feed instance count changed - re-verify description() on the new set");
+        // 2026-10-23: 22 -> 20 (issue #357). ezETH is removed from the NAV on mainnet and Arbitrum, so both
+        // `ezETHCrossRate` monitors are `enabled: false`. A REMOVAL, so no new pair identity needed confirming.
+        assertEq(total, 20, "rate-feed instance count changed - re-verify description() on the new set");
     }
 
     function _countGuarded(uint256 chainId) internal view returns (uint256 n) {
@@ -272,6 +274,8 @@ contract RateFeedGuardTest is Test {
     uint256 constant SYNTH_INITPARAM = 999_905;
     uint256 constant SYNTH_BANDONLY = 999_906;
     uint256 constant SYNTH_DISABLED = 999_907;
+    uint256 constant SYNTH_UNVERIFIABLE = 999_908;
+    uint256 constant SYNTH_UNVERIFIABLE_NOREASON = 999_909;
     address constant SYNTH_FEED = 0x00000000000000000000000000000000DeaDBeef;
 
     function _synthPath(uint256 chainId) internal view returns (string memory) {
@@ -312,6 +316,42 @@ contract RateFeedGuardTest is Test {
     /// @notice External wrapper returning how many instances `checkAll` checked.
     function exposedCheckAllCount(uint256 chainId) external view returns (uint256) {
         return RateFeedGuard.checkAll(vm, chainId);
+    }
+
+    /// @notice **`$UNVERIFIABLE` skips ONLY the pair check, and only with a stated reason.** No committed config uses it
+    ///         outside the disabled `ezETHCrossRateMarket` entry, so these pin the branch directly:
+    ///         with a reason the description is not compared (the mock's "USD / ARS" would otherwise mismatch) and the
+    ///         band still applies; without a reason it reverts `RateFeedUnverifiableReasonMissing`.
+    function test_unverifiableDescription_needsAReason_andKeepsTheBand() public {
+        _writeSynth(
+            SYNTH_UNVERIFIABLE,
+            '{"Unverifiable":{"enabled":true,'
+            '"constructor":{"usdToAssetChainlinkAddress":"0x00000000000000000000000000000000DeaDBeeF"},'
+            '"rateFeedGuard":{"param":"usdToAssetChainlinkAddress","description":"$UNVERIFIABLE",'
+            '"descriptionUnverifiableReason":"provider description carries no pair",'
+            '"minRate1e18":"1000000000000000000000","maxRate1e18":"5000000000000000000000"}}}'
+        );
+        (bool ok,) = address(this)
+            .staticcall(abi.encodeWithSelector(this.exposedCheck.selector, SYNTH_UNVERIFIABLE, "Unverifiable"));
+        _removeSynth(SYNTH_UNVERIFIABLE);
+        assertTrue(ok, "a declared, reasoned $UNVERIFIABLE skips the pair check and passes the band");
+
+        _writeSynth(
+            SYNTH_UNVERIFIABLE_NOREASON,
+            '{"NoReason":{"enabled":true,'
+            '"constructor":{"usdToAssetChainlinkAddress":"0x00000000000000000000000000000000DeaDBeeF"},'
+            '"rateFeedGuard":{"param":"usdToAssetChainlinkAddress","description":"$UNVERIFIABLE",'
+            '"minRate1e18":"1000000000000000000000","maxRate1e18":"5000000000000000000000"}}}'
+        );
+        bytes memory ret;
+        (ok, ret) = address(this)
+            .staticcall(abi.encodeWithSelector(this.exposedCheck.selector, SYNTH_UNVERIFIABLE_NOREASON, "NoReason"));
+        _removeSynth(SYNTH_UNVERIFIABLE_NOREASON);
+        assertFalse(ok, "an unverifiable declaration without a reason must revert");
+        assertEq(
+            ret,
+            abi.encodeWithSelector(RateFeedGuard.RateFeedUnverifiableReasonMissing.selector, "NoReason", SYNTH_FEED)
+        );
     }
 
     /// @notice **A DISABLED entry is skipped by `checkAll`, even when its rate feed reverts** (issue #357). The guard

@@ -299,7 +299,8 @@
     ]
   },
   "RenzoRestakedEthWalletMeta": {
-    "enabled": true,
+    "enabled": false,
+    "$removedComment": "DISABLED 2026-10-23 (issue #357): its only instance, ezETH, is removed from the NAV on this chain. The adapter is deregistered in the ADR 0029 rollout batch (NAVCalculator.removeBalanceAdapters, which also releases the ezETH claim) before ezETH is unregistered; its deployment record is removed after that executes. Source kept (wallet-yield family census).",
     "$comment": "Wallet-held yield tokens (ADR 0010 meta family). Each instance below is the yield TOKEN's own address, which is also a registered priced asset - that is what makes this value-neutral: the adapter reports balanceOf and NAVCalculator prices the asset it already priced, so only the identity changes. Reclassifies ezETH from `wallet`/`Wallet` to `renzo`/`Staking`. ORDERING: the asset must be REGISTERED BEFORE it is claimed here - registerAsset refuses to arm the default adapter for an already-claimed token (MetaInstanceClaimedByAnotherAdapter), a hard revert rather than a silent double-count. The standard order (RegisterAssets, then 06_Configure) satisfies this.",
     "instances": [
       "0xbf5495Efe5DB9ce00f80364C8B423567e58d2110"

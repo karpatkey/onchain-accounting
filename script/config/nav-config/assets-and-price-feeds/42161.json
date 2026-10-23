@@ -86,30 +86,6 @@
       }
     ]
   },
-  "ezETH": {
-    "address": "0x2416092f143378750bb29b79eD961ab195CcEea5",
-    "$kindComment": "Renzo ezETH; rate from xRenzoDeposit on Arbitrum (per feed config) - RestakeManager is the mainnet path.",
-    "accrualKind": "Appreciating",
-    "labels": [
-      "Renzo",
-      "LRT"
-    ],
-    "divergenceToleranceBps": 250,
-    "priceFeeds": [
-      {
-        "type": "Custom",
-        "feed": "ezETH_L2",
-        "heartbeat": 86400
-      }
-    ],
-    "monitorFeeds": [
-      {
-        "type": "Custom",
-        "feed": "ezETHCrossRate",
-        "heartbeat": 86400
-      }
-    ]
-  },
   "rsETH": {
     "address": "0x4186BFC76E2E237523CBC30FD220FE055156b41F",
     "$kindComment": "Kelp rsETH; priced via a Chainlink rsETH/ETH exchange-rate feed (per feed config) - the rateProvider path is mainnet-only.",

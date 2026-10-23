@@ -342,6 +342,14 @@ jobs:
           python3 -m unittest test_redstone_declared_heartbeats -v
           python3 -O -m unittest test_redstone_declared_heartbeats
 
+      - name: ADR 0029 pre-upgrade census logic (adr0029_census, offline)
+        # Pins the Rule 1 / Rule 2 verdicts against hand-encoded ABI replies, notably that a feed still in the
+        # PRE-ROLLOUT record fails and that an unreadable reply is an ERROR, never a pass. -O as well, as above.
+        working-directory: script/deploy/preflight
+        run: |
+          python3 -m unittest test_adr0029_census -v
+          python3 -O -m unittest test_adr0029_census
+
       - name: Published addresses match the deployment records
         # Added after DEPLOYED_ADDRESSES.md was found publishing 66 addresses that appear in NO deployment
         # record — contracts from a superseded generation. Stale entries still have code, so an integrator

@@ -86,7 +86,8 @@
     }
   },
   "ezETH": {
-    "enabled": true,
+    "enabled": false,
+    "$removedComment": "DISABLED 2026-10-23 (issue #357): its asset is removed from the NAV on this chain (no production client holds it), so this feed is NOT redeployed in the ADR 0029 rollout; the live one is deregistered by AssetKindRegistry.unregisterAsset and its record retired with retire_custom_feeds.py after that executes. The contract source and this constructor block are kept for the fork tests and in case the asset returns.",
     "constructor": {
       "ezEth": "0xbf5495Efe5DB9ce00f80364C8B423567e58d2110",
       "restakeManager": "0x74a09653A083691711cF8215a6ab074BB4e99ef5",
@@ -222,7 +223,8 @@
     }
   },
   "ezETHCrossRate": {
-    "enabled": true,
+    "enabled": false,
+    "$removedComment": "DISABLED 2026-10-23 (issue #357): its asset is removed from the NAV on this chain (no production client holds it), so this feed is NOT redeployed in the ADR 0029 rollout; the live one is deregistered by AssetKindRegistry.unregisterAsset and its record retired with retire_custom_feeds.py after that executes. The contract source and this constructor block are kept for the fork tests and in case the asset returns.",
     "$comment": "ezETH divergence monitor (ezETH_CrossRateCustomPriceFeed). CrossRate: ezETH/USD = ETH/USD x ezETH/ETH. yToXFeed migrated 2026-07-22 to the RedStone multi-feed ezETH_FUNDAMENTAL feed (0x701e83Bd\u2026) after the old Classic-Push ezETH/ETH market feed (0xF4a3e183\u2026) was sunset by RedStone (per Slack C03BP6L2A9W / Nicolas). Still independent of the primary (Renzo RestakeManager on-chain rate) \u2014 RedStone's rate vs Renzo's, plus the NAV ETH/USD leg. Feed is 8-dec. HEARTBEAT 43200 = RedStone's declared cadence for this feed (ADR 0025: registered == declared). It was 86400 \"for margin\" under the pre-ADR-0025 policy, a 12 h window in which a dead rate leg still read fresh; found when redstone_declared_heartbeats.py was extended to custom-feed legs (issue #356). Takes effect with the ADR 0029 redeploy of this monitor.",
     "constructor": {
       "underlyingAsset": "0xbf5495Efe5DB9ce00f80364C8B423567e58d2110",

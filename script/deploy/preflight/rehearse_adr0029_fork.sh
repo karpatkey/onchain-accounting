@@ -19,6 +19,11 @@
 # usage:
 #   script/deploy/preflight/rehearse_adr0029_fork.sh [chainId] [forkBlock]
 #   EXPECT_ASSETS / EXPECT_ADAPTERS override the per-chain removal expectations (comma-separated addresses).
+#   PREPEND_PARTS: space-separated stamped parts (e.g. from `adr0029_batch.py import`) placed FIRST in the batch,
+#     for another team's Council calls bundled into the same Safe transaction (chain 1: the BTC Carry scheduleBatch).
+#   POST_CHECK: a command run after the post-snapshot with ADR0029_FORK_RPC, REHEARSAL_WORK, REHEARSAL_CHAIN,
+#     REHEARSAL_URL_VAR and REHEARSAL_COUNCIL set; its exit code is an assertion (e.g. warp past a timelock delay and
+#     execute what a bundled part scheduled, or rehearse a rollback to the previous implementation).
 set -uo pipefail
 
 CHAIN_ID="${1:-1}"
@@ -539,10 +544,12 @@ cast rpc anvil_setBalance "$COUNCIL" 0x21e19e0c9bab2400000 --rpc-url "$RPC" >/de
 FOUNDRY_PROFILE=slow forge script script/manage/MigrateToMonitorFeeds.s.sol --rpc-url "$RPC" --sender "$COUNCIL" \
   > "$WORK/migrate.log" 2>&1 || { echo "    FAIL migrate plan (see $WORK/migrate.log)"; grep -aE "^Error|Error:|revert" "$WORK/migrate.log" | tail -3 | cut -c1-300 | sed 's/^/      /'; FAILED=1; }
 grep -E "Planned adds/sets|Planned removes|Nothing to migrate|skip" "$WORK/migrate.log" | head -8 | sed 's/^/    /'
-echo "--- assemble (removals + migrate + upgradeToAndCall $NEW_IMPL)"
+echo "--- assemble (${PREPEND_PARTS:+prepended [$PREPEND_PARTS] + }removals + migrate + upgradeToAndCall $NEW_IMPL)"
 # Migrate writes no file when it has nothing to plan (a chain with no assets). Leave its part out ONLY when its
 # log says so explicitly; any other missing file is a failure that `assemble` reports.
-PARTS=("$B/${CHAIN_ID}-adr0029-removals.json")
+PARTS=()
+for P in ${PREPEND_PARTS:-}; do PARTS+=("$P"); done
+PARTS+=("$B/${CHAIN_ID}-adr0029-removals.json")
 # "Nothing to migrate" is also printed when the new feeds are missing from the record (every asset logs
 # "[skip asset] target primary not deployed"); that must stay a loud failure, so a "[skip" line disqualifies it.
 if grep -q "Nothing to migrate" "$WORK/migrate.log" && ! grep -q "\[skip" "$WORK/migrate.log" \
@@ -563,6 +570,10 @@ python3 script/deploy/preflight/council_fork_exec.py --rpc-url "$RPC" --safe "$C
   --batch "$B/${CHAIN_ID}-adr0029-rollout.json" > "$WORK/exec.log" 2>&1; EXEC_RC=$?
 head -1 "$WORK/exec.log" | sed 's/^/    /'
 
+# The implementation right after the batch, captured now: a POST_CHECK may change it (e.g. a rollback rehearsal), and the
+# assertions below run after the post-check.
+IMPL_AFTER_BATCH="$(impl_of)"
+
 # Keep every part (the forge-written migrate JSON, the removals, the assembled batch): the cleanup restores
 # safe-transactions/ from its backup and would otherwise destroy them.
 rm -rf "${WORK:?}/safe-transactions" && cp -r "$B" "$WORK/safe-transactions"
@@ -572,6 +583,15 @@ census > "$WORK/census-post.log" 2>&1; CENSUS_POST=$?
 echo "--- post-snapshot"
 snap "$WORK/post" || { echo "post-snapshot failed; see $WORK/post.log"; FAILED=1; }
 python3 script/deploy/preflight/diff_snapshots.py "$WORK/pre" "$WORK/post" --json "$WORK/diff.json" > "$WORK/diff.log" 2>&1
+POST_CHECK_RC=0
+if [[ -n "${POST_CHECK:-}" ]]; then
+  # After the post-snapshot and diff (a post-check may warp time, which would age every feed) and before the
+  # assertions, which therefore read the implementation captured right after the batch, not the live one.
+  echo "--- post-check: $POST_CHECK"
+  ADR0029_FORK_RPC="$RPC" REHEARSAL_WORK="$WORK" REHEARSAL_CHAIN="$CHAIN_ID" REHEARSAL_URL_VAR="$URL_VAR" \
+    REHEARSAL_COUNCIL="$COUNCIL" bash -c "$POST_CHECK" > "$WORK/post-check.log" 2>&1; POST_CHECK_RC=$?
+  sed 's/^/    /' "$WORK/post-check.log" | tail -12
+fi
 
 echo; echo "=== ASSERTIONS (chain $CHAIN_ID, fork block $(jq -r .block "$WORK/pre/${CHAIN_ID}.json" 2>/dev/null)) ==="
 assert "census BEFORE ran (its chain header is present — a crashed census cannot pass vacuously)" \
@@ -580,8 +600,11 @@ assert "census BEFORE flags every live Custom feed as PRE-ROLLOUT (the check bit
   '[[ -n "$N_CUSTOM" && "$N_CUSTOM" == "$N_PRE" && "$N_ERR_PRE" == "$N_PRE" && ( -z "$KEYS" || "$N_CUSTOM" -gt 0 ) ]]'
 assert "the batch executed atomically through the Council Safe" '[[ $EXEC_RC -eq 0 ]]'
 assert "the NAV runs the new implementation ($NEW_IMPL)" \
-  '[[ "$(impl_of | tr A-F a-f)" == "$(tr A-F a-f <<<"$NEW_IMPL")" && "$NEW_IMPL" != "$PRE_IMPL" ]]'
+  '[[ "$(tr A-F a-f <<<"$IMPL_AFTER_BATCH")" == "$(tr A-F a-f <<<"$NEW_IMPL")" && "$NEW_IMPL" != "$PRE_IMPL" ]]'
 assert "census AFTER: 0 ERRORs (Rule 1 + Rule 2)" '[[ $CENSUS_POST -eq 0 ]]'
+if [[ -n "${POST_CHECK:-}" ]]; then
+  assert "post-check passed ($WORK/post-check.log)" '[[ $POST_CHECK_RC -eq 0 ]]'
+fi
 for A in ${EXPECT_ASSETS//,/ }; do
   assert "asset $A unregistered" '[[ "$(cast call "$NAV" "isAssetRegistered(address)(bool)" "$A" --rpc-url "$RPC")" == false ]]'
 done

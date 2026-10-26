@@ -19,6 +19,12 @@ usage:
   adr0029_batch.py assemble --chain 1 --parts safe-transactions/1-adr0029-removals.json \\
                             safe-transactions/1-migrate-monitor-feeds.json --upgrade-impl 0x… \\
                             --out safe-transactions/1-adr0029-rollout.json
+  adr0029_batch.py import   --chain 1 --in <Transaction-Builder file from another repo> \\
+                            --out safe-transactions/1-btc-carry-schedule.json
+`import` turns a Council Transaction-Builder file written in the UI's method form (`contractMethod` +
+`contractInputsValues`, no `data`, no checksum) into a stamped part, so `assemble` can bundle another team's Council
+calls into the same Safe transaction (2026-10-26: the BTC Carry `scheduleBatch` rides in chain 1's batch). It refuses
+tuple-typed inputs, value, DELEGATECALL, another chain or another Safe, and records the source file's sha256.
 `--rpc-url` is accepted only for a loopback (fork) endpoint; a real endpoint is read from the environment with
 `--rpc-env` and is never printed.
 """
@@ -27,6 +33,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sys
 import time
 from pathlib import Path
@@ -225,6 +232,96 @@ def cmd_removals(a) -> int:
     return 0
 
 
+_INT_RE = re.compile(r"^(0x[0-9a-fA-F]+|[0-9]+)$")
+_HEX_RE = re.compile(r"^0x([0-9a-fA-F]{2})*$")
+
+
+def _strict_address(v) -> str:
+    """40-hex address, non-zero, and if mixed-case a valid EIP-55 checksum (a typo'd checksum is refused)."""
+    a = str(v)
+    if not re.fullmatch(r"0x[0-9a-fA-F]{40}", a) or int(a, 16) == 0:
+        raise BatchError(f"not an address: {a!r}")
+    if a[2:] != a[2:].lower() and a[2:] != a[2:].upper():
+        from eth_utils import to_checksum_address
+        if to_checksum_address(a) != a:
+            raise BatchError(f"bad EIP-55 checksum: {a}")
+    return a
+
+
+def _abi_value(typ: str, v):
+    if typ.endswith("[]"):
+        items = json.loads(v) if isinstance(v, str) else v
+        if not isinstance(items, list):
+            raise BatchError(f"{typ} value is not a list")
+        return [_abi_value(typ[:-2], x) for x in items]
+    if typ == "address":
+        return _strict_address(v)
+    if typ.startswith(("uint", "int")):
+        if not _INT_RE.fullmatch(str(v)):
+            raise BatchError(f"{typ} value {str(v)[:30]!r} is not a plain decimal or 0x integer")
+        return int(str(v), 0)
+    if typ == "bool":
+        if str(v).lower() not in ("true", "false"):
+            raise BatchError(f"bool value {v!r} is not true/false")
+        return str(v).lower() == "true"
+    if typ == "bytes" or (typ.startswith("bytes") and typ[5:].isdigit()):
+        h = str(v)
+        if not _HEX_RE.fullmatch(h):
+            raise BatchError(f"{typ} value {h[:20]!r} is not 0x-hex")
+        if typ != "bytes" and len(h) != 2 + 2 * int(typ[5:]):
+            raise BatchError(f"{typ} value has {(len(h) - 2) // 2} bytes, expected {typ[5:]}")
+        return bytes.fromhex(h[2:])
+    if typ == "string":
+        return str(v)
+    raise BatchError(f"unsupported input type {typ!r} (tuples are refused: encode them in the source repo)")
+
+
+def encode_method_call(method: dict, values: dict) -> str:
+    """Calldata for a Transaction-Builder `contractMethod` + `contractInputsValues` entry."""
+    types = [i["type"] for i in method.get("inputs") or []]
+    if any(t.startswith("tuple") for t in types):  # before the eth_abi import, so the refusal needs no dependency
+        raise BatchError(f"{method.get('name')}: tuple inputs are refused")
+    from eth_abi import encode
+    from eth_utils import keccak
+    sel = keccak(f"{method['name']}({','.join(types)})".encode())[:4]
+    args = [_abi_value(i["type"], values[i["name"]]) for i in method.get("inputs") or []]
+    return "0x" + (sel + encode(types, args)).hex()
+
+
+def cmd_import(a) -> int:
+    import hashlib
+    council = _council(a.chain)
+    raw = Path(a.input).read_bytes()
+    b = json.loads(raw)
+    if str(b.get("chainId")) != str(a.chain):
+        raise BatchError(f"{a.input}: chainId {b.get('chainId')} != {a.chain}")
+    safe = (b.get("meta") or {}).get("createdFromSafeAddress", "")
+    if safe.lower() != council.lower():
+        raise BatchError(f"{a.input}: made for {safe or '<none>'}, not the Council {council}")
+    txs = []
+    for t in b.get("transactions") or []:
+        if int(t.get("operation", 0) or 0) != 0:
+            raise BatchError(f"{a.input}: DELEGATECALL entry refused")
+        if int(str(t.get("value", "0") or "0"), 0) != 0:
+            raise BatchError(f"{a.input}: an entry sends value — refused")
+        to = _strict_address(t.get("to", ""))
+        data = t.get("data")
+        if data is None:
+            if not t.get("contractMethod"):
+                raise BatchError(f"{a.input}: entry has neither data nor contractMethod")
+            data = encode_method_call(t["contractMethod"], t.get("contractInputsValues") or {})
+        if not _HEX_RE.fullmatch(str(data)) or len(str(data)) < 10:
+            raise BatchError(f"{a.input}: entry to {to} has no function call (data {str(data)[:12]!r})")
+        txs.append({"to": to, "value": "0", "data": data, "operation": 0})
+    if not txs:
+        raise BatchError(f"{a.input}: no transactions")
+    sha = hashlib.sha256(raw).hexdigest()
+    write_batch(a.out, a.chain, council, (b.get("meta") or {}).get("name") or "imported",
+                f"imported from {Path(a.input).name} (sha256 {sha})", txs)
+    print(f"chain {a.chain}: {len(txs)} call(s) imported from {Path(a.input).name} (sha256 {sha[:16]}…) -> {a.out}")
+    return 0
+
+
 def cmd_assemble(a) -> int:
     council = _council(a.chain)
     txs: list[dict] = []
@@ -254,7 +351,9 @@ def cmd_assemble(a) -> int:
             if int(t.get("operation", 0)) != 0:
                 raise BatchError(f"{p}: DELEGATECALL entry refused")
             txs.append({"to": t["to"], "value": str(t.get("value", "0")), "data": t["data"], "operation": 0})
-        summary.append(f"{len(part_txs)} from {Path(p).name}")
+        desc = (b.get("meta") or {}).get("description", "")
+        prov = f" [{desc[desc.index('imported from'):]}]" if "imported from" in desc else ""
+        summary.append(f"{len(part_txs)} from {Path(p).name}{prov}")
     if a.upgrade_impl:
         if not c.is_address(a.upgrade_impl):
             raise BatchError(f"--upgrade-impl {a.upgrade_impl!r} is not an address")
@@ -284,10 +383,14 @@ def main(argv: list[str]) -> int:
     s.add_argument("--parts", nargs="+", required=True)
     s.add_argument("--upgrade-impl")
     s.add_argument("--out", required=True)
+    i = sub.add_parser("import")
+    i.add_argument("--chain", type=int, required=True)
+    i.add_argument("--in", dest="input", required=True)
+    i.add_argument("--out", required=True)
     a = ap.parse_args(argv)
     c.load_env()
     try:
-        return cmd_removals(a) if a.cmd == "removals" else cmd_assemble(a)
+        return {"removals": cmd_removals, "assemble": cmd_assemble, "import": cmd_import}[a.cmd](a)
     except (BatchError, ac.CensusError) as e:
         print(f"FAIL: {e}")
         return 1

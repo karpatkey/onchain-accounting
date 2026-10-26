@@ -7,6 +7,8 @@ unless what it derives equals what the operator expected — an accidental unreg
 """
 
 import json
+import shutil
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -188,15 +190,94 @@ class Derivation(unittest.TestCase):
         finally:
             ab.ac.LiveReader.chain_id = saved
 
+    def _ui_file(self, **over):
+        tx = {"to": AKR, "value": "0", "data": None, "operation": 0,
+              "contractMethod": {"name": "scheduleBatch", "inputs": [
+                  {"name": "targets", "type": "address[]"}, {"name": "values", "type": "uint256[]"},
+                  {"name": "payloads", "type": "bytes[]"}, {"name": "predecessor", "type": "bytes32"},
+                  {"name": "salt", "type": "bytes32"}, {"name": "delay", "type": "uint256"}]},
+              "contractInputsValues": {"targets": json.dumps([OTHER]), "values": json.dumps(["0"]),
+                                       "payloads": json.dumps(["0x1234"]), "predecessor": "0x" + "00" * 32,
+                                       "salt": "0x" + "00" * 32, "delay": "259200"}}
+        tx.update(over.pop("tx", {}))
+        doc = {"chainId": "1", "meta": {"createdFromSafeAddress": "0x" + "c0" * 20, "checksum": ""},
+               "transactions": [tx]}
+        doc.update(over)
+        self._n = getattr(self, "_n", 0) + 1
+        f = Path(self.tmp.name) / f"ui{self._n}.json"  # one file per fixture: a shared path made the refusals vacuous
+        f.write_text(json.dumps(doc))
+        return f
+
+    def _import(self, f):
+        class A:
+            chain = 1
+        A.input, A.out = str(f), str(Path(self.tmp.name) / "imported.json")
+        return ab.cmd_import(A)
+
+    @needs_eth_abi
+    def test_import_encodes_the_ui_method_form_and_stamps_it(self):
+        self.assertEqual(self._import(self._ui_file()), 0)
+        out = json.loads((Path(self.tmp.name) / "imported.json").read_text())
+        data = out["transactions"][0]["data"]
+        self.assertTrue(data.startswith("0x8f2a0bb0"))  # scheduleBatch(address[],uint256[],bytes[],bytes32,bytes32,uint256)
+        self.assertEqual(out["meta"]["checksum"], ab.checksum(out["transactions"]))
+        self.assertIn("sha256", out["meta"]["description"])
+        self.assertEqual(self._assemble([str(Path(self.tmp.name) / "imported.json")]), 0)
+
+    @needs_eth_abi
+    @unittest.skipUnless(shutil.which("cast"), "cast not installed")
+    def test_import_matches_cast(self):
+        self._import(self._ui_file())
+        data = json.loads((Path(self.tmp.name) / "imported.json").read_text())["transactions"][0]["data"]
+        want = subprocess.run(["cast", "calldata", "scheduleBatch(address[],uint256[],bytes[],bytes32,bytes32,uint256)",
+                               f"[{OTHER}]", "[0]", "[0x1234]", "0x" + "00" * 32, "0x" + "00" * 32, "259200"],
+                              capture_output=True, text=True, check=True).stdout.strip()
+        self.assertEqual(data, want)
+
+    def test_import_refuses_another_safe_chain_value_delegatecall_tuples_or_no_call(self):
+        bad = {"another Safe": self._ui_file(meta={"createdFromSafeAddress": "0x" + "5d" * 20}),
+               "another chain": self._ui_file(chainId="10"),
+               "value": self._ui_file(tx={"value": "1"}),
+               "delegatecall": self._ui_file(tx={"operation": 1}),
+               "tuple": self._ui_file(tx={"contractMethod": {"name": "f", "inputs": [{"name": "x", "type": "tuple[]"}]},
+                                          "contractInputsValues": {"x": "[]"}}),
+               "no transactions": self._ui_file(transactions=[]),
+               "zero to": self._ui_file(tx={"to": "0x" + "00" * 20}),
+               "empty call": self._ui_file(tx={"data": "0x", "contractMethod": None})}
+        self.assertEqual(len({str(f) for f in bad.values()}), len(bad), "every fixture is its own file")
+        for why, f in bad.items():
+            with self.assertRaises(ab.BatchError, msg=why):
+                self._import(f)
+
+    def test_abi_values_are_strict(self):
+        for typ, v in (("bool", "1"), ("bool", "yes"), ("bytes32", "0x12"), ("uint256", " 1"), ("uint256", "1e3"),
+                       ("uint256", "-1"), ("address", "0x" + "00" * 20), ("bytes", "0x123")):
+            with self.assertRaises(ab.BatchError, msg=f"{typ} {v!r}"):
+                ab._abi_value(typ, v)
+        self.assertEqual(ab._abi_value("uint256", "0x10"), 16)
+        self.assertEqual(ab._abi_value("bool", "TRUE"), True)
+        self.assertEqual(ab._abi_value("address[]", json.dumps([OTHER])), [OTHER])
+
+    @needs_eth_abi
+    def test_bad_eip55_checksum_is_refused(self):
+        good = "0x8b884f80B3B839F52b6cE168f133e7a5D1f0A537"
+        self.assertEqual(ab._strict_address(good), good)
+        with self.assertRaises(ab.BatchError):
+            ab._strict_address(good.replace("B3B8", "b3B8"))
+
+    @needs_eth_abi
+    def test_assembled_description_carries_the_import_provenance(self):
+        self._import(self._ui_file())
+        self._assemble([str(Path(self.tmp.name) / "imported.json")])
+        out = json.loads((Path(self.tmp.name) / "out.json").read_text())
+        self.assertIn("sha256", out["meta"]["description"])
+
     def test_real_endpoint_must_come_from_env(self):
         class A:
             rpc_url, rpc_env = "https://example.invalid/v2/key", None
         with self.assertRaises(ab.BatchError):
             ab._reader(A)
 
-
-import shutil  # noqa: E402
-import subprocess  # noqa: E402
 
 
 class Encoding(unittest.TestCase):

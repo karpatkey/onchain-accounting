@@ -145,13 +145,34 @@ One Security Council batch per chain, executed directly by the Council Safe (5-o
 - `MigrateToMonitorFeeds` re-emits `setDivergenceTolerance` / `setPegTolerance` for every configured asset even
   when the live value already matches (seen on Optimism: 6 such no-op calls). Harmless; signers will see them.
 
+- **Another team's Council calls in the same transaction (chain 1, 2026-10-26: the BTC Carry permissions).** The
+  client-configs payload `WBTC-Carry_1_SC_scheduleBatch_MANAGER.json` (SC → timelock `0xa490f5D2…`
+  `scheduleBatch`, 9 MANAGER calls, delay 259,200 s) is a Council call too, so it rides as the FIRST part of chain 1's
+  batch and the Council signs one transaction there. `adr0029_batch.py import --chain 1 --in <file> --out <part>`
+  encodes the UI's method form (`contractMethod` + `contractInputsValues`) into calldata and stamps it (refuses tuple
+  inputs, value, DELEGATECALL, another chain or Safe; records the source file's sha256 in the part's description);
+  `assemble --parts <imported> <removals> <migrate>` keeps that order. The bundle is atomic: if any NAV call fails, the
+  schedule fails with it and both are re-signed. Rehearse it with `PREPEND_PARTS=<imported part>` and
+  `POST_CHECK="python3 script/deploy/preflight/timelock_batch_fork_check.py --timelock 0xa490… --schedule <file>
+  --execute <file>"` (warps past the timelock's own delay and runs the `executeBatch` file from a random EOA;
+  EXECUTOR_ROLE is open). The Manager Safe's own batch and `executeBatch` stay separate (other signer; anyone, 3 days
+  later).
+  **Pre-sign gate:** the operation id is content-derived (salt 0, predecessor 0), so if the same payload is ever
+  scheduled on its own first, the bundle's `scheduleBatch` reverts and takes the WHOLE NAV rollout with it. Right
+  before signing and before executing, `cast call 0xa490f5D25488E93fC065237aD84bbfc120ef69c4
+  "isOperation(bytes32)(bool)" 0xdb8c2c7359d8ae8adcfc59aa1bb8fa7ea1a83d108a047ee89bd447bd6e94537d` must be `false`,
+  and the client-configs owners must not schedule the standalone file. If it already exists, re-assemble without the
+  part and re-sign.
 - **Chains with no assets** (17 of the 25 hold only the native-token placeholder registered at initialize, and have
   no asset config): `removals` writes an empty part (the native placeholder is never a removal),
   `MigrateToMonitorFeeds` plans nothing and writes no file, the rehearsal then leaves that part out (only when its
   log says "Nothing to migrate" with no "[skip …]" line), and the batch is `upgradeToAndCall` alone.
 
 Rehearsed 2026-10-26 (all PASS): Gnosis (12 calls), Arc (3), and the no-asset chains Unichain, Scroll and HyperEVM
-(1 call each). Rehearsed 2026-10-23 (all PASS): mainnet (95 calls, 2.95M gas), Arbitrum (25 calls, 0.77M), Base (21 calls,
+(1 call each); mainnet WITH the BTC Carry bundle in one harness run (96 calls in one Council transaction, 3.18M gas,
+census 0 ERROR; then `rollback_fork_check.sh` → `timelock_batch_fork_check.py`: operation pending → +259,201 s →
+`executeBatch` from a random EOA, status 1, 1.58M gas, operation done). The imported calldata is byte-identical to
+`cast calldata`. Rehearsed 2026-10-23 (all PASS): mainnet (95 calls, 2.95M gas), Arbitrum (25 calls, 0.77M), Base (21 calls,
 0.54M), Optimism (assets but no custom feeds: 7 calls). Mainnet's diff showed only the planned changes (ezETH/EIGEN/Renzo removed,
 WBTC +2 monitors, cbBTC on BTC/USD, osETH's dead monitor removed); the only account that moved was the test Safe ACCOUNT_3, by its 0.005 aEzETH (issue #357), and no production account moved.
 
@@ -199,5 +220,36 @@ config exists to read:
   Robinhood NAV consumers, and note that the #353 docs describe the pre-upgrade behaviour.
 - **Rule 2 sweep, live:** the equity feeds are recorded as using 518,400 s (six days); confirm every primary
   heartbeat is below 604,800 s.
-- The Safe batch is built and stamped by hand for `0x2F0d…`; the library and implementation CREATE2 deploys use
-  the canonical deployer `0x4e59b44847b379578588920cA78FbF26c0B4956C` directly.
+- **Deploys: `01_2` cannot run on 4663** (no `chains/4663.json`, so `ConfigReader` reverts). Reuse #338's path:
+  replay the two CREATE2 transactions `01_2` sends on another chain (the real 130 broadcast:
+  `broadcast/01_2_DeployNAVImplementation.s.sol/130/run-latest.json`, `to` = `0x4e59b44847b379578588920cA78FbF26c0B4956C`,
+  `input` = salt ‖ init code) byte-identical on 4663 from the deployer, skipping an address that already has code
+  (NavRegistryLib does), and assert each address's code hash equals 130's before the upgrade.
+- **Batch:** `upgradeToAndCall(newImpl, "")` alone, signed by the Robinhood Safe `0x2F0d…` (it holds
+  `DEFAULT_ADMIN_ROLE`; the Council holds no role on 4663 as of 2026-10-26) — unless ownership moves to the Council
+  first, in which case it joins the Council round. No ezETH/EIGEN is registered there, so no removals.
+- Rehearsed 2026-10-26 (PASS): `01_2` dry run on a 130 fork → 2 CREATE2 calls (PriceFeedLib, NAV implementation) →
+  replayed on a 4663 fork, code hashes equal 130's → upgrade as the Robinhood Safe → all 29 asset prices and the
+  three vaults' NAV (kRHUSD, kRHETH, kRHSPY Portfolio Safes) byte-identical before and after (the NAV's `timestamp`
+  word masked) → census 0 ERROR. `01_2` writes `deployments/<chain>.json` whenever `PERSIST_DEPLOYMENTS` is set,
+  broadcast or not, and the repo `.env` sets it: run a dry run with it unset, or restore the record after. Replaying
+  the REAL 130 broadcast makes Robinhood's deploy depend on 130's `01_2` landing first.
+
+## Rollback
+
+The previous implementation `0xA7243DCDF7e4D6f8FA20A9F022186C0d0778C2b6` stays deployed on every chain. Rollback is
+one call from the role holder (the Council on the 25, the Robinhood Safe on 4663): `upgradeToAndCall(oldImpl, "")`.
+The new feeds stay: they read the NAV through `getPriceDataNoDivergence`, which the old implementation serves with the
+same struct. Rehearsed 2026-10-26 on Arbitrum (a sequencer chain, Rule 1's case): rollout, then rollback as the
+Council → snapshot read with 0 errors, every account's NAV equal to the PRE-rollout snapshot within block-to-block
+interest (ACCOUNT_7 +$0.03 on $1.89M), and the only structural differences the intended removals (ezETH, the Renzo
+adapter). Same on mainnet (44 feeds + removals): the only differences are the planned ones (ezETH, EIGEN and the
+Renzo adapter removed, WBTC's two new monitors, cbBTC on BTC/USD, osETH's dead monitor gone) and ACCOUNT_3, the test
+Safe, losing its ezETH leg (−$12.67). Rehearse it with `POST_CHECK="bash script/deploy/preflight/rollback_fork_check.sh <previousImplementation>"`.
+What a rollback does NOT undo, and what it brings back:
+- the removals (re-registering ezETH/EIGEN would be a separate MANAGER batch);
+- `MigrateToMonitorFeeds`' swaps: cbBTC stays on Chainlink BTC/USD (3600 s), and under the OLD library that feed is
+  zero-priced for the ~520 s a day its rounds overshoot the heartbeat (see "Swap cbBTC's primary in the same batch"
+  above) — the window ADR 0029 closes;
+- the old staleness rule everywhere: a stale feed is valued at zero again (on Robinhood, the equity feeds' last-price
+  holdover is gone too).

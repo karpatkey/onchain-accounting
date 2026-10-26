@@ -36,7 +36,8 @@ def _cast(rpc: str, *a: str) -> str:
 
 def _batch_args(path: str) -> tuple[str, str, str, str, str]:
     v = json.load(open(path))["transactions"][0]["contractInputsValues"]
-    arr = lambda k: "[" + ",".join(json.loads(v[k]) if isinstance(v[k], str) else v[k]) + "]"  # noqa: E731
+    # Elements may be JSON strings ("0") or numbers (0); both are valid Transaction-Builder input.
+    arr = lambda k: "[" + ",".join(str(x) for x in (json.loads(v[k]) if isinstance(v[k], str) else v[k])) + "]"  # noqa: E731
     return arr("targets"), arr("values"), arr("payloads"), v["predecessor"], v["salt"]
 
 

@@ -341,18 +341,18 @@
       "baseUsdChainlink": "0xF4030086522a5bEEa4988F8cA5B36dbC97BeE88c",
       "baseUsdHeartbeat": "3600",
       "baseAsset": "0x0000000000000000000000000000000000000000",
-      "minAnswer": "50000000",
+      "minAnswer": "1000000",
       "maxAnswer": "150000000"
     },
     "rateFeedGuard": {
-      "$comment": "Pair identity + plausibility band for the WBTC / BTC rate leg (rateChainlink). description() verified live on-chain 2026-10-22. Band 0.5 .. 1.5 BTC per WBTC, deliberately WIDER than a parity wrapper needs: this feed exists to SEE a depeg, and a rate outside the band makes the feed report (0, stale) - i.e. the monitor goes unhealthy instead of raising `irregular`. A 0.5 floor keeps every depeg short of a 50% collapse inside the band, where it surfaces as `irregular` against the BTC / USD primary. The band still catches a re-pointed aggregator: BTC / USD answers ~8e12 raw and ETH / BTC ~3e6, both orders of magnitude outside. The BTC / USD leg (baseUsdChainlink) has no guard block - RateFeedGuard pins one param per instance - and is asserted by description() in the fork test instead.",
+      "$comment": "Pair identity + plausibility band for the WBTC / BTC rate leg (rateChainlink). description() verified live on-chain 2026-10-22. Band 0.01 .. 1.5 BTC per WBTC, deliberately WIDER than a parity wrapper needs: this feed exists to SEE a depeg, and a rate outside the band makes the feed report (0, stale) - the monitor drops out instead of raising `irregular`, and the kept RedStone BTC monitor (which prices BTC, not WBTC) then AGREES with the BTC / USD primary, so nothing is flagged. The floor was 0.5 until 2026-10-26 (Copilot, PR #358): a collapse below 0.5 BTC went silent. At 0.01 every depeg down to 99% surfaces as `irregular` against the primary. A re-pointed aggregator: BTC / USD (~8e12 raw) stays far outside; ETH / BTC (~3e6) now falls INSIDE, which is acceptable for a MONITOR - its price would sit ~97% below the primary and raise `irregular` (loud), never move WBTC's price (a wrong pair trading near 1.0, e.g. cbBTC/BTC, would be silent under any floor - that is what the description() pin is for) - and pair identity is pinned pre-deploy by description() below. The BTC / USD leg (baseUsdChainlink) has no guard block - RateFeedGuard pins one param per instance - and is asserted by description() in the fork test instead.",
       "param": "rateChainlink",
       "description": "WBTC / BTC",
-      "minRate1e18": "500000000000000000",
+      "minRate1e18": "10000000000000000",
       "maxRate1e18": "1500000000000000000"
     },
     "$noNavDependencyReason": "This feed reads NO base/USD price out of the NAV. It derives WBTC/USD wholly from two Chainlink legs (WBTC / BTC x BTC / USD), so there is no base asset to read and BASE_ASSET is a compile-time constant address(0) on the contract, not a configurable argument. The zero here MIRRORS the contract rather than opting out of a dependency that exists - and a NAV-sourced base is not possible for this asset at all, because the NAV's BTC/USD base is WBTC itself.",
-    "$bandComment": "minAnswer/maxAnswer are the RUNTIME pin on the rate leg, in WBTC / BTC's own 8 decimals: 0.5e8 .. 1.5e8 vs a live ~0.998e8. RateFeedGuard pins the same band pre-deploy and reconciles these two keys against rateFeedGuard.minRate1e18/maxRate1e18 (RateFeedBandMismatch), so they cannot drift."
+    "$bandComment": "minAnswer/maxAnswer are the RUNTIME pin on the rate leg, in WBTC / BTC's own 8 decimals: 0.01e8 .. 1.5e8 vs a live ~0.998e8. RateFeedGuard pins the same band pre-deploy and reconciles these two keys against rateFeedGuard.minRate1e18/maxRate1e18 (RateFeedBandMismatch), so they cannot drift."
   },
   "WBTCCrossRateRedstone": {
     "enabled": true,
@@ -365,14 +365,14 @@
       "baseUsdChainlink": "0xF4030086522a5bEEa4988F8cA5B36dbC97BeE88c",
       "baseUsdHeartbeat": "3600",
       "baseAsset": "0x0000000000000000000000000000000000000000",
-      "minAnswer": "50000000",
+      "minAnswer": "1000000",
       "maxAnswer": "150000000"
     },
     "rateFeedGuard": {
-      "$comment": "Pair identity + plausibility band for the RedStone WBTC/BTC rate leg; description() verified live on-chain 2026-10-22. Same 0.5 .. 1.5 band and reasoning as WBTCCrossRate.",
+      "$comment": "Pair identity + plausibility band for the RedStone WBTC/BTC rate leg; description() verified live on-chain 2026-10-22. Same 0.01 .. 1.5 band and reasoning as WBTCCrossRate.",
       "param": "rateChainlink",
       "description": "RedStone Price Feed for WBTC/BTC",
-      "minRate1e18": "500000000000000000",
+      "minRate1e18": "10000000000000000",
       "maxRate1e18": "1500000000000000000"
     }
   },

@@ -38,7 +38,7 @@ contract ChainlinkCrossRateCustomPriceFeedForkTest is TestEnvConfigurator {
 
     uint256 constant RATE_HB = 86_400;
     uint256 constant BASE_HB = 3_600;
-    uint256 constant MIN_R = 0.5e8;
+    uint256 constant MIN_R = 0.01e8; // the configured floor (custom-price-feeds/1.json WBTCCrossRate*)
     uint256 constant MAX_R = 1.5e8;
     uint256 constant FORK_BLOCK = 26_240_000;
     uint32 constant DIVERGENCE_BPS = 50;
@@ -308,6 +308,23 @@ contract ChainlinkCrossRateCustomPriceFeedForkTest is TestEnvConfigurator {
         INAVCalculator.PriceFeedData memory depeg = INAVCalculator(NAV).getPriceData(WBTC);
         assertTrue(depeg.irregular, "WBTC depeg -> irregular");
         assertEq(depeg.price, calm.price, "a monitor never moves the price");
+        vm.revertToState(snap);
+
+        // A collapse to 0.3 BTC (Copilot, PR #358): below the old 0.5 floor both WBTC monitors dropped out and the
+        // RedStone BTC monitor, which prices BTC, agreed with the primary — nothing flagged. The 0.01 floor keeps it in.
+        snap = vm.snapshotState();
+        _mockFresh(WBTC_BTC, 0.3e8);
+        _mockFresh(RS_WBTC_BTC, 0.3e8);
+        INAVCalculator.PriceFeedData memory collapse = INAVCalculator(NAV).getPriceData(WBTC);
+        assertTrue(collapse.irregular, "a 70% WBTC collapse -> irregular");
+        assertEq(collapse.monitorFeedCount, 3, "both WBTC monitors stay in the band");
+        assertEq(collapse.price, calm.price, "a monitor never moves the price");
+        vm.revertToState(snap);
+
+        // A re-pointed rate leg answering like ETH / BTC (~0.03) is inside the 0.01 floor: loud, never silent.
+        snap = vm.snapshotState();
+        _mockFresh(WBTC_BTC, 0.03e8);
+        assertTrue(INAVCalculator(NAV).getPriceData(WBTC).irregular, "a wrong-pair leg -> irregular");
         vm.revertToState(snap);
 
         // Primary frozen past its heartbeat while BTC moves 3%: only RedStone BTC can see it, and it does.

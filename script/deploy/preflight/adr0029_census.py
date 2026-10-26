@@ -102,11 +102,20 @@ def _addr(word: int) -> str:
     return "0x" + word.to_bytes(20, "big").hex()
 
 
+def _top_offset(raw: bytes, what: str) -> int:
+    """A function returning one dynamic array encodes its offset as 32. Anything else (a lone zero word from a
+    contract that is not the NAV, a short reply) would decode as an empty array and pass the census unchecked."""
+    off = _word(raw, 0)
+    if off != 32:
+        raise CensusError(f"malformed {what} reply: top-level offset {off}, expected 32")
+    return off
+
+
 def decode_assets(ret_hex: str) -> list[str]:
     """`Asset[]` = tuple(address asset, string symbol, uint8 decimals)[]; a dynamic tuple array, so the head is one
     offset per element (relative to the start of the element area); each element starts with its address."""
     raw = _raw(ret_hex)
-    off = _word(raw, 0)
+    off = _top_offset(raw, "Asset[]")
     n = _word(raw, off)
     base = off + 32
     if n > 100_000:
@@ -118,7 +127,7 @@ def decode_feed_configs(ret_hex: str) -> list[dict]:
     """`PriceFeedConfig[]` = (address priceFeed, uint8 decimals, PriceType priceType, uint256 chainlinkHeartbeat)[]:
     static tuples of four words."""
     raw = _raw(ret_hex)
-    off = _word(raw, 0)
+    off = _top_offset(raw, "PriceFeedConfig[]")
     n = _word(raw, off)
     base = off + 32
     if len(raw) < base + 128 * n:

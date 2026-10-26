@@ -224,14 +224,14 @@ contract RateFeedGuardTest is Test {
         //
         //   description()     "WBTC / BTC"
         //   decimals()        8
-        //   latestRoundData() 99816000  ->  0.99816e18, inside the configured 0.5-1.5e18 band
+        //   latestRoundData() 99816000  ->  0.99816e18, inside the configured band (0.5-1.5e18 then; floor lowered to 0.01e18 on 2026-10-26)
         //
         // Its second leg (`baseUsdChainlink`, Chainlink BTC / USD `0xF403…E88c`, description "BTC / USD")
         // is not counted here: the guard pins ONE param per instance, and that leg's identity is asserted in
         // the feed's fork test instead.
         // 2026-10-22: 23 -> 24. Mainnet `WBTCCrossRateRedstone` (issue #356), the second WBTC monitor: rate leg
         // RedStone WBTC/BTC `0xD260596f85C6D91Ccd40f7076eEb62ACb3B2ad53`, description() "RedStone Price Feed for
-        // WBTC/BTC", 8 decimals, 99816289 at block 26240000 (inside the 0.5 .. 1.5 band).
+        // WBTC/BTC", 8 decimals, 99816289 at block 26240000 (inside the 0.01 .. 1.5 band).
         // 2026-10-22: 24 -> 22 (issue #357). `ezETHCrossRateMarket` and `osETHCrossRate` are `enabled: false` (their
         // RedStone legs are dead: no update since 2026-08-20, and reverting, respectively), and the census now counts
         // enabled entries only, matching `checkAll`. A REMOVAL, so no new pair identity needed confirming.

@@ -197,6 +197,18 @@ class DecodersAgainstEthAbi(unittest.TestCase):
                                                        {"feed": CL, "type": CHAINLINK, "heartbeat": ac.UINT256_MAX}])
 
 
+class MalformedReplies(unittest.TestCase):
+    def test_zero_word_and_short_replies_are_refused_not_read_as_empty(self):
+        for dec in (ac.decode_assets, ac.decode_feed_configs):
+            for bad in ("0x" + "00" * 32, "0x", "0x" + _w(64) + _w(0), "0x" + _w(32)):
+                with self.assertRaises(ac.CensusError, msg=f"{dec.__name__}({bad[:20]}...)"):
+                    dec(bad)
+
+    def test_well_formed_empty_arrays_still_decode(self):
+        self.assertEqual(ac.decode_assets("0x" + _w(32) + _w(0)), [])
+        self.assertEqual(ac.decode_feed_configs("0x" + _w(32) + _w(0)), [])
+
+
 class ChainCheck(unittest.TestCase):
     def test_wrong_or_unreadable_chain_is_refused(self):
         class R:

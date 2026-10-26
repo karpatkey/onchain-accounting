@@ -145,8 +145,14 @@ One Security Council batch per chain, executed directly by the Council Safe (5-o
 - `MigrateToMonitorFeeds` re-emits `setDivergenceTolerance` / `setPegTolerance` for every configured asset even
   when the live value already matches (seen on Optimism: 6 such no-op calls). Harmless; signers will see them.
 
-Rehearsed 2026-10-23 (all PASS): mainnet (95 calls, 2.95M gas), Arbitrum (25 calls, 0.77M), Base (21 calls,
-0.54M), Optimism impl-only (7 calls). Mainnet's diff showed only the planned changes (ezETH/EIGEN/Renzo removed,
+- **Chains with no assets** (17 of the 25 hold only the native-token placeholder registered at initialize, and have
+  no asset config): `removals` writes an empty part (the native placeholder is never a removal),
+  `MigrateToMonitorFeeds` plans nothing and writes no file, the rehearsal then leaves that part out (only when its
+  log says "Nothing to migrate" with no "[skip …]" line), and the batch is `upgradeToAndCall` alone.
+
+Rehearsed 2026-10-26 (all PASS): Gnosis (12 calls), Arc (3), and the no-asset chains Unichain, Scroll and HyperEVM
+(1 call each). Rehearsed 2026-10-23 (all PASS): mainnet (95 calls, 2.95M gas), Arbitrum (25 calls, 0.77M), Base (21 calls,
+0.54M), Optimism (assets but no custom feeds: 7 calls). Mainnet's diff showed only the planned changes (ezETH/EIGEN/Renzo removed,
 WBTC +2 monitors, cbBTC on BTC/USD, osETH's dead monitor removed); the only account that moved was the test Safe ACCOUNT_3, by its 0.005 aEzETH (issue #357), and no production account moved.
 
 ## Rule 2 — sweep the heartbeats already on-chain

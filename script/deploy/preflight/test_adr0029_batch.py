@@ -79,6 +79,11 @@ class Derivation(unittest.TestCase):
         self.assertEqual(adapters, [RENZO])
         self.assertEqual(assets, sorted([EZETH, EIGEN]))
 
+    def test_native_placeholder_is_never_a_removal(self):
+        # Registered by NAVCalculator.initialize on every chain; chains with no assets have no asset config at all.
+        _, assets = ab.derive_removals(1, Fake([WETH, ab.NATIVE_ADDRESS], [OTHER]))
+        self.assertEqual(assets, [])
+
     def test_disabled_but_unregistered_adapter_is_not_removed(self):
         adapters, _ = ab.derive_removals(1, Fake([WETH], [OTHER]))
         self.assertEqual(adapters, [])

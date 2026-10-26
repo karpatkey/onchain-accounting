@@ -227,4 +227,71 @@ contract CompoundV3CometsMetaBalanceAdapterTest is Test {
         assertEq(meta.positionLabels(abi.encode(dirty)).length, 0, "dirty upper bits");
         assertEq(meta.positionLabels(abi.encode(coord, uint256(1))).length, 0, "over-long");
     }
+
+    /// @dev The BTC Carry shape (OIV-64): two BTC collaterals and a base borrow on one comet. Every leg is emitted
+    ///      with the comet's own amounts, the borrow as the only debt, and no rewards leg when nothing accrued.
+    function _btcCarryComet() internal returns (MockCometRich c, MetaTok cbbtc) {
+        cbbtc = new MetaTok("cbBTC", 8);
+        nav.registerAsset(address(cbbtc), 8, "cbBTC");
+        address[] memory collats = new address[](2);
+        collats[0] = address(wbtc);
+        collats[1] = address(cbbtc);
+        c = new MockCometRich(address(usdc), collats);
+        c.setCollateral(alice, address(wbtc), 1e8);
+        c.setCollateral(alice, address(cbbtc), 5e7);
+        c.setPrincipal(alice, -int104(uint104(50_000e6)));
+    }
+
+    function _one(address c) internal pure returns (bytes32[] memory ins) {
+        ins = new bytes32[](1);
+        ins[0] = bytes32(uint256(uint160(c)));
+    }
+
+    function test_multiCollateralBorrow_allLegs() public {
+        (MockCometRich c, MetaTok cbbtc) = _btcCarryComet();
+        INAVCalculator.PositionBalance[] memory p =
+            meta.getAdapterPositionsForInstances(alice, _one(address(c)), address(0));
+        assertEq(p.length, 3, "borrow + two collaterals, no rewards leg");
+        assertEq(p[0].balanceAsset.asset, address(usdc));
+        assertEq(p[0].amount, 50_000e6);
+        assertTrue(p[0].isDebt);
+        assertEq(uint256(p[0].positionKind), uint256(PositionKind.Borrowed));
+        assertEq(p[1].balanceAsset.asset, address(wbtc));
+        assertEq(p[1].amount, 1e8);
+        assertFalse(p[1].isDebt);
+        assertEq(uint256(p[1].positionKind), uint256(PositionKind.Collateral));
+        assertEq(p[2].balanceAsset.asset, address(cbbtc));
+        assertEq(p[2].amount, 5e7);
+        assertFalse(p[2].isDebt);
+        assertEq(uint256(p[2].positionKind), uint256(PositionKind.Collateral));
+    }
+
+    /// @dev An unregistered collateral drops only its own leg. The debt stays, so the NAV can only under-report.
+    function test_unregisteredCollateral_keepsTheDebt() public {
+        (MockCometRich c, MetaTok cbbtc) = _btcCarryComet();
+        nav.unregisterAssetHelper(address(cbbtc));
+        INAVCalculator.PositionBalance[] memory p =
+            meta.getAdapterPositionsForInstances(alice, _one(address(c)), address(0));
+        assertEq(p.length, 2, "cbBTC dropped, WBTC and the debt kept");
+        assertEq(p[0].balanceAsset.asset, address(usdc));
+        assertTrue(p[0].isDebt);
+        assertEq(p[0].amount, 50_000e6);
+        assertEq(p[1].balanceAsset.asset, address(wbtc));
+    }
+
+    /// @dev Filtering on the debt asset returns the debt leg alone (the NAV queries per asset in some paths).
+    function test_assetFilter_onBorrowedBase() public {
+        (MockCometRich c,) = _btcCarryComet();
+        INAVCalculator.PositionBalance[] memory p =
+            meta.getAdapterPositionsForInstances(alice, _one(address(c)), address(usdc));
+        assertEq(p.length, 1);
+        assertTrue(p[0].isDebt);
+        assertEq(p[0].amount, 50_000e6);
+    }
+
+    function test_zeroPosition_isEmpty() public {
+        (MockCometRich c,) = _btcCarryComet();
+        address bob = makeAddr("bob");
+        assertEq(meta.getAdapterPositionsForInstances(bob, _one(address(c)), address(0)).length, 0);
+    }
 }

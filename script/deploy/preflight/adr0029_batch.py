@@ -35,6 +35,7 @@ import adr0029_census as ac
 import chainlib as c
 
 SEL_GET_ALL_ADAPTERS = "0xe31ada97"  # getAllAdapters()
+NATIVE_ADDRESS = "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"  # src/balances/Balances.sol NATIVE_ADDRESS
 SEL_REMOVE_BALANCE_ADAPTERS = "0x3aecc485"  # removeBalanceAdapters(address[])
 SEL_UNREGISTER_ASSET = "0xc906d2cf"  # unregisterAsset(address)
 SEL_UPGRADE_TO_AND_CALL = "0x4f1ef286"  # upgradeToAndCall(address,bytes)
@@ -101,7 +102,9 @@ def derive_removals(chain: int, reader, proxy: str = ac.NAV_PROXY) -> tuple[list
     """(adapters to deregister, assets to unregister), from the live NAV vs this tree's config."""
     live_assets = {a.lower() for a in ac.decode_assets(reader.call(proxy, ac.SEL_GET_REGISTERED_ASSETS))}
     live_adapters = {a.lower() for a in decode_addresses(reader.call(proxy, SEL_GET_ALL_ADAPTERS))}
-    assets = sorted(live_assets - config_assets(chain))
+    # The native-token placeholder is registered by `NAVCalculator.initialize`, never by config (most chains with
+    # no assets have no asset config at all), so it is never a removal.
+    assets = sorted(live_assets - config_assets(chain) - {NATIVE_ADDRESS})
     adapters = sorted(set(disabled_adapters(chain)) & live_adapters)
     # The symmetric check: any OTHER registered adapter that config does not enable (a deleted key, a re-pointed
     # record) is not removed automatically — it is reported, so under-derivation cannot pass silently.
@@ -220,6 +223,7 @@ def cmd_removals(a) -> int:
 def cmd_assemble(a) -> int:
     council = _council(a.chain)
     txs: list[dict] = []
+    summary: list[str] = []
     for p in a.parts:
         if not Path(p).exists():
             raise BatchError(f"part {p} does not exist — refusing (every part must be present; an empty one is fine)")
@@ -241,15 +245,17 @@ def cmd_assemble(a) -> int:
             if int(t.get("operation", 0)) != 0:
                 raise BatchError(f"{p}: DELEGATECALL entry refused")
             txs.append({"to": t["to"], "value": str(t.get("value", "0")), "data": t["data"], "operation": 0})
+        summary.append(f"{len(part_txs)} from {Path(p).name}")
     if a.upgrade_impl:
         if not c.is_address(a.upgrade_impl):
             raise BatchError(f"--upgrade-impl {a.upgrade_impl!r} is not an address")
         txs.append({"to": ac.NAV_PROXY, "value": "0", "operation": 0,
                     "data": enc_upgrade_to_and_call(a.upgrade_impl)})
+        summary.append(f"upgradeToAndCall({a.upgrade_impl})")
     if not txs:
         raise BatchError("empty batch")
     write_batch(a.out, a.chain, council, "ADR 0029 rollout",
-                f"{len(txs)} calls: removals, MigrateToMonitorFeeds, upgradeToAndCall", txs)
+                f"{len(txs)} call(s): " + "; ".join(summary), txs)
     print(f"chain {a.chain}: {len(txs)} call(s) -> {a.out}")
     return 0
 

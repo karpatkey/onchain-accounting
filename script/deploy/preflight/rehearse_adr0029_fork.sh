@@ -540,8 +540,19 @@ FOUNDRY_PROFILE=slow forge script script/manage/MigrateToMonitorFeeds.s.sol --rp
   > "$WORK/migrate.log" 2>&1 || { echo "    FAIL migrate plan (see $WORK/migrate.log)"; grep -aE "^Error|Error:|revert" "$WORK/migrate.log" | tail -3 | cut -c1-300 | sed 's/^/      /'; FAILED=1; }
 grep -E "Planned adds/sets|Planned removes|Nothing to migrate|skip" "$WORK/migrate.log" | head -8 | sed 's/^/    /'
 echo "--- assemble (removals + migrate + upgradeToAndCall $NEW_IMPL)"
+# Migrate writes no file when it has nothing to plan (a chain with no assets). Leave its part out ONLY when its
+# log says so explicitly; any other missing file is a failure that `assemble` reports.
+PARTS=("$B/${CHAIN_ID}-adr0029-removals.json")
+# "Nothing to migrate" is also printed when the new feeds are missing from the record (every asset logs
+# "[skip asset] target primary not deployed"); that must stay a loud failure, so a "[skip" line disqualifies it.
+if grep -q "Nothing to migrate" "$WORK/migrate.log" && ! grep -q "\[skip" "$WORK/migrate.log" \
+   && [[ ! -f "$B/${CHAIN_ID}-migrate-monitor-feeds.json" ]]; then
+  echo "    (MigrateToMonitorFeeds planned nothing on this chain — its part is omitted)"
+else
+  PARTS+=("$B/${CHAIN_ID}-migrate-monitor-feeds.json")
+fi
 python3 script/deploy/preflight/adr0029_batch.py assemble --chain "$CHAIN_ID" \
-  --parts "$B/${CHAIN_ID}-adr0029-removals.json" "$B/${CHAIN_ID}-migrate-monitor-feeds.json" \
+  --parts "${PARTS[@]}" \
   --upgrade-impl "$NEW_IMPL" --out "$B/${CHAIN_ID}-adr0029-rollout.json" > "$WORK/assemble.log" 2>&1 || FAILED=1
 sed 's/^/    /' "$WORK/assemble.log"
 cp -f "$B/${CHAIN_ID}-adr0029-rollout.json" "$WORK/" 2>/dev/null

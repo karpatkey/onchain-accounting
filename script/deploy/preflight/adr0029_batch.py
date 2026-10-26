@@ -197,11 +197,16 @@ def _reader(a) -> ac.LiveReader:
     if a.rpc_url:
         if not (a.rpc_url.startswith("http://127.0.0.1:") or a.rpc_url.startswith("http://localhost:")):
             raise BatchError("--rpc-url is for a loopback fork only; use --rpc-env for a real endpoint")
-        return ac.LiveReader(a.rpc_url)
-    url = os.environ.get(a.rpc_env or "")
-    if not url:
-        raise BatchError(f"no RPC: set --rpc-url (fork) or --rpc-env <VAR> (env var {a.rpc_env!r} is empty)")
-    return ac.LiveReader(url)
+        url = a.rpc_url
+    else:
+        url = os.environ.get(a.rpc_env or "")
+        if not url:
+            raise BatchError(f"no RPC: set --rpc-url (fork) or --rpc-env <VAR> (env var {a.rpc_env!r} is empty)")
+    reader = ac.LiveReader(url)
+    why = ac.chain_mismatch(reader, a.chain)
+    if why:
+        raise BatchError(f"chain {a.chain}: {why} — refusing to derive removals from another chain")
+    return reader
 
 
 def cmd_removals(a) -> int:
@@ -228,11 +233,15 @@ def cmd_assemble(a) -> int:
         if not Path(p).exists():
             raise BatchError(f"part {p} does not exist — refusing (every part must be present; an empty one is fine)")
         b = json.loads(Path(p).read_text())
-        part_txs = b.get("transactions") or []
+        if not isinstance(b.get("transactions"), list):
+            raise BatchError(f"{p}: no `transactions` list — refusing (an empty part is stamped with `[]`)")
+        part_txs = b["transactions"]
         stamped_sum = (b.get("meta") or {}).get("checksum", "")
-        if part_txs and not stamped_sum:
-            raise BatchError(f"{p}: has transactions but no meta.checksum — refusing an unstamped part")
-        if part_txs and stamped_sum.lower() != checksum(
+        # Checked even for an empty part: `write_batch` stamps `checksum([])`, so a part whose transactions were
+        # cleared by hand no longer matches and cannot shrink the batch to an upgrade without its swaps.
+        if not stamped_sum:
+            raise BatchError(f"{p}: no meta.checksum — refusing an unstamped part")
+        if stamped_sum.lower() != checksum(
                 [{"to": t["to"], "value": str(t.get("value", "0")), "data": t["data"],
                   "operation": int(t.get("operation", 0))} for t in part_txs]).lower():
             raise BatchError(f"{p}: transactions do not match its meta.checksum (edited by hand?)")
@@ -241,7 +250,7 @@ def cmd_assemble(a) -> int:
         stamped = (b.get("meta") or {}).get("createdFromSafeAddress", "")
         if stamped.lower() != council.lower():
             raise BatchError(f"{p}: generated for {stamped or '<none>'}, not the Council {council}")
-        for t in b.get("transactions") or []:
+        for t in part_txs:
             if int(t.get("operation", 0)) != 0:
                 raise BatchError(f"{p}: DELEGATECALL entry refused")
             txs.append({"to": t["to"], "value": str(t.get("value", "0")), "data": t["data"], "operation": 0})

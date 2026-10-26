@@ -148,6 +148,19 @@ class LiveReader:
     def storage(self, addr: str, slot: str) -> str:
         return c.rpc(self._url, "eth_getStorageAt", [addr, slot, "latest"])
 
+    def chain_id(self) -> int:
+        return int(c.rpc(self._url, "eth_chainId", []), 16)
+
+
+def chain_mismatch(reader, chain: int) -> str | None:
+    """None when the endpoint serves `chain`, else why not. A census run against the wrong chain's endpoint would
+    read another NAV and could report 0 ERRORs for a chain it never looked at."""
+    try:
+        got = reader.chain_id()
+    except Exception as e:  # noqa: BLE001 - an unreadable chain id is a refusal, not a pass
+        return f"eth_chainId unreadable ({_safe(e, 120)})"
+    return None if got == chain else f"endpoint serves chain {got}, not {chain}"
+
 
 def _optional_address(reader, to: str, sel: str) -> str | None:
     """An address getter that may legitimately not exist (a feed with no NAV()). None on a revert or a non-address."""
@@ -292,12 +305,19 @@ def main(argv: list[str]) -> int:
             print(f"  ERROR: chain {chain} NOT checked - no working endpoint ({note}).")
             total += 1
             continue
+        reader = LiveReader(url)
+        why = chain_mismatch(reader, chain)
+        if why:
+            print(f"=== chain {chain}: 1 ERROR (wrong endpoint: {why}) ===")
+            print(f"  ERROR: chain {chain} NOT checked - {why} [rpc: {note.split(' (')[0]}].")
+            total += 1
+            continue
         if a.live_only:
             new_feeds = old = None
         else:
             new_feeds = record_addresses(c.deployment(chain))
             old = all_record_addresses(base_record(chain, a.base))
-        f, s = census(chain, LiveReader(url), new_feeds, old)
+        f, s = census(chain, reader, new_feeds, old)
         errs = [m for lvl, m in f if lvl == ERROR]
         total += len(errs)
         seq = s["sequencerFeed"] or "none"

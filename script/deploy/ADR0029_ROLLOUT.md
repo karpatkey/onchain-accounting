@@ -129,7 +129,7 @@ ezETH/EIGEN before building its batch.
 One Security Council batch per chain, executed directly by the Council Safe (5-of-8). Tools, all in
 `script/deploy/preflight/`:
 
-- `adr0029_batch.py removals` (always writes its part, empty when there is nothing to remove; `assemble` refuses a missing part or one whose transactions no longer match its checksum, and `removals` refuses a registered adapter that config neither enables nor disables) derives the removal calls from the live NAV against this tree's config and refuses
+- `adr0029_batch.py removals` (always writes its part, empty when there is nothing to remove; `assemble` refuses a missing or unstamped part, or one whose transactions no longer match its checksum (empty parts included), and `removals` refuses a registered adapter that config neither enables nor disables) derives the removal calls from the live NAV against this tree's config and refuses
   unless they equal `--expect-assets` / `--expect-adapters` (1: ezETH + EIGEN + the Renzo adapter; 42161: ezETH +
   the Renzo adapter; every other chain: none). `adr0029_batch.py assemble` concatenates removals +
   `MigrateToMonitorFeeds`'s batch + `upgradeToAndCall(newImpl, "")` into one Transaction-Builder file for the
@@ -190,6 +190,13 @@ config exists to read:
   from an external kit (`RobinhoodEquityPriceFeed`); before upgrading, confirm what each does when its input is stale
   — a feed that returns `(0, true)` stays unusable under the new library (today's behaviour), and only a NAV-sourced
   feed built with the old `NavBaseUsdLib` carries the sequencer hazard. Read `chainlinkL2SequencerUptimeFeed()`.
+- **What changes for the equity feeds after the upgrade:** a feed that returns `(lastPrice, true)` (stale, but with a
+  price, as #353's `RobinhoodEquity_CustomPriceFeed` does once its print is too old, its multiplier is 0, or the
+  oracle is paused) is valued at zero today. Under the new library it is valued at that price, flagged stale, until
+  the aggregator's last print is `MAX_STALE_PRICE_AGE` (7 days) old, then at zero. The age counts from the
+  aggregator's `updatedAt`, so a paused or zero-multiplier token whose aggregator keeps publishing stays valued
+  (flagged stale) for as long as the pause lasts. This is the ADR 0029 behaviour, not a regression; tell the
+  Robinhood NAV consumers, and note that the #353 docs describe the pre-upgrade behaviour.
 - **Rule 2 sweep, live:** the equity feeds are recorded as using 518,400 s (six days); confirm every primary
   heartbeat is below 604,800 s.
 - The Safe batch is built and stamped by hand for `0x2F0d…`; the library and implementation CREATE2 deploys use

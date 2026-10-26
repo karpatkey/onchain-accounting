@@ -157,6 +157,37 @@ class Derivation(unittest.TestCase):
         self.assertTrue(out["transactions"][-1]["data"].startswith(ab.SEL_UPGRADE_TO_AND_CALL))
         self.assertEqual(out["meta"]["checksum"], ab.checksum(out["transactions"]))
 
+    @needs_eth_abi
+    def test_assemble_refuses_a_part_emptied_by_hand(self):
+        part = str(Path(self.tmp.name) / "p.json")
+        ab.write_batch(part, 1, "0x" + "c0" * 20, "n", "d",
+                       [{"to": AKR, "value": "0", "data": ab.enc_unregister_asset(EZETH), "operation": 0}])
+        for edit in (lambda d: d.update(transactions=[]), lambda d: d.pop("transactions")):
+            d = json.loads(Path(part).read_text())
+            edit(d)
+            emptied = str(Path(self.tmp.name) / "emptied.json")
+            Path(emptied).write_text(json.dumps(d))
+            with self.assertRaises(ab.BatchError):
+                self._assemble([emptied])
+
+    def test_assemble_refuses_an_unstamped_empty_part(self):
+        part = Path(self.tmp.name) / "u.json"
+        part.write_text(json.dumps({"chainId": "1", "meta": {"createdFromSafeAddress": "0x" + "c0" * 20},
+                                    "transactions": []}))
+        with self.assertRaises(ab.BatchError):
+            self._assemble([str(part)])
+
+    def test_reader_refuses_an_endpoint_for_another_chain(self):
+        class A:
+            chain, rpc_url, rpc_env = 42161, "http://127.0.0.1:1", None
+        saved = ab.ac.LiveReader.chain_id
+        ab.ac.LiveReader.chain_id = lambda self: 10
+        try:
+            with self.assertRaises(ab.BatchError):
+                ab._reader(A)
+        finally:
+            ab.ac.LiveReader.chain_id = saved
+
     def test_real_endpoint_must_come_from_env(self):
         class A:
             rpc_url, rpc_env = "https://example.invalid/v2/key", None

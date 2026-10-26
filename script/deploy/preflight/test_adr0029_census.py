@@ -197,5 +197,20 @@ class DecodersAgainstEthAbi(unittest.TestCase):
                                                        {"feed": CL, "type": CHAINLINK, "heartbeat": ac.UINT256_MAX}])
 
 
+class ChainCheck(unittest.TestCase):
+    def test_wrong_or_unreadable_chain_is_refused(self):
+        class R:
+            def __init__(self, cid):
+                self.cid = cid
+
+            def chain_id(self):
+                if self.cid is None:
+                    raise RuntimeError("rpc error")
+                return self.cid
+        self.assertIsNone(ac.chain_mismatch(R(42161), 42161))
+        self.assertIn("serves chain 10", ac.chain_mismatch(R(10), 42161))
+        self.assertIn("unreadable", ac.chain_mismatch(R(None), 42161))
+
+
 if __name__ == "__main__":
     unittest.main()

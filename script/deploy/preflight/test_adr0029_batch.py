@@ -444,5 +444,51 @@ class Governance(unittest.TestCase):
                           ab.SEL_RENOUNCE_ROLE])
 
 
+class TimelockFileChecks(unittest.TestCase):
+    """timelock_batch_fork_check reads the BTC Carry files; it must refuse one aimed at another contract/function."""
+    TL = "0x" + "a4" * 20
+
+    def setUp(self):
+        import timelock_batch_fork_check as t
+        self.t = t
+        self.tmp = tempfile.TemporaryDirectory()
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def _file(self, name, **tx):
+        inputs = [{"name": n, "type": ty} for n, ty in (("targets", "address[]"), ("values", "uint256[]"),
+                  ("payloads", "bytes[]"), ("predecessor", "bytes32"), ("salt", "bytes32"))]
+        base = {"to": self.TL, "value": "0", "operation": 0, "data": None,
+                "contractMethod": {"name": "executeBatch", "inputs": inputs},
+                "contractInputsValues": {"targets": json.dumps([OTHER]), "values": "[0]", "payloads": '["0x12"]',
+                                         "predecessor": "0x" + "00" * 32, "salt": "0x" + "00" * 32}}
+        base.update(tx)
+        f = Path(self.tmp.name) / name
+        f.write_text(json.dumps({"transactions": [base]}))
+        return str(f)
+
+    def test_accepts_the_right_target_and_method(self):
+        self.assertEqual(self.t._batch_args(self._file("ok.json"), self.TL.upper().replace("0X", "0x"), "executeBatch")[1],
+                         "[0]")
+
+    def test_refuses_another_target_method_value_or_count(self):
+        bad = [self._file("to.json", to="0x" + "bb" * 20),
+               self._file("m.json", contractMethod={"name": "scheduleBatch"}),
+               self._file("v.json", value="1"),
+               self._file("op.json", operation=1),
+               self._file("data.json", data="0x1234"),
+               self._file("types.json", contractMethod={"name": "executeBatch", "inputs": [
+                   {"name": "targets", "type": "address[]"}, {"name": "values", "type": "uint128[]"},
+                   {"name": "payloads", "type": "bytes[]"}, {"name": "predecessor", "type": "bytes32"},
+                   {"name": "salt", "type": "bytes32"}]})]
+        two = Path(self.tmp.name) / "two.json"  # built from a VALID entry, so only the count guard can refuse it
+        two.write_text(json.dumps({"transactions": [json.loads(Path(self._file("ok2.json")).read_text())["transactions"][0]] * 2}))
+        bad.append(str(two))
+        for f in bad:
+            with self.assertRaises(self.t.CheckError, msg=f):
+                self.t._batch_args(f, self.TL, "executeBatch")
+
+
 if __name__ == "__main__":
     unittest.main()

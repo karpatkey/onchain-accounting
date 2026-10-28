@@ -34,8 +34,29 @@ def _cast(rpc: str, *a: str) -> str:
     return r.stdout.strip()
 
 
-def _batch_args(path: str) -> tuple[str, str, str, str, str]:
-    v = json.load(open(path))["transactions"][0]["contractInputsValues"]
+def _batch_args(path: str, timelock: str, method: str) -> tuple[str, str, str, str, str]:
+    """The one call in a Transaction-Builder file, checked to be `method` on `timelock`: the rehearsal then sends
+    exactly what the file would send, so a file aimed at another contract or function cannot pass."""
+    txs = json.load(open(path)).get("transactions") or []
+    if len(txs) != 1:
+        raise CheckError(f"{path}: expected exactly one transaction, found {len(txs)}")
+    t = txs[0]
+    if str(t.get("to", "")).lower() != timelock.lower():
+        raise CheckError(f"{path}: targets {t.get('to')}, not the timelock {timelock}")
+    if (t.get("contractMethod") or {}).get("name") != method:
+        raise CheckError(f"{path}: calls {(t.get('contractMethod') or {}).get('name')!r}, not {method!r}")
+    if int(str(t.get("value", "0") or "0"), 0) != 0 or int(t.get("operation", 0) or 0) != 0:
+        raise CheckError(f"{path}: sends value or is a DELEGATECALL")
+    # The Safe UI encodes from the method form (or would send a non-null `data` as-is), so pin both to what this check
+    # re-encodes: no raw `data`, and exactly the timelock's argument types and names, in order.
+    if t.get("data") not in (None, "", "0x"):
+        raise CheckError(f"{path}: carries raw `data`; expected the method form only")
+    want = [("targets", "address[]"), ("values", "uint256[]"), ("payloads", "bytes[]"), ("predecessor", "bytes32"),
+            ("salt", "bytes32")] + ([("delay", "uint256")] if method == "scheduleBatch" else [])
+    got = [(i.get("name"), i.get("type")) for i in (t.get("contractMethod") or {}).get("inputs") or []]
+    if got != want:
+        raise CheckError(f"{path}: {method} inputs {got} != {want}")
+    v = t["contractInputsValues"]
     # Elements may be JSON strings ("0") or numbers (0); both are valid Transaction-Builder input.
     arr = lambda k: "[" + ",".join(str(x) for x in (json.loads(v[k]) if isinstance(v[k], str) else v[k])) + "]"  # noqa: E731
     return arr("targets"), arr("values"), arr("payloads"), v["predecessor"], v["salt"]
@@ -50,7 +71,8 @@ def main(argv: list[str]) -> int:
     rpc = os.environ.get("ADR0029_FORK_RPC", "")
     if not (rpc.startswith("http://127.0.0.1:") or rpc.startswith("http://localhost:")):
         raise CheckError("ADR0029_FORK_RPC must be a loopback fork")
-    sched, exe = _batch_args(a.schedule), _batch_args(a.execute)
+    sched = _batch_args(a.schedule, a.timelock, "scheduleBatch")
+    exe = _batch_args(a.execute, a.timelock, "executeBatch")
     if sched != exe:
         raise CheckError("the executeBatch file does not name the scheduled operation (targets/values/payloads/"
                          "predecessor/salt differ)")

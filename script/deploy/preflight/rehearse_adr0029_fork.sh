@@ -21,6 +21,10 @@
 #   EXPECT_ASSETS / EXPECT_ADAPTERS override the per-chain removal expectations (comma-separated addresses).
 #   PREPEND_PARTS: space-separated stamped parts (e.g. from `adr0029_batch.py import`) placed FIRST in the batch,
 #     for another team's Council calls bundled into the same Safe transaction (chain 1: the BTC Carry scheduleBatch).
+#   LIVE_DEPLOYS=1: the EOA deploys already happened on the live chain; skip 01_2/retire/03 and build the batch
+#     against the recorded addresses (asserted to have code). This is how the REAL batches are generated; without it
+#     the run refuses once the record's implementation already has code. CENSUS_BASE (default: the pre-rollout commit
+#     cf9bbb74) is the record the census treats as PRE-ROLLOUT in this mode.
 #   POST_CHECK: a command run after the post-snapshot with ADR0029_FORK_RPC, REHEARSAL_WORK, REHEARSAL_CHAIN,
 #     REHEARSAL_URL_VAR and REHEARSAL_COUNCIL set; its exit code is an assertion (e.g. warp past a timelock delay and
 #     execute what a bundled part scheduled, or rehearse a rollback to the previous implementation).
@@ -28,6 +32,7 @@ set -uo pipefail
 
 CHAIN_ID="${1:-1}"
 FORK_BLOCK="${2:-}"
+case "${LIVE_DEPLOYS:-0}" in 0|1) ;; *) echo "REFUSING: LIVE_DEPLOYS must be 0 or 1 (got '${LIVE_DEPLOYS}')"; exit 2 ;; esac
 PORT="${ANVIL_PORT:-8546}"
 RPC="http://127.0.0.1:${PORT}"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
@@ -474,7 +479,11 @@ run_step() {
 }
 assert() { if eval "$2"; then echo "  PASS  $1"; else echo "  FAIL  $1"; FAILED=1; fi; }
 impl_of() { cast parse-bytes32-address "$(cast storage "$NAV" $IMPL_SLOT --rpc-url "$RPC")"; }
-census() { python3 script/deploy/preflight/adr0029_census.py --chain "$CHAIN_ID" --rpc-env ADR0029_FORK_RPC --base HEAD "$@"; }
+# The PRE-ROLLOUT record: HEAD while the rehearsal deploys the feeds itself; with LIVE_DEPLOYS=1 HEAD already holds the new
+# feeds, so the pre-rollout record is the commit before the deploy commits (cf9bbb74, the branch's merge-base with main;
+# a moving ref like origin/main would hold the new feeds once this branch merges).
+CENSUS_BASE="${CENSUS_BASE:-$([[ "${LIVE_DEPLOYS:-0}" == 1 ]] && echo cf9bbb74dad7fef80712918917352bb7706a6835 || echo HEAD)}"
+census() { python3 script/deploy/preflight/adr0029_census.py --chain "$CHAIN_ID" --rpc-env ADR0029_FORK_RPC --base "$CENSUS_BASE" "$@"; }
 
 FAILED=0
 SAFE_TX_BACKUP="${WORK:?}/safe-transactions.orig"
@@ -507,8 +516,6 @@ PRE_IMPL="$(impl_of)"
 echo "pre-upgrade impl: $PRE_IMPL"
 
 # --- 1. EOA deploys ----------------------------------------------------------------------------------
-run_step 01_2_DeployNAVImplementation script/deploy/01_2_DeployNAVImplementation.s.sol || FAILED=1
-NEW_IMPL="$(jq -r '.NAVCalculatorImplementation // ""' "$REC")"
 # Redeployed keys = every ENABLED custom feed that already has a recorded address (new keys deploy fresh).
 KEYS="$(python3 - "$CHAIN_ID" <<'PY'
 import json, os, sys
@@ -520,13 +527,52 @@ print(",".join(k for k, v in cfg.items() if not k.startswith("$") and isinstance
                and v.get("enabled") is True and str(rec.get(k, "")).startswith("0x")))
 PY
 )"
-if [[ -n "$KEYS" ]]; then
-  echo "--- retire the redeployed custom-feed keys ($(tr ',' '\n' <<<"$KEYS" | wc -l))"
-  python3 script/deploy/preflight/retire_custom_feeds.py --chain "$CHAIN_ID" --keys "$KEYS" \
-    --reason "ADR 0029 rehearsal" --apply > "$WORK/retire.log" 2>&1 || { echo "    FAIL retire (see $WORK/retire.log)"; FAILED=1; }
-  run_step 03_DeployPriceFeeds script/deploy/03_DeployPriceFeeds.s.sol || FAILED=1
+if [[ "${LIVE_DEPLOYS:-0}" == 1 ]]; then
+  # The EOA deploys already ran on the live chain (records committed): build the REAL batch against them. Re-running
+  # retire + 03 here would deploy fork-only feeds and the batch would point at addresses that do not exist on-chain.
+  NEW_IMPL="$(jq -r '.NAVCalculatorImplementation // ""' "$REC")"
+  echo "--- LIVE_DEPLOYS=1: deploys skipped; recorded implementation $NEW_IMPL, PriceFeedLib and every ENABLED custom feed must have code"
+  MISSING="$(RPC="$RPC" python3 - "$CHAIN_ID" "$NEW_IMPL" <<'PY'
+import json, os, subprocess, sys
+c, impl = sys.argv[1], sys.argv[2]
+rec = json.load(open(f"script/config/deployments/{c}.json"))
+p = f"script/config/contracts-deployment-config/custom-price-feeds/{c}.json"
+cfg = json.load(open(p)) if os.path.exists(p) else {}
+feeds = rec.get("customPriceFeeds") or {}
+want = [("NAVCalculatorImplementation", impl), ("PriceFeedLib", rec.get("PriceFeedLib", ""))]
+want += [(k, feeds.get(k, "")) for k, v in cfg.items() if not k.startswith("$") and isinstance(v, dict) and v.get("enabled") is True]
+for k, a in want:
+    a = str(a or "")
+    code = subprocess.run(["cast", "code", a, "--rpc-url", os.environ["RPC"]], capture_output=True, text=True).stdout.strip() if a.startswith("0x") else ""
+    if code in ("", "0x"):
+        print(f"{k}={a or '<blank>'}")
+PY
+)"
+  # Fail closed: a batch built against an address without code must never be produced.
+  [[ -z "$MISSING" ]] || { echo "    REFUSING: recorded addresses without code on the fork: $MISSING"; exit 1; }
 else
-  echo "--- no recorded custom feeds on this chain: 03 skipped (impl-only chain)"
+  # Refuse once the live deploys exist: this path would deploy fork-only feeds and still pass. "Live" = the record names
+  # an implementation that is NOT the proxy's current one and already has code (a pre-rollout record names the current,
+  # deployed implementation, which must not trip this).
+  REC_IMPL="$(jq -r '.NAVCalculatorImplementation // ""' "$REC")"
+  if [[ -n "$REC_IMPL" && "${REC_IMPL,,}" != "${PRE_IMPL,,}" ]]; then
+    REC_CODE="$(cast code "$REC_IMPL" --rpc-url "$RPC" 2>/dev/null)" \
+      || { echo "REFUSING: could not read code at the record's implementation $REC_IMPL"; exit 2; }
+    if [[ "$REC_CODE" != 0x ]]; then
+      echo "REFUSING: the record's implementation $REC_IMPL already has code on this chain — the EOA deploys are live; run with LIVE_DEPLOYS=1"
+      exit 2
+    fi
+  fi
+  run_step 01_2_DeployNAVImplementation script/deploy/01_2_DeployNAVImplementation.s.sol || FAILED=1
+  NEW_IMPL="$(jq -r '.NAVCalculatorImplementation // ""' "$REC")"
+  if [[ -n "$KEYS" ]]; then
+    echo "--- retire the redeployed custom-feed keys ($(tr ',' '\n' <<<"$KEYS" | wc -l))"
+    python3 script/deploy/preflight/retire_custom_feeds.py --chain "$CHAIN_ID" --keys "$KEYS" \
+      --reason "ADR 0029 rehearsal" --apply > "$WORK/retire.log" 2>&1 || { echo "    FAIL retire (see $WORK/retire.log)"; FAILED=1; }
+    run_step 03_DeployPriceFeeds script/deploy/03_DeployPriceFeeds.s.sol || FAILED=1
+  else
+    echo "--- no recorded custom feeds on this chain: 03 skipped (impl-only chain)"
+  fi
 fi
 
 # --- 2. census BEFORE the batch: every live Custom feed must be flagged PRE-ROLLOUT ----------------------
@@ -618,7 +664,12 @@ python3 script/deploy/preflight/adr0029_batch.py assemble --chain "$CHAIN_ID" \
   --parts "${PARTS[@]}" ${FINAL_PARTS[@]:+--final-parts "${FINAL_PARTS[@]}"} \
   --upgrade-impl "$NEW_IMPL" --out "$B/${CHAIN_ID}-adr0029-rollout.json" > "$WORK/assemble.log" 2>&1 || FAILED=1
 sed 's/^/    /' "$WORK/assemble.log"
-cp -f "$B/${CHAIN_ID}-adr0029-rollout.json" "$WORK/" 2>/dev/null
+# Only a LIVE_DEPLOYS=1 batch points at contracts that exist on-chain; a rehearsal's batch is marked so it is never signed.
+if [[ "${LIVE_DEPLOYS:-0}" == 1 ]]; then
+  cp -f "$B/${CHAIN_ID}-adr0029-rollout.json" "$WORK/" 2>/dev/null
+else
+  cp -f "$B/${CHAIN_ID}-adr0029-rollout.json" "$WORK/${CHAIN_ID}-adr0029-rollout.REHEARSAL-FORK-ONLY.json" 2>/dev/null
+fi
 
 # --- 4. execute it through the REAL Security Council Safe, as one MultiSend -----------------------------
 echo "--- execute through the Council Safe $COUNCIL (council_fork_exec.py)"
@@ -689,6 +740,10 @@ echo; echo "=== census after (tail) ==="; tail -4 "$WORK/census-post.log" | sed 
 echo; echo "=== diff_snapshots pre -> post (tail; expect the removed assets' legs, the feed moves and, with the handover, the Council's two role DIFFs True -> False) ==="
 tail -30 "$WORK/diff.log" | sed 's/^/  /'
 echo; echo "=== steps ==="; column -t "$WORK/steps.tsv" | sed 's/^/  /'
-echo; echo "batch: $WORK/${CHAIN_ID}-adr0029-rollout.json   exec: $WORK/exec.log"
+if [[ "${LIVE_DEPLOYS:-0}" == 1 ]]; then
+  echo; echo "batch: $WORK/${CHAIN_ID}-adr0029-rollout.json   exec: $WORK/exec.log"
+else
+  echo; echo "batch (FORK-ONLY rehearsal, NOT for signing): $WORK/${CHAIN_ID}-adr0029-rollout.REHEARSAL-FORK-ONLY.json   exec: $WORK/exec.log"
+fi
 if (( FAILED )); then echo "RESULT: FAIL"; exit 1; fi
 echo "RESULT: PASS"

@@ -66,6 +66,10 @@ CHAIN_URL_ENV = {
     5000: "MANTLE_URL", 8453: "BASE_URL", 9745: "PLASMA_URL", 42161: "ARBITRUM_URL",
     42220: "CELO_URL", 43114: "AVALANCHE_URL", 57073: "INK_URL", 59144: "LINEA_URL",
     80094: "BERACHAIN_URL", 534352: "SCROLL_URL",
+    # Chains whose config rpc is `$ALCHEMY` with no other env var: unset by default (the public fallback below serves
+    # reads); the fork rehearsals set them to point snapshot_production at the fork. (43111/16661 already have one: their
+    # config rpc is `$QUICKNODE_*`.)
+    143: "MONAD_URL", 196: "XLAYER_URL", 204: "OPBNB_URL",
 }
 
 # Public fallbacks for chains with no configured endpoint at all. Read-only use only; the deploy
@@ -467,8 +471,9 @@ def fork_rpc_spec(chain_id: int, allow_public_fallback: bool = True) -> tuple[st
         # The fallback is a public endpoint for the SAME chain, so it never violates the "never
         # another chain's endpoint" rule — but it does let a caller proceed in a credential state
         # where the DEPLOY would fail. It is on by default because the five chains that reach here
-        # (143, 196, 204, 43111, 16661) have no CHAIN_URL_ENV entry and a credential-gated config
-        # rpc, so without it they cannot be rehearsed at all; and the caller announces it loudly.
+        # (143, 196, 204, 43111, 16661) have a credential-gated config rpc and no CHAIN_URL_ENV var set (143/196/204's
+        # are normally unset; 43111/16661 have none), so without it they cannot be rehearsed at all; and the caller
+        # announces it loudly.
         # `allow_public_fallback=False` gives the strict behaviour to anyone who wants a missing
         # credential to be fatal rather than degraded.
         if allow_public_fallback:

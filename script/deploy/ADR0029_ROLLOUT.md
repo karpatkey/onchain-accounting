@@ -146,7 +146,12 @@ One Security Council batch per chain, executed directly by the Council Safe (5-o
   Safe as one MultiSend (`council_fork_exec.py`: impersonated owners `approveHash`, then one `execTransaction`),
   census again (0 ERRORs), then a snapshot diff. Forge steps run under `FOUNDRY_PROFILE=slow` (EVM caps only; the
   default caps MemoryOOG on mainnet's config).
-- **Generate the real batches the same way, on a fresh fork at the latest block, after the EOA deploys:**
+- **Generate the real batches with `LIVE_DEPLOYS=1`, on a fresh fork at the latest block, after the EOA deploys.**
+  That mode skips `01_2`/retire/`03` (they already ran on the live chain), refuses unless the recorded
+  implementation, PriceFeedLib and every enabled custom feed have code, and runs the census against the pre-rollout
+  record (`CENSUS_BASE`, default the pre-deploy commit `cf9bbb74`). Without it the script refuses once the record's
+  implementation has code, because re-running `03` on the fork would put fork-only feed addresses in the batch.
+  Also:
   `MigrateToMonitorFeeds` must be simulated with the Council as `--sender`, and on several L2s the Council Safe
   holds no native token, so forge refuses to simulate against the live chain. The fork funds it.
 - `MigrateToMonitorFeeds` re-emits `setDivergenceTolerance` / `setPegTolerance` for every configured asset even

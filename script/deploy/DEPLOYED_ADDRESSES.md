@@ -30,8 +30,8 @@ The throwaway 1/1 ops Safe `0xEEd8dC3c034Be12ff66646cCaAf07D35C43E8AA1` that exe
 | Contract | Address |
 | --- | --- |
 | **NAVCalculator proxy** | `0x54EaD2A1dB7456cA917675Ea8908ec8A997c6214` — the address every consumer should call |
-| NAVCalculator implementation | `0xA7243DCDF7e4D6f8FA20A9F022186C0d0778C2b6` |
-| PriceFeedLib | `0x0f913658d70BB19b7B42eF9926c3df7c70fafCf2` |
+| NAVCalculator implementation | `0x1D7a950730620795434216827B8D15B6Fc37e79a` (ADR 0029, deployed 2026-10-28 on all 25 + Robinhood; becomes live on each chain when its Council batch executes `upgradeToAndCall` — until then the proxy still runs the previous `0xA7243DCDF7e4D6f8FA20A9F022186C0d0778C2b6`. Tx list: `script/deploy/ADR0029_DEPLOY_LOG.md`) |
+| PriceFeedLib | `0xaBCC2526a6ebCFE637EB2B660410adff60eCFB73` (linked into the implementation above; previous `0x0f913658d70BB19b7B42eF9926c3df7c70fafCf2`) |
 | NAVRegistryLib | `0x3D5369B0b2044d62a8f643bf9a2b8CC03775934D` |
 | ERC20Default balance adapter | `0x4Bc39Dce61245F5A63189d1FA03E6D76646f1EE6` (created inside `NAVCalculator.initialize`; identical everywhere) |
 | UUPSPlaceholder | `0x85Ee38b0385D042918a59C01dB319b6eDdF7A8Cf` (temporary impl during atomic proxy deploy) |

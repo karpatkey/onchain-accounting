@@ -1,0 +1,49 @@
+# ADR 0029 rollout — deploy log
+
+Live record of the rollout's on-chain steps (PRs #354 + #358). Procedure: `ADR0029_ROLLOUT.md`.
+
+## EOA deploys — `01_2` (2026-10-28)
+
+From the kpk-deployer `0xAa5A7C7Ea51F276301f881F9CCB501a1dFeF4F72`, CREATE2 through `0x4e59b44847b379578588920cA78FbF26c0B4956C`.
+Same addresses on every chain: PriceFeedLib `0xaBCC2526a6ebCFE637EB2B660410adff60eCFB73`, NAV implementation
+`0x1D7a950730620795434216827B8D15B6Fc37e79a` (NavRegistryLib `0x3D5369B0b2044d62a8f643bf9a2b8CC03775934D` unchanged,
+already deployed). Nothing live changes until each chain's Council batch executes (`upgradeToAndCall`).
+
+| Chain | PriceFeedLib tx | NAV implementation tx |
+|---|---|---|
+| 1 Ethereum | `0x5413d5c02fe81b1e6028f15a94cf54de65d8525974a6110488138bcd39121b49` | `0xd00d5addbe1c4f0618595124f29dba78540c6bdb19ab6e893d6149afaaa24c38` |
+| 10 Optimism | `0xf2d179cff487eb86f572a5cd7aceb28a03b202fb458b6cc54f98582b8a295130` | `0x7dba87715bd6d405a4997660941bbe86698d6f9ccb22f34db5cceaf41a02d574` |
+| 56 BNB Chain | `0x18662a7c07c92fef09cc990d89ab57a8fc866a2945e066e320459c8fa2da68cf` | `0x824c9119a6f9048af56156da8ec1b0384339176b745bb3238e328349c3b7a8b1` |
+| 100 Gnosis | `0x6e7a2adb0bb782829ab04ccbf8b70357370a825f214f1d7cd0986647cc5210c4` | `0x4195437387f143479f8c20cc94078470821299fee21f4b728213e121e3cac537` |
+| 130 Unichain | `0xbb573e397d36718cf8027aa0dcb43a044f3c07b5d57df6291fa7a1892e9b0396` | `0xdce775f95b136519668de36798b8d4e8cf7f2872065938511c504942a91a5e7c` |
+| 137 Polygon | `0xcae659fdd4a648bd89ab284116fe39c9ec83eb6b1e3d06ca79308bd160ab3ef4` | `0xb46395c9008ba6937007c0412e4a1804520772aa27865756305884bfdebb34d3` |
+| 143 Monad | `0xcb50d18dd6af9ad19a916692b04e1e696e73712ffec5d80c93c53660389c940a` | `0x69c339c04ab7591c2b0acf1c5e790f8dd96b917cbebcc7a0fd566010fb8c4d32` |
+| 146 Sonic | `0xcd67352a580a9db1737641595d0b4d2c86a9195641d0e7ef9fd5cfb2c610087a` | `0x1f05f0269ecd70a3b7a9de5eac2781d109f4af6885cbd49fa01a76302cde0ee3` |
+| 196 X Layer | `0xcf2f8a3355a3fed7d8b8bce2d0674080c3f5103d2da62409ad96df216f0a5982` | `0x5ed7518687979d97dd7429274264098fb319cd1157b94af12b36c4e2b557ccbe` |
+| 204 opBNB | `0x5eaea73851e147d5f8390322541b78f1b616814e2841c0e986c153a559cc2685` | `0xdff9bf07baab2a8aa5bb5579d66740dae1e45067e963314277e93052d143b539` |
+| 480 World Chain | `0x6dca4759dafd7ba6e83fe29ab00956c613a72ecd49498239f8be27ee7090cf15` | `0x9f72927341162b109f91724c3147dcd2488aa2f06866a53845de7c5aa7c1fe40` |
+| 999 HyperEVM | `0xf2722320006dda585c1509888cf3a5ed85e56aa86aa9a94f05f746a1b31f06c9` | `0xd29b9db12c5d36e0ada41b5f21cb4f40a06b83ba985f99cb39f69b739eb53ca0` |
+| 5000 Mantle | `0x36674b98622806127d38655b03ab14a04dbfd6eb69d630b0afb006e8b9a90c0d` | `0x814db58971c2d69db6c62d5c2f59d25d1e30a570ca216b81818b7de40cfd6e50` |
+| 5042 Arc | `0x0493577ba570f1649a6532a2dffb22102d9d5bb0cb50cc1eb92f0da8d147f767` | `0x8ca695a18cbc7ec4ba54743af8fffc921ebcfbd967a4c07cfbd3b2d48a4db47e` |
+| 8453 Base | `0x7501973072c17c0f2f75f328ae283c9d0e56f2e30637494d0bde80c4d438b87a` | `0xf0ba032fe4608e80baa84df9537089bc0c42692e8fe7d55a9e460e1db40c4c7f` |
+| 9745 Plasma | `0x1a3f09d143d51ae203bd076d68b0d4771c4df634e510e985dd974df91df58b27` | `0x74890db4ef354c119fdea255ab651f8248ffae65e5688f118612317521e779bc` |
+| 16661 0G | `0x3a2ee6c026f9b1a6f3441a6ebb3d4b0cf3da2ff984913e9faf625f179269b24f` | `0x830ac2fa48c9f7bccb85a1650e53212484f5e995a47d2542a4a88c1ea76beff5` |
+| 42161 Arbitrum | `0x72891af696f2806bc45c7c33feea3fc32bd7cca97fadeb7539176826ef091c0a` | `0xb9d381f96ae3802908bfe09d72074db9a4f509d2cfced9a42ed34ba2f483b7c0` |
+| 42220 Celo | `0x03107be5a45a453ecaef9675ddb733dc45b85ef339cf860485310a8e36f6d4c4` | `0x01686851816b87412aff9dc2574a546bffe853ff177202ed7160b0d1526713fa` |
+| 43111 Hemi | `0x750da45aff507c19bfc8800421620069de6c638fb496b2cc6d3d0ffea0613bd0` | `0x9644324a1f86ad8cfed79da717c12bedbac59189e2fbb09589593eba63b38663` |
+| 43114 Avalanche | `0x5c9ea3680dff4aa3d80015e39a597a44eafb6c17f49c3c16c12a3f5b41b50a91` | `0x65987b9695d6335a72d42ec880167bf81f3e492c39bdb7555c0bccfc24ce01a1` |
+| 57073 Ink | `0x89720b6b54822d0a1d0fc44b62096272f9442032e3162de6d6929241ea741499` | `0x53385c2266bf2023898f5aa3529b9d878c56ec191b9f2a62957147fba781cc7f` |
+| 59144 Linea | `0x2be8546a35fa42d9b74ee37a67c80894d25be13160a1dae5f5ce8ee24e1ff8e8` | `0x2e8dddf378fcc12141685c0363abfdb30fdab961f681bab3cb9d165a72dd2752` |
+| 80094 Berachain | `0xf9d3a63cbcb65d980e3bb5cfd8387d46f523ec698192679e91078c66d578eee5` | `0x8ea4ac25745b76380d43a53db96e8ed027039afbccbdceeb7be433e7272476d3` |
+| 534352 Scroll | `0x587bb91eb83448d15cd017fe5e2322ce1c816ca11901c2ad995b390667c9e385` | `0xee7754de771b8416c1fca11bd5edde5e366d0262e86cd12dbad7c684c8a0618a` |
+| 4663 Robinhood | `0x1de9aad168abb4be18d73281dcbae270aa4d219c26d96f3ffaf048c3b975fb1c` | `0x683f25d644ffbff4bb75198cc19fad8d6faf42ad67b0765c08eaa695f5c69b00` |
+
+25 chains + Robinhood, every transaction status 1, code verified at both addresses after each deploy.
+- World Chain (480): the first post-deploy code read returned empty (RPC lag); both receipts were status 1 and the code
+  was present on re-read.
+- HyperEVM (999): deployed with `--legacy` with HyperEVM big blocks switched ON for the deployer (Hyperliquid
+  `evmUserModify`), then switched OFF again.
+- Robinhood (4663): no chain config in this repo, so `01_2` cannot run there; chain 130's two CREATE2 inputs were
+  replayed byte-identical from its broadcast. Code hashes equal chain 130's (PriceFeedLib
+  `0xf73d64e47f904d64f2169e1c21d62d35302470477b4128cb57ff6fa2a1b24262`, implementation
+  `0x5d35998279f6d972a0a5213f9b853faca6087d260e471b2446ccf3869d88e651`).

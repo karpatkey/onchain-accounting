@@ -490,6 +490,12 @@ case "$CHAIN_ID" in
          DEF_ADAPTERS=0x9145A559108426e1eA429A2A6441e2A875f069ec ;;
   *)     DEF_ASSETS=""; DEF_ADAPTERS="" ;;
 esac
+# Assets this round REGISTERS (config entries not yet live): asserted registered after the batch.
+case "$CHAIN_ID" in
+  1) DEF_NEW_ASSETS=0x4045FcF533C84578e754be939821d26A087FC7C9 ;;  # Merkl "USD Coin (wrapped)" (2026-10-28)
+  *) DEF_NEW_ASSETS="" ;;
+esac
+EXPECT_NEW_ASSETS="${EXPECT_NEW_ASSETS-$DEF_NEW_ASSETS}"
 EXPECT_ASSETS="${EXPECT_ASSETS-$DEF_ASSETS}"
 EXPECT_ADAPTERS="${EXPECT_ADAPTERS-$DEF_ADAPTERS}"
 
@@ -538,6 +544,14 @@ python3 script/deploy/preflight/adr0029_batch.py removals --chain "$CHAIN_ID" --
   --expect-assets "$EXPECT_ASSETS" --expect-adapters "$EXPECT_ADAPTERS" \
   --out "$B/${CHAIN_ID}-adr0029-removals.json" > "$WORK/removals.log" 2>&1 || FAILED=1
 sed 's/^/    /' "$WORK/removals.log"
+echo "--- RegisterAssets (plan only; simulated as the Council): assets in config but not yet registered"
+# Placed after the removals and before Migrate (which skips unregistered assets, so the new asset's monitor is planned
+# here only). It writes a part only when it has work; "Nothing to register" with no part is the normal case.
+cast rpc anvil_setBalance "$COUNCIL" 0x21e19e0c9bab2400000 --rpc-url "$RPC" >/dev/null
+rm -f "${B:?}/${CHAIN_ID:?}-register-assets.json"
+FOUNDRY_PROFILE=slow forge script script/manage/RegisterAssets.s.sol --rpc-url "$RPC" --sender "$COUNCIL" \
+  > "$WORK/register.log" 2>&1 || { echo "    FAIL register plan (see $WORK/register.log)"; grep -aE "^Error|Error:|revert" "$WORK/register.log" | tail -3 | cut -c1-300 | sed 's/^/      /'; FAILED=1; }
+grep -E "Planned actions|wiring|Nothing to register" "$WORK/register.log" | head -8 | sed 's/^/    /'
 echo "--- MigrateToMonitorFeeds (plan only; simulated as the Council, which holds MANAGER)"
 # forge refuses to simulate a sender that cannot pay gas; the Council Safe holds no native token on some L2s.
 cast rpc anvil_setBalance "$COUNCIL" 0x21e19e0c9bab2400000 --rpc-url "$RPC" >/dev/null
@@ -550,6 +564,11 @@ echo "--- assemble (${PREPEND_PARTS:+prepended [$PREPEND_PARTS] + }removals + mi
 PARTS=()
 for P in ${PREPEND_PARTS:-}; do PARTS+=("$P"); done
 PARTS+=("$B/${CHAIN_ID}-adr0029-removals.json")
+if grep -q "Nothing to register" "$WORK/register.log" && [[ ! -f "$B/${CHAIN_ID}-register-assets.json" ]]; then
+  echo "    (RegisterAssets planned nothing on this chain — its part is omitted)"
+else
+  PARTS+=("$B/${CHAIN_ID}-register-assets.json")
+fi
 # "Nothing to migrate" is also printed when the new feeds are missing from the record (every asset logs
 # "[skip asset] target primary not deployed"); that must stay a loud failure, so a "[skip" line disqualifies it.
 if grep -q "Nothing to migrate" "$WORK/migrate.log" && ! grep -q "\[skip" "$WORK/migrate.log" \
@@ -629,6 +648,9 @@ if [[ -n "${POST_CHECK:-}" ]]; then
 fi
 for A in ${EXPECT_ASSETS//,/ }; do
   assert "asset $A unregistered" '[[ "$(cast call "$NAV" "isAssetRegistered(address)(bool)" "$A" --rpc-url "$RPC")" == false ]]'
+done
+for A in ${EXPECT_NEW_ASSETS//,/ }; do
+  assert "new asset $A registered" '[[ "$(cast call "$NAV" "isAssetRegistered(address)(bool)" "$A" --rpc-url "$RPC")" == true ]]'
 done
 for A in ${EXPECT_ADAPTERS//,/ }; do
   assert "adapter $A deregistered" '[[ "$(cast call "$NAV" "isAdapterRegistered(address)(bool)" "$A" --rpc-url "$RPC")" == false ]]'

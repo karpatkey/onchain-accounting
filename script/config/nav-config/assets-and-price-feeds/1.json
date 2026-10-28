@@ -232,6 +232,32 @@
       }
     ]
   },
+  "USDC_MerklWrapped": {
+    "$comment": "2026-10-28 (Giel, #oiv ts 1793201068.556989): Merkl's 'USD Coin (wrapped)' PullTokenWrapperAllowImmutable, the token Aave v4 Merkl campaigns pay rewards in. token() = USDC; on claim it pulls the same amount of USDC from its holder 0x89587ebe7cFF64c6527fE2Deccc3521D75763E8D to the claimer and burns the wrapper, so it is worth USDC 1:1 — priced with USDC's exact config. Checked on-chain 2026-10-28: holder 74,072.83 USDC, allowance to the wrapper 74,072.43 = the wrapper's totalSupply. Remaining risk is the payer (if its balance/allowance runs short a claim reverts or pays less), not the price. Needed so MerklRewardsAttestedBalanceAdapter's cached Aave v4 rewards are counted (they are skipped while the token is unregistered).",
+    "address": "0x4045FcF533C84578e754be939821d26A087FC7C9",
+    "accrualKind": "None",
+    "labels": [
+      "Circle",
+      "Stablecoin",
+      "Merkl wrapper"
+    ],
+    "pegToleranceBps": 100,
+    "divergenceToleranceBps": 50,
+    "priceFeeds": [
+      {
+        "type": "Chainlink",
+        "address": "0x8fFfFfd4AfB6115b954Bd326cbe7B4BA576818f6",
+        "heartbeat": 82800
+      }
+    ],
+    "monitorFeeds": [
+      {
+        "type": "Redstone",
+        "address": "0xeeF31c7d9F2E82e8A497b140cc60cc082Be4b94e",
+        "heartbeat": 86400
+      }
+    ]
+  },
   "EURC": {
     "address": "0x1aBaEA1f7C830bD89Acc67eC4af516284b1bC33c",
     "$kindComment": "FLAG: EUR fiat-backed, so it is hard-pegged but NOT to the NAV's quote asset - its USD price moves with EUR/USD. That is why it carries NO pegToleranceBps: a $1 guard would fire constantly. Do not add one.",

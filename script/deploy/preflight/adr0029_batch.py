@@ -7,7 +7,8 @@ The batch, in its load-bearing order (`script/deploy/ADR0029_ROLLOUT.md`):
                  live NAV but absent from nav-config (ezETH on 1 and 42161, EIGEN on 1). Adapters first: that
                  releases their claim on the asset's coordinate.
   2. the `MigrateToMonitorFeeds` batch (alone; it also swaps the primaries — see the rollout doc);
-  3. `upgradeToAndCall(newImpl, "")` on the NAV proxy, last.
+  3. `upgradeToAndCall(newImpl, "")` on the NAV proxy;
+  4. the timelock handover (`governance`, passed as `--final-parts`), last.
 
 Removals are DERIVED from live state vs config, so they are only as right as the config. To make an accidental
 unregistration impossible, `removals` refuses unless the derived sets equal what the operator states with
@@ -21,6 +22,13 @@ usage:
                             --out safe-transactions/1-adr0029-rollout.json
   adr0029_batch.py import   --chain 1 --in <Transaction-Builder file from another repo> \\
                             --out safe-transactions/1-btc-carry-schedule.json
+  adr0029_batch.py governance --chain 1 --rpc-env MAINNET_URL --out safe-transactions/1-adr0029-governance.json
+`governance` finishes #338's handover (requested 2026-10-27 after a fund-DD finding): the timelock's `updateDelay`
+(scheduled and executed in the same transaction, which works only while its delay is still 0) and the Council's
+`renounceRole` of DEFAULT_ADMIN_ROLE and MANAGER on the NAV, so only the timelock holds them, behind the delay. It
+refuses unless the timelock already holds BOTH roles (renouncing first would leave the NAV with no admin), the Council
+is a proposer and the Council or anyone can execute (checked when the delay still has to be set), and the timelock
+administers itself. `assemble --final-parts` places it AFTER the upgrade.
 `import` turns a Council Transaction-Builder file written in the UI's method form (`contractMethod` +
 `contractInputsValues`, no `data`, no checksum) into a stamped part, so `assemble` can bundle another team's Council
 calls into the same Safe transaction (2026-10-26: the BTC Carry `scheduleBatch` rides in chain 1's batch). It refuses
@@ -168,6 +176,97 @@ def enc_unregister_asset(asset: str) -> str:
 def enc_upgrade_to_and_call(impl: str) -> str:
     """`upgradeToAndCall(impl, "")`: address, offset 0x40, empty bytes."""
     return SEL_UPGRADE_TO_AND_CALL + _word_addr(impl) + f"{64:064x}" + f"{0:064x}"
+
+
+SEL_RENOUNCE_ROLE = "0x36568abe"  # renounceRole(bytes32,address)
+SEL_HAS_ROLE = "0x91d14854"  # hasRole(bytes32,address)
+SEL_TL_SCHEDULE = "0x01d5062a"  # schedule(address,uint256,bytes,bytes32,bytes32,uint256)
+SEL_TL_EXECUTE = "0x134008d3"  # execute(address,uint256,bytes,bytes32,bytes32)
+SEL_TL_UPDATE_DELAY = "0x64d62353"  # updateDelay(uint256)
+SEL_TL_GET_MIN_DELAY = "0xf27a0c92"  # getMinDelay()
+ROLE_DEFAULT_ADMIN = "00" * 32
+ROLE_MANAGER = "af290d8680820aad922855f39b306097b20e28774d6c1ad35a20325630c3a02c"  # keccak256("MANAGER")
+ROLE_TL_PROPOSER = "b09aa5aeb3702cfd50b6b62bc4532604938f21248a27a1d5ca736082b6819cc1"  # keccak256("PROPOSER_ROLE")
+ROLE_TL_EXECUTOR = "d8aa0f3194971a2a116679f7c2090f6939c8d4e01a2a8d7e41d55e5351469e63"  # keccak256("EXECUTOR_ROLE")
+# A fixed, recognisable salt for the one `updateDelay` operation: keccak256("ADR0029 rollout: timelock updateDelay").
+UPDATE_DELAY_SALT = "8d5862e484f0cb25822eb596e2db031df6ab6e804ea496d2301f0169e5bc3535"
+TIMELOCK_DELAY_S = 259200  # 3 days
+
+
+def _bytes_tail(data_hex: str) -> str:
+    raw = data_hex[2:]
+    n = len(raw) // 2
+    return f"{n:064x}" + raw + "0" * ((-len(raw)) % 64)
+
+
+def enc_update_delay(seconds: int) -> str:
+    return SEL_TL_UPDATE_DELAY + f"{seconds:064x}"
+
+
+def enc_tl_schedule(target: str, data_hex: str, salt: str, delay: int) -> str:
+    """schedule(target, 0, data, predecessor 0, salt, delay): 6 head words, `data` at offset 6*32."""
+    return (SEL_TL_SCHEDULE + _word_addr(target) + f"{0:064x}" + f"{6 * 32:064x}" + f"{0:064x}" + salt
+            + f"{delay:064x}" + _bytes_tail(data_hex))
+
+
+def enc_tl_execute(target: str, data_hex: str, salt: str) -> str:
+    """execute(target, 0, data, predecessor 0, salt): 5 head words, `data` at offset 5*32."""
+    return (SEL_TL_EXECUTE + _word_addr(target) + f"{0:064x}" + f"{5 * 32:064x}" + f"{0:064x}" + salt
+            + _bytes_tail(data_hex))
+
+
+def enc_renounce_role(role_hex: str, account: str) -> str:
+    return SEL_RENOUNCE_ROLE + role_hex + _word_addr(account)
+
+
+def _has_role(reader, contract: str, role_hex: str, account: str) -> bool:
+    # A read, so the zero address is a legitimate argument here (OZ "open role" = granted to address(0)).
+    if not re.fullmatch(r"0x[0-9a-fA-F]{40}", account):
+        raise BatchError(f"not an address: {account!r}")
+    r = reader.call(contract, SEL_HAS_ROLE + role_hex + account[2:].lower().rjust(64, "0"))
+    if not r or len(r) < 66:
+        raise BatchError(f"hasRole on {contract} returned {r!r} — no contract there?")
+    return int(r, 16) == 1
+
+
+def governance_transactions(chain: int, reader, proxy: str = ac.NAV_PROXY,
+                            delay: int = TIMELOCK_DELAY_S) -> tuple[list[dict], list[str]]:
+    """The calls that finish the timelock handover, in order, plus a human summary. Refuses any state in which
+    renouncing would leave the NAV without a working admin."""
+    council = _council(chain)
+    tl = (c.deployment(chain).get("TimelockController") or "")
+    if not c.is_address(tl):
+        raise BatchError(f"chain {chain}: no TimelockController in the deployment record")
+    for role, name in ((ROLE_DEFAULT_ADMIN, "DEFAULT_ADMIN_ROLE"), (ROLE_MANAGER, "MANAGER")):
+        if not _has_role(reader, proxy, role, tl):
+            raise BatchError(f"chain {chain}: the timelock {tl} does not hold {name} on the NAV — renouncing the "
+                             "Council's would leave no path to it; refusing")
+    if not _has_role(reader, tl, ROLE_DEFAULT_ADMIN, tl):
+        raise BatchError(f"chain {chain}: the timelock does not administer itself — refusing")
+    txs: list[dict] = []
+    notes: list[str] = []
+    raw = reader.call(tl, SEL_TL_GET_MIN_DELAY)
+    if not raw or len(raw) < 66:
+        raise BatchError(f"chain {chain}: getMinDelay on {tl} returned {raw!r} — no timelock there?")
+    current = int(raw, 16)
+    if current != delay:
+        if current != 0:
+            raise BatchError(f"chain {chain}: timelock delay is {current}, not 0 — the same-transaction "
+                             "schedule+execute of updateDelay only works at 0; refusing")
+        if not _has_role(reader, tl, ROLE_TL_PROPOSER, council):
+            raise BatchError(f"chain {chain}: the Council is not a proposer on the timelock — refusing")
+        if not (_has_role(reader, tl, ROLE_TL_EXECUTOR, "0x" + "00" * 20)
+                or _has_role(reader, tl, ROLE_TL_EXECUTOR, council)):
+            raise BatchError(f"chain {chain}: neither open execution nor the Council can execute — refusing")
+        data = enc_update_delay(delay)
+        txs.append({"to": tl, "value": "0", "operation": 0, "data": enc_tl_schedule(tl, data, UPDATE_DELAY_SALT, 0)})
+        txs.append({"to": tl, "value": "0", "operation": 0, "data": enc_tl_execute(tl, data, UPDATE_DELAY_SALT)})
+        notes.append(f"timelock updateDelay({delay}) scheduled+executed")
+    for role, name in ((ROLE_MANAGER, "MANAGER"), (ROLE_DEFAULT_ADMIN, "DEFAULT_ADMIN_ROLE")):
+        if _has_role(reader, proxy, role, council):
+            txs.append({"to": proxy, "value": "0", "operation": 0, "data": enc_renounce_role(role, council)})
+            notes.append(f"Council renounces {name}")
+    return txs, notes
 
 
 def checksum(txs: list[dict]) -> str:
@@ -322,11 +421,23 @@ def cmd_import(a) -> int:
     return 0
 
 
+def cmd_governance(a) -> int:
+    txs, notes = governance_transactions(a.chain, _reader(a), delay=a.delay)
+    write_batch(a.out, a.chain, _council(a.chain), "ADR 0029 rollout — timelock handover",
+                "; ".join(notes) or "nothing left to hand over", txs)
+    print(f"chain {a.chain}: {len(txs)} governance call(s) -> {a.out}" if txs
+          else f"chain {a.chain}: handover already complete (empty part written to {a.out})")
+    return 0
+
+
 def cmd_assemble(a) -> int:
     council = _council(a.chain)
     txs: list[dict] = []
     summary: list[str] = []
-    for p in a.parts:
+    final_txs: list[dict] = []
+    final_summary: list[str] = []
+    for p, into_txs, into_summary in ([(p, txs, summary) for p in a.parts]
+                                      + [(p, final_txs, final_summary) for p in (getattr(a, "final_parts", None) or [])]):
         if not Path(p).exists():
             raise BatchError(f"part {p} does not exist — refusing (every part must be present; an empty one is fine)")
         b = json.loads(Path(p).read_text())
@@ -350,16 +461,19 @@ def cmd_assemble(a) -> int:
         for t in part_txs:
             if int(t.get("operation", 0)) != 0:
                 raise BatchError(f"{p}: DELEGATECALL entry refused")
-            txs.append({"to": t["to"], "value": str(t.get("value", "0")), "data": t["data"], "operation": 0})
+            into_txs.append({"to": t["to"], "value": str(t.get("value", "0")), "data": t["data"], "operation": 0})
         desc = (b.get("meta") or {}).get("description", "")
         prov = f" [{desc[desc.index('imported from'):]}]" if "imported from" in desc else ""
-        summary.append(f"{len(part_txs)} from {Path(p).name}{prov}")
+        into_summary.append(f"{len(part_txs)} from {Path(p).name}{prov}")
     if a.upgrade_impl:
         if not c.is_address(a.upgrade_impl):
             raise BatchError(f"--upgrade-impl {a.upgrade_impl!r} is not an address")
         txs.append({"to": ac.NAV_PROXY, "value": "0", "operation": 0,
                     "data": enc_upgrade_to_and_call(a.upgrade_impl)})
         summary.append(f"upgradeToAndCall({a.upgrade_impl})")
+    # After the upgrade, by request: the handover must not precede the calls that still need the Council's roles.
+    txs += final_txs
+    summary += final_summary
     if not txs:
         raise BatchError("empty batch")
     write_batch(a.out, a.chain, council, "ADR 0029 rollout",
@@ -382,7 +496,14 @@ def main(argv: list[str]) -> int:
     s.add_argument("--chain", type=int, required=True)
     s.add_argument("--parts", nargs="+", required=True)
     s.add_argument("--upgrade-impl")
+    s.add_argument("--final-parts", nargs="*", default=[], help="parts placed AFTER upgradeToAndCall (governance)")
     s.add_argument("--out", required=True)
+    g = sub.add_parser("governance")
+    g.add_argument("--chain", type=int, required=True)
+    g.add_argument("--rpc-url")
+    g.add_argument("--rpc-env")
+    g.add_argument("--delay", type=int, default=TIMELOCK_DELAY_S)
+    g.add_argument("--out", required=True)
     i = sub.add_parser("import")
     i.add_argument("--chain", type=int, required=True)
     i.add_argument("--in", dest="input", required=True)
@@ -390,7 +511,8 @@ def main(argv: list[str]) -> int:
     a = ap.parse_args(argv)
     c.load_env()
     try:
-        return {"removals": cmd_removals, "assemble": cmd_assemble, "import": cmd_import}[a.cmd](a)
+        return {"removals": cmd_removals, "assemble": cmd_assemble, "import": cmd_import,
+                "governance": cmd_governance}[a.cmd](a)
     except (BatchError, ac.CensusError) as e:
         print(f"FAIL: {e}")
         return 1

@@ -544,7 +544,7 @@ cast rpc anvil_setBalance "$COUNCIL" 0x21e19e0c9bab2400000 --rpc-url "$RPC" >/de
 FOUNDRY_PROFILE=slow forge script script/manage/MigrateToMonitorFeeds.s.sol --rpc-url "$RPC" --sender "$COUNCIL" \
   > "$WORK/migrate.log" 2>&1 || { echo "    FAIL migrate plan (see $WORK/migrate.log)"; grep -aE "^Error|Error:|revert" "$WORK/migrate.log" | tail -3 | cut -c1-300 | sed 's/^/      /'; FAILED=1; }
 grep -E "Planned adds/sets|Planned removes|Nothing to migrate|skip" "$WORK/migrate.log" | head -8 | sed 's/^/    /'
-echo "--- assemble (${PREPEND_PARTS:+prepended [$PREPEND_PARTS] + }removals + migrate + upgradeToAndCall $NEW_IMPL)"
+echo "--- assemble (${PREPEND_PARTS:+prepended [$PREPEND_PARTS] + }removals + migrate + upgradeToAndCall $NEW_IMPL + governance)"
 # Migrate writes no file when it has nothing to plan (a chain with no assets). Leave its part out ONLY when its
 # log says so explicitly; any other missing file is a failure that `assemble` reports.
 PARTS=()
@@ -558,8 +558,18 @@ if grep -q "Nothing to migrate" "$WORK/migrate.log" && ! grep -q "\[skip" "$WORK
 else
   PARTS+=("$B/${CHAIN_ID}-migrate-monitor-feeds.json")
 fi
+# The timelock handover (2026-10-27 request): updateDelay(3 days) + the Council renouncing its direct NAV roles, placed
+# AFTER the upgrade. On by default; GOVERNANCE=0 rehearses the batch without it.
+FINAL_PARTS=()
+if [[ "${GOVERNANCE:-1}" != 0 ]]; then
+  echo "--- governance (timelock handover, appended after the upgrade)"
+  python3 script/deploy/preflight/adr0029_batch.py governance --chain "$CHAIN_ID" --rpc-env ADR0029_FORK_RPC \
+    --out "$B/${CHAIN_ID}-adr0029-governance.json" > "$WORK/governance.log" 2>&1 || FAILED=1
+  sed 's/^/    /' "$WORK/governance.log"
+  FINAL_PARTS+=("$B/${CHAIN_ID}-adr0029-governance.json")
+fi
 python3 script/deploy/preflight/adr0029_batch.py assemble --chain "$CHAIN_ID" \
-  --parts "${PARTS[@]}" \
+  --parts "${PARTS[@]}" ${FINAL_PARTS[@]:+--final-parts "${FINAL_PARTS[@]}"} \
   --upgrade-impl "$NEW_IMPL" --out "$B/${CHAIN_ID}-adr0029-rollout.json" > "$WORK/assemble.log" 2>&1 || FAILED=1
 sed 's/^/    /' "$WORK/assemble.log"
 cp -f "$B/${CHAIN_ID}-adr0029-rollout.json" "$WORK/" 2>/dev/null
@@ -573,6 +583,14 @@ head -1 "$WORK/exec.log" | sed 's/^/    /'
 # The implementation right after the batch, captured now: a POST_CHECK may change it (e.g. a rollback rehearsal), and the
 # assertions below run after the post-check.
 IMPL_AFTER_BATCH="$(impl_of)"
+# Governance state right after the batch, for the same reason.
+TIMELOCK="$(jq -r '.TimelockController // ""' "script/config/deployments/${CHAIN_ID}.json")"
+role_held() { cast call "$1" "hasRole(bytes32,address)(bool)" "$2" "$3" --rpc-url "$RPC" 2>/dev/null; }
+MANAGER_ROLE_HASH="$(cast keccak MANAGER)"; ADMIN_ROLE_HASH=0x0000000000000000000000000000000000000000000000000000000000000000
+GOV_AFTER="delay=$(cast call "$TIMELOCK" 'getMinDelay()(uint256)' --rpc-url "$RPC" 2>/dev/null | awk '{print $1}')"
+GOV_AFTER+=" council_admin=$(role_held "$NAV" $ADMIN_ROLE_HASH "$COUNCIL") council_mgr=$(role_held "$NAV" "$MANAGER_ROLE_HASH" "$COUNCIL")"
+GOV_AFTER+=" tl_admin=$(role_held "$NAV" $ADMIN_ROLE_HASH "$TIMELOCK") tl_mgr=$(role_held "$NAV" "$MANAGER_ROLE_HASH" "$TIMELOCK")"
+echo "    governance after the batch: $GOV_AFTER"
 
 # Keep every part (the forge-written migrate JSON, the removals, the assembled batch): the cleanup restores
 # safe-transactions/ from its backup and would otherwise destroy them.
@@ -602,6 +620,10 @@ assert "the batch executed atomically through the Council Safe" '[[ $EXEC_RC -eq
 assert "the NAV runs the new implementation ($NEW_IMPL)" \
   '[[ "$(tr A-F a-f <<<"$IMPL_AFTER_BATCH")" == "$(tr A-F a-f <<<"$NEW_IMPL")" && "$NEW_IMPL" != "$PRE_IMPL" ]]'
 assert "census AFTER: 0 ERRORs (Rule 1 + Rule 2)" '[[ $CENSUS_POST -eq 0 ]]'
+if [[ "${GOVERNANCE:-1}" != 0 ]]; then
+  assert "handover: delay 259200, the Council holds no NAV role, the timelock holds both ($GOV_AFTER)" \
+    '[[ "$GOV_AFTER" == "delay=259200 council_admin=false council_mgr=false tl_admin=true tl_mgr=true" ]]'
+fi
 if [[ -n "${POST_CHECK:-}" ]]; then
   assert "post-check passed ($WORK/post-check.log)" '[[ $POST_CHECK_RC -eq 0 ]]'
 fi
@@ -613,7 +635,7 @@ for A in ${EXPECT_ADAPTERS//,/ }; do
 done
 
 echo; echo "=== census after (tail) ==="; tail -4 "$WORK/census-post.log" | sed 's/^/  /'
-echo; echo "=== diff_snapshots pre -> post (tail; expect only the removed assets' legs and the feed moves) ==="
+echo; echo "=== diff_snapshots pre -> post (tail; expect the removed assets' legs, the feed moves and, with the handover, the Council's two role DIFFs True -> False) ==="
 tail -30 "$WORK/diff.log" | sed 's/^/  /'
 echo; echo "=== steps ==="; column -t "$WORK/steps.tsv" | sed 's/^/  /'
 echo; echo "batch: $WORK/${CHAIN_ID}-adr0029-rollout.json   exec: $WORK/exec.log"

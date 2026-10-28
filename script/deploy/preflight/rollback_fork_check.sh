@@ -13,11 +13,34 @@ NAV=0x54EaD2A1dB7456cA917675Ea8908ec8A997c6214
 SLOT=0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc
 impl() { cast parse-bytes32-address "$(cast storage $NAV $SLOT --rpc-url "$ADR0029_FORK_RPC")"; }
 
-cast rpc anvil_setBalance "$REHEARSAL_COUNCIL" 0x21e19e0c9bab2400000 --rpc-url "$ADR0029_FORK_RPC" >/dev/null
+R="$ADR0029_FORK_RPC"
+cast rpc anvil_setBalance "$REHEARSAL_COUNCIL" 0x21e19e0c9bab2400000 --rpc-url "$R" >/dev/null
 echo "impl before rollback: $(impl)"
-ST="$(cast send $NAV "upgradeToAndCall(address,bytes)" "$OLD_IMPL" 0x --from "$REHEARSAL_COUNCIL" --unlocked \
-      --rpc-url "$ADR0029_FORK_RPC" --json | jq -r .status)"
-echo "rollback tx status $ST (sent by the Council $REHEARSAL_COUNCIL)"
+DATA="$(cast calldata "upgradeToAndCall(address,bytes)" "$OLD_IMPL" 0x)"
+if [[ "$(cast call $NAV 'hasRole(bytes32,address)(bool)' 0x0000000000000000000000000000000000000000000000000000000000000000 "$REHEARSAL_COUNCIL" --rpc-url "$R")" == true ]]; then
+  ST="$(cast send $NAV "$DATA" --from "$REHEARSAL_COUNCIL" --unlocked --rpc-url "$R" --json | jq -r .status)"
+  echo "rollback tx status $ST (sent directly by the Council $REHEARSAL_COUNCIL)"
+else
+  # After the timelock handover the Council holds no NAV role: it proposes through the timelock, waits the delay,
+  # and anyone executes. That wait is the rollback's real duration from now on.
+  TL="$(jq -r '.TimelockController // ""' "script/config/deployments/${REHEARSAL_CHAIN}.json")"
+  DELAY="$(cast call "$TL" 'getMinDelay()(uint256)' --rpc-url "$R" | awk '{print $1}')"
+  SALT="$(cast keccak "rollback rehearsal")"; Z=0x0000000000000000000000000000000000000000000000000000000000000000
+  S1="$(cast send "$TL" 'schedule(address,uint256,bytes,bytes32,bytes32,uint256)' $NAV 0 "$DATA" $Z "$SALT" "$DELAY" \
+        --from "$REHEARSAL_COUNCIL" --unlocked --rpc-url "$R" --json | jq -r .status)"
+  cast rpc anvil_removeBlockTimestampInterval --rpc-url "$R" >/dev/null
+  NOWTS="$(cast block latest --field timestamp --rpc-url "$R")"
+  cast rpc evm_setNextBlockTimestamp "$(printf '0x%x' $((NOWTS + DELAY + 1)))" --rpc-url "$R" >/dev/null
+  cast rpc evm_mine --rpc-url "$R" >/dev/null
+  ANY=0x00000000000000000000000000000000000ba11c
+  cast rpc anvil_setBalance $ANY 0xde0b6b3a7640000 --rpc-url "$R" >/dev/null
+  ST="$(cast send "$TL" 'execute(address,uint256,bytes,bytes32,bytes32)' $NAV 0 "$DATA" $Z "$SALT" \
+        --from $ANY --unlocked --rpc-url "$R" --json | jq -r .status)"
+  echo "rollback through the timelock: Council schedule status $S1, executed after ${DELAY} s by any account: status $ST"
+  echo "NOTE: the fork's oracles are frozen and the clock moved ${DELAY} s, so every feed now reads stale; the old"
+  echo "      library values stale prices at 0, so the snapshot diff below is NOT a valid NAV comparison on this path."
+  echo "      What this path proves: the rollback goes through the timelock and lands after the delay."
+fi
 NOW="$(impl)"; echo "impl after rollback: $NOW"
 [[ "$ST" == 0x1 && "${NOW,,}" == "${OLD_IMPL,,}" ]] || { echo "FAIL: implementation not rolled back"; exit 1; }
 

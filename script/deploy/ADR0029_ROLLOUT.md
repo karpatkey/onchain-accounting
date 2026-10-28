@@ -132,8 +132,8 @@ One Security Council batch per chain, executed directly by the Council Safe (5-o
 - `adr0029_batch.py removals` (always writes its part, empty when there is nothing to remove; `assemble` refuses a missing or unstamped part, or one whose transactions no longer match its checksum (empty parts included), and `removals` refuses a registered adapter that config neither enables nor disables) derives the removal calls from the live NAV against this tree's config and refuses
   unless they equal `--expect-assets` / `--expect-adapters` (1: ezETH + EIGEN + the Renzo adapter; 42161: ezETH +
   the Renzo adapter; every other chain: none). `adr0029_batch.py assemble` concatenates removals +
-  `MigrateToMonitorFeeds`'s batch + `upgradeToAndCall(newImpl, "")` into one Transaction-Builder file for the
-  Council.
+  `MigrateToMonitorFeeds`'s batch + `upgradeToAndCall(newImpl, "")` + the timelock handover (`governance`,
+  `--final-parts`; see "Timelock handover") into one Transaction-Builder file for the Council.
 - `rehearse_adr0029_fork.sh <chainId> [block]` runs the whole sequence on a local anvil fork: `01_2`, retire, `03`,
   census (every live Custom feed must show PRE-ROLLOUT), the batch built as above, executed through the REAL Council
   Safe as one MultiSend (`council_fork_exec.py`: impersonated owners `approveHash`, then one `execTransaction`),
@@ -166,10 +166,12 @@ One Security Council batch per chain, executed directly by the Council Safe (5-o
 - **Chains with no assets** (17 of the 25 hold only the native-token placeholder registered at initialize, and have
   no asset config): `removals` writes an empty part (the native placeholder is never a removal),
   `MigrateToMonitorFeeds` plans nothing and writes no file, the rehearsal then leaves that part out (only when its
-  log says "Nothing to migrate" with no "[skip …]" line), and the batch is `upgradeToAndCall` alone.
+  log says "Nothing to migrate" with no "[skip …]" line), and the batch is `upgradeToAndCall` + the handover.
 
 Rehearsed 2026-10-26 (all PASS): Gnosis (12 calls), Arc (3), and the no-asset chains Unichain, Scroll and HyperEVM
-(1 call each); mainnet WITH the BTC Carry bundle in one harness run (96 calls in one Council transaction, 3.18M gas,
+(1 call each, before the handover existed); with the handover (2026-10-28): Unichain 5 calls, mainnet 100 calls in
+one Council transaction (3.25M gas, PASS incl. the handover assertion and a timelock-path rollback); before it,
+mainnet WITH the BTC Carry bundle in one harness run (96 calls in one Council transaction, 3.18M gas,
 census 0 ERROR; then `rollback_fork_check.sh` → `timelock_batch_fork_check.py`: operation pending → +259,201 s →
 `executeBatch` from a random EOA, status 1, 1.58M gas, operation done). The imported calldata is byte-identical to
 `cast calldata`. Rehearsed 2026-10-23 (all PASS): mainnet (95 calls, 2.95M gas), Arbitrum (25 calls, 0.77M), Base (21 calls,
@@ -235,17 +237,55 @@ config exists to read:
   broadcast or not, and the repo `.env` sets it: run a dry run with it unset, or restore the record after. Replaying
   the REAL 130 broadcast makes Robinhood's deploy depend on 130's `01_2` landing first.
 
+## Timelock handover (end of every chain's batch)
+
+Requested 2026-10-27 after a fund due-diligence finding. #338 put the NAV behind `TimelockController`
+`0xAB92EA75D07792915eB1f29259354866B880dFC2` (same address on all 25) but left it in the transitional state its
+runbook describes: `minDelay` 0 and the Council still holding `DEFAULT_ADMIN_ROLE` and `MANAGER` directly, so the
+timelock protected nothing. Verified on all 25 chains on 2026-10-28. This round finishes it, as the LAST calls of
+each chain's Council batch (after the removals, the feed migration and the upgrade, which still need the Council's
+direct roles):
+
+1. timelock `schedule` + `execute` of its own `updateDelay(259200)` (3 days) — a self-call, so it goes through the
+   timelock; both land in one transaction because the delay is still 0 at that point (fixed salt
+   `keccak256("ADR0029 rollout: timelock updateDelay")`);
+2. NAV `renounceRole(MANAGER, Council)` then `renounceRole(DEFAULT_ADMIN_ROLE, Council)`.
+
+`adr0029_batch.py governance` builds these from live state and refuses unless the timelock already holds BOTH NAV roles
+and administers itself (renouncing first would leave the NAV with no admin), and — when the delay still has to be
+set — the Council is a proposer and the Council or anyone can execute. `assemble --final-parts` places them after `upgradeToAndCall`; the rehearsal does this by default
+(`GOVERNANCE=0` to skip) and asserts afterwards: delay 259,200 s, the Council holds neither role, the timelock holds
+both. The AssetKindRegistry keeps MANAGER on the NAV, as today: it has no roles of its own and every write it accepts
+is gated on the CALLER holding NAV MANAGER, so it is timelock-gated too. Robinhood (4663) has no timelock and stays as it
+is: its Safe holds the roles directly, so the handover covers the 25 timelocked proxies, not Robinhood's.
+
+**From then on, every NAV change goes through the timelock with a 3-day wait** — feed swaps, instance changes, asset
+removals, AssetKindRegistry writes (labels, kinds), `setChainlinkL2SequencerUptimeFeed`, granting MANAGER to anyone,
+shortening the delay again, an emergency switch of a depegged feed, and a rollback.
+
+**What the delay is and is not.** The Council is the timelock's only proposer AND only canceller, and the timelock is
+its own admin. So the 3 days are a transparency window — anyone can see a scheduled change before it executes — not a
+second key: nobody else can cancel a Council proposal, and if the Council could no longer reach 5 of 8, nobody could
+propose anything (the NAV would be frozen as it is). Both are the same exposure as today; adding an independent
+canceller (e.g. a guardian Safe) would be a separate decision. The batch tools in this folder emit direct Council
+calls; future NAV operations need them wrapped in the timelock's `scheduleBatch` + `executeBatch` (the #338 runbook
+already notes `RealignHeartbeats` and `ClearDormantMetaInstances` are EOA-only).
+
 ## Rollback
 
 The previous implementation `0xA7243DCDF7e4D6f8FA20A9F022186C0d0778C2b6` stays deployed on every chain. Rollback is
-one call from the role holder (the Council on the 25, the Robinhood Safe on 4663): `upgradeToAndCall(oldImpl, "")`.
+`upgradeToAndCall(oldImpl, "")` from the role holder: on the 25 chains, after the handover above, that is the
+TIMELOCK — the Council schedules it, waits 3 days, and anyone executes; on Robinhood (4663) it is one call from its Safe.
 The new feeds stay: they read the NAV through `getPriceDataNoDivergence`, which the old implementation serves with the
 same struct. Rehearsed 2026-10-26 on Arbitrum (a sequencer chain, Rule 1's case): rollout, then rollback as the
 Council → snapshot read with 0 errors, every account's NAV equal to the PRE-rollout snapshot within block-to-block
 interest (ACCOUNT_7 +$0.03 on $1.89M), and the only structural differences the intended removals (ezETH, the Renzo
 adapter). Same on mainnet (44 feeds + removals): the only differences are the planned ones (ezETH, EIGEN and the
 Renzo adapter removed, WBTC's two new monitors, cbBTC on BTC/USD, osETH's dead monitor gone) and ACCOUNT_3, the test
-Safe, losing its ezETH leg (−$12.67). Rehearse it with `POST_CHECK="bash script/deploy/preflight/rollback_fork_check.sh <previousImplementation>"`.
+Safe, losing its ezETH leg (−$12.67). Rehearse it with `POST_CHECK="bash script/deploy/preflight/rollback_fork_check.sh <previousImplementation>"`; when the
+Council no longer holds ADMIN it goes through the timelock (schedule, warp the delay, execute from any account). On
+that path the fork's frozen oracles are 3 days stale after the warp and the old library values stale prices at 0, so
+its snapshot diff is not a NAV comparison — the direct-path rehearsals above are.
 What a rollback does NOT undo, and what it brings back:
 - the removals (re-registering ezETH/EIGEN would be a separate MANAGER batch);
 - `MigrateToMonitorFeeds`' swaps: cbBTC stays on Chainlink BTC/USD (3600 s), and under the OLD library that feed is

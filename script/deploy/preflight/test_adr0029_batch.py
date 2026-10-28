@@ -315,5 +315,134 @@ class Encoding(unittest.TestCase):
             cfe._loopback("https://eth-mainnet.example/v2/key")
 
 
+class Governance(unittest.TestCase):
+    """The timelock handover (`governance`): order, and every refusal that guards against an admin-less NAV."""
+    TL, COUNCIL, NAV = "0x" + "ab" * 20, "0x" + "c0" * 20, "0x54ead2a1db7456ca917675ea8908ec8a997c6214"
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        r = Path(self.tmp.name)
+        for d in ("deployments", "chains"):
+            (r / d).mkdir(parents=True)
+        (r / "deployments/1.json").write_text(json.dumps({"TimelockController": self.TL}))
+        (r / "chains/1.json").write_text(json.dumps({"addresses": {"securityCouncil": self.COUNCIL}}))
+        self.saved = (ab.c.DEPLOY_DIR, ab.c.CHAINS_DIR)
+        ab.c.DEPLOY_DIR, ab.c.CHAINS_DIR = r / "deployments", r / "chains"
+
+    def tearDown(self):
+        ab.c.DEPLOY_DIR, ab.c.CHAINS_DIR = self.saved
+        self.tmp.cleanup()
+
+    def reader(self, delay=0, roles=None):
+        """roles: set of (contract, role_hex, account) that hold; default = today's live state on all 25 chains."""
+        t, c_, n = self.TL, self.COUNCIL, self.NAV
+        held = roles if roles is not None else {
+            (n, ab.ROLE_DEFAULT_ADMIN, t), (n, ab.ROLE_MANAGER, t), (n, ab.ROLE_DEFAULT_ADMIN, c_),
+            (n, ab.ROLE_MANAGER, c_), (t, ab.ROLE_DEFAULT_ADMIN, t), (t, ab.ROLE_TL_PROPOSER, c_),
+            (t, ab.ROLE_TL_EXECUTOR, "0x" + "00" * 20)}
+
+        class R:
+            def call(_, to, data):
+                if data == ab.SEL_TL_GET_MIN_DELAY:
+                    return "0x" + f"{delay:064x}"
+                assert data.startswith(ab.SEL_HAS_ROLE), data
+                role, acct = data[10:74], "0x" + data[-40:]
+                return "0x" + f"{int((to.lower(), role, acct.lower()) in held):064x}"
+        return R()
+
+    def test_order_is_schedule_execute_then_renounce_manager_then_admin(self):
+        txs, _ = ab.governance_transactions(1, self.reader(), proxy=self.NAV)
+        self.assertEqual([t["data"][:10] for t in txs],
+                         [ab.SEL_TL_SCHEDULE, ab.SEL_TL_EXECUTE, ab.SEL_RENOUNCE_ROLE, ab.SEL_RENOUNCE_ROLE])
+        self.assertEqual([t["to"].lower() for t in txs], [self.TL, self.TL, self.NAV, self.NAV])
+        self.assertEqual(txs[2]["data"][10:74], ab.ROLE_MANAGER)
+        self.assertEqual(txs[3]["data"][10:74], ab.ROLE_DEFAULT_ADMIN)
+        self.assertTrue(all(t["operation"] == 0 and t["value"] == "0" for t in txs))
+        # The exact operation: same data + salt in schedule and execute, delay 0, renounces for the Council itself.
+        upd = ab.enc_update_delay(ab.TIMELOCK_DELAY_S)
+        self.assertEqual(txs[0]["data"], ab.enc_tl_schedule(self.TL, upd, ab.UPDATE_DELAY_SALT, 0))
+        self.assertEqual(txs[1]["data"], ab.enc_tl_execute(self.TL, upd, ab.UPDATE_DELAY_SALT))
+        self.assertTrue(all(t["data"][-40:] == self.COUNCIL[2:] for t in txs[2:]))
+
+    def test_no_contract_at_the_nav_is_a_clean_refusal(self):
+        class Empty:
+            def call(_, to, data):
+                return "0x"
+        with self.assertRaises(ab.BatchError):
+            ab.governance_transactions(1, Empty(), proxy=self.NAV)
+
+    def test_no_answer_from_get_min_delay_is_a_clean_refusal(self):
+        inner = self.reader()
+
+        class NoDelay:
+            def call(_, to, data):
+                return "0x" if data == ab.SEL_TL_GET_MIN_DELAY else inner.call(to, data)
+        with self.assertRaises(ab.BatchError):
+            ab.governance_transactions(1, NoDelay(), proxy=self.NAV)
+
+    def test_refuses_when_renouncing_would_strand_the_nav(self):
+        for missing in ((self.NAV, ab.ROLE_DEFAULT_ADMIN, self.TL), (self.NAV, ab.ROLE_MANAGER, self.TL),
+                        (self.TL, ab.ROLE_DEFAULT_ADMIN, self.TL), (self.TL, ab.ROLE_TL_PROPOSER, self.COUNCIL)):
+            roles = {(self.NAV, ab.ROLE_DEFAULT_ADMIN, self.TL), (self.NAV, ab.ROLE_MANAGER, self.TL),
+                     (self.TL, ab.ROLE_DEFAULT_ADMIN, self.TL), (self.TL, ab.ROLE_TL_PROPOSER, self.COUNCIL),
+                     (self.NAV, ab.ROLE_MANAGER, self.COUNCIL), (self.TL, ab.ROLE_TL_EXECUTOR, "0x" + "00" * 20)}
+            roles.discard(missing)
+            with self.assertRaises(ab.BatchError, msg=str(missing)):
+                ab.governance_transactions(1, self.reader(roles=roles), proxy=self.NAV)
+
+    def test_refuses_without_an_executor(self):
+        roles = {(self.NAV, ab.ROLE_DEFAULT_ADMIN, self.TL), (self.NAV, ab.ROLE_MANAGER, self.TL),
+                 (self.TL, ab.ROLE_DEFAULT_ADMIN, self.TL), (self.TL, ab.ROLE_TL_PROPOSER, self.COUNCIL)}
+        with self.assertRaises(ab.BatchError):
+            ab.governance_transactions(1, self.reader(roles=roles), proxy=self.NAV)
+
+    def test_refuses_a_nonzero_delay_that_is_not_the_target(self):
+        with self.assertRaises(ab.BatchError):
+            ab.governance_transactions(1, self.reader(delay=60), proxy=self.NAV)
+
+    def test_already_handed_over_yields_no_calls(self):
+        roles = {(self.NAV, ab.ROLE_DEFAULT_ADMIN, self.TL), (self.NAV, ab.ROLE_MANAGER, self.TL),
+                 (self.TL, ab.ROLE_DEFAULT_ADMIN, self.TL)}
+        txs, _ = ab.governance_transactions(1, self.reader(delay=ab.TIMELOCK_DELAY_S, roles=roles), proxy=self.NAV)
+        self.assertEqual(txs, [])
+
+    def test_hand_encoding_matches_pinned_cast_vectors(self):
+        tl = "0xAB92EA75D07792915eB1f29259354866B880dFC2"
+        d = ab.enc_update_delay(259200)
+        self.assertEqual(d, "0x64d62353000000000000000000000000000000000000000000000000000000000003f480")
+        self.assertEqual(ab.enc_tl_schedule(tl, d, ab.UPDATE_DELAY_SALT, 0), "0x01d5062a000000000000000000000000ab92ea75d07792915eb1f29259354866b880dfc2000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000c000000000000000000000000000000000000000000000000000000000000000008d5862e484f0cb25822eb596e2db031df6ab6e804ea496d2301f0169e5bc35350000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000002464d62353000000000000000000000000000000000000000000000000000000000003f48000000000000000000000000000000000000000000000000000000000")
+        self.assertEqual(ab.enc_tl_execute(tl, d, ab.UPDATE_DELAY_SALT), "0x134008d3000000000000000000000000ab92ea75d07792915eb1f29259354866b880dfc2000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000a000000000000000000000000000000000000000000000000000000000000000008d5862e484f0cb25822eb596e2db031df6ab6e804ea496d2301f0169e5bc3535000000000000000000000000000000000000000000000000000000000000002464d62353000000000000000000000000000000000000000000000000000000000003f48000000000000000000000000000000000000000000000000000000000")
+        self.assertEqual(ab.enc_renounce_role(ab.ROLE_MANAGER, "0x8b884f80B3B839F52b6cE168f133e7a5D1f0A537"), "0x36568abeaf290d8680820aad922855f39b306097b20e28774d6c1ad35a20325630c3a02c0000000000000000000000008b884f80b3b839f52b6ce168f133e7a5d1f0a537")
+
+    @unittest.skipUnless(shutil.which("cast"), "cast not installed (CI preflight job has no Foundry)")
+    def test_role_and_salt_constants_match_keccak(self):
+        def k(x):
+            return subprocess.run(["cast", "keccak", x], capture_output=True, text=True, check=True).stdout.strip()[2:]
+        self.assertEqual(ab.ROLE_MANAGER, k("MANAGER"))
+        self.assertEqual(ab.ROLE_TL_PROPOSER, k("PROPOSER_ROLE"))
+        self.assertEqual(ab.ROLE_TL_EXECUTOR, k("EXECUTOR_ROLE"))
+        self.assertEqual(ab.UPDATE_DELAY_SALT, k("ADR0029 rollout: timelock updateDelay"))
+
+    def test_the_target_delay_is_three_days(self):
+        self.assertEqual(ab.TIMELOCK_DELAY_S, 3 * 24 * 3600)
+
+    @needs_eth_abi
+    def test_assemble_puts_final_parts_after_the_upgrade(self):
+        gov = str(Path(self.tmp.name) / "g.json")
+        txs, _ = ab.governance_transactions(1, self.reader(), proxy=self.NAV)
+        ab.write_batch(gov, 1, self.COUNCIL, "g", "d", txs)
+        empty = str(Path(self.tmp.name) / "e.json")
+        ab.write_batch(empty, 1, self.COUNCIL, "e", "d", [])
+
+        class A:
+            chain, upgrade_impl, parts, final_parts = 1, "0x" + "92" * 20, [empty], [gov]
+            out = str(Path(self.tmp.name) / "out.json")
+        ab.cmd_assemble(A)
+        out = json.loads(Path(A.out).read_text())["transactions"]
+        self.assertEqual([t["data"][:10] for t in out],
+                         [ab.SEL_UPGRADE_TO_AND_CALL, ab.SEL_TL_SCHEDULE, ab.SEL_TL_EXECUTE, ab.SEL_RENOUNCE_ROLE,
+                          ab.SEL_RENOUNCE_ROLE])
+
+
 if __name__ == "__main__":
     unittest.main()

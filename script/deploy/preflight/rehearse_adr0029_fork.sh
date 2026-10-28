@@ -562,11 +562,14 @@ for k, v in cfg.items():
         continue
     r = subprocess.run(["cast", "call", os.environ["NAV"], "isAssetRegistered(address)(bool)", v["address"],
                         "--rpc-url", os.environ["RPC"]], capture_output=True, text=True)
-    if r.stdout.strip() == "false":
+    ans = r.stdout.strip()
+    if ans not in ("true", "false"):  # an RPC error must not silently drop a new asset from the batch
+        sys.exit(f"isAssetRegistered({v['address']}) for {k} returned {ans!r}")
+    if ans == "false":
         out.append(k)
 print(",".join(out))
 PY
-)"
+)" || { echo "    FAIL: could not probe which config assets are registered"; FAILED=1; }
 if [[ -z "$NEW_SYMBOLS" ]]; then
   echo "Nothing to register (every configured asset is already registered)" > "$WORK/register.log"
 else
@@ -582,7 +585,7 @@ cast rpc anvil_setBalance "$COUNCIL" 0x21e19e0c9bab2400000 --rpc-url "$RPC" >/de
 FOUNDRY_PROFILE=slow forge script script/manage/MigrateToMonitorFeeds.s.sol --rpc-url "$RPC" --sender "$COUNCIL" \
   > "$WORK/migrate.log" 2>&1 || { echo "    FAIL migrate plan (see $WORK/migrate.log)"; grep -aE "^Error|Error:|revert" "$WORK/migrate.log" | tail -3 | cut -c1-300 | sed 's/^/      /'; FAILED=1; }
 grep -E "Planned adds/sets|Planned removes|Nothing to migrate|skip" "$WORK/migrate.log" | head -8 | sed 's/^/    /'
-echo "--- assemble (${PREPEND_PARTS:+prepended [$PREPEND_PARTS] + }removals + migrate + upgradeToAndCall $NEW_IMPL + governance)"
+echo "--- assemble (${PREPEND_PARTS:+prepended [$PREPEND_PARTS] + }removals + register + migrate + upgradeToAndCall $NEW_IMPL + governance)"
 # Migrate writes no file when it has nothing to plan (a chain with no assets). Leave its part out ONLY when its
 # log says so explicitly; any other missing file is a failure that `assemble` reports.
 PARTS=()
@@ -675,6 +678,8 @@ for A in ${EXPECT_ASSETS//,/ }; do
 done
 for A in ${EXPECT_NEW_ASSETS//,/ }; do
   assert "new asset $A registered" '[[ "$(cast call "$NAV" "isAssetRegistered(address)(bool)" "$A" --rpc-url "$RPC")" == true ]]'
+  assert "new asset $A has its configured monitor(s)" \
+    '[[ "$(cast call "$NAV" "getMonitorFeeds(address)((address,uint8,uint8,uint256)[])" "$A" --rpc-url "$RPC" | grep -o "0x[0-9a-fA-F]\{40\}" | wc -l)" -ge 1 ]]'
 done
 for A in ${EXPECT_ADAPTERS//,/ }; do
   assert "adapter $A deregistered" '[[ "$(cast call "$NAV" "isAdapterRegistered(address)(bool)" "$A" --rpc-url "$RPC")" == false ]]'

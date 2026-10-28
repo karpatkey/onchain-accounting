@@ -132,8 +132,15 @@ One Security Council batch per chain, executed directly by the Council Safe (5-o
 - `adr0029_batch.py removals` (always writes its part, empty when there is nothing to remove; `assemble` refuses a missing or unstamped part, or one whose transactions no longer match its checksum (empty parts included), and `removals` refuses a registered adapter that config neither enables nor disables) derives the removal calls from the live NAV against this tree's config and refuses
   unless they equal `--expect-assets` / `--expect-adapters` (1: ezETH + EIGEN + the Renzo adapter; 42161: ezETH +
   the Renzo adapter; every other chain: none). `adr0029_batch.py assemble` concatenates removals +
-  `MigrateToMonitorFeeds`'s batch + `upgradeToAndCall(newImpl, "")` + the timelock handover (`governance`,
-  `--final-parts`; see "Timelock handover") into one Transaction-Builder file for the Council.
+  the new-asset registrations + `MigrateToMonitorFeeds`'s batch + `upgradeToAndCall(newImpl, "")` + the timelock
+  handover (`governance`, `--final-parts`; see "Timelock handover") into one Transaction-Builder file for the Council.
+- **New assets** (config entries not registered on-chain; this round: Merkl's "USD Coin (wrapped)"
+  `0x4045FcF533C84578e754be939821d26A087FC7C9` on mainnet, priced with USDC's exact config, requested 2026-10-28):
+  `RegisterAssets` is planned as the Council with `REGISTER_ONLY=<those symbols>` and its part goes after the removals
+  and before `MigrateToMonitorFeeds`. The filter matters: unfiltered, it checks every asset against the pre-batch
+  state and stops (`FeedOrderMismatch`) on an asset whose feed this same batch swaps. Migrate skips unregistered
+  assets, so the new asset's monitor is planned once, by `RegisterAssets`. It needs MANAGER, so it must precede the
+  handover. The rehearsal computes the list from the fork and asserts the asset and its monitor are registered.
 - `rehearse_adr0029_fork.sh <chainId> [block]` runs the whole sequence on a local anvil fork: `01_2`, retire, `03`,
   census (every live Custom feed must show PRE-ROLLOUT), the batch built as above, executed through the REAL Council
   Safe as one MultiSend (`council_fork_exec.py`: impersonated owners `approveHash`, then one `execTransaction`),

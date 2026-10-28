@@ -136,7 +136,7 @@ contract RegisterAssets is BaseDeployScript {
                 revert NavNotPointedAtAssetKindRegistry(navProxy, pointsAt, assetKindRegistry);
             }
         }
-        string[] memory symbols = ConfigReader.getAssetSymbols(vm, currentChainId);
+        string[] memory symbols = _onlyFilter(ConfigReader.getAssetSymbols(vm, currentChainId));
 
         console2.log("\n=== Register Assets (from assets.json) ===");
         console2.log("Chain:", chainConfig.name);
@@ -191,6 +191,29 @@ contract RegisterAssets is BaseDeployScript {
 
         _broadcastManagerMultiSend(batch);
         console2.log(string(abi.encodePacked("Safe transaction written to safe-transactions/", filename)));
+    }
+
+    /// @notice A `REGISTER_ONLY` symbol that is not a key of this chain's asset config.
+    error RegisterOnlyUnknownSymbol(string symbol);
+
+    /// @notice Narrows the run to the comma-separated `REGISTER_ONLY` symbols (unset or empty = every configured asset).
+    /// @dev Exists so a NEW asset can be planned into a batch whose other parts still change existing assets' feeds:
+    ///      planned against that pre-state, the full scan stops on the first asset whose live feed is about to be
+    ///      swapped later in the same batch (`FeedOrderMismatch`, correctly). An unknown symbol reverts rather than
+    ///      silently planning nothing.
+    function _onlyFilter(string[] memory symbols) internal view returns (string[] memory) {
+        string memory only = vm.envOr("REGISTER_ONLY", string(""));
+        if (bytes(only).length == 0) return symbols;
+        string[] memory wanted = vm.split(only, ",");
+        for (uint256 w = 0; w < wanted.length; w++) {
+            bool known;
+            for (uint256 i = 0; i < symbols.length; i++) {
+                if (keccak256(bytes(symbols[i])) == keccak256(bytes(wanted[w]))) known = true;
+            }
+            if (!known) revert RegisterOnlyUnknownSymbol(wanted[w]);
+        }
+        console2.log("REGISTER_ONLY:", only);
+        return wanted;
     }
 
     /// @notice Returns the ordered calldata actions to fully wire one asset's feeds, or an empty array to skip it.

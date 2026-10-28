@@ -549,8 +549,32 @@ echo "--- RegisterAssets (plan only; simulated as the Council): assets in config
 # here only). It writes a part only when it has work; "Nothing to register" with no part is the normal case.
 cast rpc anvil_setBalance "$COUNCIL" 0x21e19e0c9bab2400000 --rpc-url "$RPC" >/dev/null
 rm -f "${B:?}/${CHAIN_ID:?}-register-assets.json"
-FOUNDRY_PROFILE=slow forge script script/manage/RegisterAssets.s.sol --rpc-url "$RPC" --sender "$COUNCIL" \
-  > "$WORK/register.log" 2>&1 || { echo "    FAIL register plan (see $WORK/register.log)"; grep -aE "^Error|Error:|revert" "$WORK/register.log" | tail -3 | cut -c1-300 | sed 's/^/      /'; FAILED=1; }
+# Only the config assets NOT registered yet: the full scan would stop on an existing asset whose feed is swapped later
+# in this same batch (FeedOrderMismatch). The native placeholder is registered at initialize, so it never appears.
+NEW_SYMBOLS="$(NAV="$NAV" RPC="$RPC" python3 - "$CHAIN_ID" <<'PY'
+import json, os, subprocess, sys
+c = sys.argv[1]
+p = f"script/config/nav-config/assets-and-price-feeds/{c}.json"
+cfg = json.load(open(p)) if os.path.exists(p) else {}
+out = []
+for k, v in cfg.items():
+    if k.startswith("$") or not isinstance(v, dict) or not v.get("address"):
+        continue
+    r = subprocess.run(["cast", "call", os.environ["NAV"], "isAssetRegistered(address)(bool)", v["address"],
+                        "--rpc-url", os.environ["RPC"]], capture_output=True, text=True)
+    if r.stdout.strip() == "false":
+        out.append(k)
+print(",".join(out))
+PY
+)"
+if [[ -z "$NEW_SYMBOLS" ]]; then
+  echo "Nothing to register (every configured asset is already registered)" > "$WORK/register.log"
+else
+  REGISTER_ONLY="$NEW_SYMBOLS" FOUNDRY_PROFILE=slow forge script script/manage/RegisterAssets.s.sol --rpc-url "$RPC" \
+    --sender "$COUNCIL" > "$WORK/register.log" 2>&1 \
+    || { echo "    FAIL register plan (see $WORK/register.log)"; grep -aE "^Error|Error:|revert" "$WORK/register.log" | tail -3 | cut -c1-300 | sed 's/^/      /'; FAILED=1; }
+fi
+echo "    new assets: ${NEW_SYMBOLS:-none}"
 grep -E "Planned actions|wiring|Nothing to register" "$WORK/register.log" | head -8 | sed 's/^/    /'
 echo "--- MigrateToMonitorFeeds (plan only; simulated as the Council, which holds MANAGER)"
 # forge refuses to simulate a sender that cannot pay gas; the Council Safe holds no native token on some L2s.

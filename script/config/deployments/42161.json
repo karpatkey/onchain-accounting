@@ -22,15 +22,30 @@
   },
   "NAVCalculatorProxy": "0x54EaD2A1dB7456cA917675Ea8908ec8A997c6214",
   "customPriceFeeds": {
-    "wstETH_L2": "0x24ACa7b73dda9f4f6Fbd366f0537b70C491FEe30",
-    "weETH_L2": "0xE641c8cD8e3f7C31C0312b30cB20620bc80749Ef",
-    "rsETH_L2": "0x500b6920248eAFbB2a11Eaa79193A0C5Cd219c5E",
+    "wstETH_L2": "0x7fff8527DfCB5D4E00cfa81c2af702D15b1c0521",
+    "weETH_L2": "0xF9A11fd76d76de5F5b2c85b33b9741bD9177409b",
+    "rsETH_L2": "0x1682f4DC1d22E3E8Ee25F80E1823F433f7518d7b",
     "ezETH_L2": "0xc8FDD6D339864eEd91Ea94f9018439Ff5c98f5EC",
-    "syrupUSDC_L2": "0x925194Ba011f5907943BC1A1CbF7bCaee806aeb5",
-    "weETHCrossRate": "0xA99bE398df4eab668585d5eeC5de7c80f4bB634f",
+    "syrupUSDC_L2": "0x9675780D906203f7dF6A8e98FC27F11F8c4294a6",
+    "weETHCrossRate": "0x2105d9F888Bc05512660050b8f8EF844f15f1e05",
     "ezETHCrossRate": "0xCEbB97a1c4aA99EbA63b3885e5BbB76a4893C090",
-    "rsETHCrossRate": "0x4531e81ce4193071311D0De838412cAfCCc0000C"
+    "rsETHCrossRate": "0x19a35CB4FC26e5B9ed4d8d3AB01967D6F5291E3c"
   },
   "AssetKindRegistry": "0xf60467a88C2b4d0f46C0c41C3Ba0C74da3d3CCD0",
-  "TimelockController": "0xAB92EA75D07792915eB1f29259354866B880dFC2"
+  "TimelockController": "0xAB92EA75D07792915eB1f29259354866B880dFC2",
+  "retiredCustomPriceFeeds": {
+    "$comment": "Deployed feed contracts no longer configured as NAV price sources. A SIBLING of customPriceFeeds, not a member of it, so a reset of customPriceFeeds can never destroy the retirement record.",
+    "wstETH_L2": "0x24ACa7b73dda9f4f6Fbd366f0537b70C491FEe30",
+    "$wstETH_L2": "RETIRED 2026-10-28. ADR 0029 rollout (2026-10-28) The contract is still deployed at the address above.",
+    "weETH_L2": "0xE641c8cD8e3f7C31C0312b30cB20620bc80749Ef",
+    "$weETH_L2": "RETIRED 2026-10-28. ADR 0029 rollout (2026-10-28) The contract is still deployed at the address above.",
+    "rsETH_L2": "0x500b6920248eAFbB2a11Eaa79193A0C5Cd219c5E",
+    "$rsETH_L2": "RETIRED 2026-10-28. ADR 0029 rollout (2026-10-28) The contract is still deployed at the address above.",
+    "syrupUSDC_L2": "0x925194Ba011f5907943BC1A1CbF7bCaee806aeb5",
+    "$syrupUSDC_L2": "RETIRED 2026-10-28. ADR 0029 rollout (2026-10-28) The contract is still deployed at the address above.",
+    "weETHCrossRate": "0xA99bE398df4eab668585d5eeC5de7c80f4bB634f",
+    "$weETHCrossRate": "RETIRED 2026-10-28. ADR 0029 rollout (2026-10-28) The contract is still deployed at the address above.",
+    "rsETHCrossRate": "0x4531e81ce4193071311D0De838412cAfCCc0000C",
+    "$rsETHCrossRate": "RETIRED 2026-10-28. ADR 0029 rollout (2026-10-28) The contract is still deployed at the address above."
+  }
 }

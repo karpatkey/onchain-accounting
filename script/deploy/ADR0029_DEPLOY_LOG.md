@@ -47,3 +47,83 @@ already deployed). Nothing live changes until each chain's Council batch execute
   replayed byte-identical from its broadcast. Code hashes equal chain 130's (PriceFeedLib
   `0xf73d64e47f904d64f2169e1c21d62d35302470477b4128cb57ff6fa2a1b24262`, implementation
   `0x5d35998279f6d972a0a5213f9b853faca6087d260e471b2446ccf3869d88e651`).
+
+## Custom price feeds — `03` (2026-10-28)
+
+Retired the replaced keys with `retire_custom_feeds.py` (old addresses kept under `retiredCustomPriceFeeds`), then `03`
+from the deployer (plain CREATE). Checked after each chain: every configured feed's record has code, none is still the
+old address, and every replaced feed returns the same `getLatestPrice()` as the feed it replaces (the two new WBTC
+monitors price WBTC at ~$81k). `bytecode_audit.py`: every new feed CURRENT; the old ones RETIRED_BUT_REGISTERED until
+each chain's Council batch swaps them. Arc's first attempt sent nothing: a `03` simulation run before it wrote the
+predicted address into the record, so the broadcast logged "already deployed"; the key was reset and redeployed.
+
+### 1 Ethereum — 32 feeds
+
+| Feed | Address | Tx |
+|---|---|---|
+| LDO | `0xa215bb87448d69f5389bbd58fe87f47f05cbb880` | `0x240773423d58024a0e3dcc9352b0e9ea0c9c4a6c03f3fce29cec1e96c5f2af2b` |
+| sUSDS | `0x49722f676dc72274c78f1f188a5347b84636647d` | `0x10a3edf83565df4b54f0d42ee903b6fcd5005523f097430a7274443b9215d4f8` |
+| sUSDe | `0x234b2c5a02860e2fa67b4aaa018794583c04de4b` | `0x0f35dd6df820f2468497f33ebb2fe1482852b6f6598c09b0977b4c411c9fab03` |
+| syrupUSDC | `0x7bc96e9455426dc88e467bc065eea8abe99a7bfb` | `0xeaee9668cf24b8f956003f0d95256aa31e5552d0b8d942d93d9b5541203ed3f7` |
+| syrupUSDG | `0x61e39bfdb1274b939836177a4f4236f7280d8a88` | `0x61e5ff013c85adbc08cef332b457a822a7e1c684d64f2ccb5cc4e0b96068a951` |
+| syrupUSDT | `0x25b10769a991cedd1daf522ff36aafbe2510a827` | `0x4ce9f7d694b069409fe7a7c2a2f61e853d55afadeaeb58eb6d2934cc510e261e` |
+| LBTC | `0x676bcb3ca68769b00b1a7fb8e70928de7a6652ba` | `0xad6c384ca39d373011528c30b5f6a900eaa87b4bb6134b70252b2f9ba0aedc01` |
+| LBTCCrossRateMarket | `0x04fbb733112300c09125e91cc500fe4033df7842` | `0x0e63ac0c31832fa1d26374062f30d2dcf0bb3506d85576ed3e26a5622ee2ab37` |
+| spUSDC | `0x7f3cebdecf9ea0e3ef98e4c47247b0e898ca0e2a` | `0xfc16db0ce6a269101089dc98102448c2393c4bc6bc3ceeaa6469455f616431ff` |
+| spUSDT | `0x95dbbac54fd9f24bc7d470e7af28fe9cbb518d9f` | `0x15ad270bc43d7e457c19859d81a221b101f28b295a75b12cecca0afc24110cc4` |
+| spETH | `0x64c77d734ad06d007536c31b2ff78f11c6ae9fd1` | `0xfcd2f88cb0251f79d7fe4c607a690ac9ee8647643664a8118e361c2173cd1b1c` |
+| sDAI | `0x4a1e7c2f32dbb348e197eadbffe5b82f7597f632` | `0xbcbf82ad45954f6c0f373462c5cbcb1e9cf24d03bddfa497264ab7c38a990596` |
+| RWIV | `0x9f754fc5611b20978cd971c0eeef53bb258972d6` | `0xd4c1336a6cc03890a0d3d6f4081f94910abdf45cde2256e487466a2c32fa884e` |
+| sGHO | `0x6e51baac4cd0bd3b0134596ffe9fad91ea12458f` | `0x619f64d1a73db48b780e3f04b6a9a39a6c2c0d3a7ff3120172c9624d21394780` |
+| wstETH | `0xe2a290e65af7288c2fec0a37078b3f95c135141a` | `0xafd1c61fca92f53ec7ae173621aeacdac6c450d72542c88430ef79d24c9d3eea` |
+| stETHFundamental | `0x73f88dc4ac4d66752430f481778863e9d8d28c1b` | `0xb621cf697e5eb5ad3d0cc9168904d8c5c56453e630f94a6268ad682b9488c440` |
+| stETHCrossRate | `0x3aec270a31a05f497714a963564b22cc39e007ee` | `0xb827ed483064aef6144b1b5e2628c06d868d660227f7431f95ba19f24dd3438e` |
+| lsETH | `0xa60f3f3f992062b0d3a4c06169e4998f1a21bb5c` | `0x24c48baf12fd6b43ad85fefd2f0565f6deab03e4ed6c0e8e3e89e0e78ecc0bb1` |
+| rETH | `0x9307dbff0edca57541d21b2383fb5a778f0fff21` | `0xdc0b772363e499cd2e84c091808a61d52a46396ea6b2f1c8d7039d3cb48ceb92` |
+| weETH | `0xa564909d2815ebc6f3449f3f6105cd8b07c29373` | `0x673700e3ed633b3865b56342a32c50f359820bb3d7fe4e898e889c76dec7e3cd` |
+| rsETH | `0xb5a6993335b046c373a637b4200446613302d9ff` | `0x2d6fa5d7f9fc060894db7900a27db841b4a288862becc3b47460158333de82c4` |
+| eETH | `0x9925829882b1b562e5c527c2f519f63b1136e7bd` | `0x94ae71cc39824bf4649833bc54c9fb0e687858aa07a6ba26b772b9b452aafdf3` |
+| ETHx | `0x1e5c8c1cd602e9af8e32c8f0db6df12bff07ef39` | `0x4372f4915abe1030dfae6972d32b28a243ec9db4120007a10c535e4619edd9d5` |
+| osETH | `0x51da3d0e890a63c9c960b21d19fcd3f81ea4d75e` | `0x12e7092068b0ea937eb4d205db88e04019ecfc62471df1bc82d9428981590727` |
+| ETHxCrossRate | `0x2471fc16cadd1dea6448080a6a0be7f9987a8626` | `0x2cd1302ad8d4613acf162e013cd3d8b3c82e13f3c378342e43faa09ed9c5261e` |
+| rETHCrossRate | `0xb0c579815a3888a47dc3346e151e80f893d758d9` | `0x50c86a1fddf6b9ffc0212ed0fb119a9750d3abba530a2931ec707756bab2c6ba` |
+| ankrETH | `0xb24353a022bc964601d93b31e7b4aa4ba5411fa6` | `0x1acc94e9d7eb4c1016ec60dbb100c6b6d607103a570a2df907a04b57f652bdfe` |
+| wARS | `0x11618048a0746967c31d103a52985bf59edbb6aa` | `0xccb541de397a486847a081cbe447b55f9957568ed37ce7a726b644c759324f55` |
+| WBTCCrossRate | `0xea2a1daee93626d2f8f06dcb74f808b77a13513d` | `0x520a07934a6053df8bb5532e65b011173cc452e954eb787ee0710714311364b2` |
+| WBTCCrossRateRedstone | `0x2b6b43852cf181e04c620feb55b602d3b1da8663` | `0x9d29611afc35e99bff41922445f3626c68003f413179292dd7d328af20a80939` |
+| NXM | `0x5481f435dd6dde913ca0fbea4f1b3bda883df44c` | `0x2db631c695ac5e4711ce022157e07fdf000bc60c53c87a513fd39721cf02970c` |
+| wNXM | `0xb716d5b601f2979201bcb2ddecf241d836d9e7eb` | `0x5ef49d812516d9f972e8dbc4ba6679bcf677e4d43271f4099068d77f72f8d09a` |
+
+### 42161 Arbitrum — 6 feeds
+
+| Feed | Address | Tx |
+|---|---|---|
+| wstETH_L2 | `0x7fff8527dfcb5d4e00cfa81c2af702d15b1c0521` | `0x1ddbd22ca7ca23e1be59f5a9845a101b02d328793ae45603fa6f1d79f60a3343` |
+| weETH_L2 | `0xf9a11fd76d76de5f5b2c85b33b9741bd9177409b` | `0xf621f61510f50f6d5f95b80eff635a2c72e74b7f3f2dae5265b65bd43299ec09` |
+| rsETH_L2 | `0x1682f4dc1d22e3e8ee25f80e1823f433f7518d7b` | `0x976a4d5ce37d7c437cd5e55b68539b92fa86f999d538e1f1fbf521248bc21fe5` |
+| syrupUSDC_L2 | `0x9675780d906203f7df6a8e98fc27f11f8c4294a6` | `0xf5aaebb1955b994597ca4d705e426596ba47e183e66dd5186737d808e0e0932a` |
+| weETHCrossRate | `0x2105d9f888bc05512660050b8f8ef844f15f1e05` | `0x61230ebd8fc7e4bf45cb9416816e69f77e2b558c282454fd2d197c20e3c83ae5` |
+| rsETHCrossRate | `0x19a35cb4fc26e5b9ed4d8d3ab01967d6f5291e3c` | `0xdb25bb6c6a6dd2518156293bf9c2ff939f92333beb1dbe4800c76f4586afe00b` |
+
+### 8453 Base — 4 feeds
+
+| Feed | Address | Tx |
+|---|---|---|
+| wstETH_L2 | `0x1f6fb1969b79e3a43e63103c39e13457a5340a64` | `0x23a17b01a4637e3e7e2b6307981d827e11b95d5944fdb5b06c7ab77e23ee1729` |
+| weETH_L2 | `0x92bda9ff899f2e37832943e72fe2d5ed9f5fa7fd` | `0x3187b4b6302bd6d564ba5ec913fa415f8752c7fb870e3df4d4ba43b702e87347` |
+| cbETH_L2 | `0xaa3e29e95e8e573a6b07640a0ee2b597b21c7774` | `0xc2ed6716da444b337916b16390f0dfadbdba17c98258bc99af7704b1f5714b61` |
+| weETHCrossRate | `0x4bc85b1f615258d0a35f01ddfa44df5ce8cf8764` | `0xc4b8febb3ec459dbe445b8537f8316033e6678aa08f8c57035be12d4896acb80` |
+
+### 100 Gnosis — 3 feeds
+
+| Feed | Address | Tx |
+|---|---|---|
+| sXDAI | `0xbef120b82415f113f8997ff1c17360c678359187` | `0x868b10ed31717b8e719bac85f8b48ffd34ef476b66a76d04cbdefadb7b1e9871` |
+| wstETH_L2 | `0x8b9f7493100fbd1d2b70f873ce270c586d49fe45` | `0x47decdf22868a09570f7b19bc276ec1db87d6f4027f168a2a30b7883afe0c743` |
+| osGNO | `0xc3b09c9a8b7c7bce3442c22a834069df737713ad` | `0x46283fa47b4499aa1292a10366f414540f87687279dff5128e08e5eb4cc9870d` |
+
+### 5042 Arc — 1 feeds
+
+| Feed | Address | Tx |
+|---|---|---|
+| wARS | `0x3edc5a9b0db866779aca1710b4f27179e160920e` | `0x9093bae63fd00a48b33dcf93dbc0644e59b575ca1111627c17a1725266f7ac41` |

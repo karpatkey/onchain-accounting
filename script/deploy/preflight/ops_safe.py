@@ -89,7 +89,15 @@ def pack_multisend(txs: list[dict]) -> str:
         value = int(str(t.get("value", "0") or "0"), 0)
         if value < 0:
             raise OpsSafeError(f"entry {i}: negative value")
-        data = _hex(t.get("data") or "0x")
+        raw = t.get("data")
+        if raw is None:
+            # A Transaction-Builder entry in the UI's method form (contractMethod + contractInputsValues, data null)
+            # carries no calldata; packing it as empty would silently call the target's receive/fallback instead.
+            hint = " (method form: encode it first with `adr0029_batch.py import`)" if t.get("contractMethod") else ""
+            raise OpsSafeError(f"entry {i}: no calldata{hint}")
+        data = _hex(raw)
+        if not data and value == 0:
+            raise OpsSafeError(f"entry {i}: empty call with no value — it would only hit the target's receive/fallback")
         out.append("00" + _addr(t["to"]) + f"{value:064x}" + f"{len(data) // 2:064x}" + data)
     return "0x" + "".join(out)
 

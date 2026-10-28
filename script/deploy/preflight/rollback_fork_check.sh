@@ -15,6 +15,8 @@ impl() { cast parse-bytes32-address "$(cast storage $NAV $SLOT --rpc-url "$ADR00
 
 R="$ADR0029_FORK_RPC"
 cast rpc anvil_setBalance "$REHEARSAL_COUNCIL" 0x21e19e0c9bab2400000 --rpc-url "$R" >/dev/null
+# Explicit, so this also works on a plain `anvil --fork-url` (the rehearsal starts anvil with --auto-impersonate).
+cast rpc anvil_impersonateAccount "$REHEARSAL_COUNCIL" --rpc-url "$R" >/dev/null
 echo "impl before rollback: $(impl)"
 DATA="$(cast calldata "upgradeToAndCall(address,bytes)" "$OLD_IMPL" 0x)"
 if [[ "$(cast call $NAV 'hasRole(bytes32,address)(bool)' 0x0000000000000000000000000000000000000000000000000000000000000000 "$REHEARSAL_COUNCIL" --rpc-url "$R")" == true ]]; then
@@ -34,6 +36,7 @@ else
   cast rpc evm_mine --rpc-url "$R" >/dev/null
   ANY=0x00000000000000000000000000000000000ba11c
   cast rpc anvil_setBalance $ANY 0xde0b6b3a7640000 --rpc-url "$R" >/dev/null
+  cast rpc anvil_impersonateAccount $ANY --rpc-url "$R" >/dev/null
   ST="$(cast send "$TL" 'execute(address,uint256,bytes,bytes32,bytes32)' $NAV 0 "$DATA" $Z "$SALT" \
         --from $ANY --unlocked --rpc-url "$R" --json | jq -r .status)"
   echo "rollback through the timelock: Council schedule status $S1, executed after ${DELAY} s by any account: status $ST"

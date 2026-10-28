@@ -71,6 +71,8 @@ def run(rpc: str, safe: str, batch_path: str, sender: str) -> dict:
                o.MULTISEND_CALL_ONLY, "0", ms, "1", "0", "0", "0", o.ZERO, o.ZERO, str(nonce), "--rpc-url", rpc)
     for owner in signers:
         o.cast("rpc", "anvil_setBalance", owner, FUND, "--rpc-url", rpc)
+        # Explicit, so this also works on a plain `anvil --fork-url` (the rehearsal adds --auto-impersonate).
+        o.cast("rpc", "anvil_impersonateAccount", owner, "--rpc-url", rpc)
         o.send(rpc, safe, o.cast("calldata", "approveHash(bytes32)", h), ["--unlocked", "--from", owner], None)
     exec_data = o.cast("calldata",
                        "execTransaction(address,uint256,bytes,uint8,uint256,uint256,uint256,address,address,bytes)",
@@ -82,6 +84,7 @@ def run(rpc: str, safe: str, batch_path: str, sender: str) -> dict:
     block_gas = int(o.cast("block", "latest", "--field", "gasLimit", "--rpc-url", rpc), 0)
     gas_limit = min(est * 13 // 10, block_gas)
     o.cast("rpc", "anvil_setBalance", sender, FUND, "--rpc-url", rpc)
+    o.cast("rpc", "anvil_impersonateAccount", sender, "--rpc-url", rpc)
     r = o.send(rpc, safe, exec_data, ["--unlocked", "--from", sender], gas_limit)
     ok_t = o.cast("keccak", o.EXECUTION_SUCCESS_TOPIC_SIG).lower()
     topics = [(l.get("address", "").lower(), (l.get("topics") or [""])[0].lower()) for l in r.get("logs", [])]

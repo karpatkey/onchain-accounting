@@ -179,6 +179,18 @@ class Wrap(unittest.TestCase):
         _, _, s = tw.wrap(1, self.src, "x", 259200, pred, Live(predecessors=[pred]))
         self.assertEqual(s["predecessor"], pred)
 
+    def test_rehearsal_refuses_a_file_made_for_another_chain(self):
+        sched, _, _ = tw.wrap(1, self.src, "chain", 259200, tw.ZERO32)
+        tl = ab.c.deployment(1)["TimelockController"]
+        for chain, ok in (("1", True), ("8453", False)):
+            f = Path(self.tmp.name) / f"one-{chain}.json"
+            f.write_text(json.dumps({"chainId": chain, "transactions": [sched["tx"]]}))
+            if ok:
+                self.assertEqual(tw._one_call(str(f), tl, tw.SEL_SCHEDULE_BATCH, 1), sched["tx"]["data"])
+            else:
+                with self.assertRaises(tw.WrapError):
+                    tw._one_call(str(f), tl, tw.SEL_SCHEDULE_BATCH, 1)
+
     def test_refuses_an_empty_label(self):
         with self.assertRaises(tw.WrapError):
             tw.wrap(1, self.src, "  ", 259200, tw.ZERO32)

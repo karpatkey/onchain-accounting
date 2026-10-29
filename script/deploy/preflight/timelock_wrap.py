@@ -234,8 +234,10 @@ def _cast(rpc: str, *args: str) -> str:
     return r.stdout.strip()
 
 
-def _one_call(path: str, timelock: str, selector: str) -> str:
+def _one_call(path: str, timelock: str, selector: str, chain: int) -> str:
     doc = json.loads(Path(path).read_text())
+    if str(doc.get("chainId")) != str(chain):  # the Safe UI sends a file to the chain it names
+        raise WrapError(f"{path}: made for chain {doc.get('chainId')}, not {chain}")
     txs = doc.get("transactions") or []
     if len(txs) != 1 or txs[0]["to"].lower() != timelock.lower() or not str(txs[0].get("data", "")).startswith(selector):
         raise WrapError(f"{path}: expected exactly one {selector} call to the timelock {timelock}")
@@ -250,8 +252,8 @@ def rehearse(chain: int, rpc: str, schedule_path: str, execute_path: str, post_c
     if int(_cast(rpc, "chain-id")) != chain:
         raise WrapError(f"the fork at {rpc} is not chain {chain}")
     tl, council = _timelock(chain), b._council(chain)
-    sched_data = _one_call(schedule_path, tl, SEL_SCHEDULE_BATCH)
-    exec_data = _one_call(execute_path, tl, SEL_EXECUTE_BATCH)
+    sched_data = _one_call(schedule_path, tl, SEL_SCHEDULE_BATCH, chain)
+    exec_data = _one_call(execute_path, tl, SEL_EXECUTE_BATCH, chain)
     # The two files must name the SAME operation: decode both and compare the timelock's own operation ids.
     from eth_abi import decode
     arr = ["address[]", "uint256[]", "bytes[]", "bytes32", "bytes32"]

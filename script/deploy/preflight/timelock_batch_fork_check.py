@@ -2,6 +2,7 @@
 """Fork-only follow-through for a timelock `scheduleBatch` that rode in a Council batch (ADR0029_ROLLOUT.md,
 "Another team's Council calls in the same transaction").
 
+Both files must be stamped for the fork's chain (the Safe UI sends a file to the chain its `chainId` names).
 Run as `rehearse_adr0029_fork.sh`'s POST_CHECK (it sets ADR0029_FORK_RPC). Asserts that the operation in the
 `scheduleBatch` file is PENDING and not yet ready, that the `executeBatch` file names the same operation, warps past
 the timelock's own `getMinDelay()`, executes from a random EOA (the BTC Carry timelock's EXECUTOR_ROLE is open), and
@@ -34,10 +35,15 @@ def _cast(rpc: str, *a: str) -> str:
     return r.stdout.strip()
 
 
-def _batch_args(path: str, timelock: str, method: str) -> tuple[str, str, str, str, str]:
+def _batch_args(path: str, timelock: str, method: str, chain_id: int) -> tuple[str, str, str, str, str]:
     """The one call in a Transaction-Builder file, checked to be `method` on `timelock`: the rehearsal then sends
-    exactly what the file would send, so a file aimed at another contract or function cannot pass."""
-    txs = json.load(open(path)).get("transactions") or []
+    exactly what the file would send, so a file aimed at another contract, function or chain cannot pass."""
+    doc = json.load(open(path))
+    # The Safe UI sends a file to the chain its `chainId` names, so a file stamped for another chain must not pass a
+    # rehearsal on this fork even though its arguments are identical.
+    if str(doc.get("chainId")) != str(chain_id):
+        raise CheckError(f"{path}: made for chain {doc.get('chainId')}, but the fork is chain {chain_id}")
+    txs = doc.get("transactions") or []
     if len(txs) != 1:
         raise CheckError(f"{path}: expected exactly one transaction, found {len(txs)}")
     t = txs[0]
@@ -72,8 +78,9 @@ def main(argv: list[str]) -> int:
     rpc = os.environ.get("ADR0029_FORK_RPC", "")
     if not (rpc.startswith("http://127.0.0.1:") or rpc.startswith("http://localhost:")):
         raise CheckError("ADR0029_FORK_RPC must be a loopback fork")
-    sched = _batch_args(a.schedule, a.timelock, "scheduleBatch")
-    exe = _batch_args(a.execute, a.timelock, "executeBatch")
+    fork_chain = int(_cast(rpc, "chain-id"))
+    sched = _batch_args(a.schedule, a.timelock, "scheduleBatch", fork_chain)
+    exe = _batch_args(a.execute, a.timelock, "executeBatch", fork_chain)
     # Compare the timelock's own operation ids, not the argument text (address casing must not matter).
     hash_sig = "hashOperationBatch(address[],uint256[],bytes[],bytes32,bytes32)(bytes32)"
     op = _cast(rpc, "call", a.timelock, hash_sig, *exe)

@@ -456,7 +456,7 @@ class TimelockFileChecks(unittest.TestCase):
     def tearDown(self):
         self.tmp.cleanup()
 
-    def _file(self, name, **tx):
+    def _file(self, name, chain="1", **tx):
         inputs = [{"name": n, "type": ty} for n, ty in (("targets", "address[]"), ("values", "uint256[]"),
                   ("payloads", "bytes[]"), ("predecessor", "bytes32"), ("salt", "bytes32"))]
         base = {"to": self.TL, "value": "0", "operation": 0, "data": None,
@@ -465,11 +465,19 @@ class TimelockFileChecks(unittest.TestCase):
                                          "predecessor": "0x" + "00" * 32, "salt": "0x" + "00" * 32}}
         base.update(tx)
         f = Path(self.tmp.name) / name
-        f.write_text(json.dumps({"transactions": [base]}))
+        f.write_text(json.dumps({"chainId": chain, "transactions": [base]}))
         return str(f)
 
+    def test_refuses_a_file_made_for_another_chain_than_the_fork(self):
+        # The Safe UI sends a file to the chain it names: a Base-stamped file must not pass a mainnet rehearsal.
+        self.assertEqual(self.t._batch_args(self._file("c1.json"), self.TL, "executeBatch", 1)[1], "[0]")
+        with self.assertRaises(self.t.CheckError):
+            self.t._batch_args(self._file("c8453.json", chain="8453"), self.TL, "executeBatch", 1)
+        with self.assertRaises(self.t.CheckError):  # no chainId at all: refused, never treated as a match
+            self.t._batch_args(self._file("nochain.json", chain=None), self.TL, "executeBatch", 1)
+
     def test_accepts_the_right_target_and_method(self):
-        self.assertEqual(self.t._batch_args(self._file("ok.json"), self.TL.upper().replace("0X", "0x"), "executeBatch")[1],
+        self.assertEqual(self.t._batch_args(self._file("ok.json"), self.TL.upper().replace("0X", "0x"), "executeBatch", 1)[1],
                          "[0]")
 
     def test_refuses_another_target_method_value_or_count(self):
@@ -489,7 +497,7 @@ class TimelockFileChecks(unittest.TestCase):
         bad.append(str(two))
         for f in bad:
             with self.assertRaises(self.t.CheckError, msg=f):
-                self.t._batch_args(f, self.TL, "executeBatch")
+                self.t._batch_args(f, self.TL, "executeBatch", 1)
 
 
 if __name__ == "__main__":

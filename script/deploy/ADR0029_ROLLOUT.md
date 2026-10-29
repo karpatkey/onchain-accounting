@@ -280,8 +280,40 @@ its own admin. So the 3 days are a transparency window — anyone can see a sche
 second key: nobody else can cancel a Council proposal, and if the Council could no longer reach 5 of 8, nobody could
 propose anything (the NAV would be frozen as it is). Both are the same exposure as today; adding an independent
 canceller (e.g. a guardian Safe) would be a separate decision. The batch tools in this folder emit direct Council
-calls; future NAV operations need them wrapped in the timelock's `scheduleBatch` + `executeBatch` (the #338 runbook
-already notes `RealignHeartbeats` and `ClearDormantMetaInstances` are EOA-only).
+calls, which revert after the handover; wrap them with `timelock_wrap.py` (next section). `RealignHeartbeats` and
+`ClearDormantMetaInstances` are EOA-only scripts (#338 runbook) and need a Safe-batch variant before they can be
+wrapped.
+
+## After the handover: making a NAV change through the timelock
+
+`script/deploy/preflight/timelock_wrap.py` turns any stamped Council batch into the two files the timelock needs. It
+deploys nothing and sends nothing; the Council signs the first file in the Safe UI as usual.
+
+1. **Build the batch as today, planned as the timelock.** Inside the operation every call's `msg.sender` is the
+   timelock, so forge planning scripts run with `--sender <TimelockController>` (from `deployments/<chain>.json`),
+   not the Council, which no longer passes the role checks. The output must be a stamped batch with raw calldata
+   (what the repo tools write).
+2. **Wrap it:**
+   `timelock_wrap.py wrap --chain <id> --in <batch> --label "<what and why>" --out-schedule <file> --out-execute <file> --rpc-env <CHAIN>_URL`.
+   The salt is keccak256(label); the operation id also covers the calls, so a reused label only blocks re-scheduling
+   the same batch: use a fresh, descriptive label per change. With `--rpc-env` it refuses a delay below the live
+   `getMinDelay()`, a Council that is not a proposer, execution that is not open to any account, a predecessor that is
+   not an existing operation, or an operation that already exists. It refuses value, DELEGATECALL, another chain, and a batch edited after it was stamped. It prints the
+   operation id; both files record it, the source file's sha256, the label and the delay.
+3. **Rehearse it on a fork:**
+   `timelock_wrap.py rehearse --chain <id> --rpc-url http://127.0.0.1:<port> --schedule <file> --execute <file> [--post-check "<cmd>"]`.
+   It checks both files name the same operation (the timelock's own `hashOperationBatch`), runs the schedule through
+   the real Council Safe, checks the operation is pending and that executing early reverts with the timelock's own
+   `TimelockUnexpectedOperationState`, warps past its ready time, executes from an unrelated account, checks it is
+   done, then runs the post-check (`ADR0029_FORK_RPC` set). If any wrapped call reverts, the execute reverts as a
+   whole. It consumes the fork: start a fresh one to rehearse again.
+4. **Sign and wait:** the Council signs the schedule file; after the delay (3 days) any account sends the execute
+   call — from an EOA: `cast send <TimelockController> $(jq -r '.transactions[0].data' <execute file>)`, or load the
+   file in any Safe's Transaction Builder. Until then the operation is visible on-chain, and the Council can cancel it (`cancel(operationId)`).
+
+Rehearsed 2026-10-29 on a mainnet fork after this round's real mainnet batch: the Council's direct call reverts; a
+2-call change (two tolerances) wrapped, scheduled, refused before the delay, executed after it by an unrelated account,
+both changes landed; a reused label and a failing post-check are refused.
 
 ## Rollback
 

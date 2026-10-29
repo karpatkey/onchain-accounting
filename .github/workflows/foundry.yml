@@ -359,6 +359,16 @@ jobs:
           python3 -m unittest test_adr0029_batch -v
           python3 -O -m unittest test_adr0029_batch
 
+      - name: NAV timelock wrapper (timelock_wrap, offline)
+        # Offline here (no eth_abi / Foundry): pins the scheduleBatch / executeBatch encodings against pinned `cast` vectors
+        # and the plain input refusals (value, DELEGATECALL, missing calldata, bad target, empty, another chain, unstamped).
+        # The tests that need keccak/eth_abi (operation id, edited batch, live refusals, both files naming one operation)
+        # are skipped here and run wherever eth_abi is installed. -O as well, as above.
+        working-directory: script/deploy/preflight
+        run: |
+          python3 -m unittest test_timelock_wrap -v
+          python3 -O -m unittest test_timelock_wrap
+
       - name: Published addresses match the deployment records
         # Added after DEPLOYED_ADDRESSES.md was found publishing 66 addresses that appear in NO deployment
         # record — contracts from a superseded generation. Stale entries still have code, so an integrator

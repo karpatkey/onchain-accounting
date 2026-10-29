@@ -47,10 +47,11 @@ def _batch_args(path: str, timelock: str, method: str) -> tuple[str, str, str, s
         raise CheckError(f"{path}: calls {(t.get('contractMethod') or {}).get('name')!r}, not {method!r}")
     if int(str(t.get("value", "0") or "0"), 0) != 0 or int(t.get("operation", 0) or 0) != 0:
         raise CheckError(f"{path}: sends value or is a DELEGATECALL")
-    # The Safe UI encodes from the method form (or would send a non-null `data` as-is), so pin both to what this check
-    # re-encodes: no raw `data`, and exactly the timelock's argument types and names, in order.
-    if t.get("data") not in (None, "", "0x"):
-        raise CheckError(f"{path}: carries raw `data`; expected the method form only")
+    # The Safe UI encodes from the method form only when `data` is null (any string, "0x" and "" included, is sent
+    # as-is; "0x" would hit the timelock's receive function), so pin both to what this check re-encodes: `data` null,
+    # and exactly the timelock's argument types and names, in order. Same rule as `adr0029_batch.py import`.
+    if t.get("data") is not None:
+        raise CheckError(f"{path}: `data` is {t.get('data')!r}; expected null (the method form only)")
     want = [("targets", "address[]"), ("values", "uint256[]"), ("payloads", "bytes[]"), ("predecessor", "bytes32"),
             ("salt", "bytes32")] + ([("delay", "uint256")] if method == "scheduleBatch" else [])
     got = [(i.get("name"), i.get("type")) for i in (t.get("contractMethod") or {}).get("inputs") or []]
@@ -73,11 +74,11 @@ def main(argv: list[str]) -> int:
         raise CheckError("ADR0029_FORK_RPC must be a loopback fork")
     sched = _batch_args(a.schedule, a.timelock, "scheduleBatch")
     exe = _batch_args(a.execute, a.timelock, "executeBatch")
-    if sched != exe:
-        raise CheckError("the executeBatch file does not name the scheduled operation (targets/values/payloads/"
-                         "predecessor/salt differ)")
-    op = _cast(rpc, "call", a.timelock, "hashOperationBatch(address[],uint256[],bytes[],bytes32,bytes32)(bytes32)",
-               *exe)
+    # Compare the timelock's own operation ids, not the argument text (address casing must not matter).
+    hash_sig = "hashOperationBatch(address[],uint256[],bytes[],bytes32,bytes32)(bytes32)"
+    op = _cast(rpc, "call", a.timelock, hash_sig, *exe)
+    if _cast(rpc, "call", a.timelock, hash_sig, *sched) != op:
+        raise CheckError("the executeBatch file does not name the scheduled operation (its hashOperationBatch differs)")
     pending = _cast(rpc, "call", a.timelock, "isOperationPending(bytes32)(bool)", op)
     ready = _cast(rpc, "call", a.timelock, "isOperationReady(bytes32)(bool)", op)
     print(f"operation {op}: pending={pending} ready={ready} (after the Council batch)")

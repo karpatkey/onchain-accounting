@@ -478,6 +478,8 @@ class TimelockFileChecks(unittest.TestCase):
                self._file("v.json", value="1"),
                self._file("op.json", operation=1),
                self._file("data.json", data="0x1234"),
+               self._file("data0x.json", data="0x"),
+               self._file("dataempty.json", data=""),
                self._file("types.json", contractMethod={"name": "executeBatch", "inputs": [
                    {"name": "targets", "type": "address[]"}, {"name": "values", "type": "uint128[]"},
                    {"name": "payloads", "type": "bytes[]"}, {"name": "predecessor", "type": "bytes32"},

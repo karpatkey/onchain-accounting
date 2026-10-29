@@ -21,6 +21,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import time
 
 import ops_safe as o
 
@@ -56,6 +57,29 @@ def _owners(rpc: str, safe: str) -> tuple[list[str], int]:
     return owners, threshold
 
 
+def _rpc(rpc: str, method: str, params: list):
+    """JSON-RPC straight to the LOCAL fork. The MultiSend calldata is passed this way, never as a `cast` argument: a
+    large batch (the 2026-10-29 mainnet batch is ~88 KB, ~177 KB as hex) exceeds Linux's 128 KiB per-argument limit
+    (MAX_ARG_STRLEN) and `cast` cannot even be started."""
+    import urllib.request
+    body = json.dumps({"jsonrpc": "2.0", "id": 1, "method": method, "params": params}).encode()
+    req = urllib.request.Request(rpc, data=body, headers={"Content-Type": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=600) as r:
+            out = json.loads(r.read())
+    except (OSError, ValueError) as e:  # URLError/HTTPError are OSErrors; a non-JSON body is a ValueError
+        raise CouncilForkError(f"{method}: {e}") from None
+    if "error" in out:
+        raise CouncilForkError(f"{method}: {json.dumps(out['error'])[:300]}")
+    return out["result"]
+
+
+def _abi_call(sig: str, types: list[str], values: list) -> str:
+    from eth_abi import encode
+    from eth_utils import keccak
+    return "0x" + keccak(text=sig)[:4].hex() + encode(types, values).hex()
+
+
 def run(rpc: str, safe: str, batch_path: str, sender: str) -> dict:
     _loopback(rpc)
     o.check_code(rpc, o.MULTISEND_CALL_ONLY, safe)
@@ -65,27 +89,39 @@ def run(rpc: str, safe: str, batch_path: str, sender: str) -> dict:
     owners, threshold = _owners(rpc, safe)
     signers = sorted(owners, key=lambda a: int(a, 16))[:threshold]
     nonce = int(o.cast("call", safe, "nonce()(uint256)", "--rpc-url", rpc).split()[0])
-    ms = o.cast("calldata", "multiSend(bytes)", o.pack_multisend(batch["transactions"]))
-    h = o.cast("call", safe,
-               "getTransactionHash(address,uint256,bytes,uint8,uint256,uint256,uint256,address,address,uint256)(bytes32)",
-               o.MULTISEND_CALL_ONLY, "0", ms, "1", "0", "0", "0", o.ZERO, o.ZERO, str(nonce), "--rpc-url", rpc)
+    ms_bytes = bytes.fromhex(o.pack_multisend(batch["transactions"])[2:])
+    ms = _abi_call("multiSend(bytes)", ["bytes"], [ms_bytes])
+    tx_args_types = ["address", "uint256", "bytes", "uint8", "uint256", "uint256", "uint256", "address", "address"]
+    tx_args = [o.MULTISEND_CALL_ONLY, 0, bytes.fromhex(ms[2:]), 1, 0, 0, 0, o.ZERO, o.ZERO]
+    h = _rpc(rpc, "eth_call", [{"to": safe, "data": _abi_call(
+        "getTransactionHash(address,uint256,bytes,uint8,uint256,uint256,uint256,address,address,uint256)",
+        tx_args_types + ["uint256"], tx_args + [nonce])}, "latest"])
     for owner in signers:
         o.cast("rpc", "anvil_setBalance", owner, FUND, "--rpc-url", rpc)
         # Explicit, so this also works on a plain `anvil --fork-url` (the rehearsal adds --auto-impersonate).
         o.cast("rpc", "anvil_impersonateAccount", owner, "--rpc-url", rpc)
         o.send(rpc, safe, o.cast("calldata", "approveHash(bytes32)", h), ["--unlocked", "--from", owner], None)
-    exec_data = o.cast("calldata",
-                       "execTransaction(address,uint256,bytes,uint8,uint256,uint256,uint256,address,address,bytes)",
-                       o.MULTISEND_CALL_ONLY, "0", ms, "1", "0", "0", "0", o.ZERO, o.ZERO, approved_signatures(signers))
-    ok = o.cast("call", safe, exec_data, "--from", sender, "--rpc-url", rpc)
+    exec_data = _abi_call(
+        "execTransaction(address,uint256,bytes,uint8,uint256,uint256,uint256,address,address,bytes)",
+        tx_args_types + ["bytes"], tx_args + [bytes.fromhex(approved_signatures(signers)[2:])])
+    call = {"from": sender, "to": safe, "data": exec_data}
+    ok = _rpc(rpc, "eth_call", [call, "latest"])
     if int(ok or "0x0", 16) != 1:
         raise CouncilForkError(f"simulation returned {ok}, expected true")
-    est = int(o.cast("estimate", safe, exec_data, "--from", sender, "--rpc-url", rpc))
+    est = int(_rpc(rpc, "eth_estimateGas", [call]), 16)
     block_gas = int(o.cast("block", "latest", "--field", "gasLimit", "--rpc-url", rpc), 0)
     gas_limit = min(est * 13 // 10, block_gas)
     o.cast("rpc", "anvil_setBalance", sender, FUND, "--rpc-url", rpc)
     o.cast("rpc", "anvil_impersonateAccount", sender, "--rpc-url", rpc)
-    r = o.send(rpc, safe, exec_data, ["--unlocked", "--from", sender], gas_limit)
+    txh = _rpc(rpc, "eth_sendTransaction", [dict(call, gas=hex(gas_limit))])
+    r = None
+    for _ in range(60):  # anvil automines; poll briefly in case it does not
+        r = _rpc(rpc, "eth_getTransactionReceipt", [txh])
+        if r:
+            break
+        time.sleep(1)
+    if not r or str(r.get("status")) not in ("0x1", "1"):
+        raise CouncilForkError(f"tx {txh} reverted or was not mined (status {r and r.get('status')})")
     ok_t = o.cast("keccak", o.EXECUTION_SUCCESS_TOPIC_SIG).lower()
     topics = [(l.get("address", "").lower(), (l.get("topics") or [""])[0].lower()) for l in r.get("logs", [])]
     if (safe.lower(), ok_t) not in topics:

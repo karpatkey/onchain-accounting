@@ -41,6 +41,7 @@ import json
 import os
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import adr0029_batch as b
@@ -259,11 +260,10 @@ def rehearse(chain: int, rpc: str, schedule_path: str, execute_path: str, post_c
     arr = ["address[]", "uint256[]", "bytes[]", "bytes32", "bytes32"]
     sa = decode(arr + ["uint256"], bytes.fromhex(sched_data[10:]))
     ea = decode(arr, bytes.fromhex(exec_data[10:]))
-    ids = []
-    for t, v, p, pred, salt in (sa[:5], ea):
-        ids.append(_cast(rpc, "call", tl, "hashOperationBatch(address[],uint256[],bytes[],bytes32,bytes32)(bytes32)",
-                         "[" + ",".join(t) + "]", "[" + ",".join(str(x) for x in v) + "]",
-                         "[" + ",".join("0x" + x.hex() for x in p) + "]", "0x" + pred.hex(), "0x" + salt.hex()))
+    # Large calldata goes over JSON-RPC, never as a `cast` argument (Linux caps one argument at 128 KiB).
+    ids = [fx._rpc(rpc, "eth_call", [{"to": tl, "data": "0xb1c5f427" + _batch_args(
+        [str(a) for a in t], list(v), ["0x" + x.hex() for x in p], "0x" + pred.hex(), "0x" + salt.hex(), None)},
+        "latest"]) for t, v, p, pred, salt in (sa[:5], ea)]
     if ids[0] != ids[1]:
         raise WrapError("the execute file does not name the scheduled operation")
     op = ids[0]
@@ -271,22 +271,36 @@ def rehearse(chain: int, rpc: str, schedule_path: str, execute_path: str, post_c
     st = lambda f: _cast(rpc, "call", tl, f"{f}(bytes32)(bool)", op)  # noqa: E731
     if st("isOperationPending") != "true" or st("isOperationReady") != "false":
         raise WrapError(f"after the schedule, operation {op} is not pending-and-not-ready")
-    early = subprocess.run(["cast", "call", tl, exec_data, "--from", EXECUTOR, "--rpc-url", rpc],
-                           capture_output=True, text=True)
-    # Must be the timelock's own refusal (TimelockUnexpectedOperationState), not any cast failure.
-    if early.returncode == 0 or ERR_UNEXPECTED_STATE not in (early.stderr + early.stdout):
+    # Must be the timelock's own refusal (TimelockUnexpectedOperationState), not any other failure.
+    try:
+        fx._rpc(rpc, "eth_call", [{"from": EXECUTOR, "to": tl, "data": exec_data}, "latest"])
+        early_err = None
+    except fx.CouncilForkError as e:
+        early_err = str(e)
+    if early_err is None or ERR_UNEXPECTED_STATE not in early_err:
         raise WrapError("executeBatch before the delay did not revert with TimelockUnexpectedOperationState "
-                        f"(rc {early.returncode}) — the timelock is not enforcing the delay, or the call is malformed")
+                        f"({early_err or 'it succeeded'}) — the timelock is not enforcing the delay, or the call is malformed")
     ready_at = int(_cast(rpc, "call", tl, "getTimestamp(bytes32)(uint256)", op).split()[0])
     _cast(rpc, "rpc", "anvil_removeBlockTimestampInterval")
     _cast(rpc, "rpc", "evm_setNextBlockTimestamp", hex(ready_at + 1))
     _cast(rpc, "rpc", "evm_mine")
     _cast(rpc, "rpc", "anvil_setBalance", EXECUTOR, "0xde0b6b3a7640000")
     _cast(rpc, "rpc", "anvil_impersonateAccount", EXECUTOR)
-    rcpt = json.loads(_cast(rpc, "send", tl, exec_data, "--from", EXECUTOR, "--unlocked", "--json"))
+    call = {"from": EXECUTOR, "to": tl, "data": exec_data}
+    gas = int(fx._rpc(rpc, "eth_estimateGas", [call]), 16)
+    block_gas = int(fx._rpc(rpc, "eth_getBlockByNumber", ["latest", False])["gasLimit"], 16)
+    txh = fx._rpc(rpc, "eth_sendTransaction", [dict(call, gas=hex(min(gas * 13 // 10, block_gas)))])
+    rcpt = {}
+    for _ in range(60):  # the receipt can lag the send by a moment
+        rcpt = fx._rpc(rpc, "eth_getTransactionReceipt", [txh]) or {}
+        if rcpt:
+            break
+        time.sleep(1)
+    if not rcpt:
+        raise WrapError(f"executeBatch {txh} was not mined")
     if rcpt.get("status") not in ("0x1", 1) or st("isOperationDone") != "true":
         raise WrapError(f"executeBatch did not complete operation {op}")
-    out = {"operation": op, "scheduleGas": r["gasUsed"], "executeGas": int(str(rcpt["gasUsed"]), 0),
+    out = {"operation": op, "scheduleGas": r["gasUsed"], "executeGas": int(str(rcpt.get("gasUsed", "0x0")), 0),
            "executedAfter": ready_at + 1, "postCheck": None}
     if post_check:
         env = dict(os.environ, ADR0029_FORK_RPC=rpc, TIMELOCK_WRAP_CHAIN=str(chain), TIMELOCK_WRAP_OPERATION=op)

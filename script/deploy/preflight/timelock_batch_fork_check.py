@@ -19,6 +19,7 @@ import argparse
 import json
 import os
 import subprocess
+import time
 import sys
 
 EXECUTOR = "0x00000000000000000000000000000000000b7c01"
@@ -69,6 +70,44 @@ def _batch_args(path: str, timelock: str, method: str, chain_id: int) -> tuple[s
     return arr("targets"), arr("values"), arr("payloads"), v["predecessor"], v["salt"]
 
 
+def _rpc(rpc: str, method: str, params: list):
+    """JSON-RPC straight to the local fork: a large BTC Carry batch (file 2 is ~70 KB since #280) exceeds Linux's
+    128 KiB per-argument limit as a hex `cast` argument, so its calldata never goes through `cast`."""
+    import urllib.request
+    body = json.dumps({"jsonrpc": "2.0", "id": 1, "method": method, "params": params}).encode()
+    try:
+        with urllib.request.urlopen(urllib.request.Request(rpc, data=body, headers={"Content-Type": "application/json"}),
+                                    timeout=600) as r:
+            out = json.loads(r.read())
+    except (OSError, ValueError) as e:  # URLError/HTTPError are OSErrors; a non-JSON body is a ValueError
+        raise CheckError(f"{method}: {e}") from None
+    if "error" in out:
+        raise CheckError(f"{method}: {json.dumps(out['error'])[:300]}")
+    return out["result"]
+
+
+def _encode(sig: str, args: tuple[str, str, str, str, str]) -> str:
+    """ABI-encode `sig` over the five batch arguments as `_batch_args` returns them ("[a,b]" strings + bytes32)."""
+    from eth_abi import encode
+    from eth_utils import keccak
+    lst = lambda x: [e for e in x.strip("[]").split(",") if e]  # noqa: E731
+    t, v, p, pred, salt = args
+
+    def hexb(x: str, size: int | None = None) -> bytes:
+        try:
+            if not x.startswith("0x"):
+                raise ValueError("missing 0x")
+            b = bytes.fromhex(x[2:])
+        except ValueError as e:
+            raise CheckError(f"malformed hex argument {x[:20]!r}: {e}") from None
+        if size is not None and len(b) != size:
+            raise CheckError(f"{x[:20]!r} is {len(b)} bytes, expected {size}")
+        return b
+    vals = [lst(t), [int(x) for x in lst(v)], [hexb(x) for x in lst(p)], hexb(pred, 32), hexb(salt, 32)]
+    return "0x" + keccak(text=sig)[:4].hex() + encode(["address[]", "uint256[]", "bytes[]", "bytes32", "bytes32"],
+                                                       vals).hex()
+
+
 def main(argv: list[str]) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--timelock", required=True)
@@ -82,9 +121,9 @@ def main(argv: list[str]) -> int:
     sched = _batch_args(a.schedule, a.timelock, "scheduleBatch", fork_chain)
     exe = _batch_args(a.execute, a.timelock, "executeBatch", fork_chain)
     # Compare the timelock's own operation ids, not the argument text (address casing must not matter).
-    hash_sig = "hashOperationBatch(address[],uint256[],bytes[],bytes32,bytes32)(bytes32)"
-    op = _cast(rpc, "call", a.timelock, hash_sig, *exe)
-    if _cast(rpc, "call", a.timelock, hash_sig, *sched) != op:
+    hash_sig = "hashOperationBatch(address[],uint256[],bytes[],bytes32,bytes32)"
+    op = _rpc(rpc, "eth_call", [{"to": a.timelock, "data": _encode(hash_sig, exe)}, "latest"])
+    if _rpc(rpc, "eth_call", [{"to": a.timelock, "data": _encode(hash_sig, sched)}, "latest"]) != op:
         raise CheckError("the executeBatch file does not name the scheduled operation (its hashOperationBatch differs)")
     pending = _cast(rpc, "call", a.timelock, "isOperationPending(bytes32)(bool)", op)
     ready = _cast(rpc, "call", a.timelock, "isOperationReady(bytes32)(bool)", op)
@@ -106,14 +145,24 @@ def main(argv: list[str]) -> int:
 
     _cast(rpc, "rpc", "anvil_setBalance", EXECUTOR, "0xde0b6b3a7640000")
     _cast(rpc, "rpc", "anvil_impersonateAccount", EXECUTOR)
-    data = subprocess.run(["cast", "calldata", "executeBatch(address[],uint256[],bytes[],bytes32,bytes32)", *exe],
-                          capture_output=True, text=True, check=True).stdout.strip()
-    rcpt = json.loads(_cast(rpc, "send", a.timelock, data, "--from", EXECUTOR, "--unlocked", "--json"))
+    data = _encode("executeBatch(address[],uint256[],bytes[],bytes32,bytes32)", exe)
+    call = {"from": EXECUTOR, "to": a.timelock, "data": data}
+    gas = int(_rpc(rpc, "eth_estimateGas", [call]), 16)
+    block_gas = int(_rpc(rpc, "eth_getBlockByNumber", ["latest", False])["gasLimit"], 16)
+    txh = _rpc(rpc, "eth_sendTransaction", [dict(call, gas=hex(min(gas * 13 // 10, block_gas)))])
+    rcpt = {}
+    for _ in range(60):  # the receipt can lag the send by a moment
+        rcpt = _rpc(rpc, "eth_getTransactionReceipt", [txh]) or {}
+        if rcpt:
+            break
+        time.sleep(1)
+    if not rcpt:
+        raise CheckError(f"executeBatch {txh} was not mined")
     print(f"executeBatch from a random EOA after {delay + 1} s: status {rcpt['status']}, "
           f"gasUsed {int(rcpt['gasUsed'], 16)}, logs {len(rcpt['logs'])}")
     done = _cast(rpc, "call", a.timelock, "isOperationDone(bytes32)(bool)", op)
     print(f"operation done: {done}")
-    if rcpt["status"] not in ("0x1", 1) or done != "true":
+    if rcpt.get("status") not in ("0x1", 1) or done != "true":
         raise CheckError("executeBatch did not complete the operation")
     return 0
 

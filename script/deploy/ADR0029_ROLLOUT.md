@@ -159,7 +159,8 @@ One Security Council batch per chain, executed directly by the Council Safe (5-o
 
 - **Another team's Council calls in the same transaction (chain 1, 2026-10-26: the BTC Carry permissions).** The
   client-configs payload `WBTC-Carry_1_SC_scheduleBatch_MANAGER.json` (SC → timelock `0xa490f5D2…`
-  `scheduleBatch`, 9 MANAGER calls, delay 259,200 s) is a Council call too, so it rides as the FIRST part of chain 1's
+  `scheduleBatch` of the MANAGER changes, delay 259,200 s; 28 inner calls since client-configs #280, which keeps
+  WBTC as BTC Carry's only BTC asset) is a Council call too, so it rides as the FIRST part of chain 1's
   batch and the Council signs one transaction there. `adr0029_batch.py import --chain 1 --in <file> --out <part>`
   encodes the UI's method form (`contractMethod` + `contractInputsValues`) into calldata and stamps it (refuses tuple
   inputs, value, DELEGATECALL, another chain or Safe; records the source file's sha256 in the part's description);
@@ -171,10 +172,12 @@ One Security Council batch per chain, executed directly by the Council Safe (5-o
   later).
   **Pre-sign gate:** the operation id is content-derived (salt 0, predecessor 0), so if the same payload is ever
   scheduled on its own first, the bundle's `scheduleBatch` reverts and takes the WHOLE NAV rollout with it. Right
-  before signing and before executing, `cast call 0xa490f5D25488E93fC065237aD84bbfc120ef69c4
-  "isOperation(bytes32)(bool)" 0xdb8c2c7359d8ae8adcfc59aa1bb8fa7ea1a83d108a047ee89bd447bd6e94537d` must be `false`,
-  and the client-configs owners must not schedule the standalone file. If it already exists, re-assemble without the
-  part and re-sign.
+  before signing and before executing, `isOperation(<id>)` on `0xa490f5D25488E93fC065237aD84bbfc120ef69c4` must be
+  `false`, where `<id>` is the timelock's `hashOperationBatch` of the call actually in the batch (derive it from the
+  batch, never copy it: it changes whenever client-configs re-exports; 2026-10-29: `0x809b3376…fcd5`), and the
+  client-configs owners must not schedule the standalone file. If it already exists, re-assemble without the part and
+  re-sign. Since #280 the batch is ~88 KB of MultiSend calldata (fine on-chain); the fork tools pass large calldata
+  over JSON-RPC because a single `cast` argument is capped at 128 KiB.
 - **Chains with no assets** (17 of the 25 hold only the native-token placeholder registered at initialize, and have
   no asset config): `removals` writes an empty part (the native placeholder is never a removal),
   `MigrateToMonitorFeeds` plans nothing and writes no file, the rehearsal then leaves that part out (only when its

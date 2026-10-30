@@ -195,12 +195,15 @@ contract RegisterAssets is BaseDeployScript {
 
     /// @notice A `REGISTER_ONLY` symbol that is not a key of this chain's asset config.
     error RegisterOnlyUnknownSymbol(string symbol);
+    /// @notice A `REGISTER_ONLY` symbol listed twice: it would be planned twice and the second registration would revert
+    ///         the whole batch.
+    error RegisterOnlyDuplicateSymbol(string symbol);
 
     /// @notice Narrows the run to the comma-separated `REGISTER_ONLY` symbols (unset or empty = every configured asset).
     /// @dev Exists so a NEW asset can be planned into a batch whose other parts still change existing assets' feeds:
     ///      planned against that pre-state, the full scan stops on the first asset whose live feed is about to be
     ///      swapped later in the same batch (`FeedOrderMismatch`, correctly). An unknown symbol reverts rather than
-    ///      silently planning nothing.
+    ///      silently planning nothing; a repeated symbol reverts rather than planning the asset twice.
     function _onlyFilter(string[] memory symbols) internal view returns (string[] memory) {
         string memory only = vm.envOr("REGISTER_ONLY", string(""));
         if (bytes(only).length == 0) return symbols;
@@ -211,6 +214,11 @@ contract RegisterAssets is BaseDeployScript {
                 if (keccak256(bytes(symbols[i])) == keccak256(bytes(wanted[w]))) known = true;
             }
             if (!known) revert RegisterOnlyUnknownSymbol(wanted[w]);
+            for (uint256 v = 0; v < w; v++) {
+                if (keccak256(bytes(wanted[v])) == keccak256(bytes(wanted[w]))) {
+                    revert RegisterOnlyDuplicateSymbol(wanted[w]);
+                }
+            }
         }
         console2.log("REGISTER_ONLY:", only);
         return wanted;

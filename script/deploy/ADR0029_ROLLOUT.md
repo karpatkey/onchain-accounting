@@ -136,7 +136,8 @@ One Security Council batch per chain, executed directly by the Council Safe (5-o
   handover (`governance`, `--final-parts`; see "Timelock handover") into one Transaction-Builder file for the Council.
 - **New assets** (config entries not registered on-chain; this round: Merkl's "USD Coin (wrapped)"
   `0x4045FcF533C84578e754be939821d26A087FC7C9` on mainnet, priced with USDC's exact config, requested 2026-10-28):
-  `RegisterAssets` is planned as the Council with `REGISTER_ONLY=<those symbols>` and its part goes after the removals
+  `RegisterAssets` is planned as the Council with `REGISTER_ONLY=<those symbols>` (an unknown or repeated symbol makes
+  the plan revert) and its part goes after the removals
   and before `MigrateToMonitorFeeds`. The filter matters: unfiltered, it checks every asset against the pre-batch
   state and stops (`FeedOrderMismatch`) on an asset whose feed this same batch swaps. Migrate skips unregistered
   assets, so the new asset's monitor is planned once, by `RegisterAssets`. It needs MANAGER, so it must precede the

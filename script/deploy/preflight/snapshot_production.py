@@ -160,7 +160,7 @@ def block_lag(url: str, override: int | None = None) -> int:
     """
     if override is not None:
         return max(override, 0)
-    return 0 if url.startswith(("http://127.0.0.1", "http://localhost")) else 3
+    return 0 if c.is_loopback_rpc(url) else 3
 
 
 def snapshot_chain(chain_id: int, url: str, rpc_note: str, want_nav: bool,

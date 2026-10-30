@@ -301,7 +301,7 @@ def _council(chain: int) -> str:
 
 def _reader(a) -> ac.LiveReader:
     if a.rpc_url:
-        if not (a.rpc_url.startswith("http://127.0.0.1:") or a.rpc_url.startswith("http://localhost:")):
+        if not c.is_loopback_rpc(a.rpc_url):
             raise BatchError("--rpc-url is for a loopback fork only; use --rpc-env for a real endpoint")
         url = a.rpc_url
     else:

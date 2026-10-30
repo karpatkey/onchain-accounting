@@ -27,7 +27,7 @@ operator: **pin the fork block** (see the note at the rehearsal invocation — i
 path executes; it is not a deploy, and it is not an approval to deploy.
 
 Companion tooling lives in [`preflight/`](preflight/README.md). The only script there that broadcasts
-at all is `rehearse_fork.sh`, whose RPC is built as loopback (`:49`) and refused otherwise (`:57`).
+at all is `rehearse_fork.sh`, whose RPC is built as loopback (`:49`) and refused otherwise (`:56-59`).
 Four of its scripts write **git-tracked** files — and because that list has been wrong before,
 **`git status` is the check of record, not this paragraph**:
 

@@ -1,7 +1,7 @@
 # Deploy preflight tooling
 
 Tooling for preparing and verifying a from-scratch NAV redeploy. The only script here that broadcasts
-at all is `rehearse_fork.sh`, whose RPC is built as loopback (`:49`) and refused otherwise (`:57`).
+at all is `rehearse_fork.sh`, whose RPC is built as loopback (`:49`) and refused otherwise (`:56-59`).
 
 Four scripts write **git-tracked** files. This list has been wrong before, so treat `git status` as
 the check of record rather than this paragraph. `reset_deployment_records.py --apply` also creates

@@ -41,7 +41,9 @@ cd "$ROOT"
 
 # --- safety rail -------------------------------------------------------------
 case "$RPC" in
-  http://127.0.0.1:*|http://localhost:*) ;;
+  http://127.0.0.1:[0-9]*|http://localhost:[0-9]*)
+    # Exact form only (a prefix glob also matches http://127.0.0.1:1@evil.host/):
+    [[ "$RPC" =~ ^http://(127\.0\.0\.1|localhost):[0-9]+/?$ ]] || { echo "REFUSING: rehearsal RPC '$RPC' is not a plain loopback URL."; exit 2; } ;;
   *) echo "REFUSING: rehearsal RPC '$RPC' is not loopback."; exit 2 ;;
 esac
 

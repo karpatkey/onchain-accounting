@@ -44,7 +44,8 @@ def approved_signatures(owners: list[str]) -> str:
 
 
 def _loopback(rpc: str) -> None:
-    if not (rpc.startswith("http://127.0.0.1:") or rpc.startswith("http://localhost:")):
+    import chainlib
+    if not chainlib.is_loopback_rpc(rpc):
         raise CouncilForkError("REFUSING: council_fork_exec.py runs on a local anvil fork only (loopback RPC)")
 
 

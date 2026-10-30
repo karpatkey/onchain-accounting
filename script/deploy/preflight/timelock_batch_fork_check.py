@@ -115,7 +115,8 @@ def main(argv: list[str]) -> int:
     ap.add_argument("--execute", required=True)
     a = ap.parse_args(argv)
     rpc = os.environ.get("ADR0029_FORK_RPC", "")
-    if not (rpc.startswith("http://127.0.0.1:") or rpc.startswith("http://localhost:")):
+    import chainlib
+    if not chainlib.is_loopback_rpc(rpc):
         raise CheckError("ADR0029_FORK_RPC must be a loopback fork")
     fork_chain = int(_cast(rpc, "chain-id"))
     sched = _batch_args(a.schedule, a.timelock, "scheduleBatch", fork_chain)

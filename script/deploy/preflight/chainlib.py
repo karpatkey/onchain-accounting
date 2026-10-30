@@ -708,6 +708,23 @@ def enumerate_deployed(chain_id: int) -> list[dict]:
     return out
 
 
+
+def is_loopback_rpc(url: str) -> bool:
+    """True only for a plain local-fork endpoint: http, host exactly 127.0.0.1 or localhost, a numeric port, no
+    user/password part and no path beyond "/". A prefix check is not enough: `http://127.0.0.1:1@evil.example/` starts
+    with `http://127.0.0.1:` but connects to evil.example."""
+    from urllib.parse import urlsplit
+    if not isinstance(url, str) or any(ch.isspace() for ch in url) or "?" in url or "#" in url:
+        return False  # urlsplit normalises whitespace away; validate the exact string that will be used
+    try:
+        u = urlsplit(url or "")
+        port = u.port
+    except ValueError:
+        return False
+    return (u.scheme == "http" and u.hostname in ("127.0.0.1", "localhost") and port is not None
+            and u.username is None and u.password is None and "@" not in u.netloc
+            and u.path in ("", "/") and not u.query and not u.fragment)
+
 if __name__ == "__main__":
     # Tiny CLI so shell tooling resolves endpoints through THIS module rather than reimplementing
     # the rules.

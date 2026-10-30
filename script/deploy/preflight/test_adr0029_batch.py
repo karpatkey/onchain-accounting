@@ -500,5 +500,47 @@ class TimelockFileChecks(unittest.TestCase):
                 self.t._batch_args(f, self.TL, "executeBatch", 1)
 
 
+class LoopbackGuard(unittest.TestCase):
+    """The fork-only tools must refuse anything but a plain local endpoint: a prefix check passed
+    `http://127.0.0.1:1@evil.example/`, which connects to evil.example."""
+
+    def test_accepts_plain_loopback_only(self):
+        import chainlib
+        for ok in ("http://127.0.0.1:8546", "http://localhost:8545", "http://127.0.0.1:8546/"):
+            self.assertTrue(chainlib.is_loopback_rpc(ok), ok)
+        for bad in ("http://127.0.0.1:1@evil.example/", "http://user:pw@127.0.0.1:8546", "http://127.0.0.1.evil.example:8546",
+                    "https://127.0.0.1:8546", "http://127.0.0.1", "http://localhost:abc", "http://127.0.0.1:8546/x",
+                    "http://127.0.0.1:8546?x=1", "http://10.0.0.1:8546", "http://evil.example/127.0.0.1:8546", "", None):
+            self.assertFalse(chainlib.is_loopback_rpc(bad), bad)
+
+    def test_fork_executor_refuses_the_bypass(self):
+        with self.assertRaises(cfe.CouncilForkError):
+            cfe._loopback("http://127.0.0.1:1@evil.example/")
+
+    def test_batch_reader_and_timelock_check_refuse_the_bypass(self):
+        class A:
+            chain, rpc_url, rpc_env = 1, "http://127.0.0.1:1@evil.example/", None
+        with self.assertRaises(ab.BatchError):
+            ab._reader(A())
+        import os
+        import timelock_batch_fork_check as tbf
+        old = os.environ.get("ADR0029_FORK_RPC")
+        os.environ["ADR0029_FORK_RPC"] = "http://127.0.0.1:1@evil.example/"
+        try:
+            with self.assertRaises(tbf.CheckError):
+                tbf.main(["--timelock", "0x" + "a4" * 20, "--schedule", "x", "--execute", "y"])
+        finally:
+            if old is None:
+                os.environ.pop("ADR0029_FORK_RPC", None)
+            else:
+                os.environ["ADR0029_FORK_RPC"] = old
+
+    def test_whitespace_query_and_fragment_are_refused(self):
+        import chainlib
+        for bad in (" http://127.0.0.1:8546", "http://127.0.0.1:8546\n", "http://127.0.0.1\t:8546",
+                    "http://127.0.0.1:8546#", "http://127.0.0.1:8546?", 123):
+            self.assertFalse(chainlib.is_loopback_rpc(bad), repr(bad))
+
+
 if __name__ == "__main__":
     unittest.main()

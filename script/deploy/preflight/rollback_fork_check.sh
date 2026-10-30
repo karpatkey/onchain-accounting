@@ -8,7 +8,7 @@
 set -uo pipefail
 : "${ADR0029_FORK_RPC:?}" "${REHEARSAL_WORK:?}" "${REHEARSAL_CHAIN:?}" "${REHEARSAL_URL_VAR:?}" "${REHEARSAL_COUNCIL:?}"
 OLD_IMPL="${1:?usage: rollback_fork_check.sh <previousImplementation>}"
-case "$ADR0029_FORK_RPC" in http://127.0.0.1:*|http://localhost:*) ;; *) echo "REFUSING: not a loopback fork"; exit 2 ;; esac
+[[ "$ADR0029_FORK_RPC" =~ ^http://(127\.0\.0\.1|localhost):[0-9]+/?$ ]] || { echo "REFUSING: not a plain loopback fork URL"; exit 2; }
 NAV=0x54EaD2A1dB7456cA917675Ea8908ec8A997c6214
 SLOT=0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc
 impl() { cast parse-bytes32-address "$(cast storage $NAV $SLOT --rpc-url "$ADR0029_FORK_RPC")"; }

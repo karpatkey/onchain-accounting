@@ -147,36 +147,6 @@
       }
     ]
   },
-  "ezETH": {
-    "address": "0xbf5495Efe5DB9ce00f80364C8B423567e58d2110",
-    "$kindComment": "Renzo ezETH; rate from RestakeManager (per feed config).",
-    "accrualKind": "Appreciating",
-    "labels": [
-      "Renzo",
-      "LRT"
-    ],
-    "divergenceToleranceBps": 250,
-    "priceFeeds": [
-      {
-        "type": "Custom",
-        "feed": "ezETH",
-        "heartbeat": 3600
-      }
-    ],
-    "$comment": "Finding #2: ezETH's primary is fundamental (Renzo RestakeManager) and its only monitor, ezETHCrossRate, is ALSO fundamental after the 2026-07-22 migration to RedStone's ezETH_FUNDAMENTAL feed - so the 250 bps tolerance could not fire on a market depeg. ezETHCrossRateMarket adds a genuine MARKET leg (RedStone Classic Push ezETH/ETH). Both monitors are kept: divergenceBps is primary-vs-the-WORST-single-monitor (not the median), so the market monitor DOMINATES rather than being diluted by the fundamental one sitting near 0 bps. Its 46800 heartbeat is derived from the feed's measured 12 h cadence (max gap 43224 s + 3576 s margin), NOT copied from ezETHCrossRate's 86400; the registered value must cover the slower leg because TwoFeedChainlinkPriceFeed reports updatedAt = min(rateUpdatedAt, baseUpdatedAt), and the 12 h rate leg is slower than WETH's 3600 s ETH/USD. See custom-price-feeds/1.json.ezETHCrossRateMarket for the full measurement and the deprecated-feed rationale.",
-    "monitorFeeds": [
-      {
-        "type": "Custom",
-        "feed": "ezETHCrossRate",
-        "heartbeat": 86400
-      },
-      {
-        "type": "Custom",
-        "feed": "ezETHCrossRateMarket",
-        "heartbeat": 46800
-      }
-    ]
-  },
   "rsETH": {
     "address": "0xA1290d69c65A6Fe4DF752f95823fae25cB99e5A7",
     "$kindComment": "Kelp rsETH; rate from rateProvider (per feed config).",
@@ -234,13 +204,8 @@
         "heartbeat": 3600
       }
     ],
-    "monitorFeeds": [
-      {
-        "type": "Custom",
-        "feed": "osETHCrossRate",
-        "heartbeat": 86400
-      }
-    ],
+    "$monitorComment": "No monitor until issue #357 is closed. The market monitor osETHCrossRate (RedStone osETH/ETH 0x66ac817f…) was removed for the ADR 0029 rollout: that RedStone feed's latestRoundData() reverts, so the monitor was excluded anyway. divergenceToleranceBps is kept for its replacement (preflight WARNs: tolerance without a monitor).",
+    "monitorFeeds": [],
     "note": "Priced via osToken_CustomPriceFeed (priceFeeds.osETH.1): convertToAssets(1e18) [osETH/ETH] * ETH/USD. Held osETH is reported by ERC20DefaultBalanceAdapter (wallet balance). The pricefeed address is filled by 03_DeployPriceFeeds. Separate from the StakeWiseV3Vault osToken-debt leg (denominated in ETH)."
   },
   "USDC": {
@@ -249,6 +214,32 @@
     "labels": [
       "Circle",
       "Stablecoin"
+    ],
+    "pegToleranceBps": 100,
+    "divergenceToleranceBps": 50,
+    "priceFeeds": [
+      {
+        "type": "Chainlink",
+        "address": "0x8fFfFfd4AfB6115b954Bd326cbe7B4BA576818f6",
+        "heartbeat": 82800
+      }
+    ],
+    "monitorFeeds": [
+      {
+        "type": "Redstone",
+        "address": "0xeeF31c7d9F2E82e8A497b140cc60cc082Be4b94e",
+        "heartbeat": 86400
+      }
+    ]
+  },
+  "USDC_MerklWrapped": {
+    "$comment": "2026-10-28 (Giel, #oiv ts 1793201068.556989): Merkl's 'USD Coin (wrapped)' PullTokenWrapperAllowImmutable, the token Aave v4 Merkl campaigns pay rewards in. token() = USDC; on claim it pulls the same amount of USDC from its holder 0x89587ebe7cFF64c6527fE2Deccc3521D75763E8D to the claimer and burns the wrapper, so it is worth USDC 1:1 — priced with USDC's exact config. Checked on-chain 2026-10-28: holder 74,072.83 USDC, allowance to the wrapper 74,072.43 = the wrapper's totalSupply. Remaining risk is the payer (if its balance/allowance runs short a claim reverts or pays less), not the price. Needed so MerklRewardsAttestedBalanceAdapter's cached Aave v4 rewards are counted (they are skipped while the token is unregistered).",
+    "address": "0x4045FcF533C84578e754be939821d26A087FC7C9",
+    "accrualKind": "None",
+    "labels": [
+      "Circle",
+      "Stablecoin",
+      "Merkl wrapper"
     ],
     "pegToleranceBps": 100,
     "divergenceToleranceBps": 50,
@@ -741,23 +732,6 @@
       }
     ]
   },
-  "EIGEN": {
-    "address": "0xec53bF9167f50cDEB3Ae105f56099aaaB9061F83",
-    "accrualKind": "None",
-    "labels": [
-      "EigenLayer",
-      "Governance"
-    ],
-    "divergenceToleranceBps": 50,
-    "priceFeeds": [
-      {
-        "type": "Chainlink",
-        "address": "0xf2917e602C2dCa458937fad715bb1E465305A4A1",
-        "heartbeat": 86400
-      }
-    ],
-    "note": "MONITOR FEED REMOVED 2026-09-16 for RedStone's EIGEN delisting, the same shape as ETHx's 2026-07-27 sunset above. The RedStone push feed 0x2ee5Ce6556599E16c226579BA14F94926d8Cb86d was dropped from main/relayer-manifests-multi-feed/ethereumMultiFeed.json upstream: present at redstone-oracles-monorepo 8234070c (2026-08-31), absent at 48452b66 (2026-09-08, 'Changes from PR #12917'), and the EIGEN key appears in NONE of the 116 manifests under relayer-remote-config/main today. The contract itself now REVERTS on latestRoundData() (custom error 0x4f319ffe, dataFeedId 'EIGEN'; decimals() still answers 8), so it was already contributing nothing: NAVCalculator.getPriceData(EIGEN) on the live proxy reads monitorFeedCount 0, divergenceBps 0, irregular false, while the Chainlink primary 0xf2917e60…A4A1 stays healthy. Keeping the registration cost the ADR 0025 guard its only honest verdict (cadence UNCHECKED) while advertising a monitor that cannot answer. divergenceToleranceBps is retained deliberately: EIGEN gets no divergence signal until a live monitor exists (preflight_config WARN, exactly as ETHx carries), and Chainlink has no second EIGEN/USD feed to promote. TO CLOSE: register a replacement monitor when one is published, or drop the tolerance. On-chain the dead monitor is STILL registered -> deregister with NAVCalculator.removeMonitorFeed(0xec53bF91…1F83, 0x2ee5Ce65…b86d) from the MANAGER EOA."
-  },
   "COMP": {
     "address": "0xc00e94Cb662C3520282E6f5717214004A7f26888",
     "accrualKind": "None",
@@ -790,6 +764,19 @@
     ],
     "monitorFeeds": [
       {
+        "$comment": "WBTC-specific price (issue #356): Chainlink WBTC/BTC x Chainlink BTC/USD, both read directly (ChainlinkCrossRateCustomPriceFeed). Added next to the RedStone BTC monitor 0xAB7f623fb2F6fea6601D4350FA0E2290663C28Fc, which prices BTC, not WBTC, so on its own the NAV could not see a WBTC depeg. 88 days to 2026-10-22: |WBTC/BTC - 1| <= ~21 bps, so no false irregular at 50 bps.",
+        "type": "Custom",
+        "feed": "WBTCCrossRate",
+        "heartbeat": 86400
+      },
+      {
+        "$comment": "Second WBTC-specific monitor: the same class on RedStone's WBTC/BTC (source redundancy; also keeps WBTC out of monitorsUnhealthyPriceAssets while the Chainlink WBTC/BTC round overshoots its heartbeat). 88 days: |RedStone WBTC/BTC - 1| <= ~32 bps.",
+        "type": "Custom",
+        "feed": "WBTCCrossRateRedstone",
+        "heartbeat": 86400
+      },
+      {
+        "$comment": "KEPT (today's live WBTC monitor): RedStone BTC/USD, the one monitor that shares no feed with the Chainlink BTC/USD primary. Both WBTC-specific monitors above multiply by that primary feed, so when the primary freezes past its 3600 s heartbeat they go stale with it and drop out; this one stays fresh and still raises irregular on a frozen primary (ADR 0029). It cannot see a WBTC depeg (it prices BTC), which is what the two monitors above are for. Cost unchanged from today: over 88 days to 2026-10-22, 104 short episodes above 50 bps (79 min total, longest 7 min, sharp BTC moves). Measured alternative, rejected: RedStone WBTC/BTC x RedStone BTC/USD as one independent WBTC-specific monitor gave 179 episodes / 916 min / longest 98 min at 50 bps, because WBTC's standing discount to BTC adds to the RedStone-vs-Chainlink lag.",
         "type": "Redstone",
         "address": "0xAB7f623fb2F6fea6601D4350FA0E2290663C28Fc",
         "heartbeat": 86400
@@ -868,9 +855,10 @@
     "divergenceToleranceBps": 50,
     "priceFeeds": [
       {
+        "$comment": "Priced on Chainlink BTC/USD, like WBTC (issue #356): BTC/USD primary for every BTC wrapper, the wrapper-specific price as the monitor. The previous primary, Chainlink cbBTC/USD 0x2665701293fCbEB223D11A08D826563EDcCE423A, only updates on a 2% move or every 24 h; against the RedStone cbBTC monitor it was irregular ~46% of the time over 88 days and mispriced deposits by the lag. It is dropped, not kept as a monitor (against BTC/USD it is above 50 bps ~47% of the time).",
         "type": "Chainlink",
-        "address": "0x2665701293fCbEB223D11A08D826563EDcCE423A",
-        "heartbeat": 86400
+        "address": "0xF4030086522a5bEEa4988F8cA5B36dbC97BeE88c",
+        "heartbeat": 3600
       }
     ],
     "monitorFeeds": [
@@ -881,7 +869,7 @@
         "heartbeat": 86400
       }
     ],
-    "$comment": "Coinbase Wrapped BTC. Registered so its Morpho collateral leg (MorphoMarket_cbBTC_USDC) is valued \u2014 was previously unregistered, dropping the collateral leg from NAV. Chainlink cbBTC/USD, 8 decimals."
+    "$comment": "Coinbase Wrapped BTC. Registered so its Morpho collateral leg (MorphoMarket_cbBTC_USDC) is valued \u2014 was previously unregistered, dropping the collateral leg from NAV. Priced on Chainlink BTC/USD since issue #356 (see priceFeeds[0].$comment); RedStone cbBTC/USD monitors the wrapper."
   },
   "wARS": {
     "address": "0x0DC4F92879B7670e5f4e4e6e3c801D229129D90D",
@@ -969,7 +957,7 @@
   "LINK": {
     "address": "0x514910771AF9Ca656af840dff83E8264EcF986CA",
     "accrualKind": "None",
-    "$kindComment": "ChainLink Token, 18-dp. NOT $1-pegged, so NO pegToleranceBps -> pegKind derives Floating. Labelled Governance to match the file's existing use of that segment for a protocol's own token (AAVE, UNI, COMP, ENS, EIGEN); LINK is a work/payment token rather than a governance one, and the taxonomy has no better segment today.",
+    "$kindComment": "ChainLink Token, 18-dp. NOT $1-pegged, so NO pegToleranceBps -> pegKind derives Floating. Labelled Governance to match the file's existing use of that segment for a protocol's own token (AAVE, UNI, COMP, ENS); LINK is a work/payment token rather than a governance one, and the taxonomy has no better segment today.",
     "labels": [
       "Chainlink",
       "Governance"

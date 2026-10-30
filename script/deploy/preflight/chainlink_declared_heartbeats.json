@@ -1,7 +1,7 @@
 {
   "$comment": "Snapshot of each oracle's PROVIDER-DECLARED heartbeat, for the declared-heartbeat-margin guard in declared_heartbeat_guard.py. Committed on purpose: preflight must be DETERMINISTIC and must not depend on a third-party endpoint at deploy time \u2014 a network failure should not block a deploy, and a silently-changed remote should not change the verdict. Regenerate with: python3 declared_heartbeat_guard.py --refresh. Source: Chainlink reference-data-directory. Only addresses referenced by config are recorded; an unrecorded address is reported by the guard as actionable (run --refresh) rather than silently passing.",
   "source": "https://reference-data-directory.vercel.app/",
-  "fetched": "2026-09-17",
+  "fetched": "2026-10-22",
   "chains": {
     "1": {
       "0x04f84020fdf10d9ee64d1dcc2986edf2f556da11": {
@@ -26,12 +26,6 @@
         "name": "XAU / USD",
         "declaredHeartbeat": 86400,
         "threshold": 0.3,
-        "feedCategory": "low"
-      },
-      "0x2665701293fcbeb223d11a08d826563edcce423a": {
-        "name": "cbBTC / USD",
-        "declaredHeartbeat": 86400,
-        "threshold": 2,
         "feedCategory": "low"
       },
       "0x26c46b7ad0012ca71f2298ada567dc9af14e7f2a": {
@@ -212,13 +206,19 @@
         "name": "EIGEN / USD",
         "declaredHeartbeat": 86400,
         "threshold": 2,
-        "feedCategory": "low"
+        "feedCategory": "deprecating"
       },
       "0xf4030086522a5beea4988f8ca5b36dbc97bee88c": {
         "name": "BTC / USD",
         "declaredHeartbeat": 3600,
         "threshold": 0.5,
         "feedCategory": "low"
+      },
+      "0xfdfd9c85ad200c506cf9e21f1fd8dd01932fbb23": {
+        "name": "WBTC / BTC",
+        "declaredHeartbeat": 86400,
+        "threshold": 0.5,
+        "feedCategory": "medium"
       },
       "0xff30586cd0f29ed462364c7e81375fc0c71219b1": {
         "name": "USDS / USD",
@@ -374,12 +374,6 @@
       }
     },
     "8453": {
-      "0x07da0e54543a844a80abe69c8a12f22b3aa59f9d": {
-        "name": "cbBTC / USD",
-        "declaredHeartbeat": 1200,
-        "threshold": 0.3,
-        "feedCategory": "low"
-      },
       "0x35e9d7001819ea3b39da906ae6b06a62cfe2c181": {
         "name": "weETH / eETH Exchange Rate",
         "declaredHeartbeat": 86400,
@@ -397,6 +391,12 @@
         "declaredHeartbeat": 86400,
         "threshold": 0.5,
         "feedCategory": "medium"
+      },
+      "0x64c911996d3c6ac71f9b455b1e8e7266bcbd848f": {
+        "name": "BTC / USD",
+        "declaredHeartbeat": 1200,
+        "threshold": 0.1,
+        "feedCategory": "low"
       },
       "0x71041dddad3595f9ced3dccfbe3d1f4b0a16bb70": {
         "name": "ETH / USD",
@@ -532,7 +532,7 @@
         "name": "USD / ARS",
         "declaredHeartbeat": 86400,
         "threshold": 0.5,
-        "feedCategory": ""
+        "feedCategory": "low"
       }
     }
   }

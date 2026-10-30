@@ -1,7 +1,7 @@
 {
-  "PriceFeedLib": "0x0f913658d70BB19b7B42eF9926c3df7c70fafCf2",
+  "PriceFeedLib": "0xaBCC2526a6ebCFE637EB2B660410adff60eCFB73",
   "NavRegistryLib": "0x3D5369B0b2044d62a8f643bf9a2b8CC03775934D",
-  "NAVCalculatorImplementation": "0xA7243DCDF7e4D6f8FA20A9F022186C0d0778C2b6",
+  "NAVCalculatorImplementation": "0x1D7a950730620795434216827B8D15B6Fc37e79a",
   "BridgeEscrowImplementation": "0xe2237d9776041514b1AC66856407Ed344b480De0",
   "balanceAdapters": {
     "ERC20Default": "0x4Bc39Dce61245F5A63189d1FA03E6D76646f1EE6",
@@ -16,11 +16,20 @@
   },
   "NAVCalculatorProxy": "0x54EaD2A1dB7456cA917675Ea8908ec8A997c6214",
   "customPriceFeeds": {
-    "sXDAI": "0x513F159f9a2a65fec8AC61d16203450fDC7cA893",
-    "wstETH_L2": "0x2A0Fa71f5923f720c4a622cD4Da0b7837C466612",
-    "osGNO": "0xd0e852a932490290B5bAACe8DafF04D9ec19c164"
+    "sXDAI": "0xBEF120B82415F113F8997Ff1C17360c678359187",
+    "wstETH_L2": "0x8b9f7493100fbd1D2B70f873cE270c586D49FE45",
+    "osGNO": "0xC3b09C9a8B7c7bCe3442c22A834069dF737713Ad"
   },
   "StakeWiseV3ExitQueueAssistant": "0xB111B929f443Fd48bD40a6e1e4E064a878096B6C",
   "AssetKindRegistry": "0xf60467a88C2b4d0f46C0c41C3Ba0C74da3d3CCD0",
-  "TimelockController": "0xAB92EA75D07792915eB1f29259354866B880dFC2"
+  "TimelockController": "0xAB92EA75D07792915eB1f29259354866B880dFC2",
+  "retiredCustomPriceFeeds": {
+    "$comment": "Deployed feed contracts no longer configured as NAV price sources. A SIBLING of customPriceFeeds, not a member of it, so a reset of customPriceFeeds can never destroy the retirement record.",
+    "osGNO": "0xd0e852a932490290B5bAACe8DafF04D9ec19c164",
+    "$osGNO": "RETIRED 2026-10-28. ADR 0029 rollout (2026-10-28) The contract is still deployed at the address above.",
+    "sXDAI": "0x513F159f9a2a65fec8AC61d16203450fDC7cA893",
+    "$sXDAI": "RETIRED 2026-10-28. ADR 0029 rollout (2026-10-28) The contract is still deployed at the address above.",
+    "wstETH_L2": "0x2A0Fa71f5923f720c4a622cD4Da0b7837C466612",
+    "$wstETH_L2": "RETIRED 2026-10-28. ADR 0029 rollout (2026-10-28) The contract is still deployed at the address above."
+  }
 }

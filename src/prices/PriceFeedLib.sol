@@ -196,7 +196,8 @@ library PriceFeedLib {
     ///      out-of-range price, API3 answer scaling to 0); freshness and the age cap are NOT applied here, each caller
     ///      applies its own gate. A Custom feed whose `latestRoundData` reverts or reports `updatedAt == 0` is
     ///      rate-only: `effectiveTime` is the block.timestamp-1 sentinel so it clears a heartbeat gate.
-    /// @return r The read; `r.usable == false` (and everything else zero) when the feed gives no usable price.
+    /// @return r The read; `r.usable == false` when the feed gives no usable price (the other fields are then
+    ///         meaningless — `internalStale` may be set — and callers must check `usable` first).
     function _readPrimaryFeed(IPrices.PriceFeedConfig storage cfg) private view returns (FeedRead memory r) {
         uint256 updatedAt;
         if (cfg.priceType == IPrices.PriceType.Custom) {

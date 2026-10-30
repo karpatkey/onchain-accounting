@@ -48,7 +48,8 @@
     }
   },
   "ezETH_L2": {
-    "enabled": true,
+    "enabled": false,
+    "$removedComment": "DISABLED 2026-10-23 (issue #357): its asset is removed from the NAV on this chain (no production client holds it), so this feed is NOT redeployed in the ADR 0029 rollout; the live one is deregistered by AssetKindRegistry.unregisterAsset and its record retired with retire_custom_feeds.py after that executes. The contract source and this constructor block are kept for the fork tests and in case the asset returns.",
     "constructor": {
       "ezEth": "0x2416092f143378750bb29b79eD961ab195CcEea5",
       "xRenzoDeposit": "0x2EfA125B4fcD5B082a4233BA55b53FeB2Fb4Ff33",
@@ -90,7 +91,8 @@
   },
   "ezETHCrossRate": {
     "$comment": "ezETH redundancy monitor (CrossRate): ezETH/USD = ETH/USD x ezETH/ETH. yToXFeed is the Chainlink ezETH/ETH MARKET feed, independent of the fundamental ezETH_L2 primary.",
-    "enabled": true,
+    "enabled": false,
+    "$removedComment": "DISABLED 2026-10-23 (issue #357): its asset is removed from the NAV on this chain (no production client holds it), so this feed is NOT redeployed in the ADR 0029 rollout; the live one is deregistered by AssetKindRegistry.unregisterAsset and its record retired with retire_custom_feeds.py after that executes. The contract source and this constructor block are kept for the fork tests and in case the asset returns.",
     "constructor": {
       "underlyingAsset": "0x2416092f143378750bb29b79eD961ab195CcEea5",
       "yToXFeed": "0x11E1836bFF2ce9d6A5bec9cA79dc998210f3886d",

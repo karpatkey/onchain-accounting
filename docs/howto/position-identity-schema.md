@@ -643,7 +643,7 @@ PositionBalance({
 | `LiquidCollectiveStakedEthWallet` | `liquid-collective` | `liquid-collective-staked-eth` | Staking |
 | `MapleSavingsWallet` | `maple` | `maple-savings` | Supplied |
 | `NexusMutualVaultsWallet` | `nexus-mutual` | `nexus-mutual-vaults` | Supplied |
-| `RenzoRestakedEthWallet` | `renzo` | `renzo-restaked-eth` | Staking |
+| `RenzoRestakedEthWallet` | `renzo` | `renzo-restaked-eth` | Staking (disabled in config 2026-10-23: ezETH is being removed from the NAV, issue #357; deregistered on-chain by the ADR 0029 rollout batch) |
 | `ReserveBasketsWallet` | `reserve` | `reserve-baskets` | Supplied |
 | `RocketPoolStakedEthWallet` | `rocket-pool` | `rocket-pool-staked-eth` | Staking |
 | `SkySavingsWallet` | `sky` | `sky-savings` | Supplied |

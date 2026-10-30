@@ -47,9 +47,26 @@ class PackMultiSendTest(unittest.TestCase):
         with self.assertRaises(o.OpsSafeError):
             o.pack_multisend([])
         with self.assertRaises(o.OpsSafeError):
-            o.pack_multisend([{"to": "0x1234", "value": "0", "data": "0x"}])
+            o.pack_multisend([{"to": "0x1234", "value": "0", "data": "0x01"}])  # bad address (non-empty data)
         with self.assertRaises(o.OpsSafeError):
             o.pack_multisend([{"to": A, "value": "0", "data": "0xabc"}])  # odd-length hex
+
+
+    def test_method_form_entry_without_calldata_is_refused(self):
+        # A Transaction-Builder file in the UI's method form carries data: null; packing it as "0x" would call the
+        # target's receive/fallback (e.g. a timelock's payable receive) and the rehearsal would report success.
+        entry = {"to": A, "value": "0", "data": None, "operation": 0,
+                 "contractMethod": {"name": "scheduleBatch", "inputs": []}, "contractInputsValues": {}}
+        with self.assertRaisesRegex(o.OpsSafeError, "adr0029_batch.py import"):
+            o.pack_multisend([entry])
+        with self.assertRaises(o.OpsSafeError):
+            o.pack_multisend([{"to": A, "value": "0", "operation": 0}])  # no data key at all
+
+    def test_empty_call_without_value_is_refused_but_a_plain_transfer_is_not(self):
+        with self.assertRaises(o.OpsSafeError):
+            o.pack_multisend([{"to": A, "value": "0", "data": "0x"}])
+        packed = o.pack_multisend([{"to": A, "value": "1", "data": "0x"}])
+        self.assertEqual(len(packed), 2 + 2 + 40 + 64 + 64)
 
 
 class SignatureTest(unittest.TestCase):

@@ -156,7 +156,8 @@ contract RateFeedGuardTest is Test {
         for (uint256 i; i < chains.length; ++i) {
             total += _countGuarded(chains[i]);
         }
-        // 21 rate-feed-bearing instances: 9 mainnet, 7 Arbitrum, 4 Base, 1 Gnosis. Each verified on-chain.
+        // 20 ENABLED rate-feed-bearing instances: 9 mainnet, 6 Arbitrum, 4 Base, 1 Gnosis. Each verified on-chain.
+        // (Counts ENABLED entries since issue #357; it used to count every entry, enabled or not.)
         // (Census header kept in step with the assertion below: it read 20 / 8 mainnet after #302's OETH
         // removal and was not updated when wARS took mainnet back to 9 — see the 2026-08-15 note.)
         //
@@ -215,7 +216,28 @@ contract RateFeedGuardTest is Test {
         // The band is tighter than its neighbours' on purpose: LBTC is 1:1 BTC-backed, so anything far from
         // parity is a wiring error. A BTC/USD feed swapped in here would answer ~7.6e22 at 1e18 scale and miss
         // the band by four orders of magnitude.
-        assertEq(total, 22, "rate-feed instance count changed - re-verify description() on the new set");
+        //
+        // 2026-10-22: 22 -> 23. Mainnet `WBTCCrossRate` added (issue #356) — the WBTC depeg MONITOR,
+        // ChainlinkCrossRateCustomPriceFeed: WBTC / BTC x BTC / USD, both legs read from Chainlink. Population
+        // grew by one real instance; its guarded leg's pair identity WAS confirmed on-chain first —
+        // `0xfdFD9C85aD200c506Cf9e21F1FD8dd01932FBB23` measured 2026-10-22 (block 26240000):
+        //
+        //   description()     "WBTC / BTC"
+        //   decimals()        8
+        //   latestRoundData() 99816000  ->  0.99816e18, inside the configured band (0.5-1.5e18 then; floor lowered to 0.01e18 on 2026-10-26)
+        //
+        // Its second leg (`baseUsdChainlink`, Chainlink BTC / USD `0xF403…E88c`, description "BTC / USD")
+        // is not counted here: the guard pins ONE param per instance, and that leg's identity is asserted in
+        // the feed's fork test instead.
+        // 2026-10-22: 23 -> 24. Mainnet `WBTCCrossRateRedstone` (issue #356), the second WBTC monitor: rate leg
+        // RedStone WBTC/BTC `0xD260596f85C6D91Ccd40f7076eEb62ACb3B2ad53`, description() "RedStone Price Feed for
+        // WBTC/BTC", 8 decimals, 99816289 at block 26240000 (inside the 0.01 .. 1.5 band).
+        // 2026-10-22: 24 -> 22 (issue #357). `ezETHCrossRateMarket` and `osETHCrossRate` are `enabled: false` (their
+        // RedStone legs are dead: no update since 2026-08-20, and reverting, respectively), and the census now counts
+        // enabled entries only, matching `checkAll`. A REMOVAL, so no new pair identity needed confirming.
+        // 2026-10-23: 22 -> 20 (issue #357). ezETH is removed from the NAV on mainnet and Arbitrum, so both
+        // `ezETHCrossRate` monitors are `enabled: false`. A REMOVAL, so no new pair identity needed confirming.
+        assertEq(total, 20, "rate-feed instance count changed - re-verify description() on the new set");
     }
 
     function _countGuarded(uint256 chainId) internal view returns (uint256 n) {
@@ -251,6 +273,9 @@ contract RateFeedGuardTest is Test {
     uint256 constant SYNTH_TOPPARAM = 999_904;
     uint256 constant SYNTH_INITPARAM = 999_905;
     uint256 constant SYNTH_BANDONLY = 999_906;
+    uint256 constant SYNTH_DISABLED = 999_907;
+    uint256 constant SYNTH_UNVERIFIABLE = 999_908;
+    uint256 constant SYNTH_UNVERIFIABLE_NOREASON = 999_909;
     address constant SYNTH_FEED = 0x00000000000000000000000000000000DeaDBeef;
 
     function _synthPath(uint256 chainId) internal view returns (string memory) {
@@ -286,6 +311,74 @@ contract RateFeedGuardTest is Test {
     /// @notice External wrapper so `vm.expectRevert` can observe a revert out of the internal library.
     function exposedCheckAll(uint256 chainId) external view {
         RateFeedGuard.checkAll(vm, chainId);
+    }
+
+    /// @notice External wrapper returning how many instances `checkAll` checked.
+    function exposedCheckAllCount(uint256 chainId) external view returns (uint256) {
+        return RateFeedGuard.checkAll(vm, chainId);
+    }
+
+    /// @notice **`$UNVERIFIABLE` skips ONLY the pair check, and only with a stated reason.** No committed config uses it
+    ///         outside the disabled `ezETHCrossRateMarket` entry, so these pin the branch directly:
+    ///         with a reason the description is not compared (the mock's "USD / ARS" would otherwise mismatch) and the
+    ///         band still applies; without a reason it reverts `RateFeedUnverifiableReasonMissing`.
+    function test_unverifiableDescription_needsAReason_andKeepsTheBand() public {
+        _writeSynth(
+            SYNTH_UNVERIFIABLE,
+            '{"Unverifiable":{"enabled":true,'
+            '"constructor":{"usdToAssetChainlinkAddress":"0x00000000000000000000000000000000DeaDBeeF"},'
+            '"rateFeedGuard":{"param":"usdToAssetChainlinkAddress","description":"$UNVERIFIABLE",'
+            '"descriptionUnverifiableReason":"provider description carries no pair",'
+            '"minRate1e18":"1000000000000000000000","maxRate1e18":"5000000000000000000000"}}}'
+        );
+        (bool ok,) = address(this)
+            .staticcall(abi.encodeWithSelector(this.exposedCheck.selector, SYNTH_UNVERIFIABLE, "Unverifiable"));
+        _removeSynth(SYNTH_UNVERIFIABLE);
+        assertTrue(ok, "a declared, reasoned $UNVERIFIABLE skips the pair check and passes the band");
+
+        _writeSynth(
+            SYNTH_UNVERIFIABLE_NOREASON,
+            '{"NoReason":{"enabled":true,'
+            '"constructor":{"usdToAssetChainlinkAddress":"0x00000000000000000000000000000000DeaDBeeF"},'
+            '"rateFeedGuard":{"param":"usdToAssetChainlinkAddress","description":"$UNVERIFIABLE",'
+            '"minRate1e18":"1000000000000000000000","maxRate1e18":"5000000000000000000000"}}}'
+        );
+        bytes memory ret;
+        (ok, ret) = address(this)
+            .staticcall(abi.encodeWithSelector(this.exposedCheck.selector, SYNTH_UNVERIFIABLE_NOREASON, "NoReason"));
+        _removeSynth(SYNTH_UNVERIFIABLE_NOREASON);
+        assertFalse(ok, "an unverifiable declaration without a reason must revert");
+        assertEq(
+            ret,
+            abi.encodeWithSelector(RateFeedGuard.RateFeedUnverifiableReasonMissing.selector, "NoReason", SYNTH_FEED)
+        );
+    }
+
+    /// @notice **A DISABLED entry is skipped by `checkAll`, even when its rate feed reverts** (issue #357). The guard
+    ///         runs before `03` deploys anything, so reading a dead, disabled feed would abort the whole deploy; the
+    ///         enabled sibling is still checked.
+    function test_checkAll_skipsDisabledEntries() public {
+        address dead = 0x000000000000000000000000000000000000dEaD;
+        vm.etch(dead, hex"00");
+        vm.mockCallRevert(dead, abi.encodeWithSignature("latestRoundData()"), "dead");
+        vm.mockCallRevert(dead, abi.encodeWithSignature("description()"), "dead");
+        vm.mockCallRevert(dead, abi.encodeWithSignature("decimals()"), "dead");
+        _writeSynth(
+            SYNTH_DISABLED,
+            '{"Dead":{"enabled":false,'
+            '"constructor":{"usdToAssetChainlinkAddress":"0x000000000000000000000000000000000000dEaD"},'
+            '"rateFeedGuard":{"param":"usdToAssetChainlinkAddress","description":"USD / ARS",'
+            '"minRate1e18":"100000000000000000000","maxRate1e18":"999000000000000000000000"}},'
+            '"Live":{"enabled":true,'
+            '"constructor":{"usdToAssetChainlinkAddress":"0x00000000000000000000000000000000DeaDBeeF"},'
+            '"rateFeedGuard":{"param":"usdToAssetChainlinkAddress","description":"USD / ARS",'
+            '"minRate1e18":"100000000000000000000","maxRate1e18":"999000000000000000000000"}}}'
+        );
+        (bool ok, bytes memory ret) =
+            address(this).staticcall(abi.encodeWithSelector(this.exposedCheckAllCount.selector, SYNTH_DISABLED));
+        _removeSynth(SYNTH_DISABLED);
+        assertTrue(ok, "a disabled entry with a dead feed must not abort checkAll");
+        assertEq(abi.decode(ret, (uint256)), 1, "only the enabled sibling is checked");
     }
 
     /// @notice **A band declared OUTSIDE `constructor` must still be reconciled.**
@@ -392,8 +485,19 @@ contract RateFeedGuardTest is Test {
 
 /// @dev Thin shim so the test above reads config through exactly the same reader the deploy script uses.
 library ConfigReaderShim {
-    function enabledPriceFeeds(Vm vm, uint256 chainId) internal view returns (string[] memory) {
-        return ConfigReader.getEnabledAdapters(vm, chainId, "deployPriceFeeds");
+    /// @dev ENABLED entries only, as `RateFeedGuard.checkAll` and `03` see them (`getEnabledAdapters` does not
+    ///      filter on `enabled`).
+    function enabledPriceFeeds(Vm vm, uint256 chainId) internal view returns (string[] memory names) {
+        string[] memory all = ConfigReader.getEnabledAdapters(vm, chainId, "deployPriceFeeds");
+        uint256 n;
+        for (uint256 i; i < all.length; ++i) {
+            if (ConfigReader.isPriceFeedEnabled(vm, chainId, all[i])) ++n;
+        }
+        names = new string[](n);
+        uint256 j;
+        for (uint256 i; i < all.length; ++i) {
+            if (ConfigReader.isPriceFeedEnabled(vm, chainId, all[i])) names[j++] = all[i];
+        }
     }
 
     function hasGuard(Vm vm, uint256 chainId, string memory name) internal view returns (bool) {

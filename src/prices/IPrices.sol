@@ -35,7 +35,8 @@ interface IPrices {
     /// latestRoundData() passes the same heartbeat gate (updatedAt==0 is treated as block.timestamp-1 so rate-only
     /// feeds participate but yield to any feed with a real push timestamp). A fresh feed beats a stale one; then the
     /// largest effectiveUpdatedAt wins. A stale feed still prices until it is MAX_STALE_PRICE_AGE old (ADR 0029),
-    /// so a finite primary heartbeat must be below it.
+    /// so a finite primary heartbeat must be below it. A rate-only Custom feed that reports itself stale is
+    /// unusable: it has no timestamp the cap could bound.
     struct PriceFeedConfig {
         address priceFeed;
         uint8 decimals;

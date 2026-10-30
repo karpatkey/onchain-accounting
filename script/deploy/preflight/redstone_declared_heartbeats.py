@@ -32,6 +32,8 @@ import sys
 import urllib.request
 from pathlib import Path
 
+from declared_heartbeat_guard import _parse_heartbeat
+
 REPO = Path(__file__).resolve().parents[3]
 SNAPSHOT = Path(__file__).with_name("redstone_declared_heartbeats.json")
 BASE = ("https://raw.githubusercontent.com/redstone-finance/redstone-oracles-monorepo/main/"
@@ -110,7 +112,8 @@ def declared_map(chain: str, fetch=_fetch) -> tuple[dict[str, int], list[str]]:
 def registered_redstone(chain: str) -> list[dict]:
     """Every RedStone registration in this chain's nav-config, primary and monitor alike."""
     p = REPO / f"script/config/nav-config/assets-and-price-feeds/{chain}.json"
-    cfg = json.loads(p.read_text())
+    # A chain may have custom-feed config before (or without) a nav-config file; its legs are still checked below.
+    cfg = json.loads(p.read_text()) if p.exists() else {}
     rows = []
     for asset, v in cfg.items():
         if not isinstance(v, dict):
@@ -119,8 +122,59 @@ def registered_redstone(chain: str) -> list[dict]:
             for i, f in enumerate(v.get(arr) or []):
                 if not isinstance(f, dict) or f.get("type") != "Redstone":
                     continue
+                # An absent heartbeat registers at 3600 on the deploy path (ConfigReader.readAssetFeedHeartbeat /
+                # readAssetMonitorFeedHeartbeat), so check that value rather than report it as unreadable.
                 rows.append({"asset": asset, "role": f"{arr}[{i}]",
-                             "address": f.get("address"), "heartbeat": f.get("heartbeat")})
+                             "address": f.get("address"), "heartbeat": f["heartbeat"] if "heartbeat" in f else 3600})
+    return rows + custom_feed_legs(chain)
+
+
+def _is_address(v) -> bool:
+    return isinstance(v, str) and v.startswith("0x") and len(v) == 42
+
+
+def chainlink_catalogued(chain: str) -> set[str]:
+    """Addresses the committed Chainlink snapshot records for `chain` (lowercased): legs the Chainlink guard checks."""
+    p = REPO / "script/deploy/preflight/chainlink_declared_heartbeats.json"
+    if not p.exists():
+        return set()
+    return {a.lower() for a in ((json.loads(p.read_text()).get("chains") or {}).get(str(chain)) or {})}
+
+
+def custom_feed_legs(chain: str) -> list[dict]:
+    """Every (address, heartbeat) pair inside an ENABLED custom feed's constructor, as a candidate RedStone leg.
+
+    A custom feed can read a RedStone push feed directly (issue #356: `WBTCCrossRateRedstone` reads RedStone WBTC/BTC
+    as its rate leg). That address never appears as a `type: Redstone` nav-config row, so without this it was checked
+    by neither heartbeat guard. Pairs `<stem>Heartbeat` with the one sibling address key starting with `<stem>`, the
+    same convention `declared_heartbeat_guard` uses for Chainlink legs. Rows are marked `leg: True`. `findings` holds a
+    leg found in a RedStone manifest to its declared cadence, leaves a leg in the Chainlink snapshot to the Chainlink
+    guard, and reports a leg in NEITHER as an ERROR unless recorded in UNCATALOGUED_EXCEPTIONS (a sunset RedStone feed
+    looks exactly like that). A heartbeat key with no unique address sibling is reported as `unpaired`, never dropped.
+    Only entries with `enabled: true` are read, as the deployer does.
+    """
+    p = REPO / f"script/config/contracts-deployment-config/custom-price-feeds/{chain}.json"
+    if not p.exists():
+        return []
+    rows = []
+    for name, entry in json.loads(p.read_text()).items():
+        if not isinstance(entry, dict) or entry.get("enabled") is not True:
+            continue
+        # Merge as `declared_heartbeat_guard` does and as `ConfigReader.readAdapterParam` resolves: a top-level
+        # `.<feed>.<key>` wins over `constructor`, which wins over `initialize`.
+        ctor = {**(entry.get("initialize") or {}), **(entry.get("constructor") or {}),
+                **{k: x for k, x in entry.items() if not isinstance(x, dict) and not k.startswith("$")}}
+        for hk, hv in ctor.items():
+            if not hk.endswith("Heartbeat"):
+                continue
+            stem = hk[: -len("Heartbeat")]
+            sibs = [k for k, v in ctor.items() if stem and k != hk and k.startswith(stem) and _is_address(v)]
+            if len(sibs) != 1:
+                rows.append({"asset": name, "role": f"constructor.{hk}", "address": None, "heartbeat": hv,
+                             "leg": True, "unpaired": f"{len(sibs)} address keys start with '{stem}'"})
+                continue
+            rows.append({"asset": name, "role": f"constructor.{sibs[0]}", "address": ctor[sibs[0]],
+                         "heartbeat": hv, "leg": True})
     return rows
 
 
@@ -133,9 +187,18 @@ def findings(chain: str, fetch=_fetch) -> list[tuple[str, str]]:
         out.append((ERROR, f"chain {chain}: manifest {f} could NOT be fetched, so its feeds were not "
                            f"verified against RedStone's declared cadences. Failing closed — re-run, or "
                            f"snapshot the manifests if this endpoint is unreliable."))
+    cl = chainlink_catalogued(chain)
     for r in registered_redstone(chain):
+        if r.get("unpaired"):
+            # ERROR, not WARN: only ENABLED entries are read, and an enabled leg the guard cannot pair is unchecked —
+            # unchecked must not pass. Name the leg `<stem><Something>` beside `<stem>Heartbeat`.
+            out.append((ERROR, f"custom feed '{r['asset']}' {r['role']}: {r['unpaired']}, so no rate-leg address could "
+                               f"be identified and this heartbeat is NOT checked against any declared cadence."))
+            continue
         addr = (r["address"] or "").lower()
         rh, dh = r["heartbeat"], decl.get(addr)
+        if dh is None and r.get("leg") and addr in cl:
+            continue  # a Chainlink leg: checked by declared_heartbeat_guard against the Chainlink snapshot
         if dh is None:
             note = UNCATALOGUED_EXCEPTIONS.get((chain, addr))
             if note:
@@ -148,16 +211,28 @@ def findings(chain: str, fetch=_fetch) -> list[tuple[str, str]]:
                                f"manifest that carries it to MANIFESTS, or record it in "
                                f"UNCATALOGUED_EXCEPTIONS with the evidence."))
             continue
-        if not isinstance(rh, int) or rh != dh:
+        # Parsed as the deploy path reads it (`vm.parseUint`: a JSON integer, or a decimal or `0x` hex string), by
+        # the same parser the Chainlink guard uses, so `"0xa8c0"` and `43200` are the same heartbeat to both.
+        hb = _parse_heartbeat(rh)
+        if hb is None:
+            out.append((ERROR, f"asset '{r['asset']}' {r['role']} ({r['address']}): heartbeat {rh!r} is not a decimal "
+                               f"or `0x` hex heartbeat this guard can read, so it is NOT checked against RedStone's declared "
+                               f"{dh}s."))
+        elif hb != dh:
             out.append((ERROR, f"declared-heartbeat MISMATCH: asset '{r['asset']}' {r['role']} "
-                               f"({r['address']}) is registered at {rh} but RedStone declares {dh} "
-                               f"({(rh - dh):+d}s). ADR 0025 requires exact equality; above declared is a "
+                               f"({r['address']}) is registered at {hb} but RedStone declares {dh} "
+                               f"({(hb - dh):+d}s). ADR 0025 requires exact equality; above declared is a "
                                f"window in which a dead feed still reads fresh."))
     return out
 
 
 def main(argv: list[str]) -> int:
-    chains = [a for a in argv[1:] if a.isdigit()] or list(MANIFESTS)
+    # Default scope: every chain with RedStone manifests AND every chain with a config file, so a RedStone row or
+    # custom-feed leg added on a chain without manifests is reported (as uncatalogued) instead of never examined.
+    cfg = {p.stem for d in ("script/config/nav-config/assets-and-price-feeds",
+                            "script/config/contracts-deployment-config/custom-price-feeds")
+           for p in (REPO / d).glob("*.json") if p.stem.isdigit()}
+    chains = [a for a in argv[1:] if a.isdigit()] or sorted(set(MANIFESTS) | cfg, key=int)
     total = 0
     for c in chains:
         f = findings(c)

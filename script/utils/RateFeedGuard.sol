@@ -60,8 +60,9 @@ interface IRateFeedIdentity {
 ///      very param-name-guessing escape it existed to close, because the narrowed test is just another
 ///      guessable name list. So: a feed that declares a band AND names its rate leg outside the allowlist
 ///      above receives neither a pair check nor a band reconciliation. No committed config has that shape
-///      (mainnet `wARS` is the only banded feed, and it declares a recognised param and a guard). Closing
-///      it needs an explicit config assertion, not a third heuristic.
+///      (the banded feeds, mainnet `wARS`, `WBTCCrossRate` and `WBTCCrossRateRedstone`, each declare a recognised param
+///      and a guard).
+///      Closing it needs an explicit config assertion, not a third heuristic.
 library RateFeedGuard {
     /// @notice The configured address is an aggregator, but for the wrong pair.
     error RateFeedPairMismatch(string feed, address rateFeed, string expected, string actual);
@@ -94,9 +95,10 @@ library RateFeedGuard {
     /// @dev `rateFeedGuard.min/maxRate1e18` (checked here, deploy-time) and `constructor.min/maxAnswer` (baked
     ///      into an IMMUTABLE feed, in the RATE FEED's own decimals) express one band. Nothing compared the two
     ///      before this check existed, so a drift silently shipped the UNCHECKED copy into a contract that can
-    ///      never be amended. The keys are read by `03_DeployPriceFeeds._deployInvertedFeed` (the deploy path)
-    ///      AND by `test/integration/IntegrationFromConfigBase.fork.sol` (`_deployWars`, which rebuilds the feed
-    ///      from the same config) — grep before renaming them rather than trusting this list to be closed. An
+    ///      never be amended. The keys are read by `03_DeployPriceFeeds._deployInvertedFeed` and
+    ///      `_deployChainlinkCrossRateFeed` (the deploy paths) AND by
+    ///      `test/integration/IntegrationFromConfigBase.fork.sol` (`_deployWars` / `_deployWbtcCrossRate`, which
+    ///      rebuild the feeds from the same config) — grep before renaming them rather than trusting this list to be closed. An
     ///      earlier revision of this line claimed the keys were read "at exactly ONE site and nowhere else in
     ///      the repo"; the same PR that wrote it added the second reader.
     ///      Config carried only a "keep these in step" comment, which is the documentary guard this repo
@@ -135,6 +137,10 @@ library RateFeedGuard {
     function checkAll(Vm vm, uint256 chainId) internal view returns (uint256 checked) {
         string[] memory names = ConfigReader.getEnabledAdapters(vm, chainId, "deployPriceFeeds");
         for (uint256 i; i < names.length; ++i) {
+            // `getEnabledAdapters` does NOT filter on `enabled` (see its NatSpec). A disabled entry is not deployed,
+            // and its rate feed may be dead — checking it would abort `03` before anything deploys (issue #357:
+            // osETHCrossRate's RedStone leg reverts). Same gate `03` applies per feed.
+            if (!ConfigReader.isPriceFeedEnabled(vm, chainId, names[i])) continue;
             string memory param = _guardField(vm, chainId, names[i], "param");
             if (bytes(param).length == 0) {
                 // No guard declared. Only legitimate if this instance takes no rate feed at all AND declares no

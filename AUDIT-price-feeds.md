@@ -156,6 +156,8 @@ Ranked by "would this produce a wrong NAV on a configured chain today".
 
 ### 2. ezETH's only depeg detector is now itself a fundamental feed
 
+> **Status (2026-10-23, issue #357):** closed by removal. ezETH is removed from config on mainnet and Arbitrum (no production client holds it) and deregistered on-chain by the ADR 0029 rollout batch, so there is no ezETH price left to check. The text below is the original finding.
+
 **Files:** `src/prices/protocols/ezETH_CrossRateCustomPriceFeed.sol:9-12`. Config: `custom-price-feeds/1.json` → `ezETHCrossRate.constructor.yToXFeed = 0x701e83Bd1B84D02c10587f0De9Dfad5A22419DF7`; `nav-config/assets-and-price-feeds/1.json` → `ezETH.divergenceToleranceBps = 250`, `monitorFeeds = [ezETHCrossRate]`.
 
 **What breaks.** ezETH's primary is Renzo's on-chain `calculateTVLs() / totalSupply` (`ezETH_CustomPriceFeed.sol:33-41`) — fundamental. Its **sole** monitor is `ezETHCrossRate`, whose rate leg was migrated on 2026-07-22 to **RedStone's `ezETH_FUNDAMENTAL` feed**. The config `$comment` records the swap and argues independence ("*RedStone's rate vs Renzo's*") — true of the *source*, false of the *methodology*. Two fundamental sources agreeing tells you nothing about market price.
@@ -240,6 +242,8 @@ The parent `CrossRateCustomPriceFeed` *is* tested (`test/prices/protocols/CrossR
 **Reachable.** All four are enabled and deployed on mainnet today.
 
 ### 7. `_compute()` runs twice per feed selection — and ADR 0019 made each run far more expensive
+
+> **Note (2026-10-23, issue #357):** the ezETH `calculateTVLs` worst case below leaves with ezETH (removed from the NAV); the double-compute pattern itself remains for the other feeds.
 
 **Files:** `src/prices/BaseCustomPriceFeed.sol:106` (and the identical pattern in `TwoFeedChainlinkPriceFeed.sol:135`, `ERC4626VaultRatePriceFeed.sol:126`, `ankrETH_CustomPriceFeed.sol:105`, `sDAI_CustomPriceFeed.sol:120`) against `src/prices/PriceFeedLib.sol:105-124`.
 

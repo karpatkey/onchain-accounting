@@ -131,7 +131,8 @@ def main(argv: list[str] | None = None) -> int:
     if not a.apply:
         print(f"dry run: {len(retire)} key(s) would be retired in {path}. Re-run with --apply.")
         return 0
-    path.write_text(json.dumps(new, indent=2) + "\n")
+    # ensure_ascii=False: keep the record's existing non-ASCII characters as they are (no `\uXXXX` diff noise).
+    path.write_text(json.dumps(new, indent=2, ensure_ascii=False) + "\n")
     print(f"retired {len(retire)} key(s) in {path}")
     return 0
 

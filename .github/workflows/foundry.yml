@@ -333,6 +333,42 @@ jobs:
           python3 -m unittest test_retire_custom_feeds -v
           python3 -O -m unittest test_retire_custom_feeds
 
+      - name: RedStone heartbeat guard logic (redstone_declared_heartbeats, offline)
+        # The real-config step below hits RedStone's manifests; this one pins the guard's VERDICTS offline, notably
+        # the custom-feed-leg path (issue #356): a leg in neither catalogue must fail loudly, which is how a sunset
+        # RedStone feed looks. -O as well, as above.
+        working-directory: script/deploy/preflight
+        run: |
+          python3 -m unittest test_redstone_declared_heartbeats -v
+          python3 -O -m unittest test_redstone_declared_heartbeats
+
+      - name: ADR 0029 pre-upgrade census logic (adr0029_census, offline)
+        # Pins the Rule 1 / Rule 2 verdicts against hand-encoded ABI replies, notably that a feed still in the
+        # PRE-ROLLOUT record fails and that an unreadable reply is an ERROR, never a pass. -O as well, as above.
+        working-directory: script/deploy/preflight
+        run: |
+          python3 -m unittest test_adr0029_census -v
+          python3 -O -m unittest test_adr0029_census
+
+      - name: ADR 0029 batch builder + Council fork executor logic (adr0029_batch, council_fork_exec, offline)
+        # Pins that the removal batch is refused unless what is derived from live state equals what the operator
+        # expected, the hand-encoded calldata (pinned `cast` vectors; the live `cast` cross-check is skipped here: no Foundry in this job) and the
+        # Safe signature ordering. -O as well, as above.
+        working-directory: script/deploy/preflight
+        run: |
+          python3 -m unittest test_adr0029_batch -v
+          python3 -O -m unittest test_adr0029_batch
+
+      - name: NAV timelock wrapper (timelock_wrap, offline)
+        # Offline here (no eth_abi / Foundry): pins the scheduleBatch / executeBatch encodings against pinned `cast` vectors
+        # and the plain input refusals (value, DELEGATECALL, missing calldata, bad target, empty, another chain, unstamped).
+        # The tests that need keccak/eth_abi (operation id, edited batch, live refusals, both files naming one operation)
+        # are skipped here and run wherever eth_abi is installed. -O as well, as above.
+        working-directory: script/deploy/preflight
+        run: |
+          python3 -m unittest test_timelock_wrap -v
+          python3 -O -m unittest test_timelock_wrap
+
       - name: Published addresses match the deployment records
         # Added after DEPLOYED_ADDRESSES.md was found publishing 66 addresses that appear in NO deployment
         # record — contracts from a superseded generation. Stale entries still have code, so an integrator

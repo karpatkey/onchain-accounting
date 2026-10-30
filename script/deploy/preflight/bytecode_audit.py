@@ -470,6 +470,9 @@ def _feed_addresses(ret_hex: str) -> set[str]:
     if len(raw) < 64:
         raise ValueError(f"short PriceFeedConfig[] return ({len(raw)} bytes)")
     off = int.from_bytes(raw[0:32], "big")
+    if off + 32 > len(raw):
+        # An offset past the payload would read `n = 0` and look like an empty (unregistered) list — refuse it.
+        raise ValueError(f"PriceFeedConfig[] offset {off} out of range ({len(raw)} bytes)")
     n = int.from_bytes(raw[off:off + 32], "big")
     start = off + 32
     if len(raw) < start + n * 128:

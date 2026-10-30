@@ -117,9 +117,11 @@ def _parse_heartbeat(v):
     """A config heartbeat as the deploy path reads it, or None if it cannot be read.
 
     Mirrors `ConfigReader.readAssetFeedHeartbeat` + `vm.parseUint`: a JSON integer, or a string of decimal digits
-    (leading zeros allowed) or `0x` hex. Rejects booleans, negatives and anything else (`"7d"`, `"86_400"`,
-    `" 86400"`, `"0o..."`), so one parser serves every check in this module and none can disagree with another.
-    A JSON float is truncated, which is stricter than the deploy path (it would revert) and never hides a breach.
+    (leading zeros allowed) or `0x` hex. Returns None for booleans, negatives and anything else (`"7d"`,
+    `"86_400"`, `" 86400"`, `"0o..."`), so one parser serves every check in this module (and
+    `redstone_declared_heartbeats.py`) and none can disagree with another. `vm.parseUint` also accepts a few forms
+    this rejects (`"0o10"`, `"0b11"`, `"1e3"`, a trailing space); those fail closed here. A JSON float is truncated,
+    which is more lenient than the deploy path (it reverts on a float), so it never lets a breach reach the chain.
     """
     if isinstance(v, bool) or v is None:
         return None
@@ -896,6 +898,22 @@ def _fetch_directory(fn: str) -> list:
         return json.load(resp)
 
 
+def _index_catalogue(cat: list) -> dict[str, dict]:
+    """Chainlink catalogue records keyed by every address they can be registered under (lowercased).
+
+    `secondaryProxyAddress` too: Chainlink lists some STANDARD feeds only there (Base BTC/USD 0x64c9…848F, whose
+    record's `proxyAddress` is an SVR variant). Keys are tried in order and `setdefault` keeps the first match, so a
+    record matched by its own `proxyAddress` wins over another record's secondary entry for the same address.
+    """
+    idx: dict[str, dict] = {}
+    for k in ("proxyAddress", "contractAddress", "secondaryProxyAddress"):
+        for rec in cat:
+            a = rec.get(k)
+            if isinstance(a, str):
+                idx.setdefault(a.lower(), rec)
+    return idx
+
+
 def refresh(allow_shrink: bool = False, fetch=None) -> int:
     """Re-fetch declared heartbeats for every address config references. Needs network.
 
@@ -968,12 +986,7 @@ def refresh(allow_shrink: bool = False, fetch=None) -> int:
                 total += len(prev_ent)
                 carried.append((chain_id, "fetch failed"))
             continue
-        idx: dict[str, dict] = {}
-        for rec in cat:
-            for k in ("proxyAddress", "contractAddress"):
-                a = rec.get(k)
-                if isinstance(a, str):
-                    idx.setdefault(a.lower(), rec)
+        idx = _index_catalogue(cat)
         ent = {}
         for a in sorted(refs):
             rec = idx.get(a)
@@ -1127,6 +1140,19 @@ def self_test() -> int:
     case("BELOW declared is an ERROR (manufactured staleness)", "1", snap,
          [{"asset": "T", "role": "priceFeeds[0]", "address": A, "heartbeat": 3600, "where": "x"}],
          ERROR, "BELOW declared")
+    # The catalogue index must resolve a feed listed ONLY as a `secondaryProxyAddress` (Base's standard BTC/USD),
+    # and a record's own `proxyAddress` must win over another record's secondary entry for the same address.
+    _sp, _pp = "0x" + "ab" * 20, "0x" + "cd" * 20
+    _ix = _index_catalogue([
+        {"name": "SVR", "proxyAddress": _pp, "secondaryProxyAddress": _sp, "heartbeat": 1200},
+        {"name": "OTHER", "secondaryProxyAddress": _pp, "heartbeat": 1},
+        {"name": "STD-ONLY-SECONDARY", "proxyAddress": "0x" + "ef" * 20, "secondaryProxyAddress": "0x" + "12" * 20},
+    ])
+    _good = (_ix.get(_sp, {}).get("name") == "SVR" and _ix.get(_pp, {}).get("name") == "SVR"
+             and _ix.get("0x" + "12" * 20, {}).get("name") == "STD-ONLY-SECONDARY")
+    ok = ok and _good
+    print(f"  [{'PASS' if _good else 'FAIL'}] the catalogue index resolves a secondaryProxyAddress-only feed, "
+          f"and a proxyAddress match wins")
     # ADR 0029: a primary at or above the 7-day stale cap would go from fresh straight to unusable. Driven
     # through a SYNTHETIC nav-config (not a stubbed registered_feeds), because the cap must also reach the named
     # `Custom` primaries that registered_feeds deliberately omits — an earlier version checked only enumerated

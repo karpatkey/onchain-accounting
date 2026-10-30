@@ -27,7 +27,7 @@ operator: **pin the fork block** (see the note at the rehearsal invocation — i
 path executes; it is not a deploy, and it is not an approval to deploy.
 
 Companion tooling lives in [`preflight/`](preflight/README.md). The only script there that broadcasts
-at all is `rehearse_fork.sh`, whose RPC is built as loopback (`:49`) and refused otherwise (`:57`).
+at all is `rehearse_fork.sh`, whose RPC is built as loopback (`:49`) and refused otherwise (`:56-59`).
 Four of its scripts write **git-tracked** files — and because that list has been wrong before,
 **`git status` is the check of record, not this paragraph**:
 
@@ -756,10 +756,11 @@ consequence is **stronger** than "19 chains are unreachable": a broadcast needs 
 field is not a substitute on any of them.
 
 **Supply the endpoint explicitly on every chain** — `--rpc-url` on every invocation. For **19 of the 24**
-the URL comes from that chain's `*_URL` var (`CHAIN_URL_ENV`, `chainlib.py:63-69`). **The remaining five —
-`143 monad`, `196 xlayer`, `204 opbnb`, `16661 0g`, `43111 hemi` — have no `*_URL` var at all**, so there
-is nothing to source from: pass the provisioned endpoint to `--rpc-url` directly, and if you want the
-preflight to see it too, add the chain to `CHAIN_URL_ENV` (a code change, not config). Those five are the
+the URL comes from that chain's `*_URL` var (`CHAIN_URL_ENV` in `chainlib.py`). **The remaining five —
+`143 monad`, `196 xlayer`, `204 opbnb`, `16661 0g`, `43111 hemi` — have no `*_URL` var set by default**
+(143/196/204 are mapped to `MONAD_URL`/`XLAYER_URL`/`OPBNB_URL` since 2026-10-28, normally unset; 16661/43111 have
+none), so pass the provisioned endpoint to `--rpc-url` directly, and set that var (or, for 16661/43111, add the chain to
+`CHAIN_URL_ENV`, a code change) if you want the preflight to see it too. Those five are the
 same chains that currently fall back to public RPCs — see the note below. This is **not** an either/or
 with the Alchemy app:
 because `chainConfig.rpc` is inert (see the paragraph above), enabling those networks does not hand Foundry an
@@ -1486,11 +1487,13 @@ Chains 1 (26 enabled, of 27 entries), 42161 (8), 8453 (4), 100 (3) only. Each fe
 address, held as `INAVCalculator public immutable NAV` (ADR 0019) — which is precisely why a new
 proxy invalidates every existing feed.
 
-> **ONE EXCEPTION, and step 1.5 will show it to you.** `wARS` (`InvertedChainlinkCustomPriceFeed`, a `USD / X`
-> inverter) reads no base price out of the NAV, so it takes no proxy address and exposes **no `NAV()` at all**.
-> An unreadable `NAV()` on that one feed is CORRECT, not the leftover-feed failure this step hunts — which is why
-> `verify_step` exempts it on its own `BASE_ASSET() == 0` answer and substitutes `underlyingAssetSupported()` as
-> the per-address evidence. Do not redeploy it chasing a pointer that does not exist.
+> **THE EXCEPTIONS, and step 1.5 will show them to you.** `wARS` (`InvertedChainlinkCustomPriceFeed`, a `USD / X`
+> inverter) and, since issue #356, the two WBTC monitors `WBTCCrossRate` / `WBTCCrossRateRedstone`
+> (`ChainlinkCrossRateCustomPriceFeed`, both legs read from Chainlink-ABI feeds) read no base price out of the NAV,
+> so they take no proxy address and expose **no `NAV()` at all**.
+> An unreadable `NAV()` on those feeds is CORRECT, not the leftover-feed failure this step hunts — which is why
+> `verify_step` exempts each on its own `BASE_ASSET() == 0` answer and substitutes `underlyingAssetSupported()` as
+> the per-address evidence. Do not redeploy them chasing a pointer that does not exist.
 
 > **THE COUNT IS 41 AS OF PR #308 (2026-08-15).** Re-derived from config, not carried forward:
 > **mainnet 26, arbitrum 8, base 4, gnosis 3 = 41.**
@@ -1539,7 +1542,8 @@ proxy invalidates every existing feed.
   That last one is the check that matters: a feed is otherwise indistinguishable from a correct one
   while still pricing against the abandoned NAV.
 
-  **EXCEPTION, and it is one feed today: `wARS`.** `InvertedChainlinkCustomPriceFeed` reads no base
+  **EXCEPTION: `wARS`, and since issue #356 the two WBTC monitors (`ChainlinkCrossRateCustomPriceFeed`), which
+  likewise answer `BASE_ASSET() == 0`.** `InvertedChainlinkCustomPriceFeed` reads no base
   price out of the NAV, so it has **no `NAV` immutable to point anywhere** — it answers
   `BASE_ASSET() == 0` instead. `verify_step` 1.5 and `bytecode_audit` both read `BASE_ASSET()` first and
   record `BASE_ASSET() == 0, no NAV dependency` as a CLASSIFICATION rather than a failure, so wARS is
@@ -1554,7 +1558,8 @@ proxy invalidates every existing feed.
   expected name/count set, and it declares `BASE_ASSET() == 0`. The residual exposure is a wrong-address
   or accidentally-carried-over wARS, which nothing in this step would catch. That exposure is narrow for
   a reason worth stating rather than assuming — the failure this step hunts is a feed pricing against
-  the ABANDONED NAV, and a feed that reads no price out of any NAV cannot have it. Any OTHER feed reporting `no NAV dependency` is NOT expected and should be
+  the ABANDONED NAV, and a feed that reads no price out of any NAV cannot have it. The same holds for the two
+  WBTC monitors, which are likewise NEW (issue #356) with no prior generation. Any OTHER feed reporting `no NAV dependency` is NOT expected and should be
   treated as the stale-pointer signal this step hunts.
 
 ### 1.6 `RegisterAssets` — assets + feeds on the new NAV

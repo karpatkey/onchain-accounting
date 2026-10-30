@@ -1,15 +1,20 @@
 {
-  "PriceFeedLib": "0x0f913658d70BB19b7B42eF9926c3df7c70fafCf2",
+  "PriceFeedLib": "0xaBCC2526a6ebCFE637EB2B660410adff60eCFB73",
   "NavRegistryLib": "0x3D5369B0b2044d62a8f643bf9a2b8CC03775934D",
-  "NAVCalculatorImplementation": "0xA7243DCDF7e4D6f8FA20A9F022186C0d0778C2b6",
+  "NAVCalculatorImplementation": "0x1D7a950730620795434216827B8D15B6Fc37e79a",
   "balanceAdapters": {
     "ERC20Default": "0x4Bc39Dce61245F5A63189d1FA03E6D76646f1EE6",
     "MorphoVaultsMeta": "0x72a012B30b240458C3f79fd20E5c2A907d77e54f"
   },
   "NAVCalculatorProxy": "0x54EaD2A1dB7456cA917675Ea8908ec8A997c6214",
   "customPriceFeeds": {
-    "wARS": "0xC67360B2Cf8d23849ad2b7F3E79AB813D64A94C5"
+    "wARS": "0x3edc5A9B0DB866779aca1710B4F27179E160920E"
   },
   "AssetKindRegistry": "0xf60467a88C2b4d0f46C0c41C3Ba0C74da3d3CCD0",
-  "TimelockController": "0xAB92EA75D07792915eB1f29259354866B880dFC2"
+  "TimelockController": "0xAB92EA75D07792915eB1f29259354866B880dFC2",
+  "retiredCustomPriceFeeds": {
+    "$comment": "Deployed feed contracts no longer configured as NAV price sources. A SIBLING of customPriceFeeds, not a member of it, so a reset of customPriceFeeds can never destroy the retirement record.",
+    "wARS": "0xC67360B2Cf8d23849ad2b7F3E79AB813D64A94C5",
+    "$wARS": "RETIRED 2026-10-28. ADR 0029 rollout (2026-10-28) The contract is still deployed at the address above."
+  }
 }

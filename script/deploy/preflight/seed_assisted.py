@@ -260,9 +260,9 @@ def probe_coords_of(url: str, adapter: str, label: str) -> None:
         raise SeedError(f"{label} {adapter} answered coordsOf with {str(ret)[:66]} — not an assisted adapter")
 
 
-def cached_counts(url: str, adapter: str, accounts: set[str]) -> dict[str, int]:
-    """How many entries each account ALREADY has in `adapter` (counts toward the keeper limit)."""
-    return {a: len(decode_bytes_array(c.eth_call(url, adapter, "0x" + SEL_COORDS_OF + _addr_word(a))))
+def cached_sets(url: str, adapter: str, accounts: set[str]) -> dict[str, set[bytes]]:
+    """The coordinates each account ALREADY has in `adapter` (they count toward the keeper limit)."""
+    return {a: set(decode_bytes_array(c.eth_call(url, adapter, "0x" + SEL_COORDS_OF + _addr_word(a))))
             for a in sorted(accounts)}
 
 
@@ -321,12 +321,18 @@ def dedupe(pairs: list[tuple[str, bytes]]) -> list[tuple[str, bytes]]:
 
 
 def over_headroom(pairs: list[tuple[str, bytes]], headroom: int,
-                  existing: dict[str, int] | None = None) -> dict[str, int]:
-    """Accounts the plan would fill past `headroom` entries, counting what the NEW cache already holds."""
-    count: dict[str, int] = dict(existing or {})
-    for a, _ in pairs:
-        count[a] = count.get(a, 0) + 1
-    return {a: n for a, n in count.items() if n > headroom}
+                  existing: dict[str, set[bytes]] | None = None) -> dict[str, int]:
+    """Accounts whose cache would exceed `headroom` entries after the plan: the UNION of what the NEW cache already
+    holds and what the plan adds (a re-run re-plans cached coordinates; they must not count twice)."""
+    total: dict[str, set[bytes]] = {a: set(s) for a, s in (existing or {}).items()}
+    for a, x in pairs:
+        total.setdefault(a, set()).add(x)
+    return {a: len(s) for a, s in total.items() if len(s) > headroom}
+
+
+def not_yet_cached(pairs: list[tuple[str, bytes]], existing: dict[str, set[bytes]]) -> list[tuple[str, bytes]]:
+    """Drop coordinates the NEW cache already holds, so a re-run only sends what is missing."""
+    return [(a, x) for a, x in pairs if x not in existing.get(a, set())]
 
 
 def chunks(new: str, pairs: list[tuple[str, bytes]], size: int) -> list[dict]:
@@ -385,15 +391,18 @@ def main(argv: list[str] | None = None) -> int:
         discovered, skipped = discover(a.chain, a.member, url, accts, a.from_block, vaults)
     pairs = dedupe(migrated + discovered)
     ok, rejected = validate(url, a.new, pairs)
+    existing = cached_sets(url, a.new, {x for x, _ in ok})
+    to_send = not_yet_cached(ok, existing)
     plan = {"chain": a.chain, "member": a.member, "old": a.old, "new": a.new,
             "migrated": len(migrated), "discovered": len(discovered), "kept": len(ok),
             "skipped_not_created_by_account": skipped, "rejected_by_preview": rejected,
-            "accounts_over_headroom": over_headroom(ok, a.headroom,
-                                                    cached_counts(url, a.new, {x for x, _ in ok})),
-            "chunks": chunks(a.new, ok, a.chunk)}
+            "accounts_over_headroom": over_headroom(ok, a.headroom, existing),
+            "already_cached": len(ok) - len(to_send), "to_send": len(to_send),
+            "chunks": chunks(a.new, to_send, a.chunk)}
     json.dump(plan, open(a.out, "w"), indent=2)
     print(f"{a.member}: migrated {len(migrated)}, discovered {len(discovered)}, kept {len(ok)}, "
-          f"skipped {len(skipped)}, rejected {len(rejected)} → {len(plan['chunks'])} chunk(s) in {a.out}")
+          f"skipped {len(skipped)}, rejected {len(rejected)}, already cached {plan['already_cached']} → "
+          f"{plan['to_send']} to send in {len(plan['chunks'])} chunk(s), {a.out}")
     if plan["accounts_over_headroom"]:
         print(f"WARNING: over --headroom {a.headroom}: {plan['accounts_over_headroom']} — review before sending",
               file=sys.stderr)

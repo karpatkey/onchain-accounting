@@ -54,9 +54,15 @@ class Planning(unittest.TestCase):
         self.assertEqual(s.over_headroom(pairs, 2), {A1: 3})
         self.assertEqual(s.over_headroom(pairs, 3), {})
 
-    def test_over_headroom_counts_existing_entries(self):
-        pairs = [(A1, s.coord_token(1))]
-        self.assertEqual(s.over_headroom(pairs, 2, {A1: 2}), {A1: 3})
+    def test_over_headroom_counts_the_union(self):
+        pairs = [(A1, s.coord_token(1)), (A1, s.coord_token(2))]
+        cached = {A1: {s.coord_token(1), s.coord_token(2)}}
+        self.assertEqual(s.over_headroom(pairs, 2, cached), {}, "a re-run must not double count")
+        self.assertEqual(s.over_headroom(pairs + [(A1, s.coord_token(3))], 2, cached), {A1: 3})
+
+    def test_rerun_sends_only_missing(self):
+        pairs = [(A1, s.coord_token(1)), (A1, s.coord_token(2)), (A2, s.coord_token(1))]
+        self.assertEqual(s.not_yet_cached(pairs, {A1: {s.coord_token(1)}}), [(A1, s.coord_token(2)), (A2, s.coord_token(1))])
 
     def test_chunk_size_must_be_positive(self):
         with self.assertRaises(s.SeedError):

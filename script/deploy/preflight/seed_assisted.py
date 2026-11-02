@@ -172,7 +172,8 @@ def emitted_inside_account_frame(trace: dict, log: dict, account: str) -> bool:
     a, target = account.lower(), _log_key(log)
 
     def walk(frame: dict, inside: bool):
-        inside = inside or (frame.get("to", "").lower() == a
+        # A real CALL only: DELEGATECALL / CALLCODE to the Safe run its code in the CALLER's context, not the Safe's.
+        inside = inside or ((frame.get("type") or "").upper() == "CALL" and frame.get("to", "").lower() == a
                             and (frame.get("input") or "")[:10].lower() in SAFE_EXEC_SELECTORS)
         for lg in frame.get("logs") or []:
             if _log_key(lg) == target:

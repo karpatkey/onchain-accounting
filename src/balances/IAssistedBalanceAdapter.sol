@@ -84,4 +84,10 @@ interface IAssistedBalanceAdapter is IAccessControl, IBalanceAdapter {
     ///         re-submitted. Consistent with the family invariant it only ever **under-reports** the caller's own NAV;
     ///         it is not NAV-neutral when live coordinates are present.
     function clearAccount() external;
+
+    /// @notice Drop ONE of the caller's own cached coordinates, live or not (keyed on `msg.sender`). The selective
+    ///         form of {clearAccount}: it lets a Safe whose cache a keeper filled with positions a third party created
+    ///         in its name (ADR 0030 S13) free slots without dropping its real entries. Like {clearAccount} it can
+    ///         only under-report the caller's own NAV. Reverts `CoordinateNotCached` / {NonCanonicalCoordinate}.
+    function evict(bytes calldata coord) external;
 }

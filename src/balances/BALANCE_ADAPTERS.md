@@ -400,6 +400,7 @@ interface IAssistedBalanceAdapter is IAccessControl, IBalanceAdapter {
     function removeFor(address account, bytes calldata coord) external;                      // anyone, once provably dead
     function previewPositions(address account, bytes calldata data) external view returns (PositionBalance[] memory);
     function clearAccount() external; // self-service GC of the caller's cache
+    function evict(bytes calldata coord) external; // drop one of the caller's own entries, live or not
 }
 ```
 

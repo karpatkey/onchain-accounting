@@ -69,8 +69,8 @@ def _log(data):
     return {"address": PROTO, "topics": [s.TOPIC_EXIT_ENTERED], "data": data}
 
 
-def _frame(frm, to, logs=(), calls=(), sel="0x12345678"):
-    return {"from": frm, "to": to, "input": sel + "00" * 4, "logs": list(logs), "calls": list(calls)}
+def _frame(frm, to, logs=(), calls=(), sel="0x12345678", typ="CALL"):
+    return {"type": typ, "from": frm, "to": to, "input": sel + "00" * 4, "logs": list(logs), "calls": list(calls)}
 
 
 EXEC_MODULE = "0x468721a7"
@@ -89,6 +89,13 @@ class Provenance(unittest.TestCase):
     def test_owner_exec_counts(self):
         tr = _frame(EOA, SAFE, sel=EXEC_OWNER, calls=[_frame(SAFE, PROTO, logs=[_log("0x01")])])
         self.assertTrue(s.emitted_inside_account_frame(tr, _log("0x01"), SAFE))
+
+    def test_delegated_safe_code_does_not_count(self):
+        # an attacker contract DELEGATECALLs / CALLCODEs the Safe's code with execTransaction: runs in ITS context
+        for typ in ("DELEGATECALL", "CALLCODE"):
+            tr = _frame(EOA, ROLES, calls=[_frame(ROLES, SAFE, sel=EXEC_OWNER, typ=typ,
+                                                  calls=[_frame(ROLES, PROTO, logs=[_log("0x01")])])])
+            self.assertFalse(s.emitted_inside_account_frame(tr, _log("0x01"), SAFE), typ)
 
     def test_fallback_handler_frame_does_not_count(self):
         # someone calls the Safe's fallback (no exec selector); the Safe forwards to its handler, which emits

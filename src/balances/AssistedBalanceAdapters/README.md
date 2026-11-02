@@ -33,7 +33,7 @@ Consequences:
 The family is fed by an on-chain **assistant** contract the owner **delegatecalls** ([ADR 0018](../../../docs/decisions/0018-assistant-fed-assisted-balance-adapters.md)):
 
 - **Owner path** — the typed `submit`/`remove` and `clearAccount` key on `msg.sender`, so a caller can only touch its own set.
-- **Keeper path ([ADR 0030](../../../docs/decisions/0030-assisted-adapters-keeper-submit-and-preview.md))** — for positions the owner did NOT open through its assistant (a Safe that entered the protocol directly, a StakeWise remainder ticket after a partial claim). `submitFor(account, coord)` / `submitForBatch` require `SUBMITTER_ROLE` (a keeper; `DEFAULT_ADMIN_ROLE` = the Security Council) and run the same `_validateCoord(account, coord)` as the owner path, so a coordinate is filed only under the account the protocol says owns it. The keeper path stops `OWNER_RESERVE` (32) slots short of the cap, so the owner's Assistant `submit` always has room. `removeFor(account, coord)` is permissionless but succeeds only when the protocol PROVES the position is gone (`_isDead`; a reverting read never counts). `previewPositions(account, abi.encode(bytes[]))` values caller-supplied coordinates without touching the cache, validating each like a submit and reverting on a bad one.
+- **Keeper path ([ADR 0030](../../../docs/decisions/0030-assisted-adapters-keeper-submit-and-preview.md))** — for positions the owner did NOT open through its assistant (a Safe that entered the protocol directly, a StakeWise remainder ticket after a partial claim). `submitFor(account, coord)` / `submitForBatch` require `SUBMITTER_ROLE` (a keeper; `DEFAULT_ADMIN_ROLE` = the Security Council) and run the same `_validateCoord(account, coord)` as the owner path, so a coordinate is filed only under the account the protocol says owns it. The keeper path stops `OWNER_RESERVE` (32) slots short of the cap, so the owner's Assistant `submit` always has room; `evict(coord)` lets the owner drop one entry of its own set regardless of liveness (selective `clearAccount`). `removeFor(account, coord)` is permissionless but succeeds only when the protocol PROVES the position is gone (`_isDead`; a reverting read never counts). `previewPositions(account, abi.encode(bytes[]))` values caller-supplied coordinates without touching the cache, validating each like a submit and reverting on a bad one.
 - Cache base: **`AssistedCoordCache`** (§4). Submit shape: incremental `submit`/`remove`, atomic with the protocol deposit/claim.
 - Members: **Nexus, StakeWise, ether.fi** (§6).
 
@@ -55,10 +55,10 @@ mapping(address => bytes[])                     _coords;    // per-account coord
 mapping(address => mapping(bytes32 => uint256)) _idxPlus1;  // keccak256(coord) -> index+1 (dedup + O(1) swap-pop)
 ```
 
-- The owner path (`submit`/`remove`/`clearAccount`) is **self-scoped**: it keys on `msg.sender`, so a caller can only ever touch its **own** set. The keeper path (§3) writes another account's set, but only coordinates that account owns, through the same internal admission (`_addEntry`), and with the exact coordinate length each member declares (`_coordLength`, so one position has one cache key).
+- The owner path (`submit`/`remove`/`clearAccount`/`evict`) is **self-scoped**: it keys on `msg.sender`, so a caller can only ever touch its **own** set. The keeper path (§3) writes another account's set, but only coordinates that account owns, through the same internal admission (`_addEntry`), and with the exact coordinate length each member declares (`_coordLength`, so one position has one cache key).
 - **`_submitCoord(bytes coord)`** — re-validates ownership on *every* call (via `_validateCoord`, **before** the dedup early-return, so resubmitting a coordinate you've since transferred away reverts), dedups by `keccak256(coord)`, caps at `_maxCoords()` (`CoordinateCacheFull`), pushes.
 - **`_removeCoord(bytes coord)`** — fail-loud: reverts `CoordinateNotCached` if the caller isn't tracking it, `CoordinateStillLive` if `_removable` says it's not yet droppable; else swap-pops.
-- **`clearAccount()`** — self-service GC of the caller's whole set (the one method `IAssistedBalanceAdapter` prescribes).
+- **`clearAccount()`** — self-service GC of the caller's whole set; **`evict(coord)`** drops one of the caller's own entries regardless of liveness (ADR 0030).
 
 ### 4.2 Valuation — fail-open fan-out
 
@@ -107,6 +107,7 @@ interface IAssistedBalanceAdapter is IAccessControl, IBalanceAdapter {
     function removeFor(address account, bytes calldata coord) external;                      // anyone, proof of death
     function previewPositions(address account, bytes calldata data) external view returns (PositionBalance[] memory);
     function clearAccount() external;   // self-service GC; msg.sender-keyed
+    function evict(bytes calldata coord) external; // drop one of the caller's own entries, live or not
 }
 ```
 
@@ -134,7 +135,7 @@ An **assistant** is the on-chain feeder that keeps an adapter's cache current, a
 **Residual risk, stated accurately.** The risk is *not* "an operator bypasses the process" — that path is not permitted. It is: **a change to the roles permission set adds a path that reaches the protocol without going through the assistant.** After such a change the cache silently misses positions, and **there is no tripwire anywhere in this repository** that would detect it — the adapters would report a smaller-but-internally-consistent set, and every contract-level invariant would still hold. So roles-permission changes touching these protocols are the thing to review.
 
 - **Open via the assistant.** Enforced by roles; the direct entrypoint is not callable. Were it ever reachable, the position would be created on-chain with its coordinate **never cached**, so NAV could not see it — silently **under-counted** until the coordinate is submitted — by the owner Safe after the fact, or by the keeper's `submitFor` (ADR 0030).
-- **Close via the assistant.** Claiming/withdrawing through the assistant prunes the cache in the same tx. A direct close would leave a stale coordinate — harmless (it values live to `0` and is discarded on read; `remove`/`clearAccount`, or anyone's `removeFor` once the protocol proves it gone, GC it) but it wastes read gas and the cap.
+- **Close via the assistant.** Claiming/withdrawing through the assistant prunes the cache in the same tx. A direct close would leave a stale coordinate — harmless (it values live to `0` and is discarded on read; `remove`/`evict`/`clearAccount`, or anyone's `removeFor` once the protocol proves it gone, GC it) but it wastes read gas and the cap.
 - **The contract-level "under-report only" property is the defence-in-depth that survives if the roles half is ever removed**: bypassing the assistant can only make NAV *miss* a position, never invent one. That is why the two halves are stated together — the roles layer makes the cache complete, and the contract layer bounds the damage if it ever stops being so.
 
 Concretely: instead of `LiquidityPool.requestWithdraw(...)` the Safe delegatecalls `EtherFiWithdrawalQueueAssistant.requestWithdraw(...)`; instead of `vault.enterExitQueue(...)` it delegatecalls `StakeWiseV3ExitQueueAssistant.enterExitQueue(...)`; etc. The assistant forwards to the very same protocol function (same effect on funds) **and** records the coordinate — one atomic transaction, no separate bookkeeping step that could be forgotten or fall out of sync.

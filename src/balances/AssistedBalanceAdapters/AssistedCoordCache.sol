@@ -153,6 +153,12 @@ abstract contract AssistedCoordCache is IAssistedBalanceAdapter, AccessControl {
         emit AccountCleared(msg.sender);
     }
 
+    /// @inheritdoc IAssistedBalanceAdapter
+    function evict(bytes calldata coord) external {
+        _requireCanonical(coord);
+        _removeEntry(msg.sender, coord, true);
+    }
+
     //
     // Reads
     //

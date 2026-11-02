@@ -253,6 +253,49 @@ contract EtherFiKeeperPathTest is BalanceAdapterTestBase {
         adapter.submit(cap + 1);
     }
 
+    /// @notice S13 recovery: after a keeper saturated its share with live positions and the owner used its reserve, the
+    ///         owner frees one slot with `evict` (live entry, no liveness gate) without losing its other entries.
+    function test_evict_ownerFreesSlotAfterKeeperSaturation() public {
+        uint256 cap = adapter.MAX_TOKEN_IDS();
+        uint256 keeperLimit = cap - adapter.OWNER_RESERVE();
+        for (uint256 i = 1; i <= cap; ++i) {
+            _pending(i, holder);
+            if (i <= keeperLimit) {
+                vm.prank(keeper);
+                adapter.submitFor(holder, _coord(i));
+            } else {
+                vm.prank(holder);
+                adapter.submit(i);
+            }
+        }
+        _pending(cap + 1, holder);
+        vm.expectRevert(abi.encodeWithSelector(CoordinateCacheFull.selector, holder, cap));
+        vm.prank(holder);
+        adapter.submit(cap + 1);
+
+        vm.prank(holder);
+        adapter.evict(_coord(1)); // a keeper-filed, still-live entry
+        vm.prank(holder);
+        adapter.submit(cap + 1);
+        assertEq(adapter.tokenIdsOf(holder).length, cap);
+    }
+
+    function test_evict_nonCanonicalReverts() public {
+        vm.expectRevert(abi.encodeWithSelector(IAssistedBalanceAdapter.NonCanonicalCoordinate.selector, 33, 32));
+        vm.prank(holder);
+        adapter.evict(abi.encodePacked(_coord(7), bytes1(0)));
+    }
+
+    function test_evict_onlyTouchesCallersOwnSet() public {
+        _pending(7, holder);
+        vm.prank(keeper);
+        adapter.submitFor(holder, _coord(7));
+        vm.expectRevert(abi.encodeWithSelector(CoordinateNotCached.selector, other, 7));
+        vm.prank(other);
+        adapter.evict(_coord(7));
+        assertEq(adapter.tokenIdsOf(holder).length, 1);
+    }
+
     // ---- removeFor (S6) ----
 
     function _cached(uint256 id) internal {

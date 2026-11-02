@@ -66,7 +66,8 @@ abstract contract AssistedCoordCache is IAssistedBalanceAdapter, AccessControl {
     /// @dev Gates {submitFor}/{submitForBatch} only. The owner path, {removeFor} and {clearAccount} stay open.
     bytes32 public constant SUBMITTER_ROLE = SUBMITTER;
 
-    /// @notice Cache slots the keeper path can never use, so an account's own Assistant `submit` always has room. Anyone
+    /// @notice Cache slots the keeper path can never use, so an account always keeps at least this many for its own
+    ///         Assistant `submit` (beyond that, `evict` frees room). Anyone
     ///         can create a live position OWNED by a Safe; if a keeper could file those up to the full cap, the Safe's
     ///         Assistant path (whose `submit` is not caught) would revert until it cleared its cache (ADR 0030 S13).
     uint256 public constant OWNER_RESERVE = 32;

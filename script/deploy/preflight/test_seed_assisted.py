@@ -54,6 +54,10 @@ class Planning(unittest.TestCase):
         self.assertEqual(s.over_headroom(pairs, 2), {A1: 3})
         self.assertEqual(s.over_headroom(pairs, 3), {})
 
+    def test_over_headroom_counts_existing_entries(self):
+        pairs = [(A1, s.coord_token(1))]
+        self.assertEqual(s.over_headroom(pairs, 2, {A1: 2}), {A1: 3})
+
     def test_chunk_size_must_be_positive(self):
         with self.assertRaises(s.SeedError):
             s.chunks(A2, [(A1, s.coord_token(1))], 0)
@@ -197,6 +201,20 @@ class Discovery(unittest.TestCase):
         s.c.get_code = lambda url, addr: "0x"
         with self.assertRaises(s.SeedError):
             s.validate("u", A2, [(SAFE, s.coord_token(1))])
+
+    def test_trace_rpc_failure_aborts(self):
+        def boom(url, m, params):
+            raise s.c.RpcError("debug_traceTransaction: method not found")
+        s.c.rpc = boom
+        with self.assertRaises(s.SeedError):
+            s.created_by_account("u", {"transactionHash": "0xa"}, SAFE, {})
+
+    def test_old_adapter_probe(self):
+        s.c.eth_call = lambda url, to, data: "0x"
+        with self.assertRaises(s.SeedError):
+            s.probe_coords_of("u", A2, "--old")
+        s.c.eth_call = lambda url, to, data: "0x" + s._word(32) + s._word(0)
+        s.probe_coords_of("u", A2, "--old")  # an empty bytes[] is a valid answer
 
     def test_migrate_reads_live_cache_per_account(self):
         logs = [{"topics": [s.TOPIC_COORD_SUBMITTED, "0x" + s._addr_word(SAFE)]},

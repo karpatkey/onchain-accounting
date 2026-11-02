@@ -250,6 +250,22 @@ def discover(chain: int, member: str, url: str, accounts: list[str], from_block:
     return found, skipped
 
 
+def probe_coords_of(url: str, adapter: str, label: str) -> None:
+    """Abort unless `adapter` answers `coordsOf(address)` with a `bytes[]` (i.e. it is an assisted adapter)."""
+    try:
+        ret = c.eth_call(url, adapter, "0x" + SEL_COORDS_OF + _addr_word("0x" + "00" * 19 + "01"))
+    except c.RpcError as e:
+        raise SeedError(f"{label} {adapter} does not serve coordsOf(address): {str(e)[:120]}") from e
+    if not is_abi_array_reply(ret):
+        raise SeedError(f"{label} {adapter} answered coordsOf with {str(ret)[:66]} — not an assisted adapter")
+
+
+def cached_counts(url: str, adapter: str, accounts: set[str]) -> dict[str, int]:
+    """How many entries each account ALREADY has in `adapter` (counts toward the keeper limit)."""
+    return {a: len(decode_bytes_array(c.eth_call(url, adapter, "0x" + SEL_COORDS_OF + _addr_word(a))))
+            for a in sorted(accounts)}
+
+
 def migrate(chain: int, url: str, old: str, from_block: int) -> list[tuple[str, bytes]]:
     logs = etherscan_logs(chain, old, {"topic0": TOPIC_COORD_SUBMITTED}, from_block)
     accounts = sorted({"0x" + lg["topics"][1][-40:] for lg in logs})
@@ -304,9 +320,10 @@ def dedupe(pairs: list[tuple[str, bytes]]) -> list[tuple[str, bytes]]:
     return out
 
 
-def over_headroom(pairs: list[tuple[str, bytes]], headroom: int) -> dict[str, int]:
-    """Accounts the plan alone would fill past `headroom` entries (a full cache blocks the Safe's Assistant path)."""
-    count: dict[str, int] = {}
+def over_headroom(pairs: list[tuple[str, bytes]], headroom: int,
+                  existing: dict[str, int] | None = None) -> dict[str, int]:
+    """Accounts the plan would fill past `headroom` entries, counting what the NEW cache already holds."""
+    count: dict[str, int] = dict(existing or {})
     for a, _ in pairs:
         count[a] = count.get(a, 0) + 1
     return {a: n for a, n in count.items() if n > headroom}
@@ -333,6 +350,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--stakewise-vaults", default="", help="comma-separated vaults to scan (stakewise)")
     ap.add_argument("--from-block", type=int, default=0)
     ap.add_argument("--chunk", type=int, default=50)
+    ap.add_argument("--allow-empty-migration", action="store_true",
+                    help="accept an old adapter with nothing cached (otherwise migrated == 0 aborts)")
     ap.add_argument("--headroom", type=int, default=200,
                     help="flag accounts the plan would fill past this many entries (keeper limit 224 = cap 256 - "
                          "OWNER_RESERVE 32; ADR 0030 S13)")
@@ -349,7 +368,13 @@ def main(argv: list[str] | None = None) -> int:
     for label, addr in (("--old", a.old), ("--new", a.new)):
         if c.get_code(url, addr) in ("0x", "", None):
             raise SeedError(f"{label} {addr} has no code on chain {a.chain}")
+    if a.old.lower() == a.new.lower():
+        raise SeedError("--old and --new are the same address")
+    probe_coords_of(url, a.old, "--old")
+    probe_coords_of(url, a.new, "--new")
     migrated = migrate(a.chain, url, a.old, a.from_block)
+    if not migrated and not a.allow_empty_migration:
+        raise SeedError(f"--old {a.old} has nothing cached — wrong address? (pass --allow-empty-migration if expected)")
     discovered, skipped = [], []
     if a.accounts:
         accts = [ln.strip() for ln in open(a.accounts) if ln.strip() and not ln.strip().startswith("#")]
@@ -363,7 +388,8 @@ def main(argv: list[str] | None = None) -> int:
     plan = {"chain": a.chain, "member": a.member, "old": a.old, "new": a.new,
             "migrated": len(migrated), "discovered": len(discovered), "kept": len(ok),
             "skipped_not_created_by_account": skipped, "rejected_by_preview": rejected,
-            "accounts_over_headroom": over_headroom(ok, a.headroom),
+            "accounts_over_headroom": over_headroom(ok, a.headroom,
+                                                    cached_counts(url, a.new, {x for x, _ in ok})),
             "chunks": chunks(a.new, ok, a.chunk)}
     json.dump(plan, open(a.out, "w"), indent=2)
     print(f"{a.member}: migrated {len(migrated)}, discovered {len(discovered)}, kept {len(ok)}, "

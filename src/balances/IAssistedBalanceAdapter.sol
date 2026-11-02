@@ -55,8 +55,8 @@ interface IAssistedBalanceAdapter is IAccessControl, IBalanceAdapter {
 
     /// @notice File `coord` under `account`, which the protocol must say owns it (idempotent). Requires
     ///         {SUBMITTER_ROLE}. Reverts `CoordinateNotOwned` / `InvalidCoordinate` on a bad or non-owned
-    ///         coordinate, `CoordinateCacheFull` once the account holds the cap minus `OWNER_RESERVE` entries (the reserve stays for the
-    ///         owner's own submit), {NonCanonicalCoordinate} on a wrong encoding.
+    ///         coordinate, `CoordinateCacheFull` once the account holds the cap minus `OWNER_RESERVE` entries
+    ///         (the reserve stays for the owner's own submit), {NonCanonicalCoordinate} on a wrong encoding.
     function submitFor(address account, bytes calldata coord) external;
 
     /// @notice Batch {submitFor}; all-or-nothing. Requires {SUBMITTER_ROLE}.
@@ -89,5 +89,6 @@ interface IAssistedBalanceAdapter is IAccessControl, IBalanceAdapter {
     ///         form of {clearAccount}: it lets a Safe whose cache a keeper filled with positions a third party created
     ///         in its name (ADR 0030 S13) free slots without dropping its real entries. Like {clearAccount} it can
     ///         only under-report the caller's own NAV. Reverts `CoordinateNotCached` / {NonCanonicalCoordinate}.
+    ///         Not reachable through an Assistant: a roles-operated Safe needs a roles entry for it (or a signer tx).
     function evict(bytes calldata coord) external;
 }

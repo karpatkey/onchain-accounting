@@ -2,7 +2,7 @@
 
 Reference for the **assisted** balance-adapter family and the **assistant** feeder contracts that keep it current. This folder holds the adapters (`*.sol` here), the single shared cache base (`AssistedCoordCache.sol`), and the assistant foundation + concretes (`assistants/`).
 
-- **ADRs:** [0015](../../../docs/decisions/0015-assisted-balance-adapter-family.md) (the family), [0018](../../../docs/decisions/0018-assistant-fed-assisted-balance-adapters.md) (the permissionless assistant-fed variant), [0014](../../../docs/decisions/0014-agent-fed-cache-adapters-for-exit-queues.md) (the original agent-fed queues), [0017](../../../docs/decisions/0017-lp-valuation-instantaneous-amounts.md) (instantaneous LP valuation / async-NAV threat model).
+- **ADRs:** [0015](../../../docs/decisions/0015-assisted-balance-adapter-family.md) (the family), [0018](../../../docs/decisions/0018-assistant-fed-assisted-balance-adapters.md) (the assistant-fed variant), [0030](../../../docs/decisions/0030-assisted-adapters-keeper-submit-and-preview.md) (keeper `submitFor`, proof-of-death `removeFor`, cache-free `previewPositions`), [0014](../../../docs/decisions/0014-agent-fed-cache-adapters-for-exit-queues.md) (the original agent-fed queues), [0017](../../../docs/decisions/0017-lp-valuation-instantaneous-amounts.md) (instantaneous LP valuation / async-NAV threat model).
 
 ---
 
@@ -25,18 +25,19 @@ Every member — regardless of who feeds it — upholds one invariant:
 Consequences:
 
 - A faulty or malicious feeder can only ever **under-report, never over-report** NAV. It cannot fabricate a balance, because amounts are always read live from the protocol and a coordinate that isn't (or is no longer) owned by the account values to `0` and is discarded.
-- **In production the cache is also COMPLETE, not merely conservative** — so "under-report only" understates the actual guarantee. The portfolio Safes' **roles-modifier allow-list permits these protocol entries only through the assistant contracts**, so a position of these types cannot be active without having been fed. That half is enforced **outside this repository** (see [§5.0](#50-the-assistant-is-the-only-path--enforced-on-chain-by-the-safes-roles-modifier)) — nothing here enforces it, since `submit`/`remove` are permissionless and `msg.sender`-keyed.
+- **In production the cache is also COMPLETE, not merely conservative** — so "under-report only" understates the actual guarantee. The portfolio Safes' **roles-modifier allow-list permits these protocol entries only through the assistant contracts**, so a position of these types cannot be active without having been fed. That half is enforced **outside this repository** (see [§5.0](#50-the-assistant-is-the-only-path--enforced-on-chain-by-the-safes-roles-modifier)) — nothing here enforces it, since the owner `submit`/`remove` are `msg.sender`-keyed and the keeper path only adds coverage.
 - These adapters are the documented exception to the "adapters are immutable / no mutable storage" rule — the coordinate cache is their only mutable state.
 
 ## 3. Feeding: assistant-fed
 
 The family is fed by an on-chain **assistant** contract the owner **delegatecalls** ([ADR 0018](../../../docs/decisions/0018-assistant-fed-assisted-balance-adapters.md)):
 
-- **Permissionless** — the cache mutators key on `msg.sender`, so a caller can only touch its own set.
+- **Owner path** — the typed `submit`/`remove` and `clearAccount` key on `msg.sender`, so a caller can only touch its own set.
+- **Keeper path ([ADR 0030](../../../docs/decisions/0030-assisted-adapters-keeper-submit-and-preview.md))** — for positions the owner did NOT open through its assistant (a Safe that entered the protocol directly, a StakeWise remainder ticket after a partial claim). `submitFor(account, coord)` / `submitForBatch` require `SUBMITTER_ROLE` (a keeper; `DEFAULT_ADMIN_ROLE` = the Security Council) and run the same `_validateCoord(account, coord)` as the owner path, so a coordinate is filed only under the account the protocol says owns it. `removeFor(account, coord)` is permissionless but succeeds only when the protocol PROVES the position is gone (`_isDead`; a reverting read never counts). `previewPositions(account, abi.encode(bytes[]))` values caller-supplied coordinates without touching the cache, validating each like a submit and reverting on a bad one.
 - Cache base: **`AssistedCoordCache`** (§4). Submit shape: incremental `submit`/`remove`, atomic with the protocol deposit/claim.
 - Members: **Nexus, StakeWise, ether.fi** (§6).
 
-> **Historical note.** An earlier **agent-fed** variant existed — an off-chain agent holding `ASSISTANT_ROLE` fed a role-gated base (`AssistantFedBalanceAdapter`) with full-set `submitTokenIds`; its only member was Merkl. That variant (base + marker + Merkl adapter) was **removed in #141**. Merkl was then re-added as its **own separate `attested` family** — `MerklRewardsAttestedBalanceAdapter` in `../AttestedBalanceAdapters/`, [ADR 0022](../../../docs/decisions/0022-attested-balance-adapter-family.md) — because it caches a proof-verified *amount* (not coordinates valued live), so it is NOT part of this assisted family. This assisted family is exactly the permissionless assistant-fed coordinate-cache variant described here.
+> **Historical note.** An earlier **agent-fed** variant existed — an off-chain agent holding `ASSISTANT_ROLE` fed a role-gated base (`AssistantFedBalanceAdapter`) with full-set `submitTokenIds`; its only member was Merkl. That variant (base + marker + Merkl adapter) was **removed in #141**. Merkl was then re-added as its **own separate `attested` family** — `MerklRewardsAttestedBalanceAdapter` in `../AttestedBalanceAdapters/`, [ADR 0022](../../../docs/decisions/0022-attested-balance-adapter-family.md) — because it caches a proof-verified *amount* (not coordinates valued live), so it is NOT part of this assisted family. This assisted family is exactly the assistant-fed coordinate-cache variant described here (with the ADR 0030 keeper path).
 
 ---
 
@@ -54,7 +55,7 @@ mapping(address => bytes[])                     _coords;    // per-account coord
 mapping(address => mapping(bytes32 => uint256)) _idxPlus1;  // keccak256(coord) -> index+1 (dedup + O(1) swap-pop)
 ```
 
-- `submit`/`remove`/`clearAccount` are **permissionless and self-scoped**: they key on `msg.sender`, so a caller can only ever touch its **own** set.
+- The owner path (`submit`/`remove`/`clearAccount`) is **self-scoped**: it keys on `msg.sender`, so a caller can only ever touch its **own** set. The keeper path (§3) writes another account's set, but only coordinates that account owns, through the same internal admission (`_addEntry`), and with the exact coordinate length each member declares (`_coordLength`, so one position has one cache key).
 - **`_submitCoord(bytes coord)`** — re-validates ownership on *every* call (via `_validateCoord`, **before** the dedup early-return, so resubmitting a coordinate you've since transferred away reverts), dedups by `keccak256(coord)`, caps at `_maxCoords()` (`CoordinateCacheFull`), pushes.
 - **`_removeCoord(bytes coord)`** — fail-loud: reverts `CoordinateNotCached` if the caller isn't tracking it, `CoordinateStillLive` if `_removable` says it's not yet droppable; else swap-pops.
 - **`clearAccount()`** — self-service GC of the caller's whole set (the one method `IAssistedBalanceAdapter` prescribes).
@@ -88,8 +89,10 @@ event AccountCleared(address indexed account);
 | `_maxCoords()` | per-account cache cap (read-loop gas bound) |
 | `_maxLegsPerCoord()` | upper bound on legs per coordinate (scratch-buffer sizing) |
 | `_coordId(bytes)` | decode → the human id for events/errors |
-| `_validateCoord(account, bytes)` | fail-loud write-time hygiene — revert `InvalidCoordinate` (malformed/unregistered target) or `CoordinateNotOwned` (not owned by the caller) |
+| `_validateCoord(account, bytes)` | fail-loud write-time hygiene, shared by `submit`, `submitFor` and `previewPositions` — revert `InvalidCoordinate` (malformed/unregistered target) or `CoordinateNotOwned` (not owned by `account`) |
 | `_removable(account, bytes)` | may this coordinate be dropped? (see per-member policy below) |
+| `_isDead(account, bytes)` | gate for the permissionless `removeFor`: true only when a SUCCESSFUL protocol read proves the position gone (burned / transferred / emptied); a revert is never death (ADR 0030) |
+| `_coordLength()` | byte length of the canonical `abi.encode` (32 for a tokenId, 96 for StakeWise's tuple); the keeper path and preview reject any other length |
 | `_valueCoord(account, bytes, underlying)` | decode, re-verify ownership live, return the priced legs (may revert — it's isolated) |
 
 Plus the adapter exposes a **typed** `submit`/`remove` that `abi.encode`s its coordinate and routes to `_submitCoord`/`_removeCoord`, and a typed read helper (`tokenIdsOf` for Nexus/ether.fi, `positionsOf` for StakeWise) that decodes `_cachedCoords`.
@@ -97,12 +100,17 @@ Plus the adapter exposes a **typed** `submit`/`remove` that `abi.encode`s its co
 ### 4.6 Marker interface
 
 ```solidity
-interface IAssistedBalanceAdapter is IBalanceAdapter {
+interface IAssistedBalanceAdapter is IAccessControl, IBalanceAdapter {
+    function SUBMITTER_ROLE() external view returns (bytes32);
+    function submitFor(address account, bytes calldata coord) external;                     // SUBMITTER_ROLE
+    function submitForBatch(address[] calldata accounts, bytes[] calldata coords) external;  // SUBMITTER_ROLE
+    function removeFor(address account, bytes calldata coord) external;                      // anyone, proof of death
+    function previewPositions(address account, bytes calldata data) external view returns (PositionBalance[] memory);
     function clearAccount() external;   // self-service GC; msg.sender-keyed
 }
 ```
 
-Minimal, permissionless, no role getter. (The removed legacy agent-fed marker was `IAssistantFedBalanceAdapter is IAccessControl, IBalanceAdapter` with an `ASSISTANT_ROLE()` getter — see the historical note above.)
+The typed `submit`/`remove` stay per member (the coordinate shape differs). The only admin power is granting and revoking `SUBMITTER_ROLE`; the role decides which positions occupy the capped cache, never what they are worth ([ADR 0030](../../../docs/decisions/0030-assisted-adapters-keeper-submit-and-preview.md)).
 
 ---
 
@@ -121,12 +129,12 @@ An **assistant** is the on-chain feeder that keeps an adapter's cache current, a
 | **Contract** (this repo) | **Cannot over-report** — coordinates only (never amounts), valued live on-chain, ownership re-verified per read, so a bad or stale coordinate values to `0` and is dropped | `AssistedCoordCache` + each adapter's `_valueCoord` / `_ownerOf` |
 | **Roles** (outside this repo) | **Cannot under-report either** — the position cannot come into existence without being fed, so the cached set is complete | the Safe's roles-modifier allow-list |
 
-**Where enforcement lives, and why you cannot see it here.** Nothing in *this repository* enforces the roles half. `AssistedCoordCache`'s `submit`/`remove` are **permissionless** and `msg.sender`-keyed, and the assistant is *the canonical feeder* rather than a gate — so a reader of those files alone sees a permissionless cache and no completeness guarantee at all. The guarantee is one layer up, in the **Safe's roles configuration**, which is not part of this repo. Read this section as a pointer to that configuration.
+**Where enforcement lives, and why you cannot see it here.** Nothing in *this repository* enforces the roles half. `AssistedCoordCache`'s owner `submit`/`remove` are `msg.sender`-keyed, the keeper path only adds coverage, and the assistant is *the canonical feeder* rather than a gate — so a reader of those files alone sees a permissionless cache and no completeness guarantee at all. The guarantee is one layer up, in the **Safe's roles configuration**, which is not part of this repo. Read this section as a pointer to that configuration.
 
 **Residual risk, stated accurately.** The risk is *not* "an operator bypasses the process" — that path is not permitted. It is: **a change to the roles permission set adds a path that reaches the protocol without going through the assistant.** After such a change the cache silently misses positions, and **there is no tripwire anywhere in this repository** that would detect it — the adapters would report a smaller-but-internally-consistent set, and every contract-level invariant would still hold. So roles-permission changes touching these protocols are the thing to review.
 
-- **Open via the assistant.** Enforced by roles; the direct entrypoint is not callable. Were it ever reachable, the position would be created on-chain with its coordinate **never cached**, so NAV could not see it — silently **under-counted** until someone `submit`s the coordinate (which, being permissionless and `msg.sender`-keyed, the owner Safe can still do after the fact).
-- **Close via the assistant.** Claiming/withdrawing through the assistant prunes the cache in the same tx. A direct close would leave a stale coordinate — harmless (it values live to `0` and is discarded on read; `remove`/`clearAccount` GC it) but it wastes read gas and the cap.
+- **Open via the assistant.** Enforced by roles; the direct entrypoint is not callable. Were it ever reachable, the position would be created on-chain with its coordinate **never cached**, so NAV could not see it — silently **under-counted** until the coordinate is submitted — by the owner Safe after the fact, or by the keeper's `submitFor` (ADR 0030).
+- **Close via the assistant.** Claiming/withdrawing through the assistant prunes the cache in the same tx. A direct close would leave a stale coordinate — harmless (it values live to `0` and is discarded on read; `remove`/`clearAccount`, or anyone's `removeFor` once the protocol proves it gone, GC it) but it wastes read gas and the cap.
 - **The contract-level "under-report only" property is the defence-in-depth that survives if the roles half is ever removed**: bypassing the assistant can only make NAV *miss* a position, never invent one. That is why the two halves are stated together — the roles layer makes the cache complete, and the contract layer bounds the damage if it ever stops being so.
 
 Concretely: instead of `LiquidityPool.requestWithdraw(...)` the Safe delegatecalls `EtherFiWithdrawalQueueAssistant.requestWithdraw(...)`; instead of `vault.enterExitQueue(...)` it delegatecalls `StakeWiseV3ExitQueueAssistant.enterExitQueue(...)`; etc. The assistant forwards to the very same protocol function (same effect on funds) **and** records the coordinate — one atomic transaction, no separate bookkeeping step that could be forgotten or fall out of sync.

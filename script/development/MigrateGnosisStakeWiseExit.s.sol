@@ -83,8 +83,10 @@ contract MigrateGnosisStakeWiseExit is Script {
         vm.startBroadcast();
 
         // 1) Deploy the new permissionless adapter (osGNO / GNO-denominated) + its assistant.
+        // Historical (already executed). The trailing DEPLOYER is the ADR 0030 admin argument, added only so this
+        // script keeps compiling against the current constructors.
         StakeWiseV3ExitQueueAssistedBalanceAdapter stakewise = new StakeWiseV3ExitQueueAssistedBalanceAdapter(
-            STAKEWISE_VAULTS_REGISTRY, GNO, RECEIPT_SYMBOL, address(NAV), EXIT_CLAIM_DELAY
+            STAKEWISE_VAULTS_REGISTRY, GNO, RECEIPT_SYMBOL, address(NAV), EXIT_CLAIM_DELAY, DEPLOYER
         );
         StakeWiseV3ExitQueueAssistant stakewiseAssistant = new StakeWiseV3ExitQueueAssistant(address(stakewise));
 

@@ -42,9 +42,9 @@ contract EtherFiWithdrawalQueueAssistedBalanceAdapterForkTest is BalanceAdapterT
         balances = new BalancesHarnessForFork();
         balances.registerAssetForTest(NATIVE_ETH, 18, "ETH");
 
-        // Permissionless adapter: no admin/roles. The test later pranks as the real holder and self-submits the tokenId.
+        // Owner path (no role needed). The test later pranks as the real holder and self-submits the tokenId.
         adapter = new EtherFiWithdrawalQueueAssistedBalanceAdapter(
-            WITHDRAW_REQUEST_NFT, LIQUIDITY_POOL, NATIVE_ETH, address(balances)
+            WITHDRAW_REQUEST_NFT, LIQUIDITY_POOL, NATIVE_ETH, address(balances), address(this)
         );
     }
 

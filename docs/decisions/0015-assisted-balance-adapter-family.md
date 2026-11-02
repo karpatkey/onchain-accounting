@@ -1,6 +1,6 @@
 # 0015 — Assisted balance-adapter family (shared interface + AccessControl base)
 
-Status: accepted (feeding model refined by [ADR 0018](0018-assistant-fed-assisted-balance-adapters.md))
+Status: accepted (feeding model refined by [ADR 0018](0018-assistant-fed-assisted-balance-adapters.md); keeper path added by [ADR 0030](0030-assisted-adapters-keeper-submit-and-preview.md))
 
 > **Later refinement (shipped):** the **`ASSISTANT_ROLE` / AccessControl** feeding model described in the Decision below was replaced by a **permissionless, `msg.sender`-keyed** cache fed on-chain by a delegatecall `BalanceAdapterAssistant` ([ADR 0018](0018-assistant-fed-assisted-balance-adapters.md)); the shared base is now `AssistedCoordCache` (in `src/balances/AssistedBalanceAdapters/`), not the `AssistedBalanceAdapter` AccessControl base. The family and its trust invariant (cache coordinates only, value live, re-verify ownership per read → **under-report only**) still stand; only the *who-may-feed* mechanism changed — no roles, no admin/assistant. See ADR 0018 for the shipped design.
 

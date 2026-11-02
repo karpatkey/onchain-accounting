@@ -260,7 +260,7 @@ contract StakeWiseV3ExitQueueAssistantTest is BalanceAdapterTestBase {
 
     function test_endToEnd_enterTracksBalance_thenClaimClears() public {
         StakeWiseV3ExitQueueAssistedBalanceAdapter adapter = new StakeWiseV3ExitQueueAssistedBalanceAdapter(
-            address(registry), NATIVE, "osETH", address(balances), DELAY
+            address(registry), NATIVE, "osETH", address(balances), DELAY, address(this)
         );
         balances.addSupportedAssetForTest(NATIVE);
         StakeWiseV3ExitQueueAssistant w = new StakeWiseV3ExitQueueAssistant(address(adapter));

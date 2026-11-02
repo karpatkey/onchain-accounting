@@ -160,3 +160,19 @@ record — 231 addresses across the 24 chains. `script/verify/sweeps/make_target
 `PriceFeedLib` + the NAV implementation plus feed instances read from **uncommitted** `broadcast/`
 logs, so it omits the proxy, `NavRegistryLib`, all 27 balance adapters and the assistants; it is not
 usable as the audit's enumerator.
+
+## Seeding the assisted adapters (`seed_assisted.py`, ADR 0030)
+
+Read-only planner for the keeper path: it builds `submitForBatch` calldata that files existing positions into a NEW
+assisted adapter before the NAV swaps to it. Per member it (1) migrates everything the OLD adapter caches
+(`CoordSubmitted` accounts → live `coordsOf`), (2) optionally discovers positions of allow-listed Safes that never went
+through an Assistant, keeping only those the Safe itself executed (receipt has a Safe execution log emitted by the
+account — Roles-module executions included), and (3) keeps only coordinates the new adapter's `previewPositions`
+accepts. It never sends anything; the `SUBMITTER_ROLE` keeper sends each chunk. Needs `ETHERSCAN_API_KEY` and an RPC.
+
+```bash
+python3 seed_assisted.py --chain 1 --member etherfi --old <old adapter> --new <new adapter> \
+  --accounts safes.txt --out etherfi-plan.json
+```
+
+A chunk is all-or-nothing, so keep `--chunk` small and re-run right before sending. Rollout order: ADR 0030 "Rollout".

@@ -20,7 +20,7 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 ///         `msg.sender = Safe = owner`: it pushes the `requestId` on `requestWithdraw` and pops it on `claimWithdraw`,
 ///         atomically. Each cached id is valued live, re-verifying ownership every read; the cache stores **ids only,
 ///         never amounts**.
-/// @dev Member of the permissionless assistant-fed assisted family ([ADR 0018](../../../docs/decisions/0018-assistant-fed-assisted-balance-adapters.md)),
+/// @dev Member of the assistant-fed assisted family ([ADR 0018](../../../docs/decisions/0018-assistant-fed-assisted-balance-adapters.md)),
 ///      extending the single {AssistedCoordCache}: the coordinate is `abi.encode(tokenId)`. Supersedes the earlier
 ///      off-chain-agent (ASSISTANT_ROLE) ether.fi adapter of ADR 0014. {_removable} = "no longer owned by the caller":
 ///      ether.fi's `claimWithdraw` **burns** the NFT, so a claimed id becomes removable while a still-owned (pending)
@@ -45,10 +45,17 @@ contract EtherFiWithdrawalQueueAssistedBalanceAdapter is AssistedCoordCache, IPo
     /// @param liquidityPool_      ether.fi LiquidityPool (for `amountForShare`). Must be a contract.
     /// @param underlyingToken_    Payout asset (native-ETH sentinel). Must be non-zero.
     /// @param navCalculator_      NAVCalculator. Must be a contract.
-    constructor(address withdrawRequestNft_, address liquidityPool_, address underlyingToken_, address navCalculator_)
-        AssistedCoordCache(underlyingToken_, navCalculator_)
-    {
-        if (withdrawRequestNft_ == address(0) || liquidityPool_ == address(0)) revert InvalidArguments();
+    /// @param admin_              `DEFAULT_ADMIN_ROLE` holder (grants the keeper's `SUBMITTER_ROLE`). Must be non-zero.
+    constructor(
+        address withdrawRequestNft_,
+        address liquidityPool_,
+        address underlyingToken_,
+        address navCalculator_,
+        address admin_
+    ) AssistedCoordCache(underlyingToken_, navCalculator_, admin_) {
+        if (withdrawRequestNft_ == address(0) || liquidityPool_ == address(0)) {
+            revert InvalidArguments();
+        }
         AddressCheckLib.requireContract(withdrawRequestNft_, "WithdrawRequestNFT");
         AddressCheckLib.requireContract(liquidityPool_, "LiquidityPool");
         WITHDRAW_REQUEST_NFT = withdrawRequestNft_;
@@ -56,7 +63,7 @@ contract EtherFiWithdrawalQueueAssistedBalanceAdapter is AssistedCoordCache, IPo
     }
 
     //
-    // Typed feed surface (permissionless, msg.sender-keyed)
+    // Typed owner feed surface (msg.sender-keyed; the keeper path is in the base, ADR 0030)
     //
 
     /// @notice Track `tokenId` for the caller (idempotent). **Reverts** `CoordinateNotOwned` if not owned by the caller,
@@ -125,10 +132,42 @@ contract EtherFiWithdrawalQueueAssistedBalanceAdapter is AssistedCoordCache, IPo
     }
 
     /// @inheritdoc AssistedCoordCache
-    /// @dev Removable once claimed — `claimWithdraw` burns the NFT, so `ownerOf` reverts and the id reads as unowned.
+    function _coordLength() internal pure override returns (uint256) {
+        return 32;
+    }
+
+    /// @inheritdoc AssistedCoordCache
+    /// @dev Owner-side: removable once claimed (`claimWithdraw` burns the NFT, so `ownerOf` reverts and the id reads as
+    ///      unowned), or while ether.fi has the request invalidated — it values 0 then, and the owner can re-submit if
+    ///      the protocol re-validates it. A failed `isValid` read keeps the id.
     function _removable(address account, bytes memory coord) internal view override returns (bool) {
-        (address owner, bool ok) = _ownerOf(abi.decode(coord, (uint256)));
-        return !(ok && owner == account);
+        uint256 tokenId = abi.decode(coord, (uint256));
+        (address owner, bool ok) = _ownerOf(tokenId);
+        // Keep this check FIRST: ether.fi's `isValid` reverts for a burned id.
+        if (!(ok && owner == account)) return true;
+        try IEtherFiWithdrawRequestNFT(WITHDRAW_REQUEST_NFT).isValid(tokenId) returns (bool valid) {
+            return !valid;
+        } catch {
+            return false;
+        }
+    }
+
+    /// @inheritdoc AssistedCoordCache
+    /// @dev Dead when `ownerOf` succeeds with another owner (transferred away), or when `ownerOf` reverts (burned)
+    ///      AND `getRequest` succeeds with an emptied request — a claim burns the NFT and deletes the request. A
+    ///      request `account` still owns is never dead here, whatever `getRequest` says. Invalidation is NOT death:
+    ///      ether.fi can re-validate a request.
+    function _isDead(address account, bytes memory coord) internal view override returns (bool) {
+        uint256 tokenId = abi.decode(coord, (uint256));
+        IEtherFiWithdrawRequestNFT nft = IEtherFiWithdrawRequestNFT(WITHDRAW_REQUEST_NFT);
+        try nft.ownerOf(tokenId) returns (address o) {
+            return o != account;
+        } catch {}
+        try nft.getRequest(tokenId) returns (IEtherFiWithdrawRequestNFT.WithdrawRequest memory r) {
+            return r.amountOfEEth == 0 && r.shareOfEEth == 0;
+        } catch {
+            return false;
+        }
     }
 
     /// @inheritdoc AssistedCoordCache

@@ -1,12 +1,14 @@
 // SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8;
 
+import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 
 import {IAssistedBalanceAdapter} from "src/balances/IAssistedBalanceAdapter.sol";
 import {IBalanceAdapter} from "src/balances/IBalanceAdapter.sol";
 import {RegisteredAssetLib} from "src/balances/RegisteredAssetLib.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
+import {SUBMITTER} from "src/constants.sol";
 import {AddressCheckLib} from "src/utils/AddressCheckLib.sol";
 import {GasStipendLib} from "src/utils/GasStipendLib.sol";
 // forge-lint: disable-next-line(unaliased-plain-import)
@@ -26,7 +28,7 @@ error CoordinateGasExhausted(address adapter, uint256 coordId, uint256 stipend, 
 
 /// @title AssistedCoordCache
 /// @author KPK
-/// @notice The single cache base for the **permissionless, assistant-fed** assisted balance-adapter family. A position
+/// @notice The single cache base for the **assistant-fed** assisted balance-adapter family. A position
 ///         *coordinate* is an opaque `bytes` blob, so ONE cache serves every member regardless of coordinate shape:
 ///         a bare `uint256` NFT tokenId / withdrawal requestId (`abi.encode(id)`) or a richer tuple (StakeWise V3 exit
 ///         positions, `abi.encode(vault, positionTicket, timestamp)`). It holds the per-account coordinate-record cache
@@ -35,13 +37,15 @@ error CoordinateGasExhausted(address adapter, uint256 coordId, uint256 stipend, 
 ///         exposes a *typed* `submit`/`remove` that `abi.encode`s its coordinate and routes to {_submitCoord}/
 ///         {_removeCoord}, and implements {_valueCoord} (decode + value live), {_validateCoord} (fail-loud write-time
 ///         hygiene), {_removable}, {_coordId}, {_maxCoords}, {_maxLegsPerCoord}.
-/// @dev Permissionless & self-scoped: no roles; all mutators key on `msg.sender`, so a caller can only ever touch its
-///      OWN set. The canonical feeder is a {BalanceAdapterAssistant} the owner Safe delegatecalls (so `msg.sender` is the
-///      Safe). The family invariant holds — coordinates only, valued live, ownership re-verified per read → under-report
-///      only.
+/// @dev Two feeders. The owner path keys on `msg.sender`, so a caller can only ever touch its OWN set; the canonical
+///      feeder is a {BalanceAdapterAssistant} the owner Safe delegatecalls (so `msg.sender` is the Safe). For positions
+///      the owner did not open through its assistant, a {SUBMITTER_ROLE} keeper files coordinates under the account the
+///      protocol says owns them ({submitFor}); anyone may drop a coordinate the protocol proves dead ({removeFor}).
+///      Both run the same {_validateCoord} / ownership rules as the owner path, so the family invariant holds unchanged
+///      — coordinates only, valued live, ownership re-verified per read → under-report only (ADR 0030).
 ///
 ///      **WHAT THIS FILE CANNOT SHOW YOU — the cache is COMPLETE in production, not merely conservative.** Read on its
-///      own, this contract is a permissionless cache with no completeness guarantee whatsoever: anyone may `submit`
+///      own, this contract is a cache with no completeness guarantee whatsoever: anyone may `submit`
 ///      their own coordinates, nobody is obliged to, and the assistant is the *canonical feeder* rather than a gate. So
 ///      "under-report only" is the honest reading of THIS code — and it understates the deployed system. The portfolio
 ///      Safes' **roles-modifier permission set allows the corresponding protocol entries only through the assistant
@@ -57,7 +61,11 @@ error CoordinateGasExhausted(address adapter, uint256 coordId, uint256 stipend, 
 ///      Uses a `bytes[]` array + `key → idxPlus1` map for dedup and O(1) swap-pop removal. Reads isolate each
 ///      coordinate behind a self-`staticcall` ({valueCoordSelf}), so a revert-prone valuation (e.g. Nexus's
 ///      `StakingViewer.getTokens`) only drops that one coordinate, never the account's whole set.
-abstract contract AssistedCoordCache is IAssistedBalanceAdapter {
+abstract contract AssistedCoordCache is IAssistedBalanceAdapter, AccessControl {
+    /// @inheritdoc IAssistedBalanceAdapter
+    /// @dev Gates {submitFor}/{submitForBatch} only. The owner path, {removeFor} and {clearAccount} stay open.
+    bytes32 public constant SUBMITTER_ROLE = SUBMITTER;
+
     /// @notice The single asset this adapter reports. Must be a registered NAV asset for {getAdapterPositions} to count
     ///         it; the balance getters report it regardless (registration-independent).
     address public immutable UNDERLYING_TOKEN;
@@ -78,18 +86,56 @@ abstract contract AssistedCoordCache is IAssistedBalanceAdapter {
     event CoordSubmitted(address indexed account, uint256 indexed id);
     event CoordCleared(address indexed account, uint256 indexed id);
     event AccountCleared(address indexed account);
+    /// @notice A {SUBMITTER_ROLE} keeper filed a new coordinate for `account` (emitted alongside {CoordSubmitted}, so
+    ///         keeper-filed entries are attributable without a trace).
+    event CoordSubmittedFor(address indexed account, uint256 indexed id, address indexed submitter);
 
     /// @param underlyingToken_ The reported underlying asset. Must be non-zero.
     /// @param navCalculator_   NAVCalculator. Must be a contract.
-    constructor(address underlyingToken_, address navCalculator_) {
-        if (underlyingToken_ == address(0) || navCalculator_ == address(0)) revert InvalidArguments();
+    /// @param admin_           Holder of `DEFAULT_ADMIN_ROLE` (grants/revokes {SUBMITTER_ROLE}). Must be non-zero. No
+    ///                         submitter is granted here: a deploy alone never creates a live submit right.
+    constructor(address underlyingToken_, address navCalculator_, address admin_) {
+        if (underlyingToken_ == address(0) || navCalculator_ == address(0) || admin_ == address(0)) {
+            revert InvalidArguments();
+        }
         AddressCheckLib.requireContract(navCalculator_, "NAVCalculator");
         UNDERLYING_TOKEN = underlyingToken_;
         NAV_CALCULATOR = INAVCalculator(navCalculator_);
+        _grantRole(DEFAULT_ADMIN_ROLE, admin_);
     }
 
     //
-    // Writes (permissionless — each account feeds/cleans its own cache, keyed on msg.sender)
+    // Writes — keeper path (role-gated submit, proof-of-death remove)
+    //
+
+    /// @inheritdoc IAssistedBalanceAdapter
+    function submitFor(address account, bytes calldata coord) external {
+        _checkRole(SUBMITTER_ROLE);
+        _submitFor(account, coord);
+    }
+
+    /// @inheritdoc IAssistedBalanceAdapter
+    function submitForBatch(address[] calldata accounts, bytes[] calldata coords) external {
+        // Checked here too: an EMPTY batch never enters the loop, and a roleless caller must not get a success.
+        _checkRole(SUBMITTER_ROLE);
+        if (accounts.length != coords.length) revert InvalidArguments();
+        for (uint256 i; i < accounts.length; ++i) {
+            _submitFor(accounts[i], coords[i]);
+        }
+    }
+
+    /// @inheritdoc IAssistedBalanceAdapter
+    /// @dev Not role-gated on purpose: a role-gated remove would let a compromised key delete LIVE positions (a
+    ///      targeted under-report). Gating on {_isDead} instead makes the call safe for anyone.
+    function removeFor(address account, bytes calldata coord) external {
+        _requireCanonical(coord);
+        // Cached-check first, so {_isDead} only ever reads a coordinate that passed write-time validation.
+        if (_idxPlus1[account][keccak256(coord)] == 0) revert CoordinateNotCached(account, _coordId(coord));
+        _removeEntry(account, coord, _isDead(account, coord));
+    }
+
+    //
+    // Writes — owner path (each account feeds/cleans its own cache, keyed on msg.sender)
     //
 
     /// @inheritdoc IAssistedBalanceAdapter
@@ -171,41 +217,113 @@ abstract contract AssistedCoordCache is IAssistedBalanceAdapter {
         return _collect(account, underlying);
     }
 
+    /// @inheritdoc IAssistedBalanceAdapter
+    function previewPositions(address account, bytes calldata data)
+        external
+        view
+        override
+        returns (INAVCalculator.PositionBalance[] memory positions)
+    {
+        if (account == address(0) || data.length == 0) return new INAVCalculator.PositionBalance[](0);
+        return this.previewPositionsSelf(account, abi.decode(data, (bytes[])));
+    }
+
+    /// @notice External self-call frame for the preview loop — `msg.sender`-guarded to `address(this)`; `view`, so the
+    ///         self-call is a staticcall. Mirrors {valueCoordSelf}.
+    /// @dev No per-coordinate stipend or try/catch, unlike the NAV read: the caller pays for its own `eth_call`, and a
+    ///      bad coordinate must surface rather than be dropped.
+    function previewPositionsSelf(address account, bytes[] calldata coords)
+        external
+        view
+        returns (INAVCalculator.PositionBalance[] memory positions)
+    {
+        if (msg.sender != address(this)) revert NotAuthorized();
+        uint256 n = coords.length;
+        if (n == 0) return new INAVCalculator.PositionBalance[](0);
+        if (n > _maxCoords()) revert TooManyCoordinates(account, n, _maxCoords());
+
+        bytes32[] memory keys = new bytes32[](n);
+        for (uint256 i; i < n; ++i) {
+            _requireCanonical(coords[i]);
+            keys[i] = keccak256(coords[i]);
+            for (uint256 j; j < i; ++j) {
+                if (keys[j] == keys[i]) revert DuplicateCoordinate(account, _coordId(coords[i]));
+            }
+            _validateCoord(account, coords[i]);
+        }
+
+        (INAVCalculator.Asset memory underlying, bool registered) =
+            RegisteredAssetLib.find(NAV_CALCULATOR.getRegisteredAssets(), UNDERLYING_TOKEN);
+        if (!registered) return new INAVCalculator.PositionBalance[](0);
+
+        INAVCalculator.PositionBalance[] memory temp = new INAVCalculator.PositionBalance[](n * _maxLegsPerCoord());
+        uint256 count;
+        for (uint256 i; i < n; ++i) {
+            INAVCalculator.PositionBalance[] memory legs = _valueCoord(account, coords[i], underlying);
+            for (uint256 j; j < legs.length; ++j) {
+                temp[count++] = legs[j];
+            }
+        }
+        positions = new INAVCalculator.PositionBalance[](count);
+        for (uint256 i; i < count; ++i) {
+            positions[i] = temp[i];
+        }
+    }
+
     /// @inheritdoc IERC165
-    function supportsInterface(bytes4 interfaceId) public view virtual override returns (bool) {
+    function supportsInterface(bytes4 interfaceId) public view virtual override(AccessControl, IERC165) returns (bool) {
         return interfaceId == type(IBalanceAdapter).interfaceId
-            || interfaceId == type(IAssistedBalanceAdapter).interfaceId || interfaceId == type(IERC165).interfaceId;
+            || interfaceId == type(IAssistedBalanceAdapter).interfaceId || super.supportsInterface(interfaceId);
     }
 
     //
     // Internal — cache mutation (called by the concrete's typed submit/remove)
     //
 
-    /// @dev Add one coordinate for the caller (idempotent). Fail-loud: `CoordinateCacheFull` past {_maxCoords}, and
-    ///      {_validateCoord} reverts (`InvalidCoordinate` / `CoordinateNotOwned`) on a bad or non-owned coordinate.
-    ///      Keyed on `msg.sender` (self-scoped).
+    /// @dev Owner path: add one coordinate for the caller (idempotent). Keyed on `msg.sender` (self-scoped). The typed
+    ///      `submit` always passes a canonical `abi.encode`.
     function _submitCoord(bytes memory coord) internal {
-        address account = msg.sender;
+        _addEntry(msg.sender, coord);
+    }
+
+    /// @dev Keeper path: canonical-encoding check, then the same admission as the owner path.
+    function _submitFor(address account, bytes calldata coord) private {
+        if (account == address(0)) revert InvalidArguments();
+        _requireCanonical(coord);
+        if (_addEntry(account, coord)) emit CoordSubmittedFor(account, _coordId(coord), msg.sender);
+    }
+
+    /// @dev The single admission point for both paths (idempotent). Fail-loud: `CoordinateCacheFull` past
+    ///      {_maxCoords}, and {_validateCoord} reverts (`InvalidCoordinate` / `CoordinateNotOwned`) on a bad or
+    ///      non-owned coordinate.
+    function _addEntry(address account, bytes memory coord) private returns (bool added) {
         bytes32 key = keccak256(coord);
         // Re-validate on EVERY submit (before the dedup early-return) so a resubmit of an already-cached coordinate the
         // caller has since transferred away is rejected loud rather than silently kept.
         _validateCoord(account, coord); // fail-loud write-time hygiene
-        if (_idxPlus1[account][key] != 0) return; // already cached (idempotent no-op)
+        if (_idxPlus1[account][key] != 0) return false; // already cached (idempotent no-op)
         if (_coords[account].length >= _maxCoords()) revert CoordinateCacheFull(account, _maxCoords());
         _coords[account].push(coord);
         _idxPlus1[account][key] = _coords[account].length;
         emit CoordSubmitted(account, _coordId(coord));
+        return true;
     }
 
-    /// @dev Drop one coordinate for the caller. Fail-loud: **reverts**
-    ///      `CoordinateNotCached` if the caller isn't tracking `coord`, and `CoordinateStillLive` if it is not yet
-    ///      removable (see {_removable}) — so a live position is never silently dropped. Keyed on `msg.sender`.
+    /// @dev Owner path: drop one coordinate for the caller once {_removable}. Keyed on `msg.sender`.
     function _removeCoord(bytes memory coord) internal {
         address account = msg.sender;
+        if (_idxPlus1[account][keccak256(coord)] == 0) revert CoordinateNotCached(account, _coordId(coord));
+        _removeEntry(account, coord, _removable(account, coord));
+    }
+
+    /// @dev Drop one coordinate from `account`. Fail-loud: **reverts** `CoordinateNotCached` if `account` isn't
+    ///      tracking `coord`, and `CoordinateStillLive` unless `removable` — so a live position is never silently
+    ///      dropped.
+    function _removeEntry(address account, bytes memory coord, bool removable) private {
         bytes32 key = keccak256(coord);
         uint256 idxPlus1 = _idxPlus1[account][key];
         if (idxPlus1 == 0) revert CoordinateNotCached(account, _coordId(coord));
-        if (!_removable(account, coord)) revert CoordinateStillLive(account, _coordId(coord));
+        if (!removable) revert CoordinateStillLive(account, _coordId(coord));
         uint256 idx = idxPlus1 - 1;
         bytes[] storage list = _coords[account];
         uint256 lastIdx = list.length - 1;
@@ -217,6 +335,12 @@ abstract contract AssistedCoordCache is IAssistedBalanceAdapter {
         list.pop();
         delete _idxPlus1[account][key];
         emit CoordCleared(account, _coordId(coord));
+    }
+
+    /// @dev Rejects any `coord` whose length differs from the member's canonical encoding, BEFORE anything decodes
+    ///      it, so one position has exactly one cache key (ADR 0030 S2).
+    function _requireCanonical(bytes memory coord) internal pure {
+        if (coord.length != _coordLength()) revert NonCanonicalCoordinate(coord.length, _coordLength());
     }
 
     //
@@ -310,6 +434,9 @@ abstract contract AssistedCoordCache is IAssistedBalanceAdapter {
     /// @notice The per-account cache cap (read-loop gas bound).
     function _maxCoords() internal view virtual returns (uint256);
 
+    /// @notice Byte length of the member's canonical coordinate encoding (`abi.encode` of its static tuple).
+    function _coordLength() internal pure virtual returns (uint256);
+
     /// @notice Upper bound on legs emitted per coordinate (scratch-buffer sizing).
     function _maxLegsPerCoord() internal pure virtual returns (uint256);
 
@@ -327,6 +454,11 @@ abstract contract AssistedCoordCache is IAssistedBalanceAdapter {
     ///         live owed amount for `account` (claimed / consumed) — so {_removeCoord} never drops a live position
     ///         (under-report only). Implemented per adapter (the liveness proxy is protocol-specific).
     function _removable(address account, bytes memory coord) internal view virtual returns (bool);
+
+    /// @notice Whether the protocol PROVES `coord` no longer holds anything for `account` — the gate for the
+    ///         permissionless {removeFor}. Stricter than {_removable}: only a SUCCESSFUL read showing the position
+    ///         burned, transferred away or emptied counts; a reverting read never does (it could be transient).
+    function _isDead(address account, bytes memory coord) internal view virtual returns (bool);
 
     /// @notice Values a single cached coordinate into its legs (empty if it contributes nothing — not owned, claimed,
     ///         zero amount). Decodes `coord` and re-verifies ownership live. Reached only via the self-`staticcall` in

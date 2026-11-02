@@ -131,7 +131,9 @@ contract EtherFiWithdrawalQueueAssistantTest is Test {
         balances.addSupportedAssetForTest(NATIVE);
 
         // Adapter first (wrapper unknown at construction) → deploy wrapper → grant WRAPPER_ROLE to the wrapper.
-        adapter = new EtherFiWithdrawalQueueAssistedBalanceAdapter(address(nft), address(lp), NATIVE, address(balances));
+        adapter = new EtherFiWithdrawalQueueAssistedBalanceAdapter(
+            address(nft), address(lp), NATIVE, address(balances), address(this)
+        );
         wrapper = new EtherFiWithdrawalQueueAssistant(address(adapter), address(lp), address(nft), address(eeth));
 
         safe = new MockSafe();

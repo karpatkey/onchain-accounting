@@ -47,7 +47,9 @@ contract NexusMutualStakingPoolsAssistedBalanceAdapterForkTest is BalanceAdapter
         balances = new BalancesHarnessForFork();
         balances.registerAssetForTest(NXM, 18, "NXM");
 
-        adapter = new NexusMutualStakingPoolsAssistedBalanceAdapter(STAKING_NFT, STAKING_VIEWER, NXM, address(balances));
+        adapter = new NexusMutualStakingPoolsAssistedBalanceAdapter(
+            STAKING_NFT, STAKING_VIEWER, NXM, address(balances), address(this)
+        );
         // Permissionless: the account itself submits its ids (all owned by HOLDER → no revert).
         uint256[] memory ids = _knownIds();
         for (uint256 i; i < ids.length; ++i) {

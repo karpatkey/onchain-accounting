@@ -433,7 +433,7 @@
   },
   "EtherFiWithdrawalQueueAssisted": {
     "enabled": true,
-    "$comment": "ether.fi withdrawal-queue cache adapter (agent-fed; ADR 0014). Mutable id-cache, owner = chainConfig.admin (OIV Safe); the kpk-agents submitter feeds WithdrawRequestNFT tokenIds. Native-ETH denominated; values from live reads (finalized getClaimableAmount, else min(amountOfEEth, amountForShare)-fee) and re-verifies ownerOf every read. Reports 0 until the agent submits ids. 04 reads withdrawRequestNft/liquidityPool/underlyingToken; the display name and positionId are hardcoded in the contract.",
+    "$comment": "ether.fi withdrawal-queue assisted adapter (ADR 0015/0018/0030). Caches WithdrawRequestNFT tokenIds only, never amounts; values each live (finalized: getClaimableAmount, else min(amountOfEEth, amountForShare) - fee) and re-verifies ownerOf on every read. Fed by the owner Safe through EtherFiWithdrawalQueueAssistant (msg.sender-keyed submit/remove) and, for requests not opened through the assistant, by a SUBMITTER_ROLE keeper (submitFor). 04 passes the chain's securityCouncil as DEFAULT_ADMIN_ROLE; no submitter is granted at deploy. 04 reads withdrawRequestNft, liquidityPool, underlyingToken; eeth is for the assistant.",
     "constructor": {
       "withdrawRequestNft": "0x7d5706f6ef3F89B3951E23e557CDFBC3239D4E2c",
       "liquidityPool": "0x308861A430be4cce5502d0A12724771Fc6DaF216",
@@ -444,7 +444,7 @@
   },
   "NexusMutualStakingPoolsAssisted": {
     "enabled": true,
-    "$comment": "Nexus Mutual staking pools (assisted adapter; agent-fed, ADR 0015). The assistant submits an account's StakingNFT tokenIds via submitTokenIds (admin+assistant = chainConfig.admin at deploy; ASSISTANT_ROLE submits, DEFAULT_ADMIN_ROLE administers); the adapter caches ids only (never amounts), values each via StakingViewer.getTokens into per-NFT NXM-denominated Staking (active+expired) + Rewards legs (positionId=abi.encode(stakingPoolAddress) (NFT id in display labels)), and re-verifies ownership via tokenInfo on every read (assistant can only under-report). 04 reads stakingNft/stakingViewer/underlyingToken; the display name and positionId are hardcoded in the contract. NXM must be a registered+priced asset (PR #71). Reports 0 until the agent submits ids.",
+    "$comment": "Nexus Mutual staking pools assisted adapter (ADR 0015/0018/0030). Caches StakingNFT tokenIds only, never amounts; values each via StakingViewer.getTokens into NXM Staking (active+expired) + Rewards legs, re-verifying tokenInfo ownership on every read. Fed by the owner Safe through NexusMutualStakingPoolsAssistant (msg.sender-keyed submit/remove) and, for positions not opened through the assistant, by a SUBMITTER_ROLE keeper (submitFor). 04 passes the chain's securityCouncil as DEFAULT_ADMIN_ROLE; no submitter is granted at deploy. tokenController is for the assistant.",
     "constructor": {
       "stakingNft": "0xcafea508a477D94c502c253A58239fb8F948e97f",
       "stakingViewer": "0xcafea5c7d25a192ba70ECA0E2dB62F835c1cF81F",
@@ -455,7 +455,7 @@
   },
   "StakeWiseV3ExitQueueAssisted": {
     "enabled": true,
-    "$comment": "StakeWise V3 exit-queue cache adapter (agent-fed; ADR 0014, sibling of EtherFiWithdrawalQueueAssisted). Mutable cache of (vault, positionTicket, timestamp) tuples \u2014 never amounts \u2014 admin+assistant = chainConfig.admin at deploy (assisted-family AccessControl; ASSISTANT_ROLE submits, DEFAULT_ADMIN_ROLE administers; ADR 0015); the kpk-agents submitter (holding ASSISTANT_ROLE) feeds tuples discovered from ExitQueueEntered events. Native-ETH denominated (mainnet StakeWise vaults settle in ETH); values from live reads (calculateExitedAssets.exitedAssets + convertToAssets(leftShares)) with calculateExitedAssets(receiver=account) as the on-chain ownership check. Reports 0 until the agent submits tuples. 04 reads vaultsRegistry/underlyingToken/receiptSymbol; the display name and positionId are hardcoded in the contract. receiptSymbol names StakeWise's LST (osETH on mainnet) for the position label '<receiptSymbol> Exit Queue', matching the sibling queues.",
+    "$comment": "StakeWise V3 exit-queue assisted adapter (ADR 0015/0018/0030). Caches (vault, positionTicket, timestamp) tuples only, never amounts; vaults gated by the VaultsRegistry; values each live via calculateExitedAssets (claimable after exitClaimDelay, else locked). Fed by the owner Safe through StakeWiseV3ExitQueueAssistant (msg.sender-keyed submit/remove) and, for positions not opened through the assistant (incl. the remainder ticket a partial claim re-queues), by a SUBMITTER_ROLE keeper (submitFor). 04 passes the chain's securityCouncil as DEFAULT_ADMIN_ROLE; no submitter is granted at deploy.",
     "constructor": {
       "vaultsRegistry": "0x3a0008a588772446f6e656133C2D5029CC4FC20E",
       "underlyingToken": "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE",

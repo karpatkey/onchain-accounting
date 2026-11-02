@@ -271,6 +271,15 @@ def validate(url: str, new: str, pairs: list[tuple[str, bytes]]) -> tuple[list, 
     aborts the run, so an outage can never masquerade as "every coordinate is invalid"."""
     if pairs and c.get_code(url, new) in ("0x", "", None):
         raise SeedError(f"--new {new} has no code")
+    if pairs:
+        # Probe once that --new really serves previewPositions (an empty payload answers an empty array), so a wrong
+        # target — e.g. the OLD adapter — aborts instead of "rejecting" every coordinate and exiting with nothing kept.
+        try:
+            probe = c.eth_call(url, new, "0x" + SEL_PREVIEW + _addr_word("0x" + "00" * 19 + "01") + _word(64) + _word(0))
+        except c.RpcError as e:
+            raise SeedError(f"--new {new} does not serve previewPositions(address,bytes): {str(e)[:120]}") from e
+        if not is_abi_array_reply(probe):
+            raise SeedError(f"--new {new} answered previewPositions with {str(probe)[:66]} — not an assisted adapter")
     ok, bad = [], []
     for acct, coord in pairs:
         try:

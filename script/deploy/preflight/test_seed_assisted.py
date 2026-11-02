@@ -186,6 +186,11 @@ class Discovery(unittest.TestCase):
         self.assertEqual(len(bad), 1)
         with self.assertRaises(s.SeedError):
             s.validate("u", A2, [(SAFE, s.coord_token(3))])
+        def old_adapter(url, to, data):  # code-bearing, but no previewPositions → every call reverts
+            raise s.c.RpcError("eth_call: {'message': 'execution reverted'}")
+        s.c.eth_call = old_adapter
+        with self.assertRaises(s.SeedError):
+            s.validate("u", A2, [(SAFE, s.coord_token(1))])
         s.c.eth_call = lambda url, to, data: "0x"  # e.g. an EOA / undeployed address answers 0x
         with self.assertRaises(s.SeedError):
             s.validate("u", A2, [(SAFE, s.coord_token(1))])

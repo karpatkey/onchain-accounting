@@ -61,25 +61,58 @@ class Planning(unittest.TestCase):
 
 SAFE = A1
 ROLES = "0x3333333333333333333333333333333333333333"
+EOA = "0x5555555555555555555555555555555555555555"
+PROTO = "0x6666666666666666666666666666666666666666"
 
 
-def _receipt(*emitters):
-    return {"logs": [{"address": a, "topics": [t]} for a, t in emitters]}
+def _log(data):
+    return {"address": PROTO, "topics": [s.TOPIC_EXIT_ENTERED], "data": data}
+
+
+def _frame(frm, to, logs=(), calls=(), sel="0x12345678"):
+    return {"from": frm, "to": to, "input": sel + "00" * 4, "logs": list(logs), "calls": list(calls)}
+
+
+EXEC_MODULE = "0x468721a7"
+EXEC_OWNER = "0x6a761202"
 
 
 class Provenance(unittest.TestCase):
-    """ADR 0030 S13: keep a position only if the account itself executed in the creating transaction."""
+    """ADR 0030 S13: keep a position only if its creating event was emitted inside a frame the account made."""
 
-    def test_module_execution_counts(self):  # Zodiac Roles path: tx.to is the Roles modifier
-        self.assertTrue(s.account_executed(_receipt((SAFE, s.TOPIC_SAFE_MODULE_SUCCESS)), SAFE))
+    def test_roles_module_execution_counts(self):
+        # EOA -> Roles -> Safe (module exec) -> vault (emits)
+        tr = _frame(EOA, ROLES, calls=[_frame(ROLES, SAFE, sel=EXEC_MODULE,
+                                              calls=[_frame(SAFE, PROTO, logs=[_log("0x01")])])])
+        self.assertTrue(s.emitted_inside_account_frame(tr, _log("0x01"), SAFE))
 
-    def test_owner_execution_counts(self):
-        self.assertTrue(s.account_executed(_receipt((SAFE.upper().replace("0X", "0x"), s.TOPIC_SAFE_EXECUTION_SUCCESS)), SAFE))
+    def test_owner_exec_counts(self):
+        tr = _frame(EOA, SAFE, sel=EXEC_OWNER, calls=[_frame(SAFE, PROTO, logs=[_log("0x01")])])
+        self.assertTrue(s.emitted_inside_account_frame(tr, _log("0x01"), SAFE))
 
-    def test_other_emitter_or_topic_does_not_count(self):
-        self.assertFalse(s.account_executed(_receipt((ROLES, s.TOPIC_SAFE_MODULE_SUCCESS)), SAFE))
-        self.assertFalse(s.account_executed(_receipt((SAFE, s.TOPIC_TRANSFER)), SAFE))
-        self.assertFalse(s.account_executed({}, SAFE))
+    def test_fallback_handler_frame_does_not_count(self):
+        # someone calls the Safe's fallback (no exec selector); the Safe forwards to its handler, which emits
+        tr = _frame(EOA, SAFE, sel="0x150b7a02", calls=[_frame(SAFE, PROTO, logs=[_log("0x01")])])
+        self.assertFalse(s.emitted_inside_account_frame(tr, _log("0x01"), SAFE))
+
+    def test_bundled_third_party_deposit_does_not_count(self):
+        # attacker contract executes an unrelated Safe tx AND, separately, creates a position naming the Safe
+        tr = _frame(EOA, ROLES, calls=[_frame(ROLES, SAFE, sel=EXEC_MODULE,
+                                              calls=[_frame(SAFE, PROTO, logs=[_log("0x01")])]),
+                                       _frame(ROLES, PROTO, logs=[_log("0x02")])])
+        self.assertFalse(s.emitted_inside_account_frame(tr, _log("0x02"), SAFE))
+
+    def test_missing_log_or_trace_aborts(self):
+        tr = _frame(EOA, SAFE, sel=EXEC_OWNER, calls=[_frame(SAFE, PROTO, logs=[_log("0x01")])])
+        with self.assertRaises(s.SeedError):
+            s.emitted_inside_account_frame(tr, _log("0x03"), SAFE)
+        with self.assertRaises(s.SeedError):
+            s.emitted_inside_account_frame(None, _log("0x01"), SAFE)
+
+    def test_array_reply_check(self):
+        self.assertTrue(s.is_abi_array_reply("0x" + s._word(32) + s._word(0)))
+        self.assertFalse(s.is_abi_array_reply("0x"))
+        self.assertFalse(s.is_abi_array_reply("0x" + s._word(64) + s._word(0)))
 
     def test_etherscan_zero_hex(self):
         self.assertEqual(s._hex("0x"), 0)
@@ -90,14 +123,23 @@ class Discovery(unittest.TestCase):
     VAULT = "0x4444444444444444444444444444444444444444"
 
     def setUp(self):
-        self._orig = (s.etherscan_logs, s.c.rpc, s.c.eth_call)
+        self._orig = (s.etherscan_logs, s.c.rpc, s.c.eth_call, s.c.get_code)
+        s.c.get_code = lambda url, addr: "0x60"
 
     def tearDown(self):
-        s.etherscan_logs, s.c.rpc, s.c.eth_call = self._orig
+        s.etherscan_logs, s.c.rpc, s.c.eth_call, s.c.get_code = self._orig
 
     def _stub(self, logs_by_topic, executed_txs):
         s.etherscan_logs = lambda chain, addr, topics, fb: logs_by_topic.get(topics["topic0"], [])
-        s.c.rpc = lambda url, m, params: _receipt((SAFE, s.TOPIC_SAFE_MODULE_SUCCESS)) if params[0] in executed_txs else _receipt()
+        all_logs = [lg for v in logs_by_topic.values() for lg in v]
+
+        def trace(url, m, params):
+            mine = [lg for lg in all_logs if lg["transactionHash"] == params[0]]
+            if params[0] in executed_txs:
+                return _frame(EOA, ROLES, calls=[_frame(ROLES, SAFE, sel=EXEC_MODULE,
+                                                        calls=[_frame(SAFE, PROTO, logs=mine)])])
+            return _frame(EOA, ROLES, calls=[_frame(ROLES, PROTO, logs=mine)])
+        s.c.rpc = trace
 
     def test_stakewise_entry_and_remainder_chain(self):
         entered = [
@@ -130,13 +172,19 @@ class Discovery(unittest.TestCase):
                 raise s.c.RpcError("eth_call: {'message': 'execution reverted'}")
             if data.endswith(s._word(3)):
                 raise s.c.RpcError("eth_call failed after 4 attempts: timeout")
-            return "0x"
+            return "0x" + s._word(32) + s._word(0)
         s.c.eth_call = call
         ok, bad = s.validate("u", A2, [(SAFE, s.coord_token(1)), (SAFE, s.coord_token(2))])
         self.assertEqual(ok, [(SAFE, s.coord_token(1))])
         self.assertEqual(len(bad), 1)
         with self.assertRaises(s.SeedError):
             s.validate("u", A2, [(SAFE, s.coord_token(3))])
+        s.c.eth_call = lambda url, to, data: "0x"  # e.g. an EOA / undeployed address answers 0x
+        with self.assertRaises(s.SeedError):
+            s.validate("u", A2, [(SAFE, s.coord_token(1))])
+        s.c.get_code = lambda url, addr: "0x"
+        with self.assertRaises(s.SeedError):
+            s.validate("u", A2, [(SAFE, s.coord_token(1))])
 
     def test_migrate_reads_live_cache_per_account(self):
         logs = [{"topics": [s.TOPIC_COORD_SUBMITTED, "0x" + s._addr_word(SAFE)]},

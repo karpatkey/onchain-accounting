@@ -55,7 +55,8 @@ interface IAssistedBalanceAdapter is IAccessControl, IBalanceAdapter {
 
     /// @notice File `coord` under `account`, which the protocol must say owns it (idempotent). Requires
     ///         {SUBMITTER_ROLE}. Reverts `CoordinateNotOwned` / `InvalidCoordinate` on a bad or non-owned
-    ///         coordinate, `CoordinateCacheFull` past the cap, {NonCanonicalCoordinate} on a wrong encoding.
+    ///         coordinate, `CoordinateCacheFull` once the account holds the cap minus `OWNER_RESERVE` entries (the reserve stays for the
+    ///         owner's own submit), {NonCanonicalCoordinate} on a wrong encoding.
     function submitFor(address account, bytes calldata coord) external;
 
     /// @notice Batch {submitFor}; all-or-nothing. Requires {SUBMITTER_ROLE}.

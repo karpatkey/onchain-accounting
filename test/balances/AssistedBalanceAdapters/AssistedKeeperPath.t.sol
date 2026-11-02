@@ -227,17 +227,30 @@ contract EtherFiKeeperPathTest is BalanceAdapterTestBase {
         adapter.submitForBatch(new address[](1), new bytes[](2));
     }
 
-    function test_submitFor_capStillApplies() public {
-        for (uint256 i = 1; i <= adapter.MAX_TOKEN_IDS(); ++i) {
+    /// @notice S13: the keeper stops OWNER_RESERVE slots short of the cap, so the owner's own submit (its Assistant
+    ///         path) always has room; the owner path still runs to the full cap.
+    function test_submitFor_stopsShortOfCap_ownerKeepsReserve() public {
+        uint256 cap = adapter.MAX_TOKEN_IDS();
+        uint256 keeperLimit = cap - adapter.OWNER_RESERVE();
+        for (uint256 i = 1; i <= keeperLimit; ++i) {
             _pending(i, holder);
             vm.prank(keeper);
             adapter.submitFor(holder, _coord(i));
         }
-        uint256 extra = adapter.MAX_TOKEN_IDS() + 1;
-        _pending(extra, holder);
-        vm.expectRevert(abi.encodeWithSelector(CoordinateCacheFull.selector, holder, adapter.MAX_TOKEN_IDS()));
+        _pending(keeperLimit + 1, holder);
+        vm.expectRevert(abi.encodeWithSelector(CoordinateCacheFull.selector, holder, keeperLimit));
         vm.prank(keeper);
-        adapter.submitFor(holder, _coord(extra));
+        adapter.submitFor(holder, _coord(keeperLimit + 1));
+
+        for (uint256 i = keeperLimit + 1; i <= cap; ++i) {
+            _pending(i, holder);
+            vm.prank(holder);
+            adapter.submit(i);
+        }
+        _pending(cap + 1, holder);
+        vm.expectRevert(abi.encodeWithSelector(CoordinateCacheFull.selector, holder, cap));
+        vm.prank(holder);
+        adapter.submit(cap + 1);
     }
 
     // ---- removeFor (S6) ----
@@ -575,26 +588,32 @@ contract NexusKeeperPathTest is BalanceAdapterTestBase {
         }
     }
 
-    function test_cacheFull_atCap() public {
-        uint256 cap = adapter.MAX_TOKEN_IDS();
+    /// @dev Keeper fills to its limit, the owner fills the reserve: a full cache, by both paths.
+    function _fillToCap() internal returns (uint256 cap) {
+        cap = adapter.MAX_TOKEN_IDS();
+        uint256 keeperLimit = cap - adapter.OWNER_RESERVE();
         for (uint256 i = 1; i <= cap; ++i) {
             _seed(i, holder, 1 ether);
-            vm.prank(keeper);
-            adapter.submitFor(holder, abi.encode(i));
+            if (i <= keeperLimit) {
+                vm.prank(keeper);
+                adapter.submitFor(holder, abi.encode(i));
+            } else {
+                vm.prank(holder);
+                adapter.submit(i);
+            }
         }
+    }
+
+    function test_cacheFull_atCap() public {
+        uint256 cap = _fillToCap();
         _seed(cap + 1, holder, 1 ether);
         vm.expectRevert(abi.encodeWithSelector(CoordinateCacheFull.selector, holder, cap));
-        vm.prank(keeper);
-        adapter.submitFor(holder, abi.encode(cap + 1));
+        vm.prank(holder);
+        adapter.submit(cap + 1);
     }
 
     function test_readAtCap_staysWithinGas() public {
-        uint256 cap = adapter.MAX_TOKEN_IDS();
-        for (uint256 i = 1; i <= cap; ++i) {
-            _seed(i, holder, 1 ether);
-            vm.prank(keeper);
-            adapter.submitFor(holder, abi.encode(i));
-        }
+        uint256 cap = _fillToCap();
         uint256 g = gasleft();
         INAVCalculator.PositionBalance[] memory legs = adapter.getAdapterPositions(holder, address(0));
         uint256 used = g - gasleft();

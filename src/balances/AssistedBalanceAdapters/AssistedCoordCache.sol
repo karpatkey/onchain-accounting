@@ -66,6 +66,11 @@ abstract contract AssistedCoordCache is IAssistedBalanceAdapter, AccessControl {
     /// @dev Gates {submitFor}/{submitForBatch} only. The owner path, {removeFor} and {clearAccount} stay open.
     bytes32 public constant SUBMITTER_ROLE = SUBMITTER;
 
+    /// @notice Cache slots the keeper path can never use, so an account's own Assistant `submit` always has room. Anyone
+    ///         can create a live position OWNED by a Safe; if a keeper could file those up to the full cap, the Safe's
+    ///         Assistant path (whose `submit` is not caught) would revert until it cleared its cache (ADR 0030 S13).
+    uint256 public constant OWNER_RESERVE = 32;
+
     /// @notice The single asset this adapter reports. Must be a registered NAV asset for {getAdapterPositions} to count
     ///         it; the balance getters report it regardless (registration-independent).
     address public immutable UNDERLYING_TOKEN;
@@ -283,26 +288,30 @@ abstract contract AssistedCoordCache is IAssistedBalanceAdapter, AccessControl {
     /// @dev Owner path: add one coordinate for the caller (idempotent). Keyed on `msg.sender` (self-scoped). The typed
     ///      `submit` always passes a canonical `abi.encode`.
     function _submitCoord(bytes memory coord) internal {
-        _addEntry(msg.sender, coord);
+        _addEntry(msg.sender, coord, _maxCoords());
     }
 
-    /// @dev Keeper path: canonical-encoding check, then the same admission as the owner path.
+    /// @dev Keeper path: canonical-encoding check, then the owner path's admission with a lower limit (cap minus
+    ///      {OWNER_RESERVE}; 0 for a member whose cap does not exceed the reserve, which disables the keeper path).
     function _submitFor(address account, bytes calldata coord) private {
         if (account == address(0)) revert InvalidArguments();
         _requireCanonical(coord);
-        if (_addEntry(account, coord)) emit CoordSubmittedFor(account, _coordId(coord), msg.sender);
+        uint256 cap = _maxCoords();
+        if (_addEntry(account, coord, cap > OWNER_RESERVE ? cap - OWNER_RESERVE : 0)) {
+            emit CoordSubmittedFor(account, _coordId(coord), msg.sender);
+        }
     }
 
-    /// @dev The single admission point for both paths (idempotent). Fail-loud: `CoordinateCacheFull` past
-    ///      {_maxCoords}, and {_validateCoord} reverts (`InvalidCoordinate` / `CoordinateNotOwned`) on a bad or
-    ///      non-owned coordinate.
-    function _addEntry(address account, bytes memory coord) private returns (bool added) {
+    /// @dev The single admission point for both paths (idempotent). Fail-loud: `CoordinateCacheFull` once the set
+    ///      holds `limit` entries ({_maxCoords} for the owner, {_maxCoords} − {OWNER_RESERVE} for the keeper), and
+    ///      {_validateCoord} reverts (`InvalidCoordinate` / `CoordinateNotOwned`) on a bad or non-owned coordinate.
+    function _addEntry(address account, bytes memory coord, uint256 limit) private returns (bool added) {
         bytes32 key = keccak256(coord);
         // Re-validate on EVERY submit (before the dedup early-return) so a resubmit of an already-cached coordinate the
         // caller has since transferred away is rejected loud rather than silently kept.
         _validateCoord(account, coord); // fail-loud write-time hygiene
         if (_idxPlus1[account][key] != 0) return false; // already cached (idempotent no-op)
-        if (_coords[account].length >= _maxCoords()) revert CoordinateCacheFull(account, _maxCoords());
+        if (_coords[account].length >= limit) revert CoordinateCacheFull(account, limit);
         _coords[account].push(coord);
         _idxPlus1[account][key] = _coords[account].length;
         emit CoordSubmitted(account, _coordId(coord));

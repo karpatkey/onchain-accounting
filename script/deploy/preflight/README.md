@@ -166,8 +166,8 @@ usable as the audit's enumerator.
 Read-only planner for the keeper path: it builds `submitForBatch` calldata that files existing positions into a NEW
 assisted adapter before the NAV swaps to it. Per member it (1) migrates everything the OLD adapter caches
 (`CoordSubmitted` accounts → live `coordsOf`), (2) optionally discovers positions of allow-listed Safes that never went
-through an Assistant, keeping only those the Safe itself executed (receipt has a Safe execution log emitted by the
-account — Roles-module executions included), and (3) keeps only coordinates the new adapter's `previewPositions`
+through an Assistant, keeping only those whose creating event was emitted inside one of the Safe's own executions
+(call trace; Roles-module executions and the Assistant included; needs `debug_traceTransaction`), and (3) keeps only coordinates the new adapter's `previewPositions`
 accepts. It never sends anything; the `SUBMITTER_ROLE` keeper sends each chunk. Needs `ETHERSCAN_API_KEY` and an RPC.
 
 ```bash

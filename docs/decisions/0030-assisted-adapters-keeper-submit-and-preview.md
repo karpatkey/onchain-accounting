@@ -62,9 +62,9 @@ only → **a cache entry can under-report, never over-report**. The rows below a
 | S8 | New mutable state in an "immutable" adapter. | The only admin power is granting / revoking `SUBMITTER_ROLE`. No amounts, no configuration, no upgrade. An extension of the ADR 0015 coordinate-cache exception, not a new kind. |
 | S9 | Preview abuse with caller-supplied coordinates. | Same length, dedup, cap and ownership validation as a submit, fail-loud; StakeWise's vault-registry check happens in validation (the valuation alone would call any vault address), so validation is mandatory, not optional. View-only, never on the NAV path. |
 | S10 | Gap after the swap (new caches start empty). | Seed the new adapters with `submitForBatch` before the timelock executes the swap, and again right before execution. |
-| S11 | Completeness for Assistant users (the roles-level half). | Holds only if the Safes' roles allow-list points at the **new** Assistants before the swap. Outside this repo; a deployment prerequisite. The keeper becomes a second, off-chain completeness source for positions not opened through an Assistant. |
+| S11 | Completeness for Assistant users (the roles-level half). | The old Assistants keep feeding the old, still-registered adapter until the swap executes; the Safes' roles allow-list moves to the **new** Assistants only AFTER the swap (outside this repo). Positions the old Assistants open up to that switch sit in the old cache and are carried over by re-running the seeding migration right after the swap and right after the switch. Switching earlier would leave every new position out of the NAV for the whole timelock delay. The keeper becomes a second, off-chain completeness source for positions not opened through an Assistant. |
 | S12 | Entries that can never be removed keep cap slots. | ether.fi: an invalidated request the owner still holds becomes owner-removable. `removeFor` stays strict: invalidation is reversible. |
-| S13 | Anyone can create a position *owned by* a victim (`requestWithdraw(recipient)`, `enterExitQueue(receiver)`, `depositTo(destination)`); an honest keeper that submits everything it discovers would fill the victim's cache with dust. At the 256 cap the cache rejects new entries, and because the Assistants' own `submit` is not caught, the Safe's Assistant path (withdraw request / exit-queue entry / staking deposit) then REVERTS until the owner runs `clearAccount`. | Keeper policy, off-chain: submit only positions the account itself executed (the creating transaction's receipt carries a Safe `ExecutionSuccess` / `ExecutionFromModuleSuccess` log emitted by the account — true for its own transactions, Zodiac Roles module executions and the Assistant path), only for allow-listed client Safes, and never fill an account past a headroom below the cap. `seed_assisted.py` enforces the provenance rule. Contract escape hatch: the owner's `clearAccount` plus re-submit. Residual: under-report, read cost, and a blocked Assistant path until `clearAccount`; never over-report. |
+| S13 | Anyone can create a position *owned by* a victim (`requestWithdraw(recipient)`, `enterExitQueue(receiver)`, `depositTo(destination)`); a keeper that files everything it discovers would fill the victim's cache with dust. At the cap the Assistants' uncaught `submit` would make the Safe's withdraw request / exit-queue entry / staking deposit revert. | **On-chain:** the keeper path stops `OWNER_RESERVE` (32) slots short of the cap, so the owner's own `submit` — its Assistant path — always has room; a keeper (buggy or compromised) can never block it. **Keeper policy, off-chain:** file only positions the account itself created — the creating event (mint / `ExitQueueEntered`) must be emitted inside a Safe execution of the account (`execTransaction` / `execTransactionFromModule`), checked on the transaction's call trace (this covers the Safe's own transactions, Zodiac Roles module executions and the delegatecall Assistant, and rejects a third party that bundles an unrelated Safe execution with its own deposit naming the Safe, or reaches the Safe's fallback handler); only for allow-listed client Safes; under a headroom. `seed_assisted.py` enforces the trace rule and flags headroom. Residual: under-report and read cost, never over-report. |
 | S14 | Reentrancy, including read-only. | Every protocol call in validation and valuation is a `view` interface call (STATICCALL). `submitFor` / `removeFor` make no state-changing external call. |
 | S15 | Double count while both the old and the new adapter are registered. | The swap is ONE timelock operation (`removeBalanceAdapters([old])` + `addBalanceAdapters([new])`), never two. If ever split, remove first. |
 
@@ -82,12 +82,16 @@ only → **a cache entry can under-report, never over-report**. The rows below a
 ## Rollout (per chain: 1, and 100 for StakeWise)
 
 1. Deploy the three adapters and their Assistants (`04`, admin = the chain's Security Council). Verify on every explorer.
-2. Ops move the Safes' roles allow-list to the NEW Assistants (S11). The new caches fill while unregistered (NAV-neutral).
-3. In ONE Council Safe transaction: `grantRole(SUBMITTER_ROLE, keeper)` on each new adapter, and schedule the swap on
-   the NAV timelock as ONE operation (`removeBalanceAdapters([old…]) + addBalanceAdapters([new…])`, S15).
-4. Seed: `script/deploy/preflight/seed_assisted.py` per member → the keeper sends each `submitForBatch` chunk.
-   A chunk is all-or-nothing, so keep chunks small and re-run the script right before sending.
-5. Re-seed right before the timelock delay ends; anyone executes the swap; check the NAV per account before vs after.
+2. In ONE Council Safe transaction: `grantRole(SUBMITTER_ROLE, keeper)` on each new adapter, and schedule the swap on
+   the NAV timelock as ONE operation (`removeBalanceAdapters([old…]) + addBalanceAdapters([new…])`, S15). The old
+   Assistants keep feeding the old, registered adapters meanwhile.
+3. Seed: `script/deploy/preflight/seed_assisted.py` per member (migrates the old caches + discovered positions) → the
+   keeper sends each `submitForBatch` chunk. A chunk is all-or-nothing, so keep chunks small and re-run the script
+   right before sending. Re-seed right before the timelock delay ends.
+4. Anyone executes the swap; re-run the seeding right after (it carries over whatever the old Assistants filed since the
+   last run). Check the NAV per account before vs after.
+5. Ops move the Safes' roles allow-list to the NEW Assistants (S11), then run the seeding once more to carry over
+   anything the old Assistants filed in between.
 
 ## Consequences
 

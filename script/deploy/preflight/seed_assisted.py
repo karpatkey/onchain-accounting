@@ -12,11 +12,12 @@ Two sources of coordinates, per member:
      `ExitQueueEntered` with the account as receiver (in the `--stakewise-vaults` given) plus the remainder ticket a
      partial claim re-queues (`ExitedAssetsClaimed`, same entry timestamp).
 
-ADR 0030 S13 (anyone can create a position OWNED by a victim): a discovered position is kept only if the account
-itself executed in the transaction that created it — its receipt carries a Safe `ExecutionSuccess` or
-`ExecutionFromModuleSuccess` log emitted BY the account. That holds for a Safe's own transaction, a Zodiac Roles
-module execution (the production path, where `tx.to` is the Roles modifier, not the Safe) and the delegatecall
-assistant alike. A position someone else created in the account's name is skipped and reported.
+ADR 0030 S13 (anyone can create a position OWNED by a victim): a discovered position is kept only if the creating
+event (the NFT mint / `ExitQueueEntered`) was emitted INSIDE a call frame the account itself made — checked on the
+transaction's call trace (`debug_traceTransaction`, `callTracer` with logs). That holds for a Safe's own transaction, a
+Zodiac Roles module execution (the production path, where `tx.to` is the Roles modifier) and the delegatecall assistant
+alike, and it rejects a third party that bundles an unrelated Safe execution with its own deposit naming the Safe. A
+position someone else created in the account's name is skipped and reported. No trace support on the RPC = abort.
 
 Every surviving coordinate is then checked with an `eth_call` of the new adapter's `previewPositions(account,
 [coord])`, which runs the same ownership validation as `submitFor` and reverts on a bad coordinate; failures are
@@ -44,9 +45,6 @@ TOPIC_COORD_SUBMITTED = "0x7728999634b195c39bbd63fdaab812fa23cdf37de6bbc1e06a1de
 TOPIC_TRANSFER = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"
 TOPIC_EXIT_ENTERED = "0x211091c5bf013c1230f996c3bb2bc327e3de429a3d3c356dcea9a0c858bc407f"
 TOPIC_EXITED_CLAIMED = "0xeb3b05c070c24f667611fdb3ff75fe007d42401c573aed8d8faca95fd00ccb56"
-# Safe execution events — emitted by the Safe itself when it executes (own tx / module).
-TOPIC_SAFE_EXECUTION_SUCCESS = "0x442e715f626346e8c54381002da614f62bee8d27386535b2521ec8540898556e"
-TOPIC_SAFE_MODULE_SUCCESS = "0x6895c13664aa4f67288b25d7a21d7aaa34916e355fb9b6fae0a139a9085becb8"
 
 # Protocol contracts the discovery reads (chain 1; StakeWise vaults are passed explicitly).
 ETHERFI_WITHDRAW_REQUEST_NFT = {1: "0x7d5706f6ef3f89b3951e23e557cdfbc3239d4e2c"}
@@ -154,15 +152,42 @@ def _hex(x: str) -> int:
     return 0 if x in ("0x", "") else int(x, 16)
 
 
-def account_executed(receipt: dict, account: str) -> bool:
-    """True iff the receipt carries a Safe execution log emitted BY `account` (ADR 0030 S13)."""
-    a = account.lower()
-    for lg in (receipt or {}).get("logs", []):
-        topics = lg.get("topics") or []
-        if (lg.get("address", "").lower() == a and topics
-                and topics[0].lower() in (TOPIC_SAFE_EXECUTION_SUCCESS, TOPIC_SAFE_MODULE_SUCCESS)):
-            return True
-    return False
+def _log_key(lg: dict) -> tuple:
+    return (lg.get("address", "").lower(), tuple(x.lower() for x in (lg.get("topics") or [])),
+            (lg.get("data") or "0x").lower())
+
+
+# Safe entry points that execute a transaction the Safe itself authorised (owner signatures or an enabled module).
+SAFE_EXEC_SELECTORS = ("0x6a761202", "0x468721a7", "0x5229073f")  # execTransaction / ...FromModule / ...ReturnData
+
+
+def emitted_inside_account_frame(trace: dict, log: dict, account: str) -> bool:
+    """True iff `log` was emitted inside a Safe execution of `account` (ADR 0030 S13): a frame calling `account` with
+    `execTransaction` / `execTransactionFromModule(ReturnData)` and the log somewhere in its subtree.
+
+    That covers the Safe's own transaction, a Zodiac Roles module execution and the delegatecall assistant (all run
+    inside such a frame), and rejects a log a third party produced in the same transaction — including through the
+    Safe's fallback handler, which is reached without an exec entry point. Raises if the trace does not contain the log
+    at all (a tracer that ignored `withLog`, or a null trace): that must abort, not read as "not created"."""
+    a, target = account.lower(), _log_key(log)
+
+    def walk(frame: dict, inside: bool):
+        inside = inside or (frame.get("to", "").lower() == a
+                            and (frame.get("input") or "")[:10].lower() in SAFE_EXEC_SELECTORS)
+        for lg in frame.get("logs") or []:
+            if _log_key(lg) == target:
+                return inside
+        for child in frame.get("calls") or []:
+            found = walk(child, inside)
+            if found is not None:
+                return found
+        return None
+
+    found = walk(trace or {}, False)
+    if found is None:
+        raise SeedError(f"creating log not found in the call trace of {log.get('transactionHash', '?')} "
+                        "(tracer without withLog support?) — refusing to guess")
+    return found
 
 
 def topic_addr(a: str) -> str:
@@ -174,8 +199,11 @@ def topic_addr(a: str) -> str:
 def created_by_account(url: str, log: dict, account: str, cache: dict[str, dict]) -> bool:
     h = log["transactionHash"]
     if h not in cache:
-        cache[h] = c.rpc(url, "eth_getTransactionReceipt", [h])
-    return account_executed(cache[h], account)
+        try:
+            cache[h] = c.rpc(url, "debug_traceTransaction", [h, {"tracer": "callTracer", "tracerConfig": {"withLog": True}}])
+        except c.RpcError as e:
+            raise SeedError(f"call trace unavailable for {h} (the S13 check needs debug_traceTransaction): {e}") from e
+    return emitted_inside_account_frame(cache[h], log, account)
 
 
 def discover(chain: int, member: str, url: str, accounts: list[str], from_block: int,
@@ -231,13 +259,23 @@ def migrate(chain: int, url: str, old: str, from_block: int) -> list[tuple[str, 
     return out
 
 
+def is_abi_array_reply(ret: str) -> bool:
+    """A dynamic-array return value: head offset 0x20 followed by a length word."""
+    h = (ret or "")[2:] if (ret or "").startswith("0x") else (ret or "")
+    return len(h) >= 128 and int(h[0:64], 16) == 32
+
+
 def validate(url: str, new: str, pairs: list[tuple[str, bytes]]) -> tuple[list, list[str]]:
     """Keep what `previewPositions` accepts. Only an execution REVERT rejects a coordinate; any other RPC failure
     aborts the run, so an outage can never masquerade as "every coordinate is invalid"."""
+    if pairs and c.get_code(url, new) in ("0x", "", None):
+        raise SeedError(f"--new {new} has no code")
     ok, bad = [], []
     for acct, coord in pairs:
         try:
-            c.eth_call(url, new, encode_preview(acct, [coord]))
+            ret = c.eth_call(url, new, encode_preview(acct, [coord]))
+            if not is_abi_array_reply(ret):
+                raise SeedError(f"previewPositions on {new} returned {str(ret)[:66]} — not an adapter reply")
             ok.append((acct, coord))
         except c.RpcError as e:
             if "revert" not in str(e).lower():
@@ -286,7 +324,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--from-block", type=int, default=0)
     ap.add_argument("--chunk", type=int, default=50)
     ap.add_argument("--headroom", type=int, default=200,
-                    help="flag accounts the plan would fill past this many entries (cap is 256; ADR 0030 S13)")
+                    help="flag accounts the plan would fill past this many entries (keeper limit 224 = cap 256 - "
+                         "OWNER_RESERVE 32; ADR 0030 S13)")
     ap.add_argument("--out", required=True)
     a = ap.parse_args(argv)
     for x in (a.old, a.new):
@@ -297,6 +336,9 @@ def main(argv: list[str] | None = None) -> int:
     if not url:
         raise SeedError(f"no RPC for chain {a.chain}: {note}")
 
+    for label, addr in (("--old", a.old), ("--new", a.new)):
+        if c.get_code(url, addr) in ("0x", "", None):
+            raise SeedError(f"{label} {addr} has no code on chain {a.chain}")
     migrated = migrate(a.chain, url, a.old, a.from_block)
     discovered, skipped = [], []
     if a.accounts:

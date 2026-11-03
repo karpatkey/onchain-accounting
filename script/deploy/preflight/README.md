@@ -171,7 +171,9 @@ through an Assistant, keeping only those whose creating event was emitted inside
 accepts AND values to at least one leg (a DISCOVERED owned-but-empty position, e.g. a withdrawn Nexus StakingNFT, which
 Nexus never burns, is skipped; coordinates migrated from the old cache carry over even when empty (ether.fi only — an emptied Nexus NFT is dead for
 the contract and is skipped), and any the new adapter rejects are listed for review — `--strict` stops instead;
-`--from-block` bounds discovery only, the migration always reads the old adapter's full history; the adapter's underlying must be registered on the NAV, else the run aborts). It never sends anything; the `SUBMITTER_ROLE` keeper sends each chunk. Needs `ETHERSCAN_API_KEY` and an RPC.
+`--from-block` bounds only the ether.fi / Nexus NFT discovery (an NFT received before it is not discovered; keep 0 for a
+first seed) — the migration and StakeWise discovery always read full
+history (a remainder needs its original entry's timestamp); the adapter's underlying must be registered on the NAV, else the run aborts). It never sends anything; the `SUBMITTER_ROLE` keeper sends each chunk. Needs `ETHERSCAN_API_KEY` and an RPC.
 
 ```bash
 python3 seed_assisted.py --chain 1 --member etherfi --old <old adapter> --new <new adapter> \

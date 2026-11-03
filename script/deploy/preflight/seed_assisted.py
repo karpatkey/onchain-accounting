@@ -232,8 +232,10 @@ def discover(chain: int, member: str, url: str, accounts: list[str], from_block:
             for v in vaults:
                 entered = []
                 for topic in (TOPIC_EXIT_ENTERED, TOPIC_V2_EXIT_ENTERED):  # V2… on v2-era vaults; ticket = word 0
+                    # Always from block 0: a remainder claimed inside a bounded window needs its ORIGINAL entry's
+                    # timestamp, which may predate --from-block (receiver-filtered, so the full scan is cheap).
                     entered += etherscan_logs(chain, v, {"topic0": topic, "topic2": topic_addr(acct),
-                                                         "topic0_2_opr": "and"}, from_block)
+                                                         "topic0_2_opr": "and"}, 0)
                 ts_of: dict[int, int] = {}
                 for lg in entered:
                     data = lg["data"][2:]
@@ -244,13 +246,17 @@ def discover(chain: int, member: str, url: str, accounts: list[str], from_block:
                     else:
                         skipped.append(f"{acct} ticket {ticket}: queued in a transaction the account did not execute")
                 claimed = etherscan_logs(chain, v, {"topic0": TOPIC_EXITED_CLAIMED, "topic1": topic_addr(acct),
-                                                    "topic0_1_opr": "and"}, from_block)
+                                                    "topic0_1_opr": "and"}, 0)
                 for lg in sorted(claimed, key=lambda x: (_hex(x["blockNumber"]), _hex(x["logIndex"]))):
                     data = lg["data"][2:]
                     prev, new = int(data[0:64], 16), int(data[64:128], 16)
                     if prev in ts_of and new != 0:  # the remainder keeps the entry timestamp
                         ts_of[new] = ts_of[prev]
                         found.append((acct, coord_stakewise(v, new, ts_of[prev])))
+                    if prev in ts_of:  # a claim deletes the old request: don't plan the consumed ticket
+                        consumed = (acct, coord_stakewise(v, prev, ts_of[prev]))
+                        if consumed in found:
+                            found.remove(consumed)
         else:
             raise SeedError(f"unknown member {member}")
     return found, skipped
@@ -394,7 +400,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--accounts", help="file with one allow-listed account per line (discovery)")
     ap.add_argument("--stakewise-vaults", default="", help="comma-separated vaults to scan (stakewise)")
     ap.add_argument("--from-block", type=int, default=0,
-                    help="bounds DISCOVERY only; the migration always reads the old adapter's full history")
+                    help="bounds the ether.fi / Nexus NFT discovery only; the migration and StakeWise discovery always "
+                         "read full history (a remainder needs its original entry's timestamp)")
     ap.add_argument("--chunk", type=int, default=50)
     ap.add_argument("--strict", action="store_true",
                     help="exit non-zero (no plan written) if any coordinate from the OLD cache is rejected")

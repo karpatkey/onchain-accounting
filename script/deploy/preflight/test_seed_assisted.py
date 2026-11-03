@@ -171,9 +171,16 @@ class Discovery(unittest.TestCase):
         self._stub({s.TOPIC_EXIT_ENTERED: entered, s.TOPIC_EXITED_CLAIMED: claimed}, {"0xa"})
         found, skipped = s.discover(1, "stakewise", "u", [SAFE], 0, [self.VAULT])
         got = [c for _, c in found]
-        self.assertEqual(got, [s.coord_stakewise(self.VAULT, t, 0x10) for t in (100, 150, 170)],
-                         "remainders keep the ENTRY timestamp; the third-party ticket and its remainder are dropped")
+        self.assertEqual(got, [s.coord_stakewise(self.VAULT, 170, 0x10)],
+                         "only the live remainder is planned, with the ENTRY timestamp; consumed tickets (100, 150) and "
+                         "the third-party ticket and its remainder are dropped")
         self.assertEqual(len(skipped), 1)
+
+    def test_stakewise_scans_full_history_even_with_from_block(self):
+        seen = []
+        s.etherscan_logs = lambda chain, addr, topics, fb: seen.append(fb) or []
+        s.discover(1, "stakewise", "u", [SAFE], 12_345, [self.VAULT])
+        self.assertTrue(seen and all(fb == 0 for fb in seen), "entries and claims must be read from block 0")
 
     def test_nft_mint_filtered_by_provenance(self):
         mints = [{"transactionHash": "0xa", "topics": [s.TOPIC_TRANSFER, "0x0", "0x0", "0x" + s._word(11)]},

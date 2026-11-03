@@ -207,6 +207,16 @@ class Discovery(unittest.TestCase):
         self.assertEqual(probe_ok[0], [(SAFE, s.coord_token(1))])
         self.assertEqual(len(probe_ok[2]), 1)
 
+    def test_validate_keeps_empty_migrated_coordinates(self):
+        # an owned ether.fi request migrated from the OLD cache that previews empty (e.g. temporarily invalidated)
+        # carries over; the same coordinate merely DISCOVERED would be skipped
+        s.c.eth_call = self._adapter(lambda data: 0)
+        pair = (SAFE, s.coord_token(1))
+        ok, bad, empty = s.validate("u", A2, [pair], keep_empty={pair})
+        self.assertEqual((ok, empty), ([pair], []))
+        ok, bad, empty = s.validate("u", A2, [pair])
+        self.assertEqual((ok, len(empty)), ([], 1))
+
     def test_validate_requires_registered_underlying(self):
         s.c.eth_call = self._adapter(registered=False)
         with self.assertRaises(s.SeedError):

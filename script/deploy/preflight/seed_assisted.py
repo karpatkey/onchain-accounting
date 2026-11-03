@@ -306,12 +306,15 @@ def underlying_registered(url: str, adapter: str) -> bool:
     return int(h[64:128], 16) == 1
 
 
-def validate(url: str, new: str, pairs: list[tuple[str, bytes]]) -> tuple[list, list[str], list[str]]:
+def validate(url: str, new: str, pairs: list[tuple[str, bytes]],
+             keep_empty: set[tuple[str, bytes]] | None = None) -> tuple[list, list[str], list[str]]:
     """Keep what `previewPositions` accepts AND values to at least one leg. Only an execution REVERT rejects a
     coordinate; any other RPC failure aborts the run, so an outage can never masquerade as "every coordinate is
     invalid". A coordinate that previews EMPTY (owned but holding nothing — e.g. a withdrawn Nexus StakingNFT, which
-    Nexus never burns) is skipped: filing it would only spend a keeper slot. Requires the underlying to be registered on
-    the NAV, so "empty" really means "nothing live"."""
+    Nexus never burns) is skipped: filing it would only spend a keeper slot — EXCEPT the pairs in `keep_empty` (the
+    coordinates migrated from the OLD cache: the owner filed them, and an owned ether.fi request can preview empty only
+    temporarily, e.g. while invalidated, so they carry over as long as they pass validation). Requires the underlying to
+    be registered on the NAV, so "empty" really means "nothing live"."""
     if pairs and c.get_code(url, new) in ("0x", "", None):
         raise SeedError(f"--new {new} has no code")
     if pairs:
@@ -332,7 +335,7 @@ def validate(url: str, new: str, pairs: list[tuple[str, bytes]]) -> tuple[list, 
             ret = c.eth_call(url, new, encode_preview(acct, [coord]))
             if not is_abi_array_reply(ret):
                 raise SeedError(f"previewPositions on {new} returned {str(ret)[:66]} — not an adapter reply")
-            if array_len(ret) == 0:
+            if array_len(ret) == 0 and (acct, coord) not in (keep_empty or set()):
                 empty.append(f"{acct} 0x{coord.hex()}")
             else:
                 ok.append((acct, coord))
@@ -389,6 +392,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--stakewise-vaults", default="", help="comma-separated vaults to scan (stakewise)")
     ap.add_argument("--from-block", type=int, default=0)
     ap.add_argument("--chunk", type=int, default=50)
+    ap.add_argument("--strict", action="store_true",
+                    help="exit non-zero (no plan written) if any coordinate from the OLD cache is rejected")
     ap.add_argument("--allow-empty-migration", action="store_true",
                     help="accept an old adapter with nothing cached (otherwise migrated == 0 aborts)")
     ap.add_argument("--headroom", type=int, default=200,
@@ -423,12 +428,20 @@ def main(argv: list[str] | None = None) -> int:
         vaults = [v for v in a.stakewise_vaults.split(",") if v]
         discovered, skipped = discover(a.chain, a.member, url, accts, a.from_block, vaults)
     pairs = dedupe(migrated + discovered)
-    ok, rejected, empty = validate(url, a.new, pairs)
+    migrated_set = set(dedupe(migrated))
+    ok, rejected, empty = validate(url, a.new, pairs, keep_empty=migrated_set)
+    # A MIGRATED coordinate (filed by its owner) that the new adapter rejects is usually dead (claimed / transferred),
+    # but list it apart so a transient failure is reviewed rather than silently left behind.
+    migrated_rejected = [r for r in rejected if any(r.startswith(f"{acct} 0x{coord.hex()}:") for acct, coord in migrated_set)]
     existing = cached_sets(url, a.new, {x for x, _ in ok})
     to_send = not_yet_cached(ok, existing)
+    if migrated_rejected and a.strict:
+        raise SeedError(f"--strict: {len(migrated_rejected)} coordinate(s) from the OLD cache were rejected: "
+                        f"{migrated_rejected[:3]}")
     plan = {"chain": a.chain, "member": a.member, "old": a.old, "new": a.new,
             "migrated": len(migrated), "discovered": len(discovered), "kept": len(ok),
             "skipped_not_created_by_account": skipped, "rejected_by_preview": rejected,
+            "migrated_rejected_review": migrated_rejected,
             "skipped_empty": empty,
             "accounts_over_headroom": over_headroom(ok, a.headroom, existing),
             "already_cached": len(ok) - len(to_send), "to_send": len(to_send),
@@ -437,6 +450,10 @@ def main(argv: list[str] | None = None) -> int:
     print(f"{a.member}: migrated {len(migrated)}, discovered {len(discovered)}, kept {len(ok)}, "
           f"skipped {len(skipped)}, rejected {len(rejected)}, empty {len(empty)}, already cached {plan['already_cached']} → "
           f"{plan['to_send']} to send in {len(plan['chunks'])} chunk(s), {a.out}")
+    if migrated_rejected:
+        print(f"REVIEW: {len(migrated_rejected)} coordinate(s) from the OLD cache were rejected by the new adapter "
+              "(see migrated_rejected_review) — usually dead, re-run if a read may have failed transiently",
+              file=sys.stderr)
     if plan["accounts_over_headroom"]:
         print(f"WARNING: over --headroom {a.headroom}: {plan['accounts_over_headroom']} — review before sending",
               file=sys.stderr)

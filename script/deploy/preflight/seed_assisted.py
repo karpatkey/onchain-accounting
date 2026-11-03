@@ -41,6 +41,9 @@ import chainlib as c
 SEL_SUBMIT_FOR_BATCH = "b74e4c50"  # submitForBatch(address[],bytes[])
 SEL_COORDS_OF = "197c3a51"  # coordsOf(address)
 SEL_PREVIEW = "9461d46c"  # previewPositions(address,bytes)
+SEL_UNDERLYING = "29db1be6"  # UNDERLYING_TOKEN()
+SEL_NAV = "9f584337"  # NAV_CALCULATOR()
+SEL_REGISTERED_ASSET = "c574642c"  # getRegisteredAsset(address) -> (Asset, bool)
 TOPIC_COORD_SUBMITTED = "0x7728999634b195c39bbd63fdaab812fa23cdf37de6bbc1e06a1dedddd04cd01e"
 TOPIC_TRANSFER = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"
 TOPIC_EXIT_ENTERED = "0x211091c5bf013c1230f996c3bb2bc327e3de429a3d3c356dcea9a0c858bc407f"
@@ -282,9 +285,33 @@ def is_abi_array_reply(ret: str) -> bool:
     return len(h) >= 128 and int(h[0:64], 16) == 32
 
 
-def validate(url: str, new: str, pairs: list[tuple[str, bytes]]) -> tuple[list, list[str]]:
-    """Keep what `previewPositions` accepts. Only an execution REVERT rejects a coordinate; any other RPC failure
-    aborts the run, so an outage can never masquerade as "every coordinate is invalid"."""
+def array_len(ret: str) -> int:
+    """Element count of a dynamic-array reply (caller has checked `is_abi_array_reply`)."""
+    h = ret[2:] if ret.startswith("0x") else ret
+    return int(h[64:128], 16)
+
+
+def underlying_registered(url: str, adapter: str) -> bool:
+    """Whether the adapter's underlying is registered on its NAV — otherwise every preview is empty by design, so an
+    empty preview could not tell 'nothing live' from 'not priced' (and nothing should be seeded until it is)."""
+    try:
+        token = "0x" + c.eth_call(url, adapter, "0x" + SEL_UNDERLYING)[-40:]
+        nav = "0x" + c.eth_call(url, adapter, "0x" + SEL_NAV)[-40:]
+        ret = c.eth_call(url, nav, "0x" + SEL_REGISTERED_ASSET + _addr_word(token))
+    except c.RpcError as e:
+        raise SeedError(f"could not read {adapter}'s underlying registration: {str(e)[:120]}") from e
+    h = ret[2:] if ret.startswith("0x") else ret
+    if len(h) < 128:
+        raise SeedError(f"NAV {nav} gave a malformed getRegisteredAsset reply")
+    return int(h[64:128], 16) == 1
+
+
+def validate(url: str, new: str, pairs: list[tuple[str, bytes]]) -> tuple[list, list[str], list[str]]:
+    """Keep what `previewPositions` accepts AND values to at least one leg. Only an execution REVERT rejects a
+    coordinate; any other RPC failure aborts the run, so an outage can never masquerade as "every coordinate is
+    invalid". A coordinate that previews EMPTY (owned but holding nothing — e.g. a withdrawn Nexus StakingNFT, which
+    Nexus never burns) is skipped: filing it would only spend a keeper slot. Requires the underlying to be registered on
+    the NAV, so "empty" really means "nothing live"."""
     if pairs and c.get_code(url, new) in ("0x", "", None):
         raise SeedError(f"--new {new} has no code")
     if pairs:
@@ -296,18 +323,24 @@ def validate(url: str, new: str, pairs: list[tuple[str, bytes]]) -> tuple[list, 
             raise SeedError(f"--new {new} does not serve previewPositions(address,bytes): {str(e)[:120]}") from e
         if not is_abi_array_reply(probe):
             raise SeedError(f"--new {new} answered previewPositions with {str(probe)[:66]} — not an assisted adapter")
-    ok, bad = [], []
+        if not underlying_registered(url, new):
+            raise SeedError(f"--new {new}: its underlying is not registered on its NAV — every preview would be empty; "
+                            "register the asset first")
+    ok, bad, empty = [], [], []
     for acct, coord in pairs:
         try:
             ret = c.eth_call(url, new, encode_preview(acct, [coord]))
             if not is_abi_array_reply(ret):
                 raise SeedError(f"previewPositions on {new} returned {str(ret)[:66]} — not an adapter reply")
-            ok.append((acct, coord))
+            if array_len(ret) == 0:
+                empty.append(f"{acct} 0x{coord.hex()}")
+            else:
+                ok.append((acct, coord))
         except c.RpcError as e:
             if "revert" not in str(e).lower():
                 raise SeedError(f"RPC failure while validating (not a revert): {str(e)[:160]}") from e
             bad.append(f"{acct} 0x{coord.hex()}: {str(e)[:160]}")
-    return ok, bad
+    return ok, bad, empty
 
 
 def dedupe(pairs: list[tuple[str, bytes]]) -> list[tuple[str, bytes]]:
@@ -390,18 +423,19 @@ def main(argv: list[str] | None = None) -> int:
         vaults = [v for v in a.stakewise_vaults.split(",") if v]
         discovered, skipped = discover(a.chain, a.member, url, accts, a.from_block, vaults)
     pairs = dedupe(migrated + discovered)
-    ok, rejected = validate(url, a.new, pairs)
+    ok, rejected, empty = validate(url, a.new, pairs)
     existing = cached_sets(url, a.new, {x for x, _ in ok})
     to_send = not_yet_cached(ok, existing)
     plan = {"chain": a.chain, "member": a.member, "old": a.old, "new": a.new,
             "migrated": len(migrated), "discovered": len(discovered), "kept": len(ok),
             "skipped_not_created_by_account": skipped, "rejected_by_preview": rejected,
+            "skipped_empty": empty,
             "accounts_over_headroom": over_headroom(ok, a.headroom, existing),
             "already_cached": len(ok) - len(to_send), "to_send": len(to_send),
             "chunks": chunks(a.new, to_send, a.chunk)}
     json.dump(plan, open(a.out, "w"), indent=2)
     print(f"{a.member}: migrated {len(migrated)}, discovered {len(discovered)}, kept {len(ok)}, "
-          f"skipped {len(skipped)}, rejected {len(rejected)}, already cached {plan['already_cached']} → "
+          f"skipped {len(skipped)}, rejected {len(rejected)}, empty {len(empty)}, already cached {plan['already_cached']} → "
           f"{plan['to_send']} to send in {len(plan['chunks'])} chunk(s), {a.out}")
     if plan["accounts_over_headroom"]:
         print(f"WARNING: over --headroom {a.headroom}: {plan['accounts_over_headroom']} — review before sending",

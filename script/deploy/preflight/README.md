@@ -168,7 +168,8 @@ assisted adapter before the NAV swaps to it. Per member it (1) migrates everythi
 (`CoordSubmitted` accounts → live `coordsOf`), (2) optionally discovers positions of allow-listed Safes that never went
 through an Assistant, keeping only those whose creating event was emitted inside one of the Safe's own executions
 (call trace; Roles-module executions and the Assistant included; needs `debug_traceTransaction`), and (3) keeps only coordinates the new adapter's `previewPositions`
-accepts. It never sends anything; the `SUBMITTER_ROLE` keeper sends each chunk. Needs `ETHERSCAN_API_KEY` and an RPC.
+accepts AND values to at least one leg (an owned-but-empty position, e.g. a withdrawn Nexus StakingNFT, which Nexus
+never burns, is skipped; the adapter's underlying must be registered on the NAV, else the run aborts). It never sends anything; the `SUBMITTER_ROLE` keeper sends each chunk. Needs `ETHERSCAN_API_KEY` and an RPC.
 
 ```bash
 python3 seed_assisted.py --chain 1 --member etherfi --old <old adapter> --new <new adapter> \

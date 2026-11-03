@@ -183,17 +183,40 @@ class Discovery(unittest.TestCase):
         self.assertEqual(found, [(SAFE, s.coord_token(11))])
         self.assertEqual(len(skipped), 1)
 
-    def test_validate_rejects_reverts_but_aborts_on_transport_errors(self):
+    @staticmethod
+    def _adapter(legs_for=None, registered=True):
+        """Stub eth_call for an assisted adapter + its NAV. `legs_for(data)` → leg count of a preview reply."""
         def call(url, to, data):
+            sel = data[2:10]
+            if sel == s.SEL_UNDERLYING or sel == s.SEL_NAV:
+                return "0x" + s._addr_word(PROTO)
+            if sel == s.SEL_REGISTERED_ASSET:
+                return "0x" + s._word(64) + s._word(1 if registered else 0) + s._word(0) * 4
             if data.endswith(s._word(2)):
                 raise s.c.RpcError("eth_call: {'message': 'execution reverted'}")
             if data.endswith(s._word(3)):
                 raise s.c.RpcError("eth_call failed after 4 attempts: timeout")
-            return "0x" + s._word(32) + s._word(0)
-        s.c.eth_call = call
-        ok, bad = s.validate("u", A2, [(SAFE, s.coord_token(1)), (SAFE, s.coord_token(2))])
+            n = legs_for(data) if legs_for else 1
+            return "0x" + s._word(32) + s._word(n) + s._word(0) * n
+        return call
+
+    def test_validate_skips_empty_previews(self):
+        # coordinate 4 previews EMPTY (owned but holding nothing, e.g. a withdrawn Nexus NFT) → not seeded
+        s.c.eth_call = self._adapter(lambda data: 0 if data.endswith(s._word(4)) else 1)
+        probe_ok = s.validate("u", A2, [(SAFE, s.coord_token(1)), (SAFE, s.coord_token(4))])
+        self.assertEqual(probe_ok[0], [(SAFE, s.coord_token(1))])
+        self.assertEqual(len(probe_ok[2]), 1)
+
+    def test_validate_requires_registered_underlying(self):
+        s.c.eth_call = self._adapter(registered=False)
+        with self.assertRaises(s.SeedError):
+            s.validate("u", A2, [(SAFE, s.coord_token(1))])
+
+    def test_validate_rejects_reverts_but_aborts_on_transport_errors(self):
+        s.c.eth_call = self._adapter()
+        ok, bad, empty = s.validate("u", A2, [(SAFE, s.coord_token(1)), (SAFE, s.coord_token(2))])
         self.assertEqual(ok, [(SAFE, s.coord_token(1))])
-        self.assertEqual(len(bad), 1)
+        self.assertEqual((len(bad), len(empty)), (1, 0))
         with self.assertRaises(s.SeedError):
             s.validate("u", A2, [(SAFE, s.coord_token(3))])
         def old_adapter(url, to, data):  # code-bearing, but no previewPositions → every call reverts

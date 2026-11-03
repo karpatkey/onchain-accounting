@@ -455,7 +455,7 @@
   },
   "StakeWiseV3ExitQueueAssisted": {
     "enabled": true,
-    "$comment": "StakeWise V3 exit-queue assisted adapter (ADR 0015/0018/0030). Caches (vault, positionTicket, timestamp) tuples only, never amounts; vaults gated by the VaultsRegistry; values each live via calculateExitedAssets (claimable after exitClaimDelay, else locked). Fed by the owner Safe through StakeWiseV3ExitQueueAssistant (msg.sender-keyed submit/remove) and, for positions not opened through the assistant (incl. the remainder ticket a partial claim re-queues), by a SUBMITTER_ROLE keeper (submitFor). 04 passes the chain's securityCouncil as DEFAULT_ADMIN_ROLE; no submitter is granted at deploy.",
+    "$comment": "StakeWise V3 exit-queue assisted adapter (ADR 0015/0018/0030). Caches (vault, positionTicket, timestamp) tuples only, never amounts; vaults gated by the VaultsRegistry; values each live via calculateExitedAssets (claimable after exitClaimDelay, else locked). Fed by the owner Safe through StakeWiseV3ExitQueueAssistant (msg.sender-keyed submit/remove) and, for positions not opened through the assistant (the StakeWise Assistant registers a partial claim's remainder itself; the keeper is the backstop), by a SUBMITTER_ROLE keeper (submitFor). 04 passes the chain's securityCouncil as DEFAULT_ADMIN_ROLE; no submitter is granted at deploy.",
     "constructor": {
       "vaultsRegistry": "0x3a0008a588772446f6e656133C2D5029CC4FC20E",
       "underlyingToken": "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE",

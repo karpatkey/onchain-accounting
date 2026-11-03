@@ -13,7 +13,7 @@ feeder is the account itself: `submit` / `remove` are keyed on `msg.sender`, and
 That leaves a gap the ADR 0018 design accepted at the time: **a position the account did not open through its
 Assistant is invisible to the NAV.** That covers Safes that entered ether.fi, StakeWise or Nexus Mutual directly
 (bespoke clients whose roles allow the protocol entrypoint, positions opened before the Assistants existed), and
-the StakeWise remainder ticket a partial claim re-queues. The account could submit those itself, but for a client
+the StakeWise remainder ticket a partial claim re-queues (until this ADR the StakeWise Assistant did not register it; it now does — see Decision 5). The account could submit those itself, but for a client
 Safe that is a signed transaction plus a roles-permission change per client, which does not happen in practice.
 
 Two capabilities close the gap:
@@ -44,7 +44,19 @@ Two capabilities close the gap:
 4. **`OWNER_RESERVE` (32):** the keeper path stops 32 slots short of the cap, so the owner always has at least 32
    slots of its own (S13). **`evict(coord)`:** the owner can drop one of its own entries regardless of liveness (S13
    recovery).
-5. Owner `submit` / `remove` / `clearAccount`, coordinate encodings, identity (`protocolBrand` / `protocolId` /
+5. **StakeWise Assistant registers the partial-claim remainder.** A partial `claimExitedAssets` deletes the claimed
+   ticket and re-queues the rest under `ticket + exitedTickets` with the same timestamp (when more than one ticket is
+   left). The Assistant reads `calculateExitedAssets` just before claiming — the same split the vault applies — and
+   `submit`s the new ticket in the same transaction, so the unclaimed rest never drops out of the NAV. A failing
+   registration never blocks the claim (event `RemainderRequeued(..., tracked = false)`; the keeper can file it with `submitFor`, except when the cause is a full cache — the keeper's limit sits `OWNER_RESERVE` below the cap, so the owner must `evict` / `clearAccount` first). The Assistant also no longer reverts on an uncollateralized vault, where StakeWise redeems on the spot and returns `type(uint256).max` instead of a ticket (event `RedeemedImmediately`).
+   Replayed on a real mainnet partial claim (block 25,836,981). ether.fi (claims are whole) and Nexus Mutual (a partial
+   withdrawal keeps the same NFT id) need no equivalent.
+6. **Verification against DeBank.** `previewPositions` is checked against DeBank for real holders at a pinned block
+   (`AssistedPreviewVsDebank.fork.t.sol`, fixture from `script/test/assisted-debank-snapshot.py`): ether.fi withdrawal
+   requests and Nexus Mutual staking match within the 0.5% tolerance (observed: equal to DeBank within float precision for ether.fi, under 10 ppm for
+   Nexus at the first snapshot; the test log prints the difference). DeBank does not report StakeWise exit positions; those are
+   pinned against the vault's own reads.
+7. Owner `submit` / `remove` / `clearAccount`, coordinate encodings, identity (`protocolBrand` / `protocolId` /
    `protocolSubId` / `positionId`), legs and caps are otherwise **unchanged**, so reconciliation keys stay stable
    across the redeploy.
 
@@ -96,12 +108,26 @@ only → **a cache entry can under-report, never over-report**. The rows below a
 5. Ops move the Safes' roles allow-list to the NEW Assistants (S11), then run the seeding once more to carry over
    anything the old Assistants filed in between.
 
+## Common questions
+
+- **Do the Assistants need `SUBMITTER_ROLE`?** No. A Safe delegatecalls its Assistant, so the Assistant's `submit` /
+  `remove` reach the adapter with `msg.sender` = the Safe — the owner path, which needs no role. `SUBMITTER_ROLE` is only
+  for `submitFor` / `submitForBatch` (a third party filing positions for someone else). The Assistants hold no roles.
+- **What happens when a filed position is closed?** It is valued live on every read, so a claimed, burned, emptied or
+  transferred-away position produces no leg — it is dropped from the NAV, not reported as 0. The leftover coordinate is
+  housekeeping: the Assistant removes it when the close goes through it; otherwise anyone can `removeFor` it once the
+  protocol proves it gone, or the owner `remove`s / `evict`s it.
+- **StakeWise partial claims?** The claimed ticket is deleted and the remainder re-queued under a new ticket; the
+  Assistant registers the new ticket in the same transaction (Decision 5). A claim made outside the Assistant leaves the
+  remainder to the keeper (`ExitedAssetsClaimed` names the new ticket; `seed_assisted.py` follows it).
+
 ## Consequences
 
 - New contracts: the three adapters and their Assistants are redeployed (Assistants pin `ADAPTER`), then swapped on
   the NAV through the timelock. The Safes' roles allow-list must move to the new Assistants (outside this repo).
 - A privileged key appears in a family that had none. It protects which positions occupy the cache, never their
-  value. Liveness depends on it only for positions not opened through an Assistant.
+  value. Liveness depends on it only for positions not opened through an Assistant, and for a StakeWise remainder whose inline
+  registration failed (`RemainderRequeued(..., tracked = false)`).
 - `type(IAssistedBalanceAdapter).interfaceId` changes; no on-chain consumer reads it.
 - ADR 0018's "no roles, no `IAccessControl`" statement is superseded on that point only; its delegatecall
   Assistant design and the roles-level completeness argument stand.

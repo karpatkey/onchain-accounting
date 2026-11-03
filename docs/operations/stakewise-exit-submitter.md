@@ -4,7 +4,7 @@ The `StakeWiseV3ExitQueueAssistedBalanceAdapter` (`src/balances/AssistedBalanceA
 
 > **Access control:** this adapter is in the assisted balance-adapter family. Its **owner path** — `submit` / `remove` / `clearAccount` / `evict` — is `msg.sender`-keyed (no role), so a caller only ever touches its own set (see [ADR 0015](../decisions/0015-assisted-balance-adapter-family.md) and [ADR 0018](../decisions/0018-assistant-fed-assisted-balance-adapters.md)). Because an exit position's on-chain owner is the queue `receiver`, only a call whose `msg.sender` is that account registers anything (`calculateExitedAssets(msg.sender, …)` must resolve to a non-zero owed amount) — so the feed must execute **as the OIV Safe itself**, normally via the `StakeWiseV3ExitQueueAssistant` the Safe delegatecalls. Where this guide says "owner"/"owner key" below, read it as the OIV Safe. **Keeper path ([ADR 0030](../decisions/0030-assisted-adapters-keeper-submit-and-preview.md)):** for positions the Safe did not open through its assistant, a keeper holding `SUBMITTER_ROLE` (granted by the Security Council, the adapter's `DEFAULT_ADMIN_ROLE`) can `submitFor(account, coord)`, filed only under the account the protocol says owns it; anyone can `removeFor` a position the protocol proves gone; `previewPositions` values coordinates without the cache.
 
-This file is the contract between the on-chain adapter and the ops process that feeds it. In the normal path the position is registered **inline**: when the Safe enters (or claims) the queue it delegatecalls the `StakeWiseV3ExitQueueAssistant` (`src/balances/AssistedBalanceAdapters/assistants/StakeWiseV3ExitQueueAssistant.sol`), which `submit`s (or `remove`s) the ticket in the same transaction. An off-chain reconciliation process is a backstop for positions the inline path misses — most notably a re-queued remainder ticket (StakeWise re-queues a not-yet-checkpointed remainder under a **new** ticket, which the assistant does not track) — re-submitting them by having the Safe call `submit` directly.
+This file is the contract between the on-chain adapter and the ops process that feeds it. In the normal path the position is registered **inline**: when the Safe enters (or claims) the queue it delegatecalls the `StakeWiseV3ExitQueueAssistant` (`src/balances/AssistedBalanceAdapters/assistants/StakeWiseV3ExitQueueAssistant.sol`), which `submit`s (or `remove`s) the ticket in the same transaction. On a **partial** claim StakeWise deletes the claimed ticket and re-queues the remainder under a **new** ticket (`ticket + exitedTickets`, same entry timestamp); since ADR 0030 the assistant registers that new ticket in the same transaction (event `RemainderRequeued`, `tracked = false` if registering failed — the claim never reverts for it). The off-chain backstop — the `SUBMITTER_ROLE` keeper's `submitFor` (ADR 0030), or the Safe calling `submit` directly — covers positions the inline path misses: ones opened outside the assistant, and a remainder whose registration failed.
 
 ---
 
@@ -26,6 +26,19 @@ ExitQueueEntered(address indexed owner, address indexed receiver, uint256 positi
 ```
 
 For each event where `receiver == account`, record `(vault, positionTicket, blockTimestamp)` — where **`blockTimestamp` is the timestamp of the block that emitted the event**. This is load-bearing: the exit-request key is `keccak256(abi.encode(receiver, timestamp, positionTicket))`, so the timestamp must be the entry block's `block.timestamp` or the adapter will value the tuple as 0. An indexer/subgraph or a bounded `eth_getLogs` scan both work. Submit only tuples **not already tracked** (resubmits are harmless no-ops, but wasteful) and only **still-live** ones. Do **not** submit already-claimed positions: write-time validation is fail-loud — a tuple whose vault is not StakeWise-registered makes `submit` **revert** `InvalidCoordinate`, and one that no longer resolves to a non-zero owed amount for the account **reverts** `CoordinateNotOwned`. Because each `submit` is a single coordinate and reverts atomically, a bad tuple never touches the rest of the account's cached set.
+
+Then follow **partial claims**: a claim deletes the claimed ticket and, when more than one ticket is left, re-queues the
+remainder under a new ticket with the **original entry timestamp**. Scan
+
+```
+ExitedAssetsClaimed(address indexed receiver, uint256 prevPositionTicket, uint256 newPositionTicket, uint256 withdrawnAssets)
+```
+
+and for each event where `receiver == account` and `newPositionTicket != 0`, record `(vault, newPositionTicket,
+timestamp of prevPositionTicket's entry)` — chaining through repeated partial claims. The StakeWise Assistant registers
+these itself (ADR 0030); this step catches claims made outside it and `RemainderRequeued(..., tracked = false)` cases.
+`script/deploy/preflight/seed_assisted.py` implements both scans (with the ADR 0030 provenance rule) and files the
+results with the keeper's `submitFor`.
 
 ## Inputs
 

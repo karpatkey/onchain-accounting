@@ -69,7 +69,7 @@ abstract contract AssistedCoordCache is IAssistedBalanceAdapter, AccessControl {
     /// @notice Cache slots the keeper path can never use, so an account always keeps at least this many for its own
     ///         Assistant `submit` (beyond that, `evict` frees room). Anyone
     ///         can create a live position OWNED by a Safe; if a keeper could file those up to the full cap, the Safe's
-    ///         Assistant path (whose `submit` is not caught) would revert until it cleared its cache (ADR 0030 S13).
+    ///         Assistant enter path (whose `submit` is not caught) would revert until it cleared its cache (ADR 0030 S13).
     uint256 public constant OWNER_RESERVE = 32;
 
     /// @notice The single asset this adapter reports. Must be a registered NAV asset for {getAdapterPositions} to count

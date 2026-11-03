@@ -58,7 +58,14 @@ contract MockTracker {
         revertOther = v;
     }
 
+    bool public revertSubmit; // e.g. a full cache when registering a re-queued remainder
+
+    function setRevertSubmit(bool v) external {
+        revertSubmit = v;
+    }
+
     function submit(address vault, uint256 positionTicket, uint256 timestamp) external {
+        if (revertSubmit) revert MockUnexpectedRemoveError();
         lastAccount = msg.sender;
         lastVault = vault;
         lastTicket = positionTicket;
@@ -95,7 +102,18 @@ contract MockEnterExitVault {
     uint256 public lastEnterShares;
     uint256 public lastClaimTicket;
 
+    bool public uncollateralized; // StakeWise redeems on the spot and returns type(uint256).max (no request)
+
+    function setUncollateralized(bool v) external {
+        uncollateralized = v;
+    }
+
     function enterExitQueue(uint256 shares, address receiver) external returns (uint256 positionTicket) {
+        if (uncollateralized) {
+            lastEnterReceiver = receiver;
+            lastEnterShares = shares;
+            return type(uint256).max;
+        }
         positionTicket = nextTicket++;
         lastEnterReceiver = receiver;
         lastEnterShares = shares;
@@ -103,9 +121,27 @@ contract MockEnterExitVault {
         _req[keccak256(abi.encode(receiver, positionTicket, block.timestamp))] = Req(0, shares, true); // 1:1 claimable
     }
 
+    // Partial-claim mode: `calculateExitedAssets` reports (partialLeft, partialExited) and `claimExitedAssets` re-queues
+    // the remainder under `positionTicket + exitedTickets` (same timestamp) when more than one ticket is left — exactly
+    // StakeWise's VaultEnterExit.claimExitedAssets.
+    bool public partialMode;
+    uint256 public partialLeft;
+    uint256 public partialExited;
+
+    function setPartial(uint256 left, uint256 exited) external {
+        partialMode = true;
+        partialLeft = left;
+        partialExited = exited;
+    }
+
     function claimExitedAssets(uint256 positionTicket, uint256 timestamp, uint256) external {
         lastClaimTicket = positionTicket;
         delete _req[keccak256(abi.encode(msg.sender, positionTicket, timestamp))];
+        if (partialMode && partialLeft > 1) {
+            uint256 newTicket = positionTicket + partialExited;
+            _idx[newTicket] = int256(1);
+            _req[keccak256(abi.encode(msg.sender, newTicket, timestamp))] = Req(partialLeft, 0, true);
+        }
     }
 
     function getExitQueueIndex(uint256 ticket) external view returns (int256) {
@@ -119,6 +155,7 @@ contract MockEnterExitVault {
     {
         Req memory r = _req[keccak256(abi.encode(receiver, ticket, ts))];
         if (!r.set) return (0, 0, 0);
+        if (partialMode) return (partialLeft, partialExited, r.exitedAssets);
         return (r.leftShares, 0, r.exitedAssets);
     }
 
@@ -202,8 +239,9 @@ contract StakeWiseV3ExitQueueAssistantTest is BalanceAdapterTestBase {
         assertEq(t.lastTicket(), ticket);
     }
 
-    /// @notice A partial claim leaves the ticket still owed; the adapter reverts CoordinateStillLive on remove, which
-    ///         the assistant swallows — the claim itself still succeeds (the residual stays tracked, never dropped).
+    /// @notice If the adapter refuses the remove (CoordinateStillLive), the assistant swallows it — the claim itself
+    ///         still succeeds and the ticket stays tracked, never dropped. (With StakeWise's real claim the old request is
+    ///         deleted, so this is a defensive path; the re-queued remainder is covered by the test above.)
     function test_claimExitedAssets_partialClaim_keepsTracking() public {
         (StakeWiseV3ExitQueueAssistant w, MockTracker t) = _wrapperWithMockTracker();
         bytes memory ret = safe.exec(address(w), abi.encodeCall(w.enterExitQueue, (address(vault), 5 ether)));
@@ -215,6 +253,85 @@ contract StakeWiseV3ExitQueueAssistantTest is BalanceAdapterTestBase {
         safe.exec(address(w), abi.encodeCall(w.claimExitedAssets, (address(vault), ticket, ts, 1)));
         assertEq(vault.lastClaimTicket(), ticket); // claim happened
         assertEq(t.removes(), 0); // remove reverted internally → not counted (ticket kept)
+    }
+
+    event RemainderRequeued(
+        address indexed account,
+        address indexed vault,
+        uint256 positionTicket,
+        uint256 newPositionTicket,
+        uint256 timestamp,
+        bool tracked
+    );
+
+    /// @notice A partial claim re-queues the remainder under `ticket + exitedTickets` with the SAME timestamp; the
+    ///         assistant registers that new ticket in the same transaction, so the unclaimed rest stays in the NAV.
+    function test_claimExitedAssets_partialClaim_registersRemainderTicket() public {
+        (StakeWiseV3ExitQueueAssistant w, MockTracker t) = _wrapperWithMockTracker();
+        bytes memory ret = safe.exec(address(w), abi.encodeCall(w.enterExitQueue, (address(vault), 5 ether)));
+        uint256 ticket = abi.decode(ret, (uint256));
+        uint256 ts = block.timestamp;
+        vault.setPartial(3 ether, 2 ether);
+
+        vm.expectEmit(true, true, true, true, address(safe));
+        emit RemainderRequeued(address(safe), address(vault), ticket, ticket + 2 ether, ts, true);
+        safe.exec(address(w), abi.encodeCall(w.claimExitedAssets, (address(vault), ticket, ts, 1)));
+
+        assertEq(t.removes(), 1, "old ticket deregistered");
+        assertEq(t.submits(), 2, "enter + remainder");
+        assertEq(t.lastAccount(), address(safe));
+        assertEq(t.lastTicket(), ticket + 2 ether, "remainder ticket = ticket + exitedTickets");
+        assertEq(t.lastTimestamp(), ts, "remainder keeps the entry timestamp");
+    }
+
+    event RedeemedImmediately(address indexed account, address indexed vault, uint256 shares);
+
+    /// @notice An uncollateralized vault redeems on the spot (no ticket): the assistant must not try to register the
+    ///         `type(uint256).max` sentinel, which would revert and block the Safe's only allow-listed exit path.
+    function test_enterExitQueue_uncollateralizedVault_redeemsWithoutRegistering() public {
+        (StakeWiseV3ExitQueueAssistant w, MockTracker t) = _wrapperWithMockTracker();
+        vault.setUncollateralized(true);
+        vm.expectEmit(true, true, true, true, address(safe));
+        emit RedeemedImmediately(address(safe), address(vault), 5 ether);
+        bytes memory ret = safe.exec(address(w), abi.encodeCall(w.enterExitQueue, (address(vault), 5 ether)));
+        assertEq(abi.decode(ret, (uint256)), type(uint256).max);
+        assertEq(t.submits(), 0, "nothing registered");
+    }
+
+    /// @notice No exited tickets means nothing was claimed (a silent no-op on old vault versions): no remainder event.
+    function test_claimExitedAssets_noExitedTickets_registersNothing() public {
+        (StakeWiseV3ExitQueueAssistant w, MockTracker t) = _wrapperWithMockTracker();
+        bytes memory ret = safe.exec(address(w), abi.encodeCall(w.enterExitQueue, (address(vault), 5 ether)));
+        uint256 ticket = abi.decode(ret, (uint256));
+        vault.setPartial(5 ether, 0);
+        safe.exec(address(w), abi.encodeCall(w.claimExitedAssets, (address(vault), ticket, block.timestamp, 1)));
+        assertEq(t.submits(), 1, "only the enter");
+    }
+
+    /// @notice One leftover ticket is StakeWise's rounding error — it re-queues nothing, so nothing is registered. (The
+    ///         real v4+ view already folds a single leftover ticket into the exited ones; this guards the `> 1` branch.)
+    function test_claimExitedAssets_singleLeftoverTicket_registersNothing() public {
+        (StakeWiseV3ExitQueueAssistant w, MockTracker t) = _wrapperWithMockTracker();
+        bytes memory ret = safe.exec(address(w), abi.encodeCall(w.enterExitQueue, (address(vault), 5 ether)));
+        uint256 ticket = abi.decode(ret, (uint256));
+        vault.setPartial(1, 5 ether);
+        safe.exec(address(w), abi.encodeCall(w.claimExitedAssets, (address(vault), ticket, block.timestamp, 1)));
+        assertEq(t.submits(), 1, "only the enter");
+    }
+
+    /// @notice Registering the remainder must never block the claim: a failing submit is reported (tracked = false).
+    function test_claimExitedAssets_remainderSubmitFails_claimStillSucceeds() public {
+        (StakeWiseV3ExitQueueAssistant w, MockTracker t) = _wrapperWithMockTracker();
+        bytes memory ret = safe.exec(address(w), abi.encodeCall(w.enterExitQueue, (address(vault), 5 ether)));
+        uint256 ticket = abi.decode(ret, (uint256));
+        uint256 ts = block.timestamp;
+        vault.setPartial(3 ether, 2 ether);
+        t.setRevertSubmit(true);
+
+        vm.expectEmit(true, true, true, true, address(safe));
+        emit RemainderRequeued(address(safe), address(vault), ticket, ticket + 2 ether, ts, false);
+        safe.exec(address(w), abi.encodeCall(w.claimExitedAssets, (address(vault), ticket, ts, 1)));
+        assertEq(vault.lastClaimTicket(), ticket, "claim went through");
     }
 
     /// @notice An untracked ticket (e.g. cleared via clearAccount) makes remove revert CoordinateNotCached; the

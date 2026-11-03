@@ -8,7 +8,7 @@ import "src/errors.sol";
 
 /// @title BalanceAdapterAssistant
 /// @author KPK
-/// @notice Abstract base for the delegatecall-action assistants that feed the permissionless, assistant-fed assisted
+/// @notice Abstract base for the delegatecall-action assistants that feed the assistant-fed assisted
 ///         balance adapters. It contributes the pieces every such assistant shares: the immutable `ADAPTER` reference,
 ///         this module's own `SELF` address pinned at construction, and the {onlyDelegateCall} guard. Concrete assistants
 ///         add the protocol-target immutables and the forward-then-`submit`/`remove` entrypoints.

@@ -48,6 +48,7 @@ TOPIC_COORD_SUBMITTED = "0x7728999634b195c39bbd63fdaab812fa23cdf37de6bbc1e06a1de
 TOPIC_TRANSFER = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"
 TOPIC_EXIT_ENTERED = "0x211091c5bf013c1230f996c3bb2bc327e3de429a3d3c356dcea9a0c858bc407f"
 TOPIC_EXITED_CLAIMED = "0xeb3b05c070c24f667611fdb3ff75fe007d42401c573aed8d8faca95fd00ccb56"
+TOPIC_V2_EXIT_ENTERED = "0x869f12645d154414259c47bcb998b6b6983fae50e5e0c6053bc87d4330db9f2d"  # older vaults
 
 # Protocol contracts the discovery reads (chain 1; StakeWise vaults are passed explicitly).
 ETHERFI_WITHDRAW_REQUEST_NFT = {1: "0x7d5706f6ef3f89b3951e23e557cdfbc3239d4e2c"}
@@ -229,8 +230,10 @@ def discover(chain: int, member: str, url: str, accounts: list[str], from_block:
                     skipped.append(f"{acct} id {tid}: minted in a transaction the account did not execute")
         elif member == "stakewise":
             for v in vaults:
-                entered = etherscan_logs(chain, v, {"topic0": TOPIC_EXIT_ENTERED, "topic2": topic_addr(acct),
-                                                    "topic0_2_opr": "and"}, from_block)
+                entered = []
+                for topic in (TOPIC_EXIT_ENTERED, TOPIC_V2_EXIT_ENTERED):  # V2… on v2-era vaults; ticket = word 0
+                    entered += etherscan_logs(chain, v, {"topic0": topic, "topic2": topic_addr(acct),
+                                                         "topic0_2_opr": "and"}, from_block)
                 ts_of: dict[int, int] = {}
                 for lg in entered:
                     data = lg["data"][2:]
@@ -390,7 +393,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--new", required=True, help="the new adapter to seed")
     ap.add_argument("--accounts", help="file with one allow-listed account per line (discovery)")
     ap.add_argument("--stakewise-vaults", default="", help="comma-separated vaults to scan (stakewise)")
-    ap.add_argument("--from-block", type=int, default=0)
+    ap.add_argument("--from-block", type=int, default=0,
+                    help="bounds DISCOVERY only; the migration always reads the old adapter's full history")
     ap.add_argument("--chunk", type=int, default=50)
     ap.add_argument("--strict", action="store_true",
                     help="exit non-zero (no plan written) if any coordinate from the OLD cache is rejected")
@@ -416,7 +420,9 @@ def main(argv: list[str] | None = None) -> int:
         raise SeedError("--old and --new are the same address")
     probe_coords_of(url, a.old, "--old")
     probe_coords_of(url, a.new, "--new")
-    migrated = migrate(a.chain, url, a.old, a.from_block)
+    # The migration always scans the old adapter's FULL history: `--from-block` only bounds discovery, so it can never
+    # silently drop an account whose CoordSubmitted predates it.
+    migrated = migrate(a.chain, url, a.old, 0)
     if not migrated and not a.allow_empty_migration:
         raise SeedError(f"--old {a.old} has nothing cached — wrong address? (pass --allow-empty-migration if expected)")
     discovered, skipped = [], []
@@ -426,10 +432,15 @@ def main(argv: list[str] | None = None) -> int:
             if not c.is_address(x):
                 raise SeedError(f"bad account in {a.accounts}: {x}")
         vaults = [v for v in a.stakewise_vaults.split(",") if v]
+        if a.member == "stakewise" and not vaults:
+            raise SeedError("--member stakewise with --accounts needs --stakewise-vaults (nothing would be discovered)")
         discovered, skipped = discover(a.chain, a.member, url, accts, a.from_block, vaults)
     pairs = dedupe(migrated + discovered)
     migrated_set = set(dedupe(migrated))
-    ok, rejected, empty = validate(url, a.new, pairs, keep_empty=migrated_set)
+    # Keep-empty applies to ether.fi only: an owned ether.fi request previews empty while (temporarily) invalidated, which
+    # the contract does NOT treat as dead. An owned-but-emptied Nexus NFT IS dead for the contract (`removeFor` accepts it),
+    # so carrying it over would only churn with a cleaner; StakeWise cannot preview empty (validation needs owed > 0).
+    ok, rejected, empty = validate(url, a.new, pairs, keep_empty=migrated_set if a.member == "etherfi" else set())
     # A MIGRATED coordinate (filed by its owner) that the new adapter rejects is usually dead (claimed / transferred),
     # but list it apart so a transient failure is reviewed rather than silently left behind.
     migrated_rejected = [r for r in rejected if any(r.startswith(f"{acct} 0x{coord.hex()}:") for acct, coord in migrated_set)]

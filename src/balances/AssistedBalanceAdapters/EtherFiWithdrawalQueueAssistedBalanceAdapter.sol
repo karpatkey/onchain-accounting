@@ -22,9 +22,9 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 ///         never amounts**.
 /// @dev Member of the assistant-fed assisted family ([ADR 0018](../../../docs/decisions/0018-assistant-fed-assisted-balance-adapters.md)),
 ///      extending the single {AssistedCoordCache}: the coordinate is `abi.encode(tokenId)`. Supersedes the earlier
-///      off-chain-agent (ASSISTANT_ROLE) ether.fi adapter of ADR 0014. {_removable} = "no longer owned by the caller":
-///      ether.fi's `claimWithdraw` **burns** the NFT, so a claimed id becomes removable while a still-owned (pending)
-///      id cannot be dropped (CoordinateStillLive) — the assistant claims first, then removes. Emits ONE native-ETH
+///      off-chain-agent (ASSISTANT_ROLE) ether.fi adapter of ADR 0014. {_removable} = "no longer owned by the caller, or
+///      invalidated by ether.fi": `claimWithdraw` **burns** the NFT, so a claimed id becomes removable while a still-owned
+///      valid (pending) id cannot be dropped (CoordinateStillLive) — the assistant claims first, then removes. Emits ONE native-ETH
 ///      `Supplied` leg per owned cached request, `positionId = abi.encode(WITHDRAW_REQUEST_NFT)`, `isLocked = !finalized`,
 ///      the tokenId in `positionInstanceId`.
 contract EtherFiWithdrawalQueueAssistedBalanceAdapter is AssistedCoordCache, IPositionDescribable {
@@ -73,7 +73,8 @@ contract EtherFiWithdrawalQueueAssistedBalanceAdapter is AssistedCoordCache, IPo
     }
 
     /// @notice Stop tracking `tokenId` for the caller (after claim burns it). **Reverts** `CoordinateNotCached` if not
-    ///         tracked, `CoordinateStillLive` if still owned (not yet claimed).
+    ///         tracked, `CoordinateStillLive` if still owned and valid (not yet claimed; an ether.fi-invalidated request
+    ///         the caller still owns IS removable — it values 0 until ether.fi re-validates it, then re-submit).
     function remove(uint256 tokenId) external {
         _removeCoord(abi.encode(tokenId));
     }

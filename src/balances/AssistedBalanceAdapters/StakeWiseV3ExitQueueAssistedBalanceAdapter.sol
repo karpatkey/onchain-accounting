@@ -140,7 +140,9 @@ contract StakeWiseV3ExitQueueAssistedBalanceAdapter is AssistedCoordCache, IPosi
 
     /// @inheritdoc AssistedCoordCache
     function _coordId(bytes memory coord) internal pure override returns (uint256 positionTicket) {
-        (, positionTicket,) = abi.decode(coord, (address, uint256, uint256));
+        // Decoded as raw words (not `address`), so a coordinate with dirty address bits still yields its ticket for the
+        // typed `Coordinate*` errors instead of an opaque decode revert.
+        (, positionTicket,) = abi.decode(coord, (uint256, uint256, uint256));
     }
 
     /// @inheritdoc AssistedCoordCache

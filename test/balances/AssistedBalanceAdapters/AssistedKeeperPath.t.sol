@@ -296,6 +296,20 @@ contract EtherFiKeeperPathTest is BalanceAdapterTestBase {
         assertEq(adapter.tokenIdsOf(holder).length, 1);
     }
 
+    /// @notice Re-seeding is safe at the keeper limit: an already-cached coordinate is an idempotent no-op even when the
+    ///         account sits at cap − OWNER_RESERVE (the dedup return comes before the limit check).
+    function test_submitFor_resubmitAtKeeperLimitIsNoop() public {
+        uint256 keeperLimit = adapter.MAX_TOKEN_IDS() - adapter.OWNER_RESERVE();
+        for (uint256 i = 1; i <= keeperLimit; ++i) {
+            _pending(i, holder);
+            vm.prank(keeper);
+            adapter.submitFor(holder, _coord(i));
+        }
+        vm.prank(keeper);
+        adapter.submitFor(holder, _coord(1)); // no revert
+        assertEq(adapter.tokenIdsOf(holder).length, keeperLimit);
+    }
+
     // ---- removeFor (S6) ----
 
     function _cached(uint256 id) internal {
@@ -513,6 +527,15 @@ contract StakeWiseKeeperPathTest is BalanceAdapterTestBase {
         adapter.submitFor(holder, _coord(address(vault), TICKET, TS));
         vault.clearRequest(holder, TICKET, TS);
         vault.setRevertCalc(true);
+        vm.expectRevert(abi.encodeWithSelector(CoordinateStillLive.selector, holder, TICKET));
+        adapter.removeFor(holder, _coord(address(vault), TICKET, TS));
+    }
+
+    function test_removeFor_indexReadRevertIsNotDeath() public {
+        vm.prank(keeper);
+        adapter.submitFor(holder, _coord(address(vault), TICKET, TS));
+        vault.clearRequest(holder, TICKET, TS);
+        vault.setRevertIndex(true);
         vm.expectRevert(abi.encodeWithSelector(CoordinateStillLive.selector, holder, TICKET));
         adapter.removeFor(holder, _coord(address(vault), TICKET, TS));
     }

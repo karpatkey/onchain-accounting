@@ -1,0 +1,2 @@
+# I-03 — (pre-existing, not in diff) StakeWise queued leg values tickets as shares
+StakeWiseV3ExitQueueAssistedBalanceAdapter.sol:277-284: `convertToAssets(leftTickets)`. This is correct for v1 and v3+ requests, where tickets equal shares. For still-unprocessed requests entered on v2.0.x vaults, tickets are asset-denominated (`_convertAssetsToExitTickets`), so the leg would be scaled by the share price. Live exposure is likely nil in 2026 (v2-era requests are processed). Noted only because preview and keeper make more coordinates reachable.

@@ -1,0 +1,3 @@
+- StakeWise V3 vaults (registry-gated; vaults permissionlessly creatable but run registry-approved impls). calculateExitedAssets returns (0,0,0) iff no request (all versions). claim deletes + requeues remainder at ticket+exitedTickets same ts iff leftTickets>1 (v1.1.0..main identical rule; v1 returns early w/o revert when claimedShares==0, v2+ reverts).
+- ether.fi WithdrawRequestNFT (ownerOf reverts when burned; claim burns + deletes request) + LiquidityPool.amountForShare.
+- Nexus StakingNFT.tokenInfo, StakingViewer.getTokens (reverts "expirations were not processed" instead of reporting 0 for unprocessed expired tranches).

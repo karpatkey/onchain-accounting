@@ -24,12 +24,12 @@ The Safe (via the assistant, or directly) calls the adapter's `msg.sender`-keyed
 | Call | Effect | Reverts |
 |---|---|---|
 | `submit(uint256 tokenId)` | Track `tokenId` for the caller (idempotent; deduped by hash). | `CoordinateNotOwned` if the caller doesn't own it; `CoordinateCacheFull` past `MAX_TOKEN_IDS` (256). |
-| `remove(uint256 tokenId)` | Stop tracking `tokenId` for the caller. | `CoordinateNotCached` if not tracked; `CoordinateStillLive` if still owned (not yet claimed). |
+| `remove(uint256 tokenId)` | Stop tracking `tokenId` for the caller. | `CoordinateNotCached` if not tracked; `CoordinateStillLive` if still owned and valid (not yet claimed). An invalidated request the caller still owns is removable. |
 | `clearAccount()` | Drop the caller's entire cached set. | — |
 | `evict(bytes coord)` | Drop ONE of the caller's own entries, live or not (ADR 0030; e.g. dust a third party created in its name). | — |
 | `tokenIdsOf(address account)` | View the account's cached candidate ids (display/debug; not ownership-filtered). | — |
 
-`submit` is **add**, not replace: each call tracks one more id and dedups against the existing set. `remove` is gated on the id no longer being owned — because `claimWithdraw` **burns** the NFT, a claimed id becomes removable while a still-pending id cannot be dropped (`CoordinateStillLive`). This is why the assistant always claims before removing. Explicit `clearAccount` is an occasional reset (e.g. to prune ids acquired outside the assistant), not steady-state-critical: a claimed id left in the cache reads as 0 anyway (the adapter drops it when `ownerOf != account`), and the `MAX_TOKEN_IDS` (256) cap is one a normal account never approaches.
+`submit` is **add**, not replace: each call tracks one more id and dedups against the existing set. `remove` is gated on the id no longer being owned — because `claimWithdraw` **burns** the NFT, a claimed id becomes removable while a still-pending valid id cannot be dropped (`CoordinateStillLive`); an id ether.fi has invalidated is also removable by its owner (it values 0; re-submit if ether.fi re-validates it). This is why the assistant always claims before removing. Explicit `clearAccount` is an occasional reset (e.g. to prune ids acquired outside the assistant), not steady-state-critical: a claimed id left in the cache reads as 0 anyway (the adapter drops it when `ownerOf != account`), and the `MAX_TOKEN_IDS` (256) cap is one a normal account never approaches.
 
 ## Inputs
 

@@ -169,13 +169,14 @@ assisted adapter before the NAV swaps to it. Per member it (1) migrates everythi
 through an Assistant, keeping only those whose creating event was emitted inside one of the Safe's own executions
 (call trace; Roles-module executions and the Assistant included; needs `debug_traceTransaction`), and (3) keeps only coordinates the new adapter's `previewPositions`
 accepts AND values to at least one leg (a DISCOVERED owned-but-empty position, e.g. a withdrawn Nexus StakingNFT, which
-Nexus never burns, is skipped; coordinates migrated from the old cache carry over even when empty, and any the new
-adapter rejects are listed for review — `--strict` stops instead; keep `--from-block` at 0 for the migration, since
-accounts are found from the old adapter's `CoordSubmitted` logs; the adapter's underlying must be registered on the NAV, else the run aborts). It never sends anything; the `SUBMITTER_ROLE` keeper sends each chunk. Needs `ETHERSCAN_API_KEY` and an RPC.
+Nexus never burns, is skipped; coordinates migrated from the old cache carry over even when empty (ether.fi only — an emptied Nexus NFT is dead for
+the contract and is skipped), and any the new adapter rejects are listed for review — `--strict` stops instead;
+`--from-block` bounds discovery only, the migration always reads the old adapter's full history; the adapter's underlying must be registered on the NAV, else the run aborts). It never sends anything; the `SUBMITTER_ROLE` keeper sends each chunk. Needs `ETHERSCAN_API_KEY` and an RPC.
 
 ```bash
 python3 seed_assisted.py --chain 1 --member etherfi --old <old adapter> --new <new adapter> \
   --accounts safes.txt --out etherfi-plan.json
 ```
 
-A chunk is all-or-nothing, so keep `--chunk` small and re-run right before sending. Rollout order: ADR 0030 "Rollout".
+A chunk is all-or-nothing, so keep `--chunk` small and re-run right before sending. Rollout order: ADR 0030 "Rollout"
+(note step 1: record the old addresses, then clear their deployment-record keys so `04` redeploys).

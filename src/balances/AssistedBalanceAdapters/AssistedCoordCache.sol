@@ -63,7 +63,7 @@ error CoordinateGasExhausted(address adapter, uint256 coordId, uint256 stipend, 
 ///      `StakingViewer.getTokens`) only drops that one coordinate, never the account's whole set.
 abstract contract AssistedCoordCache is IAssistedBalanceAdapter, AccessControl {
     /// @inheritdoc IAssistedBalanceAdapter
-    /// @dev Gates {submitFor}/{submitForBatch} only. The owner path, {removeFor} and {clearAccount} stay open.
+    /// @dev Gates {submitFor}/{submitForBatch} only. The owner path, {removeFor}, {evict} and {clearAccount} stay open.
     bytes32 public constant SUBMITTER_ROLE = SUBMITTER;
 
     /// @notice Cache slots the keeper path can never use, so an account always keeps at least this many for its own
@@ -254,6 +254,12 @@ abstract contract AssistedCoordCache is IAssistedBalanceAdapter, AccessControl {
         if (n == 0) return new INAVCalculator.PositionBalance[](0);
         if (n > _maxCoords()) revert TooManyCoordinates(account, n, _maxCoords());
 
+        // Same short-circuit as the NAV read: nothing is reported for an unregistered underlying, so don't spend gas
+        // validating coordinates first.
+        (INAVCalculator.Asset memory underlying, bool registered) =
+            RegisteredAssetLib.find(NAV_CALCULATOR.getRegisteredAssets(), UNDERLYING_TOKEN);
+        if (!registered) return new INAVCalculator.PositionBalance[](0);
+
         bytes32[] memory keys = new bytes32[](n);
         for (uint256 i; i < n; ++i) {
             _requireCanonical(coords[i]);
@@ -263,10 +269,6 @@ abstract contract AssistedCoordCache is IAssistedBalanceAdapter, AccessControl {
             }
             _validateCoord(account, coords[i]);
         }
-
-        (INAVCalculator.Asset memory underlying, bool registered) =
-            RegisteredAssetLib.find(NAV_CALCULATOR.getRegisteredAssets(), UNDERLYING_TOKEN);
-        if (!registered) return new INAVCalculator.PositionBalance[](0);
 
         INAVCalculator.PositionBalance[] memory temp = new INAVCalculator.PositionBalance[](n * _maxLegsPerCoord());
         uint256 count;

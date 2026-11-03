@@ -54,7 +54,7 @@ def rpc_url():
 def cast(*a):
     r = subprocess.run(["cast", *a, "--rpc-url", rpc_url()], capture_output=True, text=True)
     if r.returncode:
-        raise RuntimeError(r.stderr[-200:])
+        raise RuntimeError(r.stderr.strip())  # full text: callers classify reverts by its content
     return r.stdout.strip()
 
 
@@ -77,8 +77,13 @@ def owned_now(nft, ids, holder, block, owner_sig):
     for i in ids:
         try:
             o = cast("call", nft, owner_sig, str(i), "--block", str(block))
-        except RuntimeError:
-            continue  # burned (ether.fi claim)
+        except RuntimeError as e:
+            # Only an execution REVERT means the token is gone (ether.fi burns a claimed request). A timeout, rate
+            # limit or any other RPC failure must stop the snapshot: skipping it would drop a live NFT while keeping
+            # DeBank's full amount.
+            if "execution reverted" in str(e).lower():
+                continue
+            raise RuntimeError(f"ownership read for token {i} failed (not a revert): {e}") from e
         if holder.lower() in o.lower():
             out.append(i)
     return out

@@ -40,3 +40,4 @@ Short, numbered records of *why* the codebase looks the way it does. Read these 
 | 0023 | [Asset classification on two orthogonal axes (`PegKind` × `AccrualKind`), surfaced by a standalone `AssetKindRegistry`](0023-asset-classification-two-axes.md) | accepted |
 | 0024 | [Drop oversized submodules; vendor single-file dependencies](0024-dependency-size-vendor-single-file-deps.md) | accepted |
 | 0025 | [A registered heartbeat MUST equal the provider's declared heartbeat](0025-heartbeat-equals-declared.md) | accepted |
+| 0030 | [Assisted adapters: keeper-fed `submitFor` + cache-free `previewPositions`](0030-assisted-adapters-keeper-submit-and-preview.md) | proposed |

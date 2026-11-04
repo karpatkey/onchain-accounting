@@ -1,0 +1,5 @@
+- DEFAULT_ADMIN_ROLE = chain securityCouncil (04 `_assistedAdmin()`, reverts if unset). Only power: grant/revoke SUBMITTER_ROLE (+ AccessControl self-admin). No amount/config/upgrade power.
+- SUBMITTER_ROLE (keeper): chooses WHICH owner-validated coordinates occupy <= cap-OWNER_RESERVE (224) slots. Cannot remove, cannot value.
+- removeFor: permissionless, gated by _isDead (successful protocol read proving gone). evict/clearAccount: owner-only (msg.sender).
+- Owner path (Assistant delegatecall): msg.sender = Safe; Assistant submit on enter is UNCAUGHT (blocks at cap), remove on exit is caught (cache errors only).
+- Completeness half lives in Safe roles config (outside repo) + keeper provenance policy (seed_assisted.py trace rule) for non-Assistant positions.

@@ -14,7 +14,7 @@ import "src/errors.sol";
 /// @notice Delegatecall-only logic the owning Safe runs to request/claim ether.fi withdrawals while keeping the
 ///         assistant-fed {EtherFiWithdrawalQueueAssistedBalanceAdapter} id-cache current **on-chain, atomically**. Both
 ///         entrypoints are DELEGATECALLed by the Safe, so `address(this)` is the Safe: ether.fi sees `msg.sender = Safe`
-///         and the adapter (permissionless, `msg.sender`-keyed) records against that same Safe — no roles, no
+///         and the adapter's owner path (`msg.sender`-keyed) records against that same Safe — no roles, no
 ///         self-calls, no custody.
 /// @dev Extends {BalanceAdapterAssistant} for `SELF` / {onlyDelegateCall} / immutable `ADAPTER`. A direct (non-delegate)
 ///      call reverts `NotDelegateCall`. ether.fi's `claimWithdraw` hard-requires `ownerOf == msg.sender` (no
@@ -72,7 +72,7 @@ contract EtherFiWithdrawalQueueAssistant is BalanceAdapterAssistant {
     function claimWithdraw(uint256 tokenId) external onlyDelegateCall {
         IWithdrawRequestNFTClaim(WITHDRAW_REQUEST_NFT).claimWithdraw(tokenId);
         // Best-effort untrack — never block the claim. Normally the id is tracked and the burned NFT makes it
-        // removable; an untracked request (cleared via `clearAccount` or acquired outside the assistant) reverts
+        // removable; an untracked request (cleared via `clearAccount` / `evict` or acquired outside the assistant) reverts
         // `CoordinateNotCached`. {_bubbleUnlessCacheRevert} swallows the expected cache-state reverts and re-throws
         // anything else.
         try IEtherFiWithdrawalQueueAssistedBalanceAdapter(ADAPTER).remove(tokenId) {}

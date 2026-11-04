@@ -308,17 +308,20 @@ contract ProtocolNameConsistencyTest is Test {
             "Stader"
         );
         assertEq(
-            new EtherFiWithdrawalQueueAssistedBalanceAdapter(stub, stub, stub, address(nav)).protocolName(),
+            new EtherFiWithdrawalQueueAssistedBalanceAdapter(stub, stub, stub, address(nav), address(this))
+                .protocolName(),
             ProtocolNames.ETHERFI,
             "ether.fi"
         );
         assertEq(
-            new NexusMutualStakingPoolsAssistedBalanceAdapter(stub, stub, stub, address(nav)).protocolName(),
+            new NexusMutualStakingPoolsAssistedBalanceAdapter(stub, stub, stub, address(nav), address(this))
+                .protocolName(),
             ProtocolNames.NEXUS_MUTUAL,
             "Nexus Mutual"
         );
         assertEq(
-            new StakeWiseV3ExitQueueAssistedBalanceAdapter(stub, stub, "osETH", address(nav), 1 days).protocolName(),
+            new StakeWiseV3ExitQueueAssistedBalanceAdapter(stub, stub, "osETH", address(nav), 1 days, address(this))
+                .protocolName(),
             ProtocolNames.STAKEWISE_V3,
             "StakeWiseV3ExitQueue"
         );
@@ -357,8 +360,9 @@ contract ProtocolNameConsistencyTest is Test {
     /// @notice The two `ProtocolIds.STAKEWISE_V3` adapters — the vaults meta-adapter (derived name) and the
     ///         exit-queue adapter (hardcoded name) — must agree.
     function test_stakeWiseV3Group_reportsOneProtocolName() public {
-        string memory exitQueue =
-            new StakeWiseV3ExitQueueAssistedBalanceAdapter(stub, stub, "osETH", address(nav), 1 days).protocolName();
+        string memory exitQueue = new StakeWiseV3ExitQueueAssistedBalanceAdapter(
+                stub, stub, "osETH", address(nav), 1 days, address(this)
+            ).protocolName();
         string memory vaults = new StakeWiseV3VaultsMetaBalanceAdapter(stub, stub, address(nav)).protocolName();
 
         assertEq(exitQueue, vaults, "exit queue and vaults share stakewise-v3 but disagree");

@@ -3,7 +3,7 @@ pragma solidity ^0.8;
 
 /// @title IBalanceAdapterAssistant
 /// @author KPK
-/// @notice Marker interface for the **delegatecall-action assistants** that feed the permissionless, assistant-fed assisted
+/// @notice Marker interface for the **delegatecall-action assistants** that feed the assistant-fed assisted
 ///         balance adapters ({IAssistedBalanceAdapter}). An assistant is a stateless logic module a depositor Safe
 ///         `delegatecall`s: in the same transaction it enters/exits a protocol (deposit, withdrawal-request, exit-queue
 ///         entry, claim), it pushes/pops the resulting position **coordinate** onto its paired adapter. Running under

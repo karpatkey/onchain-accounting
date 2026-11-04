@@ -8,7 +8,7 @@ import "src/errors.sol";
 
 /// @title BalanceAdapterAssistant
 /// @author KPK
-/// @notice Abstract base for the delegatecall-action assistants that feed the permissionless, assistant-fed assisted
+/// @notice Abstract base for the delegatecall-action assistants that feed the assistant-fed assisted
 ///         balance adapters. It contributes the pieces every such assistant shares: the immutable `ADAPTER` reference,
 ///         this module's own `SELF` address pinned at construction, and the {onlyDelegateCall} guard. Concrete assistants
 ///         add the protocol-target immutables and the forward-then-`submit`/`remove` entrypoints.
@@ -54,7 +54,7 @@ abstract contract BalanceAdapterAssistant is IBalanceAdapterAssistant {
 
     /// @notice Best-effort untrack helper for the `withdraw`/`claim` entrypoints: given the raw revert `reason` from a
     ///         failed `ADAPTER.remove(...)`, swallow the two expected cache-state reverts and re-throw anything else.
-    ///         `CoordinateNotCached` = the id was never tracked (cleared via `clearAccount`, or acquired outside the
+    ///         `CoordinateNotCached` = the id was never tracked (cleared via `clearAccount` / `evict`, or acquired outside the
     ///         assistant) — nothing to untrack. `CoordinateStillLive` = the position is still live after a partial
     ///         withdraw/claim — keep it tracked. Both are safe to ignore because the adapter re-verifies ownership and
     ///         re-values live on every read: a coordinate left cached only ever **under-reports** (a fully-consumed or

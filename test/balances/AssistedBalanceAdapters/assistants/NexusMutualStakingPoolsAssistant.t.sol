@@ -101,7 +101,7 @@ contract NexusMutualStakingPoolsAssistantTest is BalanceAdapterTestBase {
         tokenController = new MockTokenController();
 
         adapter = new NexusMutualStakingPoolsAssistedBalanceAdapter(
-            address(nft), address(viewer), address(nxm), address(balances)
+            address(nft), address(viewer), address(nxm), address(balances), address(this)
         );
         wrapper = new NexusMutualStakingPoolsAssistant(address(adapter), address(nxm), address(tokenController));
 

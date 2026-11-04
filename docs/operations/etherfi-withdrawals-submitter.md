@@ -40,6 +40,8 @@ The Safe (via the assistant, or directly) calls the adapter's `msg.sender`-keyed
 | **Adapter address** | `script/config/deployments/1.json` → `balanceAdapters.EtherFiWithdrawalQueueAssisted` | Read at startup; refresh on redeploy. |
 | **Assistant address** | `script/config/deployments/1.json` → `EtherFiWithdrawalQueueAssistant` | The delegatecall target the Safe runs. |
 
+> **Until the ADR 0030 swap executes, use the `retiredAssistedAdapters` entries.** The ADR 0030 adapters and Assistants were deployed on 2026-11-04 and recorded in the active keys above, but the NAV registers them only when the swap (one NAV-timelock operation scheduled by the Council) executes. Until then the NAV still reads the previous adapter, so a Safe must keep delegatecalling the previous Assistant, recorded in the same file under `retiredAssistedAdapters.EtherFiWithdrawalQueueAssistant` (adapter: `retiredAssistedAdapters.EtherFiWithdrawalQueueAssisted`). A position opened through the new Assistant before the swap lands in an adapter the NAV does not read yet. After the swap, use the active keys.
+
 The `WithdrawRequestNFT`, `LiquidityPool`, and `eETH` addresses and all valuation/verification rules are pinned in the adapter and assistant at construction; nothing else is needed at runtime.
 
 ## Steady-state flow

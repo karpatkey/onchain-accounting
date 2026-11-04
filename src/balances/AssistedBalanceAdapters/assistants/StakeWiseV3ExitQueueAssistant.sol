@@ -28,8 +28,8 @@ contract StakeWiseV3ExitQueueAssistant is BalanceAdapterAssistant {
     event RedeemedImmediately(address indexed account, address indexed vault, uint256 shares);
     /// @notice Emitted (in the Safe's context) when a partial claim re-queued the remainder under `newPositionTicket`
     ///         (same `timestamp`) and the assistant registered it — `tracked = false` if registering it failed (the claim
-    ///         still went through; the keeper can file the remainder with `submitFor`, except when the cache is full —
-    ///         then the owner frees a slot first with `evict` / `clearAccount`).
+    ///         still went through; the keeper can file the remainder with `submitFor` while the account is below the
+    ///         keeper limit; if the cache was full, the owner frees a slot with `evict` / `clearAccount` and `submit`s it).
     event RemainderRequeued(
         address indexed account,
         address indexed vault,
@@ -92,7 +92,7 @@ contract StakeWiseV3ExitQueueAssistant is BalanceAdapterAssistant {
             uint256 newPositionTicket = positionTicket + exitedTickets;
             bool tracked;
             // Never block the claim: a failed registration is reported (tracked = false). The keeper can file it with
-            // `submitFor` — unless the cause was a full cache, which only the owner's `evict` / `clearAccount` frees.
+            // `submitFor` below its limit; after a full-cache failure the owner frees a slot and `submit`s it itself.
             try IStakeWiseV3ExitQueueAssistedBalanceAdapter(ADAPTER).submit(vault, newPositionTicket, timestamp) {
                 tracked = true;
             } catch {}

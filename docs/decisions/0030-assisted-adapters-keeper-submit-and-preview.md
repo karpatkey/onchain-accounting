@@ -48,7 +48,7 @@ Two capabilities close the gap:
    ticket and re-queues the rest under `ticket + exitedTickets` with the same timestamp (when more than one ticket is
    left). The Assistant reads `calculateExitedAssets` just before claiming — the same split the vault applies — and
    `submit`s the new ticket in the same transaction, so the unclaimed rest never drops out of the NAV. A failing
-   registration never blocks the claim (event `RemainderRequeued(..., tracked = false)`; the keeper can file it with `submitFor`, except when the cause is a full cache — the keeper's limit sits `OWNER_RESERVE` below the cap, so the owner must `evict` / `clearAccount` first). The Assistant also no longer reverts on an uncollateralized vault, where StakeWise redeems on the spot and returns `type(uint256).max` instead of a ticket (event `RedeemedImmediately`).
+   registration never blocks the claim (event `RemainderRequeued(..., tracked = false)`; the keeper can file it with `submitFor` while the account holds fewer than cap − `OWNER_RESERVE` entries; if the cause was a full cache, the keeper cannot, so the owner frees a slot with `evict` / `clearAccount` and `submit`s the new ticket itself). The Assistant also no longer reverts on an uncollateralized vault, where StakeWise redeems on the spot and returns `type(uint256).max` instead of a ticket (event `RedeemedImmediately`).
    Replayed on a real mainnet partial claim (block 25,836,981). ether.fi (claims are whole) and Nexus Mutual (a partial
    withdrawal keeps the same NFT id) need no equivalent.
 6. **Verification against DeBank.** `previewPositions` is checked against DeBank for real holders at a pinned block

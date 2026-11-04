@@ -2,7 +2,7 @@
 
 ## Status
 
-proposed (amends [0015](0015-assisted-balance-adapter-family.md) and [0018](0018-assistant-fed-assisted-balance-adapters.md))
+accepted — adapters and Assistants deployed 2026-11-04 on chains 1 and 100; NAV swap pending (amends [0015](0015-assisted-balance-adapter-family.md) and [0018](0018-assistant-fed-assisted-balance-adapters.md))
 
 ## Context
 
@@ -103,7 +103,11 @@ only → **a cache entry can under-report, never over-report**. The rows below a
    recovery) and set up monitoring of free slots per account.
 2. In ONE Council Safe transaction: `grantRole(SUBMITTER_ROLE, keeper)` on each new adapter, and schedule the swap on
    the NAV timelock as ONE operation (`removeBalanceAdapters([old…]) + addBalanceAdapters([new…])`, S15). The old
-   Assistants keep feeding the old, registered adapters meanwhile.
+   Assistants keep feeding the old, registered adapters meanwhile. The keeper is a Safe, not a bare key: a dedicated
+   KPK operations Safe whose Zodiac Roles modifier lets an agent signer call only `submitFor` / `submitForBatch` on
+   these adapters (optionally with `account` limited to the tracked fund Safes), so the signer can be rotated or cut
+   off by the Safe's owners without a Council transaction. That Safe must exist before this step. The contracts do
+   not depend on it: `SUBMITTER_ROLE` can be held by any address, and every keeper write is ownership-validated.
 3. Seed: `script/deploy/preflight/seed_assisted.py` per member (migrates the old caches + discovered positions) → the
    keeper sends each `submitForBatch` chunk. A chunk is all-or-nothing, so keep chunks small and re-run the script
    right before sending. Re-seed right before the timelock delay ends.

@@ -73,7 +73,7 @@ CANONICAL_LAYER = {
 # an address must not meet one they are not supposed to call, and a retired feed still answers, so naming
 # it would hand out plausible numbers the NAV no longer uses. Publishing one is an error in the other
 # direction — see `check`.
-RETIRED_MAPS = {"retiredCustomPriceFeeds"}
+RETIRED_MAPS = {"retiredCustomPriceFeeds", "retiredAssistedAdapters"}
 
 
 def recorded_addresses(chain_id: str) -> dict[str, str]:
@@ -171,7 +171,7 @@ def check() -> list[str]:
             if addr.lower() in retired:
                 problems.append(
                     f"chain {chain}: `{name}` published as {addr}, which is RETIRED "
-                    f"(recorded under retiredCustomPriceFeeds as `{retired[addr.lower()]}`) — a superseded "
+                    f"(recorded under a retired section as `{retired[addr.lower()]}`) — a superseded "
                     f"address must not appear in the docs"
                 )
             elif addr.lower() not in by_address:

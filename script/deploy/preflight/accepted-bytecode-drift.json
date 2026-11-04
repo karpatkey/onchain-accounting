@@ -162,6 +162,34 @@
       "recorded": "2026-08-27",
       "action": "NONE while the bridge is out of scope. When bridge work resumes: diagnose which commit this was built from, decide whether the difference is material, then redeploy or re-justify. Delete ALL 23 entries together once it is fixed.",
       "scope": "bridge - out of scope as of 2026-08-27"
+    },
+    "1:0xd2ea372e6c1ba08ce3d20f4ce69d68f13e1f92c4": {
+      "key": "EtherFiWithdrawalQueueAssistant",
+      "reason": "IN SCOPE, TEMPORARY (ADR 0030, deployed 2026-11-04): this NEW Assistant's code is current, but it points at the new assisted adapter, which is registered on the NAV only when the ADR 0030 swap (one timelocked Council operation: remove old + add new) executes - so the audit reads ORPHAN -> CURRENT_CODE_STALE_POINTER until then. Expected, not a defect. DELETE this entry right after the swap executes: the audit then reads CURRENT and the two-way baseline check fails until it is removed.",
+      "recorded": "2026-11-04",
+      "action": "Delete this entry right after the ADR 0030 NAV swap executes.",
+      "scope": "IN SCOPE (temporary, until the ADR 0030 swap)"
+    },
+    "1:0x35cd6ea4e28001fca5e718de1d1c70ac3a79e3de": {
+      "key": "NexusMutualStakingPoolsAssistant",
+      "reason": "IN SCOPE, TEMPORARY (ADR 0030, deployed 2026-11-04): this NEW Assistant's code is current, but it points at the new assisted adapter, which is registered on the NAV only when the ADR 0030 swap (one timelocked Council operation: remove old + add new) executes - so the audit reads ORPHAN -> CURRENT_CODE_STALE_POINTER until then. Expected, not a defect. DELETE this entry right after the swap executes: the audit then reads CURRENT and the two-way baseline check fails until it is removed.",
+      "recorded": "2026-11-04",
+      "action": "Delete this entry right after the ADR 0030 NAV swap executes.",
+      "scope": "IN SCOPE (temporary, until the ADR 0030 swap)"
+    },
+    "1:0xc020e93ca7bfb23e63adee13b2bb97abc78db13d": {
+      "key": "StakeWiseV3ExitQueueAssistant",
+      "reason": "IN SCOPE, TEMPORARY (ADR 0030, deployed 2026-11-04): this NEW Assistant's code is current, but it points at the new assisted adapter, which is registered on the NAV only when the ADR 0030 swap (one timelocked Council operation: remove old + add new) executes - so the audit reads ORPHAN -> CURRENT_CODE_STALE_POINTER until then. Expected, not a defect. DELETE this entry right after the swap executes: the audit then reads CURRENT and the two-way baseline check fails until it is removed.",
+      "recorded": "2026-11-04",
+      "action": "Delete this entry right after the ADR 0030 NAV swap executes.",
+      "scope": "IN SCOPE (temporary, until the ADR 0030 swap)"
+    },
+    "100:0xf044b3c75da32b3d5c6e31a911e420cbc97a546a": {
+      "key": "StakeWiseV3ExitQueueAssistant",
+      "reason": "IN SCOPE, TEMPORARY (ADR 0030, deployed 2026-11-04): this NEW Assistant's code is current, but it points at the new assisted adapter, which is registered on the NAV only when the ADR 0030 swap (one timelocked Council operation: remove old + add new) executes - so the audit reads ORPHAN -> CURRENT_CODE_STALE_POINTER until then. Expected, not a defect. DELETE this entry right after the swap executes: the audit then reads CURRENT and the two-way baseline check fails until it is removed.",
+      "recorded": "2026-11-04",
+      "action": "Delete this entry right after the ADR 0030 NAV swap executes.",
+      "scope": "IN SCOPE (temporary, until the ADR 0030 swap)"
     }
   }
 }

@@ -204,7 +204,7 @@ position manager is at a different address entirely.
 | EthenaCooldown | `0x3F12f2baf245eeF00F6b0C5C2173Df990FFBa796` |
 | EthenaSavingsWalletMeta ★ | `0x51970009da25B52048ACBBB850B11aa198bdC64B` |
 | EtherFiStakedEthWalletMeta ★ | `0x8a6fde256DD9B262596A22BC4a6c8292Fc3a5D65` |
-| EtherFiWithdrawalQueueAssisted | `0x5c5c1A98CdF07c9D9B4664933AF98a30e36F3618` |
+| EtherFiWithdrawalQueueAssisted | `0xd074FAf8D8f2909BE3E6D51c219916065c5d870A` |
 | EulerVaultsMeta ★ | `0x331566e8F7b48Fa683fE865403Cf4311b50A7710` |
 | FluidFTokensMeta ★ | `0xb1a03cDD28cAA91f409C417C9f56ab53bc9d7ae9` |
 | FluidVaultsMeta ☆ | `0x161EB6952Ffc4319a05bd8FEBB1B90283F267005` |
@@ -218,7 +218,7 @@ position manager is at a different address entirely.
 | MerklRewards ☆ | `0xFf2D5A8bf801191eD1292E6DD6792F5D03c5aFBF` |
 | MorphoMarketsMeta ☆ | `0x08e590BcFc753fC6383aFE327253558C962D3EB6` |
 | MorphoVaultsMeta ★ | `0x72a012B30b240458C3f79fd20E5c2A907d77e54f` |
-| NexusMutualStakingPoolsAssisted | `0x25Be749999683381703c7346462503a5EFFFd184` |
+| NexusMutualStakingPoolsAssisted | `0x535861D4f3AE8eC84d0aEd11134fF5F992b47F8D` |
 | NexusMutualVaultsWalletMeta ★ | `0xeA71c3af5127f7fC0F791FE0bFfF9826Ea589060` |
 | PolygonStakingMeta | `0x905c04819dd4DB75590663658B7cd635aD67B151` |
 | RenzoRestakedEthWalletMeta ★ | `0x9145A559108426e1eA429A2A6441e2A875f069ec` |
@@ -229,7 +229,7 @@ position manager is at a different address entirely.
 | SparkSavingsWalletMeta ★ | `0xd848BE8B5f580C7F8a7f93256DD218cf06CAcd3f` |
 | StaderStakedEthWalletMeta ★ | `0x30c6A35827E3dC294f410073C305C8b3f91f1a4a` |
 | StaderWithdrawalQueue | `0xCB975897AfA295C8fAEB0C33B333C77B95195094` |
-| StakeWiseV3ExitQueueAssisted | `0x83375fDE808F6388c85fC0A1dA86a69492a20798` |
+| StakeWiseV3ExitQueueAssisted | `0x662F43D46b10D57C5F1970684BD0e35CD3e5DFa7` |
 | StakeWiseV3OsTokenWalletMeta ★ | `0x818dD183121641B09752891bB7E971b0FE29e101` |
 | StakeWiseV3VaultsMeta | `0xE97bE4B11EE8D65A123dD99bDdec7a4fDcA6359E` |
 | SymbioticVaultsMeta ★ | `0x320699dE0693d71C28f5559a68635495AdA0826c` |
@@ -287,7 +287,7 @@ position manager is at a different address entirely.
 | LidoStakedEthWalletMeta ★ | `0x7ED4F12798ea3f26AE02a6521eE84702CE5f8f90` |
 | MerklRewards ☆ | `0xFf2D5A8bf801191eD1292E6DD6792F5D03c5aFBF` |
 | SkySavingsWalletMeta ★ | `0xb967b206445ca58445d09b6CE9878add5Bb14dd4` |
-| StakeWiseV3ExitQueueAssisted | `0xE1e163663961237C0955b665188864f0fD281020` |
+| StakeWiseV3ExitQueueAssisted | `0x6E23b1f1447c95E50e06c0F40C64F3f7ff717Eea` |
 | StakeWiseV3OsTokenWalletMeta ★ | `0x818dD183121641B09752891bB7E971b0FE29e101` |
 | StakeWiseV3VaultsMeta | `0x04f7a5Faaa9da0a163814e8C30ED7435F159A8eC` |
 | UniswapV3PoolsMeta ☆ | `0xaC47D9Cbe8B3EDc9c9d1a6c8092054299bBC1adE` |
@@ -319,19 +319,25 @@ Delegatecall action modules for the assisted adapters. They are **not** register
 the owner Safe delegatecalls them, so the adapter sees `msg.sender = Safe`. Recorded at the top level of
 `script/config/deployments/<chainId>.json`, not under `balanceAdapters`.
 
+**ADR 0030 redeploy (2026-11-04):** the assisted adapters and these Assistants were redeployed with the keeper path
+(`submitFor` / `removeFor` / `evict` / `previewPositions`). The new adapters are registered on the NAV only when the
+ADR 0030 swap (one timelocked Council operation: remove old + add new) executes; until then the NAV still reads the
+previous ones, which are recorded under `retiredAssistedAdapters` in `deployments/{1,100}.json`. Positions must be
+opened through the NEW Assistants only after that swap.
+
 ### Ethereum (1)
 
 | Assistant | Address |
 | --- | --- |
-| EtherFiWithdrawalQueueAssistant | `0x03663a1BC7adf766a98421c5C1C1E4E01d45c476` |
-| NexusMutualStakingPoolsAssistant | `0xC528664DA4B972cCc6c39649da1388a1e756bf91` |
-| StakeWiseV3ExitQueueAssistant | `0x28bA4320CF3936964268C82F198CAB0626b7d1aD` |
+| EtherFiWithdrawalQueueAssistant | `0xD2EA372e6c1bA08cE3d20F4Ce69d68f13E1F92c4` |
+| NexusMutualStakingPoolsAssistant | `0x35cd6EA4e28001FCA5E718De1D1c70Ac3A79E3DE` |
+| StakeWiseV3ExitQueueAssistant | `0xc020E93CA7BFB23E63aDeE13b2bB97ABc78db13d` |
 
 ### Gnosis (100)
 
 | Assistant | Address |
 | --- | --- |
-| StakeWiseV3ExitQueueAssistant | `0xB111B929f443Fd48bD40a6e1e4E064a878096B6C` |
+| StakeWiseV3ExitQueueAssistant | `0xF044b3C75DA32b3D5C6e31a911E420CBC97A546a` |
 
 ## Custom price feeds (per chain)
 

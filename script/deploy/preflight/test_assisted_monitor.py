@@ -202,6 +202,24 @@ class Misc(unittest.TestCase):
         self.assertEqual(m.redact("GET https://x/v2/SECRET?k=KEY failed", ["https://x/v2/SECRET", "KEY", ""]),
                          "GET ***?k=*** failed")
 
+    def test_redact_path_only_transport_error(self):
+        url = "https://mainnet.infura.io/v3/SECRETKEY123?x=QTOKEN"
+        msg = ("RpcError: eth_call failed after 4 attempts: HTTPSConnectionPool(host='mainnet.infura.io', port=443): "
+               "Max retries exceeded with url: /v3/SECRETKEY123?x=QTOKEN (Caused by NewConnectionError)")
+        out = m.redact(msg, m.url_secrets(url))
+        self.assertNotIn("SECRETKEY123", out)
+        self.assertNotIn("QTOKEN", out)
+        self.assertNotIn("SECRETKEY123", m.redact("GET " + url + " failed", m.url_secrets(url)))
+
+    def test_redact_userinfo(self):
+        self.assertNotIn("pw", m.redact("x https://user:pw@h/ y", m.url_secrets("https://user:pw@h/")))
+
+    def test_alert_not_masked_by_other_chains_read_failure(self):
+        ok = run(Chain(used={A1: 224}))
+        failed = {"chain": 100, "error": "no RPC", "adapters": []}
+        self.assertEqual(m.verdict([ok, failed]), 1)
+        self.assertEqual(m.verdict([run(Chain()), failed]), 2)
+
     def test_cap_read_propagates_transport_errors(self):
         def call(to, data):
             raise c.RpcError("eth_call failed after 4 attempts: timeout")

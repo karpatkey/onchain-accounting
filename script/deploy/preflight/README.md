@@ -196,7 +196,8 @@ holder is only as visible as Etherscan's log index, so a lagging index can delay
 expected one): an admin other than the chain's `securityCouncil` (or `--expect-admin`), a missing Council, or a submitter
 not passed as `--expect-submitter` is a problem. Whether the adapter is registered on the NAV is informational.
 Exit 0 = clean (WARNs allowed), 1 = ALERT or role problem, 2 = a read failed, an empty accounts file, a chain with no
-assisted adapter recorded, or any unexpected error — it fails closed, so it can run from cron. Needs
+assisted adapter recorded, or any unexpected error — it fails closed, so it can run from cron. An ALERT or role problem on a chain that was read
+always wins (exit 1, with any read failure on another chain also printed), so an outage elsewhere never masks it. Needs
 `ETHERSCAN_API_KEY` and an RPC.
 
 ```bash

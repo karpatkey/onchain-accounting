@@ -28,6 +28,7 @@ import os
 import sys
 
 import requests
+from urllib.parse import urlsplit
 
 import chainlib as c
 import seed_assisted as s
@@ -176,13 +177,15 @@ def run_chain(chain: int, call, logs, record: dict, accounts: list[str], expect_
 
 
 def verdict(chains: list[dict]) -> int:
-    for ch in chains:
-        if ch.get("error"):
-            return 2
+    """1 if ANY chain that was read shows an ALERT or a role problem (it is never masked by another chain's read
+    failure), else 2 if any chain could not be read, else 0."""
     for ch in chains:
         for ad in ch["adapters"]:
             if ad["problems"] or any(r["status"] == "ALERT" for r in ad["accounts"]):
                 return 1
+    for ch in chains:
+        if ch.get("error"):
+            return 2
     return 0
 
 
@@ -209,10 +212,23 @@ def render(chains: list[dict]) -> str:
     return "\n".join(out)
 
 
+def url_secrets(url: str) -> list[str]:
+    """The URL plus every component that can carry a credential on its own: a transport error often quotes only
+    the request path (`/v3/<key>`) or the query, never the full URL, so whole-URL redaction alone would miss it."""
+    if not url:
+        return []
+    parts = urlsplit(url)
+    out = [url, parts.query]
+    if parts.path and parts.path != "/":
+        out.append(parts.path)
+    if "@" in parts.netloc:
+        out.append(parts.netloc.split("@", 1)[0])
+    return [x for x in out if x]
+
+
 def redact(msg: str, secrets: list[str]) -> str:
-    for x in secrets:
-        if x:
-            msg = msg.replace(x, "***")
+    for x in sorted((x for x in secrets if x), key=len, reverse=True):  # longest first: the URL before its path
+        msg = msg.replace(x, "***")
     return msg
 
 
@@ -248,7 +264,7 @@ def main(argv: list[str] | None = None) -> int:
     chains = []
     for chain in a.chain or [1, 100]:
         url, note = c.resolve_rpc(chain)
-        secrets = [url or "", os.environ.get("ETHERSCAN_API_KEY", ""), os.environ.get("ALCHEMY_API_KEY", "")]
+        secrets = url_secrets(url or "") + [os.environ.get("ETHERSCAN_API_KEY", ""), os.environ.get("ALCHEMY_API_KEY", "")]
         if not url:
             chains.append({"chain": chain, "error": f"no RPC: {note}", "adapters": []})
             continue
@@ -268,6 +284,9 @@ def main(argv: list[str] | None = None) -> int:
     if a.json:
         json.dump({"exit": code, "chains": chains}, open(a.json, "w"), indent=2)
     print({0: "OK", 1: "ALERT / unexpected role holder", 2: "READ FAILURE"}[code], file=sys.stderr)
+    if code == 1 and any(ch.get("error") for ch in chains):
+        print("also: READ FAILURE on " + ", ".join(str(ch["chain"]) for ch in chains if ch.get("error")),
+              file=sys.stderr)
     return code
 
 

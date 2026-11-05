@@ -220,6 +220,26 @@ class Misc(unittest.TestCase):
         self.assertEqual(m.verdict([ok, failed]), 1)
         self.assertEqual(m.verdict([run(Chain()), failed]), 2)
 
+    def test_one_adapter_failure_keeps_siblings_alert(self):
+        rec = {"NAVCalculatorProxy": NAV, "balanceAdapters": {"AAssisted": ADAPTER, "BAssisted": A2}}
+        chain = Chain(used={A1: 224})
+        base = chain.call
+        def call(to, data):
+            if to == A2:
+                raise c.RpcError("eth_call failed after 4 attempts: timeout")
+            return base(to, data)
+        chain.call = call
+        r = run(chain, record=rec)
+        self.assertEqual(len(r["adapters"]), 2)
+        self.assertTrue(any(ad.get("error") for ad in r["adapters"]))
+        self.assertEqual(m.verdict([r]), 1, "the healthy adapter's ALERT wins")
+        self.assertIn("ALERT", m.render([r]))
+        self.assertIn("ERROR", m.render([r]))
+        clean = Chain()
+        cb = clean.call
+        clean.call = lambda to, data: (_ for _ in ()).throw(c.RpcError("x")) if to == A2 else cb(to, data)
+        self.assertEqual(m.verdict([run(clean, record=rec)]), 2, "no ALERT anywhere → read failure")
+
     def test_cap_read_propagates_transport_errors(self):
         def call(to, data):
             raise c.RpcError("eth_call failed after 4 attempts: timeout")

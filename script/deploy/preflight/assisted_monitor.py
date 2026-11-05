@@ -171,8 +171,15 @@ def run_chain(chain: int, call, logs, record: dict, accounts: list[str], expect_
     recorded = assisted_adapters(record)
     if not recorded:
         raise MonitorError(f"chain {chain}: no *Assisted adapter in the deployment record")
-    adapters = [check_adapter(call, logs, chain, n, a, accounts, nav_adapters, expect_admin, expect_submitter)
-                for n, a in recorded]
+    adapters = []
+    for n, a in recorded:
+        # One adapter's read failure must not discard the others' results (an ALERT found on a sibling stays visible).
+        try:
+            adapters.append(check_adapter(call, logs, chain, n, a, accounts, nav_adapters, expect_admin,
+                                          expect_submitter))
+        except Exception as e:  # noqa: BLE001 — recorded per adapter; verdict() turns it into exit 2 unless an ALERT wins
+            adapters.append({"chain": chain, "name": n, "adapter": a, "error": f"{type(e).__name__}: {e}",
+                             "accounts": [], "problems": [], "admins": [], "submitters": []})
     return {"chain": chain, "nav": nav, "adapters": adapters}
 
 
@@ -184,7 +191,7 @@ def verdict(chains: list[dict]) -> int:
             if ad["problems"] or any(r["status"] == "ALERT" for r in ad["accounts"]):
                 return 1
     for ch in chains:
-        if ch.get("error"):
+        if ch.get("error") or any(ad.get("error") for ad in ch["adapters"]):
             return 2
     return 0
 
@@ -199,6 +206,9 @@ def render(chains: list[dict]) -> str:
         if not ch["adapters"]:
             out.append("  (no assisted adapters recorded)")
         for ad in ch["adapters"]:
+            if ad.get("error"):
+                out.append(f"  {ad['name']} {ad['adapter']}  ERROR {ad['error']}")
+                continue
             reg = {True: "yes", False: "no", None: "n/a"}[ad["registeredOnNav"]]
             out.append(f"  {ad['name']} {ad['adapter']}  cap {ad['cap']}  reserve {ad['ownerReserve']}  "
                        f"keeper limit {ad['keeperLimit']}  on NAV: {reg}")
@@ -275,8 +285,12 @@ def main(argv: list[str] | None = None) -> int:
                            "adapters": []})
             continue
         try:
-            chains.append(run_chain(chain, lambda to, d: c.eth_call(url, to, d), s.etherscan_logs, c.deployment(chain),
-                                    accounts, expect_admin, {x.lower() for x in a.expect_submitter}))
+            ch = run_chain(chain, lambda to, d: c.eth_call(url, to, d), s.etherscan_logs, c.deployment(chain),
+                           accounts, expect_admin, {x.lower() for x in a.expect_submitter})
+            for ad in ch["adapters"]:
+                if ad.get("error"):
+                    ad["error"] = redact(ad["error"], secrets)[:240]
+            chains.append(ch)
         except Exception as e:  # noqa: BLE001 — any failure to read is a READ FAILURE (exit 2), never an ALERT or OK
             chains.append({"chain": chain, "error": redact(f"{type(e).__name__}: {e}", secrets)[:240], "adapters": []})
     print(render(chains))
@@ -284,9 +298,10 @@ def main(argv: list[str] | None = None) -> int:
     if a.json:
         json.dump({"exit": code, "chains": chains}, open(a.json, "w"), indent=2)
     print({0: "OK", 1: "ALERT / unexpected role holder", 2: "READ FAILURE"}[code], file=sys.stderr)
-    if code == 1 and any(ch.get("error") for ch in chains):
-        print("also: READ FAILURE on " + ", ".join(str(ch["chain"]) for ch in chains if ch.get("error")),
-              file=sys.stderr)
+    failed = [str(ch["chain"]) for ch in chains if ch.get("error")] + [
+        f"{ch['chain']}:{ad['name']}" for ch in chains for ad in ch["adapters"] if ad.get("error")]
+    if code == 1 and failed:
+        print("also: READ FAILURE on " + ", ".join(failed), file=sys.stderr)
     return code
 
 

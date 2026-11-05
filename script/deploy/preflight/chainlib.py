@@ -666,6 +666,11 @@ CANONICAL_KEYS = {
 # anchored and does not match `retiredCustomPriceFeeds.OETH`. So the address is bytecode-audited like
 # every other deployed contract, while being exempt from the pointer check that a deliberately
 # un-redeployed feed can never pass. Both properties were verified by running the enumeration.
+# `retiredAssistedAdapters` (ADR 0030 redeploy) is deliberately NOT here, unlike `retiredCustomPriceFeeds`: those
+# contracts run SUPERSEDED code by design (the ADR 0030 change is the reason they were replaced), so every one would
+# read STALE forever, and after the NAV swap their old Assistants point at unregistered adapters (ORPHAN) forever too.
+# Auditing them would only add permanent noise to the drift gate. The section stays visible to
+# `published_addresses_guard.RETIRED_MAPS`, so a retired address still cannot be published as current.
 NESTED_KEYS = ("balanceAdapters", "customPriceFeeds", "retiredCustomPriceFeeds", "bridgeAdapters")
 
 

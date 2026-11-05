@@ -51,6 +51,8 @@ results with the keeper's `submitFor`.
 | **Assistant address** | `script/config/deployments/<chainId>.json` → `StakeWiseV3ExitQueueAssistant` | The delegatecall action the Safe uses to enter/claim and feed the adapter in one tx. |
 | **Owner key** | Operator secret store | The OIV Safe (`chainConfig.admin`), which is the exit-position `receiver`. Feed via the Safe Transaction Service / a granted Zodiac role — a `submit` sent from any other key tracks that key's own (empty) set, not the Safe's. |
 
+> **Until the ADR 0030 swap executes, use the `retiredAssistedAdapters` entries.** The ADR 0030 adapters and Assistants were deployed on 2026-11-04 and recorded in the active keys above, but the NAV registers them only when the swap (one NAV-timelock operation scheduled by the Council) executes. Until then the NAV still reads the previous adapter, so a Safe must keep delegatecalling the previous Assistant, recorded in the same file under `retiredAssistedAdapters.StakeWiseV3ExitQueueAssistant` (adapter: `retiredAssistedAdapters.StakeWiseV3ExitQueueAssisted`). A position opened through the new Assistant before the swap lands in an adapter the NAV does not read yet. After the swap, use the active keys.
+
 The `VaultsRegistry` address and all valuation/verification rules are pinned in the adapter; the reconciliation process does not need them beyond event scanning.
 
 ## Steady-state loop

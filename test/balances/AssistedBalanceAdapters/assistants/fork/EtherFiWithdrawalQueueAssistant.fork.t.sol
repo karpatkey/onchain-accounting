@@ -104,7 +104,7 @@ contract EtherFiWithdrawalQueueAssistantForkTest is BalanceAdapterTestBase {
 
         // Deploy adapter (wrapper unknown yet) → wrapper → grant WRAPPER_ROLE to the wrapper.
         adapter = new EtherFiWithdrawalQueueAssistedBalanceAdapter(
-            WITHDRAW_REQUEST_NFT, LIQUIDITY_POOL, NATIVE_ETH, address(balances)
+            WITHDRAW_REQUEST_NFT, LIQUIDITY_POOL, NATIVE_ETH, address(balances), address(this)
         );
         wrapper = new EtherFiWithdrawalQueueAssistant(address(adapter), LIQUIDITY_POOL, WITHDRAW_REQUEST_NFT, EETH);
 

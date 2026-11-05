@@ -40,7 +40,9 @@ contract NexusMutualStakingPoolsAssistantSafeRolesForkTest is AssistantSafeRoles
         super.setUp(); // invokes _setupFork()
         balances = _deployBalancesForAdapter(NXM);
 
-        adapter = new NexusMutualStakingPoolsAssistedBalanceAdapter(STAKING_NFT, STAKING_VIEWER, NXM, address(balances));
+        adapter = new NexusMutualStakingPoolsAssistedBalanceAdapter(
+            STAKING_NFT, STAKING_VIEWER, NXM, address(balances), address(this)
+        );
         assistant = new NexusMutualStakingPoolsAssistant(address(adapter), NXM, TOKEN_CONTROLLER);
 
         _initManagerSafe();

@@ -38,7 +38,7 @@ contract StakeWiseV3ExitQueueAssistantSafeRolesForkTest is AssistantSafeRolesFor
         balances = _balancesForNativeEth();
 
         adapter = new StakeWiseV3ExitQueueAssistedBalanceAdapter(
-            VAULTS_REGISTRY, NATIVE_ETH, "osETH", address(balances), 1 days
+            VAULTS_REGISTRY, NATIVE_ETH, "osETH", address(balances), 1 days, address(this)
         );
         assistant = new StakeWiseV3ExitQueueAssistant(address(adapter));
 

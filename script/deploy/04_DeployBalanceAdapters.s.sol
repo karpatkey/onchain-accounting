@@ -170,6 +170,9 @@ contract DeployBalanceAdapters is BaseDeployScript {
     /// @dev Fail loud rather than deploy an adapter with no admin: `SUBMITTER_ROLE` could then never be granted,
     ///      and because the address is deterministic, the salt would be permanently burned on that chain.
     error MerklAdminUnset();
+    /// @notice Thrown when `chainConfig.securityCouncil` is unset while deploying an assisted adapter, which would
+    ///         leave nobody able to grant the keeper's `SUBMITTER_ROLE`.
+    error AssistedAdminUnset();
 
     function run() public override {
         setUp();
@@ -282,14 +285,14 @@ contract DeployBalanceAdapters is BaseDeployScript {
         _deployIfEnabled("StakeWiseV3VaultsMeta"); // Meta-adapter: all StakeWise V3 vaults; vault set on NAV (ADR 0010)
         _deployIfEnabled("PolygonStakingMeta"); // Meta-adapter: all Polygon PoS ValidatorShares; validator set on NAV (ADR 0010)
 
-        // --- ether.fi withdrawal-queue cache adapter (assisted; permissionless assistant-fed, ADR 0018) ---
+        // --- ether.fi withdrawal-queue cache adapter (assisted; assistant-fed + keeper, ADR 0018/0030) ---
         _deployIfEnabled("EtherFiWithdrawalQueueAssisted");
 
-        // --- Nexus Mutual staked NXM (assisted cache adapter; StakingNFT tokenIds, ADR 0015/0018 permissionless
-        //     assistant-fed; values via StakingViewer, re-verifies ownership per read) ---
+        // --- Nexus Mutual staked NXM (assisted cache adapter; StakingNFT tokenIds, ADR 0015/0018/0030
+        //     assistant-fed + keeper; values via StakingViewer, re-verifies ownership per read) ---
         _deployIfEnabled("NexusMutualStakingPoolsAssisted");
 
-        // --- StakeWise V3 exit-queue cache adapter (assisted; permissionless assistant-fed, ADR 0018) ---
+        // --- StakeWise V3 exit-queue cache adapter (assisted; assistant-fed + keeper, ADR 0018/0030) ---
         _deployIfEnabled("StakeWiseV3ExitQueueAssisted");
 
         // Attested family (ADR 0022): SUBMITTER_ROLE-gated, proof-verified cache — NO assistant contract.
@@ -307,7 +310,7 @@ contract DeployBalanceAdapters is BaseDeployScript {
         // --- PancakeSwap V3 (meta-adapter; disabled in config — never deployed, kept for parity) ---
         _deployIfEnabled("PancakeSwapV3PoolsMeta"); // meta-adapter: PancakeSwap V3 pools (on-chain NFT enumeration)
 
-        // --- Assistants for the permissionless assisted adapters (ADR 0018) ---
+        // --- Assistants for the assisted adapters (ADR 0018) ---
         // Delegatecall helpers the owner Safe uses to enter/stake while keeping the adapter cache current. Deployed
         // alongside their adapters (not NAV-registered); recorded in the deployment state so the ops team can whitelist
         // them on the Roles modifier. Stader is a plain adapter and has no assistant.
@@ -351,7 +354,7 @@ contract DeployBalanceAdapters is BaseDeployScript {
         }
     }
 
-    /// @notice Deploys the delegatecall assistants paired with the permissionless assisted adapters (ADR 0018), when
+    /// @notice Deploys the delegatecall assistants paired with the assisted adapters (ADR 0018), when
     ///         their adapters are deployed. Assistants are NOT NAV-registered (they are not balance adapters); they are
     ///         recorded in the deployment state for the ops team to whitelist on the Roles modifier. Idempotent — skips
     ///         an assistant already recorded. Constructor args beyond the adapter address are read from the paired
@@ -958,6 +961,14 @@ contract DeployBalanceAdapters is BaseDeployScript {
         return address(adapter);
     }
 
+    /// @notice `DEFAULT_ADMIN_ROLE` holder for the assisted adapters (ADR 0030): the chain's Security Council Safe,
+    ///         which grants and revokes the keeper's `SUBMITTER_ROLE`. Unlike Merkl there is no address to pin (plain
+    ///         CREATE), so the end-state admin goes in directly; no submitter is granted at deploy.
+    function _assistedAdmin() internal view returns (address admin) {
+        admin = chainConfig.securityCouncil;
+        if (admin == address(0)) revert AssistedAdminUnset();
+    }
+
     /// @notice Deploys the Merkl rewards adapter (attested family, ADR 0022) via CREATE2, so it takes the SAME
     ///         address on every chain. Constructor takes (distributor, navCalculator, admin). Proof-verified; NO
     ///         assistant contract.
@@ -1036,8 +1047,8 @@ contract DeployBalanceAdapters is BaseDeployScript {
         internal
         returns (address)
     {
-        // Permissionless assistant-fed adapter (ADR 0018): no admin/roles — the id cache is msg.sender-keyed
-        // and fed on-chain by the delegatecall assistant. NAV registration + assistant deploy wiring deferred.
+        // Assisted adapter (ADR 0018/0030): the owner path is msg.sender-keyed and fed on-chain by the delegatecall
+        // assistant; admin = the chain's Security Council for the keeper's SUBMITTER_ROLE (none granted here).
         address withdrawRequestNft = vm.parseAddress(
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "withdrawRequestNft")
         );
@@ -1049,7 +1060,7 @@ contract DeployBalanceAdapters is BaseDeployScript {
         );
 
         EtherFiWithdrawalQueueAssistedBalanceAdapter adapter = new EtherFiWithdrawalQueueAssistedBalanceAdapter(
-            withdrawRequestNft, liquidityPool, underlyingToken, navCalculator
+            withdrawRequestNft, liquidityPool, underlyingToken, navCalculator, _assistedAdmin()
         );
         return address(adapter);
     }
@@ -1058,9 +1069,9 @@ contract DeployBalanceAdapters is BaseDeployScript {
         internal
         returns (address)
     {
-        // Assisted adapter (permissionless assistant-fed; ADR 0015/0018): the caller submits an account's StakingNFT
-        // tokenIds via the msg.sender-keyed submit; the adapter values each via StakingViewer.getTokens and re-verifies
-        // ownership via tokenInfo per read, so a feeder can only under-report (id-cache, never amounts). No roles.
+        // Assisted adapter (ADR 0015/0018/0030): StakingNFT tokenIds arrive via the owner's msg.sender-keyed submit or
+        // the keeper's submitFor; the adapter values each via StakingViewer.getTokens and re-verifies ownership via
+        // tokenInfo per read, so a feeder can only under-report (id-cache, never amounts).
         // underlyingToken = NXM.
         address stakingNft = vm.parseAddress(
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "stakingNft")
@@ -1071,10 +1082,10 @@ contract DeployBalanceAdapters is BaseDeployScript {
         address underlyingToken = vm.parseAddress(
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "underlyingToken")
         );
-        // Permissionless assistant-fed adapter (ADR 0018): no admin/roles — the id cache is msg.sender-keyed
-        // and fed on-chain by the delegatecall assistant. NAV registration + assistant deploy wiring deferred.
+        // Assisted adapter (ADR 0018/0030): the owner path is msg.sender-keyed and fed on-chain by the delegatecall
+        // assistant; admin = the chain's Security Council for the keeper's SUBMITTER_ROLE (none granted here).
         NexusMutualStakingPoolsAssistedBalanceAdapter adapter = new NexusMutualStakingPoolsAssistedBalanceAdapter(
-            stakingNft, stakingViewer, underlyingToken, navCalculator
+            stakingNft, stakingViewer, underlyingToken, navCalculator, _assistedAdmin()
         );
         return address(adapter);
     }
@@ -1083,7 +1094,8 @@ contract DeployBalanceAdapters is BaseDeployScript {
         internal
         returns (address)
     {
-        // Permissionless assistant-fed (ADR 0018): submit/remove are msg.sender-keyed (no roles). The adapter values
+        // Assisted (ADR 0018/0030): owner submit/remove are msg.sender-keyed; the keeper's submitFor is role-gated. The
+        // adapter values
         // from live on-chain reads and verifies each tuple belongs to the account via calculateExitedAssets(
         // receiver=account), so a feeder cannot fabricate amounts (under-report only). See
         // docs/decisions/0018-assistant-fed-assisted-balance-adapters.md.
@@ -1102,10 +1114,10 @@ contract DeployBalanceAdapters is BaseDeployScript {
         uint256 exitClaimDelay = vm.parseUint(
             ConfigReader.readAdapterParam(vm, currentChainId, "balanceAdapters", adapterName, "exitClaimDelay")
         );
-        // Permissionless assistant-fed adapter (ADR 0018): no admin/roles — the coordinate cache is msg.sender-keyed
-        // and fed on-chain by the delegatecall assistant. NAV registration + assistant wiring deferred.
+        // Owner path msg.sender-keyed (delegatecall assistant); admin = the chain's Security Council for the keeper's
+        // SUBMITTER_ROLE (ADR 0030); none granted here.
         StakeWiseV3ExitQueueAssistedBalanceAdapter adapter = new StakeWiseV3ExitQueueAssistedBalanceAdapter(
-            vaultsRegistry, underlyingToken, receiptSymbol, navCalculator, exitClaimDelay
+            vaultsRegistry, underlyingToken, receiptSymbol, navCalculator, exitClaimDelay, _assistedAdmin()
         );
         return address(adapter);
     }

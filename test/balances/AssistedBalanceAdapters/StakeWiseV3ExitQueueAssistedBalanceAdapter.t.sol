@@ -128,7 +128,7 @@ contract StakeWiseV3ExitQueueAssistedBalanceAdapterTest is BalanceAdapterTestBas
         registry.setVault(address(vault), true);
         balances.addSupportedAssetForTest(NATIVE);
         adapter = new StakeWiseV3ExitQueueAssistedBalanceAdapter(
-            address(registry), NATIVE, "osETH", address(balances), DELAY
+            address(registry), NATIVE, "osETH", address(balances), DELAY, address(this)
         );
         vm.warp(TS + DELAY + 1);
     }
@@ -145,36 +145,48 @@ contract StakeWiseV3ExitQueueAssistedBalanceAdapterTest is BalanceAdapterTestBas
 
     function test_constructor_revertsOnZeroRegistry() public {
         vm.expectRevert(InvalidArguments.selector);
-        new StakeWiseV3ExitQueueAssistedBalanceAdapter(address(0), NATIVE, "osETH", address(balances), DELAY);
+        new StakeWiseV3ExitQueueAssistedBalanceAdapter(
+            address(0), NATIVE, "osETH", address(balances), DELAY, address(this)
+        );
     }
 
     function test_constructor_revertsOnZeroUnderlying() public {
         vm.expectRevert(InvalidArguments.selector);
-        new StakeWiseV3ExitQueueAssistedBalanceAdapter(address(registry), address(0), "osETH", address(balances), DELAY);
+        new StakeWiseV3ExitQueueAssistedBalanceAdapter(
+            address(registry), address(0), "osETH", address(balances), DELAY, address(this)
+        );
     }
 
     function test_constructor_revertsOnZeroNav() public {
         vm.expectRevert(InvalidArguments.selector);
-        new StakeWiseV3ExitQueueAssistedBalanceAdapter(address(registry), NATIVE, "osETH", address(0), DELAY);
+        new StakeWiseV3ExitQueueAssistedBalanceAdapter(
+            address(registry), NATIVE, "osETH", address(0), DELAY, address(this)
+        );
     }
 
     function test_constructor_revertsOnZeroClaimDelay() public {
         vm.expectRevert(InvalidArguments.selector);
-        new StakeWiseV3ExitQueueAssistedBalanceAdapter(address(registry), NATIVE, "osETH", address(balances), 0);
+        new StakeWiseV3ExitQueueAssistedBalanceAdapter(
+            address(registry), NATIVE, "osETH", address(balances), 0, address(this)
+        );
     }
 
     function test_constructor_revertsWhenRegistryNotContract() public {
         vm.expectRevert(abi.encodeWithSelector(NotAContract.selector, "VaultsRegistry"));
-        new StakeWiseV3ExitQueueAssistedBalanceAdapter(makeAddr("eoa"), NATIVE, "osETH", address(balances), DELAY);
+        new StakeWiseV3ExitQueueAssistedBalanceAdapter(
+            makeAddr("eoa"), NATIVE, "osETH", address(balances), DELAY, address(this)
+        );
     }
 
     function test_constructor_revertsWhenNavNotContract() public {
         vm.expectRevert(abi.encodeWithSelector(NotAContract.selector, "NAVCalculator"));
-        new StakeWiseV3ExitQueueAssistedBalanceAdapter(address(registry), NATIVE, "osETH", makeAddr("eoa"), DELAY);
+        new StakeWiseV3ExitQueueAssistedBalanceAdapter(
+            address(registry), NATIVE, "osETH", makeAddr("eoa"), DELAY, address(this)
+        );
     }
 
     // ---- Write surface (permissionless, self-scoped) ----
-    // submit/remove are permissionless and self-scoped to msg.sender; there is no role to test here.
+    // Owner submit/remove are self-scoped to msg.sender (no role); the keeper path is in AssistedKeeperPath.t.sol.
 
     function test_submit_storesValidPosition_andDedups() public {
         vault.setIndex(TICKET, 1);
@@ -586,8 +598,9 @@ contract StakeWiseV3ExitQueueAssistedBalanceAdapterTest is BalanceAdapterTestBas
 
     function test_positionLabels_fallbackWhenNoReceiptSymbol() public {
         // Empty receiptSymbol → bare ["Exit Queue"] breadcrumb.
-        StakeWiseV3ExitQueueAssistedBalanceAdapter a2 =
-            new StakeWiseV3ExitQueueAssistedBalanceAdapter(address(registry), NATIVE, "", address(balances), DELAY);
+        StakeWiseV3ExitQueueAssistedBalanceAdapter a2 = new StakeWiseV3ExitQueueAssistedBalanceAdapter(
+            address(registry), NATIVE, "", address(balances), DELAY, address(this)
+        );
         string[] memory labels = a2.positionLabels(abi.encode(address(vault)));
         assertEq(labels.length, 1);
         assertEq(labels[0], "Exit Queue");
@@ -602,7 +615,7 @@ contract StakeWiseV3ExitQueueAssistedBalanceAdapterTest is BalanceAdapterTestBas
     function test_unregisteredUnderlying_positionsEmpty_butBalanceStillOwed() public {
         BalancesHarness freshNav = new BalancesHarness();
         StakeWiseV3ExitQueueAssistedBalanceAdapter a2 = new StakeWiseV3ExitQueueAssistedBalanceAdapter(
-            address(registry), NATIVE, "osETH", address(freshNav), DELAY
+            address(registry), NATIVE, "osETH", address(freshNav), DELAY, address(this)
         );
         vault.setIndex(TICKET, 1);
         vault.setRequest(holder, TICKET, TS, 0, 1 ether);

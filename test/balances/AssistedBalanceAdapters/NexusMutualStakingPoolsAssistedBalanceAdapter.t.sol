@@ -156,7 +156,7 @@ contract NexusMutualStakingPoolsAssistedBalanceAdapterTest is BalanceAdapterTest
         viewer = new MockStakingViewer();
         nxm = _createAndRegisterToken("NXM", 18);
         adapter = new NexusMutualStakingPoolsAssistedBalanceAdapter(
-            address(nft), address(viewer), address(nxm), address(balances)
+            address(nft), address(viewer), address(nxm), address(balances), address(this)
         );
     }
 
@@ -164,28 +164,36 @@ contract NexusMutualStakingPoolsAssistedBalanceAdapterTest is BalanceAdapterTest
 
     function test_constructor_revertsOnZeroNft() public {
         vm.expectRevert(InvalidArguments.selector);
-        new NexusMutualStakingPoolsAssistedBalanceAdapter(address(0), address(viewer), address(nxm), address(balances));
+        new NexusMutualStakingPoolsAssistedBalanceAdapter(
+            address(0), address(viewer), address(nxm), address(balances), address(this)
+        );
     }
 
     function test_constructor_revertsOnZeroViewer() public {
         vm.expectRevert(InvalidArguments.selector);
-        new NexusMutualStakingPoolsAssistedBalanceAdapter(address(nft), address(0), address(nxm), address(balances));
+        new NexusMutualStakingPoolsAssistedBalanceAdapter(
+            address(nft), address(0), address(nxm), address(balances), address(this)
+        );
     }
 
     function test_constructor_revertsOnZeroUnderlying() public {
         vm.expectRevert(InvalidArguments.selector);
-        new NexusMutualStakingPoolsAssistedBalanceAdapter(address(nft), address(viewer), address(0), address(balances));
+        new NexusMutualStakingPoolsAssistedBalanceAdapter(
+            address(nft), address(viewer), address(0), address(balances), address(this)
+        );
     }
 
     function test_constructor_revertsOnZeroNav() public {
         vm.expectRevert(InvalidArguments.selector);
-        new NexusMutualStakingPoolsAssistedBalanceAdapter(address(nft), address(viewer), address(nxm), address(0));
+        new NexusMutualStakingPoolsAssistedBalanceAdapter(
+            address(nft), address(viewer), address(nxm), address(0), address(this)
+        );
     }
 
     function test_constructor_revertsWhenNftNotContract() public {
         vm.expectRevert(abi.encodeWithSelector(NotAContract.selector, "StakingNFT"));
         new NexusMutualStakingPoolsAssistedBalanceAdapter(
-            makeAddr("eoa"), address(viewer), address(nxm), address(balances)
+            makeAddr("eoa"), address(viewer), address(nxm), address(balances), address(this)
         );
     }
 
@@ -299,7 +307,7 @@ contract NexusMutualStakingPoolsAssistedBalanceAdapterTest is BalanceAdapterTest
     function test_unregisteredUnderlying_positionsEmpty_butBalanceOwed() public {
         BalancesHarness freshNav = new BalancesHarness();
         NexusMutualStakingPoolsAssistedBalanceAdapter a2 = new NexusMutualStakingPoolsAssistedBalanceAdapter(
-            address(nft), address(viewer), address(nxm), address(freshNav)
+            address(nft), address(viewer), address(nxm), address(freshNav), address(this)
         );
         nft.setToken(1, 1, holder);
         viewer.setToken(1, 1, 100, 0, 5);

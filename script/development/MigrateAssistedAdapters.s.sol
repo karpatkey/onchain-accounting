@@ -170,21 +170,23 @@ contract MigrateAssistedAdapters is Script {
         StaderWithdrawalQueueBalanceAdapter stader =
             new StaderWithdrawalQueueBalanceAdapter(STADER_USER_WITHDRAWAL_MANAGER, WETH, address(NAV));
 
+        // Historical (already executed). The trailing DEPLOYER is the ADR 0030 admin argument, added only so this
+        // script keeps compiling against the current constructors.
         NexusMutualStakingPoolsAssistedBalanceAdapter nexus = new NexusMutualStakingPoolsAssistedBalanceAdapter(
-            NEXUS_STAKING_NFT, NEXUS_STAKING_VIEWER, NXM, address(NAV)
+            NEXUS_STAKING_NFT, NEXUS_STAKING_VIEWER, NXM, address(NAV), DEPLOYER
         );
         NexusMutualStakingPoolsAssistant nexusAssistant =
             new NexusMutualStakingPoolsAssistant(address(nexus), NXM, NEXUS_TOKEN_CONTROLLER);
 
         EtherFiWithdrawalQueueAssistedBalanceAdapter etherfi = new EtherFiWithdrawalQueueAssistedBalanceAdapter(
-            ETHERFI_WITHDRAW_REQUEST_NFT, ETHERFI_LIQUIDITY_POOL, NATIVE_ETH, address(NAV)
+            ETHERFI_WITHDRAW_REQUEST_NFT, ETHERFI_LIQUIDITY_POOL, NATIVE_ETH, address(NAV), DEPLOYER
         );
         EtherFiWithdrawalQueueAssistant etherfiAssistant = new EtherFiWithdrawalQueueAssistant(
             address(etherfi), ETHERFI_LIQUIDITY_POOL, ETHERFI_WITHDRAW_REQUEST_NFT, EETH
         );
 
         StakeWiseV3ExitQueueAssistedBalanceAdapter stakewise = new StakeWiseV3ExitQueueAssistedBalanceAdapter(
-            STAKEWISE_VAULTS_REGISTRY, NATIVE_ETH, "osETH", address(NAV), STAKEWISE_EXIT_CLAIM_DELAY
+            STAKEWISE_VAULTS_REGISTRY, NATIVE_ETH, "osETH", address(NAV), STAKEWISE_EXIT_CLAIM_DELAY, DEPLOYER
         );
         StakeWiseV3ExitQueueAssistant stakewiseAssistant = new StakeWiseV3ExitQueueAssistant(address(stakewise));
 

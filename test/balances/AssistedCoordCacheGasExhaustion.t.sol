@@ -36,7 +36,7 @@ contract Mock_AssistedAdapter is AssistedCoordCache {
 
     Mock_CoordSink private immutable SINK;
 
-    constructor(address underlying_, address nav_) AssistedCoordCache(underlying_, nav_) {
+    constructor(address underlying_, address nav_) AssistedCoordCache(underlying_, nav_, msg.sender) {
         SINK = new Mock_CoordSink();
     }
 
@@ -59,6 +59,14 @@ contract Mock_AssistedAdapter is AssistedCoordCache {
     function _validateCoord(address, bytes memory) internal view override {}
 
     function _removable(address, bytes memory) internal view override returns (bool) {
+        return true;
+    }
+
+    function _coordLength() internal pure override returns (uint256) {
+        return 32;
+    }
+
+    function _isDead(address, bytes memory) internal view override returns (bool) {
         return true;
     }
 

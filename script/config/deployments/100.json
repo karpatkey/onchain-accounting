@@ -7,12 +7,12 @@
     "ERC20Default": "0x4Bc39Dce61245F5A63189d1FA03E6D76646f1EE6",
     "AaveV3InstancesMeta": "0xa1b3c695A768A6Ce571fF699F463224CB32260C1",
     "StakeWiseV3VaultsMeta": "0x04f7a5Faaa9da0a163814e8C30ED7435F159A8eC",
-    "StakeWiseV3ExitQueueAssisted": "0xE1e163663961237C0955b665188864f0fD281020",
     "UniswapV3PoolsMeta": "0xaC47D9Cbe8B3EDc9c9d1a6c8092054299bBC1adE",
     "MerklRewards": "0xFf2D5A8bf801191eD1292E6DD6792F5D03c5aFBF",
     "LidoStakedEthWalletMeta": "0x7ED4F12798ea3f26AE02a6521eE84702CE5f8f90",
     "SkySavingsWalletMeta": "0xb967b206445ca58445d09b6CE9878add5Bb14dd4",
-    "StakeWiseV3OsTokenWalletMeta": "0x818dD183121641B09752891bB7E971b0FE29e101"
+    "StakeWiseV3OsTokenWalletMeta": "0x818dD183121641B09752891bB7E971b0FE29e101",
+    "StakeWiseV3ExitQueueAssisted": "0x6E23b1f1447c95E50e06c0F40C64F3f7ff717Eea"
   },
   "NAVCalculatorProxy": "0x54EaD2A1dB7456cA917675Ea8908ec8A997c6214",
   "customPriceFeeds": {
@@ -20,7 +20,13 @@
     "wstETH_L2": "0x2A0Fa71f5923f720c4a622cD4Da0b7837C466612",
     "osGNO": "0xd0e852a932490290B5bAACe8DafF04D9ec19c164"
   },
-  "StakeWiseV3ExitQueueAssistant": "0xB111B929f443Fd48bD40a6e1e4E064a878096B6C",
   "AssetKindRegistry": "0xf60467a88C2b4d0f46C0c41C3Ba0C74da3d3CCD0",
-  "TimelockController": "0xAB92EA75D07792915eB1f29259354866B880dFC2"
+  "TimelockController": "0xAB92EA75D07792915eB1f29259354866B880dFC2",
+  "retiredAssistedAdapters": {
+    "$comment": "Assisted adapters + Assistants superseded by the ADR 0030 redeploy (keeper submitFor / removeFor / evict / previewPositions). Moved here BEFORE the redeploy so 04 (which skips any recorded key) deploys fresh ones. These OLD adapters stay registered on the NAV until the ADR 0030 swap (one timelock op: remove old + add new) executes; the swap batch removes them and seed_assisted.py takes them as --old. A sibling section, so reset_deployment_records never touches it. Until the swap, verify_step's configure check reports a mismatch on this chain (the record's balanceAdapters hold the new, not-yet-registered adapters; the NAV still registers these old ones). That is expected: do not 'fix' the record.",
+    "retiredAt": "2026-11-04 (ADR 0030 redeploy)",
+    "StakeWiseV3ExitQueueAssisted": "0xE1e163663961237C0955b665188864f0fD281020",
+    "StakeWiseV3ExitQueueAssistant": "0xB111B929f443Fd48bD40a6e1e4E064a878096B6C"
+  },
+  "StakeWiseV3ExitQueueAssistant": "0xF044b3C75DA32b3D5C6e31a911E420CBC97A546a"
 }

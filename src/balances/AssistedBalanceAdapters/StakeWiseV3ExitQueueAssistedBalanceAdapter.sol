@@ -19,7 +19,7 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 ///         `StakeWiseV3ExitQueueAssistant` a depositor Safe delegatecalls records it here (adapter sees `msg.sender = Safe`),
 ///         in the same tx it enters/claims the queue. The exit position is owned on-chain by that same Safe
 ///         (`receiver = the Safe`), so the valuation (keyed on `receiver = account`) needs no extra bookkeeping.
-/// @dev Permissionless assistant-fed member ([ADR 0018](../../../docs/decisions/0018-assistant-fed-assisted-balance-adapters.md)),
+/// @dev Assistant-fed member ([ADR 0018](../../../docs/decisions/0018-assistant-fed-assisted-balance-adapters.md)),
 ///      extending {AssistedCoordCache} (tuple coordinate, not a bare uint256). The cache stores **only coordinates,
 ///      never amounts**; every read values live against `receiver = account` (a tuple that isn't the account's resolves
 ///      to zero owed and is dropped) → under-report only. StakeWise exit positions have no `ownerOf`, so the ownership
@@ -49,13 +49,15 @@ contract StakeWiseV3ExitQueueAssistedBalanceAdapter is AssistedCoordCache, IPosi
     /// @param receiptSymbol_   Display symbol of StakeWise's receipt/LST token (`"osETH"` mainnet). May be empty.
     /// @param navCalculator_   NAVCalculator. Must be a contract.
     /// @param exitClaimDelay_  StakeWise's post-checkpoint claim delay in seconds (`86400` on V3 mainnet). Must be > 0.
+    /// @param admin_           `DEFAULT_ADMIN_ROLE` holder (grants the keeper's `SUBMITTER_ROLE`). Must be non-zero.
     constructor(
         address vaultsRegistry_,
         address underlyingToken_,
         string memory receiptSymbol_,
         address navCalculator_,
-        uint256 exitClaimDelay_
-    ) AssistedCoordCache(underlyingToken_, navCalculator_) {
+        uint256 exitClaimDelay_,
+        address admin_
+    ) AssistedCoordCache(underlyingToken_, navCalculator_, admin_) {
         if (vaultsRegistry_ == address(0) || exitClaimDelay_ == 0) revert InvalidArguments();
         AddressCheckLib.requireContract(vaultsRegistry_, "VaultsRegistry");
         VAULTS_REGISTRY = vaultsRegistry_;
@@ -64,7 +66,7 @@ contract StakeWiseV3ExitQueueAssistedBalanceAdapter is AssistedCoordCache, IPosi
     }
 
     //
-    // Typed feed surface (permissionless, msg.sender-keyed) — routes to the shared coordinate cache.
+    // Typed owner feed surface (msg.sender-keyed; the keeper path is in the base, ADR 0030).
     //
 
     /// @notice Track one of the caller's own exit positions. Idempotent. **Reverts** `InvalidCoordinate` if the vault is
@@ -138,7 +140,9 @@ contract StakeWiseV3ExitQueueAssistedBalanceAdapter is AssistedCoordCache, IPosi
 
     /// @inheritdoc AssistedCoordCache
     function _coordId(bytes memory coord) internal pure override returns (uint256 positionTicket) {
-        (, positionTicket,) = abi.decode(coord, (address, uint256, uint256));
+        // Decoded as raw words (not `address`), so a coordinate with dirty address bits still yields its ticket for the
+        // typed `Coordinate*` errors instead of an opaque decode revert.
+        (, positionTicket,) = abi.decode(coord, (uint256, uint256, uint256));
     }
 
     /// @inheritdoc AssistedCoordCache
@@ -156,6 +160,33 @@ contract StakeWiseV3ExitQueueAssistedBalanceAdapter is AssistedCoordCache, IPosi
         if (!registeredVault) revert InvalidCoordinate(account, ticket);
         (uint256 c, uint256 l) = _owedForPosition(account, vault, ticket, timestamp);
         if (c + l == 0) revert CoordinateNotOwned(account, ticket);
+    }
+
+    /// @inheritdoc AssistedCoordCache
+    function _coordLength() internal pure override returns (uint256) {
+        return 96;
+    }
+
+    /// @inheritdoc AssistedCoordCache
+    /// @dev Dead only when `calculateExitedAssets` SUCCEEDS and reports nothing at all — StakeWise returns
+    ///      `(0, 0, 0)` exactly when no request exists under `(account, timestamp, ticket)` (claimed in full, or
+    ///      re-queued under a new ticket after a partial claim). Unlike {_owedForPosition}, a revert is NOT death.
+    function _isDead(address account, bytes memory coord) internal view override returns (bool) {
+        (address vault, uint256 ticket, uint256 timestamp) = abi.decode(coord, (address, uint256, uint256));
+        IStakeWiseExitVault v = IStakeWiseExitVault(vault);
+        uint256 queryIdx;
+        try v.getExitQueueIndex(ticket) returns (int256 i) {
+            queryIdx = i < 0 ? type(uint256).max : uint256(i);
+        } catch {
+            return false;
+        }
+        try v.calculateExitedAssets(account, ticket, timestamp, queryIdx) returns (
+            uint256 leftTickets, uint256 exitedTickets, uint256 exitedAssets
+        ) {
+            return leftTickets == 0 && exitedTickets == 0 && exitedAssets == 0;
+        } catch {
+            return false;
+        }
     }
 
     /// @inheritdoc AssistedCoordCache

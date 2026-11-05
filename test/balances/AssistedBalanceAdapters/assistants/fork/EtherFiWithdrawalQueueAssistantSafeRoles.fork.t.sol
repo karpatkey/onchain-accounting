@@ -35,7 +35,7 @@ contract EtherFiWithdrawalQueueAssistantSafeRolesForkTest is AssistantSafeRolesF
         balances = _balancesForNativeEth();
 
         adapter = new EtherFiWithdrawalQueueAssistedBalanceAdapter(
-            WITHDRAW_REQUEST_NFT, LIQUIDITY_POOL, NATIVE_ETH, address(balances)
+            WITHDRAW_REQUEST_NFT, LIQUIDITY_POOL, NATIVE_ETH, address(balances), address(this)
         );
         assistant = new EtherFiWithdrawalQueueAssistant(address(adapter), LIQUIDITY_POOL, WITHDRAW_REQUEST_NFT, EETH);
 

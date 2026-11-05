@@ -368,7 +368,7 @@ script/verify/verify-all.sh
 
 ### Assisted Balance Adapters (externally-fed; ADR 0015/0018)
 
-Permissionless assistant-fed adapters that cache position *coordinates only* (never amounts), value live on-chain, and re-verify ownership per read (under-report only). Each is paired with a delegatecall `…Assistant`.
+Assistant-fed adapters (plus the ADR 0030 keeper path) that cache position *coordinates only* (never amounts), value live on-chain, and re-verify ownership per read (under-report only). Each is paired with a delegatecall `…Assistant`.
 
 - `NexusMutualStakingPoolsAssistedBalanceAdapter` - Nexus Mutual staking-pool NFT positions (per-account `tokenId` cache)
 - `EtherFiWithdrawalQueueAssistedBalanceAdapter` - ether.fi withdrawal-queue requests

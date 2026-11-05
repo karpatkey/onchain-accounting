@@ -180,15 +180,15 @@
   },
   "EtherFiWithdrawalQueueAssisted": {
     "enabled": true,
-    "$comment": "ether.fi withdrawal-queue cache adapter (ADR 0014). Registered via addBalanceAdapters; reports 0 until the kpk-agents submitter feeds tokenIds."
+    "$comment": "ether.fi withdrawal-queue assisted adapter (ADR 0018/0030). Registered via addBalanceAdapters; reports the account's cached WithdrawRequestNFT ids, fed by its assistant or the SUBMITTER_ROLE keeper."
   },
   "NexusMutualStakingPoolsAssisted": {
     "enabled": true,
-    "$comment": "Nexus Mutual staking pools assisted adapter (agent-fed; ADR 0015). Registered via addBalanceAdapters; reports the account's staked NXM (Staking + Rewards) per StakingNFT position (positionId=abi.encode(stakingPoolAddress); the StakingNFT id is a display-only label), valued live on-chain from agent-submitted tokenIds (ownership re-verified per read). Reports 0 until the kpk-agents submitter feeds tokenIds."
+    "$comment": "Nexus Mutual staking pools assisted adapter (ADR 0018/0030). Registered via addBalanceAdapters; reports the account's staked NXM (Staking + Rewards) per StakingNFT position (positionId = abi.encode(stakingPoolAddress)), valued live from ids fed by its assistant or the SUBMITTER_ROLE keeper (ownership re-verified per read)."
   },
   "StakeWiseV3ExitQueueAssisted": {
     "enabled": true,
-    "$comment": "StakeWise V3 exit-queue cache adapter (ADR 0014). Registered via addBalanceAdapters; reports 0 until the kpk-agents submitter feeds (vault, positionTicket, timestamp) tuples."
+    "$comment": "StakeWise V3 exit-queue assisted adapter (ADR 0018/0030). Registered via addBalanceAdapters; reports the account's cached (vault, positionTicket, timestamp) tuples, fed by its assistant or the SUBMITTER_ROLE keeper."
   },
   "UniswapV3_WBTC_WETH_3000": {
     "enabled": false

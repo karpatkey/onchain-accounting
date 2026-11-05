@@ -1,5 +1,12 @@
 # 0018 — Permissionless assistant-fed assisted balance-adapter family
 
+> **Amendment ([ADR 0030](0030-assisted-adapters-keeper-submit-and-preview.md)) — KEEPER PATH.** The family now also
+> carries OZ `AccessControl`: a `SUBMITTER_ROLE` keeper may `submitFor` a coordinate under the account the protocol
+> says owns it (positions not opened through an assistant), anyone may `removeFor` a coordinate the protocol proves
+> gone, and `previewPositions` values caller-supplied coordinates without the cache. This supersedes the "no roles"
+> statements below on that point only. The owner path, the delegatecall assistants and the roles-level completeness
+> argument are unchanged.
+
 ## Status
 
 accepted (supersedes the per-protocol drafts once numbered 0018/0019/0020 for Nexus, StakeWise, ether.fi, Stader — folded into this single family ADR)

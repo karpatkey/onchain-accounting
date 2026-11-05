@@ -33,8 +33,8 @@ interface INexusRegistry {
 /// @title NexusMutualStakingPoolsAssistant fork test (real Nexus deposit + withdraw, delegatecall module)
 /// @notice End-to-end against live Nexus Mutual on mainnet. The wrapper is a **delegatecall-only** logic module, so the
 ///         staking **account** is a {AssistantDelegateCaller} that `delegatecall`s it — under the delegatecall
-///         `address(this)` is the account, which holds the NXM, is the Nexus member, owns the StakingNFT, and holds
-///         `SUBMITTER_ROLE`. Exercises account→(delegatecall)wrapper.depositTo → pool.depositTo →
+///         `address(this)` is the account, which holds the NXM, is the Nexus member, and owns the StakingNFT (it feeds
+///         its own cache — no role). Exercises account→(delegatecall)wrapper.depositTo → pool.depositTo →
 ///         TokenController.operatorTransfer → StakingNFT mint → adapter.submit → live valuation, and the withdraw path.
 /// @dev Membership is granted via the **real** on-chain flow (no storage pokes): governor-pranked
 ///      `Registry.setKycAuthAddress` + EIP-712 `Registry.join` (KYC-signer + 0.002 ETH fee). The account's NXM is
@@ -67,10 +67,13 @@ contract NexusMutualStakingPoolsAssistantForkTest is BalanceAdapterTestBase {
         balances = new BalancesHarnessForFork();
         balances.registerAssetForTest(NXM, 18, "NXM");
 
-        adapter = new NexusMutualStakingPoolsAssistedBalanceAdapter(STAKING_NFT, STAKING_VIEWER, NXM, address(balances));
+        adapter = new NexusMutualStakingPoolsAssistedBalanceAdapter(
+            STAKING_NFT, STAKING_VIEWER, NXM, address(balances), address(this)
+        );
         wrapper = new NexusMutualStakingPoolsAssistant(address(adapter), NXM, TOKEN_CONTROLLER);
 
-        // The delegatecalling account is the real actor: it holds SUBMITTER_ROLE, is a Nexus member, and holds NXM.
+        // The delegatecalling account is the real actor: it feeds its own cache (owner path, no role), is a Nexus
+        // member, and holds NXM.
         account = new AssistantDelegateCaller();
         _enrollNexusMember(address(account));
 

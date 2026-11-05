@@ -315,6 +315,14 @@ jobs:
           python3 -m unittest test_reset_deployment_records -v
           python3 -O -m unittest test_reset_deployment_records
 
+      - name: Assisted-adapter seeding encoder (seed_assisted, ADR 0030)
+        # The keeper sends this tool's calldata unreviewed by any compiler, so its hand-rolled ABI encoding is
+        # pinned against `cast`-generated vectors. Offline; plain and -O like the jobs above.
+        working-directory: script/deploy/preflight
+        run: |
+          python3 -m unittest test_seed_assisted -v
+          python3 -O -m unittest test_seed_assisted
+
       - name: PR #338 migration tools (snapshot_and_clear_meta, ops_safe)
         # The two tools that carry the in-place migration's live-NAV writes: the surgical record clear +
         # `.pre-swap.json` producer that SwapMetaAdapter.plan() reads, and the ops-Safe MultiSend encoder

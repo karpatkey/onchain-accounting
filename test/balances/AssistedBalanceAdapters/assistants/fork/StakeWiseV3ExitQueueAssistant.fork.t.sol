@@ -66,7 +66,7 @@ contract StakeWiseV3ExitQueueAssistantForkTest is BalanceAdapterTestBase {
         balances = new BalancesHarnessForFork();
         balances.registerAssetForTest(NATIVE_ETH, 18, "ETH");
         adapter = new StakeWiseV3ExitQueueAssistedBalanceAdapter(
-            VAULTS_REGISTRY, NATIVE_ETH, "osETH", address(balances), 1 days
+            VAULTS_REGISTRY, NATIVE_ETH, "osETH", address(balances), 1 days, address(this)
         );
         wrapper = new StakeWiseV3ExitQueueAssistant(address(adapter));
     }
@@ -139,5 +139,73 @@ contract StakeWiseV3ExitQueueAssistantForkTest is BalanceAdapterTestBase {
 
     function test_fork_claimExitedAssets_holder7fc3() public {
         _assertClaim(CLAIMER2, CLAIM2_TICKET, CLAIM2_ENTRY_TS, CLAIM2_INDEX);
+    }
+}
+
+/// @title Partial claim through the assistant — replay of a REAL partial claim on mainnet
+/// @notice At block 25,836,981 `0x3428…d039` claimed ticket 253084580248056438094483 (entered at ts 1,787,631,515) and
+///         the Genesis vault re-queued the remainder under 253084938748546616225773 (`ExitedAssetsClaimed`, tx
+///         `0x87ea5e9c…ff23`). Forking one block earlier and claiming through the assistant must register that exact
+///         new ticket — same timestamp — so the unclaimed rest stays valued, with no keeper involved.
+contract StakeWiseV3ExitQueueAssistantPartialClaimForkTest is BalanceAdapterTestBase {
+    address public constant VAULTS_REGISTRY = 0x3a0008a588772446f6e656133C2D5029CC4FC20E;
+    address public constant GENESIS_VAULT = 0xAC0F906E433d58FA868F936E8A43230473652885;
+    address public constant NATIVE_ETH = 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE;
+    uint256 public constant BLOCK = 25_836_980;
+
+    address public constant CLAIMER = 0x34284C27A2304132aF751b0dEc5bBa2CF98eD039;
+    uint256 public constant TICKET = 253_084_580_248_056_438_094_483;
+    uint256 public constant ENTRY_TS = 1_787_631_515;
+    uint256 public constant EXPECTED_NEW_TICKET = 253_084_938_748_546_616_225_773; // from the real ExitedAssetsClaimed
+
+    StakeWiseV3ExitQueueAssistedBalanceAdapter public adapter;
+    StakeWiseV3ExitQueueAssistant public wrapper;
+
+    function setUp() public override {
+        super.setUp();
+        _setupFork();
+        balances = new BalancesHarnessForFork();
+        balances.registerAssetForTest(NATIVE_ETH, 18, "ETH");
+        adapter = new StakeWiseV3ExitQueueAssistedBalanceAdapter(
+            VAULTS_REGISTRY, NATIVE_ETH, "osETH", address(balances), 1 days, address(this)
+        );
+        wrapper = new StakeWiseV3ExitQueueAssistant(address(adapter));
+    }
+
+    function _setupFork() internal override {
+        fork = createForkWithCadence(getAlchemyUrl("eth-mainnet"));
+        vm.selectFork(fork);
+        vm.rollFork(BLOCK);
+    }
+
+    function test_partialClaim_registersTheRealRemainderTicket() public {
+        IStakeWiseExitVault v = IStakeWiseExitVault(GENESIS_VAULT);
+        uint256 idx = uint256(v.getExitQueueIndex(TICKET));
+        (uint256 left,,) = v.calculateExitedAssets(CLAIMER, TICKET, ENTRY_TS, idx);
+        assertGt(left, 1, "fixture: a genuinely partial claim");
+
+        // Track the ORIGINAL ticket first, so the claim must also prove it gets deregistered.
+        vm.prank(CLAIMER);
+        adapter.submit(GENESIS_VAULT, TICKET, ENTRY_TS);
+        assertEq(adapter.positionsOf(CLAIMER)[0].positionTicket, TICKET);
+
+        vm.etch(CLAIMER, address(new DelegateExecutor()).code);
+        DelegateExecutor exec = DelegateExecutor(payable(CLAIMER));
+        exec.exec(address(wrapper), abi.encodeCall(wrapper.claimExitedAssets, (GENESIS_VAULT, TICKET, ENTRY_TS, idx)));
+
+        StakeWiseV3ExitQueueAssistedBalanceAdapter.ExitPosition[] memory ps = adapter.positionsOf(CLAIMER);
+        assertEq(ps.length, 1, "only the remainder is tracked");
+        assertEq(ps[0].vault, GENESIS_VAULT);
+        assertEq(ps[0].positionTicket, EXPECTED_NEW_TICKET, "the vault's own re-queued ticket");
+        assertEq(ps[0].timestamp, ENTRY_TS, "remainder keeps the entry timestamp");
+
+        // The remainder is valued live: the adapter reports exactly what the vault says is still queued.
+        uint256 newIdx = type(uint256).max;
+        int256 i = v.getExitQueueIndex(EXPECTED_NEW_TICKET);
+        if (i >= 0) newIdx = uint256(i);
+        (uint256 newLeft,, uint256 newExited) = v.calculateExitedAssets(CLAIMER, EXPECTED_NEW_TICKET, ENTRY_TS, newIdx);
+        (uint256 amount,) = adapter.getAdapterBalanceForAsset(CLAIMER, NATIVE_ETH);
+        assertGt(amount, 0, "remainder counted");
+        assertEq(amount, v.convertToAssets(newLeft) + newExited, "valued live from the vault");
     }
 }

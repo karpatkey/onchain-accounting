@@ -22,7 +22,7 @@ import {ProtocolIds} from "src/utils/ProtocolIds.sol";
 ///         canonical feeder is `NexusMutualStakingPoolsAssistant`, delegatecalled by the owner Safe so the adapter sees
 ///         `msg.sender = Safe = owner`. Each cached id is valued live (`StakingViewer.getTokens`), re-verifying
 ///         ownership via `StakingNFT.tokenInfo` every read; the cache stores **ids only, never amounts**.
-/// @dev Member of the permissionless assistant-fed assisted family ([ADR 0018](../../../docs/decisions/0018-assistant-fed-assisted-balance-adapters.md)),
+/// @dev Member of the assistant-fed assisted family ([ADR 0018](../../../docs/decisions/0018-assistant-fed-assisted-balance-adapters.md)),
 ///      extending the single {AssistedCoordCache}: the coordinate is `abi.encode(tokenId)`. `StakingViewer.getTokens`
 ///      can revert, but {AssistedCoordCache} values each coordinate behind a self-`staticcall`, so a bad id is isolated.
 ///      positionId is the **staking-pool contract address** (`StakingViewer.stakingPool(poolId)`); the NFT id rides in
@@ -49,10 +49,17 @@ contract NexusMutualStakingPoolsAssistedBalanceAdapter is AssistedCoordCache, IP
     /// @param stakingViewer_   Nexus StakingViewer. Must be a contract.
     /// @param underlyingToken_ NXM token address. Must be non-zero.
     /// @param navCalculator_   NAVCalculator. Must be a contract.
-    constructor(address stakingNft_, address stakingViewer_, address underlyingToken_, address navCalculator_)
-        AssistedCoordCache(underlyingToken_, navCalculator_)
-    {
-        if (stakingNft_ == address(0) || stakingViewer_ == address(0)) revert InvalidArguments();
+    /// @param admin_           `DEFAULT_ADMIN_ROLE` holder (grants the keeper's `SUBMITTER_ROLE`). Must be non-zero.
+    constructor(
+        address stakingNft_,
+        address stakingViewer_,
+        address underlyingToken_,
+        address navCalculator_,
+        address admin_
+    ) AssistedCoordCache(underlyingToken_, navCalculator_, admin_) {
+        if (stakingNft_ == address(0) || stakingViewer_ == address(0)) {
+            revert InvalidArguments();
+        }
         AddressCheckLib.requireContract(stakingNft_, "StakingNFT");
         AddressCheckLib.requireContract(stakingViewer_, "StakingViewer");
         STAKING_NFT = stakingNft_;
@@ -60,7 +67,7 @@ contract NexusMutualStakingPoolsAssistedBalanceAdapter is AssistedCoordCache, IP
     }
 
     //
-    // Typed feed surface (permissionless, msg.sender-keyed)
+    // Typed owner feed surface (msg.sender-keyed; the keeper path is in the base, ADR 0030)
     //
 
     /// @notice Track `tokenId` for the caller (idempotent). **Reverts** `CoordinateNotOwned` if not owned by the caller,
@@ -157,6 +164,30 @@ contract NexusMutualStakingPoolsAssistedBalanceAdapter is AssistedCoordCache, IP
         uint256 tokenId = abi.decode(coord, (uint256));
         (address owner, bool ok) = _ownerOf(tokenId);
         if (!ok || owner != account) revert CoordinateNotOwned(account, tokenId);
+    }
+
+    /// @inheritdoc AssistedCoordCache
+    function _coordLength() internal pure override returns (uint256) {
+        return 32;
+    }
+
+    /// @inheritdoc AssistedCoordCache
+    /// @dev Dead when `tokenInfo` SUCCEEDS with another owner, or with `account` as owner and `getTokens` SUCCEEDS
+    ///      reporting no active stake, expired stake or rewards. Stricter than {_removable}: a `tokenInfo` revert or
+    ///      an empty `getTokens` reply is not proof the position is gone.
+    function _isDead(address account, bytes memory coord) internal view override returns (bool) {
+        uint256 tokenId = abi.decode(coord, (uint256));
+        (address owner, bool ok) = _ownerOf(tokenId);
+        if (!ok) return false;
+        if (owner != account) return true;
+        uint256[] memory one = new uint256[](1);
+        one[0] = tokenId;
+        try INexusStakingViewer(STAKING_VIEWER).getTokens(one) returns (INexusStakingViewer.Token[] memory tokens) {
+            if (tokens.length == 0) return false;
+            return tokens[0].activeStake + tokens[0].expiredStake + tokens[0].rewards == 0;
+        } catch {
+            return false;
+        }
     }
 
     /// @inheritdoc AssistedCoordCache

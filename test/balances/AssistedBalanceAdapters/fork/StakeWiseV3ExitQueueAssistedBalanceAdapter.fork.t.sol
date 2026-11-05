@@ -63,7 +63,7 @@ contract StakeWiseV3ExitQueueAssistedBalanceAdapterForkTest is BalanceAdapterTes
         balances = new BalancesHarnessForFork();
         balances.registerAssetForTest(NATIVE_ETH, 18, "ETH");
         a = new StakeWiseV3ExitQueueAssistedBalanceAdapter(
-            VAULTS_REGISTRY, NATIVE_ETH, "osETH", address(balances), 1 days
+            VAULTS_REGISTRY, NATIVE_ETH, "osETH", address(balances), 1 days, address(this)
         );
     }
 

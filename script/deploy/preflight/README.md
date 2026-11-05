@@ -191,10 +191,12 @@ chain (default 1 and 100) and each `*Assisted` adapter in `deployments/<chainId>
 per-account cap (`MAX_TOKEN_IDS()` / `MAX_POSITIONS()`) and `OWNER_RESERVE()` from the contract, and per `--accounts`
 account compares `coordsOf(account).length` with the keeper limit (cap − `OWNER_RESERVE`, 224 today): **WARN** at ≥ 80 %
 of it, **ALERT** at ≥ it (the keeper path is closed and the owner has only what is left of its reserve — recovery is
-`evict`). It also lists every `SUBMITTER_ROLE` and `DEFAULT_ADMIN_ROLE` holder (`RoleGranted` logs, each confirmed with
-`hasRole`): an admin other than the chain's `securityCouncil` (or `--expect-admin`), a missing Council, or a submitter
+`evict`). It also lists every `SUBMITTER_ROLE` and `DEFAULT_ADMIN_ROLE` holder (`RoleGranted` logs plus a direct probe of every expected holder, each confirmed with `hasRole`; an unexpected
+holder is only as visible as Etherscan's log index, so a lagging index can delay that alert, never hide a missing
+expected one): an admin other than the chain's `securityCouncil` (or `--expect-admin`), a missing Council, or a submitter
 not passed as `--expect-submitter` is a problem. Whether the adapter is registered on the NAV is informational.
-Exit 0 = clean (WARNs allowed), 1 = ALERT or role problem, 2 = a read failed — so it can run from cron. Needs
+Exit 0 = clean (WARNs allowed), 1 = ALERT or role problem, 2 = a read failed, an empty accounts file, a chain with no
+assisted adapter recorded, or any unexpected error — it fails closed, so it can run from cron. Needs
 `ETHERSCAN_API_KEY` and an RPC.
 
 ```bash

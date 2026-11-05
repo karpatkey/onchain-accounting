@@ -118,26 +118,24 @@ def role_findings(kind: str, holders: list[str], expected: set[str], must_hold: 
 
 # ---- Reads (callables injected so tests stub them) ----
 
-def read_cap(call, adapter: str) -> int:
-    for sel in SEL_CAP:
-        try:
-            return decode_uint(call(adapter, "0x" + sel))
-        except c.RpcError as e:
-            if "revert" not in str(e).lower():
-                raise
-    raise MonitorError(f"{adapter}: neither MAX_TOKEN_IDS() nor MAX_POSITIONS() answered")
+def read_cap(call, adapter: str, name: str) -> int:
+    """The member's public cap constant, chosen by the record key (not by parsing node error text):
+    `MAX_POSITIONS()` for the StakeWise member, `MAX_TOKEN_IDS()` for ether.fi and Nexus."""
+    sel = SEL_CAP[1] if name.startswith("StakeWise") else SEL_CAP[0]
+    return decode_uint(call(adapter, "0x" + sel))
 
 
-def role_holders(call, logs, chain: int, adapter: str, role: str) -> list[str]:
-    """Every address a `RoleGranted(role, account, …)` log names that still `hasRole` (a revoke drops it)."""
+def role_holders(call, logs, chain: int, adapter: str, role: str, also: set[str] = frozenset()) -> list[str]:
+    """Every address a `RoleGranted(role, account, …)` log names, plus every address in `also` (the expected
+    holders, probed directly so a lagging log index cannot hide them), that still `hasRole` (a revoke drops it)."""
     found = logs(chain, adapter, {"topic0": TOPIC_ROLE_GRANTED, "topic1": role.lower(), "topic0_1_opr": "and"}, 0)
-    candidates = sorted({"0x" + lg["topics"][2][-40:].lower() for lg in found})
+    candidates = sorted({"0x" + lg["topics"][2][-40:].lower() for lg in found} | {x.lower() for x in also})
     return [a for a in candidates if decode_bool(call(adapter, encode_has_role(role, a)))]
 
 
 def check_adapter(call, logs, chain: int, name: str, adapter: str, accounts: list[str], nav_adapters: set[str] | None,
                   expect_admin: set[str], expect_submitter: set[str]) -> dict:
-    cap = read_cap(call, adapter)
+    cap = read_cap(call, adapter, name)
     reserve = decode_uint(call(adapter, "0x" + SEL_OWNER_RESERVE))
     klimit = keeper_limit(cap, reserve)
     role = "0x" + call(adapter, "0x" + SEL_SUBMITTER_ROLE)[2:66].lower()
@@ -150,8 +148,8 @@ def check_adapter(call, logs, chain: int, name: str, adapter: str, accounts: lis
         rows.append({"account": a, "used": used, "keeperLimit": klimit, "cap": cap,
                      "keeperFree": max(klimit - used, 0), "ownerFree": max(cap - used, 0),
                      "status": slot_status(used, klimit)})
-    admins = role_holders(call, logs, chain, adapter, DEFAULT_ADMIN_ROLE)
-    submitters = role_holders(call, logs, chain, adapter, role)
+    admins = role_holders(call, logs, chain, adapter, DEFAULT_ADMIN_ROLE, expect_admin)
+    submitters = role_holders(call, logs, chain, adapter, role, expect_submitter)
     problems += role_findings("DEFAULT_ADMIN_ROLE", admins, expect_admin, must_hold=True)
     problems += role_findings("SUBMITTER_ROLE", submitters, expect_submitter, must_hold=False)
     return {"chain": chain, "name": name, "adapter": adapter, "cap": cap, "ownerReserve": reserve,
@@ -169,8 +167,11 @@ def run_chain(chain: int, call, logs, record: dict, accounts: list[str], expect_
               expect_submitter: set[str]) -> dict:
     nav = record.get("NAVCalculatorProxy")
     nav_adapters = {x for x in decode_address_array(call(nav, "0x" + SEL_GET_ALL_ADAPTERS))} if c.is_address(nav) else None
+    recorded = assisted_adapters(record)
+    if not recorded:
+        raise MonitorError(f"chain {chain}: no *Assisted adapter in the deployment record")
     adapters = [check_adapter(call, logs, chain, n, a, accounts, nav_adapters, expect_admin, expect_submitter)
-                for n, a in assisted_adapters(record)]
+                for n, a in recorded]
     return {"chain": chain, "nav": nav, "adapters": adapters}
 
 
@@ -224,6 +225,8 @@ def read_accounts(path: str) -> list[str]:
         if not c.is_address(x):
             raise MonitorError(f"bad account in {path}: {x}")
         out.append(x.lower())
+    if not out:
+        raise MonitorError(f"{path}: no accounts (an empty list would check nothing and still pass)")
     return list(dict.fromkeys(out))
 
 
@@ -258,7 +261,7 @@ def main(argv: list[str] | None = None) -> int:
         try:
             chains.append(run_chain(chain, lambda to, d: c.eth_call(url, to, d), s.etherscan_logs, c.deployment(chain),
                                     accounts, expect_admin, {x.lower() for x in a.expect_submitter}))
-        except (c.RpcError, s.SeedError, MonitorError, requests.RequestException, OSError, ValueError, KeyError) as e:
+        except Exception as e:  # noqa: BLE001 — any failure to read is a READ FAILURE (exit 2), never an ALERT or OK
             chains.append({"chain": chain, "error": redact(f"{type(e).__name__}: {e}", secrets)[:240], "adapters": []})
     print(render(chains))
     code = verdict(chains)
@@ -273,4 +276,8 @@ if __name__ == "__main__":
         sys.exit(main())
     except MonitorError as e:
         print(f"assisted_monitor: {e}", file=sys.stderr)
+        sys.exit(2)
+    except Exception as e:  # noqa: BLE001 — never let a crash look like an ALERT (exit 1)
+        secrets = [os.environ.get("ETHERSCAN_API_KEY", ""), os.environ.get("ALCHEMY_API_KEY", "")]
+        print(f"assisted_monitor: {redact(f'{type(e).__name__}: {e}', secrets)[:240]}", file=sys.stderr)
         sys.exit(2)

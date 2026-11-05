@@ -56,7 +56,8 @@ class Chain:
     def call(self, to, data):
         sel = data[2:10]
         if to == NAV:
-            assert sel == m.SEL_GET_ALL_ADAPTERS
+            if sel != m.SEL_GET_ALL_ADAPTERS:
+                raise AssertionError(sel)
             return addr_array(self.nav_adapters)
         if sel in m.SEL_CAP:
             if sel != self.cap_sel:
@@ -75,15 +76,16 @@ class Chain:
         raise AssertionError(f"unexpected call {data[:10]}")
 
     def logs(self, chain, address, topics, from_block):
-        assert topics["topic0"] == m.TOPIC_ROLE_GRANTED
+        if topics["topic0"] != m.TOPIC_ROLE_GRANTED:
+            raise AssertionError(topics)
         return [granted(x.lower()) for x in self.granted[topics["topic1"]]]
 
 
 RECORD = {"NAVCalculatorProxy": NAV, "balanceAdapters": {"FooAssisted": ADAPTER, "BarMeta": A2, "Empty": ""}}
 
 
-def run(chain, accounts=(A1,), expect_submitter=()):
-    return m.run_chain(1, chain.call, chain.logs, RECORD, list(accounts), {COUNCIL}, set(expect_submitter))
+def run(chain, accounts=(A1,), expect_submitter=(), record=RECORD):
+    return m.run_chain(1, chain.call, chain.logs, record, list(accounts), {COUNCIL}, set(expect_submitter))
 
 
 class Encoding(unittest.TestCase):
@@ -144,7 +146,8 @@ class Report(unittest.TestCase):
         self.assertEqual(m.verdict([r]), 0)
 
     def test_stakewise_cap_getter(self):
-        ad = run(Chain(cap_sel="f7b24e08", cap=256))["adapters"][0]
+        sw = {"NAVCalculatorProxy": NAV, "balanceAdapters": {"StakeWiseV3ExitQueueAssisted": ADAPTER}}
+        ad = run(Chain(cap_sel="f7b24e08", cap=256), record=sw)["adapters"][0]
         self.assertEqual(ad["keeperLimit"], 224)
 
     def test_registered_on_nav(self):
@@ -203,7 +206,24 @@ class Misc(unittest.TestCase):
         def call(to, data):
             raise c.RpcError("eth_call failed after 4 attempts: timeout")
         with self.assertRaises(c.RpcError):
-            m.read_cap(call, ADAPTER)
+            m.read_cap(call, ADAPTER, "EtherFiWithdrawalQueueAssisted")
+
+    def test_empty_accounts_file_is_an_error(self):
+        import tempfile
+        with tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False) as f:
+            f.write("# only a comment\n\n")
+        with self.assertRaises(m.MonitorError):
+            m.read_accounts(f.name)
+
+    def test_chain_without_assisted_adapters_is_an_error(self):
+        with self.assertRaises(m.MonitorError):
+            run(Chain(), record={"NAVCalculatorProxy": NAV, "balanceAdapters": {"BarMeta": A2}})
+
+    def test_expected_submitter_found_even_if_logs_miss_it(self):
+        chain = Chain(submitters=(A2,))
+        chain.logs = lambda *a, **k: []  # log index lagging: no RoleGranted at all
+        ad = run(chain, expect_submitter=(A2,))["adapters"][0]
+        self.assertEqual(ad["submitters"], [A2.lower()])
 
 
 if __name__ == "__main__":

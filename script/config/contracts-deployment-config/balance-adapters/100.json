@@ -1,11 +1,4 @@
 {
-  "AaveV3_Gnosis": {
-    "enabled": false,
-    "constructor": {
-      "dataProvider": "0x57038C3e3Fe0a170BB72DE2fD56E98e4d1a69717",
-      "positionId": "0xb50201558B00496A145fE76f7424749556E326D8"
-    }
-  },
   "StakeWiseV3ExitQueueAssisted": {
     "enabled": true,
     "$comment": "StakeWise V3 exit-queue assisted adapter on Gnosis (ADR 0015/0018/0030), GNO-denominated. Caches (vault, positionTicket, timestamp) tuples only, never amounts; values each live via calculateExitedAssets. Fed by the owner Safe through StakeWiseV3ExitQueueAssistant (msg.sender-keyed) and by a SUBMITTER_ROLE keeper (submitFor) for positions not opened through the assistant. 04 passes the chain's securityCouncil as DEFAULT_ADMIN_ROLE; no submitter is granted at deploy.",

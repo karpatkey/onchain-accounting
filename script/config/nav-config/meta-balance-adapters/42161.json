@@ -1,14 +1,14 @@
 {
   "AaveV3InstancesMeta": {
     "enabled": true,
-    "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Aave V3 instance. Supersedes AaveV3_Arbitrum, disabled below.",
+    "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Aave V3 instance. Supersedes AaveV3_Arbitrum (removed from config 2026-11).",
     "instances": [
       "0x14496b405D62c24F91f04Cda1c69Dc526D56fDE5"
     ]
   },
   "MorphoVaultsMeta": {
     "enabled": true,
-    "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Morpho ERC4626 vault. Supersedes MorphoVault_* adapters, disabled below.",
+    "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Morpho ERC4626 vault. Supersedes MorphoVault_* adapters (removed from config 2026-11).",
     "instances": [
       "0x2C609d9CfC9dda2dB5C128B2a665D921ec53579d",
       "0x5837e4189819637853a357aF36650902347F5e73"
@@ -16,7 +16,7 @@
   },
   "MorphoMarketsMeta": {
     "enabled": true,
-    "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Morpho Blue market. Supersedes MorphoMarket_* adapters, disabled below.",
+    "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Morpho Blue market. Supersedes MorphoMarket_* adapters (removed from config 2026-11).",
     "instancesRaw": [
       "0x77fe2f7c2dd6f4da6bc5f445b06052ff8df55cb70cfce9afc16ec3c69a5fd3a3",
       "0xf86f3edd6f16cd8211f4d206866dc4ecd41be6211063ac11f8508e1b7112ef40"
@@ -24,21 +24,21 @@
   },
   "BalancerV3PoolsMeta": {
     "enabled": true,
-    "$comment": "Meta-adapter (ADR 0010): wallet-held Balancer V3 LP. Supersedes BalancerV3_GHO_USDC_USDT pool legs, disabled below.",
+    "$comment": "Meta-adapter (ADR 0010): wallet-held Balancer V3 LP. Supersedes BalancerV3_GHO_USDC_USDT pool legs (removed from config 2026-11).",
     "instances": [
       "0x19B001e6Bc2d89154c18e2216eec5C8c6047b6d8"
     ]
   },
   "BalancerV3GaugesMeta": {
     "enabled": true,
-    "$comment": "Meta-adapter (ADR 0010): gauge-staked Balancer V3 LP + rewards. Supersedes BalancerV3_GHO_USDC_USDT gauge legs, disabled below.",
+    "$comment": "Meta-adapter (ADR 0010): gauge-staked Balancer V3 LP + rewards. Supersedes BalancerV3_GHO_USDC_USDT gauge legs (removed from config 2026-11).",
     "instances": [
       "0x915475b32983b7EB1235c1b6752149b454f81ad8"
     ]
   },
   "FluidFTokensMeta": {
     "enabled": true,
-    "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Fluid fToken. Supersedes Fluid_fToken_* adapters, disabled below.",
+    "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Fluid fToken. Supersedes Fluid_fToken_* adapters (removed from config 2026-11).",
     "instances": [
       "0x1A996cb54bb95462040408C06122D45D6Cdb6096",
       "0x4A03F37e7d3fC243e3f99341d36f4b829BEe5E03",
@@ -49,7 +49,7 @@
   },
   "CompoundV3CometsMeta": {
     "enabled": true,
-    "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Compound V3 comet. Supersedes CompoundV3_* adapters, disabled below.",
+    "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Compound V3 comet. Supersedes CompoundV3_* adapters (removed from config 2026-11).",
     "instances": [
       "0xA5EDBDD9646f8dFF606d7448e414884C7d905dCA",
       "0x9c4ec768c28520B50860ea7a15bd7213a9fF58bf",

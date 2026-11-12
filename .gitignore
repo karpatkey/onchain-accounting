@@ -30,3 +30,11 @@ pr1_body.md
 # after a coverage run; ignored here so the cause is fixed and not just the instance.
 .coverage
 .coverage.*
+
+# Generated reports (regenerate locally; the refresh workflow builds refresh-report.md at runtime)
+/comparison-report.md
+/refresh-report.md
+# Root-level NAV snapshot dumps (snapshot_production.py --out); keep them out of git
+/snapshots/
+# IDE settings
+.idea/

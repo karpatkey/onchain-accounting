@@ -1,7 +1,7 @@
 {
   "AaveV3InstancesMeta": {
     "enabled": true,
-    "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Aave V3 instance. The active instance set lives on NAVCalculator (addMetaInstances/removeMetaInstances, from instances below — each entry is the instance ProtocolDataProvider). Supersedes the per-instance AaveV3_* adapters, disabled below. positionId derived on-chain = the instance Pool; name = PoolAddressesProvider.getMarketId().",
+    "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Aave V3 instance. The active instance set lives on NAVCalculator (addMetaInstances/removeMetaInstances, from instances below — each entry is the instance ProtocolDataProvider). Supersedes the per-instance AaveV3_* adapters (removed from config 2026-11). positionId derived on-chain = the instance Pool; name = PoolAddressesProvider.getMarketId().",
     "constructor": {}
   },
   "AaveV4SpokesMeta": {
@@ -11,29 +11,29 @@
   },
   "MorphoVaultsMeta": {
     "enabled": true,
-    "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Morpho ERC4626 vault. The active vault set lives on NAVCalculator and is applied via addMetaInstances/removeMetaInstances in 06_Configure (from `instances` below). This SUPERSEDES the per-vault MorphoVault_* adapters, which are disabled below — the NAV calculator now learns the Morpho-vault universe from this list.",
+    "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Morpho ERC4626 vault. The active vault set lives on NAVCalculator and is applied via addMetaInstances/removeMetaInstances in 06_Configure (from `instances` below). This SUPERSEDES the per-vault MorphoVault_* adapters (removed from config 2026-11) — the NAV calculator now learns the Morpho-vault universe from this list.",
     "constructor": {}
   },
   "MorphoMarketsMeta": {
     "enabled": true,
-    "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Morpho Blue market. The active marketId set lives on NAVCalculator (addMetaInstances/removeMetaInstances, from instancesRaw below). Supersedes the per-market MorphoMarket_* adapters, which are disabled below.",
+    "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Morpho Blue market. The active marketId set lives on NAVCalculator (addMetaInstances/removeMetaInstances, from instancesRaw below). Supersedes the per-market MorphoMarket_* adapters (removed from config 2026-11).",
     "constructor": {
       "morpho": "0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb"
     }
   },
   "GearboxV3MarketsMeta": {
     "enabled": true,
-    "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Gearbox V3 ERC4626 farming pool. Emits one Supply leg per market (convertToAssets(balanceOf)) in the pool's underlying. The active market set lives on NAVCalculator (addMetaInstances/removeMetaInstances, from instances below — each entry is the market/pool address). Identity derived on-chain: positionId = market address; name = market name(). Supersedes the per-market GearboxMarket_* adapters, disabled below.",
+    "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Gearbox V3 ERC4626 farming pool. Emits one Supply leg per market (convertToAssets(balanceOf)) in the pool's underlying. The active market set lives on NAVCalculator (addMetaInstances/removeMetaInstances, from instances below — each entry is the market/pool address). Identity derived on-chain: positionId = market address; name = market name(). Supersedes the per-market GearboxMarket_* adapters (removed from config 2026-11).",
     "constructor": {}
   },
   "BalancerV3PoolsMeta": {
     "enabled": true,
-    "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Balancer V3 pool's wallet-held (unstaked) AMM liquidity only. The active pool set lives on NAVCalculator (addMetaInstances/removeMetaInstances, from instances below — each entry is the pool/BPT address). Gauge-staked LP + rewards are the separate BalancerV3GaugesMeta adapter. positionId derived on-chain = the pool address; name = BPT token name(). Supersedes the per-pool BalancerV3_* adapters, disabled below.",
+    "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Balancer V3 pool's wallet-held (unstaked) AMM liquidity only. The active pool set lives on NAVCalculator (addMetaInstances/removeMetaInstances, from instances below — each entry is the pool/BPT address). Gauge-staked LP + rewards are the separate BalancerV3GaugesMeta adapter. positionId derived on-chain = the pool address; name = BPT token name(). Supersedes the per-pool BalancerV3_* adapters (removed from config 2026-11).",
     "constructor": {}
   },
   "BalancerV3GaugesMeta": {
     "enabled": true,
-    "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Balancer V3 gauge's staked LP + BAL/extra rewards. The active gauge set lives on NAVCalculator (addMetaInstances/removeMetaInstances, from instances below — each entry is the gauge address). Wallet-held (unstaked) LP is the separate BalancerV3PoolsMeta adapter. positionId derived on-chain = the gauge address; name = the gauge's lp_token() BPT name(). Supersedes the per-pool BalancerV3_* adapters, disabled below.",
+    "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Balancer V3 gauge's staked LP + BAL/extra rewards. The active gauge set lives on NAVCalculator (addMetaInstances/removeMetaInstances, from instances below — each entry is the gauge address). Wallet-held (unstaked) LP is the separate BalancerV3PoolsMeta adapter. positionId derived on-chain = the gauge address; name = the gauge's lp_token() BPT name(). Supersedes the per-pool BalancerV3_* adapters (removed from config 2026-11).",
     "constructor": {
       "balancerMinter": "0x239e55F427D44C3cc793f49bFB507ebe76638a2b"
     }
@@ -55,12 +55,12 @@
   },
   "CurvePoolsMeta": {
     "enabled": true,
-    "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving wallet-held LP for every configured Curve pool. Instance coordinate = pool address. Supersedes wallet-LP reporting in per-instance Curve_* adapters, disabled below.",
+    "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving wallet-held LP for every configured Curve pool. Instance coordinate = pool address. Supersedes wallet-LP reporting in per-instance Curve_* adapters (removed from config 2026-11).",
     "constructor": {}
   },
   "CurveGaugesMeta": {
     "enabled": true,
-    "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving gauge-staked LP + CRV + extra rewards for every configured Curve gauge. Instance coordinate = gauge address. Supersedes staked-LP + reward reporting in per-instance Curve_* adapters, disabled below.",
+    "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving gauge-staked LP + CRV + extra rewards for every configured Curve gauge. Instance coordinate = gauge address. Supersedes staked-LP + reward reporting in per-instance Curve_* adapters (removed from config 2026-11).",
     "constructor": {
       "minter": "0xd061D61a4d941c39E5453435B6345Dc261C2fcE0",
       "crvToken": "0xD533a949740bb3306d119CC777fa900bA034cd52"
@@ -68,7 +68,7 @@
   },
   "ConvexCurveLPStakingMeta": {
     "enabled": true,
-    "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Convex pool. Instance coordinate = rewarder (BaseRewardPool) address. LP token resolved on-chain via rewarder.pid() → Booster.poolInfo(pid).lptoken. Emits Supplied legs (staked LP decomposed into Curve pool tokens) + Earned legs (CRV exact, CVX via cliff schedule, extra rewards). Supersedes per-instance Convex_* adapters, disabled below.",
+    "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Convex pool. Instance coordinate = rewarder (BaseRewardPool) address. LP token resolved on-chain via rewarder.pid() → Booster.poolInfo(pid).lptoken. Emits Supplied legs (staked LP decomposed into Curve pool tokens) + Earned legs (CRV exact, CVX via cliff schedule, extra rewards). Supersedes per-instance Convex_* adapters (removed from config 2026-11).",
     "constructor": {
       "booster": "0xF403C135812408BFbE8713b5A23a04b3D48AAE31",
       "cvxToken": "0x4e3FBD56CD56c3e72c1403e103b45Db9da5B9D2B"
@@ -76,19 +76,19 @@
   },
   "FluidFTokensMeta": {
     "enabled": true,
-    "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Fluid fToken (ERC4626 lending vault). One Supply leg per fToken (convertToAssets(balanceOf)) in its underlying. The active fToken set lives on NAVCalculator (addMetaInstances/removeMetaInstances, from instances below — each entry is an fToken address). Identity derived on-chain: positionId = fToken address; name = fToken symbol(). Supersedes the per-fToken Fluid_fToken_* adapters, disabled below.",
+    "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Fluid fToken (ERC4626 lending vault). One Supply leg per fToken (convertToAssets(balanceOf)) in its underlying. The active fToken set lives on NAVCalculator (addMetaInstances/removeMetaInstances, from instances below — each entry is an fToken address). Identity derived on-chain: positionId = fToken address; name = fToken symbol(). Supersedes the per-fToken Fluid_fToken_* adapters (removed from config 2026-11).",
     "constructor": {}
   },
   "FluidVaultsMeta": {
     "enabled": true,
-    "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Fluid T1 vault. Emits a Collateral leg (supply) and a Borrow leg (debt) per vault, aggregated over the account's NFT positions. The VaultResolver is the chain-level constant pinned in the constructor; the active vault set lives on NAVCalculator (addMetaInstances/removeMetaInstances, from instances below — each entry is a T1 vault address). Identity derived on-chain: positionId = vault address; name = collSym/debtSym. Supersedes the per-vault Fluid_Vault_* adapters, disabled below. T1 vaults only.",
+    "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Fluid T1 vault. Emits a Collateral leg (supply) and a Borrow leg (debt) per vault, aggregated over the account's NFT positions. The VaultResolver is the chain-level constant pinned in the constructor; the active vault set lives on NAVCalculator (addMetaInstances/removeMetaInstances, from instances below — each entry is a T1 vault address). Identity derived on-chain: positionId = vault address; name = collSym/debtSym. Supersedes the per-vault Fluid_Vault_* adapters (removed from config 2026-11). T1 vaults only.",
     "constructor": {
       "vaultResolver": "0xA5C3E16523eeeDDcC34706b0E6bE88b4c6EA95cC"
     }
   },
   "CompoundV3CometsMeta": {
     "enabled": true,
-    "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Compound V3 (Comet) market. Emits base Supply/Borrow + per-collateral Collateral + COMP Rewards legs per comet. CometRewards + reward token (COMP) are chain-level constants pinned in the constructor; the active comet set lives on NAVCalculator (addMetaInstances/removeMetaInstances, from instances below — each entry is a comet address). Identity derived on-chain: positionId = comet address; name = comet name(). Supersedes the per-comet CompoundV3_* adapters, disabled below.",
+    "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Compound V3 (Comet) market. Emits base Supply/Borrow + per-collateral Collateral + COMP Rewards legs per comet. CometRewards + reward token (COMP) are chain-level constants pinned in the constructor; the active comet set lives on NAVCalculator (addMetaInstances/removeMetaInstances, from instances below — each entry is a comet address). Identity derived on-chain: positionId = comet address; name = comet name(). Supersedes the per-comet CompoundV3_* adapters (removed from config 2026-11).",
     "constructor": {
       "compoundRewards": "0x1B0e765F6224C21223AeA2af16c1C46E38885a40",
       "rewardToken": "0xc00e94Cb662C3520282E6f5717214004A7f26888"
@@ -96,7 +96,7 @@
   },
   "StakeWiseV3VaultsMeta": {
     "enabled": true,
-    "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every StakeWise V3 vault. Emits a Staking leg (vault shares) and a Borrow leg (osToken debt) per vault, both denominated in the underlying staking asset. The active vault set lives on NAVCalculator (addMetaInstances/removeMetaInstances, from instances below). underlyingToken is the chain-level constant (ETH sentinel on mainnet). Identity derived on-chain: positionId = vault address; name = vault name(). Supersedes the per-vault StakeWiseV3Vault_* adapters, disabled below.",
+    "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every StakeWise V3 vault. Emits a Staking leg (vault shares) and a Borrow leg (osToken debt) per vault, both denominated in the underlying staking asset. The active vault set lives on NAVCalculator (addMetaInstances/removeMetaInstances, from instances below). underlyingToken is the chain-level constant (ETH sentinel on mainnet). Identity derived on-chain: positionId = vault address; name = vault name(). Supersedes the per-vault StakeWiseV3Vault_* adapters (removed from config 2026-11).",
     "constructor": {
       "underlyingToken": "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE",
       "osTokenVaultController": "0x2A261e60FB14586B474C208b1B7AC6D0f5000306"

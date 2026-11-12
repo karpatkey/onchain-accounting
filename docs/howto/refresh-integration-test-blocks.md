@@ -46,10 +46,10 @@ The single source of truth is [`test/integration/accounts.json`](../../test/inte
 >
 > - **The integration harness does not seed Merkl.** `_seedMerklProofs` was removed together with the old Merkl
 >   adapter in #141 and has not been restored: `test/integration/IntegrationFromConfigBase.fork.sol` contains no
->   Merkl code, and the Merkl adapter ships `enabled:false` in every chain's deploy config. So the committed
+>   Merkl code (the adapter itself is enabled and deployed; the harness just doesn't seed its proofs). So the committed
 >   integration baselines (`nav-positions-<chainId>.json`, expected NAVs) contain no Merkl positions, and the
 >   JSON-driven integration tests assert nothing about Merkl while reporting green. **Do not read a green
->   integration run as coverage of this adapter.** Re-wiring is a tracked follow-up, coupled to per-chain enablement.
+>   integration run as coverage of this adapter.** Re-wiring proof seeding into the harness is a tracked follow-up.
 > - **The dedicated fork test DOES consume `merkl-proofs.json`.**
 >   `MerklRewardsAttestedBalanceAdapterRealProofForkTest._setupFork` reads it with `vm.readFile` and replays a real
 >   captured proof against the live Distributor root — the only test that pins Merkl's leaf encoding against

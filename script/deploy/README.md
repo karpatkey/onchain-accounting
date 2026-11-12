@@ -1,10 +1,10 @@
 # Deploy Scripts
 
-Everything is deployed and configured by a single **deployer EOA** (private key + `--broadcast`). No Safe executes any deploy/config transaction. The deployer EOA holds `DEFAULT_ADMIN_ROLE` + `MANAGER` throughout, and the **final role-handoff** step (`07`) hands `DEFAULT_ADMIN_ROLE` + `MANAGER` to the **security-council Safe** and renounces the deployer's roles. The council Safe is the end-state governance admin (future upgrades go through it via `script/upgrade/*`, which still emit Safe-TX batches).
+Everything is deployed and configured by a single **deployer EOA** (private key + `--broadcast`). No Safe executes any deploy/config transaction. The deployer EOA holds `DEFAULT_ADMIN_ROLE` + `MANAGER` throughout, and the **final role-handoff** step (`07`) hands `DEFAULT_ADMIN_ROLE` + `MANAGER` to the **security-council Safe** and renounces the deployer's roles. The council Safe is the end-state governance admin (future upgrades go through it via `script/upgrade/*`, which still emit Safe-TX batches). The production NAVs (since PR #338) instead sit behind a `TimelockController`, installed with `11` in place of `07` for the NAV — see the `11` section.
 
 Deployment order (per chain unless noted):
 
-**01** (implementations, once across chains) → **02** (proxies + init) → **03** (price feeds; asset registration is a separate `script/manage/RegisterAssets.s.sol` step) → **04** (balance adapters) → **05** (bridge adapters, CREATE2 same-address) → **06** (configure: register balance + meta-adapters, reconcile meta-instances, authorize bridge adapters + wire `trustedRemoteAdapter`) → **07** (transfer admin to the security council — last of the role handoff). **08** (asset-kind registry) is **PRIVILEGED and must run BEFORE 07** — see below; the pipeline is therefore **01 → 02 → 08 → 03 → `RegisterAssets` → 04 → 05 → 06 → 07**. ⚠️ **`08` moved ahead of asset registration:** an asset's primary registration is routed through `AssetKindRegistry.registerAsset` so it is registered, classified and LABELLED atomically, and registration is where labels are first written — so the registry must exist and hold `MANAGER` before `RegisterAssets` runs. (A wrong label is corrected afterwards with `setAssetLabels`; the ordering requirement is about the ATOMIC register+classify, not about labels being unfixable.)
+**01** (implementations, once across chains) → **02** (proxies + init) → **03** (price feeds; asset registration is a separate `script/manage/RegisterAssets.s.sol` step) → **04** (balance adapters) → **05** (bridge adapters, CREATE2 same-address) → **06** (configure: register balance + meta-adapters, reconcile meta-instances, authorize bridge adapters + wire `trustedRemoteAdapter`) → **07** (transfer admin to the security council — last of the role handoff; or `11` for the NAV — see the `11` section). **08** (asset-kind registry) is **PRIVILEGED and must run BEFORE 07** — see below; the pipeline is therefore **01 → 02 → 08 → 03 → `RegisterAssets` → 04 → 05 → 06 → 07**. ⚠️ **`08` moved ahead of asset registration:** an asset's primary registration is routed through `AssetKindRegistry.registerAsset` so it is registered, classified and LABELLED atomically, and registration is where labels are first written — so the registry must exist and hold `MANAGER` before `RegisterAssets` runs. (A wrong label is corrected afterwards with `setAssetLabels`; the ordering requirement is about the ATOMIC register+classify, not about labels being unfixable.)
 
 `07` is the last step that touches the NAV/Bridge **proxies**, and it is still what ends the deployer's control over them. It is no longer the last script in the directory: `08` deploys its own standalone contract, but it is **not** order-independent: it grants the registry `MANAGER` on the NAV, which needs `DEFAULT_ADMIN` — a role `07` hands to the council. **`08` must run BEFORE `07`.** Do not skip it either, or the `AssetKindRegistry` does not exist on that chain and nothing in the pipeline says so.
 
@@ -61,7 +61,7 @@ Deploys the custom price-feed adapter contracts only (chain-branched, enabled pe
 
 ## 04_DeployBalanceAdapters.s.sol
 
-Deploys the per-protocol balance adapters (incl. the meta-adapters) via plain `new ...` (CREATE) from the deployer EOA, logging their addresses (persisted to the deployments file `script/config/deployments/{chainId}.json`). Balance-adapter addresses are therefore chain- and run-specific.
+Deploys the per-protocol balance adapters (incl. the meta-adapters) from the deployer EOA, logging their addresses (persisted to the deployments file `script/config/deployments/{chainId}.json`). Three tiers: adapters whose only constructor argument is the NAV proxy are CREATE2-deployed at one address fleet-wide (`_create2NavOnly`); adapters with one chain-specific protocol argument (`MorphoMarketsMeta`, `UniswapV3PoolsMeta`, `FluidVaultsMeta`, plus `MerklRewards`) are CREATE2-deployed with `_create2WithArgs`, so their address is shared only where the argument is; every other adapter is plain `new` (CREATE), chain- and run-specific.
 
 ## 05_DeployBridgeAdapters.s.sol (CREATE2 same-address, ADR 0012 D7)
 
@@ -80,7 +80,7 @@ Run by the deployer EOA (holds admin + MANAGER). It is config-driven and idempot
 forge script script/deploy/06_Configure.s.sol --chain-id 1 --broadcast --account $DEPLOYER_NAME
 ```
 
-## 07_TransferAdminToSecurityCouncil.s.sol (last of the role handoff)
+## 07_TransferAdminToSecurityCouncil.s.sol (role handoff to the security council)
 
 Grants `DEFAULT_ADMIN_ROLE` + `MANAGER` to `addresses.securityCouncil` on both proxies (`NAVCalculator`, `BridgeEscrow`), revokes `MANAGER` from the deployer, and renounces the deployer's `DEFAULT_ADMIN_ROLE`.
 
@@ -130,3 +130,34 @@ Consequences worth stating, because earlier revisions of this file said the oppo
 Calling `NAVCalculator.registerAsset` directly still works and is deliberately not blocked. Whether it *should* is a deploy-time role decision: revoking `MANAGER` from humans on the NAV makes the facade the only path and the "always classified" invariant structural rather than conventional. That choice is left to the operator — the code does not force it, so the registry is not a required dependency for asset registration unless you decide it should be.
 
 > Note: `PERSIST_DEPLOYMENTS=1` gates the top-level impl/proxy address writes (`saveDeployedAddress` in 01/01_2/02/02_2 **and 08**) to the deployments file `script/config/deployments/{chainId}.json` — without it those only log. The per-adapter writes in 04 (`balanceAdapters.<Name>`) and 05 (`bridgeAdapters.<Name>`) go through `ConfigReader.writeAdapterAddress` and are NOT gated by this flag — they write on every run. **Careful: that exemption does not cover all of 04.** 04's three *assistants* (`NexusMutualStakingPoolsAssistant`, `EtherFiWithdrawalQueueAssistant`, `StakeWiseV3ExitQueueAssistant`) are top-level keys written through the **gated** `saveDeployedAddress`, and their skip-if-deployed guards read those same records — so running 04 without the flag records no assistants and a re-run deploys duplicates. Run 04 with `PERSIST_DEPLOYMENTS=1` too. Governance after handoff (upgrades) is council-Safe-driven via `script/upgrade/*`, which still produce Safe-TX JSON batches.
+
+## 11_DeployTimelockController.s.sol (NAV governance)
+
+CREATE2-deploys the NAV's governance `TimelockController` (an EOA broadcast that needs no privileges) and writes a
+Safe batch, `safe-transactions/<chainId>-install-timelock.json`, for the security-council Safe. The batch grants the
+NAV's `DEFAULT_ADMIN_ROLE` + `MANAGER` to the timelock and revokes them from the deployer EOA and, unless
+`SAFE_RETAINS_ROLES=true`, from the Safe itself. It governs the NAV only; it does not touch `BridgeEscrow` or the
+bridge adapters.
+
+**It is an alternative to `07` for the NAV, not a step after it.** It needs BOTH the deployer and the Safe to hold
+the NAV's `DEFAULT_ADMIN_ROLE` when it runs (it reverts `DeployerNotAdmin` / `BatchExecutorNotAdmin` otherwise),
+and `07` renounces the deployer's NAV roles. Conversely, `07` cannot run after `11`'s batch: it requires the
+deployer to still hold the NAV's admin role. So there is no scripted bridge-contract handoff on the timelock path;
+on a chain with a `BridgeEscrow` proxy or bridge adapters, hand those off separately.
+
+How the live fleet ran it (PR #338): the deployer granted the Council the NAV's roles directly, then ran `11` with
+the Council keeping its roles alongside the timelock, after every step that needed deployer privileges:
+
+```bash
+for R in 0x0000000000000000000000000000000000000000000000000000000000000000 $(cast keccak MANAGER); do
+  cast send $NAV "grantRole(bytes32,address)" $R $COUNCIL --rpc-url $RPC --account $DEPLOYER_NAME
+done
+DEPLOYER_EOA=$DEPLOYER SAFE_RETAINS_ROLES=true PERSIST_DEPLOYMENTS=1 \
+forge script script/deploy/11_DeployTimelockController.s.sol --rpc-url $RPC --account $DEPLOYER_NAME --broadcast --slow
+# then the Council signs safe-transactions/<chainId>-install-timelock.json
+```
+
+`OPS_SAFE=<address>` revokes a throwaway ops Safe in the same batch, if one was used. `PERSIST_DEPLOYMENTS=1` is
+what records the timelock in `script/config/deployments/<chainId>.json`. The default (`SAFE_RETAINS_ROLES` unset)
+revokes the Safe's own roles, leaving the timelock as the only path. The mandatory post-execution checks are listed
+in the script header.

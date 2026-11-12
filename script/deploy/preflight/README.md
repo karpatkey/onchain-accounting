@@ -52,6 +52,7 @@ The ordered procedure these support is [`../REDEPLOY_RUNBOOK.md`](../REDEPLOY_RU
 | `verify_step.py` | asserts the runbook's post-condition for a given deploy step, on-chain, per chain |
 | `redeploy_scope.json` | the declared 24-chain scope; hand-maintained, never written by tooling |
 | `rehearse_fork.sh` | runs the real deploy sequence end-to-end against a local anvil fork |
+| `assisted_monitor.py` | read-only free-slot + role monitor for the ADR 0030 assisted adapters (see below) |
 
 ## Typical order
 
@@ -182,3 +183,26 @@ python3 seed_assisted.py --chain 1 --member etherfi --old <old adapter> --new <n
 
 A chunk is all-or-nothing, so keep `--chunk` small and re-run right before sending. Rollout order: ADR 0030 "Rollout"
 (note step 1: record the old addresses, then clear their deployment-record keys so `04` redeploys).
+
+## Monitoring the assisted adapters (`assisted_monitor.py`, ADR 0030)
+
+Read-only free-slot and role monitor, required before any `SUBMITTER_ROLE` grant (ADR 0030 Rollout step 1, S13). For each
+chain (default 1 and 100) and each `*Assisted` adapter in `deployments/<chainId>.json` `balanceAdapters` it reads the
+per-account cap (`MAX_TOKEN_IDS()` / `MAX_POSITIONS()`) and `OWNER_RESERVE()` from the contract, and per `--accounts`
+account compares `coordsOf(account).length` with the keeper limit (cap − `OWNER_RESERVE`, 224 today): **WARN** at ≥ 80 %
+of it, **ALERT** at ≥ it (the keeper path is closed and the owner has only what is left of its reserve — recovery is
+`evict`). It also lists every `SUBMITTER_ROLE` and `DEFAULT_ADMIN_ROLE` holder (`RoleGranted` logs plus a direct probe of every expected holder, each confirmed with `hasRole`; an unexpected
+holder is only as visible as Etherscan's log index, so a lagging index can delay that alert, never hide a missing
+expected one): an admin other than the chain's `securityCouncil` (or `--expect-admin`), a missing Council, or a submitter
+not passed as `--expect-submitter` is a problem. Whether the adapter is registered on the NAV is informational.
+Exit 0 = clean (WARNs allowed), 1 = ALERT or role problem, 2 = a read failed, an empty accounts file, a chain with no
+assisted adapter recorded, or any unexpected error — it fails closed, so it can run from cron. An ALERT or role problem on a chain that was read
+always wins (exit 1, with any read failure on another chain also printed), so an outage elsewhere never masks it. Needs
+`ETHERSCAN_API_KEY` and an RPC.
+
+```bash
+python3 assisted_monitor.py --accounts safes.txt [--chain 1] [--expect-submitter <keeper Safe>] --json monitor.json
+```
+
+The contracts do not record which entries the keeper filed (only the `CoordSubmittedFor` event does), so the count is
+the account's total — the same total the keeper limit is checked against on-chain.

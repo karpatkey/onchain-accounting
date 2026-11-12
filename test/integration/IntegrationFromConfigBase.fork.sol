@@ -77,6 +77,7 @@ import {
 import {
     SymbioticVaultsMetaBalanceAdapter
 } from "src/balances/MetaBalanceAdapters/SymbioticVaultsMetaBalanceAdapter.sol";
+import {YoVaultsMetaBalanceAdapter} from "src/balances/MetaBalanceAdapters/YoVaultsMetaBalanceAdapter.sol";
 import {InvertedChainlinkCustomPriceFeed} from "src/prices/protocols/InvertedChainlinkCustomPriceFeed.sol";
 import {MorphoMarketsMetaBalanceAdapter} from "src/balances/MetaBalanceAdapters/MorphoMarketsMetaBalanceAdapter.sol";
 import {
@@ -680,6 +681,9 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
         }
         if (_equals(name, "SymbioticVaultsMeta")) {
             return _deploySymbioticVaultsMeta(name, navAddr);
+        }
+        if (_equals(name, "YoVaultsMeta")) {
+            return address(new YoVaultsMetaBalanceAdapter(navAddr));
         }
         if (_equals(name, "GearboxV3MarketsMeta")) {
             return _deployGearboxV3MarketsMeta(name, navAddr);

@@ -17,6 +17,8 @@ pragma solidity ^0.8;
 ///                                          isLocked=non-withdrawable splits them — active stake is LOCKED
 ///                                          (isLocked=true), only a cooldown elapsed-and-in-window is UNLOCKED;
 ///                                          the reward leg shares it too, told apart by positionKind=Rewards
+///        YO_VAULTS                       → (address vault) — static; up to two Supplied legs sharing it: held shares
+///                                          (isLocked=false) + pending escrowed redeem (isLocked=true)
 ///        MORPHO_VAULTS / GEARBOX_V3_MARKETS / GEARBOX_V3_CREDIT_ACCOUNTS / EULER_VAULTS / ERC4626 /
 ///        STAKEWISE_V3_VAULTS / FLUID_VAULTS / SYMBIOTIC_VAULTS → (address vault / market / credit account)
 ///        CAP                             → (address token: cUSD or stcUSD) — one leg per token
@@ -117,6 +119,7 @@ library ProtocolIds {
     bytes32 internal constant SKY = keccak256("sky");
     bytes32 internal constant MAPLE = keccak256("maple");
     bytes32 internal constant NEXUS_MUTUAL = keccak256("nexus-mutual");
+    bytes32 internal constant YO = keccak256("yo"); // YO Protocol; unversioned, so this is also the brand
     // (CURVE below doubles as the Curve ecosystem id for CURVE_POOLS/CURVE_GAUGES.)
 
     // ── Per-product slugs (`protocolSubId`; selects the positionId decode schema) ──
@@ -161,6 +164,9 @@ library ProtocolIds {
 
     // Symbiotic
     bytes32 internal constant SYMBIOTIC_VAULTS = keccak256("symbiotic-vaults");
+
+    // YO (YoVault: held shares + pending escrowed redeems)
+    bytes32 internal constant YO_VAULTS = keccak256("yo-vaults");
 
     // Compound
     bytes32 internal constant COMPOUND_V3 = keccak256("compound-v3");

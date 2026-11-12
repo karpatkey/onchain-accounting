@@ -67,6 +67,7 @@ performs the claimable/locked split.
 | `stakewise-v3-exit` | `abi.encode(address vault)` (per vault) | claimable (exited) + locked (queued), per vault |
 | `etherfi-withdrawal` | `abi.encode(address withdrawRequestNFT)` | claimable + locked |
 | `ethena-cooldown` | `abi.encode(address sUSDe)` | single leg, `isLocked` while cooling |
+| `yo-vaults` | `abi.encode(address vault)` (per vault) | held shares (`isLocked=false`) + pending escrowed redeem (`isLocked=true`; no claimable state — the YO operator settles straight to the receiver) |
 | `aave-v3-safety-module` | `abi.encode(address stakeToken)` (both staking legs; reward leg too) | locked stake (`isLocked=true`) + unlocked stake (`isLocked=false`, cooldown elapsed-and-in-window) |
 | `aave-v3-umbrella` | `abi.encode(address stakeToken)` (both staking legs; reward leg too) | locked stake (`isLocked=true`) + unlocked stake (`isLocked=false`, cooldown elapsed-and-in-window) |
 

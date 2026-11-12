@@ -99,6 +99,7 @@ import {EulerVaultsMetaBalanceAdapter} from "src/balances/MetaBalanceAdapters/Eu
 import {
     SymbioticVaultsMetaBalanceAdapter
 } from "src/balances/MetaBalanceAdapters/SymbioticVaultsMetaBalanceAdapter.sol";
+import {YoVaultsMetaBalanceAdapter} from "src/balances/MetaBalanceAdapters/YoVaultsMetaBalanceAdapter.sol";
 import {FluidFTokensMetaBalanceAdapter} from "src/balances/MetaBalanceAdapters/FluidFTokensMetaBalanceAdapter.sol";
 import {FluidVaultsMetaBalanceAdapter} from "src/balances/MetaBalanceAdapters/FluidVaultsMetaBalanceAdapter.sol";
 import {
@@ -233,7 +234,7 @@ contract ProtocolNameConsistencyTest is Test {
 
     /// @dev Number of concrete meta adapters. Pinned so adding one fails `test_metaAdapterCensus` until the
     ///      author also adds it to `test_everyMetaAdapterReportsItsProtocolName`.
-    uint256 internal constant META_ADAPTER_COUNT = 41;
+    uint256 internal constant META_ADAPTER_COUNT = 42;
 
     /// @dev Number of concrete plain + assisted adapters, i.e. the family whose name is a bytecode LITERAL rather
     ///      than derived. Pinned so adding one fails `test_hardcodedAdapterCensus` until the author also adds it to
@@ -412,6 +413,7 @@ contract ProtocolNameConsistencyTest is Test {
         i += _expectName(
             new SymbioticVaultsMetaBalanceAdapter(n).protocolName(), ProtocolNames.SYMBIOTIC, "SymbioticVaults"
         );
+        i += _expectName(new YoVaultsMetaBalanceAdapter(n).protocolName(), ProtocolNames.YO, "YoVaults");
         i += _expectName(new FluidFTokensMetaBalanceAdapter(n).protocolName(), ProtocolNames.FLUID, "FluidFTokens");
         i += _expectName(
             new FluidVaultsMetaBalanceAdapter(address(new FluidVaultResolverStub()), n).protocolName(),

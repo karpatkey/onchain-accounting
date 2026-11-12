@@ -119,6 +119,11 @@
     "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving Symbiotic ERC-4626 vaults. Active vault set lives on NAVCalculator via addMetaInstances (from nav-config). ERC-4626 vaults only - a Symbiotic CORE vault (epoch-based activeBalanceOf + withdrawal queue) is out of scope and would contribute nothing rather than a wrong number.",
     "constructor": {}
   },
+  "YoVaultsMeta": {
+    "enabled": true,
+    "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving YO Protocol vaults (YoVault). Per vault it emits up to two Supplied legs in the vault asset under positionId abi.encode(vault): held shares (previewRedeem, fee-net, isLocked=false) and the account's pending escrowed redeem (min(net-of-fee reservation, previewRedeem(shares)), isLocked=true). CREATE2 with a NAV-only constructor (DeploySalts.YO_VAULTS_META = 1), so the address is fleet-wide and known before the deploy. YO's Morpho Vault V2 (YO Ecosystem) is a genuine Morpho vault and stays on MorphoVaultsMeta.",
+    "constructor": {}
+  },
   "PolygonStakingMeta": {
     "enabled": true,
     "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Polygon PoS ValidatorShare. NOTE THE CHAIN - Polygon PoS staking is settled on ETHEREUM L1 by StakeManager 0x5e3Ef299fDDf15eAa0432E6e66473ace8c13D908, which mints one ValidatorShare per validator; this is a chain-1 adapter despite the protocol's name. Emits a Staking leg (delegated principal) and a Rewards leg (unclaimed rewards) per validator, both denominated in POL. underlyingToken is POL and is independently checkable: StakeManager.token() returns exactly this address (verified on-chain 2026-08-26). It is passed rather than derived to match the family idiom and to avoid pinning the StakeManager too; ValidatorShare.polToken() is NOT a usable source - it returns address(0) on the live contracts. The active validator set lives on NAVCalculator (addMetaInstances/removeMetaInstances, from nav-config). Identity derived on-chain: positionId = ValidatorShare address.",

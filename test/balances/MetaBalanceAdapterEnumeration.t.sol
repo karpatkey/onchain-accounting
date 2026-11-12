@@ -90,6 +90,7 @@ import {EulerVaultsMetaBalanceAdapter} from "src/balances/MetaBalanceAdapters/Eu
 import {
     SymbioticVaultsMetaBalanceAdapter
 } from "src/balances/MetaBalanceAdapters/SymbioticVaultsMetaBalanceAdapter.sol";
+import {YoVaultsMetaBalanceAdapter} from "src/balances/MetaBalanceAdapters/YoVaultsMetaBalanceAdapter.sol";
 import {FluidFTokensMetaBalanceAdapter} from "src/balances/MetaBalanceAdapters/FluidFTokensMetaBalanceAdapter.sol";
 import {FluidVaultsMetaBalanceAdapter} from "src/balances/MetaBalanceAdapters/FluidVaultsMetaBalanceAdapter.sol";
 import {
@@ -496,7 +497,7 @@ contract MetaBalanceAdapterAdvertisedShapeTest is PositionIdJoinAsserts {
 
     /// @dev Pinned so adding an adapter fails `test_metaAdapterEnumerationCensus` until the author also adds it to
     ///      `test_everyMetaAdapter_advertisesItsCoordinateUnlessItDeclaresOtherwise`.
-    uint256 internal constant META_ADAPTER_COUNT = 41;
+    uint256 internal constant META_ADAPTER_COUNT = 42;
 
     /// @dev A coordinate with dirty high bits, for the two adapters whose instance is a raw `bytes32` rather than
     ///      an address. Deliberately un-address-like: it proves those adapters really do override
@@ -567,6 +568,7 @@ contract MetaBalanceAdapterAdvertisedShapeTest is PositionIdJoinAsserts {
         );
         i += _assertAdvertisesCoordinate(new EulerVaultsMetaBalanceAdapter(n), "EulerVaults");
         i += _assertAdvertisesCoordinate(new SymbioticVaultsMetaBalanceAdapter(n), "SymbioticVaults");
+        i += _assertAdvertisesCoordinate(new YoVaultsMetaBalanceAdapter(n), "YoVaults");
         i += _assertAdvertisesCoordinate(new FluidFTokensMetaBalanceAdapter(n), "FluidFTokens");
         i += _assertAdvertisesCoordinate(
             new FluidVaultsMetaBalanceAdapter(address(new FluidVaultResolverStub()), n), "FluidVaults"

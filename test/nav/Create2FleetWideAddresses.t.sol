@@ -29,6 +29,7 @@ import {
     UniswapV3PoolsMetaBalanceAdapter
 } from "src/balances/MetaBalanceAdapters/uniswap/UniswapV3PoolsMetaBalanceAdapter.sol";
 import {FluidVaultsMetaBalanceAdapter} from "src/balances/MetaBalanceAdapters/FluidVaultsMetaBalanceAdapter.sol";
+import {YoVaultsMetaBalanceAdapter} from "src/balances/MetaBalanceAdapters/YoVaultsMetaBalanceAdapter.sol";
 
 /// @title Create2FleetWideAddresses — pins the addresses that must be identical on every chain
 /// @notice Derives each CREATE2 address from (creation code, NAV proxy, salt) and asserts it equals the value
@@ -182,6 +183,22 @@ contract Create2FleetWideAddressesTest is Test {
         address morpho = _configAddr(chainId, "MorphoMarketsMeta", "morpho");
         return _deriveWithArgs(
             code, abi.encode(morpho, NAV_PROXY), "MorphoMarketsMetaBalanceAdapter", DeploySalts.MORPHO_MARKETS_META
+        );
+    }
+
+    /// @notice NOT YET DEPLOYED. Pins the address the yoUSD Edge governance batch registers
+    ///         (`addMetaBalanceAdapter(<this>, [Edge])`, scheduled on the TimelockController BEFORE the deploy), so a
+    ///         bytecode change that would move it — and silently invalidate the scheduled calldata — fails here. If it
+    ///         moves on purpose, re-derive the batch calldata in the PR before scheduling.
+    function testYoVaultsMetaAddress() public {
+        address derived = _derive(
+            type(YoVaultsMetaBalanceAdapter).creationCode, "YoVaultsMetaBalanceAdapter", DeploySalts.YO_VAULTS_META
+        );
+        emit log_named_address("YoVaultsMeta CREATE2 address", derived);
+        assertEq(
+            derived,
+            0x72B0D33f8c2F783c1F9aa4A866Ba19604e3fF355,
+            "YoVaultsMeta address moved - re-derive the governance batch calldata"
         );
     }
 

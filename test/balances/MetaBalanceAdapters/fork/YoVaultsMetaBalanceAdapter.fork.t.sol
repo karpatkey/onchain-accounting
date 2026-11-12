@@ -55,7 +55,7 @@ contract YoVaultsMetaBalanceAdapterForkTest is BalanceAdapterTestBase {
     bytes32 internal constant MANAGER = keccak256("MANAGER");
     address internal constant CREATE2_DEPLOYER = 0x4e59b44847b379578588920cA78FbF26c0B4956C;
     /// @dev The address the governance batch registers; pinned in `Create2FleetWideAddresses.t.sol` too.
-    address internal constant YO_VAULTS_META = 0x72B0D33f8c2F783c1F9aa4A866Ba19604e3fF355;
+    address internal constant YO_VAULTS_META = 0x64Fb8b1d04b28B0389beEB76E844e2935E25f4b3;
 
     /// @dev The five Portfolio Safes (eth, usd, wbtc, xaut, cbbtc). None holds Edge at FORK_BLOCK.
     address internal constant SAFE_ETH = 0x99b9F5F24205Cb88E33b1CC72008f644Fc23768b;

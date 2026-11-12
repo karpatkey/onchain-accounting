@@ -197,7 +197,7 @@ contract Create2FleetWideAddressesTest is Test {
         emit log_named_address("YoVaultsMeta CREATE2 address", derived);
         assertEq(
             derived,
-            0x72B0D33f8c2F783c1F9aa4A866Ba19604e3fF355,
+            0x64Fb8b1d04b28B0389beEB76E844e2935E25f4b3,
             "YoVaultsMeta address moved - re-derive the governance batch calldata"
         );
     }

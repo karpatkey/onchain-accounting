@@ -5,13 +5,8 @@ import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {MetaBalanceAdapter} from "../MetaBalanceAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {ERC4626RedeemLib} from "src/balances/ERC4626RedeemLib.sol";
-import {GasStipendLib} from "src/utils/GasStipendLib.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
-
-/// @notice A YoVault read ran out of the gas its frame was given; the position must not be silently dropped (same
-///         contract as {ERC4626RedeemLib.RedeemValueGasExhausted}).
-error YoVaultReadGasExhausted(address vault, uint256 stipend, uint256 consumed);
 
 /// @title YO Vaults Meta Balance Adapter
 /// @author KPK
@@ -45,10 +40,11 @@ error YoVaultReadGasExhausted(address vault, uint256 stipend, uint256 consumed);
 ///      `previewRedeem` is already fee-net and `net()` applies the fee once to the gross reservation: the fee is
 ///      applied exactly once on both branches, a price drop is reflected, a price rise is never credited.
 ///
-///      **Fail closed.** The held leg uses {ERC4626RedeemLib.redeemValue} (0 on failure). The pending reads are
-///      gas-stipended staticcalls that report 0 on a revert/short return — so a broken pending read drops only the
-///      pending leg, never the held one — and revert on gas exhaustion rather than dropping silently. Any other
-///      revert inside an instance (e.g. `asset()`) drops that instance via the base's per-instance isolation.
+///      **Fail closed.** Share valuation goes through {ERC4626RedeemLib.redeemValue} (0 on failure, so a leg it
+///      cannot value is dropped, never substituted by `convertToAssets`). Every other vault read (`asset`,
+///      `balanceOf`, `pendingRedeemRequest`, `feeOnWithdraw`) is a plain high-level call: any failure reverts the
+///      instance, which the base's metered per-instance isolation drops (an under-report of that vault's legs) or,
+///      when the frame was starved, surfaces loudly as `InstanceGasExhausted`.
 contract YoVaultsMetaBalanceAdapter is MetaBalanceAdapter {
     /// @dev YoVault's fee denominator (`DENOMINATOR`, 1e18 = 100%).
     uint256 private constant FEE_DENOMINATOR = 1e18;
@@ -60,53 +56,26 @@ contract YoVaultsMetaBalanceAdapter is MetaBalanceAdapter {
     // Valuation (public views, for monitoring and tests)
     //
 
-    /// @notice Fee-net value of `account`'s held (non-escrowed) shares in `vault`. 0 if unreadable.
+    /// @notice Fee-net value of `account`'s held (non-escrowed) shares in `vault`; 0 if `previewRedeem` is unreadable.
     function heldValue(address vault, address account) public view returns (uint256) {
         if (account == address(0)) return 0;
         return ERC4626RedeemLib.redeemValue(vault, IYoVault(vault).balanceOf(account));
     }
 
-    /// @notice Fee-net lower-bound value of `account`'s pending redeem in `vault`. 0 on any read failure.
+    /// @notice Fee-net lower-bound value of `account`'s pending redeem in `vault`.
+    /// @dev Plain high-level reads: a revert (or an undecodable reply) propagates to the base's metered
+    ///      per-instance isolation, which drops the instance (under-report) or, on gas starvation, raises
+    ///      `InstanceGasExhausted` loudly. No raw staticcall here by design (preflight source gate 2).
     function pendingValue(address vault, address account) public view returns (uint256) {
         if (account == address(0)) return 0;
 
-        (bool ok, uint256 pendingAssets, uint256 pendingShares) =
-            _call2(vault, abi.encodeCall(IYoVault.pendingRedeemRequest, (account)), 64);
-        if (!ok || pendingAssets == 0 || pendingShares == 0) return 0;
+        (uint256 pendingAssets, uint256 pendingShares) = IYoVault(vault).pendingRedeemRequest(account);
+        if (pendingAssets == 0 || pendingShares == 0) return 0;
 
-        (bool feeOk, uint256 fee,) = _call2(vault, abi.encodeCall(IYoVault.feeOnWithdraw, ()), 32);
-        if (!feeOk) return 0;
-
+        uint256 fee = IYoVault(vault).feeOnWithdraw();
         uint256 reservedNet = pendingAssets - Math.mulDiv(pendingAssets, fee, fee + FEE_DENOMINATOR, Math.Rounding.Ceil);
         uint256 currentNet = ERC4626RedeemLib.redeemValue(vault, pendingShares);
         return reservedNet < currentNet ? reservedNet : currentNet;
-    }
-
-    /// @dev Gas-stipended staticcall decoding up to two words; `ok` requires at least `need` bytes of return data.
-    ///      Reverts {YoVaultReadGasExhausted} when the failure was gas starvation, so a starved read is never
-    ///      mistaken for 0.
-    function _call2(address vault, bytes memory cd, uint256 need)
-        private
-        view
-        returns (bool ok, uint256 w0, uint256 w1)
-    {
-        uint256 available = gasleft();
-        uint256 stipend = GasStipendLib.stipendFrom(available);
-        uint256 size;
-        // 64-byte output window at the free pointer, not bumped (nothing allocates across this block); zeroed first.
-        assembly ("memory-safe") {
-            let out := mload(0x40)
-            mstore(out, 0)
-            mstore(add(out, 0x20), 0)
-            ok := staticcall(stipend, vault, add(cd, 0x20), mload(cd), out, 0x40)
-            size := returndatasize()
-            w0 := mload(out)
-            w1 := mload(add(out, 0x20))
-        }
-        if (ok && size >= need) return (true, w0, w1);
-        uint256 consumed = available - gasleft();
-        if (GasStipendLib.exhausted(stipend, consumed)) revert YoVaultReadGasExhausted(vault, stipend, consumed);
-        return (false, 0, 0);
     }
 
     //

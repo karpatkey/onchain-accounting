@@ -241,25 +241,37 @@ contract YoVaultsMetaBalanceAdapterTest is Test {
 
     // ---- fail closed ----
 
-    function test_failClosed_pendingRead_dropsOnlyPendingLeg() public {
+    /// @dev A broken pending read reverts the instance; the base's isolation drops it (under-report, never a
+    ///      substituted value).
+    function test_failClosed_pendingRead_dropsInstance() public {
         vault.setBalance(alice, 10_000e6);
         vault.setPending(alice, vault.convertToAssets(5_000e6), 5_000e6);
         vault.setReverts(true, false, false);
-        INAVCalculator.PositionBalance[] memory p = _positions();
-        assertEq(p.length, 1, "held leg survives a broken pending read");
-        assertFalse(p[0].isLocked);
+        assertEq(_positions().length, 0);
+        vm.expectRevert();
+        adapter.pendingValue(address(vault), alice);
     }
 
-    function test_failClosed_shortPendingReturn() public {
+    function test_failClosed_shortPendingReturn_dropsInstance() public {
+        vault.setBalance(alice, 10_000e6);
         vault.setPending(alice, 1_026_446, 1e6);
         vault.setShortPending(true);
-        assertEq(adapter.pendingValue(address(vault), alice), 0);
+        assertEq(_positions().length, 0);
     }
 
-    function test_failClosed_feeRead() public {
+    function test_failClosed_feeRead_dropsInstance() public {
+        vault.setBalance(alice, 10_000e6);
         vault.setPending(alice, 1_026_446, 1e6);
         vault.setReverts(false, true, false);
-        assertEq(adapter.pendingValue(address(vault), alice), 0);
+        assertEq(_positions().length, 0);
+    }
+
+    function test_noPending_feeReadNotNeeded() public {
+        vault.setBalance(alice, 10_000e6);
+        vault.setReverts(false, true, false);
+        INAVCalculator.PositionBalance[] memory p = _positions();
+        assertEq(p.length, 1, "held leg does not depend on the fee read when nothing is pending");
+        assertFalse(p[0].isLocked);
     }
 
     function test_failClosed_previewRevert_dropsBothLegs() public {

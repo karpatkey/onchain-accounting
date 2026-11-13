@@ -59,9 +59,10 @@ library ERC4626RedeemLib {
     ///      position disappears from a report the fund can compare against its own expectations — where the
     ///      behaviour it replaces was an invisible over-report. Every caller already treats 0 as "no leg"
     ///      (`MorphoVaultsMetaBalanceAdapter` and `SymbioticVaultsMetaBalanceAdapter` return an empty array;
-    ///      `AaveUmbrellaBalanceAdapter` skips the leg), so no caller-side change is needed and no caller learns
-    ///      to trust a fabricated number. **That list is exhaustive as written; grep `redeemValue` before
-    ///      relying on it** — it has already gone stale once, when a third caller was added.
+    ///      `AaveUmbrellaBalanceAdapter` skips the leg; `YoVaultsMetaBalanceAdapter` drops the held leg and, as
+    ///      the `min` of its pending valuation, the pending leg), so no caller-side change is needed and no caller
+    ///      learns to trust a fabricated number. **That list is exhaustive as written; grep `redeemValue` before
+    ///      relying on it** — it has already gone stale twice, when a third and a fourth caller were added.
     ///
     ///      **Why this is a raw staticcall and not `try`/`catch`.** An earlier revision used `try`/`catch` and
     ///      justified it with "the return type is a single `uint256`, so there is no decode that can revert past
@@ -88,7 +89,7 @@ library ERC4626RedeemLib {
     ///          raises {RedeemValueGasExhausted}, which the callers' existing gas classifiers surface loudly.
     ///        - **Genuinely unreadable** — a revert, an empty reply, a short reply, a code-less vault. The vault
     ///          has answered, or cannot answer at all; there is nothing to value and no reason to fail the whole
-    ///          account's read. Reports 0, which both callers already treat as "no leg".
+    ///          account's read. Reports 0, which every caller already treats as "no leg".
     ///
     ///      The stipend is `GasStipendLib.stipendFrom` — a PROPORTION of the caller's own budget, not a fixed
     ///      ceiling. That matters here specifically: MetaMorpho's `previewRedeem` walks the withdraw queue, so a

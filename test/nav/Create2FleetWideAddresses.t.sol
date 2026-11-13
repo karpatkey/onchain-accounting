@@ -29,6 +29,7 @@ import {
     UniswapV3PoolsMetaBalanceAdapter
 } from "src/balances/MetaBalanceAdapters/uniswap/UniswapV3PoolsMetaBalanceAdapter.sol";
 import {FluidVaultsMetaBalanceAdapter} from "src/balances/MetaBalanceAdapters/FluidVaultsMetaBalanceAdapter.sol";
+import {YoVaultsMetaBalanceAdapter} from "src/balances/MetaBalanceAdapters/YoVaultsMetaBalanceAdapter.sol";
 
 /// @title Create2FleetWideAddresses — pins the addresses that must be identical on every chain
 /// @notice Derives each CREATE2 address from (creation code, NAV proxy, salt) and asserts it equals the value
@@ -182,6 +183,24 @@ contract Create2FleetWideAddressesTest is Test {
         address morpho = _configAddr(chainId, "MorphoMarketsMeta", "morpho");
         return _deriveWithArgs(
             code, abi.encode(morpho, NAV_PROXY), "MorphoMarketsMetaBalanceAdapter", DeploySalts.MORPHO_MARKETS_META
+        );
+    }
+
+    /// @notice NOT YET DEPLOYED. Pins the address the yoUSD Edge governance batch registers
+    ///         (`addMetaBalanceAdapter(<this>, [Edge])` through the TimelockController), so a bytecode change that would
+    ///         move it fails here. The address also depends on the shared bases this adapter inherits or inlines
+    ///         (`MetaBalanceAdapter`, `ERC4626RedeemLib`, the label/gas helpers), which other PRs may change: derive and
+    ///         schedule the batch only from the merged `main` commit with this test green, ideally after the deploy,
+    ///         and cancel and reschedule if the address moves before execution.
+    function testYoVaultsMetaAddress() public {
+        address derived = _derive(
+            type(YoVaultsMetaBalanceAdapter).creationCode, "YoVaultsMetaBalanceAdapter", DeploySalts.YO_VAULTS_META
+        );
+        emit log_named_address("YoVaultsMeta CREATE2 address", derived);
+        assertEq(
+            derived,
+            0x64Fb8b1d04b28B0389beEB76E844e2935E25f4b3,
+            "YoVaultsMeta address moved - re-derive the governance batch calldata"
         );
     }
 

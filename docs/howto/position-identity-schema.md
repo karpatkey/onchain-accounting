@@ -1039,6 +1039,7 @@ schemas are in the next section and in the per-adapter table above.)
 | `morpho-markets` | `MORPHO_MARKETS` | `MorphoMarketsMetaBalanceAdapter` — Morpho isolated-market collateral/supply/borrow |
 | `euler-vaults` | `EULER_VAULTS` | `EulerVaultsMetaBalanceAdapter` — Euler V2 vault supply/collateral/borrow |
 | `symbiotic-vaults` | `SYMBIOTIC_VAULTS` | `SymbioticVaultsMetaBalanceAdapter` — Symbiotic **ERC-4626** vault supply. NOT Symbiotic core vaults (epoch-based `activeBalanceOf` + withdrawal queue), which this adapter does not value |
+| `yo-vaults` | `YO_VAULTS` | `YoVaultsMetaBalanceAdapter` — YO Protocol vaults (`YoVault`): held shares + pending escrowed redeem |
 | `gearbox-v3-markets` | `GEARBOX_V3_MARKETS` | `GearboxV3MarketsMetaBalanceAdapter` — Gearbox V3 passive-pool deposit |
 | `gearbox-v3-credit-accounts` | `GEARBOX_V3_CREDIT_ACCOUNTS` | `GearboxV3CreditAccountsMetaBalanceAdapter` — Gearbox V3 credit-account collateral/debt |
 | `compound-v3-comets` | `COMPOUND_V3_COMETS` | `CompoundV3CometsMetaBalanceAdapter` — Compound V3 Comet base/collateral/rewards |
@@ -1091,6 +1092,7 @@ rather than overloading an existing one.
 | `morpho-markets` | `(bytes32 marketId)` |
 | `euler-vaults` | `(address vault)` |
 | `symbiotic-vaults` | `(address vault)` |
+| `yo-vaults` | `(address vault)` — static; up to two legs (held `isLocked=false` + pending `isLocked=true`) sharing it |
 | `gearbox-v3-markets` | `(address market)` |
 | `gearbox-v3-credit-accounts` | `(address creditAccount)` |
 | `compound-v3-comets` | `(address comet)` |
@@ -1255,6 +1257,7 @@ decodes use `AbiCoder.defaultAbiCoder()` from ethers.js. Protocol ID constants c
 | `MorphoMarketsMeta` | `morpho-markets` | `Collateral`, `Supplied`, `Borrowed` |
 | `EulerVaultsMeta` | `euler-vaults` | `Supplied`, `Collateral`, `Borrowed` |
 | `SymbioticVaultsMeta` | `symbiotic-vaults` | `Supplied` |
+| `YoVaultsMeta` | `yo-vaults` | `Supplied` (held, unlocked) + `Supplied` (pending redeem, `isLocked`) |
 | `GearboxV3MarketsMeta` | `gearbox-v3-markets` | `Supplied` |
 | `FluidFTokensMeta` | `fluid-ftokens` | `Supplied` |
 | `FluidVaultsMeta` | `fluid-vaults` | `Collateral`, `Borrowed` |
@@ -1664,6 +1667,7 @@ the same on every chain. Default `positionId` = base `_instancePositionId` (inst
 | `ConvexCurveLPStakingMetaBalanceAdapter` | `convex-curve-lp-staking` | `"Convex"` | `["Staking", "Curve LP", "<coins>"]` (derived) | `abi.encode(address rewarder)` | Staking / Rewards | `["Convex","Staking","Curve LP","DAI/USDC/USDT"]` |
 | `EulerVaultsMetaBalanceAdapter` | `euler-vaults` | `"Euler"` | `["Vault", <vault.name()>]` (derived) | `abi.encode(address vault)` | Collateral/Supplied / Borrowed | `["Euler","Vault","eUSDC"]` |
 | `SymbioticVaultsMetaBalanceAdapter` | `symbiotic-vaults` | `"Symbiotic"` | `["Vault", <vault.name()>]` (derived) | `abi.encode(address vault)` | `Supplied` | `["Symbiotic","Vault","KPK USDC LiquidLane"]` |
+| `YoVaultsMetaBalanceAdapter` | `yo-vaults` | `"YO"` | `["Vault", <vault.name()>]` (derived) | `abi.encode(address vault)` | `Supplied` ×2 (held + pending, told apart by `isLocked`) | `["YO","Vault","yoUSD Edge"]` |
 | `FluidFTokensMetaBalanceAdapter` | `fluid-ftokens` | `"Fluid"` | `["Lending", <fToken.symbol()>]` (derived) | `abi.encode(address fToken)` | Supplied | `["Fluid","Lending","fUSDC"]` |
 | `FluidVaultsMetaBalanceAdapter` | `fluid-vaults` | `"Fluid"` | `["Vault", "<collateral>/<debt> #<vaultId>"]` (derived) | `abi.encode(address vault)` | Collateral / Borrowed | `["Fluid","Vault","wstETH/USDC #4"]` |
 | `GearboxV3MarketsMetaBalanceAdapter` | `gearbox-v3-markets` | `"Gearbox"` | `["Market", <market.name()>]` (derived) | `abi.encode(address market)` | Supplied | `["Gearbox","Market","dDAI"]` |

@@ -359,6 +359,7 @@ script/verify/verify-all.sh
 - `GearboxV3MarketsMetaBalanceAdapter` - Gearbox kpk-curated markets
 - `GearboxV3CreditAccountsMetaBalanceAdapter` - Gearbox credit accounts
 - `SymbioticVaultsMetaBalanceAdapter` - Symbiotic ERC-4626 vaults, single `Supplied` leg valued via `previewRedeem` (NOT Symbiotic CORE vaults, which are epoch-based and need their own adapter)
+- `YoVaultsMetaBalanceAdapter` - YO Protocol vaults (`YoVault`, e.g. yoUSD Edge), up to two `Supplied` legs per vault in `vault.asset()`: held shares (`previewRedeem`, `isLocked=false`) and the pending escrowed redeem (`isLocked=true`); CREATE2 NAV-only
 - `StakeWiseV3VaultsMetaBalanceAdapter` - StakeWise V3 vaults, `Staking` (vault shares) + `Borrowed` (osToken debt) legs per vault (osETH/osGNO themselves are Custom-priced ERC20s via `osToken_CustomPriceFeed`, not balance adapters)
 - `StaderWithdrawalQueueBalanceAdapter` - Stader pending unstake requests
 - `KelpWithdrawalQueueBalanceAdapter` - Kelp DAO rsETH exit queue (multi-asset; payout assets discovered via `lrtConfig().getSupportedAssetList()`)

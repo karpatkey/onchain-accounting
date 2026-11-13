@@ -508,8 +508,10 @@ abstract contract MetaBalanceAdapter is IMetaBalanceAdapter, IPositionDescribabl
     ///         `balanceAdapter = address(this)`), `isLocked = false`, and `positionInstanceId = bytes32(0)`.
     /// @dev The shared leg builder for every meta-adapter — each instance read calls this instead of inlining a
     ///      9-field struct literal (which also keeps per-adapter frames under the via_ir stack limit). Meta-adapter
-    ///      positions are never locked and carry no ephemeral per-item id (the instance coordinate lives in
-    ///      `positionId`), so those two fields are fixed here.
+    ///      legs carry no ephemeral per-item id (the instance coordinate lives in `positionId`), so
+    ///      `positionInstanceId` stays `bytes32(0)`. `isLocked` defaults to `false`; an adapter that reports a locked
+    ///      leg sets it on the returned struct after the call (e.g. `YoVaultsMetaBalanceAdapter`'s pending-redeem
+    ///      leg, ADR 0016).
     function _leg(
         INAVCalculator.Asset memory asset,
         uint256 amount,

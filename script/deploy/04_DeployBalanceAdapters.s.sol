@@ -30,6 +30,7 @@ import {EulerVaultsMetaBalanceAdapter} from "../../src/balances/MetaBalanceAdapt
 import {
     SymbioticVaultsMetaBalanceAdapter
 } from "../../src/balances/MetaBalanceAdapters/SymbioticVaultsMetaBalanceAdapter.sol";
+import {YoVaultsMetaBalanceAdapter} from "../../src/balances/MetaBalanceAdapters/YoVaultsMetaBalanceAdapter.sol";
 import {
     AaveSavingsWalletMetaBalanceAdapter
 } from "../../src/balances/MetaBalanceAdapters/walletYield/AaveSavingsWalletMetaBalanceAdapter.sol";
@@ -217,6 +218,7 @@ contract DeployBalanceAdapters is BaseDeployScript {
         _deployIfEnabled("MorphoMarketsMeta"); // Meta-adapter: all Morpho markets; marketId set configured on NAV (ADR 0010)
         _deployIfEnabled("EulerVaultsMeta"); // Meta-adapter: all Euler V2 vaults (EulerEarn + core eVaults); supply/collateral + borrow legs; instance set on NAV (ADR 0010)
         _deployIfEnabled("SymbioticVaultsMeta"); // Meta-adapter: Symbiotic ERC-4626 vaults (NOT core vaults); single Supplied leg; instance set on NAV (ADR 0010)
+        _deployIfEnabled("YoVaultsMeta"); // Meta-adapter: YO vaults (YoVault); held + pending-redeem legs; instance set on NAV (ADR 0010)
 
         // --- Wallet-held yield tokens (ADR 0010 meta family; one adapter per protocol) ---
         // Each reports the RAW `balanceOf` of a token that is itself a registered, priced NAV asset, so the
@@ -462,6 +464,11 @@ contract DeployBalanceAdapters is BaseDeployScript {
         // Symbiotic Vaults meta-adapter (ERC-4626 Symbiotic vaults only, NOT core vaults; instance set on NAV, ADR 0010)
         if (_equals(adapterName, "SymbioticVaultsMeta")) {
             return _deploySymbioticVaultsMeta(adapterName, navCalculator);
+        }
+
+        // YO vaults meta-adapter (YoVault: held shares + pending escrowed redeems; instance set on NAV, ADR 0010)
+        if (_equals(adapterName, "YoVaultsMeta")) {
+            return _deployYoVaultsMeta(adapterName, navCalculator);
         }
 
         // Wallet-held yield-token family. One delegation rather than seventeen branches here; address(0) means
@@ -733,6 +740,18 @@ contract DeployBalanceAdapters is BaseDeployScript {
             DeploySalts.EULER_VAULTS_META
         );
         return adapter;
+    }
+
+    /// @notice CREATE2, NAV-only constructor: one fleet-wide address, pre-computable before the deploy (pinned in
+    ///         `test/nav/Create2FleetWideAddresses.t.sol`), so the governance batch registering it can be prepared
+    ///         in advance.
+    function _deployYoVaultsMeta(string memory, address navCalculator) internal returns (address) {
+        return _create2NavOnly(
+            type(YoVaultsMetaBalanceAdapter).creationCode,
+            navCalculator,
+            "YoVaultsMetaBalanceAdapter",
+            DeploySalts.YO_VAULTS_META
+        );
     }
 
     function _deploySymbioticVaultsMeta(string memory, address navCalculator) internal returns (address) {

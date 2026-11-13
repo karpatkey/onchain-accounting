@@ -37,7 +37,8 @@ the app.
    discriminator.
 
 5. **Uniform rule:** `isLocked = non-withdrawable`. `isLocked = false` only when the leg is
-   **fully liquid / withdrawable now**. The claimable leg holds the withdrawable portion; the
+   **fully liquid / withdrawable now** (in the protocol-mechanics sense: no queue, cooldown or
+   finalization gate stands in the way; a vault's idle liquidity is not modelled, see Notes). The claimable leg holds the withdrawable portion; the
    locked leg holds the pending / cooling portion ("partial = locked" — any not-yet-withdrawable
    amount lands on the locked leg). For the staking-with-cooldown adapters (Aave SM, Umbrella) the
    same rule applies: active stake is non-withdrawable (it needs a cooldown first) so it is
@@ -85,6 +86,7 @@ The locked portion is the amount for which the predicate below is true.
 | Ethena | single cooldown: locked until `block.timestamp >= cooldownEnd` (or `cooldownDuration == 0`) |
 | Aave SM | active stake is non-withdrawable (needs cooldown) ⇒ locked; only a cooldown elapsed-and-in-window is the unlocked leg |
 | Umbrella | active stake is non-withdrawable (needs cooldown) ⇒ locked; only a cooldown elapsed-and-in-window is the unlocked leg |
+| YO Vaults | shares escrowed by `requestRedeem` (`pendingRedeemRequest`) are locked until the YO operator's `fulfillRedeem`, which pays the receiver directly (no claimable state); shares still held are the unlocked leg |
 
 For the staking-with-cooldown adapters (Aave SM, Umbrella) the uniform rule `isLocked =
 non-withdrawable` applies just as it does to the queues: active stake cannot be withdrawn without
@@ -118,6 +120,13 @@ adapter) so the app can read the queue contracts directly and render an individu
 exposes the claimable/locked split; the app drills down to the request level.
 
 ## Notes / known limitations
+
+- **Vault liquidity is not modelled.** `isLocked` follows protocol mechanics (a redeem queue, a
+  cooldown, a finalization gate), not a vault's momentary idle liquidity. Held ERC-4626 vault
+  shares (Morpho, Euler, Symbiotic, YO) report `isLocked = false` even when the vault could not
+  pay a full redemption at once: that depends on other depositors' flows and changes block by
+  block, so it would make the flag flicker without saying anything about the position itself.
+  For YO the queue IS modelled: shares already escrowed by `requestRedeem` are the locked leg.
 
 - **StakeWise claim delay.** StakeWise also enforces a post-checkpoint `claimExitedAssets` delay
   (a fixed protocol constant, ~24h on V3 mainnet) after a position's `timestamp`. There is no

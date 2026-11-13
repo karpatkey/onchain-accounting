@@ -187,9 +187,11 @@ contract Create2FleetWideAddressesTest is Test {
     }
 
     /// @notice NOT YET DEPLOYED. Pins the address the yoUSD Edge governance batch registers
-    ///         (`addMetaBalanceAdapter(<this>, [Edge])`, scheduled on the TimelockController BEFORE the deploy), so a
-    ///         bytecode change that would move it — and silently invalidate the scheduled calldata — fails here. If it
-    ///         moves on purpose, re-derive the batch calldata in the PR before scheduling.
+    ///         (`addMetaBalanceAdapter(<this>, [Edge])` through the TimelockController), so a bytecode change that would
+    ///         move it fails here. The address also depends on the shared bases this adapter inherits or inlines
+    ///         (`MetaBalanceAdapter`, `ERC4626RedeemLib`, the label/gas helpers), which other PRs may change: derive and
+    ///         schedule the batch only from the merged `main` commit with this test green, ideally after the deploy,
+    ///         and cancel and reschedule if the address moves before execution.
     function testYoVaultsMetaAddress() public {
         address derived = _derive(
             type(YoVaultsMetaBalanceAdapter).creationCode, "YoVaultsMetaBalanceAdapter", DeploySalts.YO_VAULTS_META

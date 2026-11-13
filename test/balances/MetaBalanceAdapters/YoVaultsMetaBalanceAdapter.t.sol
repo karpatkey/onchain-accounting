@@ -226,7 +226,7 @@ contract YoVaultsMetaBalanceAdapterTest is Test {
         assertApproxEqAbs(adapter.pendingValue(address(vault), alice), gross * 1e18 / (1e18 + fee), 1);
     }
 
-    function testFuzz_pending_neverAboveEitherBound(uint96 shares, uint64 newPrice, uint64 fee) public {
+    function testFuzz_pending_equalsMinOfBounds(uint96 shares, uint64 newPrice, uint64 fee) public {
         vm.assume(shares > 0 && newPrice > 0);
         fee = uint64(bound(fee, 0, 1e17 - 1));
         vault.setFee(fee);
@@ -237,6 +237,48 @@ contract YoVaultsMetaBalanceAdapterTest is Test {
         uint256 v = adapter.pendingValue(address(vault), alice);
         assertLe(v, _net(gross, fee));
         assertLe(v, vault.previewRedeem(shares));
+        uint256 current = vault.previewRedeem(shares);
+        uint256 reserved = _net(gross, fee);
+        assertEq(v, reserved < current ? reserved : current, "pending == min(net reservation, previewRedeem)");
+    }
+
+    /// @dev YoVault charges the withdrawal fee at FULFILMENT, at the live rate, on the gross reservation stored at
+    ///      request time: a fee change while the request is pending must be reflected (both bounds use the live fee).
+    function test_pending_feeChangedWhilePending_usesLiveFee() public {
+        uint256 shares = 5_000e6;
+        uint256 gross = vault.convertToAssets(shares);
+        vault.setPending(alice, gross, shares);
+        uint256 before = adapter.pendingValue(address(vault), alice);
+        assertEq(before, _net(gross, 1e13));
+
+        vault.setFee(5e16); // raised to 5% while pending
+        assertEq(adapter.pendingValue(address(vault), alice), _net(gross, 5e16));
+        assertLt(adapter.pendingValue(address(vault), alice), before);
+
+        vault.setFee(0); // lowered to 0 while pending: reports the full reservation, never more
+        assertEq(adapter.pendingValue(address(vault), alice), gross);
+    }
+
+    /// @dev The NAV-configured instance set (no-arg `getAdapterPositions`): a vault whose pending read reverts is
+    ///      dropped on its own; the other vault's legs are unaffected (per-instance isolation).
+    function test_twoVaults_brokenVaultDropsOnlyItsOwnLegs() public {
+        MockYoVault other = new MockYoVault(address(usdc));
+        bytes32[] memory ins = new bytes32[](2);
+        ins[0] = bytes32(uint256(uint160(address(vault))));
+        ins[1] = bytes32(uint256(uint160(address(other))));
+        nav.setMetaInstances(address(adapter), ins);
+
+        vault.setBalance(alice, 10_000e6);
+        other.setBalance(alice, 3_000e6);
+        other.setPending(alice, other.convertToAssets(1_000e6), 1_000e6);
+        assertEq(adapter.getAdapterPositions(alice, address(0)).length, 3);
+
+        other.setReverts(true, false, false);
+        INAVCalculator.PositionBalance[] memory legs = adapter.getAdapterPositions(alice, address(0));
+        assertEq(legs.length, 1, "only the healthy vault's held leg survives");
+        assertEq(legs[0].amount, vault.previewRedeem(10_000e6));
+        assertEq(legs[0].positionId, abi.encode(address(vault)));
+        assertFalse(legs[0].isLocked);
     }
 
     // ---- fail closed ----

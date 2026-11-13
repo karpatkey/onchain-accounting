@@ -2,6 +2,7 @@
 pragma solidity ^0.8;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {BalanceAdapterTestBase} from "test/balances/BalanceAdapterTestBase.fork.sol";
 import {YoVaultsMetaBalanceAdapter} from "src/balances/MetaBalanceAdapters/YoVaultsMetaBalanceAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
@@ -15,6 +16,7 @@ interface IYoVaultFull {
     function deposit(uint256 assets, address receiver) external returns (uint256);
     function requestRedeem(uint256 shares, address receiver, address owner) external returns (uint256);
     function fulfillRedeem(address receiver, uint256 shares, bool atCurrentPrice) external;
+    function cancelRedeem(address receiver) external;
     function updateWithdrawFee(uint256 newFee) external;
     function pendingRedeemRequest(address user) external view returns (uint256, uint256);
     function previewRedeem(uint256 shares) external view returns (uint256);
@@ -206,6 +208,102 @@ contract YoVaultsMetaBalanceAdapterForkTest is BalanceAdapterTestBase {
         assertEq(first, gross, "field 0 is the gross reserved assets");
         assertEq(second, shares, "field 1 is the escrowed shares");
         assertEq(edge.balanceOf(SAFE), 0, "shares left the Safe");
+    }
+
+    // ─── settlement edge cases (adapter reads only, no NAV call) ────────────────────────────────────────────────────
+
+    /// @notice A pending entry settled in 3 partial slices pays at most (slices - 1) wei less than the reported pending
+    ///         leg: YoVault rounds the fee up per slice, the adapter rounds it up once on the whole reservation.
+    function test_fork_partialFulfil_payoutWithinSlicesMinusOne() public {
+        uint256 shares = _deposit(DEPOSIT);
+        _requestQueued(shares);
+        (uint256 reported, uint256 legs) = _pendingLeg();
+        assertEq(legs, 1);
+
+        uint256 before = IERC20(USDC).balanceOf(SAFE);
+        _fulfill(shares / 3, false);
+        (uint256 midLeg, uint256 midLegs) = _pendingLeg();
+        assertEq(midLegs, 1, "remainder still pending");
+        assertLe(midLeg, reported);
+        _fulfill(shares / 3, false);
+        (, uint256 pendingShares) = edge.pendingRedeemRequest(SAFE);
+        _fulfill(pendingShares, false);
+        uint256 paid = IERC20(USDC).balanceOf(SAFE) - before;
+
+        (, legs) = _pendingLeg();
+        assertEq(legs, 0, "fully settled");
+        assertLe(paid, reported, "payout never exceeds the reported leg");
+        assertLe(reported - paid, 2, "over-report bounded by (slices - 1) wei");
+    }
+
+    /// @notice `cancelRedeem` returns the escrowed shares: the locked leg disappears and the held leg comes back at
+    ///         `previewRedeem(shares)`, which is never below the pending value it replaces.
+    function test_fork_cancelRedeem_lockedLegReturnsToHeld() public {
+        uint256 shares = _deposit(DEPOSIT);
+        _requestQueued(shares);
+        (uint256 pending,) = _pendingLeg();
+        assertEq(_heldLeg(), 0);
+
+        vm.prank(yoOwner);
+        edge.cancelRedeem(SAFE);
+
+        (, uint256 legs) = _pendingLeg();
+        assertEq(legs, 0, "no locked leg after cancel");
+        assertEq(edge.balanceOf(SAFE), shares, "shares returned to the Safe");
+        assertEq(_heldLeg(), edge.previewRedeem(shares));
+        assertGe(_heldLeg(), pending, "cancel can only step the value up");
+    }
+
+    /// @notice The pending entry is keyed on the receiver and accumulates: after the Safe queues its own shares, a
+    ///         third party may queue ITS shares with `receiver = Safe`. The Safe's locked leg becomes
+    ///         `min(net(a1 + a2), previewRedeem(s1 + s2))` (a donation it is paid on fulfilment), the third party
+    ///         reports nothing, and the payout to the Safe equals the reported leg.
+    function test_fork_thirdPartyRequest_accumulatesOnReceiver() public {
+        uint256 s1 = _deposit(DEPOSIT);
+        _requestQueued(s1);
+        (uint256 own,) = _pendingLeg();
+
+        address stranger = makeAddr("stranger");
+        deal(USDC, stranger, DEPOSIT);
+        vm.startPrank(stranger);
+        IERC20(USDC).approve(EDGE, DEPOSIT);
+        uint256 s2 = edge.deposit(DEPOSIT, stranger);
+        deal(USDC, EDGE, 0);
+        assertEq(edge.requestRedeem(s2, SAFE, stranger), 0, "escrow path not exercised");
+        vm.stopPrank();
+
+        (uint256 assets, uint256 shares) = edge.pendingRedeemRequest(SAFE);
+        assertEq(shares, s1 + s2, "one accumulated entry for the receiver");
+        uint256 fee = edge.feeOnWithdraw();
+        uint256 reservedNet = assets - Math.mulDiv(assets, fee, fee + 1e18, Math.Rounding.Ceil);
+        uint256 current = edge.previewRedeem(shares);
+        (uint256 pending, uint256 legs) = _pendingLeg();
+        assertEq(legs, 1, "still one locked leg");
+        assertEq(pending, reservedNet < current ? reservedNet : current, "leg == min(net(a1+a2), previewRedeem(s1+s2))");
+        assertGt(pending, own, "the third party's request grew the Safe's leg");
+        assertEq(adapter.pendingValue(EDGE, stranger), 0, "the requester no longer reports it");
+        assertEq(adapter.heldValue(EDGE, stranger), 0);
+
+        uint256 before = IERC20(USDC).balanceOf(SAFE);
+        _fulfill(shares, false);
+        assertEq(IERC20(USDC).balanceOf(SAFE) - before, pending, "payout == reported pending leg");
+    }
+
+    /// @notice YoVault charges the withdrawal fee at FULFILMENT, at the live rate: a fee raised while the request is
+    ///         pending lowers the pending leg, and the payout equals the lowered leg.
+    function test_fork_feeChangedWhilePending_legTracksLiveFee() public {
+        uint256 shares = _deposit(DEPOSIT);
+        _requestQueued(shares);
+        (uint256 atOldFee,) = _pendingLeg();
+
+        vm.prank(yoOwner);
+        edge.updateWithdrawFee(5e16);
+        (uint256 atNewFee,) = _pendingLeg();
+        assertLt(atNewFee, atOldFee, "a higher live fee must lower the pending leg");
+
+        uint256 before = IERC20(USDC).balanceOf(SAFE);
+        _fulfill(shares, false);
+        assertEq(IERC20(USDC).balanceOf(SAFE) - before, atNewFee, "payout == leg at the live fee");
     }
 
     // ─── acceptance criteria ───────────────────────────────────────────────────────────────────────────────────────

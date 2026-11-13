@@ -26,7 +26,7 @@ src/
 │   ├── IBalances.sol
 │   ├── IBalanceAdapter.sol
 │   ├── IMetaBalanceAdapter.sol  # Extends above; per-instance fan-out
-│   ├── MetaBalanceAdapter.sol   # Abstract base for all 23 meta-adapters (identity + _leg hooks)
+│   ├── MetaBalanceAdapter.sol   # Abstract base for every meta-adapter (identity + _leg hooks)
 │   ├── IAssistedBalanceAdapter.sol # Marker for the assistant-fed family (+ ADR 0030 keeper path) (ERC165)
 │   ├── IPositionDescribable.sol # Human-readable labels (ERC165)
 │   ├── LabelLib.sol             # Fail-open ERC20 name()/symbol() reads for labels
@@ -195,7 +195,7 @@ MIT licence and recording its pinned upstream rev in a header comment — see
 
 ## Summary
 
-- **Balances**: 24 meta-adapters + 12 per-instance singletons (plus the ERC20 default adapter) covering Aave, Morpho, Euler, Balancer, Uniswap, Compound, Curve, Convex, Fluid, Gearbox, StakeWise, Symbiotic, YO, Lido, Kelp, Stader, Cap, Polygon PoS staking, and more — all returning typed `PositionBalance` structs.
+- **Balances**: 25 meta-adapters + 12 per-instance singletons (plus the ERC20 default adapter) covering Aave, Morpho, Euler, Balancer, Uniswap, Compound, Curve, Convex, Fluid, Gearbox, StakeWise, Symbiotic, YO, Lido, Kelp, Stader, Cap, Polygon PoS staking, and more — all returning typed `PositionBalance` structs.
 - **Prices**: N feeds per asset (Chainlink / Redstone / API3 / Custom); freshest-wins selector; custom adapters cover LSTs, yield-bearing stables, RTokens, and cross-rates.
 - **NAV**: `NAVCalculator` (UUPS) = Prices + Balances. One contract registers assets + feeds + adapters and computes account NAV in any quote currency, and exposes human-readable position labels via `IPositionDescribable` through its verbose read methods.
 - **Bridge**: Escrow + invoice system + adapters (Across, CCIP, CCTP, Stargate, Gnosis, Superchain); destination release via `releaseByInvoiceId`; source closure via `markInvoiceCompleted`.

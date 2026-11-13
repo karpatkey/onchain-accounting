@@ -718,7 +718,7 @@ contract ProtocolNameConsistencyTest is Test {
 
     /// @notice Distinct protocols must not collide on one display name — otherwise a consumer grouping by name
     ///         would merge two genuinely different protocols, the mirror image of the Umbrella bug.
-    /// @dev **Known limitation — this list is hand-maintained.** It covers all 26 `ProtocolNames` constants today,
+    /// @dev **Known limitation — this list is hand-maintained.** It covers all 37 `ProtocolNames` constants today,
     ///      but nothing forces it to stay complete: adding a constant without adding it here passes silently, so a
     ///      duplicate introduced by copy-pasting a neighbour (say `AAVE_V4 = "Aave V3"`) would never be compared
     ///      against anything and this test would report green on exactly the collision it exists to find. There is
@@ -728,7 +728,7 @@ contract ProtocolNameConsistencyTest is Test {
     ///      `PROTOCOL_NAME_COUNT` pinned to the array's own length would be a tautology, not a guard. So: when you
     ///      add a `ProtocolNames` constant, add it to this array by hand. Revisit once `foundry.toml` is free.
     function test_distinctProtocolsHaveDistinctNames() public pure {
-        string[26] memory names = [
+        string[37] memory names = [
             ProtocolNames.WALLET,
             ProtocolNames.AAVE_V3,
             ProtocolNames.SPARK,
@@ -754,7 +754,18 @@ contract ProtocolNameConsistencyTest is Test {
             ProtocolNames.ETHERFI,
             ProtocolNames.ETHENA,
             ProtocolNames.NEXUS_MUTUAL,
-            ProtocolNames.MERKL
+            ProtocolNames.MERKL,
+            ProtocolNames.AAVE_V4,
+            ProtocolNames.SKY,
+            ProtocolNames.MAPLE,
+            ProtocolNames.RESERVE,
+            ProtocolNames.LIQUID_COLLECTIVE,
+            ProtocolNames.ROCKET_POOL,
+            ProtocolNames.COINBASE,
+            ProtocolNames.ANKR,
+            ProtocolNames.RENZO,
+            ProtocolNames.POLYGON,
+            ProtocolNames.YO
         ];
 
         for (uint256 i = 0; i < names.length; i++) {

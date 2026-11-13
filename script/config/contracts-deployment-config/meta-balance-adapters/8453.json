@@ -1,36 +1,36 @@
 {
   "AaveV3InstancesMeta": {
     "enabled": true,
-    "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Aave V3 instance. Supersedes AaveV3_Base, disabled below.",
+    "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Aave V3 instance. Supersedes AaveV3_Base (removed from config 2026-11).",
     "constructor": {}
   },
   "MorphoMarketsMeta": {
     "enabled": true,
-    "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Morpho Blue market. Supersedes MorphoMarket_* adapters, disabled below.",
+    "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Morpho Blue market. Supersedes MorphoMarket_* adapters (removed from config 2026-11).",
     "constructor": {
       "morpho": "0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb"
     }
   },
   "BalancerV3PoolsMeta": {
     "enabled": true,
-    "$comment": "Meta-adapter (ADR 0010): wallet-held Balancer V3 LP. Supersedes BalancerV3_GHO_USDC pool legs, disabled below.",
+    "$comment": "Meta-adapter (ADR 0010): wallet-held Balancer V3 LP. Supersedes BalancerV3_GHO_USDC pool legs (removed from config 2026-11).",
     "constructor": {}
   },
   "BalancerV3GaugesMeta": {
     "enabled": true,
-    "$comment": "Meta-adapter (ADR 0010): gauge-staked Balancer V3 LP + rewards. Supersedes BalancerV3_GHO_USDC gauge legs, disabled below.",
+    "$comment": "Meta-adapter (ADR 0010): gauge-staked Balancer V3 LP + rewards. Supersedes BalancerV3_GHO_USDC gauge legs (removed from config 2026-11).",
     "constructor": {
       "balancerMinter": "0x0c5538098EBe88175078972F514C9e101D325D4F"
     }
   },
   "FluidFTokensMeta": {
     "enabled": true,
-    "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Fluid fToken. Supersedes Fluid_fToken_* adapters, disabled below.",
+    "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Fluid fToken. Supersedes Fluid_fToken_* adapters (removed from config 2026-11).",
     "constructor": {}
   },
   "CompoundV3CometsMeta": {
     "enabled": true,
-    "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Compound V3 comet. Supersedes CompoundV3_* adapters, disabled below.",
+    "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Compound V3 comet. Supersedes CompoundV3_* adapters (removed from config 2026-11).",
     "constructor": {
       "compoundRewards": "0x123964802e6ABabBE1Bc9547D72Ef1B69B00A6b1",
       "rewardToken": "0x9e1028F5F1D5eDE59748FFceE5532509976840E0"

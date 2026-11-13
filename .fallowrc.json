@@ -1,7 +1,7 @@
 {
   "$schema": "https://raw.githubusercontent.com/fallow-rs/fallow/main/schema.json",
   "entry": ["script/test/nav-backtest.ts"],
-  "ignorePatterns": ["lib/**", "app/**"],
+  "ignorePatterns": ["lib/**"],
   "rules": {
     "unused-files": "error",
     "unused-exports": "error",

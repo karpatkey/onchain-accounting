@@ -192,11 +192,17 @@ forge script script/deploy/05_DeployBridgeAdapters.s.sol --chain-id $CHAIN_ID --
 #      still enforce the split on-chain (addBalanceAdapters reverts for a meta-adapter, and vice-versa).
 forge script script/deploy/06_Configure.s.sol --chain-id $CHAIN_ID --account $DEPLOYER_NAME --broadcast
 
-# 07 — LAST: the role handoff. Hand DEFAULT_ADMIN + MANAGER to the security council Safe, renounce the deployer's
-#      roles. Everything needing deployer privileges, 08 included, must already have run.
+# 07 — role handoff straight to the security council Safe (renounces the deployer's roles). Everything needing
+#      deployer privileges, 08 included, must already have run. For the production end state (the NAV behind the
+#      timelock) skip 07 and follow "NAV behind the timelock" below instead.
 DEPLOYER_EOA=0xYourDeployerEOA \
 forge script script/deploy/07_TransferAdminToSecurityCouncil.s.sol --chain-id $CHAIN_ID --account $DEPLOYER_NAME --broadcast
 ```
+
+**NAV behind the timelock (production, instead of `07`).** `11_DeployTimelockController.s.sol` needs both the
+deployer and the security-council Safe to hold the NAV's admin role when it runs, so it cannot follow `07`. Grant
+the Safe the NAV's roles from the deployer, then run `11` and have the Safe sign the batch it writes. The exact
+commands, the options and the bridge-contract caveat are in the `11` section of `script/deploy/README.md`.
 
 Each script reads from `script/config/chains/<chainId>.json` plus the relevant per-concern, per-chain file — `03` reads `contracts-deployment-config/custom-price-feeds/<chainId>.json`, `04` reads `contracts-deployment-config/balance-adapters/<chainId>.json` + `contracts-deployment-config/meta-balance-adapters/<chainId>.json`, `05` reads `contracts-deployment-config/bridge-adapters/<chainId>.json`, `RegisterAssets` reads `nav-config/assets-and-price-feeds/<chainId>.json`, and `06` reads `nav-config/balance-adapters/<chainId>.json` + `nav-config/meta-balance-adapters/<chainId>.json` + `contracts-deployment-config/bridge-escrow/<chainId>.json` (accounts + assets) — and writes deployed addresses to `script/config/deployments/<chainId>.json` (the `03`/`04`/`05` per-feed/per-adapter writes happen on every run; the `01`/`02` impl/proxy writes require `PERSIST_DEPLOYMENTS=1` — **and so do `04`'s three `*Assistant` contracts and `08`'s registry, which are top-level keys written through the gated `saveDeployedAddress`, so run those steps with the flag or their addresses are not recorded and a re-run deploys duplicates**). Re-running is safe: already-deployed addresses are skipped.
 

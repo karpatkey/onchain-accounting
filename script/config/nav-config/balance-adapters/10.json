@@ -1,16 +1,4 @@
 {
-  "AaveV3_Optimism": {
-    "enabled": false
-  },
-  "CompoundV3_USDC": {
-    "enabled": false
-  },
-  "CompoundV3_USDT": {
-    "enabled": false
-  },
-  "CompoundV3_WETH": {
-    "enabled": false
-  },
   "MerklRewards": {
     "enabled": true
   }

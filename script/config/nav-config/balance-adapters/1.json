@@ -1,10 +1,4 @@
 {
-  "AaveV3_Core": {
-    "enabled": false
-  },
-  "AaveV3_Prime": {
-    "enabled": false
-  },
   "SparkLend": {
     "enabled": true
   },
@@ -26,145 +20,6 @@
     "enabled": false,
     "deregister": true,
     "$comment": "RETIRED, and this entry is load-bearing rather than documentation. The pre-split combined Cap adapter (0x5B50A5FF...) is REGISTERED on the live mainnet NAV. It is superseded by CapStablecoin + CapSavings above. `deregister: true` makes 06_Configure call removeBalanceAdapters for it; without that an incremental deploy leaves all three registered and DOUBLE-COUNTS both Cap legs. Delete this entry only once the adapter is confirmed deregistered on every chain that had it."
-  },
-  "MorphoVault_kpkETHPrime_V1": {
-    "enabled": false
-  },
-  "MorphoVault_kpkETHPrime_V2": {
-    "enabled": false
-  },
-  "MorphoVault_kpkUSDCPrime_V1": {
-    "enabled": false
-  },
-  "MorphoVault_kpkUSDCPrime_V2": {
-    "enabled": false
-  },
-  "MorphoVault_kpkEURC_V1": {
-    "enabled": false,
-    "$comment": "kpk EURC vault (MetaMorpho ERC4626). Superseded by MorphoVaultsMeta (ADR 0010); vault still queried via instances."
-  },
-  "MorphoMarket_wstETH_USDC": {
-    "enabled": false
-  },
-  "MorphoMarket_cbBTC_USDC": {
-    "enabled": false
-  },
-  "MorphoMarket_wstUSR_USDC": {
-    "enabled": false
-  },
-  "MorphoMarket_ETHPlus_USDC": {
-    "enabled": false
-  },
-  "MorphoMarket_WBTC_USDC": {
-    "enabled": false
-  },
-  "MorphoMarket_RLP_USDC": {
-    "enabled": false
-  },
-  "MorphoMarket_syrupUSDC_USDC": {
-    "enabled": false
-  },
-  "MorphoMarket_sUSDS_USDT": {
-    "enabled": false
-  },
-  "MorphoMarket_ETHPlus_WETH": {
-    "enabled": false
-  },
-  "MorphoMarket_wstETH_WETH": {
-    "enabled": false
-  },
-  "MorphoMarket_weETH_WETH": {
-    "enabled": false
-  },
-  "MorphoMarket_rsETH_WETH": {
-    "enabled": false
-  },
-  "GearboxMarket_kpkWETH": {
-    "enabled": false
-  },
-  "GearboxMarket_kpkwstETH": {
-    "enabled": false
-  },
-  "BalancerV3_rETH_WETH": {
-    "enabled": false
-  },
-  "BalancerV3_GHO_USDT_USDC": {
-    "enabled": false
-  },
-  "Curve_weETH_WETH": {
-    "enabled": false
-  },
-  "Curve_crvUSD_USDC": {
-    "enabled": false
-  },
-  "Curve_crvUSD_USDT": {
-    "enabled": false
-  },
-  "Curve_RLUSD_USDC": {
-    "enabled": false
-  },
-  "Convex_weETH_WETH": {
-    "enabled": false
-  },
-  "Convex_crvUSD_USDC": {
-    "enabled": false
-  },
-  "Convex_crvUSD_USDT": {
-    "enabled": false
-  },
-  "Convex_RLUSD_USDC": {
-    "enabled": false
-  },
-  "Fluid_fToken_USDC": {
-    "enabled": false
-  },
-  "Fluid_fToken_USDT": {
-    "enabled": false
-  },
-  "Fluid_fToken_WETH": {
-    "enabled": false
-  },
-  "Fluid_fToken_wstETH": {
-    "enabled": false
-  },
-  "Fluid_fToken_GHO": {
-    "enabled": false
-  },
-  "Fluid_fToken_sUSDe": {
-    "enabled": false
-  },
-  "Fluid_Vault_wstETH_USDC": {
-    "enabled": false
-  },
-  "Fluid_Vault_weETH_wstETH": {
-    "enabled": false
-  },
-  "Fluid_Vault_sUSDe_USDC": {
-    "enabled": false
-  },
-  "CompoundV3_USDC": {
-    "enabled": false
-  },
-  "CompoundV3_USDS": {
-    "enabled": false
-  },
-  "CompoundV3_USDT": {
-    "enabled": false
-  },
-  "CompoundV3_WBTC": {
-    "enabled": false
-  },
-  "CompoundV3_WETH": {
-    "enabled": false
-  },
-  "CompoundV3_wstETH": {
-    "enabled": false
-  },
-  "StakeWiseV3Vault_Genesis": {
-    "enabled": false
-  },
-  "StakeWiseV3Vault_MetaVault": {
-    "enabled": false
   },
   "StaderWithdrawalQueue": {
     "enabled": true
@@ -189,21 +44,6 @@
   "StakeWiseV3ExitQueueAssisted": {
     "enabled": true,
     "$comment": "StakeWise V3 exit-queue assisted adapter (ADR 0018/0030). Registered via addBalanceAdapters; reports the account's cached (vault, positionTicket, timestamp) tuples, fed by its assistant or the SUBMITTER_ROLE keeper."
-  },
-  "UniswapV3_WBTC_WETH_3000": {
-    "enabled": false
-  },
-  "UniswapV3_WETH_COW_3000": {
-    "enabled": false
-  },
-  "UniswapV3_USDC_WETH_500": {
-    "enabled": false
-  },
-  "UniswapV3_WETH_USDT_3000": {
-    "enabled": false
-  },
-  "UniswapV3_ETH_sETH2": {
-    "enabled": false
   },
   "MerklRewards": {
     "enabled": true

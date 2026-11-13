@@ -4,7 +4,7 @@ Canonical deployed-address reference for the Onchain Accounting System (NAV). Th
 
 Deployed across **25 chains**: 8 fully configured (custom price feeds + balance adapters) + 17 with the NAV implementation + proxy only.
 
-- **Roles (current, 2026-10-09 — PR #338 timelock handoff complete):** on all 25 chains `DEFAULT_ADMIN_ROLE` + `MANAGER` on the NAV are held by the `TimelockController` `0xAB92EA75D07792915eB1f29259354866B880dFC2` and the security-council Safe `0x8b884f80B3B839F52b6cE168f133e7a5D1f0A537` (5-of-8 on every chain); `AssetKindRegistry` holds `MANAGER` only, by design. The deployer EOA `0xAa5A7C7Ea51F276301f881F9CCB501a1dFeF4F72` holds no role. The Merkl rewards adapter `0xFf2D5A8bf801191eD1292E6DD6792F5D03c5aFBF` is administered by the security-council Safe only. Step list: `script/deploy/PR338_EXECUTION_SHEET.md`; tx record: `script/deploy/PR338_DEPLOY_LOG.md`.
+- **Roles (current, 2026-10-09 — PR #338 timelock handoff complete):** on all 25 chains `DEFAULT_ADMIN_ROLE` + `MANAGER` on the NAV are held by the `TimelockController` `0xAB92EA75D07792915eB1f29259354866B880dFC2` and the security-council Safe `0x8b884f80B3B839F52b6cE168f133e7a5D1f0A537` (5-of-8 on every chain); `AssetKindRegistry` holds `MANAGER` only, by design. The deployer EOA `0xAa5A7C7Ea51F276301f881F9CCB501a1dFeF4F72` holds no role. The Merkl rewards adapter `0xFf2D5A8bf801191eD1292E6DD6792F5D03c5aFBF` is administered by the security-council Safe only. The PR #338 step list and per-transaction log were removed after the migration completed (last present at commit `40ab9caf`).
 - **Bridge:** deployed-but-dormant — only the `BridgeEscrow` implementation is deployed (no proxy, adapters, or wiring).
 - **Polygon zkEVM is intentionally excluded** — the network is being sunset by Polygon, so the system is not deployed there.
 
@@ -23,8 +23,8 @@ stack. Consumers must move to `0x54EaD2A1…`.
 every meta balance adapter did (the shared `MetaBalanceAdapter` base changed), and 17 wallet-yield meta adapters
 were added. Superseded (still on-chain, unused): implementation `0x40e4134849308d53F85A8B685324E2189b13ff7D`,
 PriceFeedLib `0x713e69954e11c2eD19dBB84950674D6a68DBfebc`, NAVRegistryLib
-`0x55b6AA29D296Eb2Ee0e7b76686eaA2e479CA3511`; the old meta-adapter addresses are in
-`script/config/deployments/<chainId>.pre-swap.json`. Per-transaction record: `script/deploy/PR338_DEPLOY_LOG.md`.
+`0x55b6AA29D296Eb2Ee0e7b76686eaA2e479CA3511`; the old meta-adapter addresses were in
+the `script/config/deployments/<chainId>.pre-swap.json` sidecars, removed after the migration (last present at commit `40ab9caf`).
 The throwaway 1/1 ops Safe `0xEEd8dC3c034Be12ff66646cCaAf07D35C43E8AA1` that executed the swaps holds no role.
 
 | Contract | Address |

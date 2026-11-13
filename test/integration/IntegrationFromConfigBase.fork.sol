@@ -1152,7 +1152,7 @@ abstract contract IntegrationFromConfigBase is TestEnvConfigurator {
                 instances[addrs.length + j] = raw[j];
             }
 
-            // No try/catch: the per-instance adapters are disabled in config, so a failed addMetaInstances must
+            // No try/catch: the per-instance adapters are gone from config, so a failed addMetaInstances must
             // fail the run loudly rather than silently omit the migrated positions from snapshots/asserts.
             nav.addMetaInstances(a, instances);
             console2.log("[meta] addMetaInstances", name, instances.length);

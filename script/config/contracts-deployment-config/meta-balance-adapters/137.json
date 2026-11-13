@@ -1,7 +1,7 @@
 {
   "FluidFTokensMeta": {
     "enabled": true,
-    "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Fluid fToken. Supersedes per-instance Fluid_fToken_* adapters, disabled below.",
+    "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Fluid fToken. Supersedes per-instance Fluid_fToken_* adapters (removed from config 2026-11).",
     "constructor": {}
   },
   "UniswapV3PoolsMeta": {

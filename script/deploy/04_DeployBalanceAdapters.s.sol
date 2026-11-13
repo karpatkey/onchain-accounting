@@ -191,7 +191,7 @@ contract DeployBalanceAdapters is BaseDeployScript {
 
         // --- Aave V3 (meta-adapter: all instances on every chain; ADR 0010) ---
         // The legacy per-market adapters (AaveV3_Core/_Prime/_Arbitrum/_Base/_Optimism/_Gnosis) are
-        // superseded by AaveV3InstancesMeta and disabled in chain config — they have no deploy path here.
+        // superseded by AaveV3InstancesMeta and removed from chain config — they have no deploy path here.
         _deployIfEnabled("AaveV3InstancesMeta"); // DataProvider set configured on NAV via addMetaInstances/removeMetaInstances
 
         // --- Aave V4 (one instance per Spoke; a v4 health factor is Spoke-scoped) ---

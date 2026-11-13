@@ -39,7 +39,7 @@ Identity is the tuple `(chainId, protocolSubId, positionId, balanceAsset.asset, 
 | | | | supply (EVC collateral on) | `Collateral` | false | `vault.asset()` |
 | | | | core-eVault debt (`debtOf`) | `Borrowed` | true | `vault.asset()` |
 | SymbioticVaultsMeta | `symbiotic-vaults` | `abi.encode(address vault)` | ERC-4626 share balance (`previewRedeem`) | `Supplied` | false | `vault.asset()` |
-| YoVaultsMeta | `yo-vaults` | `abi.encode(address vault)` (static) | held shares (`previewRedeem`, `isLocked=false`) + pending escrowed redeem (`min(net reservation, previewRedeem)`, `isLocked=true`) | `Supplied` | per leg | `vault.asset()` |
+| YoVaultsMeta | `yo-vaults` | `abi.encode(address vault)` (static) | held shares (`previewRedeem`, `isLocked=false`) + pending escrowed redeem (`min(net reservation, previewRedeem)`, `isLocked=true`) | `Supplied` | false | `vault.asset()` |
 | Cap | `cap` | `abi.encode(address cUSD)` | held cUSD (Stablecoin) | `Supplied` | false | USDC |
 | | | `abi.encode(address stcUSD)` | staked stcUSD (Savings) | `Staking` | false | USDC |
 | AaveV3SafetyModule | `aave-v3-safety-module` | `abi.encode(address stakeToken)` | locked staked principal (active stake + cooling/expired cooldown) — `isLocked=true` | `Staking` | false | staked token (AAVE/GHO/ABPT…) |

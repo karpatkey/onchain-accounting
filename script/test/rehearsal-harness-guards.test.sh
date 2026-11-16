@@ -179,7 +179,7 @@ check "the refusal still lists .env candidates" "yes" \
 
 # The public fallback is KEPT deliberately, and its announcement is the property that makes keeping
 # it defensible — a fallback run is correct-by-announcement, not silent. Removing the fallback would
-# make chains 143/196/204/43111/16661 un-rehearsable entirely, trading a loud correct degradation
+# make chains 143/196/204/5042/43111/16661 un-rehearsable entirely, trading a loud correct degradation
 # for no capability. So the banner is asserted, not assumed.
 BANNER_BLOCK="$(sed -n '/if \[\[ "\$FORK_RPC_NOTE" == public/,/^fi$/p' "$TARGET")"
 check "a public fallback raises a banner" "yes" \

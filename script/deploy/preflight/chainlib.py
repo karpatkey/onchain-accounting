@@ -76,6 +76,7 @@ PUBLIC_FALLBACK_RPC = {
     143: "https://rpc.monad.xyz",
     196: "https://rpc.xlayer.tech",
     204: "https://opbnb-mainnet-rpc.bnbchain.org",
+    5042: "https://rpc.mainnet.arc.io",
 }
 
 
@@ -466,8 +467,8 @@ def fork_rpc_spec(chain_id: int, allow_public_fallback: bool = True) -> tuple[st
     if chain_id in PUBLIC_FALLBACK_RPC:
         # The fallback is a public endpoint for the SAME chain, so it never violates the "never
         # another chain's endpoint" rule — but it does let a caller proceed in a credential state
-        # where the DEPLOY would fail. It is on by default because the five chains that reach here
-        # (143, 196, 204, 43111, 16661) have no CHAIN_URL_ENV entry and a credential-gated config
+        # where the DEPLOY would fail. It is on by default because the six chains that reach here
+        # (143, 196, 204, 5042, 43111, 16661) have no CHAIN_URL_ENV entry and a credential-gated config
         # rpc, so without it they cannot be rehearsed at all; and the caller announces it loudly.
         # `allow_public_fallback=False` gives the strict behaviour to anyone who wants a missing
         # credential to be fatal rather than degraded.

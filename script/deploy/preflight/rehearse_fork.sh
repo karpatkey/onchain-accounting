@@ -274,14 +274,14 @@ fi
 #
 # It FAILS CLOSED, and the property is precisely "never another CHAIN's endpoint" — not "never any
 # fallback". `fork_rpc_spec` can still return a `literal:` spec from PUBLIC_FALLBACK_RPC, which is a
-# public endpoint for the SAME chain; five chains (143, 196, 204, 43111, 16661) have no
+# public endpoint for the SAME chain; six chains (143, 196, 204, 5042, 43111, 16661) have no
 # CHAIN_URL_ENV entry and a credential-gated config rpc, so that fallback is the ONLY way to rehearse
 # them at all. It is never silent: the note is echoed below, so a fallback run announces itself as
 # `public fallback (unresolved ($ALCHEMY, ALCHEMY_API_KEY))`.
 #
 # ⚠️ OPEN QUESTION for review, raised by the review loop and deliberately NOT decided here: a public
 # fallback lets the rehearsal go green in a credential state where the DEPLOY would fail, which is
-# adjacent to the failure class this PR exists to end. Removing it would make those five chains
+# adjacent to the failure class this PR exists to end. Removing it would make those six chains
 # un-rehearsable. Left as-is, visibly, rather than changed unilaterally.
 #
 # A chain with no endpoint at all aborts, matching the house rule the deploy path already follows

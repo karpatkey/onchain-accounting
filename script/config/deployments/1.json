@@ -52,7 +52,8 @@
     "StakeWiseV3OsTokenWalletMeta": "0x818dD183121641B09752891bB7E971b0FE29e101",
     "EtherFiWithdrawalQueueAssisted": "0xd074FAf8D8f2909BE3E6D51c219916065c5d870A",
     "NexusMutualStakingPoolsAssisted": "0x535861D4f3AE8eC84d0aEd11134fF5F992b47F8D",
-    "StakeWiseV3ExitQueueAssisted": "0x662F43D46b10D57C5F1970684BD0e35CD3e5DFa7"
+    "StakeWiseV3ExitQueueAssisted": "0x662F43D46b10D57C5F1970684BD0e35CD3e5DFa7",
+    "YoVaultsMeta": "0x64Fb8b1d04b28B0389beEB76E844e2935E25f4b3"
   },
   "NAVCalculatorProxy": "0x54EaD2A1dB7456cA917675Ea8908ec8A997c6214",
   "customPriceFeeds": {

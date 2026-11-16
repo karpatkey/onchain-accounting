@@ -81,6 +81,7 @@ CREATE2-identical fleet-wide, so each has the same init-code hash everywhere and
 | `GearboxV3MarketsMeta` | `0xE338E5d4F7adF34107239D59828DEAD2fa2cfD86` | 1 |
 | `MorphoVaultsMeta` | `0x72a012B30b240458C3f79fd20E5c2A907d77e54f` | 1, 42161 |
 | `SymbioticVaultsMeta` | `0x320699dE0693d71C28f5559a68635495AdA0826c` | 1 |
+| `YoVaultsMeta` | `0x64Fb8b1d04b28B0389beEB76E844e2935E25f4b3` | 1 |
 | `AaveSavingsWalletMeta` | `0x36A3F6424FB9AA5B1a3cDD33B2cE09C0c5035D8F` | 1 |
 | `AnkrStakedEthWalletMeta` | `0xc157f1dF063b161Ec9a89aE25aeBc6fB95b6E90e` | 1 |
 | `CoinbaseStakedEthWalletMeta` | `0x91d437752463B60103d515c16680d0a17C1c91F9` | 8453 |
@@ -234,6 +235,7 @@ position manager is at a different address entirely.
 | StakeWiseV3VaultsMeta | `0xE97bE4B11EE8D65A123dD99bDdec7a4fDcA6359E` |
 | SymbioticVaultsMeta ★ | `0x320699dE0693d71C28f5559a68635495AdA0826c` |
 | UniswapV3PoolsMeta ☆ | `0x2F7e8f78FD8EE977F6D53752b03A79c77012Ba52` |
+| YoVaultsMeta ★ | `0x64Fb8b1d04b28B0389beEB76E844e2935E25f4b3` |
 
 ### Optimism (10)
 

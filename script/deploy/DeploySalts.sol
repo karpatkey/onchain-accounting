@@ -109,6 +109,9 @@ library DeploySalts {
     uint256 internal constant PANCAKESWAP_V2_POOLS_META = 2;
     uint256 internal constant SYMBIOTIC_VAULTS_META = 2;
     uint256 internal constant UNISWAP_V2_POOLS_META = 2;
+    /// @notice Version 1, not 2: never deployed before, so there is no plain-CREATE generation 1 to skip (same
+    ///         reasoning as the wallet-held group below).
+    uint256 internal constant YO_VAULTS_META = 1;
 
     //
     // Wallet-held yield-token adapters (NAV-only constructor, CREATE2 same-address across chains)

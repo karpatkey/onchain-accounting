@@ -34,8 +34,10 @@
       "0x5dbf760b4fd0cDdDe0366b33aEb338b2A6d77725",
       "0x1a1985F50352b58090eb36425AfdFacbaC7806F4",
       "0x7a72bcD2c3F7F7e4D6679170a0625bAB15D7DDa1",
-      "0xb5ce3CA2C774b72955C25875022FdD91f7a7B938"
+      "0xb5ce3CA2C774b72955C25875022FdD91f7a7B938",
+      "0x355A1c6A3f1946d4DbD7cE932492925AB9F261a7"
     ],
+    "$instanceComment_yoEcosystem": "0x355A1c6A3f1946d4DbD7cE932492925AB9F261a7 = 'YO Ecosystem Vault' (Morpho Vault V2, asset USDC). CONFIG SYNC ONLY: it is already in the live NAV's MorphoVaultsMeta instance set (added on-chain outside this file), read on-chain via getMetaInstances at block 26,399,588. Without this entry a future 06_Configure reconcile would removeMetaInstances it and drop the usd/xaut/cbbtc YO positions from NAV.",
     "$instanceComment_wARSYield": "0xb5ce3CA2C774b72955C25875022FdD91f7a7B938 = 'KPK wARS Yield' (Morpho Vaults V2; MORPHO() reverts, but the adapter is pure ERC-4626 and never calls it, and previewRedeem answers). asset() = wARS 0x0DC4F92879B7670e5f4e4e6e3c801D229129D90D, totalAssets ~5.0e27 (~5.0e9 wARS ~ $3.2M at $0.00063). Verified on-chain 2026-08-15. Unlike the Symbiotic LiquidLane vault this one IS genuinely a Morpho vault, so registering it here is the correct identity, not the mis-stamping this PR argues against."
   },
   "MorphoMarketsMeta": {
@@ -192,6 +194,14 @@
     "instances": [
       "0x8BcD746976885b5832bAD07B4921E3f2dD1D3703"
     ]
+  },
+  "YoVaultsMeta": {
+    "enabled": true,
+    "$comment": "Meta-adapter (ADR 0010): YO Protocol vaults (YoVault) - held shares + pending escrowed redeems, both under protocolId/brand 'yo', protocolSubId 'yo-vaults'. Registered via addMetaBalanceAdapter(adapter, instances).",
+    "instances": [
+      "0x5DD8BFa6C5C68D05d25EF6143E05C11E26c4cDB7"
+    ],
+    "$instanceComment_yoUsdEdge": "0x5DD8BFa6C5C68D05d25EF6143E05C11E26c4cDB7 = 'yoUSD Edge' (YoVault behind a TransparentUpgradeable proxy, impl 0xc84a6E01BFF58996540F1ABC22355A9DFE0d78DC; asset USDC, 6 dp). Verified on-chain 2026-11-12: previewRedeem(1e6) = 1,026,445 vs convertToAssets 1,026,456 (feeOnWithdraw 1e13 = 0.001%), pendingRedeemRequest(address) -> (grossAssets, shares)."
   },
   "PolygonStakingMeta": {
     "enabled": true,

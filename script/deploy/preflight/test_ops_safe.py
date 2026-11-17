@@ -3,7 +3,7 @@
 
 Run with `python3 -m unittest` (also under `python3 -O`; the module guards with `raise`, not `assert`).
 The on-chain half (deploy + one atomic execTransaction) is exercised end to end by
-`rehearse_inplace_fork.sh`, which runs every swap batch through a real Safe on the fork.
+the PR #338 in-place rehearsal harness (since removed), which ran every swap batch through a real Safe on the fork.
 """
 import sys
 import unittest

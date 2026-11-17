@@ -323,6 +323,14 @@ jobs:
           python3 -m unittest test_seed_assisted -v
           python3 -O -m unittest test_seed_assisted
 
+      - name: Assisted-adapter monitor (assisted_monitor, ADR 0030)
+        # Free-slot + role monitor required before any SUBMITTER_ROLE grant; its hand-rolled ABI is pinned against
+        # `cast` vectors and the reads are stubbed. Offline; plain and -O like the jobs above.
+        working-directory: script/deploy/preflight
+        run: |
+          python3 -m unittest test_assisted_monitor -v
+          python3 -O -m unittest test_assisted_monitor
+
       - name: PR #338 migration tools (snapshot_and_clear_meta, ops_safe)
         # The two tools that carry the in-place migration's live-NAV writes: the surgical record clear +
         # `.pre-swap.json` producer that SwapMetaAdapter.plan() reads, and the ops-Safe MultiSend encoder

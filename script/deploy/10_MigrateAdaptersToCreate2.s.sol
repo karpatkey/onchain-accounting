@@ -110,8 +110,8 @@ contract MigrateAdaptersToCreate2 is BaseDeployScript {
         // The address that will actually sign, NOT `msg.sender`. Under `forge script` the two need not be
         // equal, so checking `msg.sender` can fail a valid migration before broadcasting — or, worse, pass
         // one whose real signer lacks the role, leaving the revert to land mid-sequence with the old
-        // adapter already removed. `script/development/MigrateAssistedAdapters.s.sol` documents the same
-        // distinction and pins the intended broadcaster the same way.
+        // adapter already removed. The (since removed) one-off `MigrateAssistedAdapters.s.sol` documented the
+        // same distinction and pinned the intended broadcaster the same way.
         //
         // Resolved from the chain config rather than hard-coded so a chain with a different manager is not
         // silently checked against mainnet's.

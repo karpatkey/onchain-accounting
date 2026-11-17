@@ -1,7 +1,7 @@
 {
   "AaveV3InstancesMeta": {
     "enabled": true,
-    "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Aave V3 instance. Supersedes AaveV3_Gnosis, disabled below.",
+    "$comment": "Meta-adapter (ADR 0010): one immutable adapter serving every Aave V3 instance. Supersedes AaveV3_Gnosis (removed from config 2026-11).",
     "instances": [
       "0x57038C3e3Fe0a170BB72DE2fD56E98e4d1a69717"
     ]

@@ -1,8 +1,0 @@
-[Desktop Entry]
-Name=Cursor
-Exec=/home/soga/Applications/Cursor/Cursor.AppImage --no-sandbox
-Icon=/home/soga/Applications/Cursor/cursor-app-icon.webp
-Type=Application
-Categories=Development;
-Terminal=false
-X-Desktop-File-Install-Version=0.28

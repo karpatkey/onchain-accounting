@@ -134,8 +134,8 @@ contract StakeWiseV3VaultsMetaBalanceAdapter is MetaBalanceAdapter {
     ///      **Why the address stays even though consumers render a coordinate column — settled 2026-07-27, do not
     ///      reopen.** The tier-2 leaf embeds the full vault address, which the consumers known at that date already
     ///      showed beside it: kpk-app's `/nav/registry` rendered the label and then the whole `bytes32` instance
-    ///      coordinate with a copy button, and this repo's own dashboard paired the label with an `AddressChip`
-    ///      (`app/src/components/protocol-group.tsx`). Those are point-in-time observations of code that lives
+    ///      coordinate with a copy button, and this repo's former dashboard (`app/`, since removed) paired the label
+    ///      with an `AddressChip`. Those are point-in-time observations of code that lives
     ///      outside this contract and will drift; the load-bearing claim is the general one, that a consumer showing
     ///      a coordinate makes the address redundant *for that consumer*. It is kept anyway, deliberately:
     ///        - The label must stay self-contained. `positionLabels` is an on-chain view with no knowledge of what

@@ -58,6 +58,10 @@ One native-ETH leg per owned cached request (all sharing one static positionId, 
 - **Debank:** does **not** surface ether.fi WQ (verified) — this adapter is net-new coverage beyond the Debank baseline.
 
 ## 9. Wiring the live dev-anvil dashboard
+> **Outdated (2026-11):** this section used the ADR 0014-era `deploy-*`/`submit-*` dev scripts, which targeted the
+> agent-fed adapters (`submitTokenIds`/`submitPositions`, since removed) and were deleted with them. Kept as a record
+> of the original verification; current adapters are fed through the ADR 0030 Assistants or the keeper (`submitFor`).
+
 ether.fi has real holders, so no seeding — the submit helper plays the agent (submits the real holder's real tokenId).
 ```bash
 bash script/development/anvil/start-forks.sh 1

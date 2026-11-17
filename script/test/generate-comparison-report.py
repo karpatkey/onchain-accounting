@@ -248,8 +248,8 @@ def adapter_aggregated_addrs(cid: str) -> set[str]:
 def meta_covered_addrs(cid: str) -> set[str]:
     """Pool/vault addresses governed by an ENABLED meta-adapter on this chain.
 
-    A per-pool adapter is usually disabled because a meta-adapter superseded it, not because the pool
-    is untracked. Those addresses must not be treated as uncovered.
+    Used to keep a pool in UNTRACKED_LP_POOLS from being excluded once an enabled meta-adapter
+    governs it: those addresses are covered by NAV and must not be treated as uncovered.
     """
     try:
         with open(f"{META_ADAPTERS_CONFIG_DIR}/{cid}.json") as f:
@@ -271,25 +271,31 @@ def meta_covered_addrs(cid: str) -> set[str]:
     return addrs
 
 
-def disabled_lp_pool_addrs(cid: str) -> set[str]:
-    try:
-        with open(f"{BALANCE_ADAPTERS_CONFIG_DIR}/{cid}.json") as f:
-            adapters = json.load(f)
-    except FileNotFoundError:
-        return set()
-    addrs: set[str] = set()
-    for _key, params in adapters.items():
-        if _key.startswith("$") or not isinstance(params, dict):
-            continue  # $comment and other scalar metadata keys are not adapters
-        if params.get("enabled", True):
-            continue
-        ctor = params.get("constructor", {})
-        pool = ctor.get("pool") or ctor.get("pair")
-        if pool:
-            addrs.add(pool.lower())
-    # A pool superseded by an enabled meta-adapter is still covered by NAV. Dropping its DeBank
+# LP pools the NAV deliberately does not value: one leg has no price feed (COW, sETH2), so valuing
+# only the other leg would understate the position by about half. The report routes their DeBank
+# positions to its "Untracked by design" section and leaves them out of the filtered total it
+# recomputes (see accounts.json chains.<id>.$untracked_by_design). This list used to
+# be derived from the enabled:false per-instance adapter entries in
+# contracts-deployment-config/balance-adapters/<cid>.json; those dead entries were removed, so the
+# list is explicit. Add a pool here when you decide not to value it.
+UNTRACKED_LP_POOLS: dict[str, set[str]] = {
+    "1": {
+        "0xfbb81382cce6b9ce58f8645353f70d9db1bb69af",  # Uniswap V3 WETH/COW 0.3%
+        "0x7379e81228514a1d2a6cf7559203998e20598346",  # Uniswap V3 ETH/sETH2
+    },
+    "56": {
+        "0x74d4ee4ca29ca2fb69b31e9cbd4523b707e64662",  # PancakeSwap V2 ETH/COW
+    },
+    "8453": {
+        "0xfe5291ac7ac2b81a40c0ba6980308212037828af",  # PancakeSwap V3 WETH/COW
+    },
+}
+
+
+def untracked_lp_pool_addrs(cid: str) -> set[str]:
+    # A pool also governed by an enabled meta-adapter is still covered by NAV. Dropping its DeBank
     # positions would lower the reference total against a NAV that still counts them.
-    return addrs - meta_covered_addrs(cid)
+    return UNTRACKED_LP_POOLS.get(str(cid), set()) - meta_covered_addrs(cid)
 
 
 def debank_get(path, params=""):
@@ -531,7 +537,7 @@ def render_unified_table(
     priced_addrs: set[str],
     agg_addrs: set[str],
     dbank_chain: str,
-    disabled_pools: set[str] | None = None,
+    untracked_pools: set[str] | None = None,
     # Extended parameters for cross-section data collection:
     leg_matches_out: list | None = None,
     coverage_gaps_out: list | None = None,
@@ -551,8 +557,8 @@ def render_unified_table(
     - global_untracked_out: accumulator for untracked protocol entries (Section 4.1)
     - account/chain_id/chain_name/account_label: context for the above records
     """
-    if disabled_pools is None:
-        disabled_pools = set()
+    if untracked_pools is None:
+        untracked_pools = set()
     if not nav_positions and not chain_protos and not wallet_tokens:
         return ["_No positions on this chain._", ""]
 
@@ -876,7 +882,7 @@ def render_unified_table(
             items = []
             for item in all_items:
                 ctrl = (item.get("pool") or {}).get("controller", "").lower()
-                if ctrl and ctrl in disabled_pools:
+                if ctrl and ctrl in untracked_pools:
                     item_usd = item.get("stats", {}).get("net_usd_value", 0)
                     untracked_protos.append((pname, short_id, item_usd, build_item_tokens(item)))
                     if global_untracked_out is not None:
@@ -1574,7 +1580,7 @@ def main(refresh_debank: bool = False, from_cache: bool = False) -> None:
             priced_addrs = priced.get(cid, set())
             agg_addrs = adapter_aggregated_addrs(cid)
             all_covered = reg_addrs | agg_addrs
-            disabled_pools = disabled_lp_pool_addrs(cid)
+            untracked_pools = untracked_lp_pool_addrs(cid)
 
             # Compute DeBank filtered total for write-back
             filtered_proto_sum = 0.0
@@ -1583,7 +1589,7 @@ def main(refresh_debank: bool = False, from_cache: bool = False) -> None:
                     continue
                 for item in p.get("portfolio_item_list", []):
                     ctrl = (item.get("pool") or {}).get("controller", "").lower()
-                    if ctrl and ctrl in disabled_pools:
+                    if ctrl and ctrl in untracked_pools:
                         continue
                     filtered_proto_sum += item.get("stats", {}).get("net_usd_value", 0)
             filtered_token_sum = 0.0
@@ -1671,7 +1677,7 @@ def main(refresh_debank: bool = False, from_cache: bool = False) -> None:
                     priced_addrs,
                     agg_addrs,
                     dbank_chain,
-                    disabled_pools,
+                    untracked_pools,
                     # Extended:
                     leg_matches_out=all_leg_matches,
                     coverage_gaps_out=all_coverage_gaps,

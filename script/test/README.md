@@ -28,8 +28,8 @@ Tests for core deployment functionality:
 >
 > Consequences, stated so nobody re-derives them:
 > - A local green run is not evidence these 15 tests pass. Check CI.
-> - The mutation sweep that produced `AUDIT-mutation-sweep.md` could not reach any guard these tests cover; that
->   is recorded there as an explicit hole in the sweep rather than a clean result.
+> - The mutation sweep (its report, `AUDIT-mutation-sweep.md`, was removed; last present at commit `40ab9caf`) could not reach any guard these
+>   tests cover; that was recorded as an explicit hole in the sweep rather than a clean result.
 > - If you are counting expected local failures while working through the hardening wave, the count is 3.
 
 Tests for the `02_DeployProxies` deploy script:

@@ -68,6 +68,6 @@ fi
 adapter=$(echo "$line" | awk '{print $2}')
 echo "  EulerVaultsMeta: $adapter"
 
-# Persist into the addresses file for the app / later reference.
+# Persist into the addresses file for later reference.
 jq --arg a "$adapter" '. + {EulerVaultsMeta: $a}' "$ADDR_FILE" > "$ADDR_FILE.tmp" && mv "$ADDR_FILE.tmp" "$ADDR_FILE"
 echo "  -> recorded in $ADDR_FILE"

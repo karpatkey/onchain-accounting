@@ -153,6 +153,8 @@ forge script script/deploy/07_TransferAdminToSecurityCouncil.s.sol \
   --rpc-url "https://eth-mainnet.g.alchemy.com/v2/$ALCHEMY_API_KEY" --chain-id 1 --account $DEPLOYER_NAME --broadcast
 ```
 
+> **Production NAVs sit behind a timelock instead.** Since PR #338 the NAV's roles are held by a `TimelockController`, installed with `11_DeployTimelockController.s.sol` in place of this step for the NAV (it cannot run after `07`). See the `11` section of `script/deploy/README.md`.
+
 ## Step 9: Verify Contracts
 
 ```bash

@@ -556,7 +556,7 @@ script/deploy/preflight/rehearse_fork.sh 1 25708060   # <chainId> <forkBlock> �
 > — byte-exact, whatever the run did — and (c) asserts they are clean again, keeping the run's own
 > output under `/tmp/nav-rehearsal-<id>/config-after/`. Never blanket-delete `broadcast/`: it also
 > holds committed records from the real PR #141 migrations (`MigrateAssistedAdapters`,
-> `MigrateGnosisStakeWiseExit`, `RemoveMerkl`).
+> `MigrateGnosisStakeWiseExit`, `RemoveMerkl`; the scripts were since removed, the records are kept).
 
 If the rehearsal's `NAV proxy address differs from the live one` assertion **fails**, bump
 `DeploySalts.NAV_PROXY` again and re-run. The bump must land **before** 0.3 — `DeploySalts.sol` is in
@@ -1206,8 +1206,9 @@ Values are set to `""` and the keys kept, not deleted.
 > `vm.writeJson` creates a missing key unaided, so a brand-new adapter needs **no** seeded key. Pinned
 > by `script/test/WriteJsonCreatesMissingKeys.t.sol`.
 
-The pre-clear record is archived to `preflight/archive/pre-redeploy/<CID>.json` and is
-the "old addresses" input for the before/after audits.
+The pre-clear record is archived to `preflight/archive/<tag>/<CID>.json` (default tag `pre-redeploy`) and is
+the "old addresses" input for the before/after audits. The 2026-08-18 redeploy's archive was removed after it
+completed (last present at commit `40ab9caf`); the next redeploy writes a fresh one.
 
 - **Precondition:** `git status` clean; snapshot 0.7 captured.
 - **Post-condition:** `python3 script/deploy/preflight/verify_step.py 1.1` — every key in the NAV
@@ -1280,9 +1281,8 @@ alternative out, before proposing a smaller deploy.
 > (`NAVCalculator.sol:99-118`). The asset set is *not* frozen at genesis — every `registerAsset` calls
 > `addSupportedAsset` on it (`NAVCalculator.sol:176`), and
 > `excludeAssetFromDefaultAdapter`/`includeAssetInDefaultAdapter` (`:356`/`:363`) mutate it later.
-> Nothing needs preparing here, and `script/manage/update-erc20-default-from-chain.sh` is dead code
-> (it reads `chains/<id>.json .deployed.NAVCalculatorProxy`, a path that no longer exists, and skips
-> every chain).
+> Nothing needs preparing here. (The old `script/manage/update-erc20-default-from-chain.sh` read a config
+> path that no longer exists and has been removed.)
 >
 > The one thing a fresh proxy genuinely cannot rebuild from config is the **exclusion** set, since
 > `RegisterAssets` re-includes everything. The 2026-07-27 snapshot shows it is **empty on all 24
@@ -1587,7 +1587,7 @@ checkout.
 PERSIST_DEPLOYMENTS=1 forge script script/deploy/04_DeployBalanceAdapters.s.sol $BROADCAST
 ```
 
-Deploys plain + meta adapters via plain `new` (CREATE), then the delegatecall assistants, whose
+Deploys plain + meta adapters (CREATE2 for the NAV-only and single-protocol-argument ones, plain `new` for the rest), then the delegatecall assistants, whose
 `immutable ADAPTER` must point at the **new** assisted adapters.
 
 > **The flag is REQUIRED here, and this step is the reason.** Adapters record either way; the four
@@ -1761,7 +1761,7 @@ A revoked council cannot call any of these without first re-granting itself the 
 > It was RENAMED to `addOrModifyPriceFeed` — not added alongside — so the old selector
 > `addPriceFeed(address,address,uint8,uint256)` is gone. Anything holding that selector reverts
 > against the upgraded proxy: pre-signed Safe batches, keeper scripts, and any off-chain ABI copy
-> (`app/src/config/abis.ts` among them). Re-encode before executing a batch prepared prior to this
+> (e.g. a consumer app's ABI file). Re-encode before executing a batch prepared prior to this
 > upgrade.
 >
 > The new function UPSERTS. Re-registering an already-registered (asset, feed) pair now UPDATES its

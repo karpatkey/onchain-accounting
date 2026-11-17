@@ -95,7 +95,7 @@ These are not queues but represent value that lives outside the wallet and is no
 
 ### Perps / derivatives
 
-- **GMX V2**: GM/GLP token positions + open perp positions (exposure, collateral, PnL). The original v1 GMX adapter was deleted as part of the v1→v2 oracle migration (see `docs/historical/oracle-migration-plan.md`); a v2 implementation would be a from-scratch design if a kpk vault ever holds GMX exposure.
+- **GMX V2**: GM/GLP token positions + open perp positions (exposure, collateral, PnL). The original v1 GMX adapter was deleted as part of the v1→v2 oracle migration (the migration plan, `docs/historical/oracle-migration-plan.md`, was last present at commit `40ab9caf`); a v2 implementation would be a from-scratch design if a kpk vault ever holds GMX exposure.
 - **Hyperliquid (EVM bridge side)**: bridged collateral on `HyperEVM` if used.
 - **Synthetix V3**: collateral and debt positions per pool.
 

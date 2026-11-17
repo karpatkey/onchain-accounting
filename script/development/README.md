@@ -1,7 +1,7 @@
 # Development infra (anvil + fresh NAV)
 
 Spin up five anvil forks (Ethereum, Optimism, Gnosis, Arbitrum, Base), deploy a fresh NAV v2 proxy
-on each, point the Next.js dashboard at them. State persists between sessions via anvil's
+on each, then read positions and NAVs from them with `cast call`. State persists between sessions via anvil's
 `--state` flag, so you only redeploy when you choose to (after an interface change, say).
 
 This tree is intentionally minimal: only the pieces that differ from the prod deploy live here.
@@ -18,10 +18,6 @@ and `script/deploy/04_DeployBalanceAdapters.s.sol` directly against the dev anvi
 
 - `anvil` and `forge` on PATH (Foundry).
 - `jq`.
-- `app/` dependencies installed (one-time `pnpm install` inside `app/`). On Windows/WSL, install
-  node natively in WSL (the Windows-side pnpm panics on `\\wsl.localhost\` UNC paths). The
-  `@karpatkey/design-system` git dep needs an ssh-agent with your key loaded — run
-  `ssh-add ~/.ssh/id_ed25519` once per WSL shell before `pnpm install`.
 - `.env` at repo root with `MAINNET_URL`, `OP_URL`, `GNOSIS_URL`, `ARBITRUM_URL`, `BASE_URL`.
 
 ## Layout
@@ -34,8 +30,6 @@ script/development/
 │   ├── stop-forks.sh       — SIGTERM each anvil so --state dumps cleanly
 │   ├── reset-state.sh      — nuke state files (refuses if anvils still running)
 │   └── status-forks.sh     — one-line status per fork (pid, block, NAV proxy)
-├── app/
-│   └── sync-app-env.sh     — write app/.env.local pointing at the local forks
 ├── deploy/
 │   ├── 01_DeployNAV.s.sol       — fresh NAV impl + proxy + DEFAULT_ADMIN/MANAGER + native feed
 │   ├── register-assets.sh       — Chainlink-asset registrar via cast (forge-script alternative hangs)
@@ -56,8 +50,6 @@ Anything else (custom price feeds, balance adapters) is **driven by the prod scr
 ```bash
 bash script/development/anvil/start-forks.sh    # spawn anvils, resuming state if present
 bash script/development/deploy/deploy.sh        # 01_DeployNAV + register-assets per chain
-bash script/development/app/sync-app-env.sh     # rewrite app/.env.local
-( cd app && pnpm dev )                          # or restart your existing dev server
 bash script/development/anvil/status-forks.sh   # one-line status per chain
 ```
 
@@ -84,7 +76,6 @@ bash script/development/anvil/stop-forks.sh
 bash script/development/anvil/reset-state.sh
 bash script/development/anvil/start-forks.sh
 bash script/development/deploy/deploy.sh
-bash script/development/app/sync-app-env.sh
 ```
 
 `reset-state.sh` refuses to run while any anvil is still up — call `stop-forks.sh` first.
@@ -95,8 +86,8 @@ new transactions sent to the running anvils.
 ## Adding a new balance adapter to the local forks
 
 The verification workstream under `script/development/test/<protocol>/` cherry-picks one holder per
-protocol, pins a block, and ships a strict-equality fork test. To make the dashboard surface those
-positions for visual cross-check vs Debank, you also need the adapter deployed + registered on the
+protocol, pins a block, and ships a strict-equality fork test. To read those positions
+on the local forks (e.g. for a cross-check vs Debank), you also need the adapter deployed + registered on the
 local anvil:
 
 1. **Pre-verification (per-protocol ad-hoc):** a small bash deploy script under
@@ -106,9 +97,8 @@ local anvil:
    shells out to a sibling `deploy-<protocol>.s.sol` forge script that deploys the adapter and
    register-seeds it with a single atomic `addMetaBalanceAdapter(address,bytes32[])` (mirroring prod's
    `06_Configure.s.sol`) — see `script/development/deploy/deploy-aave-instances-meta.sh` +
-   `deploy-aave-instances-meta.s.sol`. (Assisted/NFT-id-cached adapters follow the meta shape but seed
-   positions via `submitTokenIds` / a per-protocol submit script instead — e.g.
-   `deploy-pancakeswap-v3-meta.sh`, `submit-etherfi-positions.sh`.)
+   `deploy-aave-instances-meta.s.sol`. (Assisted adapters are fed position coordinates instead — through their delegatecall Assistant
+   or the keeper's `submitFor` (ADR 0030).)
 2. **Post-verification:** the adapter is appended to `script/deploy/04_DeployBalanceAdapters.s.sol`
    and its config goes into `script/config/contracts-deployment-config/balance-adapters/<id>.json`
    (plain) or `meta-balance-adapters/<id>.json` (meta) for the deploy, plus
@@ -125,30 +115,20 @@ Each anvil pins its fork at the **latest block at the moment `start-forks.sh` ra
 
 - Chainlink prices read by NAV are frozen at that block.
 - Account balances are frozen at that block, unless you send transactions locally to anvil.
-- The dashboard's auto-refresh just re-reads the same static values.
+- Re-reading the NAV returns the same static values.
 
 Live cross-check against Debank therefore has up to several days of drift, depending on when you
 last reset. For verification work, refork at the start of each session to minimise that drift.
 
 ## Per-chain NAV addresses
 
-In production, NAV is at the same address on every chain via CREATE2 (`0x80eD…fa8d`, per
+In production, NAV is at the same address on every chain via CREATE2 (`0x54EaD2A1…6214`, per
 `script/config/deployments/<chainId>.json`). On dev forks we use plain `CREATE`, and the deployer
 EOA's nonce on each forked chain inherits from the live chain (different per chain), so the
 resulting proxy address differs per chain.
 
-The app handles this with per-chain env-var overrides written by `app/sync-app-env.sh`:
-
-```
-NEXT_PUBLIC_NAV_ADDRESS_1=...
-NEXT_PUBLIC_NAV_ADDRESS_10=...
-NEXT_PUBLIC_NAV_ADDRESS_100=...
-NEXT_PUBLIC_NAV_ADDRESS_42161=...
-NEXT_PUBLIC_NAV_ADDRESS_8453=...
-```
-
-`app/src/config/chains.ts` reads these into a per-chain `navAddress` and the wagmi hooks use
-`chain.navAddress` instead of a global constant.
+`bash script/development/anvil/status-forks.sh` prints each chain's local NAV proxy; read positions from it
+with `cast call` against that chain's local RPC port.
 
 ## Port and feed mapping
 

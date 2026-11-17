@@ -1,6 +1,6 @@
 # Merkl proof-submitter bot — operator's guide
 
-> **Status (2026-07):** the Merkl adapter is being **re-added as `MerklRewardsAttestedBalanceAdapter`** — its own **`attested`** balance-adapter family ([ADR 0022](../decisions/0022-attested-balance-adapter-family.md)), NOT the assisted family. Submits are **`SUBMITTER_ROLE`-gated** and **proof-verified**, the stale-gated clears are permissionless, and submit is **upsert** semantics; any `ASSISTANT_ROLE` framing below is historical and does not apply. This runbook applies once the adapter is deployed and its per-chain address is wired.
+> **Status (2026-11):** the Merkl adapter is **live as `MerklRewardsAttestedBalanceAdapter`** at `0xFf2D5A8bf801191eD1292E6DD6792F5D03c5aFBF` (same address on every configured chain; see `script/config/deployments/<chainId>.json`) — its own **`attested`** balance-adapter family ([ADR 0022](../decisions/0022-attested-balance-adapter-family.md)), NOT the assisted family. Submits are **`SUBMITTER_ROLE`-gated** and **proof-verified**, the stale-gated clears are permissionless, and submit is **upsert** semantics; any `ASSISTANT_ROLE` framing below is historical and does not apply.
 
 The `MerklRewardsAttestedBalanceAdapter` adapter (`src/balances/AttestedBalanceAdapters/MerklRewardsAttestedBalanceAdapter.sol`) reports a portfolio's *unclaimed* Merkl rewards by reading an on-chain cache of `(user, token, cumulativeAmount)` tuples. The cache is populated by an off-chain bot that fetches merkle proofs from the Merkl API and submits them to the adapter, where they're verified against the live `Distributor.getMerkleRoot()` before being stored. The adapter cannot fabricate amounts; the bot cannot fabricate amounts; only Merkl's published merkle tree determines the per-token **amounts** the adapter reports. It does **not** determine the *campaign attribution* of those amounts — the proof binds the per-token cumulative, and the contract checks only that the campaign shares sum to it, so campaign identity is submitter-controlled. See "Why this is trust-minimized" below. See [`docs/decisions/0007-merkl-trust-minimized-cache.md`](../decisions/0007-merkl-trust-minimized-cache.md) for the design rationale and trust model.
 
@@ -244,8 +244,8 @@ drop and the read returns an empty array successfully. *(That last one changes n
 revert here makes `PriceFeedLib` fail open to the same empty result — so it is a budget-sizing and monitoring
 concern, not a correctness one.)*
 
-Direction is availability and under-report, never over-report, and none of it is reachable while the adapter ships
-`enabled: false`. **Before enablement, size the read budget with a measurement rather than an argument:** an
+Direction is availability and under-report, never over-report. The adapter is now enabled, so this is reachable,
+and the measurement below is still outstanding. **Size the read budget with a measurement rather than an argument:** an
 end-to-end test that registers the adapter on a production-scale asset registry, seeds a worst-case cache
 (`MAX_TOKENS_PER_USER × MAX_CAMPAIGNS_PER_TOKEN` = 512 legs, griefer-shaped), and calls `getAccountNav` through the
 real `PriceFeedLib` path — pinning the budget at which it succeeds and asserting that below it the failure surfaces
@@ -255,7 +255,12 @@ is inferred from the sibling family rather than measured here.
 
 ## Before flipping `enabled: true` — tripwires that fire on the config change, not on deploy
 
-Both are inert while the adapter is disabled and both turn a "one-line config change" PR red:
+> **Historical (2026-11):** the adapter is now enabled and deployed (see the status note at the top). The
+> integration harness declares it in `test/integration/undispatched-adapters.json` and
+> `PositionLabelsProbeCoverage._expectedNonMetaAdapters()` lists `MerklRewards`, so the first two tripwires below
+> were resolved; this section is kept as the record of what had to be done.
+
+Both were inert while the adapter was disabled and both turned a "one-line config change" PR red:
 
 - **Integration-harness dispatch.** `IntegrationFromConfigBase._deployBalanceAdapter` has no `MerklRewards` branch
   and `test/integration/undispatched-adapters.json` has no declaration for it, so `UndispatchedAdapterGuard` will

@@ -125,6 +125,5 @@ done
 
 echo
 echo "done. next:"
-echo "  - script/development/app/sync-app-env.sh   (point app at these NAV proxies)"
 echo "  - prod/03_DeployPriceFeeds.s.sol per chain (custom feeds, when needed)"
 echo "  - prod/04_DeployBalanceAdapters.s.sol per chain (adapters, when needed)"

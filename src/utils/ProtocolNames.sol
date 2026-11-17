@@ -109,6 +109,8 @@ library ProtocolNames {
     string internal constant ETHERFI = "ether.fi";
     /// @dev `ProtocolIds.ETHENA`.
     string internal constant ETHENA = "Ethena";
+    /// @dev `ProtocolIds.YO` — the YO vaults meta-adapter (`YoVaultsMetaBalanceAdapter`).
+    string internal constant YO = "YO";
 
     // ─────────────────────────────────────────────────────────────────────────────────────────────────────────────
     // Other
@@ -173,6 +175,7 @@ library ProtocolNames {
         if (protocolId == ProtocolIds.ETHERFI) return ETHERFI;
         if (protocolId == ProtocolIds.ETHENA) return ETHENA;
         if (protocolId == ProtocolIds.NEXUS_MUTUAL) return NEXUS_MUTUAL;
+        if (protocolId == ProtocolIds.YO) return YO;
 
         // Wallet-held yield-bearing token protocols. A MISSING branch here is not cosmetic: `forProtocolId`
         // reverts UnknownProtocolId, so a new adapter whose PROTOCOL ID is absent would have no display name.

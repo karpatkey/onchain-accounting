@@ -73,6 +73,10 @@ Up to two native-ETH legs per cached exit position (claimable + locked, gated on
 - **Debank:** does not surface StakeWise exit-queue positions — this adapter is net-new coverage beyond the Debank baseline.
 
 ## 9. Wiring the live dev-anvil dashboard
+> **Outdated (2026-11):** this section used the ADR 0014-era `deploy-*`/`submit-*` dev scripts, which targeted the
+> agent-fed adapters (`submitTokenIds`/`submitPositions`, since removed) and were deleted with them. Kept as a record
+> of the original verification; current adapters are fed through the ADR 0030 Assistants or the keeper (`submitFor`).
+
 StakeWise has real holders, so no seeding — the submit helper plays the agent. The exact ENS position only renders while open, so pin the anvil fork in its open window (~block 25,378,000–25,382,000), or pass a currently-open tuple.
 ```bash
 bash script/development/anvil/start-forks.sh 1

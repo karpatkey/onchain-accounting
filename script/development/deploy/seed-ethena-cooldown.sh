@@ -4,7 +4,7 @@
 # Usage:  seed-ethena-cooldown.sh <chainId> [demoAddr] [usdeAmount(wei)]
 #   e.g.  seed-ethena-cooldown.sh 1 0x99b9f5f24205cb88e33b1cc72008f644fc23768b 50000000000000000000000
 #
-# No real KPK Safe is mid-cooldown (cooldowns are transient ~24h), so the app demo needs a seeded one.
+# No real KPK Safe is mid-cooldown (cooldowns are transient ~24h), so a local check needs a seeded one.
 # This impersonates a USDe whale (sUSDe itself, which custodies USDe) to fund the demo account, then
 # impersonates the demo account to deposit USDe -> sUSDe and call cooldownShares — creating a real
 # cooldown the EthenaCooldownBalanceAdapter then reports. Default demo account = ETH Alpha prod Safe.
@@ -49,4 +49,4 @@ rpc anvil_stopImpersonatingAccount "$DEMO"
 # 3) Verify.
 OUT=$(cast call "$SUSDE" "cooldowns(address)(uint104,uint152)" "$DEMO" --rpc-url "$RPC")
 echo "  cooldowns($DEMO) = $OUT"
-echo "  -> enter $DEMO in the app; the Ethena 'USDe Cooldown' leg should equal the underlyingAmount above."
+echo "  -> read $DEMO's Ethena 'USDe Cooldown' leg with cast call; it should equal the underlyingAmount above."

@@ -100,7 +100,8 @@ only → **a cache entry can under-report, never over-report**. The rows below a
    them), then clear their 6 keys (chain 100: 2) from `deployments/<chainId>.json` — `04` skips anything already
    recorded. Deploy the three adapters and their Assistants (`04`, admin = the chain's Security Council). Verify on every
    explorer. Before any `SUBMITTER_ROLE` grant, make sure the operating roles can reach the adapters' `evict` (S13
-   recovery) and set up monitoring of free slots per account.
+   recovery) and set up monitoring of free slots per account: `script/deploy/preflight/assisted_monitor.py` (WARN at
+   80 % of cap − `OWNER_RESERVE`, ALERT at it, plus `SUBMITTER_ROLE` / admin holders; non-zero exit for cron).
 2. In ONE Council Safe transaction: `grantRole(SUBMITTER_ROLE, keeper)` on each new adapter, and schedule the swap on
    the NAV timelock as ONE operation (`removeBalanceAdapters([old…]) + addBalanceAdapters([new…])`, S15). The old
    Assistants keep feeding the old, registered adapters meanwhile. The keeper is a Safe, not a bare key: a dedicated

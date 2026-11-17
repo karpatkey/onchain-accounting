@@ -194,8 +194,8 @@ done
 #
 # ⚠️ DO NOT DELETE THIS STEP OR THE FIXTURE — one test hard-depends on it. The gap is narrower than "unused":
 # the JSON-DRIVEN INTEGRATION HARNESS does not seed Merkl (`_seedMerklProofs` was removed with the old Merkl
-# adapter in #141 and has not been restored — IntegrationFromConfigBase.fork.sol contains no Merkl code, and
-# MerklRewardsAttestedBalanceAdapter ships `enabled:false` on every chain), so the integration baselines contain
+# adapter in #141 and has not been restored — IntegrationFromConfigBase.fork.sol contains no Merkl code; the
+# adapter is enabled and deployed, and the harness declares it in undispatched-adapters.json), so the integration baselines contain
 # no Merkl positions and a green integration run is NOT coverage of this adapter. But the DEDICATED FORK TEST does
 # consume this fixture: MerklRewardsAttestedBalanceAdapterRealProofForkTest._setupFork reads it with `vm.readFile`
 # and replays a real captured proof against the live Distributor root — the only test that pins Merkl's leaf

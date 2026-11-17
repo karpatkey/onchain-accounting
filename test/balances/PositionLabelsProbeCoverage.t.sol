@@ -119,7 +119,8 @@ contract PositionLabelsProbeCoverageTest is Test {
                 // only discriminator. Here the FILE already tells us: this directory is the plain-adapter deploy
                 // config, and `meta-balance-adapters/` is a sibling. Reusing the substring test silently exempted
                 // `StakeWiseV3Vault_MetaVault` — a PLAIN adapter whose key happens to contain "Meta" — from the
-                // very arm this function feeds. It is `enabled: false` today, so the gap was latent, not live.
+                // very arm this function feeds. It was `enabled: false` (since removed from config),
+                // so the gap was latent, not live.
                 if (_has3(acc, n, keys[k])) continue;
                 // Only ENABLED entries: a disabled stub is not "configured to deploy".
                 if (!vm.parseJsonBool(json, string.concat(".", keys[k], ".enabled"))) continue;

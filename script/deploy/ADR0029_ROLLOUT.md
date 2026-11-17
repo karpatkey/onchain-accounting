@@ -82,8 +82,7 @@ fresh-to-zero cliff after the upgrade.
   CREATE2-deployed on that chain; update them then. Until they are updated, `script/deploy/preflight/verify_step.py`
   fails on that chain (it requires the recorded `PriceFeedLib` to equal the pin) — expected, not a finding.
 - Update `script/deploy/DEPLOYED_ADDRESSES.md` in the same commit as the records: CI's "Published addresses match
-  the deployment records" step ties the two. (`script/deploy/preflight/verify_pr338_chain.sh` hardcodes the old
-  pin; it is a PR #338-only tool and is not used for this rollout.)
+  the deployment records" step ties the two.
 - Re-check the pin (CI `pin-canary` and a clean local build must agree) after any change to the library's
   sources.
 

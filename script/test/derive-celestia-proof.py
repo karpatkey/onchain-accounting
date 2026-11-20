@@ -62,7 +62,7 @@ def celestia_block(url, height):
     for _ in range(4):  # the public node times out on large blocks now and then
         try:
             out = json.loads(_curl([f"{url}/block?height={height}"]))
-        except ValueError:
+        except (ValueError, subprocess.CalledProcessError):  # bad JSON, or curl's timeout / transport error
             continue
         if "result" in out:
             return out["result"]
@@ -259,9 +259,15 @@ _HEAD = re.compile(rb"(?=([\x00-\xfa]|\xfb..|\xfc....)\x01\1)", re.S)
 
 
 def subaccounts(b):
-    """The longest sorted, gap-free run of records in the blob (the subaccount section)."""
-    best = []
+    """The longest sorted, gap-free run of records in the blob (the subaccount section).
+
+    A head that already started a record inside an earlier run is skipped: the run from it is a suffix of that run,
+    so it cannot be longer, and re-decoding it made the scan quadratic in the number of records.
+    """
+    best, seen = [], set()
     for m in _HEAD.finditer(b):
+        if m.start() in seen:
+            continue
         out, i = [], m.start()
         try:
             while True:
@@ -269,6 +275,7 @@ def subaccounts(b):
                 if out and r["id"] <= out[-1]["id"]:
                     break
                 out.append(r)
+                seen.add(i)
                 i = r["span"][1]
         except (ValueError, KeyError, IndexError):
             pass

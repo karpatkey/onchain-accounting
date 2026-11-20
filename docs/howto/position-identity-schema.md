@@ -1061,6 +1061,7 @@ schemas are in the next section and in the per-adapter table above.)
 | `nexus-mutual-staking-pools` | `NEXUS_MUTUAL_STAKING_POOLS` | `NexusMutualStakingPoolsAssistedBalanceAdapter` — Nexus Mutual StakingNFT stake + rewards |
 | `cap` | `CAP` | `CapStablecoinBalanceAdapter` (held cUSD) + `CapSavingsBalanceAdapter` (staked stcUSD) — two adapters, one `protocolSubId`: both legs encode the same positionId shape |
 | `merkl` | `MERKL` | `MerklRewardsAttestedBalanceAdapter` (`attested` family, ADR 0022) — emits unclaimed (claimable) Merkl reward tokens, one leg per cached campaign share. Per-chain enablement/deploy is a separate follow-up |
+| `derive-v3-subaccounts` | `DERIVE_V3_SUBACCOUNTS` | `DeriveCelestiaAttestedBalanceAdapter` (`attested` family, ADR 0031) — collateral of a fund's Derive v3 subaccounts, proven from Derive's Celestia batch data; one leg per token, summed over the fund's subaccounts. Brand `derive`, protocolId `derive-v3` |
 | `lido-withdrawal` | `LIDO_WITHDRAWAL` | `LidoWithdrawalQueueBalanceAdapter` — ETH owed from the Lido stETH withdrawal queue |
 | `stader-withdrawal` | `STADER_WITHDRAWAL` | `StaderWithdrawalQueueBalanceAdapter` — ETH owed from the Stader ETHx withdrawal queue |
 | `kelp-withdrawal` | `KELP_WITHDRAWAL` | `KelpWithdrawalQueueBalanceAdapter` — assets owed from the Kelp rsETH exit queue |
@@ -1114,6 +1115,7 @@ rather than overloading an existing one.
 | `cap` | `(address token)` — cUSD or stcUSD |
 | `erc4626` | `(address vault)` |
 | `merkl` | `(address distributor)` — reward token in balanceAsset |
+| `derive-v3-subaccounts` | `(address verifiableApp)` — collateral token in balanceAsset |
 | `nexus-mutual-staking-pools` | `(address stakingPool)` — NFT id in `positionInstanceId` |
 | `stader-withdrawal` | `(address userWithdrawalManager)` — static; up to two legs (claimable + locked) sharing it, told apart by `isLocked` |
 | `kelp-withdrawal` | `(address withdrawalManager)` — static; up to two legs (claimable + locked) sharing it, told apart by `isLocked`; payout asset in `balanceAsset` |
@@ -1700,6 +1702,7 @@ the same on every chain. Default `positionId` = base `_instancePositionId` (inst
 | Adapter | `protocolSubId` | `protocolName()` | `positionLabels()` → (source) | `positionId` schema | `PositionKind` legs | Example breadcrumb |
 |---|---|---|---|---|---|---|
 | `MerklRewardsAttestedBalanceAdapter` | `merkl` | `"Merkl"` (const) | `["Claimable Rewards"]` (const) | `abi.encode(address distributor)` (static — the reward token rides in `balanceAsset`) | Rewards — one leg **per cached campaign share**, `keccak256(abi.encode(campaignId, subCampaignId))` in `positionInstanceId` (or `bytes32(0)` when submitted untagged), all sharing the one positionId | `["Merkl","Claimable Rewards"]` |
+| `DeriveCelestiaAttestedBalanceAdapter` | `derive-v3-subaccounts` | `"Derive"` (const) | `["Collateral"]` (const) | `abi.encode(address verifiableApp)` (static — Derive's VAPP, the trust anchor; the token rides in `balanceAsset`) | Collateral — one leg per token, summed over the proven subaccounts; reads 0 after the next Derive batch | `["Derive","Collateral"]` |
 
 > **Campaign legs: SUM, do not dedupe** — and treat their attribution as display-grade. Every campaign leg of one
 > reward token shares an identical stable key (`positionInstanceId` is excluded from it), so a consumer that drops

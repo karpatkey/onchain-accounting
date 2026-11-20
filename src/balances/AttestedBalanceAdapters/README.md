@@ -106,6 +106,16 @@ admin-injected amounts, no upgrade path.
   [ADR 0007](../../../docs/decisions/0007-merkl-trust-minimized-cache.md). Off-chain feeder: the kpk-agents
   `SubmitMerklProofs` automation. Implements the family's cache-free `previewPositions(account, bytes)` (decoding
   `bytes` to `Allocation[]`) — see below.
+- **`DeriveCelestiaAttestedBalanceAdapter`** — collateral of a fund's Derive v3 subaccounts. Epoch =
+  `VerifiableApp.celestiaLastCommitment()`, the Celestia share commitment of the newest Derive batch blob. A submit
+  (`submitSubaccounts(account, SubaccountProof[])` or `submit(account, abi.encode(SubaccountProof[]))`) proves the
+  shares holding each subaccount record against it (`derive/CelestiaShareProof.sol`), decodes the record
+  (`derive/DeriveRecord.sol`, reverse-engineered format) and requires owner = account, no perps or options, no
+  negative balance, mapped assets only, and VAPP's program key and verifier equal to the pinned pair. Balances
+  are summed per token into one `Collateral` leg. The proof binds the bytes Derive posted to Celestia, not
+  `stateRoot()`. Entries read 0 after the next batch (about 10 minutes) or after a program rotation. Constructor
+  `(vapp, navCalculator, admin, pinnedVKey, pinnedVerifier, deriveAssets[], tokens[])`. Proof builder:
+  `script/test/derive-celestia-proof.py`. Rationale: [ADR 0031](../../../docs/decisions/0031-derive-celestia-attested-adapter.md).
 
 ## Cache-free preview (universal read on the interface)
 

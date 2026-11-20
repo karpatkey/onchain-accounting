@@ -82,6 +82,11 @@ import {
     MerklRewardsAttestedBalanceAdapter
 } from "src/balances/AttestedBalanceAdapters/MerklRewardsAttestedBalanceAdapter.sol";
 import {
+    DeriveCelestiaAttestedBalanceAdapter
+} from "src/balances/AttestedBalanceAdapters/DeriveCelestiaAttestedBalanceAdapter.sol";
+import {MockDeriveVapp} from "test/balances/AttestedBalanceAdapters/DeriveConformance.t.sol";
+import {Mock_ERC20} from "test/mocks/tokens.sol";
+import {
     AaveV3InstancesMetaBalanceAdapter
 } from "src/balances/MetaBalanceAdapters/AaveV3InstancesMetaBalanceAdapter.sol";
 import {AaveV4SpokesMetaBalanceAdapter} from "src/balances/MetaBalanceAdapters/AaveV4SpokesMetaBalanceAdapter.sol";
@@ -248,7 +253,8 @@ contract ProtocolNameConsistencyTest is Test {
     ///      sibling can appear — so both are asserted in {test_hardcodedAdapters_matchCanonicalNames} above.
     ///      `CapBalanceAdapterBase` is abstract and is not counted (the census walks `out/` for deployable artifacts).
     ///      13 -> **14** when `MerklRewardsAttestedBalanceAdapter` (attested family) was added.
-    uint256 internal constant HARDCODED_ADAPTER_COUNT = 14;
+    ///      14 -> **15** when `DeriveCelestiaAttestedBalanceAdapter` (attested family, ADR 0031) was added.
+    uint256 internal constant HARDCODED_ADAPTER_COUNT = 15;
 
     BalancesHarness internal nav;
     address internal stub;
@@ -335,6 +341,18 @@ contract ProtocolNameConsistencyTest is Test {
             new MerklRewardsAttestedBalanceAdapter(stub, address(nav), address(this)).protocolName(),
             ProtocolNames.MERKL,
             "MerklRewards"
+        );
+        assertEq(_deriveAdapter().protocolName(), ProtocolNames.DERIVE_V3, "DeriveCelestiaAttested");
+    }
+
+    function _deriveAdapter() internal returns (DeriveCelestiaAttestedBalanceAdapter) {
+        MockDeriveVapp vapp = new MockDeriveVapp();
+        address[] memory ids = new address[](1);
+        address[] memory toks = new address[](1);
+        ids[0] = address(0xD1);
+        toks[0] = address(new Mock_ERC20("T", 18));
+        return new DeriveCelestiaAttestedBalanceAdapter(
+            address(vapp), address(nav), address(this), vapp.programVKey(), vapp.verifier(), ids, toks
         );
     }
 

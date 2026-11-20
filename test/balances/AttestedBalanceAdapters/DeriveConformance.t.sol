@@ -56,7 +56,15 @@ contract DeriveConformanceTest is AttestedAdapterConformance {
         toks[0] = address(tokenA);
         toks[1] = address(tokenB);
         return new DeriveCelestiaAttestedBalanceAdapter(
-            address(vapp), address(balances), admin_, vapp.programVKey(), vapp.verifier(), ids, toks
+            address(vapp),
+            address(balances),
+            admin_,
+            vapp.programVKey(),
+            vapp.verifier(),
+            ids,
+            toks,
+            address(0),
+            address(0)
         );
     }
 
@@ -129,11 +137,16 @@ contract DeriveConformanceTest is AttestedAdapterConformance {
     function _submitViaTypedEntrypoint(address account, bytes memory data) internal override {
         (
             DeriveCelestiaAttestedBalanceAdapter.ShareProof memory first,
-            DeriveCelestiaAttestedBalanceAdapter.SubaccountProof[] memory ps
+            DeriveCelestiaAttestedBalanceAdapter.SubaccountProof[] memory ps,
+            bytes memory feeds
         ) = abi.decode(
             data,
-            (DeriveCelestiaAttestedBalanceAdapter.ShareProof, DeriveCelestiaAttestedBalanceAdapter.SubaccountProof[])
+            (
+                DeriveCelestiaAttestedBalanceAdapter.ShareProof,
+                DeriveCelestiaAttestedBalanceAdapter.SubaccountProof[],
+                bytes
+            )
         );
-        DeriveCelestiaAttestedBalanceAdapter(address(member)).submitSubaccounts(account, first, ps);
+        DeriveCelestiaAttestedBalanceAdapter(address(member)).submitSubaccounts(account, first, ps, feeds);
     }
 }

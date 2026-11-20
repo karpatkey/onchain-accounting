@@ -4,6 +4,7 @@ pragma solidity ^0.8;
 import {
     DeriveCelestiaAttestedBalanceAdapter
 } from "src/balances/AttestedBalanceAdapters/DeriveCelestiaAttestedBalanceAdapter.sol";
+import {IDeriveOptionPricer} from "src/balances/AttestedBalanceAdapters/derive/IDeriveOptionPricer.sol";
 
 /// @notice Builds small synthetic Derive blobs and their Celestia share proofs, so unit tests can exercise every
 ///         acceptance rule with chosen owners, assets and balances.
@@ -22,12 +23,20 @@ library DeriveBlobBuilder {
         int256 balance; // 12-decimal fixed point
     }
 
+    struct Opt {
+        address asset; // Derive option asset id
+        uint256 strike8; // 8-decimal USD
+        bool isCall;
+        int256 amount; // 12-decimal fixed point; negative = short
+        uint256 expiry; // Unix seconds, the series' expiry
+    }
+
     struct Rec {
         uint256 id;
         address owner;
         Coll[] coll;
         uint256 perps;
-        uint256 options;
+        Opt[] opts;
     }
 
     struct Blob {
@@ -63,11 +72,18 @@ library DeriveBlobBuilder {
         for (uint256 i; i < r.coll.length; ++i) {
             out = abi.encodePacked(out, r.coll[i].asset, uint8(0), varint(zigzag(r.coll[i].balance)), varint(1e12));
         }
-        out = abi.encodePacked(out, varint(r.options));
-        for (uint256 i; i < r.options; ++i) {
-            out = abi.encodePacked(out, address(0xCAFE), varint(uint256(1) << 120), varint(zigzag(5e12)));
+        out = abi.encodePacked(out, varint(r.opts.length));
+        for (uint256 i; i < r.opts.length; ++i) {
+            Opt memory o = r.opts[i];
+            out = abi.encodePacked(out, o.asset, varint(optionSubId(o.expiry, o.strike8, o.isCall)));
+            out = abi.encodePacked(out, varint(zigzag(o.amount)));
         }
         out = abi.encodePacked(out, uint8(0), uint8(0), uint8(0), uint8(0));
+    }
+
+    /// @notice Derive's option series id: expiry in bits 0-31, 8-decimal strike in bits 32-94, call flag in bit 95.
+    function optionSubId(uint256 expiry, uint256 strike8, bool isCall) internal pure returns (uint256) {
+        return expiry | strike8 << 32 | (isCall ? uint256(1) << 95 : 0);
     }
 
     /// @notice A blob: previous commitment, the record count, the sorted records, then the start of the next
@@ -122,7 +138,7 @@ library DeriveBlobBuilder {
         s.rfcSiblings = _rfcPath(_leaves(b.shares), i);
     }
 
-    /// @notice The submit payload: the blob's share 0 (it fixes the share count) and the subaccount proofs.
+    /// @notice The submit payload with no feeds: the blob's share 0 (it fixes the share count) and the subaccount proofs.
     function payload(Blob memory b, DeriveCelestiaAttestedBalanceAdapter.SubaccountProof memory p)
         internal
         pure
@@ -131,7 +147,7 @@ library DeriveBlobBuilder {
         DeriveCelestiaAttestedBalanceAdapter.SubaccountProof[] memory ps =
             new DeriveCelestiaAttestedBalanceAdapter.SubaccountProof[](1);
         ps[0] = p;
-        return payload(b, ps);
+        return payload(b, ps, noFeeds());
     }
 
     function payload(Blob memory b, DeriveCelestiaAttestedBalanceAdapter.SubaccountProof[] memory ps)
@@ -139,7 +155,24 @@ library DeriveBlobBuilder {
         pure
         returns (bytes memory)
     {
-        return abi.encode(shareProof(b, 0), ps);
+        return payload(b, ps, noFeeds());
+    }
+
+    /// @notice The submit payload: the blob's share 0 (it fixes the share count), the subaccount proofs, and the
+    ///         feeds as their own `bytes` (the adapter decodes them in a second step).
+    function payload(
+        Blob memory b,
+        DeriveCelestiaAttestedBalanceAdapter.SubaccountProof[] memory ps,
+        IDeriveOptionPricer.Feeds memory feeds
+    ) internal pure returns (bytes memory) {
+        return abi.encode(shareProof(b, 0), ps, abi.encode(feeds));
+    }
+
+    function noFeeds() internal pure returns (IDeriveOptionPricer.Feeds memory f) {
+        f.spots = new IDeriveOptionPricer.SpotFeed[](0);
+        f.forwards = new IDeriveOptionPricer.ForwardFeed[](0);
+        f.rates = new IDeriveOptionPricer.RateFeed[](0);
+        f.vols = new IDeriveOptionPricer.VolFeed[](0);
     }
 
     // ─────────────────────────────────────────────────────────────── internals

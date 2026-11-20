@@ -352,7 +352,15 @@ contract ProtocolNameConsistencyTest is Test {
         ids[0] = address(0xD1);
         toks[0] = address(new Mock_ERC20("T", 18));
         return new DeriveCelestiaAttestedBalanceAdapter(
-            address(vapp), address(nav), address(this), vapp.programVKey(), vapp.verifier(), ids, toks
+            address(vapp),
+            address(nav),
+            address(this),
+            vapp.programVKey(),
+            vapp.verifier(),
+            ids,
+            toks,
+            address(0),
+            address(0)
         );
     }
 

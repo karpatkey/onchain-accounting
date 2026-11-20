@@ -6,6 +6,7 @@ import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IER
 import {AddressCheckLib} from "src/utils/AddressCheckLib.sol";
 import {AttestedValueCache} from "src/balances/AttestedBalanceAdapters/AttestedValueCache.sol";
 import {CelestiaShareProof} from "src/balances/AttestedBalanceAdapters/derive/CelestiaShareProof.sol";
+import {IDeriveOptionPricer} from "src/balances/AttestedBalanceAdapters/derive/IDeriveOptionPricer.sol";
 import {DeriveRecord} from "src/balances/AttestedBalanceAdapters/derive/DeriveRecord.sol";
 import {IPositionDescribable} from "src/balances/IPositionDescribable.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
@@ -24,25 +25,37 @@ interface IDeriveVerifiableApp {
 
 /// @title Derive v3 Balance Adapter (attested from Derive's Celestia batch data)
 /// @author KPK
-/// @notice Reports a fund Safe's collateral on Derive v3. Derive keeps account state on its sequencer; Ethereum holds
-///         the `VerifiableApp` (VAPP), which stores the Celestia share commitment of the newest batch's data blob
-///         (`celestiaLastCommitment()`). Each blob carries the full record of every subaccount that changed in that
-///         batch. A submitter proves the shares holding the fund's records against that commitment; this adapter
-///         decodes the records and caches the collateral, one value per token.
+/// @notice Reports a fund Safe's collateral and option positions on Derive v3. Derive keeps account state on its
+///         sequencer; Ethereum holds the `VerifiableApp` (VAPP), which stores the Celestia share commitment of the
+///         newest batch's data blob (`celestiaLastCommitment()`). Each blob carries the full record of every
+///         subaccount that changed in that batch. A submitter proves the shares holding the fund's records against
+///         that commitment; this adapter decodes the records and caches one value per token: collateral, plus every
+///         option at its Black-76 value, netted against the cash token.
 ///
 /// @dev **What the proof binds — the statement ADR 0022 requires of every member.** The cached amount is bound to the
 ///      bytes Derive posted to Celestia for the newest batch. It is NOT bound to `VAPP.stateRoot()`: whether Derive's
 ///      SP1 program proves that blob equals the state transition is not public. The owner and subaccount id come from
-///      the same bytes. The Derive-asset → token table and decimals are constructor constants, not attested.
+///      the same bytes. The Derive-asset → token table, the option market table and decimals are constructor
+///      constants, not attested.
+///
+///      **Option valuation: Derive's mark, from Derive's signed feeds.** Options are cash-settled in Derive's USDC
+///      cash asset, so 1 cash token = 1 USD and every option's value is credited (long, rounded down) or debited
+///      (short, rounded up) to {CASH_TOKEN}. A submit carries Derive's signed spot, forward, rate and vol feed items;
+///      {PRICER} (a separate immutable contract, see `derive/DeriveOptionPricer.sol`) verifies them against its fixed
+///      signer set and values every option of every submitted subaccount at Derive's mark: Black-76 on Derive's SVI
+///      slice for a live option, intrinsic value at Derive's 30-minute settlement TWAP for an expired one. Credits and
+///      debits are netted per token across all submitted subaccounts; a token whose debits exceed its credits refuses
+///      the submit ({LiabilityExceedsCollateral}). Perps are not valued and refuse the submit ({PerpsNotAllowed}).
 ///
 ///      **Acceptance rules,** each fail-loud in {_verifyPayload}: the blob's first share must verify at index 0 (it
 ///      fixes the share count, and so the tree shape); every record share must verify at its stated blob index, and
 ///      a record's shares must be consecutive, so the decoded bytes are exactly the posted bytes; the record's owner
-///      must be the account; the subaccount must hold no perps and no options (their value is not decoded); no
-///      balance may be negative (the family is credit-only); every non-zero balance must be in a mapped asset;
-///      subaccount ids must be strictly ascending (no double counting); VAPP's `programVKey()` and `verifier()` must
-///      equal the reviewed pair passed to the constructor. A later rotation also makes cached entries read 0
-///      ({_isLive}).
+///      must be the account; the subaccount must hold no perps; options need a {PRICER}, which applies its own feed
+///      rules (every item signed by every signer, within its deadline, fresh, and used); no collateral balance may be
+///      negative (the family is credit-only); every non-zero balance must be in a mapped asset; per token, debits must
+///      not exceed credits; subaccount ids must be strictly ascending (no double counting); VAPP's `programVKey()` and
+///      `verifier()` must equal the reviewed pair passed to the constructor. A later rotation also makes cached
+///      entries read 0 ({_isLive}).
 ///
 ///      **Freshness.** Only the newest batch's commitment is on Ethereum, and a blob only carries subaccounts that
 ///      changed, so a submit needs the fund's records in the newest batch. The intended flow touches the account
@@ -93,9 +106,9 @@ contract DeriveCelestiaAttestedBalanceAdapter is AttestedValueCache {
     /// @notice Upper bound on subaccounts per submit.
     uint256 public constant MAX_SUBACCOUNTS = 8;
 
-    /// @notice Upper bound on shares per subaccount proof. A collateral-only record fits in one or two; the cap is
-    ///         set so a record with positions (a real one spans 23 shares) still decodes and is refused by name
-    ///         ({PositionsNotAllowed}) rather than by size.
+    /// @notice Upper bound on shares per subaccount proof. A collateral-only record fits in one or two. An option
+    ///         takes 30 to 46 bytes, so 32 shares hold a record of about 330 options; a larger record is refused by
+    ///         size ({TooManyShares}).
     uint256 public constant MAX_SHARES_PER_SUBACCOUNT = 32;
 
     /// @notice Upper bound on distinct tokens cached per account.
@@ -122,6 +135,12 @@ contract DeriveCelestiaAttestedBalanceAdapter is AttestedValueCache {
     /// @notice The reviewed SP1 verifier. Reads and writes refuse once VAPP reports another.
     address public immutable PINNED_VERIFIER;
 
+    /// @notice The token options settle into (Derive's USDC cash asset, mapped). Zero when there is no {PRICER}.
+    address public immutable CASH_TOKEN;
+
+    /// @notice Values options from Derive's signed feeds. Zero: any record holding options is refused.
+    IDeriveOptionPricer public immutable PRICER;
+
     /// @notice Derive protocol asset id → Ethereum token. Set once in the constructor.
     mapping(address deriveAsset => address token) public tokenOf;
 
@@ -146,7 +165,11 @@ contract DeriveCelestiaAttestedBalanceAdapter is AttestedValueCache {
     error WrongSubaccount(uint256 expected, uint256 found);
     error WrongOwner(uint256 subaccountId, address found);
     error BadBoundary(uint256 subaccountId);
-    error PositionsNotAllowed(uint256 subaccountId, uint256 perps, uint256 options);
+    error PerpsNotAllowed(uint256 subaccountId, uint256 perps);
+    /// @notice The record holds options and the adapter has no {PRICER}.
+    error UnmappedOption(uint256 subaccountId, address optionAsset);
+    /// @notice Short options owe more of `token` than the submitted subaccounts hold.
+    error LiabilityExceedsCollateral(address token);
     error NegativeBalance(uint256 subaccountId, address deriveAsset);
     error UnmappedAsset(uint256 subaccountId, address deriveAsset);
 
@@ -161,6 +184,8 @@ contract DeriveCelestiaAttestedBalanceAdapter is AttestedValueCache {
     /// @param pinnedVerifier_ The reviewed `verifier`. Must equal VAPP's at deployment.
     /// @param deriveAssets_   Derive protocol asset ids (as `WithdrawalOutbox.resolveAsset` knows them).
     /// @param tokens_         The Ethereum token for each Derive asset id.
+    /// @param cashAsset_      Derive asset id options settle into (USDC). Must be mapped when `pricer_` is set.
+    /// @param pricer_         The option pricer, or zero to refuse records holding options.
     constructor(
         address vapp_,
         address navCalculator_,
@@ -168,7 +193,9 @@ contract DeriveCelestiaAttestedBalanceAdapter is AttestedValueCache {
         bytes32 pinnedVKey_,
         address pinnedVerifier_,
         address[] memory deriveAssets_,
-        address[] memory tokens_
+        address[] memory tokens_,
+        address cashAsset_,
+        address pricer_
     ) AttestedValueCache(navCalculator_, admin_) {
         if (vapp_ == address(0) || pinnedVKey_ == bytes32(0) || pinnedVerifier_ == address(0)) {
             revert InvalidArguments();
@@ -192,6 +219,14 @@ contract DeriveCelestiaAttestedBalanceAdapter is AttestedValueCache {
             _decimals[token] = IERC20Metadata(token).decimals();
             _deriveAssets.push(asset);
         }
+
+        if (pricer_ != address(0)) {
+            AddressCheckLib.requireContract(pricer_, "DeriveOptionPricer");
+            address cash = tokenOf[cashAsset_];
+            if (cash == address(0)) revert InvalidArguments();
+            CASH_TOKEN = cash;
+            PRICER = IDeriveOptionPricer(pricer_);
+        }
     }
 
     //
@@ -200,11 +235,15 @@ contract DeriveCelestiaAttestedBalanceAdapter is AttestedValueCache {
 
     /// @notice Typed convenience over {IAttestedBalanceAdapter.submit}. Requires `SUBMITTER_ROLE`.
     /// @param firstShare The blob's share 0 with its proof; it fixes the blob's share count.
+    /// @param feeds      `abi.encode(IDeriveOptionPricer.Feeds)`: the signed feed items that price the options.
     /// @dev Funnels through `_submitPayload`, the family's single write path.
-    function submitSubaccounts(address account, ShareProof calldata firstShare, SubaccountProof[] calldata proofs)
-        external
-    {
-        _submitPayload(account, abi.encode(firstShare, proofs));
+    function submitSubaccounts(
+        address account,
+        ShareProof calldata firstShare,
+        SubaccountProof[] calldata proofs,
+        bytes calldata feeds
+    ) external {
+        _submitPayload(account, abi.encode(firstShare, proofs, feeds));
     }
 
     //
@@ -221,7 +260,8 @@ contract DeriveCelestiaAttestedBalanceAdapter is AttestedValueCache {
     }
 
     /// @inheritdoc IPositionDescribable
-    /// @dev `["Collateral"]` — the token is in `balanceAsset`; the argument is ignored.
+    /// @dev `["Collateral"]` — the token is in `balanceAsset`; the argument is ignored. The amount is net of
+    ///      options (contract NatSpec).
     function positionLabels(bytes calldata) external pure override returns (string[] memory out) {
         out = new string[](1);
         out[0] = "Collateral";
@@ -232,9 +272,10 @@ contract DeriveCelestiaAttestedBalanceAdapter is AttestedValueCache {
     //
 
     /// @inheritdoc AttestedValueCache
-    /// @dev Decodes `abi.encode(ShareProof firstShare, SubaccountProof[])`, verifies the first share and every
-    ///      subaccount record against `epoch`, and returns one summed value per token. The returned `ctxs` are
-    ///      empty: this member keeps no state beside the attestation and {_assetLegs} ignores `ctx`.
+    /// @dev Decodes `abi.encode(ShareProof firstShare, SubaccountProof[], bytes feeds)`, verifies the first share and
+    ///      every subaccount record, has {PRICER} value their options from `feeds`, and returns one netted value per
+    ///      token. The returned `ctxs` are empty: this member keeps no state beside the attestation and
+    ///      {_assetLegs} ignores `ctx`.
     function _verifyPayload(bytes32 epoch, address account, bytes memory data)
         internal
         view
@@ -242,15 +283,28 @@ contract DeriveCelestiaAttestedBalanceAdapter is AttestedValueCache {
         returns (address[] memory assets, uint256[] memory values, bytes[] memory ctxs)
     {
         if (!_programPinned()) revert ProgramChanged(VAPP.programVKey(), VAPP.verifier());
-        (ShareProof memory first, SubaccountProof[] memory proofs) = abi.decode(data, (ShareProof, SubaccountProof[]));
+        (ShareProof memory first, SubaccountProof[] memory proofs, bytes memory feeds) =
+            abi.decode(data, (ShareProof, SubaccountProof[], bytes));
+        (assets, values) = _settle(_collect(epoch, account, first, proofs, feeds));
+        ctxs = new bytes[](assets.length);
+    }
+
+    /// @dev Verifies the first share and every subaccount record, values their options, and returns the book.
+    function _collect(
+        bytes32 epoch,
+        address account,
+        ShareProof memory first,
+        SubaccountProof[] memory proofs,
+        bytes memory feeds
+    ) private view returns (Book memory book) {
         uint256 n = proofs.length;
         if (n == 0) revert EmptyPayload();
         if (n > MAX_SUBACCOUNTS) revert TooManySubaccounts(n);
         uint256 numShares = _provenShareCount(epoch, first);
+        book = _newBook(account);
 
-        address[] memory tokens = new address[](MAX_TOKENS_PER_ACCOUNT);
-        uint256[] memory sums = new uint256[](MAX_TOKENS_PER_ACCOUNT);
-        uint256 count;
+        DeriveRecord.Option[][] memory options = new DeriveRecord.Option[][](n);
+        uint256 total;
         uint256 prevId;
         for (uint256 i; i < n; ++i) {
             SubaccountProof memory p = proofs[i];
@@ -259,18 +313,52 @@ contract DeriveCelestiaAttestedBalanceAdapter is AttestedValueCache {
 
             DeriveRecord.Record memory rec = _readRecord(epoch, numShares, p);
             if (rec.owner != account) revert WrongOwner(p.subaccountId, rec.owner);
-            if (rec.perpCount != 0 || rec.optionCount != 0) {
-                revert PositionsNotAllowed(p.subaccountId, rec.perpCount, rec.optionCount);
+            if (rec.perpCount != 0) revert PerpsNotAllowed(p.subaccountId, rec.perpCount);
+            if (rec.options.length != 0 && address(PRICER) == address(0)) {
+                revert UnmappedOption(p.subaccountId, rec.options[0].asset);
             }
-            count = _accumulate(rec, tokens, sums, count);
+            _addCollateral(rec, book);
+            options[i] = rec.options;
+            total += rec.options.length;
         }
+        if (address(PRICER) != address(0)) _addOptions(options, total, feeds, book);
+    }
 
-        assets = new address[](count);
-        values = new uint256[](count);
-        ctxs = new bytes[](count);
-        for (uint256 i; i < count; ++i) {
-            assets[i] = tokens[i];
-            values[i] = sums[i];
+    /// @dev Has {PRICER} value every option of the submit in one call (so it can reject unused feed items) and nets
+    ///      the result into {CASH_TOKEN}.
+    function _addOptions(DeriveRecord.Option[][] memory options, uint256 total, bytes memory feeds, Book memory book)
+        private
+        view
+    {
+        DeriveRecord.Option[] memory all = new DeriveRecord.Option[](total);
+        uint256 k;
+        for (uint256 i; i < options.length; ++i) {
+            for (uint256 j; j < options[i].length; ++j) {
+                all[k++] = options[i][j];
+            }
+        }
+        (uint256 credit, uint256 debit) = PRICER.value(feeds, all);
+        if (credit == 0 && debit == 0) return;
+        uint256 slot = _slot(book, CASH_TOKEN);
+        book.credit[slot] += credit;
+        book.debit[slot] += debit;
+    }
+
+    /// @dev Nets each token's credit against its debit and rounds the result down to the token's decimals.
+    function _settle(Book memory book) private view returns (address[] memory assets, uint256[] memory values) {
+        uint256 count;
+        assets = new address[](book.count);
+        values = new uint256[](book.count);
+        for (uint256 t; t < book.count; ++t) {
+            if (book.debit[t] > book.credit[t]) revert LiabilityExceedsCollateral(book.tokens[t]);
+            uint256 value = _toTokenUnits(book.credit[t] - book.debit[t], _decimals[book.tokens[t]]);
+            if (value == 0) continue;
+            assets[count] = book.tokens[t];
+            values[count++] = value;
+        }
+        assembly ("memory-safe") {
+            mstore(assets, count)
+            mstore(values, count)
         }
     }
 
@@ -389,29 +477,41 @@ contract DeriveCelestiaAttestedBalanceAdapter is AttestedValueCache {
         }
     }
 
-    /// @dev Adds `rec`'s non-zero balances into `(tokens, sums)`, scaled from 12 decimals to each token's.
-    function _accumulate(DeriveRecord.Record memory rec, address[] memory tokens, uint256[] memory sums, uint256 count)
-        private
-        view
-        returns (uint256)
-    {
+    /// @dev Per-token credits and debits of one submit, in Derive's 12 decimals.
+    struct Book {
+        address account;
+        address[] tokens;
+        uint256[] credit;
+        uint256[] debit;
+        uint256 count;
+    }
+
+    function _newBook(address account) private pure returns (Book memory b) {
+        b.account = account;
+        b.tokens = new address[](MAX_TOKENS_PER_ACCOUNT);
+        b.credit = new uint256[](MAX_TOKENS_PER_ACCOUNT);
+        b.debit = new uint256[](MAX_TOKENS_PER_ACCOUNT);
+    }
+
+    /// @dev Index of `token` in `b`, added if new.
+    function _slot(Book memory b, address token) private pure returns (uint256 t) {
+        while (t < b.count && b.tokens[t] != token) ++t;
+        if (t == b.count) {
+            if (t == MAX_TOKENS_PER_ACCOUNT) revert TooManyAttestations(b.account, t + 1);
+            b.tokens[b.count++] = token;
+        }
+    }
+
+    /// @dev Credits `rec`'s non-zero collateral balances.
+    function _addCollateral(DeriveRecord.Record memory rec, Book memory b) private view {
         for (uint256 c; c < rec.collateral.length; ++c) {
             DeriveRecord.Collateral memory col = rec.collateral[c];
             if (col.balance == 0) continue;
             if (col.balance < 0) revert NegativeBalance(rec.subaccountId, col.asset);
             address token = tokenOf[col.asset];
             if (token == address(0)) revert UnmappedAsset(rec.subaccountId, col.asset);
-
-            uint256 amount = _toTokenUnits(uint256(col.balance), _decimals[token]);
-            uint256 t;
-            while (t < count && tokens[t] != token) ++t;
-            if (t == count) {
-                if (count == MAX_TOKENS_PER_ACCOUNT) revert TooManyAttestations(rec.owner, count + 1);
-                tokens[count++] = token;
-            }
-            sums[t] += amount;
+            b.credit[_slot(b, token)] += uint256(col.balance);
         }
-        return count;
     }
 
     /// @dev 12-decimal Derive amount → token units. Rounds down when the token has fewer decimals.

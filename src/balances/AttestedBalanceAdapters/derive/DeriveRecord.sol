@@ -15,14 +15,23 @@ pragma solidity ^0.8;
 ///          options     count × (asset[20], subId, amount)
 ///          tail        4 varints
 ///
+///      An option's `subId` packs its series: expiry (unix seconds) in bits 0-31, strike (8-decimal USD) in bits
+///      32-94, and 1 in bit 95 for a call. Checked against Derive's API on 252 of 252 options of one subaccount.
+///
 ///      Records are sorted by id with no gaps. A record holds the subaccount's full state after the batch, and only
-///      subaccounts that changed in the batch appear. Perp and option fields are skipped by their tag width rather
-///      than decoded: only their counts are returned, and a misaligned skip shows up in the caller's framing check.
+///      subaccounts that changed in the batch appear. Perp fields are skipped by their tag width rather than
+///      decoded (only their count is returned); a misaligned skip shows up in the caller's framing check.
 library DeriveRecord {
     struct Collateral {
         address asset; // Derive's protocol asset id, not the ERC-20
         uint256 subId;
         int256 balance; // 12-decimal fixed point
+    }
+
+    struct Option {
+        address asset; // Derive's option asset id, one per underlying
+        uint256 subId; // expiry | strike << 32 | isCall << 95
+        int256 amount; // 12-decimal fixed point; negative = short
     }
 
     struct Record {
@@ -31,7 +40,7 @@ library DeriveRecord {
         address owner;
         Collateral[] collateral;
         uint256 perpCount;
-        uint256 optionCount;
+        Option[] options;
         uint256 end; // offset just past the record
     }
 
@@ -69,9 +78,15 @@ library DeriveRecord {
             i = _skipVarints(d, i, 1); // interest index
         }
 
-        (r.optionCount, i) = varint(d, i);
-        for (uint256 k; k < r.optionCount; ++k) {
-            i = _skipVarints(d, i + 20, 2); // subId, amount
+        (n, i) = varint(d, i);
+        r.options = new Option[](n);
+        for (uint256 k; k < n; ++k) {
+            Option memory o = r.options[k];
+            uint256 raw;
+            (o.asset, i) = _addr(d, i);
+            (o.subId, i) = varint(d, i);
+            (raw, i) = varint(d, i);
+            o.amount = zigzag(raw);
         }
         r.end = _skipVarints(d, i, 4);
     }

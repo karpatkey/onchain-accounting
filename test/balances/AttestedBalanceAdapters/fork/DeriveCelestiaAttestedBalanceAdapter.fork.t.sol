@@ -7,6 +7,7 @@ import {
     IDeriveVerifiableApp
 } from "src/balances/AttestedBalanceAdapters/DeriveCelestiaAttestedBalanceAdapter.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
+import {DeriveBlobBuilder} from "test/balances/AttestedBalanceAdapters/derive/DeriveBlobBuilder.sol";
 
 /// @title DeriveCelestiaAttestedBalanceAdapterForkTest
 /// @notice End to end against the REAL Derive `VerifiableApp` on Ethereum mainnet: a real subaccount record, proven
@@ -43,8 +44,9 @@ contract DeriveCelestiaAttestedBalanceAdapterForkTest is BalanceAdapterTestBase 
         address[] memory toks = new address[](2);
         (ids[0], ids[1]) = (DERIVE_USDC, DERIVE_USDT);
         (toks[0], toks[1]) = (MAINNET_USDC, MAINNET_USDT);
-        adapter =
-            new DeriveCelestiaAttestedBalanceAdapter(VAPP, address(balances), address(this), VKEY, VERIFIER, ids, toks);
+        adapter = new DeriveCelestiaAttestedBalanceAdapter(
+            VAPP, address(balances), address(this), VKEY, VERIFIER, ids, toks, address(0), address(0)
+        );
         adapter.grantRole(adapter.SUBMITTER_ROLE(), address(this));
         account = vm.parseJsonAddress(json, ".account");
     }
@@ -101,11 +103,11 @@ contract DeriveCelestiaAttestedBalanceAdapterForkTest is BalanceAdapterTestBase 
         bytes memory s = ps[0].shares[0].share;
         s[200] = bytes1(uint8(s[200]) ^ 0x01);
         vm.expectRevert(DeriveCelestiaAttestedBalanceAdapter.InvalidShareProof.selector);
-        adapter.submit(account, abi.encode(_share(".firstShare"), ps));
+        adapter.submit(account, abi.encode(_share(".firstShare"), ps, abi.encode(DeriveBlobBuilder.noFeeds())));
     }
 
     function _payload() internal view returns (bytes memory) {
-        return abi.encode(_share(".firstShare"), _proofs());
+        return abi.encode(_share(".firstShare"), _proofs(), abi.encode(DeriveBlobBuilder.noFeeds()));
     }
 
     function _proofs() internal view returns (DeriveCelestiaAttestedBalanceAdapter.SubaccountProof[] memory ps) {

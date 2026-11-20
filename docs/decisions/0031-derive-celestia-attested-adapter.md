@@ -168,12 +168,16 @@ tested on real batches and on a fork of mainnet.
 collateralSpots)`; `values(feeds, options, spotAssets)` returns the option values and the verified spots. Payload: `abi.encode(ShareProof, SubaccountProof[], bytes feeds)` with
 `feeds = abi.encode(IDeriveOptionPricer.Feeds)` (a nested `bytes`: decoding the feeds in the same tuple overflows the
 stack under via-IR). Proof builder: `script/test/derive-celestia-proof.py` (about 1 s for the newest batch: one
-Ethereum call, one Celestia block). Caps: 8 subaccounts per submit, 32 shares per subaccount (about 330 options), 8
-tokens per account, 8 option markets, 32 feed items of each kind. Gas: a submit for subaccount 117522 (8 options, 4
-expiries, 2 markets) costs about 1.02M. Tests: the family conformance kit (`DeriveConformance.t.sol`), unit tests on
-synthetic blobs and signed feeds (long and short options on credit, covered calls and puts, a pure USDC borrow,
-deficits, rounding), real batches (including two option books priced from Derive's real signed feeds, an expired ETH
-series at Derive's published settlement, and subaccount 122119 with its USDC borrow against `margin_watch`), math vectors (`derive/DeriveOptionMath.t.sol`), and a
+Ethereum call, one Celestia block, and one signed-feeds call per option currency). For records with options it also
+writes the signed feed items they need and an `expected` amount from a float reference of the pricer. Caps: 8
+subaccounts per submit, 32 shares per subaccount (about 330 options), 8 tokens per account, 8 option markets, 32
+feed items of each kind. Gas: a submit for subaccount 117522 (8 options, 4 expiries, 2 markets) costs about 1.02M.
+Tests: the family conformance kit (`DeriveConformance.t.sol`), unit tests on synthetic blobs and signed feeds (long
+and short options on credit, covered calls and puts, a pure USDC borrow, deficits, rounding), real batches (including
+two option books priced from Derive's real signed feeds, an expired ETH series at Derive's published settlement,
+subaccount 122119 with its USDC borrow against `margin_watch`, and a fixture the proof builder wrote unedited, matched
+to its reference), math vectors (`derive/DeriveOptionMath.t.sol`), the proof builder's own suite
+(`script/test/test_derive_celestia_proof.py`: decoder, feed selection, and its reference on the same real books), and a
 fork test against the real VAPP at a pinned block.
 
 ## Before acceptance

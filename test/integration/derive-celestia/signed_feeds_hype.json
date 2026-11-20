@@ -1,0 +1,293 @@
+{
+ "fetchedAt": 1795197613,
+ "source": "POST https://api.derive.xyz/v3/public/get_latest_signed_feeds {\"currency\":\"HYPE\"}, trimmed to four expiries",
+ "result": {
+  "spot_data": {
+   "HYPE": {
+    "confidence": "1",
+    "currency": "HYPE",
+    "deadline": 1795201212,
+    "price": "60.9908524602711",
+    "signatures": {
+     "signers": [
+      "0xe92024520e22adc1b93e2084e8846122ef1b4f18",
+      "0xee688353d3faf5eb7253dfb8824b6c764d98e763"
+     ],
+     "signatures": [
+      "0x2c3323aead67de91d851d4a4b1eb8f9161a7426a666841c061697031e36b24e7384c9055a8cd903ecea6c888eded5a4ce9484423a006e2d6d166477580dc06b81b",
+      "0x1e5f112323c1104b468190d2ed2667cd2ad4c17bd4c8629d8848092df30dec9b1c46c9445486a5df9f0804ac968bb6f116ecdc335408e688893175c00f43bcae1b"
+     ]
+    },
+    "timestamp": 1795197612
+   }
+  },
+  "fwd_data": {
+   "HYPE": {
+    "1795161600": {
+     "confidence": "1",
+     "currency": "HYPE",
+     "deadline": 1797753600,
+     "expiry": 1795161600,
+     "fwd_diff": "0",
+     "signatures": {
+      "signers": [
+       "0xe92024520e22adc1b93e2084e8846122ef1b4f18",
+       "0xee688353d3faf5eb7253dfb8824b6c764d98e763"
+      ],
+      "signatures": [
+       "0x406da49309bd11c5761df708f6a503ae1cdf66f5bf0e7744760b6c99fa133f6f4eb9bc924265cd4ac487f8dacae2e6c0be0e70a3a8118707c6824bd4999f85891c",
+       "0xe93e59682e6ddb3ac3f7c1bf018dcc3dab221387bb4833cf30ce04850308e51713ff5a9596a59296c4b575d5c0b16212ba798e4c786bacee52c05339b24d58511b"
+      ]
+     },
+     "spot_aggregate_latest": "122408371138202040000000",
+     "spot_aggregate_start": "3948923241062805000000",
+     "timestamp": 1795161600
+    },
+    "1795248000": {
+     "confidence": "1",
+     "currency": "HYPE",
+     "deadline": 1795201210,
+     "expiry": 1795248000,
+     "fwd_diff": "0.0108239999999995",
+     "signatures": {
+      "signers": [
+       "0xe92024520e22adc1b93e2084e8846122ef1b4f18",
+       "0xee688353d3faf5eb7253dfb8824b6c764d98e763"
+      ],
+      "signatures": [
+       "0x96feb0d1510c8b6a8efc645dfd4062ccfd533ae77d5205d93d041eef6a7e1a296c3fac7d06a18e3fe34e2e1246297cf52d81bb76c865afb711abb280625bd5921b",
+       "0x8a1d24c4eff4030714b2fff070aca00de7af6f758397414b699aa9ae9097e4f15fb12b64910e3fe40e5d452e9695ab0dd8999e56a90d62e3e59db21f92a957fb1b"
+      ]
+     },
+     "spot_aggregate_latest": "0",
+     "spot_aggregate_start": "0",
+     "timestamp": 1795197610
+    },
+    "1795334400": {
+     "confidence": "1",
+     "currency": "HYPE",
+     "deadline": 1795201210,
+     "expiry": 1795334400,
+     "fwd_diff": "0.017285000000001105",
+     "signatures": {
+      "signers": [
+       "0xe92024520e22adc1b93e2084e8846122ef1b4f18",
+       "0xee688353d3faf5eb7253dfb8824b6c764d98e763"
+      ],
+      "signatures": [
+       "0x514706a0f95a66cf12aefcdd85fe0ef4a0e13c4a7baa31c2b148fd69e08dc9a44e6bf55cc8895e1d25a04fc301e9a2b7eaae07b4b4180d63ea45ea9763770a171c",
+       "0x4a718328f4d0cd78f4214803dcaee75b05314f646ee561fe19db82da1925788a044b1e2e9f5983e76fb47b958f8a98f7da87cf7fb8f541b95a42fd106c8e59ab1b"
+      ]
+     },
+     "spot_aggregate_latest": "0",
+     "spot_aggregate_start": "0",
+     "timestamp": 1795197610
+    },
+    "1798704000": {
+     "confidence": "1",
+     "currency": "HYPE",
+     "deadline": 1794814460,
+     "expiry": 1798704000,
+     "fwd_diff": "0.46982500000000016",
+     "signatures": {
+      "signers": [
+       "0xe92024520e22adc1b93e2084e8846122ef1b4f18",
+       "0xee688353d3faf5eb7253dfb8824b6c764d98e763"
+      ],
+      "signatures": [
+       "0x44f2af4cd89ab2e5c5e20a982e237b75b422df7e4598089d57b81fc3de4808de39fea249592ab50d98ec086713aa23c7ef20d819ddd86850db613f5fad2a50bd1c",
+       "0x78dd379b442f7a35090fbff42ec8fe9841ae9dd747c52b70f4496e16c79c2c351d5a90865ee388c70462a7101f2cb8758cafdb5541e072e27088866084d8d58d1c"
+      ]
+     },
+     "spot_aggregate_latest": "0",
+     "spot_aggregate_start": "0",
+     "timestamp": 1794810860
+    }
+   }
+  },
+  "rate_data": {
+   "HYPE": {
+    "1795161600": {
+     "confidence": "1",
+     "currency": "HYPE",
+     "deadline": 1795165200,
+     "expiry": 1795161600,
+     "rate": "0.0389",
+     "signatures": {
+      "signers": [
+       "0xe92024520e22adc1b93e2084e8846122ef1b4f18",
+       "0xee688353d3faf5eb7253dfb8824b6c764d98e763"
+      ],
+      "signatures": [
+       "0x6eb56a0f35a1018e429ea85e9242894ab15853c3e6b74da8ce5b2e3bc9a32cef153e3f44a15d382ee2c72a4f5c2f5310713c28a42b7b231e2867c5bf078d900a1c",
+       "0x880bc3ae443dba5472c2d9cdb8827cacee3946cc24a53ef7c802c22329a073080bbf1567515e527859b45675f254b0ce7b4610859ca4a3de261ca38d4fcd746e1b"
+      ]
+     },
+     "timestamp": 1795161600
+    },
+    "1795248000": {
+     "confidence": "1",
+     "currency": "HYPE",
+     "deadline": 1795201200,
+     "expiry": 1795248000,
+     "rate": "0.0389",
+     "signatures": {
+      "signers": [
+       "0xe92024520e22adc1b93e2084e8846122ef1b4f18",
+       "0xee688353d3faf5eb7253dfb8824b6c764d98e763"
+      ],
+      "signatures": [
+       "0x3aaad9e36436b1d9d37a4dd7fab245f59b6321e0e6303bde836c5080c738d57c13b8a34efe15b60b2218911ffbf674c506d33c4af0e0ac6270a8a5fc1edccb001b",
+       "0xf2e0f3f64de4e9cd60e054e48e49be9c8554cf566b8c23b79b874fb23a3415357444a7a88a8747dab7d9348db59e33072d1cdcca84a612cc08bfde07d532e9aa1b"
+      ]
+     },
+     "timestamp": 1795197600
+    },
+    "1795334400": {
+     "confidence": "1",
+     "currency": "HYPE",
+     "deadline": 1795201200,
+     "expiry": 1795334400,
+     "rate": "0.0389",
+     "signatures": {
+      "signers": [
+       "0xe92024520e22adc1b93e2084e8846122ef1b4f18",
+       "0xee688353d3faf5eb7253dfb8824b6c764d98e763"
+      ],
+      "signatures": [
+       "0x3e0fc83791f666d09221d7059110df63eee4fdda52bb7cc314aeedecb1ca89f908591be48f58660e227da587877d24c8c64c705a0eefbe899f388a6fae3b211c1c",
+       "0x1dc89a136c2d19bee0ab6f22f01e3389dc41747486e4f21cfb6211657b19c83136084ac10ebffec05ebd11a4a7d658cd766017e2e74f0346b25313a63d1da8701c"
+      ]
+     },
+     "timestamp": 1795197600
+    },
+    "1798704000": {
+     "confidence": "1",
+     "currency": "HYPE",
+     "deadline": 1794814460,
+     "expiry": 1798704000,
+     "rate": "0.0393691405919728",
+     "signatures": {
+      "signers": [
+       "0xe92024520e22adc1b93e2084e8846122ef1b4f18",
+       "0xee688353d3faf5eb7253dfb8824b6c764d98e763"
+      ],
+      "signatures": [
+       "0xacd5bca995f1e546c2a81c4b33adaf38d0225935ea6b857bc59db4f886427b6f521a4b63c0eea5c55faccf9e2f86082db20c608ff00a04b078f762fc96650a2c1c",
+       "0x3579a437dcd1b7d5216b33ae0a74316b379d98d19df98453355523647bcca78c34a16eef420ca22524cae7dcd7b867d0e79e138aa4e1c6ed1a43088e6910489f1c"
+      ]
+     },
+     "timestamp": 1794810860
+    }
+   }
+  },
+  "vol_data": {
+   "HYPE": {
+    "1795161600": {
+     "confidence": "0.95",
+     "currency": "HYPE",
+     "deadline": 1795165180,
+     "expiry": 1795161600,
+     "signatures": {
+      "signers": [
+       "0xe92024520e22adc1b93e2084e8846122ef1b4f18",
+       "0xee688353d3faf5eb7253dfb8824b6c764d98e763"
+      ],
+      "signatures": [
+       "0x01b9ef7bb4e9b010ed06dd3db5898f03a3869ad16b32d66898d9f0c0fecb3c28716dcbc63f348b6b43b1f0f50a9ff4fee1291334cce03c0aeb79155934ad48881b",
+       "0x239aa62755151022d7a62c95dbb127abf049d00be4d6471090b0b9fadae4bf710fc63391aed336e5736f37021e206db3f7566cbb7cbc029a6fec1a50b8e3e9ca1c"
+      ]
+     },
+     "timestamp": 1795161580,
+     "vol_data": {
+      "SVI_a": "0.000000343645",
+      "SVI_b": "0.000309984",
+      "SVI_fwd": "65.959098",
+      "SVI_m": "0.0000116594",
+      "SVI_refTau": "0.00000126839168",
+      "SVI_rho": "-0.0105162",
+      "SVI_sigma": "0.00110865"
+     }
+    },
+    "1795248000": {
+     "confidence": "0.95",
+     "currency": "HYPE",
+     "deadline": 1795201200,
+     "expiry": 1795248000,
+     "signatures": {
+      "signers": [
+       "0xe92024520e22adc1b93e2084e8846122ef1b4f18",
+       "0xee688353d3faf5eb7253dfb8824b6c764d98e763"
+      ],
+      "signatures": [
+       "0x95915876c6ba13d796967744d0077f7d37776d910d4f5a78b8bcbb4fc260f319666dad70f9a455e987ccaf3204bdaaf90a962ffc8c462810c32cd480864a595d1c",
+       "0x76c777be2b68beb3a8a440c7721357dc2c1592c5b7288d7686b9f13eed199756241e41537b6488d8891d3750bcd4c628140f05bdc91c3d7d3f74f43d752683721c"
+      ]
+     },
+     "timestamp": 1795197600,
+     "vol_data": {
+      "SVI_a": "0.000503869",
+      "SVI_b": "0.0232427",
+      "SVI_fwd": "61.08302",
+      "SVI_m": "0.0385637",
+      "SVI_refTau": "0.00159880771182",
+      "SVI_rho": "-0.0799978",
+      "SVI_sigma": "0.0633919"
+     }
+    },
+    "1795334400": {
+     "confidence": "0.95",
+     "currency": "HYPE",
+     "deadline": 1795201200,
+     "expiry": 1795334400,
+     "signatures": {
+      "signers": [
+       "0xe92024520e22adc1b93e2084e8846122ef1b4f18",
+       "0xee688353d3faf5eb7253dfb8824b6c764d98e763"
+      ],
+      "signatures": [
+       "0x0f9c97d5bf9c9fe2314cb40f5a8a2ad240ff20555b982c92dd0fb7f713f02b8f785cbb493c91c83d5a65b2913791a0e9b54e1612c68ba758d91b046d1369a77d1c",
+       "0x700121533af21920ae31064770e65722bae60b4624129c6759e903b4a997c61759e2e98542a3b7574290323f8c24fb37827fc78550c5855b2d1318f402557dfd1c"
+      ]
+     },
+     "timestamp": 1795197600,
+     "vol_data": {
+      "SVI_a": "-0.000896851",
+      "SVI_b": "0.0357158",
+      "SVI_fwd": "61.089481",
+      "SVI_m": "0.0363028",
+      "SVI_refTau": "0.00433853373922",
+      "SVI_rho": "-0.1817",
+      "SVI_sigma": "0.133798"
+     }
+    },
+    "1798704000": {
+     "confidence": "0.95",
+     "currency": "HYPE",
+     "deadline": 1794814440,
+     "expiry": 1798704000,
+     "signatures": {
+      "signers": [
+       "0xe92024520e22adc1b93e2084e8846122ef1b4f18",
+       "0xee688353d3faf5eb7253dfb8824b6c764d98e763"
+      ],
+      "signatures": [
+       "0x3ecdc8f4331c77283290a9036e86776ea0d4b6b65faa72707dc6752dad3087db1e25695bef4dba663da360dc464b63a6148bae022a6217c5245adc976ad120e81b",
+       "0xc5561157c675789009fe9684a7113c62d22e88b1f835c88e5769d4f9ebd6b6c61bf0e5c031cc26ff4ee926531a6e3d88b0b9f3ca4aa72bb3577eaac9844664c91c"
+      ]
+     },
+     "timestamp": 1794810840,
+     "vol_data": {
+      "SVI_a": "-0.0668236",
+      "SVI_b": "0.195746",
+      "SVI_fwd": "66.715394",
+      "SVI_m": "0.009524",
+      "SVI_refTau": "0.12345192794520549",
+      "SVI_rho": "-0.0200485",
+      "SVI_sigma": "0.595754"
+     }
+    }
+   }
+  }
+ }
+}

@@ -1527,13 +1527,13 @@ contract DeriveCelestiaAttestedBalanceAdapterTest is BalanceAdapterTestBase {
     }
 
     /// @dev Subaccount 117522 (USDC, 6 ETH and 2 BTC options, long and short), priced from Derive's real signed feeds
-    ///      in `mark_feeds.json` at `valuationTime`. Pins the adapter's output for this fixture. The independent Python
-    ///      reference gives `expectedCash12` = 26,015.997423 USDC; the adapter rounds each long down and each short up
-    ///      (12 decimals), then the total down to 6, landing 1 micro-USDC lower. Not a comparison with Derive's API:
-    ///      the feeds changed between fetches, so `margin_watch` marks of that moment differ by up to 0.9%.
+    ///      in `mark_feeds.json` at `valuationTime`. Pins the adapter's output for this fixture, which the proof
+    ///      script's float reference also gives (`script/test/test_derive_celestia_proof.py`). Not a comparison with
+    ///      Derive's API: the feeds changed between fetches, so `margin_watch` marks of that moment differ by up to 0.9%.
     function test_realBatch_optionsAt117522() public {
         string memory feeds = _readFixture("mark_feeds.json");
-        (bytes memory data, bytes32 commitment, address owner) = _loadMark("mark_117522.json", feeds);
+        (bytes memory data, bytes32 commitment, address owner) =
+            _loadMark(_readFixture("mark_117522.json"), feeds, ".subaccounts.117522");
         _deployReal(feeds);
         vapp.setCommitment(commitment);
         vm.warp(vm.parseJsonUint(feeds, ".valuationTime"));
@@ -1548,10 +1548,11 @@ contract DeriveCelestiaAttestedBalanceAdapterTest is BalanceAdapterTestBase {
     }
 
     /// @dev Subaccount 119408 (HYPE puts, one long and one short), priced from Derive's real signed feeds. Pins the
-    ///      adapter's output; equals the Python reference `expectedCash12` (88,801.606434 USDC) at 6 decimals.
+    ///      adapter's output, which the proof script's float reference also gives.
     function test_realBatch_optionsAt119408() public {
         string memory feeds = _readFixture("mark_feeds.json");
-        (bytes memory data, bytes32 commitment, address owner) = _loadMark("mark_119408.json", feeds);
+        (bytes memory data, bytes32 commitment, address owner) =
+            _loadMark(_readFixture("mark_119408.json"), feeds, ".subaccounts.119408");
         _deployReal(feeds);
         vapp.setCommitment(commitment);
         vm.warp(vm.parseJsonUint(feeds, ".valuationTime"));
@@ -1562,11 +1563,29 @@ contract DeriveCelestiaAttestedBalanceAdapterTest is BalanceAdapterTestBase {
         assertEq(amount, 88_801_606_434);
     }
 
+    /// @dev The proof script's output, unedited, end to end: `derive-celestia-proof.py --pick-options` picked
+    ///      subaccount 67937 (USDC and six long ETH calls over 4 expiries) and wrote its share proof, Derive's signed
+    ///      feeds as fetched, and `expected` from the script's float reference of the pricer. Passing means the
+    ///      script encodes feeds exactly as Derive signed them and the two pricers agree; the 1 micro-USDC allows the
+    ///      reference's float error to cross the 6-decimal floor.
+    function test_scriptFixture_optionsMatchReference() public {
+        string memory json = _readFixture("script_options_67937.json");
+        (bytes memory data, bytes32 commitment, address owner) = _loadMark(json, json, ".feeds");
+        _deployReal(json);
+        vapp.setCommitment(commitment);
+        vm.warp(vm.parseJsonUint(json, ".valuationTime"));
+
+        _submit(owner, data);
+        (uint256 amount, bool isDebt) = adapter.getAdapterBalanceForAsset(owner, address(tokenSix));
+        assertFalse(isDebt);
+        assertApproxEqAbs(amount, vm.parseJsonUint(json, ".expected[0].amount"), 1);
+    }
+
     /// @dev Derive's real signatures, one field moved by 1 wei: the digest changes, so the recovered address is no
     ///      signer and the submit is refused.
     function test_realFeeds_alteredFieldRefused() public {
         string memory feeds = _readFixture("mark_feeds.json");
-        IDeriveOptionPricer.Feeds memory fd = _loadFeeds(feeds, "119408");
+        IDeriveOptionPricer.Feeds memory fd = _loadFeeds(feeds, ".subaccounts.119408");
         fd.spots[0].price += 1;
         _expectRealFeedsRefused(feeds, fd);
     }
@@ -1575,7 +1594,7 @@ contract DeriveCelestiaAttestedBalanceAdapterTest is BalanceAdapterTestBase {
     ///      did not sign it under.
     function test_realFeeds_otherMarketsDomainRefused() public {
         string memory feeds = _readFixture("mark_feeds.json");
-        IDeriveOptionPricer.Feeds memory fd = _loadFeeds(feeds, "119408");
+        IDeriveOptionPricer.Feeds memory fd = _loadFeeds(feeds, ".subaccounts.119408");
         fd.spots[0].optionAsset = vm.parseJsonAddress(feeds, ".optionAssets.ETH");
         _expectRealFeedsRefused(feeds, fd);
     }
@@ -1703,23 +1722,22 @@ contract DeriveCelestiaAttestedBalanceAdapterTest is BalanceAdapterTestBase {
         });
     }
 
+    /// @param json  A proof-script fixture (one subaccount proof).
+    /// @param feeds The JSON holding that subaccount's signed feeds at `base` (see {_loadFeeds}).
     /// @return data       The submit payload: share 0, the subaccount's proof, and its signed feeds.
     /// @return commitment The commitment the Ethereum batch recorded for that blob.
     /// @return owner      The account the batch belongs to.
-    function _loadMark(string memory name, string memory feeds)
+    function _loadMark(string memory json, string memory feeds, string memory base)
         internal
         view
         returns (bytes memory data, bytes32 commitment, address owner)
     {
-        string memory json = _readFixture(name);
         commitment = vm.parseJsonBytes32(json, ".commitment");
         owner = vm.parseJsonAddress(json, ".account");
         DeriveCelestiaAttestedBalanceAdapter.SubaccountProof[] memory ps =
             new DeriveCelestiaAttestedBalanceAdapter.SubaccountProof[](1);
         ps[0] = _markProof(json);
-        data = abi.encode(
-            _shareFrom(json, ".firstShare"), ps, abi.encode(_loadFeeds(feeds, vm.toString(ps[0].subaccountId)))
-        );
+        data = abi.encode(_shareFrom(json, ".firstShare"), ps, abi.encode(_loadFeeds(feeds, base)));
     }
 
     function _markProof(string memory json)
@@ -1739,18 +1757,21 @@ contract DeriveCelestiaAttestedBalanceAdapterTest is BalanceAdapterTestBase {
         }
     }
 
-    /// @dev The signed feeds of one subaccount in `mark_feeds.json`: its spots, and per expiry its forward, rate and
-    ///      vol. Each feed's option asset comes from its `currency`.
-    function _loadFeeds(string memory feeds, string memory sub)
+    /// @dev The signed feeds at `base` (`mark_feeds.json`'s `.subaccounts.<id>`, or a proof-script fixture's `.feeds`):
+    ///      its spots, and per expiry its forward, plus a rate and a vol when the expiry is live (has `rate`). Each
+    ///      feed's option asset comes from its `currency`.
+    function _loadFeeds(string memory feeds, string memory base)
         internal
         view
         returns (IDeriveOptionPricer.Feeds memory fd)
     {
-        string memory base = string.concat(".subaccounts.", sub);
         uint256 ns;
         while (vm.keyExistsJson(feeds, string.concat(base, ".spots[", vm.toString(ns), "].price"))) ++ns;
         uint256 ne;
-        while (vm.keyExistsJson(feeds, string.concat(base, ".expiries[", vm.toString(ne), "].currency"))) ++ne;
+        uint256 nl;
+        for (; vm.keyExistsJson(feeds, string.concat(base, ".expiries[", vm.toString(ne), "].currency")); ++ne) {
+            if (vm.keyExistsJson(feeds, string.concat(base, ".expiries[", vm.toString(ne), "].rate"))) ++nl;
+        }
 
         fd = DeriveBlobBuilder.noFeeds();
         fd.spots = new IDeriveOptionPricer.SpotFeed[](ns);
@@ -1759,14 +1780,16 @@ contract DeriveCelestiaAttestedBalanceAdapterTest is BalanceAdapterTestBase {
             fd.spots[i] = _spotOf(feeds, p, _assetOf(feeds, p));
         }
         fd.forwards = new IDeriveOptionPricer.ForwardFeed[](ne);
-        fd.rates = new IDeriveOptionPricer.RateFeed[](ne);
-        fd.vols = new IDeriveOptionPricer.VolFeed[](ne);
+        fd.rates = new IDeriveOptionPricer.RateFeed[](nl);
+        fd.vols = new IDeriveOptionPricer.VolFeed[](nl);
+        uint256 l;
         for (uint256 i; i < ne; ++i) {
             string memory e = string.concat(base, ".expiries[", vm.toString(i), "]");
             address asset = _assetOf(feeds, e);
             fd.forwards[i] = _fwdOf(feeds, string.concat(e, ".forward"), asset);
-            fd.rates[i] = _rateOf(feeds, string.concat(e, ".rate"), asset);
-            fd.vols[i] = _volOf(feeds, string.concat(e, ".vol"), asset);
+            if (!vm.keyExistsJson(feeds, string.concat(e, ".rate"))) continue;
+            fd.rates[l] = _rateOf(feeds, string.concat(e, ".rate"), asset);
+            fd.vols[l++] = _volOf(feeds, string.concat(e, ".vol"), asset);
         }
     }
 

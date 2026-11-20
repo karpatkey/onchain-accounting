@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Build Celestia share proofs for Derive v3 subaccount records (DeriveCelestiaAttestedBalanceAdapter).
+"""Build Celestia share proofs for Derive v3 subaccount records (DeriveCelestiaAttestedBalanceAdapter), plus the
+signed Derive oracle feeds that price their options (DeriveOptionPricer).
 
 Reads the newest Derive batch the way the adapter does: VAPP.getCelestiaAnchor() gives the Celestia height and
 blob commitment; the Derive-namespace blob at that height must recompute to that commitment. The subaccount
@@ -9,14 +10,24 @@ against the commitment.
 Usage:
   derive-celestia-proof.py --subaccount ID [--subaccount ID ...]   prove these records (same owner)
   derive-celestia-proof.py --pick-collateral-only                   pick one USDC/USDT-only record in the batch
-  options: --out FILE (default stdout), --eth-rpc URL, --celestia-rpc URL,
+  derive-celestia-proof.py --pick-options                           pick one USDC + options record in the batch
+  options: --out FILE (default stdout), --eth-rpc URL, --celestia-rpc URL, --derive-api URL,
            --block N (read VAPP at block N instead of the newest; rebuilds a fixture for a pinned fork block)
 
 ETH RPC: --eth-rpc, else $MAINNET_URL, else Alchemy with $ALCHEMY_API_KEY. Output JSON (hex strings) is read by
-test/balances/AttestedBalanceAdapters/fork/DeriveCelestiaAttestedBalanceAdapter.fork.t.sol. It carries the blob's
-share 0 (`firstShare`, which fixes the share count) and each record's shares, each with its blob index; the
-adapter derives every share's place in the tree from those. The proof is only valid until Derive posts the next
-batch (about 10 minutes); fork tests pin `forkBlock` instead.
+test/balances/AttestedBalanceAdapters/fork/DeriveCelestiaAttestedBalanceAdapter.fork.t.sol and, for option
+records, by DeriveCelestiaAttestedBalanceAdapter.t.sol. It carries the blob's share 0 (`firstShare`, which fixes
+the share count) and each record's shares, each with its blob index; the adapter derives every share's place in
+the tree from those. The proof is only valid until Derive posts the next batch (about 10 minutes); fork tests pin
+`forkBlock` instead.
+
+When the records hold options, the output also carries `feeds`: the signed items that price them, from Derive's
+public/get_latest_signed_feeds, as 1e18 fixed-point decimal strings (the mark_feeds.json shape: `spots`, and per
+(currency, expiry) a `forward`, plus `rate` and `vol` for a live expiry). They are fetched at run time, not at
+--block, and `valuationTime` is the fetch time: the pricer takes live-option items for 5 minutes, so fetch and
+submit together. An expired expiry needs Derive's settlement item (forward timestamp == expiry). `expected` then
+includes the options at an independent float reference of the pricer's formulas, which the adapter matches to
+1 micro-USDC (test/balances/AttestedBalanceAdapters/DeriveCelestiaAttestedBalanceAdapter.t.sol).
 
 Format and evidence: docs/decisions/0031-derive-celestia-attested-adapter.md.
 """
@@ -29,6 +40,8 @@ import os
 import re
 import subprocess
 import sys
+import time
+from decimal import Decimal
 
 VAPP = "0xd330145C17fB6EF2a21ACf1275Ce683A305F58BB"
 NAMESPACE = bytes.fromhex("0000000000000000000000000000000000000046023b2bfb8ba6dc6fdc")
@@ -42,6 +55,27 @@ ASSETS = {
     "0x57b03e14d409adc7fab6cfc44b5886cad2d5f02b": ("USDC", "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48", 6),
     "0x5e72430ec945ccc183c34e2860ffc2b5bac712c2": ("USDT", "0xdAC17F958D2ee523a2206206994597C13D831ec7", 6),
 }
+CASH_ASSET = "0x57b03e14d409adc7fab6cfc44b5886cad2d5f02b"  # options settle in Derive's USDC
+# Derive option asset id -> feed currency, from public/get_instrument `base_asset_address` (2026-11-20).
+OPTION_MARKETS = {
+    "0x4bb4c3cdc7562f08e9910a0c7d8bb7e108861eb4": "ETH",
+    "0xd0711b9ebe84b778483709cde62bacfdbae13623": "BTC",
+    "0x7344bf2afff9afcd6d024865fc0ca53bf03464d9": "HYPE",
+}
+# Derive-chain (957) feed contracts: each signed item's EIP-712 verifyingContract (DeriveOptionPricer).
+FEED_CONTRACTS = {
+    "ETH": {"spot": "0x727aD65db6aE99DB5Dbee8F202846DD6009bf6D5", "forward": "0x791A570F5785FBdb02EA5C7a794c43111ae2f948",
+            "rate": "0x14062Edef4E2b7bd5399929E014a271A22dF77E3", "vol": "0xb27cb6b08e6c298C8634D73D5F6649665e90d160"},
+    "BTC": {"spot": "0x5Eb59391e7870807aD2C8792E8c5e75838E0fdb0", "forward": "0x958c54bFACc0E2dee586564B31Bf3F171f256279",
+            "rate": "0x37D299d9D83186B6043E68c00D58b1F59C965461", "vol": "0x388341d9E5A7D7d5accD738B2a31b0622E0c1b87"},
+    "HYPE": {"spot": "0x4fdeC4F8cfA5bddedbc60338516F3cb6ba03b143", "forward": "0x0f79fA7bD5C098b99743a9714bcD11f219C9b695",
+             "rate": "0x18522e5D09F3a6964Fc094C230bFcB1AB27e0f17", "vol": "0x481916590863053eA2d8F21B64Ee9429820512d1"},
+}
+FEED_SIGNERS = ["0xe92024520e22adc1b93e2084e8846122ef1b4f18", "0xee688353d3faf5eb7253dfb8824b6c764d98e763"]
+DERIVE_API = "https://api.derive.xyz/v3"
+MAX_FEED_AGE = 300  # DeriveOptionPricer.MAX_FEED_AGE
+SETTLEMENT_SAMPLES = 1800
+SECONDS_PER_YEAR = 365 * 86400
 
 
 # ------------------------------------------------------------------------------------------------ transport
@@ -244,15 +278,18 @@ def parse_record(b, i):
         bal, i = varint(b, i)
         _, i = varint(b, i)
         coll.append((asset, zigzag(bal)))
-    options, i = varint(b, i)
-    for _ in range(options):
+    n_opts, i = varint(b, i)
+    opts = []
+    for _ in range(n_opts):
+        asset = "0x" + b[i:i + 20].hex()
         i += 20
-        for _ in range(2):
-            _, i = varint(b, i)
+        sub_id, i = varint(b, i)
+        amount, i = varint(b, i)
+        opts.append({"asset": asset, "subId": sub_id, "amount": zigzag(amount)})
     for _ in range(4):
         _, i = varint(b, i)
     return {"id": sid, "manager": manager, "owner": owner, "collateral": coll, "perps": perps,
-            "options": options, "span": [start, i]}
+            "options": opts, "span": [start, i]}
 
 
 _HEAD = re.compile(rb"(?=([\x00-\xfa]|\xfb..|\xfc....)\x01\1)", re.S)
@@ -311,14 +348,197 @@ def prove_record(tree, recs, k):
             "shares": [tree.prove(i) for i in range(s0, s1 + 1)]}
 
 
+# ------------------------------------------------------------------------------------------------ feeds
+
+class FeedError(ValueError):
+    """The records cannot be valued from the feeds at hand (DeriveOptionPricer or the adapter would revert)."""
+
+
+def _wad(s):
+    """Derive's decimal string -> 1e18 fixed-point decimal string, exactly."""
+    return str(int(Decimal(s) * 10**18))
+
+
+def series(sub_id):
+    """(expiry, 8-decimal strike, is_call) of an option subId: bits 0-31, 32-94, 95 (DeriveRecord)."""
+    return sub_id & 0xFFFFFFFF, (sub_id >> 32) & ((1 << 63) - 1), (sub_id >> 95) & 1 == 1
+
+
+def fetch_signed_feeds(api, currency):
+    out = json.loads(_curl(["-X", "POST", f"{api}/public/get_latest_signed_feeds", "-H",
+                            "content-type: application/json", "-d", json.dumps({"currency": currency})]))
+    if "result" not in out:
+        raise RuntimeError(f"signed feeds for {currency}: {out.get('error')}")
+    return out["result"]
+
+
+def _signed(item, now, live):
+    signers = [s.lower() for s in item["signatures"]["signers"]]
+    if sorted(signers) != sorted(FEED_SIGNERS):
+        raise FeedError(f"{item['currency']}: signed by {signers}, the pricer takes {FEED_SIGNERS}")
+    if item["deadline"] < now or item["timestamp"] > now:
+        raise FeedError(f"{item['currency']}: item outside [timestamp, deadline] at {now}")
+    if live and now - item["timestamp"] > MAX_FEED_AGE:
+        raise FeedError(f"{item['currency']}: item from {item['timestamp']} is stale at {now}")
+    return {"deadline": item["deadline"], "timestamp": item["timestamp"],
+            "signatures": item["signatures"]["signatures"]}
+
+
+def build_feeds(signed, opts, now):
+    """The feed items that price `opts` at `now`, from `signed` (currency -> get_latest_signed_feeds result).
+
+    Exactly the items the options use, as the pricer rejects unused ones: a spot per currency with a live option;
+    per (currency, expiry) a forward, plus a rate and a vol when the expiry is live.
+    """
+    need = {}
+    for o in opts:
+        if o["amount"] == 0:
+            continue
+        if o["asset"] not in OPTION_MARKETS:
+            raise FeedError(f"option asset {o['asset']} has no configured market")
+        need.setdefault(OPTION_MARKETS[o["asset"]], set()).add(series(o["subId"])[0])
+    feeds = {"spots": [], "expiries": []}
+    for cur, expiries in sorted(need.items()):
+        f = signed[cur]
+        if any(e > now for e in expiries):
+            s = f["spot_data"][cur]
+            feeds["spots"].append({"currency": cur, "price": _wad(s["price"]), "confidence": _wad(s["confidence"]),
+                                   **_signed(s, now, True)})
+        for e in sorted(expiries):
+            live, k = e > now, str(e)
+            fw = f["fwd_data"][cur].get(k)
+            if fw is None:
+                raise FeedError(f"{cur} {e}: no signed forward item")
+            if not live and fw["timestamp"] != e:
+                raise FeedError(f"{cur} {e}: expired, and Derive has not published its settlement item")
+            entry = {"currency": cur, "forward": {
+                "expiry": e, "start": str(int(Decimal(fw["spot_aggregate_start"]))),
+                "latest": str(int(Decimal(fw["spot_aggregate_latest"]))), "fwdDiff": _wad(fw["fwd_diff"]),
+                "confidence": _wad(fw["confidence"]), **_signed(fw, now, live)}}
+            if live:
+                rt, vo = f["rate_data"][cur].get(k), f["vol_data"][cur].get(k)
+                if rt is None or vo is None:
+                    raise FeedError(f"{cur} {e}: no signed rate or vol item")
+                v = vo["vol_data"]
+                entry["rate"] = {"expiry": e, "rate": _wad(rt["rate"]), "confidence": _wad(rt["confidence"]),
+                                 **_signed(rt, now, True)}
+                entry["vol"] = {"expiry": e, "a": _wad(v["SVI_a"]), "b": _wad(v["SVI_b"]), "rho": _wad(v["SVI_rho"]),
+                                "m": _wad(v["SVI_m"]), "sigma": _wad(v["SVI_sigma"]), "sviFwd": _wad(v["SVI_fwd"]),
+                                "refTau": _wad(v["SVI_refTau"]), "confidence": _wad(vo["confidence"]),
+                                **_signed(vo, now, True)}
+            feeds["expiries"].append(entry)
+    return feeds
+
+
+# ------------------------------------------------------------------------------------------------ reference pricer
+# Float re-derivation of DeriveOptionPricer from the published formulas (decision 0031), written apart from the
+# Solidity fixed-point code so each checks the other. Doubles carry ~1e-15 relative error: far below 1 micro-USDC.
+
+def _f(s):
+    return int(s) / 1e18
+
+
+def norm_cdf(x):
+    return 0.5 * math.erfc(-x / math.sqrt(2))
+
+
+def black76(fwd, strike, vol, tau, rate, is_call):
+    disc = math.exp(-max(rate, 0.0) * tau)
+    total_vol, m = vol * math.sqrt(tau), strike / fwd
+    std_call = 1.0
+    if total_vol < 24:
+        d1 = (total_vol * total_vol / 2 - math.log(m)) / total_vol
+        std_call = max(norm_cdf(d1) - m * norm_cdf(d1 - total_vol), 0.0)
+    if is_call:
+        return min(std_call * fwd * disc, fwd * disc)
+    return min(max(std_call + m - 1, 0.0) * fwd * disc, strike * disc)
+
+
+def svi_vol(v, strike):
+    a, b, rho, m, sigma = _f(v["a"]), _f(v["b"]), _f(v["rho"]), _f(v["m"]), _f(v["sigma"])
+    bound = 4 * math.sqrt(a + b * sigma)
+    k = min(max(math.log(strike / _f(v["sviFwd"])), -bound), bound)
+    w = a + b * (rho * (k - m) + math.sqrt((k - m) ** 2 + sigma * sigma))
+    if w < 0:
+        raise FeedError("negative SVI variance")
+    return math.sqrt(min(w, 144.0) / _f(v["refTau"]))
+
+
+def option_value12(o, feeds, now):
+    """Signed 12-decimal USD value of one option: a long rounded down, a short rounded up and negated."""
+    cur = OPTION_MARKETS[o["asset"]]
+    expiry, strike8, is_call = series(o["subId"])
+    entry = next((x for x in feeds["expiries"] if x["currency"] == cur and x["forward"]["expiry"] == expiry), None)
+    if entry is None:
+        raise FeedError(f"{cur} {expiry}: no forward in feeds")
+    mag = abs(o["amount"])
+    if expiry <= now:
+        fw = entry["forward"]
+        settle = (int(fw["latest"]) - int(fw["start"])) // SETTLEMENT_SAMPLES
+        strike18 = strike8 * 10**10
+        p18 = max(settle - strike18, 0) if is_call else max(strike18 - settle, 0)
+        return mag * p18 // 10**18 if o["amount"] > 0 else -((mag * p18 + 10**18 - 1) // 10**18)
+    spot = next(_f(s["price"]) for s in feeds["spots"] if s["currency"] == cur)
+    fwd = spot + _f(entry["forward"]["fwdDiff"])
+    strike = strike8 / 1e8
+    price = black76(fwd, strike, svi_vol(entry["vol"], strike), (expiry - now) / SECONDS_PER_YEAR,
+                    _f(entry["rate"]["rate"]), is_call)
+    v = mag * price
+    return math.floor(v) if o["amount"] > 0 else -math.ceil(v)
+
+
+def expected_amounts(recs, feeds=None, now=None):
+    """Token -> amount the adapter reports for these records, mirroring its netting.
+
+    Raw 12-decimal balances are summed per token before converting once, as the adapter does: rounding each entry
+    first can come out lower across several subaccounts. Options are netted into USDC, and each subaccount's own
+    USDC must cover its own shorts (LiabilityExceedsCollateral).
+    """
+    raw = {}
+    _, cash_token, cash_dec = ASSETS[CASH_ASSET]
+    for r in recs:
+        cash = 0
+        for asset, bal in r["collateral"]:
+            if bal > 0 and asset in ASSETS:
+                _, token, dec = ASSETS[asset]
+                raw[(token, dec)] = raw.get((token, dec), 0) + bal
+                cash += bal if asset == CASH_ASSET else 0
+        vals = [option_value12(o, feeds, now) for o in r["options"] if o["amount"] != 0]
+        if not vals:
+            continue
+        credit, debit = sum(v for v in vals if v > 0), -sum(v for v in vals if v < 0)
+        if debit > cash + credit:
+            raise FeedError(f"subaccount {r['id']}: short options owe more than its cash and longs")
+        key = (cash_token, cash_dec)
+        raw[key] = raw.get(key, 0) + credit - debit
+    return {token: (bal * 10 ** (dec - 12) if dec >= 12 else bal // 10 ** (12 - dec))
+            for (token, dec), bal in raw.items()}
+
+
+def value_with_feeds(recs, signed, now):
+    """(feeds, expected) for records holding options; raises FeedError when they cannot be valued."""
+    feeds = build_feeds(signed, [o for r in recs for o in r["options"]], now)
+    return feeds, expected_amounts(recs, feeds, now)
+
+
+def is_option_candidate(r, max_options=12):
+    """No perps, USDC as the only non-zero collateral, 1..max_options options, all in configured markets."""
+    live = [o for o in r["options"] if o["amount"] != 0]
+    return (r["perps"] == 0 and 0 < len(live) <= max_options
+            and all(o["asset"] in OPTION_MARKETS for o in live)
+            and all(bal == 0 or (asset == CASH_ASSET and bal > 0) for asset, bal in r["collateral"]))
+
+
 def main():
     ap = argparse.ArgumentParser()
     g = ap.add_mutually_exclusive_group(required=True)
     g.add_argument("--subaccount", type=int, action="append")
     g.add_argument("--pick-collateral-only", action="store_true")
+    g.add_argument("--pick-options", action="store_true")
     ap.add_argument("--out")
     ap.add_argument("--eth-rpc")
     ap.add_argument("--celestia-rpc", default="https://rpc.celestia.pops.one")
+    ap.add_argument("--derive-api", default=DERIVE_API)
     ap.add_argument("--block", type=int)
     a = ap.parse_args()
 
@@ -340,14 +560,38 @@ def main():
 
     recs = subaccounts(data)
     by_id = {r["id"]: k for k, r in enumerate(recs)}
+    signed, now = {}, int(time.time())
+
+    def feeds_for(rs):
+        for o in (o for r in rs for o in r["options"] if o["amount"] != 0 and o["asset"] in OPTION_MARKETS):
+            cur = OPTION_MARKETS[o["asset"]]
+            if cur not in signed:
+                signed[cur] = fetch_signed_feeds(a.derive_api, cur)
+        return value_with_feeds(rs, signed, now)
+
+    feeds = None
     if a.pick_collateral_only:
         ok = [k for k, r in enumerate(recs)
-              if r["perps"] == 0 and r["options"] == 0 and r["collateral"]
+              if r["perps"] == 0 and not r["options"] and r["collateral"]
               and all(bal >= 0 and asset in ASSETS for asset, bal in r["collateral"])
               and any(bal > 0 for _, bal in r["collateral"])]
         if not ok:
             sys.exit("no USDC/USDT-only subaccount in the newest batch; try again after the next batch")
         ks = [ok[0]]
+    elif a.pick_options:
+        ks = None
+        for k, r in enumerate(recs):
+            if not is_option_candidate(r):
+                continue
+            try:
+                feeds, expected = feeds_for([r])
+            except FeedError as e:
+                print(f"skip {r['id']}: {e}", file=sys.stderr)
+                continue
+            ks = [k]
+            break
+        if ks is None:
+            sys.exit("no USDC + options subaccount in the newest batch can be valued; try after the next batch")
     else:
         missing = [s for s in a.subaccount if s not in by_id]
         if missing:
@@ -357,21 +601,22 @@ def main():
     if len(owners) != 1:
         sys.exit(f"subaccounts belong to different owners: {owners}")
 
-    # Collateral only (options need the signed feeds). Sum raw 12-decimal balances per token first, then convert
-    # once, as the adapter does: rounding each entry first can come out lower across several subaccounts.
-    raw = {}
-    for k in ks:
-        for asset, bal in recs[k]["collateral"]:
-            if bal > 0 and asset in ASSETS:
-                _, token, dec = ASSETS[asset]
-                raw[(token, dec)] = raw.get((token, dec), 0) + bal
-    expected = {token: (bal * 10 ** (dec - 12) if dec >= 12 else bal // 10 ** (12 - dec))
-                for (token, dec), bal in raw.items()}
+    chosen = [recs[k] for k in ks]
+    if feeds is None and any(o["amount"] != 0 for r in chosen for o in r["options"]):
+        try:
+            feeds, expected = feeds_for(chosen)
+        except FeedError as e:
+            sys.exit(str(e))
+    elif feeds is None:
+        expected = expected_amounts(chosen)
 
     out = {"forkBlock": block, "celestiaHeight": height, "commitment": commitment, "account": owners.pop(),
            "firstShare": tree.prove(0),
            "proofs": [prove_record(tree, recs, k) for k in ks],
            "expected": [{"token": t, "amount": v} for t, v in expected.items()]}
+    if feeds is not None:
+        out.update({"valuationTime": now, "signers": FEED_SIGNERS, "feedContracts": FEED_CONTRACTS,
+                    "optionAssets": {cur: asset for asset, cur in OPTION_MARKETS.items()}, "feeds": feeds})
     text = json.dumps(out, indent=1)
     if a.out:
         with open(a.out, "w") as fh:

@@ -41,3 +41,4 @@ Short, numbered records of *why* the codebase looks the way it does. Read these 
 | 0024 | [Drop oversized submodules; vendor single-file dependencies](0024-dependency-size-vendor-single-file-deps.md) | accepted |
 | 0025 | [A registered heartbeat MUST equal the provider's declared heartbeat](0025-heartbeat-equals-declared.md) | accepted |
 | 0030 | [Assisted adapters: keeper-fed `submitFor` + cache-free `previewPositions`](0030-assisted-adapters-keeper-submit-and-preview.md) | accepted |
+| 0031 | [Derive v3 balances: an attested member verified against Derive's Celestia blob commitment](0031-derive-celestia-attested-adapter.md) | proposed |

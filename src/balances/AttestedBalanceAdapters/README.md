@@ -106,6 +106,26 @@ admin-injected amounts, no upgrade path.
   [ADR 0007](../../../docs/decisions/0007-merkl-trust-minimized-cache.md). Off-chain feeder: the kpk-agents
   `SubmitMerklProofs` automation. Implements the family's cache-free `previewPositions(account, bytes)` (decoding
   `bytes` to `Allocation[]`) — see below.
+- **`DeriveCelestiaAttestedBalanceAdapter`** — collateral and options of a fund's Derive v3 subaccounts. Epoch =
+  `VerifiableApp.celestiaLastCommitment()`, the Celestia share commitment of the newest Derive batch blob. A submit
+  (`submitSubaccounts(account, firstShare, SubaccountProof[], bytes feeds)` or
+  `submit(account, abi.encode(firstShare, SubaccountProof[], feeds))`) proves the blob's share 0, which fixes the
+  share count and so the tree shape, then the shares holding each subaccount record at their blob indices
+  (`derive/CelestiaShareProof.sol`), decodes the record (`derive/DeriveRecord.sol`, reverse-engineered format) and
+  requires owner = account, no perps, no negative collateral, mapped assets only, and VAPP's program key and verifier
+  equal to the pinned pair. Options are valued at Derive's mark by a separate immutable `derive/DeriveOptionPricer.sol`
+  from Derive's signed spot/forward/rate/vol feeds carried in `feeds` (`abi.encode(IDeriveOptionPricer.Feeds)`):
+  every item signed by every pricer signer, within its deadline, at most 5 minutes old when pricing a live option,
+  and used; Black-76 on the SVI slice for a live option, intrinsic at Derive's settlement TWAP for an expired one.
+  Option values net into the USDC cash token, per subaccount: each subaccount's own cash must cover its own shorts,
+  so leaving a subaccount out of a submit can only lower the figure. Every covered token is written, zero included.
+  One `Collateral` leg per token. The proof binds the bytes Derive posted to Celestia, not `stateRoot()`; option
+  values rest on Derive's feed signers. Entries read 0 after the next batch (about 10 minutes), once the batch is
+  older than 30 minutes by VAPP's proven `lastOpTimestamp` (the same bound refuses submits, so a replay cannot
+  revive a stalled batch), or after a program rotation. Constructors: adapter
+  `(vapp, navCalculator, admin, pinnedVKey, pinnedVerifier, deriveAssets[], tokens[], cashAsset, pricer)` (pricer
+  zero = records with options refused); pricer `(OptionMarket[] markets, address[] signers)`. Proof builder:
+  `script/test/derive-celestia-proof.py`. Rationale: [ADR 0031](../../../docs/decisions/0031-derive-celestia-attested-adapter.md).
 
 ## Cache-free preview (universal read on the interface)
 

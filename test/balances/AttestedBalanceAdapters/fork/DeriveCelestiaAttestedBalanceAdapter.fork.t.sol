@@ -101,11 +101,11 @@ contract DeriveCelestiaAttestedBalanceAdapterForkTest is BalanceAdapterTestBase 
         bytes memory s = ps[0].shares[0].share;
         s[200] = bytes1(uint8(s[200]) ^ 0x01);
         vm.expectRevert(DeriveCelestiaAttestedBalanceAdapter.InvalidShareProof.selector);
-        adapter.submit(account, abi.encode(ps));
+        adapter.submit(account, abi.encode(_share(".firstShare"), ps));
     }
 
     function _payload() internal view returns (bytes memory) {
-        return abi.encode(_proofs());
+        return abi.encode(_share(".firstShare"), _proofs());
     }
 
     function _proofs() internal view returns (DeriveCelestiaAttestedBalanceAdapter.SubaccountProof[] memory ps) {
@@ -115,7 +115,6 @@ contract DeriveCelestiaAttestedBalanceAdapterForkTest is BalanceAdapterTestBase 
         for (uint256 i; i < n; ++i) {
             string memory k = string.concat(".proofs[", vm.toString(i), "]");
             ps[i].subaccountId = vm.parseJsonUint(json, string.concat(k, ".subaccountId"));
-            ps[i].numSubtrees = vm.parseJsonUint(json, string.concat(k, ".numSubtrees"));
             ps[i].recordOffset = vm.parseJsonUint(json, string.concat(k, ".recordOffset"));
             ps[i].usePrevious = vm.parseJsonBool(json, string.concat(k, ".usePrevious"));
             ps[i].prevOffset = vm.parseJsonUint(json, string.concat(k, ".prevOffset"));
@@ -123,14 +122,15 @@ contract DeriveCelestiaAttestedBalanceAdapterForkTest is BalanceAdapterTestBase 
             while (vm.keyExistsJson(json, string.concat(k, ".shares[", vm.toString(m), "]"))) ++m;
             ps[i].shares = new DeriveCelestiaAttestedBalanceAdapter.ShareProof[](m);
             for (uint256 j; j < m; ++j) {
-                string memory s = string.concat(k, ".shares[", vm.toString(j), "]");
-                ps[i].shares[j].index = vm.parseJsonUint(json, string.concat(s, ".index"));
-                ps[i].shares[j].share = vm.parseJsonBytes(json, string.concat(s, ".share"));
-                ps[i].shares[j].subtree = vm.parseJsonUint(json, string.concat(s, ".subtree"));
-                ps[i].shares[j].position = vm.parseJsonUint(json, string.concat(s, ".position"));
-                ps[i].shares[j].nmtSiblings = vm.parseJsonBytesArray(json, string.concat(s, ".nmtSiblings"));
-                ps[i].shares[j].rfcSiblings = vm.parseJsonBytes32Array(json, string.concat(s, ".rfcSiblings"));
+                ps[i].shares[j] = _share(string.concat(k, ".shares[", vm.toString(j), "]"));
             }
         }
+    }
+
+    function _share(string memory k) internal view returns (DeriveCelestiaAttestedBalanceAdapter.ShareProof memory s) {
+        s.index = vm.parseJsonUint(json, string.concat(k, ".index"));
+        s.share = vm.parseJsonBytes(json, string.concat(k, ".share"));
+        s.nmtSiblings = vm.parseJsonBytesArray(json, string.concat(k, ".nmtSiblings"));
+        s.rfcSiblings = vm.parseJsonBytes32Array(json, string.concat(k, ".rfcSiblings"));
     }
 }

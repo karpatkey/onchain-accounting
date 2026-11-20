@@ -35,20 +35,25 @@ interface IDeriveVerifiableApp {
 ///      SP1 program proves that blob equals the state transition is not public. The owner and subaccount id come from
 ///      the same bytes. The Derive-asset → token table and decimals are constructor constants, not attested.
 ///
-///      **Acceptance rules,** each fail-loud in {_verifyPayload}: every share must hash to the live commitment; the
-///      record's owner must be the account; the subaccount must hold no perps and no options (their value is not
-///      decoded); no balance may be negative (the family is credit-only); every non-zero balance must be in a mapped
-///      asset; subaccount ids must be strictly ascending (no double counting); VAPP's `programVKey()` and
-///      `verifier()` must equal the reviewed pair passed to the constructor. A later rotation also makes cached
-///      entries read 0 ({_isLive}).
+///      **Acceptance rules,** each fail-loud in {_verifyPayload}: the blob's first share must verify at index 0 (it
+///      fixes the share count, and so the tree shape); every record share must verify at its stated blob index, and
+///      a record's shares must be consecutive, so the decoded bytes are exactly the posted bytes; the record's owner
+///      must be the account; the subaccount must hold no perps and no options (their value is not decoded); no
+///      balance may be negative (the family is credit-only); every non-zero balance must be in a mapped asset;
+///      subaccount ids must be strictly ascending (no double counting); VAPP's `programVKey()` and `verifier()` must
+///      equal the reviewed pair passed to the constructor. A later rotation also makes cached entries read 0
+///      ({_isLive}).
 ///
 ///      **Freshness.** Only the newest batch's commitment is on Ethereum, and a blob only carries subaccounts that
 ///      changed, so a submit needs the fund's records in the newest batch. The intended flow touches the account
 ///      first (a dust transfer between the fund's own subaccounts) and submits in the settlement transaction.
-///      Cached entries read 0 after the next batch (about 10 minutes).
+///      Cached entries read 0 after the next batch (about 10 minutes), or after {MAX_ATTESTATION_AGE} if Derive
+///      stops posting batches while its sequencer keeps trading.
 ///
 ///      **Framing is a consistency check, not a proof.** The record's offset is chosen by the submitter; the adapter
 ///      requires the next record's head right after it, or the previous record ending exactly where it starts.
+///      Framing by the previous record needs that record's shares too, and it may belong to anyone; the fund should
+///      hold two adjacent subaccount ids and touch both, so each frames the other with its own small record.
 ///
 ///      Trust model and alternatives: `docs/decisions/0031-derive-celestia-attested-adapter.md`. Family: ADR 0022.
 contract DeriveCelestiaAttestedBalanceAdapter is AttestedValueCache {
@@ -56,24 +61,22 @@ contract DeriveCelestiaAttestedBalanceAdapter is AttestedValueCache {
     // Type Definitions
     //
 
-    /// @notice One 512-byte share and its path to the blob commitment.
+    /// @notice One 512-byte share and its path to the blob commitment. The share's place in the tree (subtree,
+    ///         position, depth) is derived from `index` and the proven share count, never supplied.
     struct ShareProof {
         uint256 index; // the share's index in the blob
         bytes share;
-        uint256 subtree;
-        uint256 position;
         bytes[] nmtSiblings;
         bytes32[] rfcSiblings;
     }
 
-    /// @notice The contiguous shares that hold one subaccount record, plus where the record starts in their payload.
+    /// @notice The consecutive shares that hold one subaccount record, plus where the record starts in their payload.
     /// @param recordOffset Offset of the record in the concatenated share payloads (share headers stripped).
     /// @param usePrevious  Frame the record by the previous record ending at `recordOffset` (decoded from
     ///                     `prevOffset`) instead of by the next record's head. Needed when the record is the last in
     ///                     its section.
     struct SubaccountProof {
         uint256 subaccountId;
-        uint256 numSubtrees;
         uint256 recordOffset;
         bool usePrevious;
         uint256 prevOffset;
@@ -97,6 +100,12 @@ contract DeriveCelestiaAttestedBalanceAdapter is AttestedValueCache {
 
     /// @notice Upper bound on distinct tokens cached per account.
     uint256 public constant MAX_TOKENS_PER_ACCOUNT = 8;
+
+    /// @notice How long a cached entry stays live within one Derive batch. Batches land about every 10 minutes and
+    ///         the intended flow submits and reads in one transaction, so this only bites when Derive stops posting
+    ///         batches: its sequencer can keep settling trades that spend the collateral while the commitment, and
+    ///         so the epoch, stays put.
+    uint256 public constant MAX_ATTESTATION_AGE = 30 minutes;
 
     /// @dev Share header: namespace (29) + info byte (1), plus the sequence length (4) on a blob's first share.
     uint256 private constant _FIRST_HEADER = 34;
@@ -190,9 +199,12 @@ contract DeriveCelestiaAttestedBalanceAdapter is AttestedValueCache {
     //
 
     /// @notice Typed convenience over {IAttestedBalanceAdapter.submit}. Requires `SUBMITTER_ROLE`.
+    /// @param firstShare The blob's share 0 with its proof; it fixes the blob's share count.
     /// @dev Funnels through `_submitPayload`, the family's single write path.
-    function submitSubaccounts(address account, SubaccountProof[] calldata proofs) external {
-        _submitPayload(account, abi.encode(proofs));
+    function submitSubaccounts(address account, ShareProof calldata firstShare, SubaccountProof[] calldata proofs)
+        external
+    {
+        _submitPayload(account, abi.encode(firstShare, proofs));
     }
 
     //
@@ -220,9 +232,9 @@ contract DeriveCelestiaAttestedBalanceAdapter is AttestedValueCache {
     //
 
     /// @inheritdoc AttestedValueCache
-    /// @dev Decodes `abi.encode(SubaccountProof[])`, verifies every subaccount record against `epoch`, and returns
-    ///      one summed value per token. The returned `ctxs` are empty: this member keeps no state beside the
-    ///      attestation and {_assetLegs} ignores `ctx`.
+    /// @dev Decodes `abi.encode(ShareProof firstShare, SubaccountProof[])`, verifies the first share and every
+    ///      subaccount record against `epoch`, and returns one summed value per token. The returned `ctxs` are
+    ///      empty: this member keeps no state beside the attestation and {_assetLegs} ignores `ctx`.
     function _verifyPayload(bytes32 epoch, address account, bytes memory data)
         internal
         view
@@ -230,10 +242,11 @@ contract DeriveCelestiaAttestedBalanceAdapter is AttestedValueCache {
         returns (address[] memory assets, uint256[] memory values, bytes[] memory ctxs)
     {
         if (!_programPinned()) revert ProgramChanged(VAPP.programVKey(), VAPP.verifier());
-        SubaccountProof[] memory proofs = abi.decode(data, (SubaccountProof[]));
+        (ShareProof memory first, SubaccountProof[] memory proofs) = abi.decode(data, (ShareProof, SubaccountProof[]));
         uint256 n = proofs.length;
         if (n == 0) revert EmptyPayload();
         if (n > MAX_SUBACCOUNTS) revert TooManySubaccounts(n);
+        uint256 numShares = _provenShareCount(epoch, first);
 
         address[] memory tokens = new address[](MAX_TOKENS_PER_ACCOUNT);
         uint256[] memory sums = new uint256[](MAX_TOKENS_PER_ACCOUNT);
@@ -244,7 +257,7 @@ contract DeriveCelestiaAttestedBalanceAdapter is AttestedValueCache {
             if (i != 0 && p.subaccountId <= prevId) revert SubaccountsNotAscending(p.subaccountId);
             prevId = p.subaccountId;
 
-            DeriveRecord.Record memory rec = _readRecord(epoch, p);
+            DeriveRecord.Record memory rec = _readRecord(epoch, numShares, p);
             if (rec.owner != account) revert WrongOwner(p.subaccountId, rec.owner);
             if (rec.perpCount != 0 || rec.optionCount != 0) {
                 revert PositionsNotAllowed(p.subaccountId, rec.perpCount, rec.optionCount);
@@ -267,11 +280,11 @@ contract DeriveCelestiaAttestedBalanceAdapter is AttestedValueCache {
     }
 
     /// @inheritdoc AttestedValueCache
-    /// @dev Live iff the epoch is current AND VAPP still runs the reviewed program and verifier. VAPP's owner can
-    ///      rotate either without a new batch; this turns that into a 0 read rather than a figure from a program
-    ///      nobody reviewed.
+    /// @dev Live iff the epoch is current, the entry is younger than {MAX_ATTESTATION_AGE}, and VAPP still runs the
+    ///      reviewed program and verifier. VAPP's owner can rotate either without a new batch; this turns that into
+    ///      a 0 read rather than a figure from a program nobody reviewed.
     function _isLive(Attestation memory a, address) internal view override returns (bool) {
-        return a.epoch == _liveEpoch() && _programPinned();
+        return a.epoch == _liveEpoch() && block.timestamp - a.attestedAt <= MAX_ATTESTATION_AGE && _programPinned();
     }
 
     /// @inheritdoc AttestedValueCache
@@ -324,8 +337,18 @@ contract DeriveCelestiaAttestedBalanceAdapter is AttestedValueCache {
         return VAPP.programVKey() == PINNED_VKEY && VAPP.verifier() == PINNED_VERIFIER;
     }
 
-    /// @dev Verifies `p`'s shares against `epoch`, joins their payloads, decodes the record and checks its framing.
-    function _readRecord(bytes32 epoch, SubaccountProof memory p)
+    /// @dev Verifies the blob's first share at index 0 and returns the share count it records.
+    function _provenShareCount(bytes32 epoch, ShareProof memory first) private pure returns (uint256 numShares) {
+        if (first.index != 0) revert CelestiaShareProof.NotFirstShare();
+        numShares = CelestiaShareProof.numSharesOf(first.share);
+        bytes32 root =
+            CelestiaShareProof.commitmentOf(first.share, NAMESPACE, 0, numShares, first.nmtSiblings, first.rfcSiblings);
+        if (root != epoch) revert InvalidShareProof();
+    }
+
+    /// @dev Verifies `p`'s shares against `epoch` at their blob indices, joins their payloads, decodes the record
+    ///      and checks its framing.
+    function _readRecord(bytes32 epoch, uint256 numShares, SubaccountProof memory p)
         private
         pure
         returns (DeriveRecord.Record memory rec)
@@ -337,13 +360,14 @@ contract DeriveCelestiaAttestedBalanceAdapter is AttestedValueCache {
         uint256 len;
         for (uint256 j; j < k; ++j) {
             ShareProof memory s = p.shares[j];
+            // The index is bound by the proof below (the tree shape comes from the proven share count), so
+            // consecutive indices mean the joined payload is the blob's bytes in order.
             if (s.index != p.shares[0].index + j) revert SharesNotContiguous(p.subaccountId);
-            bytes32 root = CelestiaShareProof.commitmentOf(
-                s.share, NAMESPACE, s.position, s.nmtSiblings, s.subtree, p.numSubtrees, s.rfcSiblings
-            );
+            bytes32 root =
+                CelestiaShareProof.commitmentOf(s.share, NAMESPACE, s.index, numShares, s.nmtSiblings, s.rfcSiblings);
             if (root != epoch) revert InvalidShareProof();
-            // Info byte bit 0 marks the first share of a sequence, which also carries the sequence length.
-            uint256 header = uint8(s.share[29]) & 1 == 1 ? _FIRST_HEADER : _CONT_HEADER;
+            // Share 0 carries the blob's length after the info byte; the others only the info byte.
+            uint256 header = s.index == 0 ? _FIRST_HEADER : _CONT_HEADER;
             uint256 size = CelestiaShareProof.SHARE_SIZE - header; // share length checked = 512 by commitmentOf
             bytes memory share = s.share;
             assembly ("memory-safe") {

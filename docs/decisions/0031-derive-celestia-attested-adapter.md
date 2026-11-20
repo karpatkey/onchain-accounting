@@ -24,8 +24,8 @@ tested on real batches and on a fork of mainnet.
    | Hook | Implementation |
    |---|---|
    | `_liveEpoch()` | `VAPP.celestiaLastCommitment()` |
-   | `_verifyPayload(epoch, account, data)` | For each subaccount in `data`: verify its shares against `epoch` (NMT path per share, RFC 6962 path to the commitment); decode the record; require `owner == account`, zero perps, zero options, every balance ≥ 0; require `programVKey()` and `verifier()` equal the immutable values passed to the constructor (the reviewed pair at deployment). Sum balances per asset across the subaccounts, map each Derive asset id to its Ethereum token through an immutable table, scale 12 decimals to the token's. |
-   | `_isLive` | Default: live iff the stored epoch equals the live commitment. |
+   | `_verifyPayload(epoch, account, data)` | Verify the blob's share 0 at index 0 and read the share count from it. For each subaccount in `data`: verify its shares against `epoch` at their stated blob indices (the subtree layout comes from the share count, never from the submitter), require consecutive indices, decode the record; require `owner == account`, zero perps, zero options, every balance ≥ 0; require `programVKey()` and `verifier()` equal the immutable values passed to the constructor (the reviewed pair at deployment). Sum balances per asset across the subaccounts, map each Derive asset id to its Ethereum token through an immutable table, scale 12 decimals to the token's. |
+   | `_isLive` | Live iff the stored epoch equals the live commitment, the entry is at most 30 minutes old, and the program pins still hold. |
    | `_liveValue`, `_assetLegs` | The attested amount; one `Collateral` credit leg per asset. |
 
 2. **What the proof binds, stated as 0022 requires.** The proof binds the decoded amounts to the bytes Derive
@@ -49,7 +49,9 @@ tested on real batches and on a fork of mainnet.
 - **Proof on every read** (`getAccountNavWithProofs`). Every consumer must build proofs, the NAV Calculator needs
   an upgrade, and NAV fails when proof sources are down. The family's `previewPositions(account, data)` already
   serves live UI checks without it.
-- **Time-to-live liveness.** A trade inside the window spends collateral while NAV still shows it: over-report.
+- **Time-to-live liveness alone.** A trade inside the window spends collateral while NAV still shows it:
+  over-report. The epoch stays the primary rule; the 30-minute cap only adds a bound for when Derive stops posting
+  batches while its sequencer keeps trading, which the epoch alone cannot see.
 - **Per-batch keeper or absence proofs.** Absence proofs average 2.8 shares per newer batch, and cannot use
   neighbours when the fund's id is the highest in the section (38 of 84 batches checked).
 
@@ -64,8 +66,12 @@ tested on real batches and on a fork of mainnet.
   program with Derive, deploy a new member with the new pair, swap it on `NAVCalculator`; the Derive leg reads
   0 in between.
 - **The format is reverse-engineered.** A format change makes proofs fail to decode: under-report, fail loud.
-- **Framing is a consistency check.** The record offset comes from the prover; the member requires the next
-  record's head after it, or the previous record ending at it.
+- **Share positions are proven; framing is a consistency check.** Celestia's commitment fixes a share's index only
+  under the true tree shape, so the member reads the share count from share 0 and checks each share at its stated
+  index: the decoded bytes are exactly the posted ones, in order. Where the record starts within them comes from
+  the prover; the member requires the next record's head after it, or the previous record ending at it. Framing
+  by the previous record needs that record's shares, and it may belong to anyone; the fund holds two adjacent
+  subaccount ids and touches both, so each frames the other.
 - Clears stay permissionless and stale-gated (0022): anyone can zero the leg after a batch. Under-report only.
 - Ethereum only, where VAPP is. A fund whose shares live on another chain needs a relay or offchain aggregation.
 - Assets need an Ethereum price feed, unless the fund is denominated in the same asset.

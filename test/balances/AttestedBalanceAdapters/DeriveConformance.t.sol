@@ -88,7 +88,7 @@ contract DeriveConformanceTest is AttestedAdapterConformance {
         returns (bytes memory data, address[] memory assets, uint256[] memory values)
     {
         DeriveBlobBuilder.Blob memory b = _blob(account);
-        data = DeriveBlobBuilder.payload(b.proof(0, 100, false));
+        data = b.payload(b.proof(0, 100, false));
         assets = new address[](1);
         values = new uint256[](1);
         assets[0] = address(tokenA);
@@ -101,7 +101,7 @@ contract DeriveConformanceTest is AttestedAdapterConformance {
         returns (bytes memory data, address[] memory assets, uint256[] memory values)
     {
         DeriveBlobBuilder.Blob memory b = _blob(account);
-        data = DeriveBlobBuilder.payload(b.proof(1, 101, false));
+        data = b.payload(b.proof(1, 101, false));
         assets = new address[](1);
         values = new uint256[](1);
         assets[0] = address(tokenB);
@@ -115,7 +115,7 @@ contract DeriveConformanceTest is AttestedAdapterConformance {
         bytes memory s = p.shares[0].share;
         uint256 at = 30 + p.recordOffset + 40; // header + record start + a byte inside the record body
         s[at] = bytes1(uint8(s[at]) ^ 0x01);
-        data = DeriveBlobBuilder.payload(p);
+        data = b.payload(p);
     }
 
     function _tamperedRevertSelector() internal pure override returns (bytes4) {
@@ -127,8 +127,13 @@ contract DeriveConformanceTest is AttestedAdapterConformance {
     }
 
     function _submitViaTypedEntrypoint(address account, bytes memory data) internal override {
-        DeriveCelestiaAttestedBalanceAdapter.SubaccountProof[] memory ps =
-            abi.decode(data, (DeriveCelestiaAttestedBalanceAdapter.SubaccountProof[]));
-        DeriveCelestiaAttestedBalanceAdapter(address(member)).submitSubaccounts(account, ps);
+        (
+            DeriveCelestiaAttestedBalanceAdapter.ShareProof memory first,
+            DeriveCelestiaAttestedBalanceAdapter.SubaccountProof[] memory ps
+        ) = abi.decode(
+            data,
+            (DeriveCelestiaAttestedBalanceAdapter.ShareProof, DeriveCelestiaAttestedBalanceAdapter.SubaccountProof[])
+        );
+        DeriveCelestiaAttestedBalanceAdapter(address(member)).submitSubaccounts(account, first, ps);
     }
 }

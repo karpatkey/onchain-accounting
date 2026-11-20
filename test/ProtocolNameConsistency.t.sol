@@ -746,7 +746,7 @@ contract ProtocolNameConsistencyTest is Test {
     ///      `PROTOCOL_NAME_COUNT` pinned to the array's own length would be a tautology, not a guard. So: when you
     ///      add a `ProtocolNames` constant, add it to this array by hand. Revisit once `foundry.toml` is free.
     function test_distinctProtocolsHaveDistinctNames() public pure {
-        string[37] memory names = [
+        string[38] memory names = [
             ProtocolNames.WALLET,
             ProtocolNames.AAVE_V3,
             ProtocolNames.SPARK,
@@ -783,7 +783,8 @@ contract ProtocolNameConsistencyTest is Test {
             ProtocolNames.ANKR,
             ProtocolNames.RENZO,
             ProtocolNames.POLYGON,
-            ProtocolNames.YO
+            ProtocolNames.YO,
+            ProtocolNames.DERIVE_V3
         ];
 
         for (uint256 i = 0; i < names.length; i++) {

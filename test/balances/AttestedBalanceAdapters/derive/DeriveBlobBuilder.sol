@@ -101,25 +101,29 @@ library DeriveBlobBuilder {
         uint256 s1 = _shareOf(to - 1);
 
         p.subaccountId = id;
-        p.numSubtrees = b.shares.length;
         p.recordOffset = b.starts[k] - _dataStart(s0);
         p.usePrevious = usePrevious;
         p.prevOffset = usePrevious ? b.starts[k - 1] - _dataStart(s0) : 0;
-
-        bytes32[] memory leaves = _leaves(b.shares);
         p.shares = new DeriveCelestiaAttestedBalanceAdapter.ShareProof[](s1 - s0 + 1);
         for (uint256 i = s0; i <= s1; ++i) {
-            DeriveCelestiaAttestedBalanceAdapter.ShareProof memory s = p.shares[i - s0];
-            s.index = i;
-            s.share = b.shares[i];
-            s.subtree = i;
-            s.position = 0;
-            s.nmtSiblings = new bytes[](0);
-            s.rfcSiblings = _rfcPath(leaves, i);
+            p.shares[i - s0] = shareProof(b, i);
         }
     }
 
-    function payload(DeriveCelestiaAttestedBalanceAdapter.SubaccountProof memory p)
+    /// @notice Share `i` and its path. Under 64 shares every share is its own subtree, so the NMT path is empty.
+    function shareProof(Blob memory b, uint256 i)
+        internal
+        pure
+        returns (DeriveCelestiaAttestedBalanceAdapter.ShareProof memory s)
+    {
+        s.index = i;
+        s.share = bytes.concat(b.shares[i]); // a copy: tests that alter a proof's share must not alter the blob
+        s.nmtSiblings = new bytes[](0);
+        s.rfcSiblings = _rfcPath(_leaves(b.shares), i);
+    }
+
+    /// @notice The submit payload: the blob's share 0 (it fixes the share count) and the subaccount proofs.
+    function payload(Blob memory b, DeriveCelestiaAttestedBalanceAdapter.SubaccountProof memory p)
         internal
         pure
         returns (bytes memory)
@@ -127,7 +131,15 @@ library DeriveBlobBuilder {
         DeriveCelestiaAttestedBalanceAdapter.SubaccountProof[] memory ps =
             new DeriveCelestiaAttestedBalanceAdapter.SubaccountProof[](1);
         ps[0] = p;
-        return abi.encode(ps);
+        return payload(b, ps);
+    }
+
+    function payload(Blob memory b, DeriveCelestiaAttestedBalanceAdapter.SubaccountProof[] memory ps)
+        internal
+        pure
+        returns (bytes memory)
+    {
+        return abi.encode(shareProof(b, 0), ps);
     }
 
     // ─────────────────────────────────────────────────────────────── internals

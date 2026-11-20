@@ -7,6 +7,7 @@ import {MockDeriveVapp} from "test/balances/AttestedBalanceAdapters/DeriveConfor
 import {
     DeriveCelestiaAttestedBalanceAdapter
 } from "src/balances/AttestedBalanceAdapters/DeriveCelestiaAttestedBalanceAdapter.sol";
+import {CelestiaShareProof} from "src/balances/AttestedBalanceAdapters/derive/CelestiaShareProof.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
 import {ProtocolIds} from "src/utils/ProtocolIds.sol";
@@ -98,7 +99,7 @@ contract DeriveCelestiaAttestedBalanceAdapterTest is BalanceAdapterTestBase {
 
     function test_submit_cachesCollateralAsOneLeg() public {
         DeriveBlobBuilder.Blob memory b = _blob(_rec(100, alice, DERIVE_A, 7e12), _rec(101, bob, DERIVE_A, 1e12));
-        _submit(alice, DeriveBlobBuilder.payload(b.proof(0, 100, false)));
+        _submit(alice, b.payload(b.proof(0, 100, false)));
 
         (uint256 amount, bool isDebt) = adapter.getAdapterBalanceForAsset(alice, address(tokenA));
         assertEq(amount, 7 ether);
@@ -121,8 +122,9 @@ contract DeriveCelestiaAttestedBalanceAdapterTest is BalanceAdapterTestBase {
             new DeriveCelestiaAttestedBalanceAdapter.SubaccountProof[](2);
         ps[0] = b.proof(0, 100, false);
         ps[1] = b.proof(1, 101, false);
+        DeriveCelestiaAttestedBalanceAdapter.ShareProof memory first = b.shareProof(0);
         vm.prank(keeper);
-        adapter.submitSubaccounts(alice, ps);
+        adapter.submitSubaccounts(alice, first, ps);
 
         (uint256 amount,) = adapter.getAdapterBalanceForAsset(alice, address(tokenA));
         assertEq(amount, 3 ether);
@@ -132,7 +134,7 @@ contract DeriveCelestiaAttestedBalanceAdapterTest is BalanceAdapterTestBase {
         // 1.5 units plus 1e-12: the sub-microunit part cannot be represented at 6 decimals and is dropped.
         DeriveBlobBuilder.Blob memory b =
             _blob(_rec(100, alice, DERIVE_SIX, 1.5e12 + 1), _rec(101, bob, DERIVE_A, 1e12));
-        _submit(alice, DeriveBlobBuilder.payload(b.proof(0, 100, false)));
+        _submit(alice, b.payload(b.proof(0, 100, false)));
         (uint256 amount,) = adapter.getAdapterBalanceForAsset(alice, address(tokenSix));
         assertEq(amount, 1_500_000);
     }
@@ -147,18 +149,18 @@ contract DeriveCelestiaAttestedBalanceAdapterTest is BalanceAdapterTestBase {
         // After the last record comes the next section, not a record head.
         _expectSubmitRevert(
             alice,
-            DeriveBlobBuilder.payload(b.proof(1, 101, false)),
+            b.payload(b.proof(1, 101, false)),
             abi.encodeWithSelector(DeriveCelestiaAttestedBalanceAdapter.BadBoundary.selector, 101)
         );
 
-        _submit(alice, DeriveBlobBuilder.payload(b.proof(1, 101, true)));
+        _submit(alice, b.payload(b.proof(1, 101, true)));
         (uint256 amount,) = adapter.getAdapterBalanceForAsset(alice, address(tokenA));
         assertEq(amount, 4 ether);
     }
 
     function test_preview_matchesCache() public {
         DeriveBlobBuilder.Blob memory b = _blob(_rec(100, alice, DERIVE_A, 9e12), _rec(101, bob, DERIVE_A, 1e12));
-        bytes memory data = DeriveBlobBuilder.payload(b.proof(0, 100, false));
+        bytes memory data = b.payload(b.proof(0, 100, false));
         INAVCalculator.PositionBalance[] memory preview = adapter.previewPositions(alice, data);
         _submit(alice, data);
         INAVCalculator.PositionBalance[] memory cached = adapter.getAdapterPositions(alice, address(0));
@@ -172,16 +174,32 @@ contract DeriveCelestiaAttestedBalanceAdapterTest is BalanceAdapterTestBase {
 
     function test_nextBatch_readsZero() public {
         DeriveBlobBuilder.Blob memory b = _blob(_rec(100, alice, DERIVE_A, 7e12), _rec(101, bob, DERIVE_A, 1e12));
-        _submit(alice, DeriveBlobBuilder.payload(b.proof(0, 100, false)));
+        _submit(alice, b.payload(b.proof(0, 100, false)));
         vapp.setCommitment(keccak256("next batch"));
         (uint256 amount,) = adapter.getAdapterBalanceForAsset(alice, address(tokenA));
         assertEq(amount, 0);
         assertFalse(adapter.isAttestationLive(alice, address(tokenA)));
     }
 
+    /// @dev Derive stops posting batches but its sequencer keeps trading: the commitment, and so the epoch, stays
+    ///      put while the collateral may be spent. The entry must still expire.
+    function test_stalledBatches_readZeroAfterMaxAge() public {
+        DeriveBlobBuilder.Blob memory b = _blob(_rec(100, alice, DERIVE_A, 7e12), _rec(101, bob, DERIVE_A, 1e12));
+        _submit(alice, b.payload(b.proof(0, 100, false)));
+
+        skip(adapter.MAX_ATTESTATION_AGE());
+        (uint256 amount,) = adapter.getAdapterBalanceForAsset(alice, address(tokenA));
+        assertEq(amount, 7 ether, "still live at exactly the max age");
+
+        skip(1);
+        (amount,) = adapter.getAdapterBalanceForAsset(alice, address(tokenA));
+        assertEq(amount, 0, "same batch, but older than the max age");
+        assertFalse(adapter.isAttestationLive(alice, address(tokenA)));
+    }
+
     function test_programRotation_readsZeroAndRefusesSubmits() public {
         DeriveBlobBuilder.Blob memory b = _blob(_rec(100, alice, DERIVE_A, 7e12), _rec(101, bob, DERIVE_A, 1e12));
-        bytes memory data = DeriveBlobBuilder.payload(b.proof(0, 100, false));
+        bytes memory data = b.payload(b.proof(0, 100, false));
         _submit(alice, data);
 
         vapp.setProgram(keccak256("new program"), address(0xB0B));
@@ -202,7 +220,7 @@ contract DeriveCelestiaAttestedBalanceAdapterTest is BalanceAdapterTestBase {
         DeriveBlobBuilder.Blob memory b = _blob(_rec(100, bob, DERIVE_A, 7e12), _rec(101, bob, DERIVE_A, 1e12));
         _expectSubmitRevert(
             alice,
-            DeriveBlobBuilder.payload(b.proof(0, 100, false)),
+            b.payload(b.proof(0, 100, false)),
             abi.encodeWithSelector(DeriveCelestiaAttestedBalanceAdapter.WrongOwner.selector, 100, bob)
         );
     }
@@ -213,7 +231,7 @@ contract DeriveCelestiaAttestedBalanceAdapterTest is BalanceAdapterTestBase {
         p.subaccountId = 99;
         _expectSubmitRevert(
             alice,
-            DeriveBlobBuilder.payload(p),
+            b.payload(p),
             abi.encodeWithSelector(DeriveCelestiaAttestedBalanceAdapter.WrongSubaccount.selector, 99, 100)
         );
     }
@@ -222,7 +240,7 @@ contract DeriveCelestiaAttestedBalanceAdapterTest is BalanceAdapterTestBase {
         DeriveBlobBuilder.Blob memory b = _blob(_rec(100, alice, DERIVE_A, -5e12), _rec(101, bob, DERIVE_A, 1e12));
         _expectSubmitRevert(
             alice,
-            DeriveBlobBuilder.payload(b.proof(0, 100, false)),
+            b.payload(b.proof(0, 100, false)),
             abi.encodeWithSelector(DeriveCelestiaAttestedBalanceAdapter.NegativeBalance.selector, 100, DERIVE_A)
         );
     }
@@ -231,7 +249,7 @@ contract DeriveCelestiaAttestedBalanceAdapterTest is BalanceAdapterTestBase {
         DeriveBlobBuilder.Blob memory b = _blob(_rec(100, alice, address(0xD9), 5e12), _rec(101, bob, DERIVE_A, 1e12));
         _expectSubmitRevert(
             alice,
-            DeriveBlobBuilder.payload(b.proof(0, 100, false)),
+            b.payload(b.proof(0, 100, false)),
             abi.encodeWithSelector(DeriveCelestiaAttestedBalanceAdapter.UnmappedAsset.selector, 100, address(0xD9))
         );
     }
@@ -242,7 +260,7 @@ contract DeriveCelestiaAttestedBalanceAdapterTest is BalanceAdapterTestBase {
         DeriveBlobBuilder.Blob memory b = _blob(r, _rec(101, bob, DERIVE_A, 1e12));
         _expectSubmitRevert(
             alice,
-            DeriveBlobBuilder.payload(b.proof(0, 100, false)),
+            b.payload(b.proof(0, 100, false)),
             abi.encodeWithSelector(DeriveCelestiaAttestedBalanceAdapter.PositionsNotAllowed.selector, 100, 0, 1)
         );
     }
@@ -253,7 +271,7 @@ contract DeriveCelestiaAttestedBalanceAdapterTest is BalanceAdapterTestBase {
         DeriveBlobBuilder.Blob memory b = _blob(r, _rec(101, bob, DERIVE_A, 1e12));
         _expectSubmitRevert(
             alice,
-            DeriveBlobBuilder.payload(b.proof(0, 100, false)),
+            b.payload(b.proof(0, 100, false)),
             abi.encodeWithSelector(DeriveCelestiaAttestedBalanceAdapter.PositionsNotAllowed.selector, 100, 2, 0)
         );
     }
@@ -266,7 +284,7 @@ contract DeriveCelestiaAttestedBalanceAdapterTest is BalanceAdapterTestBase {
         ps[1] = b.proof(0, 100, false);
         _expectSubmitRevert(
             alice,
-            abi.encode(ps),
+            b.payload(ps),
             abi.encodeWithSelector(DeriveCelestiaAttestedBalanceAdapter.SubaccountsNotAscending.selector, 100)
         );
     }
@@ -279,18 +297,78 @@ contract DeriveCelestiaAttestedBalanceAdapterTest is BalanceAdapterTestBase {
         ps[1] = b.proof(0, 100, false);
         _expectSubmitRevert(
             alice,
-            abi.encode(ps),
+            b.payload(ps),
             abi.encodeWithSelector(DeriveCelestiaAttestedBalanceAdapter.SubaccountsNotAscending.selector, 100)
         );
     }
 
     function test_revert_proofAgainstOlderBatch() public {
         DeriveBlobBuilder.Blob memory b = _blob(_rec(100, alice, DERIVE_A, 7e12), _rec(101, bob, DERIVE_A, 1e12));
-        bytes memory data = DeriveBlobBuilder.payload(b.proof(0, 100, false));
+        bytes memory data = b.payload(b.proof(0, 100, false));
         vapp.setCommitment(keccak256("next batch"));
         _expectSubmitRevert(
             alice, data, abi.encodeWithSelector(DeriveCelestiaAttestedBalanceAdapter.InvalidShareProof.selector)
         );
+    }
+
+    // ─────────────────────────────────────────────────────────────── share positions
+
+    /// @dev A blob of at least three shares, and the index of a record that starts in share 0 and ends in share 1.
+    function _threeShareBlob() internal returns (DeriveBlobBuilder.Blob memory b, uint256 k) {
+        DeriveBlobBuilder.Rec[] memory recs = new DeriveBlobBuilder.Rec[](20);
+        for (uint256 i; i < recs.length; ++i) {
+            recs[i] = _rec(100 + i, bob, DERIVE_A, 1e12);
+        }
+        b = DeriveBlobBuilder.build(recs);
+        assertGe(b.shares.length, 3, "fixture: at least three shares");
+        while (b.ends[k] <= DeriveBlobBuilder.FIRST_DATA) ++k;
+        assertLt(b.starts[k], DeriveBlobBuilder.FIRST_DATA, "fixture: record straddles shares 0 and 1");
+        vapp.setCommitment(b.commitment);
+    }
+
+    /// @dev Each share is real, but share 2 is presented as share 1, so the joined bytes are not what Derive
+    ///      posted. The share must be checked at the index it claims.
+    function test_revert_spliceRealShareFromElsewhere() public {
+        (DeriveBlobBuilder.Blob memory b, uint256 k) = _threeShareBlob();
+        DeriveCelestiaAttestedBalanceAdapter.SubaccountProof memory p = b.proof(k, 100 + k, false);
+        assertEq(p.shares[1].index, 1);
+        DeriveCelestiaAttestedBalanceAdapter.ShareProof memory other = b.shareProof(2);
+        other.index = 1;
+        p.shares[1] = other;
+        _expectSubmitRevert(
+            bob, b.payload(p), abi.encodeWithSelector(DeriveCelestiaAttestedBalanceAdapter.InvalidShareProof.selector)
+        );
+    }
+
+    function test_revert_repeatedShare() public {
+        (DeriveBlobBuilder.Blob memory b, uint256 k) = _threeShareBlob();
+        DeriveCelestiaAttestedBalanceAdapter.SubaccountProof memory p = b.proof(k, 100 + k, false);
+        DeriveCelestiaAttestedBalanceAdapter.ShareProof memory again = b.shareProof(0);
+        again.index = 1;
+        p.shares[1] = again;
+        _expectSubmitRevert(
+            bob, b.payload(p), abi.encodeWithSelector(DeriveCelestiaAttestedBalanceAdapter.InvalidShareProof.selector)
+        );
+    }
+
+    /// @dev The share count, and so the tree shape every index is checked against, comes from share 0. A later
+    ///      share cannot stand in for it.
+    function test_revert_firstShareMustBeShareZero() public {
+        (DeriveBlobBuilder.Blob memory b, uint256 k) = _threeShareBlob();
+        DeriveCelestiaAttestedBalanceAdapter.SubaccountProof[] memory ps =
+            new DeriveCelestiaAttestedBalanceAdapter.SubaccountProof[](1);
+        ps[0] = b.proof(k, 100 + k, false);
+
+        DeriveCelestiaAttestedBalanceAdapter.ShareProof memory first = b.shareProof(1);
+        first.index = 0;
+        vm.expectRevert(CelestiaShareProof.NotFirstShare.selector);
+        vm.prank(keeper);
+        adapter.submitSubaccounts(bob, first, ps);
+
+        first = b.shareProof(1);
+        vm.expectRevert(CelestiaShareProof.NotFirstShare.selector);
+        vm.prank(keeper);
+        adapter.submitSubaccounts(bob, first, ps);
     }
 
     // ─────────────────────────────────────────────────────────────── constructor
@@ -330,10 +408,9 @@ contract DeriveCelestiaAttestedBalanceAdapterTest is BalanceAdapterTestBase {
     /// @dev hype-split's subaccount 122119, from the blob of the Ethereum batch at block 26,450,225 (Celestia
     ///      16,041,645). The blob's subtree width is 16, so this exercises real NMT paths.
     function test_realBatch_hypeSplitSubaccount() public {
-        (DeriveCelestiaAttestedBalanceAdapter.SubaccountProof memory p, bytes32 commitment) =
-            _loadReal("hype_split_122119.json");
+        (bytes memory data,, bytes32 commitment) = _loadReal("hype_split_122119.json");
         vapp.setCommitment(commitment);
-        _submit(HYPE_SPLIT_SAFE, DeriveBlobBuilder.payload(p));
+        _submit(HYPE_SPLIT_SAFE, data);
         (uint256 amount,) = adapter.getAdapterBalanceForAsset(HYPE_SPLIT_SAFE, address(hype));
         assertEq(amount, 0.12 ether);
     }
@@ -341,39 +418,60 @@ contract DeriveCelestiaAttestedBalanceAdapterTest is BalanceAdapterTestBase {
     /// @dev Subaccount 108093 holds 2 perps and 234 options in the batch at block 26,450,577 (Celestia 16,043,118):
     ///      a real record spanning 23 shares, refused because its positions are not valued.
     function test_realBatch_positionsRefused() public {
-        (DeriveCelestiaAttestedBalanceAdapter.SubaccountProof memory p, bytes32 commitment) =
-            _loadReal("sub_108093.json");
+        (bytes memory data,, bytes32 commitment) = _loadReal("sub_108093.json");
         vapp.setCommitment(commitment);
         address owner = 0x6845630cB654E050312e0Cb4169b19e83De5Eb08;
         _expectSubmitRevert(
             owner,
-            DeriveBlobBuilder.payload(p),
+            data,
             abi.encodeWithSelector(DeriveCelestiaAttestedBalanceAdapter.PositionsNotAllowed.selector, 108093, 2, 234)
         );
     }
 
     function test_realBatch_alteredShareRefused() public {
-        (DeriveCelestiaAttestedBalanceAdapter.SubaccountProof memory p, bytes32 commitment) =
+        (, DeriveCelestiaAttestedBalanceAdapter.ShareProof memory first, bytes32 commitment) =
             _loadReal("hype_split_122119.json");
+        string memory json = _readFixture("hype_split_122119.json");
+        DeriveCelestiaAttestedBalanceAdapter.SubaccountProof[] memory ps =
+            new DeriveCelestiaAttestedBalanceAdapter.SubaccountProof[](1);
+        ps[0] = _proofFrom(json);
         vapp.setCommitment(commitment);
-        bytes memory s = p.shares[0].share;
+        bytes memory s = ps[0].shares[0].share;
         s[300] = bytes1(uint8(s[300]) ^ 0x01);
         _expectSubmitRevert(
             HYPE_SPLIT_SAFE,
-            DeriveBlobBuilder.payload(p),
+            abi.encode(first, ps),
             abi.encodeWithSelector(DeriveCelestiaAttestedBalanceAdapter.InvalidShareProof.selector)
         );
     }
 
+    function _readFixture(string memory name) internal view returns (string memory) {
+        return vm.readFile(string.concat(vm.projectRoot(), "/test/integration/derive-celestia/", name));
+    }
+
+    /// @return data       The submit payload: the blob's share 0 and the one subaccount proof.
+    /// @return first      The share 0 proof alone.
+    /// @return commitment The commitment the Ethereum batch recorded for that blob.
     function _loadReal(string memory name)
         internal
         view
-        returns (DeriveCelestiaAttestedBalanceAdapter.SubaccountProof memory p, bytes32 commitment)
+        returns (bytes memory data, DeriveCelestiaAttestedBalanceAdapter.ShareProof memory first, bytes32 commitment)
     {
-        string memory json = vm.readFile(string.concat(vm.projectRoot(), "/test/integration/derive-celestia/", name));
+        string memory json = _readFixture(name);
         commitment = vm.parseJsonBytes32(json, ".commitment");
+        first = _shareFrom(json, ".firstShare");
+        DeriveCelestiaAttestedBalanceAdapter.SubaccountProof[] memory ps =
+            new DeriveCelestiaAttestedBalanceAdapter.SubaccountProof[](1);
+        ps[0] = _proofFrom(json);
+        data = abi.encode(first, ps);
+    }
+
+    function _proofFrom(string memory json)
+        internal
+        view
+        returns (DeriveCelestiaAttestedBalanceAdapter.SubaccountProof memory p)
+    {
         p.subaccountId = vm.parseJsonUint(json, ".subaccount");
-        p.numSubtrees = vm.parseJsonUint(json, ".numSubtrees");
         p.recordOffset = vm.parseJsonUint(json, ".recordOffset");
         p.usePrevious = vm.parseJsonBool(json, ".boundary.usePrevious");
         p.prevOffset = vm.parseJsonUint(json, ".boundary.prevOffset");
@@ -381,13 +479,18 @@ contract DeriveCelestiaAttestedBalanceAdapterTest is BalanceAdapterTestBase {
         while (vm.keyExistsJson(json, string.concat(".shares[", vm.toString(n), "]"))) ++n;
         p.shares = new DeriveCelestiaAttestedBalanceAdapter.ShareProof[](n);
         for (uint256 i; i < n; ++i) {
-            string memory k = string.concat(".shares[", vm.toString(i), "]");
-            p.shares[i].index = vm.parseJsonUint(json, string.concat(k, ".index"));
-            p.shares[i].share = vm.parseJsonBytes(json, string.concat(k, ".share"));
-            p.shares[i].subtree = vm.parseJsonUint(json, string.concat(k, ".subtree"));
-            p.shares[i].position = vm.parseJsonUint(json, string.concat(k, ".position"));
-            p.shares[i].nmtSiblings = vm.parseJsonBytesArray(json, string.concat(k, ".nmtSiblings"));
-            p.shares[i].rfcSiblings = vm.parseJsonBytes32Array(json, string.concat(k, ".rfcSiblings"));
+            p.shares[i] = _shareFrom(json, string.concat(".shares[", vm.toString(i), "]"));
         }
+    }
+
+    function _shareFrom(string memory json, string memory k)
+        internal
+        pure
+        returns (DeriveCelestiaAttestedBalanceAdapter.ShareProof memory s)
+    {
+        s.index = vm.parseJsonUint(json, string.concat(k, ".index"));
+        s.share = vm.parseJsonBytes(json, string.concat(k, ".share"));
+        s.nmtSiblings = vm.parseJsonBytesArray(json, string.concat(k, ".nmtSiblings"));
+        s.rfcSiblings = vm.parseJsonBytes32Array(json, string.concat(k, ".rfcSiblings"));
     }
 }

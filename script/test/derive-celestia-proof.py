@@ -9,11 +9,14 @@ against the commitment.
 Usage:
   derive-celestia-proof.py --subaccount ID [--subaccount ID ...]   prove these records (same owner)
   derive-celestia-proof.py --pick-collateral-only                   pick one USDC/USDT-only record in the batch
-  options: --out FILE (default stdout), --eth-rpc URL, --celestia-rpc URL
+  options: --out FILE (default stdout), --eth-rpc URL, --celestia-rpc URL,
+           --block N (read VAPP at block N instead of the newest; rebuilds a fixture for a pinned fork block)
 
 ETH RPC: --eth-rpc, else $MAINNET_URL, else Alchemy with $ALCHEMY_API_KEY. Output JSON (hex strings) is read by
-test/balances/AttestedBalanceAdapters/fork/DeriveCelestiaAttestedBalanceAdapter.fork.t.sol. The proof is only
-valid until Derive posts the next batch (about 10 minutes); fork tests pin `forkBlock` instead.
+test/balances/AttestedBalanceAdapters/fork/DeriveCelestiaAttestedBalanceAdapter.fork.t.sol. It carries the blob's
+share 0 (`firstShare`, which fixes the share count) and each record's shares, each with its blob index; the
+adapter derives every share's place in the tree from those. The proof is only valid until Derive posts the next
+batch (about 10 minutes); fork tests pin `forkBlock` instead.
 
 Format and evidence: docs/decisions/0031-derive-celestia-attested-adapter.md.
 """
@@ -193,7 +196,7 @@ class Tree:
         for lv in self.levels[k][:-1]:
             sib.append(lv[p ^ 1])
             p //= 2
-        return {"index": i, "share": "0x" + self.shares[i].hex(), "subtree": k, "position": pos,
+        return {"index": i, "share": "0x" + self.shares[i].hex(),
                 "nmtSiblings": ["0x" + x.hex() for x in sib],
                 "rfcSiblings": ["0x" + x.hex() for x in rfc_path(self.roots, k)]}
 
@@ -296,7 +299,7 @@ def prove_record(tree, recs, k):
         s0, s1 = share_of(p0), share_of(b1 - 1)
     else:
         s0, s1 = share_of(b0), share_of(b1 + 11)
-    return {"subaccountId": rec["id"], "numSubtrees": len(tree.roots), "recordOffset": b0 - data_start(s0),
+    return {"subaccountId": rec["id"], "recordOffset": b0 - data_start(s0),
             "usePrevious": use_prev, "prevOffset": (p0 - data_start(s0)) if use_prev else 0,
             "shares": [tree.prove(i) for i in range(s0, s1 + 1)]}
 
@@ -309,12 +312,13 @@ def main():
     ap.add_argument("--out")
     ap.add_argument("--eth-rpc")
     ap.add_argument("--celestia-rpc", default="https://rpc.celestia.pops.one")
+    ap.add_argument("--block", type=int)
     a = ap.parse_args()
 
     eth_url = a.eth_rpc or os.environ.get("MAINNET_URL") or (
         f"https://eth-mainnet.g.alchemy.com/v2/{os.environ['ALCHEMY_API_KEY']}" if os.environ.get("ALCHEMY_API_KEY")
         else "https://ethereum-rpc.publicnode.com")
-    block = int(eth(eth_url, "eth_blockNumber", []), 16)
+    block = a.block or int(eth(eth_url, "eth_blockNumber", []), 16)
     anchor = eth(eth_url, "eth_call", [{"to": VAPP, "data": GET_ANCHOR}, hex(block)])[2:]
     height, commitment = int(anchor[0:64], 16), "0x" + anchor[128:192]
 
@@ -355,6 +359,7 @@ def main():
                 expected[token] = expected.get(token, 0) + units
 
     out = {"forkBlock": block, "celestiaHeight": height, "commitment": commitment, "account": owners.pop(),
+           "firstShare": tree.prove(0),
            "proofs": [prove_record(tree, recs, k) for k in ks],
            "expected": [{"token": t, "amount": v} for t, v in expected.items()]}
     text = json.dumps(out, indent=1)

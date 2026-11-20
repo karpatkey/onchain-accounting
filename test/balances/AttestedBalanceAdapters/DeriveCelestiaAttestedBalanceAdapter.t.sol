@@ -509,8 +509,10 @@ contract DeriveCelestiaAttestedBalanceAdapterTest is BalanceAdapterTestBase {
         assertEq(amount, 9_970_000_000);
     }
 
-    /// @dev Options net per owner, across the owner's subaccounts: short 2 × 70-put (−20) against 100 USDC.
-    function test_options_nettedAcrossSubaccountsOfOneOwner() public {
+    /// @dev A short in one subaccount is not netted against cash in another: if it were, a submitter could leave the
+    ///      short's subaccount out and over-report. Subaccount 100 (short 2 × 70-put, −20, no cash) is refused even
+    ///      though 101 holds 100 USDC.
+    function test_revert_shortNotCoveredByOtherSubaccount() public {
         DeriveBlobBuilder.Rec memory r0 = _rec(100, alice, DERIVE_SIX, 0);
         r0.opts = _opts1(_opt(OPT_HYPE, 70e8, false, -2e12, EXPIRED));
         DeriveBlobBuilder.Blob memory b = _blob(r0, _rec(101, alice, DERIVE_SIX, 100e12));
@@ -518,10 +520,26 @@ contract DeriveCelestiaAttestedBalanceAdapterTest is BalanceAdapterTestBase {
             new DeriveCelestiaAttestedBalanceAdapter.SubaccountProof[](2);
         ps[0] = b.proof(0, 100, false);
         ps[1] = b.proof(1, 101, false);
-        _submit(alice, b.payload(ps, _expiredFeeds()));
+        _expectSubmitRevert(
+            alice,
+            b.payload(ps, _expiredFeeds()),
+            abi.encodeWithSelector(DeriveCelestiaAttestedBalanceAdapter.LiabilityExceedsCollateral.selector, 100)
+        );
+    }
 
+    /// @dev Within one batch only the option prices can move (new signed feeds); the records cannot. A long call
+    ///      worth 10 must read 0 after a resubmit at a settlement that leaves it out of the money, not keep 10.
+    function test_options_valueFallingToZeroReplacesCachedCash() public {
+        DeriveBlobBuilder.Blob memory b = _expiredBlob(); // alice: long 1 × 50-call, no collateral
+        _submit(alice, b.payload(_ps1(b.proof(0, 100, false)), _expiredFeeds())); // settles at 60
         (uint256 amount,) = adapter.getAdapterBalanceForAsset(alice, address(tokenSix));
-        assertEq(amount, 80_000_000);
+        assertEq(amount, 10_000_000);
+
+        IDeriveOptionPricer.Feeds memory atForty = DeriveBlobBuilder.noFeeds();
+        atForty.forwards = _fwds1(_fwd(OPT_HYPE, EXPIRED, 0, 40e18 * 1800, EXPIRED, DEADLINE));
+        _submit(alice, b.payload(_ps1(b.proof(0, 100, false)), atForty));
+        (amount,) = adapter.getAdapterBalanceForAsset(alice, address(tokenSix));
+        assertEq(amount, 0);
     }
 
     function test_revert_liabilityExceedsCollateral() public {
@@ -531,7 +549,7 @@ contract DeriveCelestiaAttestedBalanceAdapterTest is BalanceAdapterTestBase {
         _expectSubmitRevert(
             alice,
             b.payload(_ps1(b.proof(0, 100, false)), _expiredFeeds()),
-            abi.encodeWithSelector(DeriveCelestiaAttestedBalanceAdapter.LiabilityExceedsCollateral.selector, tokenSix)
+            abi.encodeWithSelector(DeriveCelestiaAttestedBalanceAdapter.LiabilityExceedsCollateral.selector, 100)
         );
     }
 
@@ -743,8 +761,9 @@ contract DeriveCelestiaAttestedBalanceAdapterTest is BalanceAdapterTestBase {
     }
 
     /// @dev Derive stops posting batches but its sequencer keeps trading: the commitment, and so the epoch, stays
-    ///      put while the collateral may be spent. The entry must still expire.
+    ///      put while the collateral may be spent. The entry must expire with the batch's proven time.
     function test_stalledBatches_readZeroAfterMaxAge() public {
+        vapp.setLastOpTimestamp(uint64(block.timestamp));
         DeriveBlobBuilder.Blob memory b = _blob(_rec(100, alice, DERIVE_A, 7e12), _rec(101, bob, DERIVE_A, 1e12));
         _submit(alice, b.payload(b.proof(0, 100, false)));
 
@@ -756,6 +775,26 @@ contract DeriveCelestiaAttestedBalanceAdapterTest is BalanceAdapterTestBase {
         (amount,) = adapter.getAdapterBalanceForAsset(alice, address(tokenA));
         assertEq(amount, 0, "same batch, but older than the max age");
         assertFalse(adapter.isAttestationLive(alice, address(tokenA)));
+    }
+
+    /// @dev The age is the batch's, not the entry's: neither a first submit made late nor a replay of the same proof
+    ///      can make a stalled batch count again.
+    function test_revert_lateSubmitOrReplayOfStalledBatch() public {
+        uint64 batchTime = uint64(block.timestamp);
+        vapp.setLastOpTimestamp(batchTime);
+        DeriveBlobBuilder.Blob memory b = _blob(_rec(100, alice, DERIVE_A, 7e12), _rec(101, bob, DERIVE_A, 1e12));
+        bytes memory data = b.payload(b.proof(0, 100, false));
+        _submit(alice, data);
+
+        skip(adapter.MAX_ATTESTATION_AGE() + 1);
+        _expectSubmitRevert(
+            alice, data, abi.encodeWithSelector(DeriveCelestiaAttestedBalanceAdapter.BatchTooOld.selector, batchTime)
+        );
+        _expectSubmitRevert(
+            bob,
+            b.payload(b.proof(1, 101, false)),
+            abi.encodeWithSelector(DeriveCelestiaAttestedBalanceAdapter.BatchTooOld.selector, batchTime)
+        );
     }
 
     function test_programRotation_readsZeroAndRefusesSubmits() public {

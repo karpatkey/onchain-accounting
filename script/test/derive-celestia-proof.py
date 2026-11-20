@@ -350,13 +350,16 @@ def main():
     if len(owners) != 1:
         sys.exit(f"subaccounts belong to different owners: {owners}")
 
-    expected = {}
+    # Collateral only (options need the signed feeds). Sum raw 12-decimal balances per token first, then convert
+    # once, as the adapter does: rounding each entry first can come out lower across several subaccounts.
+    raw = {}
     for k in ks:
         for asset, bal in recs[k]["collateral"]:
             if bal > 0 and asset in ASSETS:
                 _, token, dec = ASSETS[asset]
-                units = bal * 10 ** (dec - 12) if dec >= 12 else bal // 10 ** (12 - dec)
-                expected[token] = expected.get(token, 0) + units
+                raw[(token, dec)] = raw.get((token, dec), 0) + bal
+    expected = {token: (bal * 10 ** (dec - 12) if dec >= 12 else bal // 10 ** (12 - dec))
+                for (token, dec), bal in raw.items()}
 
     out = {"forkBlock": block, "celestiaHeight": height, "commitment": commitment, "account": owners.pop(),
            "firstShare": tree.prove(0),

@@ -121,20 +121,22 @@ contract DeriveOptionPricer is IDeriveOptionPricer {
     }
 
     /// @inheritdoc IDeriveOptionPricer
-    function value(bytes calldata feeds, DeriveRecord.Option[] calldata options)
+    function values(bytes calldata feeds, DeriveRecord.Option[] calldata options)
         external
         view
-        returns (uint256 credit, uint256 debit)
+        returns (int256[] memory out)
     {
         FeedBook memory fb = _verifyFeeds(abi.decode(feeds, (Feeds)));
+        out = new int256[](options.length);
         for (uint256 k; k < options.length; ++k) {
             DeriveRecord.Option calldata o = options[k];
             if (o.amount == 0) continue;
             if (marketOf[o.asset].optionAsset == address(0)) revert UnmappedOption(o.asset);
             uint256 mag = o.amount > 0 ? uint256(o.amount) : uint256(-o.amount);
             uint256 num = mag * _optionPrice18(o.asset, o.subId, fb);
-            if (o.amount > 0) credit += num / 1e18;
-            else debit += (num + 1e18 - 1) / 1e18;
+            // `num` fits in uint256 (checked multiply), so num / 1e18 + 1 < 2^255 and the casts cannot wrap.
+            // forge-lint: disable-next-line(unsafe-typecast)
+            out[k] = o.amount > 0 ? int256(num / 1e18) : -int256((num + 1e18 - 1) / 1e18);
         }
         _requireAllUsed(fb);
     }

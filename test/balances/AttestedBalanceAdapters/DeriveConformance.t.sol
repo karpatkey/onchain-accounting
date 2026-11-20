@@ -10,11 +10,14 @@ import {
 } from "src/balances/AttestedBalanceAdapters/DeriveCelestiaAttestedBalanceAdapter.sol";
 import {Mock_ERC20} from "test/mocks/tokens.sol";
 
-/// @notice Stand-in for Derive's `VerifiableApp`: a settable commitment and program pair.
+/// @notice Stand-in for Derive's `VerifiableApp`: a settable commitment, program pair and batch time.
+/// @dev `lastOpTimestamp` defaults to "the batch just landed" (the current block time) until a test pins it, so tests
+///      that warp to a fixture's time do not need to re-stamp the batch; staleness tests set it explicitly.
 contract MockDeriveVapp is IDeriveVerifiableApp {
     bytes32 public celestiaLastCommitment;
     bytes32 public programVKey = keccak256("derive-vkey");
     address public verifier = address(0xA11CE);
+    uint64 internal _lastOp;
 
     function setCommitment(bytes32 c) external {
         celestiaLastCommitment = c;
@@ -23,6 +26,14 @@ contract MockDeriveVapp is IDeriveVerifiableApp {
     function setProgram(bytes32 vkey, address verifier_) external {
         programVKey = vkey;
         verifier = verifier_;
+    }
+
+    function setLastOpTimestamp(uint64 t) external {
+        _lastOp = t;
+    }
+
+    function lastOpTimestamp() external view returns (uint64) {
+        return _lastOp == 0 ? uint64(block.timestamp) : _lastOp;
     }
 }
 

@@ -101,12 +101,12 @@ interface IDeriveOptionPricer {
     ///      F = spot + fwdDiff and the rate clamped at 0; its spot, forward, rate and vol items must be at most
     ///      `MAX_FEED_AGE` old. An expired option is its intrinsic value at Derive's settlement price,
     ///      (currentSpotAggregate − settlementStartAggregate) / 1800, from a forward item stamped at the expiry.
-    /// @return credit Σ long value, 12-decimal USD, each option rounded down.
-    /// @return debit  Σ short value, 12-decimal USD, each option rounded up.
-    function value(bytes calldata feeds, DeriveRecord.Option[] calldata options)
+    /// @return values One signed value per option, 12-decimal USD: a long's value rounded down (≥ 0), a short's value
+    ///                rounded up and negated (≤ 0). Per option, so the caller can check each subaccount on its own.
+    function values(bytes calldata feeds, DeriveRecord.Option[] calldata options)
         external
         view
-        returns (uint256 credit, uint256 debit);
+        returns (int256[] memory values);
 
     /// @notice True if `optionAsset` has a configured market.
     function isMarket(address optionAsset) external view returns (bool);

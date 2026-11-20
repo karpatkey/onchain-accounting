@@ -117,10 +117,12 @@ admin-injected amounts, no upgrade path.
   from Derive's signed spot/forward/rate/vol feeds carried in `feeds` (`abi.encode(IDeriveOptionPricer.Feeds)`):
   every item signed by every pricer signer, within its deadline, at most 5 minutes old when pricing a live option,
   and used; Black-76 on the SVI slice for a live option, intrinsic at Derive's settlement TWAP for an expired one.
-  Option values net into the USDC cash token; a token whose debits exceed its credits refuses the submit. One
-  `Collateral` leg per token. The proof binds the bytes Derive posted to Celestia, not `stateRoot()`; option values
-  rest on Derive's feed signers. Entries read 0 after the next batch (about 10 minutes), after 30 minutes if batches
-  stall, or after a program rotation. Constructors: adapter
+  Option values net into the USDC cash token, per subaccount: each subaccount's own cash must cover its own shorts,
+  so leaving a subaccount out of a submit can only lower the figure. Every covered token is written, zero included.
+  One `Collateral` leg per token. The proof binds the bytes Derive posted to Celestia, not `stateRoot()`; option
+  values rest on Derive's feed signers. Entries read 0 after the next batch (about 10 minutes), once the batch is
+  older than 30 minutes by VAPP's proven `lastOpTimestamp` (the same bound refuses submits, so a replay cannot
+  revive a stalled batch), or after a program rotation. Constructors: adapter
   `(vapp, navCalculator, admin, pinnedVKey, pinnedVerifier, deriveAssets[], tokens[], cashAsset, pricer)` (pricer
   zero = records with options refused); pricer `(OptionMarket[] markets, address[] signers)`. Proof builder:
   `script/test/derive-celestia-proof.py`. Rationale: [ADR 0031](../../../docs/decisions/0031-derive-celestia-attested-adapter.md).

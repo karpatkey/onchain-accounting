@@ -24,8 +24,8 @@ tested on real batches and on a fork of mainnet.
    | Hook | Implementation |
    |---|---|
    | `_liveEpoch()` | `VAPP.celestiaLastCommitment()` |
-   | `_verifyPayload(epoch, account, data)` | Verify the blob's share 0 at index 0 and read the share count from it. For each subaccount in `data`: verify its shares against `epoch` at their stated blob indices (the subtree layout comes from the share count, never from the submitter), require consecutive indices, decode the record; require `owner == account`, zero perps, every collateral balance ≥ 0; require `programVKey()` and `verifier()` equal the immutable values passed to the constructor (the reviewed pair at deployment). Have the option pricer value every option of the submit from the signed feeds in `data` (decision 5), net credits and debits per token across the subaccounts, refuse if any token's debits exceed its credits; map each Derive asset id to its Ethereum token through an immutable table, scale 12 decimals to the token's. |
-   | `_isLive` | Live iff the stored epoch equals the live commitment, the entry is at most 30 minutes old, and the program pins still hold. |
+   | `_verifyPayload(epoch, account, data)` | Refuse if VAPP's newest batch is more than 30 minutes old. Verify the blob's share 0 at index 0 and read the share count from it. For each subaccount in `data`: verify its shares against `epoch` at their stated blob indices (the subtree layout comes from the share count, never from the submitter), require consecutive indices, decode the record; require `owner == account`, zero perps, every collateral balance ≥ 0; require `programVKey()` and `verifier()` equal the immutable values passed to the constructor (the reviewed pair at deployment). Have the option pricer value every option of the submit from the signed feeds in `data` (decision 5) and require each subaccount's own cash to cover its own shorts; sum per token, map each Derive asset id to its Ethereum token through an immutable table, scale 12 decimals to the token's, and return every covered token, zero included. |
+   | `_isLive` | Live iff the stored epoch equals the live commitment, the batch is at most 30 minutes old by VAPP's proven `lastOpTimestamp` (the batch's `maxOpTimestamp`, an SP1 public input; the same bound refuses submits), and the program pins still hold. Measuring from the batch, not from the write, means a late first submit or a replay cannot make a stalled batch count again. |
    | `_liveValue`, `_assetLegs` | The attested amount; one `Collateral` credit leg per asset, net of options. |
 
 2. **What the proof binds, stated as 0022 requires.** The proof binds the decoded amounts to the bytes Derive
@@ -48,6 +48,14 @@ tested on real batches and on a fork of mainnet.
    option asset ids come from `public/get_instrument` (`base_asset_address`: `0xd071…3623` BTC, `0x4bb4…1eb4` ETH,
    `0x7344…64d9` HYPE; quote USDC). Options are cash-settled in Derive's USDC cash asset, taken at $1, so every
    option is credited (long, rounded down) or debited (short, rounded up) to the cash token.
+   - **Each subaccount on its own.** A subaccount's short options must be covered by its own cash plus its own
+     long options; shorts are never netted against another subaccount. The contract cannot prove the submitter
+     showed every subaccount of the wallet, so this keeps omission safe: every submitted subaccount is worth at
+     least 0, and leaving one out can only lower the figure. This assumes Derive has no recourse from one
+     subaccount to another (see Before acceptance).
+   - **Zeros are written.** Every token the submitted records cover is attested, zero included, and the cash token
+     whenever options were valued. Within one batch only option prices can move (new feeds), and a value that fell
+     to zero must replace the earlier positive one instead of leaving it cached.
    - **Prices.** A submit carries Derive's signed spot, forward, rate and SVI vol items, as served by
      `public/get_latest_signed_feeds`. A separate immutable contract, `DeriveOptionPricer`, verifies them and prices
      the options; it is split out so the adapter stays under the EIP-170 size limit (adapter 21,569 bytes, pricer
@@ -134,4 +142,7 @@ fork test against the real VAPP at a pinned block.
 3. Ask Derive whether the SP1 program binds the blob to the state transition, and to route owner functions
    through the timelock. Also ask for a share-proof endpoint for the newest batch: it adds no trust (the
    adapter checks every proof against Ethereum) and removes the dependency on public Celestia nodes.
-4. Audit pass, deployment config and the settlement-guard integration.
+4. Ask Derive to confirm in writing that a subaccount's losses never reach another subaccount of the same owner
+   (the per-subaccount coverage rule rests on it). If recourse exists, the adapter must require the full set of
+   the fund's subaccounts in every submit, which needs an onchain list of them.
+5. Audit pass, deployment config and the settlement-guard integration.

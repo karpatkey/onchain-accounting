@@ -21,6 +21,8 @@ interface IDeriveVerifiableApp {
     function celestiaLastCommitment() external view returns (bytes32);
     function programVKey() external view returns (bytes32);
     function verifier() external view returns (address);
+    /// @notice The newest proven batch's `maxOpTimestamp` (an SP1 public input); 0 after an owner `setRoot`.
+    function lastOpTimestamp() external view returns (uint64);
 }
 
 /// @title Derive v3 Balance Adapter (attested from Derive's Celestia batch data)
@@ -43,25 +45,34 @@ interface IDeriveVerifiableApp {
 ///      (short, rounded up) to {CASH_TOKEN}. A submit carries Derive's signed spot, forward, rate and vol feed items;
 ///      {PRICER} (a separate immutable contract, see `derive/DeriveOptionPricer.sol`) verifies them against its fixed
 ///      signer set and values every option of every submitted subaccount at Derive's mark: Black-76 on Derive's SVI
-///      slice for a live option, intrinsic value at Derive's 30-minute settlement TWAP for an expired one. Credits and
-///      debits are netted per token across all submitted subaccounts; a token whose debits exceed its credits refuses
-///      the submit ({LiabilityExceedsCollateral}). Perps are not valued and refuse the submit ({PerpsNotAllowed}).
+///      slice for a live option, intrinsic value at Derive's 30-minute settlement TWAP for an expired one. Perps are
+///      not valued and refuse the submit ({PerpsNotAllowed}).
+///
+///      **Every submitted subaccount must be worth at least 0 on its own:** its own cash collateral must cover its own
+///      short options ({LiabilityExceedsCollateral}). A contract cannot prove the submitter showed every subaccount
+///      of the wallet, so this is what keeps omission safe: leaving a subaccount out can only lower the figure.
+///      Netting a short in one subaccount against cash in another would let a submitter drop the short's subaccount
+///      and over-report. This assumes Derive has no recourse from one subaccount to another (each is its own margin
+///      account; ADR 0031 lists the confirmation as open).
 ///
 ///      **Acceptance rules,** each fail-loud in {_verifyPayload}: the blob's first share must verify at index 0 (it
 ///      fixes the share count, and so the tree shape); every record share must verify at its stated blob index, and
 ///      a record's shares must be consecutive, so the decoded bytes are exactly the posted bytes; the record's owner
 ///      must be the account; the subaccount must hold no perps; options need a {PRICER}, which applies its own feed
 ///      rules (every item signed by every signer, within its deadline, fresh, and used); no collateral balance may be
-///      negative (the family is credit-only); every non-zero balance must be in a mapped asset; per token, debits must
-///      not exceed credits; subaccount ids must be strictly ascending (no double counting); VAPP's `programVKey()` and
-///      `verifier()` must equal the reviewed pair passed to the constructor. A later rotation also makes cached
-///      entries read 0 ({_isLive}).
+///      negative (the family is credit-only); every non-zero balance must be in a mapped asset; each subaccount's
+///      cash must cover its short options; subaccount ids must be strictly ascending (no double counting); VAPP's
+///      `programVKey()` and `verifier()` must equal the reviewed pair passed to the constructor, and its newest batch
+///      must be at most {MAX_ATTESTATION_AGE} old. A later rotation or an older batch also makes cached entries read
+///      0 ({_isLive}).
 ///
 ///      **Freshness.** Only the newest batch's commitment is on Ethereum, and a blob only carries subaccounts that
 ///      changed, so a submit needs the fund's records in the newest batch. The intended flow touches the account
 ///      first (a dust transfer between the fund's own subaccounts) and submits in the settlement transaction.
-///      Cached entries read 0 after the next batch (about 10 minutes), or after {MAX_ATTESTATION_AGE} if Derive
-///      stops posting batches while its sequencer keeps trading.
+///      Cached entries read 0 after the next batch (about 10 minutes), or once the batch itself is older than
+///      {MAX_ATTESTATION_AGE} by VAPP's proven `lastOpTimestamp`: if Derive stops posting batches while its sequencer
+///      keeps trading, neither a late first submit nor a replay can make the stalled batch count again. Every token
+///      a submit's records cover is written, zero included, so a value that fell to zero replaces the old one.
 ///
 ///      **Framing is a consistency check, not a proof.** The record's offset is chosen by the submitter; the adapter
 ///      requires the next record's head right after it, or the previous record ending exactly where it starts.
@@ -114,10 +125,10 @@ contract DeriveCelestiaAttestedBalanceAdapter is AttestedValueCache {
     /// @notice Upper bound on distinct tokens cached per account.
     uint256 public constant MAX_TOKENS_PER_ACCOUNT = 8;
 
-    /// @notice How long a cached entry stays live within one Derive batch. Batches land about every 10 minutes and
-    ///         the intended flow submits and reads in one transaction, so this only bites when Derive stops posting
-    ///         batches: its sequencer can keep settling trades that spend the collateral while the commitment, and
-    ///         so the epoch, stays put.
+    /// @notice How old the newest batch may be, by VAPP's proven `lastOpTimestamp`, for its records to be submitted
+    ///         or read. Batches land about every 10 minutes and the intended flow submits and reads in one
+    ///         transaction, so this only bites when Derive stops posting batches: its sequencer can keep settling
+    ///         trades that spend the collateral while the commitment, and so the epoch, stays put.
     uint256 public constant MAX_ATTESTATION_AGE = 30 minutes;
 
     /// @dev Share header: namespace (29) + info byte (1), plus the sequence length (4) on a blob's first share.
@@ -168,8 +179,10 @@ contract DeriveCelestiaAttestedBalanceAdapter is AttestedValueCache {
     error PerpsNotAllowed(uint256 subaccountId, uint256 perps);
     /// @notice The record holds options and the adapter has no {PRICER}.
     error UnmappedOption(uint256 subaccountId, address optionAsset);
-    /// @notice Short options owe more of `token` than the submitted subaccounts hold.
-    error LiabilityExceedsCollateral(address token);
+    /// @notice A subaccount's short options owe more than its own cash collateral plus its long options.
+    error LiabilityExceedsCollateral(uint256 subaccountId);
+    /// @notice The newest batch is older than {MAX_ATTESTATION_AGE}.
+    error BatchTooOld(uint256 lastOpTimestamp);
     error NegativeBalance(uint256 subaccountId, address deriveAsset);
     error UnmappedAsset(uint256 subaccountId, address deriveAsset);
 
@@ -283,6 +296,7 @@ contract DeriveCelestiaAttestedBalanceAdapter is AttestedValueCache {
         returns (address[] memory assets, uint256[] memory values, bytes[] memory ctxs)
     {
         if (!_programPinned()) revert ProgramChanged(VAPP.programVKey(), VAPP.verifier());
+        if (!_batchFresh()) revert BatchTooOld(VAPP.lastOpTimestamp());
         (ShareProof memory first, SubaccountProof[] memory proofs, bytes memory feeds) =
             abi.decode(data, (ShareProof, SubaccountProof[], bytes));
         (assets, values) = _settle(_collect(epoch, account, first, proofs, feeds));
@@ -304,12 +318,13 @@ contract DeriveCelestiaAttestedBalanceAdapter is AttestedValueCache {
         book = _newBook(account);
 
         DeriveRecord.Option[][] memory options = new DeriveRecord.Option[][](n);
+        uint256[] memory cash = new uint256[](n);
+        uint256[] memory ids = new uint256[](n);
         uint256 total;
-        uint256 prevId;
         for (uint256 i; i < n; ++i) {
             SubaccountProof memory p = proofs[i];
-            if (i != 0 && p.subaccountId <= prevId) revert SubaccountsNotAscending(p.subaccountId);
-            prevId = p.subaccountId;
+            if (i != 0 && p.subaccountId <= ids[i - 1]) revert SubaccountsNotAscending(p.subaccountId);
+            ids[i] = p.subaccountId;
 
             DeriveRecord.Record memory rec = _readRecord(epoch, numShares, p);
             if (rec.owner != account) revert WrongOwner(p.subaccountId, rec.owner);
@@ -317,19 +332,23 @@ contract DeriveCelestiaAttestedBalanceAdapter is AttestedValueCache {
             if (rec.options.length != 0 && address(PRICER) == address(0)) {
                 revert UnmappedOption(p.subaccountId, rec.options[0].asset);
             }
-            _addCollateral(rec, book);
+            cash[i] = _addCollateral(rec, book);
             options[i] = rec.options;
             total += rec.options.length;
         }
-        if (address(PRICER) != address(0)) _addOptions(options, total, feeds, book);
+        if (total != 0) _addOptions(options, total, cash, ids, feeds, book);
     }
 
-    /// @dev Has {PRICER} value every option of the submit in one call (so it can reject unused feed items) and nets
-    ///      the result into {CASH_TOKEN}.
-    function _addOptions(DeriveRecord.Option[][] memory options, uint256 total, bytes memory feeds, Book memory book)
-        private
-        view
-    {
+    /// @dev Has {PRICER} value every option of the submit in one call (so it can reject unused feed items), requires
+    ///      each subaccount's own cash to cover its own shorts, and nets the result into {CASH_TOKEN}.
+    function _addOptions(
+        DeriveRecord.Option[][] memory options,
+        uint256 total,
+        uint256[] memory cash,
+        uint256[] memory ids,
+        bytes memory feeds,
+        Book memory book
+    ) private view {
         DeriveRecord.Option[] memory all = new DeriveRecord.Option[](total);
         uint256 k;
         for (uint256 i; i < options.length; ++i) {
@@ -337,28 +356,32 @@ contract DeriveCelestiaAttestedBalanceAdapter is AttestedValueCache {
                 all[k++] = options[i][j];
             }
         }
-        (uint256 credit, uint256 debit) = PRICER.value(feeds, all);
-        if (credit == 0 && debit == 0) return;
-        uint256 slot = _slot(book, CASH_TOKEN);
-        book.credit[slot] += credit;
-        book.debit[slot] += debit;
+        int256[] memory v = PRICER.values(feeds, all);
+
+        uint256 slot = _slot(book, CASH_TOKEN); // written even at zero: options were valued
+        k = 0;
+        for (uint256 i; i < options.length; ++i) {
+            uint256 credit;
+            uint256 debit;
+            for (uint256 j; j < options[i].length; ++j) {
+                int256 x = v[k++];
+                if (x > 0) credit += uint256(x);
+                else debit += uint256(-x);
+            }
+            if (debit > cash[i] + credit) revert LiabilityExceedsCollateral(ids[i]);
+            book.credit[slot] += credit;
+            book.debit[slot] += debit;
+        }
     }
 
-    /// @dev Nets each token's credit against its debit and rounds the result down to the token's decimals.
+    /// @dev Every covered token, zero included (a zero must replace an earlier positive value of the same batch),
+    ///      rounded down to the token's decimals. Per-subaccount coverage ({_addOptions}) keeps credit ≥ debit.
     function _settle(Book memory book) private view returns (address[] memory assets, uint256[] memory values) {
-        uint256 count;
         assets = new address[](book.count);
         values = new uint256[](book.count);
         for (uint256 t; t < book.count; ++t) {
-            if (book.debit[t] > book.credit[t]) revert LiabilityExceedsCollateral(book.tokens[t]);
-            uint256 value = _toTokenUnits(book.credit[t] - book.debit[t], _decimals[book.tokens[t]]);
-            if (value == 0) continue;
-            assets[count] = book.tokens[t];
-            values[count++] = value;
-        }
-        assembly ("memory-safe") {
-            mstore(assets, count)
-            mstore(values, count)
+            assets[t] = book.tokens[t];
+            values[t] = _toTokenUnits(book.credit[t] - book.debit[t], _decimals[book.tokens[t]]);
         }
     }
 
@@ -368,11 +391,17 @@ contract DeriveCelestiaAttestedBalanceAdapter is AttestedValueCache {
     }
 
     /// @inheritdoc AttestedValueCache
-    /// @dev Live iff the epoch is current, the entry is younger than {MAX_ATTESTATION_AGE}, and VAPP still runs the
-    ///      reviewed program and verifier. VAPP's owner can rotate either without a new batch; this turns that into
-    ///      a 0 read rather than a figure from a program nobody reviewed.
+    /// @dev Live iff the epoch is current, the batch is at most {MAX_ATTESTATION_AGE} old by VAPP's proven
+    ///      `lastOpTimestamp` (not by when the entry was written, which a replay could refresh), and VAPP still runs
+    ///      the reviewed program and verifier. VAPP's owner can rotate either without a new batch; this turns that
+    ///      into a 0 read rather than a figure from a program nobody reviewed.
     function _isLive(Attestation memory a, address) internal view override returns (bool) {
-        return a.epoch == _liveEpoch() && block.timestamp - a.attestedAt <= MAX_ATTESTATION_AGE && _programPinned();
+        return a.epoch == _liveEpoch() && _batchFresh() && _programPinned();
+    }
+
+    /// @dev VAPP keeps `lastOpTimestamp <= block.timestamp` (it rejects batches from the future).
+    function _batchFresh() internal view returns (bool) {
+        return block.timestamp - VAPP.lastOpTimestamp() <= MAX_ATTESTATION_AGE;
     }
 
     /// @inheritdoc AttestedValueCache
@@ -502,15 +531,20 @@ contract DeriveCelestiaAttestedBalanceAdapter is AttestedValueCache {
         }
     }
 
-    /// @dev Credits `rec`'s non-zero collateral balances.
-    function _addCollateral(DeriveRecord.Record memory rec, Book memory b) private view {
+    /// @dev Credits `rec`'s collateral and returns its {CASH_TOKEN} part (12 decimals). A mapped asset is written
+    ///      even at a zero balance, so it replaces an earlier positive value of the same batch.
+    function _addCollateral(DeriveRecord.Record memory rec, Book memory b) private view returns (uint256 cash) {
         for (uint256 c; c < rec.collateral.length; ++c) {
             DeriveRecord.Collateral memory col = rec.collateral[c];
-            if (col.balance == 0) continue;
             if (col.balance < 0) revert NegativeBalance(rec.subaccountId, col.asset);
             address token = tokenOf[col.asset];
-            if (token == address(0)) revert UnmappedAsset(rec.subaccountId, col.asset);
-            b.credit[_slot(b, token)] += uint256(col.balance);
+            if (token == address(0)) {
+                if (col.balance == 0) continue;
+                revert UnmappedAsset(rec.subaccountId, col.asset);
+            }
+            uint256 amount = uint256(col.balance);
+            b.credit[_slot(b, token)] += amount;
+            if (token == CASH_TOKEN) cash += amount;
         }
     }
 

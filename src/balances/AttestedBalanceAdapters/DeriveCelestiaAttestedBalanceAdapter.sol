@@ -2,6 +2,7 @@
 pragma solidity ^0.8;
 
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
 import {AddressCheckLib} from "src/utils/AddressCheckLib.sol";
 import {AttestedValueCache} from "src/balances/AttestedBalanceAdapters/AttestedValueCache.sol";
@@ -32,7 +33,7 @@ interface IDeriveVerifiableApp {
 ///         newest batch's data blob (`celestiaLastCommitment()`). Each blob carries the full record of every
 ///         subaccount that changed in that batch. A submitter proves the shares holding the fund's records against
 ///         that commitment; this adapter decodes the records and caches one value per token: collateral, plus every
-///         option at its Black-76 value, netted against the cash token.
+///         option at Derive's mark, less USDC debt, as credit-only legs (see the dev note).
 ///
 /// @dev **What the proof binds — the statement ADR 0022 requires of every member.** The cached amount is bound to the
 ///      bytes Derive posted to Celestia for the newest batch. It is NOT bound to `VAPP.stateRoot()`: whether Derive's
@@ -40,28 +41,39 @@ interface IDeriveVerifiableApp {
 ///      the same bytes. The Derive-asset → token table, the option market table and decimals are constructor
 ///      constants, not attested.
 ///
-///      **Option valuation: Derive's mark, from Derive's signed feeds.** Options are cash-settled in Derive's USDC
-///      cash asset, so 1 cash token = 1 USD and every option's value is credited (long, rounded down) or debited
-///      (short, rounded up) to {CASH_TOKEN}. A submit carries Derive's signed spot, forward, rate and vol feed items;
+///      **Valuation: Derive's mark and spot, from Derive's signed feeds.** Options are cash-settled in Derive's USDC
+///      cash asset, so 1 cash token = 1 USD. A submit carries Derive's signed spot, forward, rate and vol feed items;
 ///      {PRICER} (a separate immutable contract, see `derive/DeriveOptionPricer.sol`) verifies them against its fixed
-///      signer set and values every option of every submitted subaccount at Derive's mark: Black-76 on Derive's SVI
-///      slice for a live option, intrinsic value at Derive's 30-minute settlement TWAP for an expired one. Perps are
-///      not valued and refuse the submit ({PerpsNotAllowed}).
+///      signer set and values every option of every submitted subaccount at Derive's mark (Black-76 on Derive's SVI
+///      slice for a live option, intrinsic value at Derive's 30-minute settlement TWAP for an expired one), long
+///      rounded down, short rounded up. It also returns the signed spot of every non-cash collateral asset the
+///      adapter asks for. Perps are not valued and refuse the submit ({PerpsNotAllowed}).
 ///
-///      **Every submitted subaccount must be worth at least 0 on its own:** its own cash collateral must cover its own
-///      short options ({LiabilityExceedsCollateral}). A contract cannot prove the submitter showed every subaccount
-///      of the wallet, so this is what keeps omission safe: leaving a subaccount out can only lower the figure.
-///      Netting a short in one subaccount against cash in another would let a submitter drop the short's subaccount
-///      and over-report. This assumes Derive has no recourse from one subaccount to another (each is its own margin
-///      account; ADR 0031 lists the confirmation as open).
+///      **Debt and covered options: equity per subaccount.** A subaccount that holds options or a negative balance
+///      (Derive auto-borrows USDC to buy an option) has its equity worked out in USD, 12 decimals: cash at 1, every
+///      other collateral asset at the signed spot (positive balances rounded down, a debt rounded up), options as
+///      above. **The equity must be at least 0 on its own** ({NegativeEquity}). A contract cannot prove the submitter
+///      showed every subaccount of the wallet, so this is what keeps omission safe: leaving a subaccount out can only
+///      lower the figure. Netting a deficit in one subaccount against another's surplus would let a submitter drop
+///      the deficit's subaccount and over-report. This assumes Derive has no recourse from one subaccount to another
+///      (each is its own margin account; ADR 0031 lists the confirmation as open).
+///
+///      **Legs are credit-only** (ADR 0022 refuses debt legs), worth at most the subaccount's equity at the signed
+///      spot, in this order: (1) a non-cash asset with a positive balance stays in its own units, so a fund
+///      denominated in that asset keeps its legs in that asset; (2) cash, options and every debt, a non-cash debt at
+///      spot rounded up, net into {CASH_TOKEN}; (3) if that net is negative, the subaccount's non-cash legs shrink by
+///      the shortfall, in record order, each by the units worth it at spot rounded up (against the fund). The
+///      shortfall is never covered by another subaccount's cash: each subaccount's legs are its own. A subaccount
+///      with only non-negative collateral and no options needs no price and books as is. The NAV Calculator then
+///      prices each leg at its own feed, so the USD total differs from the equity by that feed's spread to Derive's.
 ///
 ///      **Acceptance rules,** each fail-loud in {_verifyPayload}: the blob's first share must verify at index 0 (it
 ///      fixes the share count, and so the tree shape); every record share must verify at its stated blob index, and
 ///      a record's shares must be consecutive, so the decoded bytes are exactly the posted bytes; the record's owner
-///      must be the account; the subaccount must hold no perps; options need a {PRICER}, which applies its own feed
-///      rules (every item signed by every signer, within its deadline, fresh, and used); no collateral balance may be
-///      negative (the family is credit-only); every non-zero balance must be in a mapped asset; each subaccount's
-///      cash must cover its short options; subaccount ids must be strictly ascending (no double counting); VAPP's
+///      must be the account; the subaccount must hold no perps; options and negative balances need a {PRICER}, which
+///      applies its own feed rules (every item signed by every signer, within its deadline, fresh, and used); every
+///      non-zero balance must be in a mapped asset; each priced subaccount's equity must be at least 0; subaccount
+///      ids must be strictly ascending (no double counting); VAPP's
 ///      `programVKey()` and `verifier()` must equal the reviewed pair passed to the constructor, and its newest batch
 ///      must be at most {MAX_ATTESTATION_AGE} old. A later rotation or an older batch also makes cached entries read
 ///      0 ({_isLive}).
@@ -146,10 +158,12 @@ contract DeriveCelestiaAttestedBalanceAdapter is AttestedValueCache {
     /// @notice The reviewed SP1 verifier. Reads and writes refuse once VAPP reports another.
     address public immutable PINNED_VERIFIER;
 
-    /// @notice The token options settle into (Derive's USDC cash asset, mapped). Zero when there is no {PRICER}.
+    /// @notice The token options settle into and USDC debt is owed in (Derive's USDC cash asset, mapped). Zero when
+    ///         there is no {PRICER}.
     address public immutable CASH_TOKEN;
 
-    /// @notice Values options from Derive's signed feeds. Zero: any record holding options is refused.
+    /// @notice Values options and non-cash collateral from Derive's signed feeds. Zero: any record holding options or
+    ///         a negative balance is refused.
     IDeriveOptionPricer public immutable PRICER;
 
     /// @notice Derive protocol asset id → Ethereum token. Set once in the constructor.
@@ -179,10 +193,12 @@ contract DeriveCelestiaAttestedBalanceAdapter is AttestedValueCache {
     error PerpsNotAllowed(uint256 subaccountId, uint256 perps);
     /// @notice The record holds options and the adapter has no {PRICER}.
     error UnmappedOption(uint256 subaccountId, address optionAsset);
-    /// @notice A subaccount's short options owe more than its own cash collateral plus its long options.
-    error LiabilityExceedsCollateral(uint256 subaccountId);
+    /// @notice A subaccount's own equity is below 0: its debt and short options exceed its own collateral and long
+    ///         options at Derive's marks. Never netted against another subaccount.
+    error NegativeEquity(uint256 subaccountId);
     /// @notice The newest batch is older than {MAX_ATTESTATION_AGE}.
     error BatchTooOld(uint256 lastOpTimestamp);
+    /// @notice A negative collateral balance and no {PRICER} to value the debt.
     error NegativeBalance(uint256 subaccountId, address deriveAsset);
     error UnmappedAsset(uint256 subaccountId, address deriveAsset);
 
@@ -198,7 +214,7 @@ contract DeriveCelestiaAttestedBalanceAdapter is AttestedValueCache {
     /// @param deriveAssets_   Derive protocol asset ids (as `WithdrawalOutbox.resolveAsset` knows them).
     /// @param tokens_         The Ethereum token for each Derive asset id.
     /// @param cashAsset_      Derive asset id options settle into (USDC). Must be mapped when `pricer_` is set.
-    /// @param pricer_         The option pricer, or zero to refuse records holding options.
+    /// @param pricer_         The pricer, or zero to refuse records holding options or debt.
     constructor(
         address vapp_,
         address navCalculator_,
@@ -274,7 +290,7 @@ contract DeriveCelestiaAttestedBalanceAdapter is AttestedValueCache {
 
     /// @inheritdoc IPositionDescribable
     /// @dev `["Collateral"]` — the token is in `balanceAsset`; the argument is ignored. The amount is net of
-    ///      options (contract NatSpec).
+    ///      options and debt (contract NatSpec).
     function positionLabels(bytes calldata) external pure override returns (string[] memory out) {
         out = new string[](1);
         out[0] = "Collateral";
@@ -286,8 +302,8 @@ contract DeriveCelestiaAttestedBalanceAdapter is AttestedValueCache {
 
     /// @inheritdoc AttestedValueCache
     /// @dev Decodes `abi.encode(ShareProof firstShare, SubaccountProof[], bytes feeds)`, verifies the first share and
-    ///      every subaccount record, has {PRICER} value their options from `feeds`, and returns one netted value per
-    ///      token. The returned `ctxs` are empty: this member keeps no state beside the attestation and
+    ///      every subaccount record, has {PRICER} value their options and non-cash collateral from `feeds`, and
+    ///      returns one value per token. The returned `ctxs` are empty: this member keeps no state beside the attestation and
     ///      {_assetLegs} ignores `ctx`.
     function _verifyPayload(bytes32 epoch, address account, bytes memory data)
         internal
@@ -303,7 +319,8 @@ contract DeriveCelestiaAttestedBalanceAdapter is AttestedValueCache {
         ctxs = new bytes[](assets.length);
     }
 
-    /// @dev Verifies the first share and every subaccount record, values their options, and returns the book.
+    /// @dev Verifies the first share and every subaccount record, then books them: without a {PRICER}, collateral
+    ///      only; with one, {_bookPriced}.
     function _collect(
         bytes32 epoch,
         address account,
@@ -317,14 +334,11 @@ contract DeriveCelestiaAttestedBalanceAdapter is AttestedValueCache {
         uint256 numShares = _provenShareCount(epoch, first);
         book = _newBook(account);
 
-        DeriveRecord.Option[][] memory options = new DeriveRecord.Option[][](n);
-        uint256[] memory cash = new uint256[](n);
-        uint256[] memory ids = new uint256[](n);
+        DeriveRecord.Record[] memory recs = new DeriveRecord.Record[](n);
         uint256 total;
         for (uint256 i; i < n; ++i) {
             SubaccountProof memory p = proofs[i];
-            if (i != 0 && p.subaccountId <= ids[i - 1]) revert SubaccountsNotAscending(p.subaccountId);
-            ids[i] = p.subaccountId;
+            if (i != 0 && p.subaccountId <= proofs[i - 1].subaccountId) revert SubaccountsNotAscending(p.subaccountId);
 
             DeriveRecord.Record memory rec = _readRecord(epoch, numShares, p);
             if (rec.owner != account) revert WrongOwner(p.subaccountId, rec.owner);
@@ -332,56 +346,192 @@ contract DeriveCelestiaAttestedBalanceAdapter is AttestedValueCache {
             if (rec.options.length != 0 && address(PRICER) == address(0)) {
                 revert UnmappedOption(p.subaccountId, rec.options[0].asset);
             }
-            cash[i] = _addCollateral(rec, book);
-            options[i] = rec.options;
+            recs[i] = rec;
             total += rec.options.length;
         }
-        if (total != 0) _addOptions(options, total, cash, ids, feeds, book);
+        if (address(PRICER) == address(0)) {
+            for (uint256 i; i < n; ++i) {
+                _addCollateral(recs[i], book);
+            }
+        } else {
+            _bookPriced(recs, total, feeds, book);
+        }
     }
 
-    /// @dev Has {PRICER} value every option of the submit in one call (so it can reject unused feed items), requires
-    ///      each subaccount's own cash to cover its own shorts, and nets the result into {CASH_TOKEN}.
-    function _addOptions(
-        DeriveRecord.Option[][] memory options,
-        uint256 total,
-        uint256[] memory cash,
-        uint256[] memory ids,
-        bytes memory feeds,
+    /// @dev With a {PRICER}. A subaccount that holds options or debt needs its equity: it is priced and booked by
+    ///      {_addEquity}. Any other holds only non-negative collateral, which cannot be below 0 and is booked as is.
+    ///      One pricer call covers every option and every spot asset of the submit, so the pricer can reject unused
+    ///      feed items; no call is made when nothing needs a price.
+    function _bookPriced(DeriveRecord.Record[] memory recs, uint256 total, bytes memory feeds, Book memory book)
+        private
+        view
+    {
+        uint256 n = recs.length;
+        bool[] memory needs = new bool[](n);
+        address[] memory spotAssets = new address[](_deriveAssets.length);
+        uint256 ns;
+        for (uint256 i; i < n; ++i) {
+            needs[i] = recs[i].options.length != 0 || _hasDebt(recs[i]);
+            if (needs[i]) ns = _addSpotAssets(recs[i], spotAssets, ns);
+        }
+
+        int256[] memory v;
+        uint256[] memory spots;
+        if (total != 0 || ns != 0) {
+            DeriveRecord.Option[] memory all = new DeriveRecord.Option[](total);
+            uint256 k;
+            for (uint256 i; i < n; ++i) {
+                for (uint256 j; j < recs[i].options.length; ++j) {
+                    all[k++] = recs[i].options[j];
+                }
+            }
+            assembly ("memory-safe") {
+                mstore(spotAssets, ns)
+            }
+            (v, spots) = PRICER.values(feeds, all, spotAssets);
+        }
+
+        uint256 at;
+        for (uint256 i; i < n; ++i) {
+            if (!needs[i]) {
+                _addCollateral(recs[i], book);
+                continue;
+            }
+            _addEquity(recs[i], v, at, spotAssets, spots, book);
+            at += recs[i].options.length;
+        }
+    }
+
+    function _hasDebt(DeriveRecord.Record memory rec) private pure returns (bool) {
+        for (uint256 c; c < rec.collateral.length; ++c) {
+            if (rec.collateral[c].balance < 0) return true;
+        }
+        return false;
+    }
+
+    /// @dev Appends to `assets` (length `ns`) each non-cash mapped asset `rec` holds a non-zero balance of, once.
+    function _addSpotAssets(DeriveRecord.Record memory rec, address[] memory assets, uint256 ns)
+        private
+        view
+        returns (uint256)
+    {
+        for (uint256 c; c < rec.collateral.length; ++c) {
+            DeriveRecord.Collateral memory col = rec.collateral[c];
+            address token = tokenOf[col.asset];
+            if (col.balance == 0 || token == address(0) || token == CASH_TOKEN) continue;
+            uint256 j;
+            while (j < ns && assets[j] != col.asset) ++j;
+            if (j == ns) assets[ns++] = col.asset;
+        }
+        return ns;
+    }
+
+    /// @dev Books one subaccount from its equity in USD (12 decimals): cash at 1, every other collateral asset at its
+    ///      signed spot, long options at their value, short options and debt at theirs rounded up. The equity must be
+    ///      at least 0. It is booked as credit-only legs worth at most the equity, in this order:
+    ///      1. each non-cash asset with a positive balance stays in its own units;
+    ///      2. cash, options and debts (including a non-cash debt, at spot rounded up) net into {CASH_TOKEN};
+    ///      3. if that net is negative, the non-cash legs shrink by the shortfall, in record order, each by the units
+    ///         worth it at spot, rounded up (against the fund).
+    ///      The subaccount's own non-cash legs bear its own debt: they are never reduced by another subaccount's cash.
+    function _addEquity(
+        DeriveRecord.Record memory rec,
+        int256[] memory v,
+        uint256 from,
+        address[] memory spotAssets,
+        uint256[] memory spots,
         Book memory book
     ) private view {
-        DeriveRecord.Option[] memory all = new DeriveRecord.Option[](total);
-        uint256 k;
-        for (uint256 i; i < options.length; ++i) {
-            for (uint256 j; j < options[i].length; ++j) {
-                all[k++] = options[i][j];
+        uint256 cashSlot = _slot(book, CASH_TOKEN); // written even at zero: the subaccount was priced
+        int256 net; // cash, options and debts, USD
+        uint256 nonCash; // positive non-cash collateral, USD rounded down
+        for (uint256 j; j < rec.options.length; ++j) {
+            net += v[from + j];
+        }
+        for (uint256 c; c < rec.collateral.length; ++c) {
+            DeriveRecord.Collateral memory col = rec.collateral[c];
+            address token = tokenOf[col.asset];
+            if (token == address(0)) {
+                if (col.balance == 0) continue;
+                revert UnmappedAsset(rec.subaccountId, col.asset);
+            }
+            if (token == CASH_TOKEN) {
+                net += col.balance;
+                continue;
+            }
+            if (col.balance != 0) {
+                uint256 spot = _spotOf(rec, col.asset, spotAssets, spots);
+                if (col.balance > 0) nonCash += _usd(col.balance, spot, false);
+                else net -= _toInt(_usd(col.balance, spot, true));
             }
         }
-        int256[] memory v = PRICER.values(feeds, all);
 
-        uint256 slot = _slot(book, CASH_TOKEN); // written even at zero: options were valued
-        k = 0;
-        for (uint256 i; i < options.length; ++i) {
-            uint256 credit;
-            uint256 debit;
-            for (uint256 j; j < options[i].length; ++j) {
-                int256 x = v[k++];
-                if (x > 0) credit += uint256(x);
-                else debit += uint256(-x);
-            }
-            if (debit > cash[i] + credit) revert LiabilityExceedsCollateral(ids[i]);
-            book.credit[slot] += credit;
-            book.debit[slot] += debit;
+        uint256 shortfall;
+        if (net < 0) {
+            shortfall = _toUint(-net);
+            if (shortfall > nonCash) revert NegativeEquity(rec.subaccountId);
+        } else {
+            book.credit[cashSlot] += _toUint(net);
         }
+
+        for (uint256 c; c < rec.collateral.length; ++c) {
+            DeriveRecord.Collateral memory col = rec.collateral[c];
+            address token = tokenOf[col.asset];
+            if (token == address(0) || token == CASH_TOKEN) continue;
+            uint256 slot = _slot(book, token); // written even at zero
+            if (col.balance <= 0) continue;
+            uint256 units = _toUint(col.balance);
+            if (shortfall != 0) {
+                uint256 spot = _spotOf(rec, col.asset, spotAssets, spots);
+                uint256 take = Math.min(shortfall, _usd(col.balance, spot, false));
+                units -= Math.mulDiv(take, 1e18, spot, Math.Rounding.Ceil);
+                shortfall -= take;
+            }
+            book.credit[slot] += units;
+        }
+    }
+
+    /// @dev `balance`'s USD value at `spot` (1e18), 12 decimals: `|balance| × spot / 1e18`, rounded up or down.
+    function _usd(int256 balance, uint256 spot, bool up) private pure returns (uint256) {
+        return Math.mulDiv(_abs(balance), spot, 1e18, up ? Math.Rounding.Ceil : Math.Rounding.Floor);
+    }
+
+    /// @dev The verified spot the pricer returned for `asset`. Every non-zero non-cash balance of a priced
+    ///      subaccount was requested, so a miss is a pricer fault, refused as an unpriced asset.
+    function _spotOf(DeriveRecord.Record memory rec, address asset, address[] memory spotAssets, uint256[] memory spots)
+        private
+        pure
+        returns (uint256)
+    {
+        for (uint256 j; j < spotAssets.length; ++j) {
+            if (spotAssets[j] == asset) return spots[j];
+        }
+        revert UnmappedAsset(rec.subaccountId, asset);
+    }
+
+    function _abs(int256 x) private pure returns (uint256) {
+        // forge-lint: disable-next-line(unsafe-typecast)
+        return x >= 0 ? uint256(x) : uint256(-x);
+    }
+
+    function _toUint(int256 x) private pure returns (uint256) {
+        // forge-lint: disable-next-line(unsafe-typecast)
+        return uint256(x);
+    }
+
+    function _toInt(uint256 x) private pure returns (int256) {
+        // forge-lint: disable-next-line(unsafe-typecast)
+        return int256(x);
     }
 
     /// @dev Every covered token, zero included (a zero must replace an earlier positive value of the same batch),
-    ///      rounded down to the token's decimals. Per-subaccount coverage ({_addOptions}) keeps credit ≥ debit.
+    ///      rounded down to the token's decimals.
     function _settle(Book memory book) private view returns (address[] memory assets, uint256[] memory values) {
         assets = new address[](book.count);
         values = new uint256[](book.count);
         for (uint256 t; t < book.count; ++t) {
             assets[t] = book.tokens[t];
-            values[t] = _toTokenUnits(book.credit[t] - book.debit[t], _decimals[book.tokens[t]]);
+            values[t] = _toTokenUnits(book.credit[t], _decimals[book.tokens[t]]);
         }
     }
 
@@ -506,12 +656,12 @@ contract DeriveCelestiaAttestedBalanceAdapter is AttestedValueCache {
         }
     }
 
-    /// @dev Per-token credits and debits of one submit, in Derive's 12 decimals.
+    /// @dev Per-token credits of one submit, in Derive's 12 decimals (the cash token's are USD). Debts are netted per
+    ///      subaccount before they reach the book, so there are no debits.
     struct Book {
         address account;
         address[] tokens;
         uint256[] credit;
-        uint256[] debit;
         uint256 count;
     }
 
@@ -519,7 +669,6 @@ contract DeriveCelestiaAttestedBalanceAdapter is AttestedValueCache {
         b.account = account;
         b.tokens = new address[](MAX_TOKENS_PER_ACCOUNT);
         b.credit = new uint256[](MAX_TOKENS_PER_ACCOUNT);
-        b.debit = new uint256[](MAX_TOKENS_PER_ACCOUNT);
     }
 
     /// @dev Index of `token` in `b`, added if new.
@@ -531,9 +680,9 @@ contract DeriveCelestiaAttestedBalanceAdapter is AttestedValueCache {
         }
     }
 
-    /// @dev Credits `rec`'s collateral and returns its {CASH_TOKEN} part (12 decimals). A mapped asset is written
-    ///      even at a zero balance, so it replaces an earlier positive value of the same batch.
-    function _addCollateral(DeriveRecord.Record memory rec, Book memory b) private view returns (uint256 cash) {
+    /// @dev Credits `rec`'s collateral as is. A mapped asset is written even at a zero balance, so it replaces an
+    ///      earlier positive value of the same batch. A negative balance is refused: only {_addEquity} values debt.
+    function _addCollateral(DeriveRecord.Record memory rec, Book memory b) private view {
         for (uint256 c; c < rec.collateral.length; ++c) {
             DeriveRecord.Collateral memory col = rec.collateral[c];
             if (col.balance < 0) revert NegativeBalance(rec.subaccountId, col.asset);
@@ -542,9 +691,7 @@ contract DeriveCelestiaAttestedBalanceAdapter is AttestedValueCache {
                 if (col.balance == 0) continue;
                 revert UnmappedAsset(rec.subaccountId, col.asset);
             }
-            uint256 amount = uint256(col.balance);
-            b.credit[_slot(b, token)] += amount;
-            if (token == CASH_TOKEN) cash += amount;
+            b.credit[_slot(b, token)] += uint256(col.balance);
         }
     }
 

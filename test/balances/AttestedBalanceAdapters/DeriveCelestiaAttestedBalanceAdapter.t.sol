@@ -9,6 +9,7 @@ import {
 } from "src/balances/AttestedBalanceAdapters/DeriveCelestiaAttestedBalanceAdapter.sol";
 import {DeriveOptionPricer} from "src/balances/AttestedBalanceAdapters/derive/DeriveOptionPricer.sol";
 import {IDeriveOptionPricer} from "src/balances/AttestedBalanceAdapters/derive/IDeriveOptionPricer.sol";
+import {DeriveRecord} from "src/balances/AttestedBalanceAdapters/derive/DeriveRecord.sol";
 import {CelestiaShareProof} from "src/balances/AttestedBalanceAdapters/derive/CelestiaShareProof.sol";
 import {INAVCalculator} from "src/nav/INAVCalculator.sol";
 import {PositionKind} from "src/utils/PositionKind.sol";
@@ -90,7 +91,21 @@ contract DeriveCelestiaAttestedBalanceAdapterTest is BalanceAdapterTestBase {
         internal
         returns (address)
     {
-        return address(new DeriveOptionPricer(markets, sigs));
+        return _pricer(markets, sigs, _collateralSpots());
+    }
+
+    function _pricer(
+        IDeriveOptionPricer.OptionMarket[] memory markets,
+        address[] memory sigs,
+        IDeriveOptionPricer.CollateralSpot[] memory spots
+    ) internal returns (address) {
+        return address(new DeriveOptionPricer(markets, sigs, spots));
+    }
+
+    /// @dev Derive's HYPE collateral is priced at OPT_HYPE's spot feed.
+    function _collateralSpots() internal pure returns (IDeriveOptionPricer.CollateralSpot[] memory out) {
+        out = new IDeriveOptionPricer.CollateralSpot[](1);
+        out[0] = IDeriveOptionPricer.CollateralSpot({collateralAsset: DERIVE_HYPE, optionAsset: OPT_HYPE});
     }
 
     function _construct(
@@ -119,7 +134,7 @@ contract DeriveCelestiaAttestedBalanceAdapterTest is BalanceAdapterTestBase {
 
     function _expectPricerRevert(IDeriveOptionPricer.OptionMarket[] memory markets, address[] memory sigs) internal {
         vm.expectRevert(InvalidArguments.selector);
-        new DeriveOptionPricer(markets, sigs);
+        new DeriveOptionPricer(markets, sigs, _collateralSpots());
     }
 
     // ─────────────────────────────────────────────────────────────── helpers
@@ -523,7 +538,7 @@ contract DeriveCelestiaAttestedBalanceAdapterTest is BalanceAdapterTestBase {
         _expectSubmitRevert(
             alice,
             b.payload(ps, _expiredFeeds()),
-            abi.encodeWithSelector(DeriveCelestiaAttestedBalanceAdapter.LiabilityExceedsCollateral.selector, 100)
+            abi.encodeWithSelector(DeriveCelestiaAttestedBalanceAdapter.NegativeEquity.selector, 100)
         );
     }
 
@@ -549,7 +564,7 @@ contract DeriveCelestiaAttestedBalanceAdapterTest is BalanceAdapterTestBase {
         _expectSubmitRevert(
             alice,
             b.payload(_ps1(b.proof(0, 100, false)), _expiredFeeds()),
-            abi.encodeWithSelector(DeriveCelestiaAttestedBalanceAdapter.LiabilityExceedsCollateral.selector, 100)
+            abi.encodeWithSelector(DeriveCelestiaAttestedBalanceAdapter.NegativeEquity.selector, 100)
         );
     }
 
@@ -836,7 +851,13 @@ contract DeriveCelestiaAttestedBalanceAdapterTest is BalanceAdapterTestBase {
         );
     }
 
-    function test_revert_negativeBalance() public {
+    /// @dev Without a pricer there is nothing to value debt with: a negative balance is refused as before.
+    function test_revert_negativeBalance_withoutPricer() public {
+        (address[] memory ids, address[] memory toks) = _assets();
+        adapter = _construct(ids, toks, address(0), address(0), vapp.programVKey(), vapp.verifier());
+        bytes32 role = adapter.SUBMITTER_ROLE();
+        vm.prank(admin);
+        adapter.grantRole(role, keeper);
         DeriveBlobBuilder.Blob memory b = _blob(_rec(100, alice, DERIVE_A, -5e12), _rec(101, bob, DERIVE_A, 1e12));
         _expectSubmitRevert(
             alice,
@@ -1009,6 +1030,460 @@ contract DeriveCelestiaAttestedBalanceAdapterTest is BalanceAdapterTestBase {
         _expectPricerRevert(m, feedSigners);
     }
 
+    // ─────────────────────────────────────────────────────────────── debt and covered options
+
+    /// @dev HYPE spot of the synthetic CDP cases, and the expired series' settlement (60, see `LATEST_EXPIRED`).
+    uint256 internal constant SPOT = 60e18;
+
+    function _c(address asset, int256 bal) internal pure returns (DeriveBlobBuilder.Coll memory) {
+        return DeriveBlobBuilder.Coll(asset, bal);
+    }
+
+    function _coll2(DeriveBlobBuilder.Coll memory a, DeriveBlobBuilder.Coll memory b)
+        internal
+        pure
+        returns (DeriveBlobBuilder.Coll[] memory out)
+    {
+        out = new DeriveBlobBuilder.Coll[](2);
+        (out[0], out[1]) = (a, b);
+    }
+
+    function _recWith(
+        uint256 id,
+        address owner,
+        DeriveBlobBuilder.Coll[] memory coll,
+        DeriveBlobBuilder.Opt[] memory opts
+    ) internal pure returns (DeriveBlobBuilder.Rec memory r) {
+        r.id = id;
+        r.owner = owner;
+        r.coll = coll;
+        r.opts = opts;
+    }
+
+    function _noOpts() internal pure returns (DeriveBlobBuilder.Opt[] memory) {
+        return new DeriveBlobBuilder.Opt[](0);
+    }
+
+    /// @dev `recs` (ids 100, 101, ...) followed by 900, owned by someone else, to frame the last one.
+    function _blobOf(DeriveBlobBuilder.Rec[] memory recs) internal returns (DeriveBlobBuilder.Blob memory b) {
+        DeriveBlobBuilder.Rec[] memory all = new DeriveBlobBuilder.Rec[](recs.length + 1);
+        for (uint256 i; i < recs.length; ++i) {
+            all[i] = recs[i];
+        }
+        all[recs.length] = _rec(900, address(0xFEED), DERIVE_A, 1e12);
+        b = DeriveBlobBuilder.build(all);
+        vapp.setCommitment(b.commitment);
+    }
+
+    function _blob1(DeriveBlobBuilder.Rec memory r) internal returns (DeriveBlobBuilder.Blob memory) {
+        DeriveBlobBuilder.Rec[] memory recs = new DeriveBlobBuilder.Rec[](1);
+        recs[0] = r;
+        return _blobOf(recs);
+    }
+
+    /// @dev The proofs of the first `n` records of `b`, ids 100 + k.
+    function _proofsOf(DeriveBlobBuilder.Blob memory b, uint256 n)
+        internal
+        pure
+        returns (DeriveCelestiaAttestedBalanceAdapter.SubaccountProof[] memory ps)
+    {
+        ps = new DeriveCelestiaAttestedBalanceAdapter.SubaccountProof[](n);
+        for (uint256 k; k < n; ++k) {
+            ps[k] = b.proof(k, 100 + k, false);
+        }
+    }
+
+    /// @dev Spot item only: prices collateral, no option series.
+    function _spotFeeds(uint256 price) internal view returns (IDeriveOptionPricer.Feeds memory fd) {
+        fd = DeriveBlobBuilder.noFeeds();
+        fd.spots = _spots1(_spot(OPT_HYPE, price, NOW_T, DEADLINE));
+    }
+
+    /// @dev The expired series settled at 60, and the HYPE spot.
+    function _expiredAndSpot(uint256 price) internal view returns (IDeriveOptionPricer.Feeds memory fd) {
+        fd = _expiredFeeds();
+        fd.spots = _spots1(_spot(OPT_HYPE, price, NOW_T, DEADLINE));
+    }
+
+    function _hypeLeg(address account) internal view returns (uint256 amount) {
+        bool isDebt;
+        (amount, isDebt) = adapter.getAdapterBalanceForAsset(account, address(hype));
+        assertFalse(isDebt);
+    }
+
+    function _cashLeg(address account) internal view returns (uint256 amount) {
+        bool isDebt;
+        (amount, isDebt) = adapter.getAdapterBalanceForAsset(account, address(tokenSix));
+        assertFalse(isDebt);
+    }
+
+    /// @dev Equity 50 = HYPE 60 − USDC 20 + a 50-call worth 10 (settled at 60). The cash side nets to −10, so the
+    ///      HYPE leg gives up 10 / 60 HYPE, rounded up against the fund: 1 − 0.166666666667, not … 666.
+    function test_cdp_longCallWithUsdcDebt_shortfallTakenFromHype() public {
+        DeriveBlobBuilder.Rec memory r = _recWith(
+            100,
+            alice,
+            _coll2(_c(DERIVE_HYPE, 1e12), _c(DERIVE_SIX, -20e12)),
+            _opts1(_opt(OPT_HYPE, 50e8, true, 1e12, EXPIRED))
+        );
+        DeriveBlobBuilder.Blob memory b = _blob1(r);
+        _submit(alice, b.payload(_proofsOf(b, 1), _expiredAndSpot(SPOT)));
+
+        assertEq(_hypeLeg(alice), 0.833333333333 ether);
+        assertEq(_cashLeg(alice), 0);
+        // The legs are worth no more than the equity (50) at the signed spot: 0.833333333333 × 60 = 49.99999999998.
+        assertLe((_hypeLeg(alice) / 1e6) * 60, 50e12);
+    }
+
+    /// @dev The long call alone clears the debt: HYPE stays whole, the surplus is cash. 60 − 5 + 10 = 65.
+    function test_cdp_longCallCoversDebt_hypeKeptWhole() public {
+        DeriveBlobBuilder.Rec memory r = _recWith(
+            100,
+            alice,
+            _coll2(_c(DERIVE_HYPE, 1e12), _c(DERIVE_SIX, -5e12)),
+            _opts1(_opt(OPT_HYPE, 50e8, true, 1e12, EXPIRED))
+        );
+        DeriveBlobBuilder.Blob memory b = _blob1(r);
+        _submit(alice, b.payload(_proofsOf(b, 1), _expiredAndSpot(SPOT)));
+
+        assertEq(_hypeLeg(alice), 1 ether);
+        assertEq(_cashLeg(alice), 5_000_000);
+    }
+
+    /// @dev Live Black-76 call bought on credit: the option's value (from the pricer itself) pays down the USDC debt
+    ///      and the HYPE leg gives up the rest.
+    function test_cdp_liveLongCallWithUsdcDebt() public {
+        DeriveBlobBuilder.Opt[] memory os = _opts1(_opt(OPT_HYPE, 75e8, true, 10e12, LIVE));
+        DeriveBlobBuilder.Rec memory r = _recWith(100, alice, _coll2(_c(DERIVE_HYPE, 1e12), _c(DERIVE_SIX, -20e12)), os);
+        DeriveBlobBuilder.Blob memory b = _blob1(r);
+        IDeriveOptionPricer.Feeds memory fd = DeriveBlobBuilder.noFeeds();
+        fd.spots = _spots1(_spot(OPT_HYPE, SPOT, NOW_T, DEADLINE));
+        fd.forwards = _fwds1(_fwd(OPT_HYPE, LIVE, 0, 0, NOW_T, DEADLINE));
+        fd.rates = _rates1(_rate(OPT_HYPE, LIVE, NOW_T, DEADLINE));
+        fd.vols = _vols1(_vol(OPT_HYPE, LIVE, NOW_T, DEADLINE));
+
+        DeriveRecord.Option[] memory one = new DeriveRecord.Option[](1);
+        one[0] = DeriveRecord.Option({
+            asset: OPT_HYPE, subId: DeriveBlobBuilder.optionSubId(LIVE, 75e8, true), amount: 10e12
+        });
+        (int256[] memory v,) = adapter.PRICER().values(abi.encode(fd), one, new address[](0));
+        assertGt(v[0], 0);
+        assertLt(v[0], 20e12); // the debt is not covered by the option alone
+
+        _submit(alice, b.payload(_proofsOf(b, 1), fd));
+
+        // shortfall = 20 − option value (12 decimals); the HYPE leg gives up the units worth it, rounded up.
+        // forge-lint: disable-next-line(unsafe-typecast)
+        uint256 shortfall = 20e12 - uint256(v[0]);
+        uint256 given = (shortfall * 1e18 + SPOT - 1) / SPOT;
+        assertEq(_hypeLeg(alice), (1e12 - given) * 1e6);
+        assertEq(_cashLeg(alice), 0);
+    }
+
+    /// @dev Long put in the money (strike 70 against 60: +10) on top of cash: it is credited to cash.
+    function test_cdp_longPut_creditedToCash() public {
+        DeriveBlobBuilder.Rec memory r = _recWith(
+            100,
+            alice,
+            _coll2(_c(DERIVE_SIX, 100e12), _c(DERIVE_HYPE, 0)),
+            _opts1(_opt(OPT_HYPE, 70e8, false, 1e12, EXPIRED))
+        );
+        DeriveBlobBuilder.Blob memory b = _blob1(r);
+        _submit(alice, b.payload(_proofsOf(b, 1), _expiredFeeds()));
+        assertEq(_cashLeg(alice), 110_000_000);
+        assertEq(_hypeLeg(alice), 0);
+    }
+
+    /// @dev Covered call: HYPE 1, short 50-call (−10), no USDC. Before: `LiabilityExceedsCollateral`.
+    function test_cdp_shortCallCoveredByHype() public {
+        DeriveBlobBuilder.Rec memory r = _recWith(
+            100,
+            alice,
+            _coll2(_c(DERIVE_HYPE, 1e12), _c(DERIVE_SIX, 0)),
+            _opts1(_opt(OPT_HYPE, 50e8, true, -1e12, EXPIRED))
+        );
+        DeriveBlobBuilder.Blob memory b = _blob1(r);
+        _submit(alice, b.payload(_proofsOf(b, 1), _expiredAndSpot(SPOT)));
+        assertEq(_hypeLeg(alice), 0.833333333333 ether);
+        assertEq(_cashLeg(alice), 0);
+    }
+
+    /// @dev Cash-secured put: USDC 100, short 70-put (−10): 90 cash, no spot needed.
+    function test_cdp_shortPutCoveredByUsdc_needsNoSpot() public {
+        DeriveBlobBuilder.Rec memory r = _recWith(
+            100,
+            alice,
+            _coll2(_c(DERIVE_SIX, 100e12), _c(DERIVE_HYPE, 0)),
+            _opts1(_opt(OPT_HYPE, 70e8, false, -1e12, EXPIRED))
+        );
+        DeriveBlobBuilder.Blob memory b = _blob1(r);
+        _submit(alice, b.payload(_proofsOf(b, 1), _expiredFeeds()));
+        assertEq(_cashLeg(alice), 90_000_000);
+    }
+
+    /// @dev Put covered by HYPE (2 HYPE = 120, short 70-put −10): HYPE gives up 10 / 60.
+    function test_cdp_shortPutCoveredByHype() public {
+        DeriveBlobBuilder.Rec memory r = _recWith(
+            100,
+            alice,
+            _coll2(_c(DERIVE_HYPE, 2e12), _c(DERIVE_SIX, 0)),
+            _opts1(_opt(OPT_HYPE, 70e8, false, -1e12, EXPIRED))
+        );
+        DeriveBlobBuilder.Blob memory b = _blob1(r);
+        _submit(alice, b.payload(_proofsOf(b, 1), _expiredAndSpot(SPOT)));
+        assertEq(_hypeLeg(alice), 1.833333333333 ether);
+        assertEq(_cashLeg(alice), 0);
+    }
+
+    /// @dev A pure USDC borrow against HYPE, no options: the pricer is called for the HYPE spot alone.
+    function test_cdp_pureUsdcBorrowAgainstHype() public {
+        DeriveBlobBuilder.Rec memory r =
+            _recWith(100, alice, _coll2(_c(DERIVE_HYPE, 1e12), _c(DERIVE_SIX, -6e12)), _noOpts());
+        DeriveBlobBuilder.Blob memory b = _blob1(r);
+        _submit(alice, b.payload(_proofsOf(b, 1), _spotFeeds(SPOT)));
+        assertEq(_hypeLeg(alice), 0.9 ether); // 1 − 6 / 60
+        assertEq(_cashLeg(alice), 0);
+    }
+
+    function test_cdp_pureBorrow_previewMatchesCache() public {
+        DeriveBlobBuilder.Rec memory r =
+            _recWith(100, alice, _coll2(_c(DERIVE_HYPE, 1e12), _c(DERIVE_SIX, -6e12)), _noOpts());
+        DeriveBlobBuilder.Blob memory b = _blob1(r);
+        bytes memory data = b.payload(_proofsOf(b, 1), _spotFeeds(SPOT));
+        INAVCalculator.PositionBalance[] memory preview = adapter.previewPositions(alice, data);
+        _submit(alice, data);
+        INAVCalculator.PositionBalance[] memory cached = adapter.getAdapterPositions(alice, address(0));
+        assertEq(preview.length, cached.length);
+        for (uint256 i; i < cached.length; ++i) {
+            assertEq(preview[i].amount, cached[i].amount);
+            assertEq(preview[i].balanceAsset.asset, cached[i].balanceAsset.asset);
+        }
+    }
+
+    function test_cdp_pureBorrow_needsSpotItem() public {
+        DeriveBlobBuilder.Rec memory r =
+            _recWith(100, alice, _coll2(_c(DERIVE_HYPE, 1e12), _c(DERIVE_SIX, -6e12)), _noOpts());
+        DeriveBlobBuilder.Blob memory b = _blob1(r);
+        _expectSubmitRevert(
+            alice,
+            b.payload(_proofsOf(b, 1), DeriveBlobBuilder.noFeeds()),
+            abi.encodeWithSelector(IDeriveOptionPricer.MissingSpot.selector, OPT_HYPE)
+        );
+    }
+
+    function test_cdp_pureBorrow_staleSpotRefused() public {
+        DeriveBlobBuilder.Rec memory r =
+            _recWith(100, alice, _coll2(_c(DERIVE_HYPE, 1e12), _c(DERIVE_SIX, -6e12)), _noOpts());
+        DeriveBlobBuilder.Blob memory b = _blob1(r);
+        IDeriveOptionPricer.Feeds memory fd = DeriveBlobBuilder.noFeeds();
+        fd.spots = _spots1(_spot(OPT_HYPE, SPOT, NOW_T - 301, DEADLINE));
+        _expectSubmitRevert(
+            alice,
+            b.payload(_proofsOf(b, 1), fd),
+            abi.encodeWithSelector(IDeriveOptionPricer.FeedStale.selector, NOW_T - 301)
+        );
+    }
+
+    function test_cdp_pureBorrow_unusedFeedRefused() public {
+        DeriveBlobBuilder.Rec memory r =
+            _recWith(100, alice, _coll2(_c(DERIVE_HYPE, 1e12), _c(DERIVE_SIX, -6e12)), _noOpts());
+        DeriveBlobBuilder.Blob memory b = _blob1(r);
+        IDeriveOptionPricer.Feeds memory fd = _spotFeeds(SPOT);
+        fd.forwards = _fwds1(_fwd(OPT_HYPE, EXPIRED, 0, LATEST_EXPIRED, EXPIRED, DEADLINE));
+        _expectSubmitRevert(
+            alice,
+            b.payload(_proofsOf(b, 1), fd),
+            abi.encodeWithSelector(IDeriveOptionPricer.UnusedFeed.selector, OPT_HYPE)
+        );
+    }
+
+    /// @dev A debt in an asset with no spot mapping cannot be valued.
+    function test_cdp_revert_debtInAssetWithoutSpot() public {
+        DeriveBlobBuilder.Blob memory b = _blob(_rec(100, alice, DERIVE_A, -5e12), _rec(101, bob, DERIVE_A, 1e12));
+        _expectSubmitRevert(
+            alice,
+            b.payload(b.proof(0, 100, false)),
+            abi.encodeWithSelector(IDeriveOptionPricer.UnmappedSpotAsset.selector, DERIVE_A)
+        );
+    }
+
+    /// @dev Equity −5: a debt and nothing to cover it.
+    function test_cdp_revert_debtWithoutCollateral() public {
+        DeriveBlobBuilder.Blob memory b = _blob(_rec(100, alice, DERIVE_SIX, -5e12), _rec(101, bob, DERIVE_A, 1e12));
+        _expectSubmitRevert(
+            alice,
+            b.payload(b.proof(0, 100, false)),
+            abi.encodeWithSelector(DeriveCelestiaAttestedBalanceAdapter.NegativeEquity.selector, 100)
+        );
+    }
+
+    /// @dev HYPE worth 60 against a 61 USDC debt: equity −1.
+    function test_cdp_revert_debtExceedsHypeValue() public {
+        DeriveBlobBuilder.Rec memory r =
+            _recWith(100, alice, _coll2(_c(DERIVE_HYPE, 1e12), _c(DERIVE_SIX, -61e12)), _noOpts());
+        DeriveBlobBuilder.Blob memory b = _blob1(r);
+        _expectSubmitRevert(
+            alice,
+            b.payload(_proofsOf(b, 1), _spotFeeds(SPOT)),
+            abi.encodeWithSelector(DeriveCelestiaAttestedBalanceAdapter.NegativeEquity.selector, 100)
+        );
+    }
+
+    /// @dev Long option plus HYPE cannot hide a bigger debt: 60 + 10 − 71 < 0.
+    function test_cdp_revert_equityNegativeWithLongOption() public {
+        DeriveBlobBuilder.Rec memory r = _recWith(
+            100,
+            alice,
+            _coll2(_c(DERIVE_HYPE, 1e12), _c(DERIVE_SIX, -71e12)),
+            _opts1(_opt(OPT_HYPE, 50e8, true, 1e12, EXPIRED))
+        );
+        DeriveBlobBuilder.Blob memory b = _blob1(r);
+        _expectSubmitRevert(
+            alice,
+            b.payload(_proofsOf(b, 1), _expiredAndSpot(SPOT)),
+            abi.encodeWithSelector(DeriveCelestiaAttestedBalanceAdapter.NegativeEquity.selector, 100)
+        );
+    }
+
+    /// @dev Equity exactly 0 is accepted and writes zero legs: HYPE 1 (60) against a 60 USDC debt.
+    function test_cdp_zeroEquity_writesZeroLegs() public {
+        _submit(alice, _zeroEquityData());
+        assertEq(_hypeLeg(alice), 0);
+        assertEq(_cashLeg(alice), 0);
+        assertTrue(adapter.isAttestationLive(alice, address(hype)));
+        assertTrue(adapter.isAttestationLive(alice, address(tokenSix)));
+    }
+
+    function _zeroEquityData() internal returns (bytes memory) {
+        DeriveBlobBuilder.Rec memory r =
+            _recWith(100, alice, _coll2(_c(DERIVE_HYPE, 1e12), _c(DERIVE_SIX, -60e12)), _noOpts());
+        DeriveBlobBuilder.Blob memory b = _blob1(r);
+        return b.payload(_proofsOf(b, 1), _spotFeeds(SPOT));
+    }
+
+    /// @dev One more unit of debt than the collateral is worth (rounded up at spot) is below zero.
+    function test_cdp_revert_oneUnitOverZeroEquity() public {
+        DeriveBlobBuilder.Rec memory r =
+            _recWith(100, alice, _coll2(_c(DERIVE_HYPE, 1e12), _c(DERIVE_SIX, -60e12 - 1)), _noOpts());
+        DeriveBlobBuilder.Blob memory b = _blob1(r);
+        _expectSubmitRevert(
+            alice,
+            b.payload(_proofsOf(b, 1), _spotFeeds(SPOT)),
+            abi.encodeWithSelector(DeriveCelestiaAttestedBalanceAdapter.NegativeEquity.selector, 100)
+        );
+    }
+
+    /// @dev Three subaccounts of one owner. 100: HYPE 1, USDC −20, long call (+10) → HYPE 0.833…, no cash.
+    ///      101: USDC 100, short 70-put (−10) → 90 cash. 102: HYPE 0.5, nothing else → as is.
+    ///      100's shortfall is taken from 100's HYPE although 101 holds cash, and omitting 101 only lowers the total.
+    function test_cdp_mixedSubaccounts_neverNetAcross() public {
+        DeriveBlobBuilder.Rec[] memory recs = new DeriveBlobBuilder.Rec[](3);
+        recs[0] = _recWith(
+            100,
+            alice,
+            _coll2(_c(DERIVE_HYPE, 1e12), _c(DERIVE_SIX, -20e12)),
+            _opts1(_opt(OPT_HYPE, 50e8, true, 1e12, EXPIRED))
+        );
+        recs[1] = _recWith(
+            101,
+            alice,
+            _coll2(_c(DERIVE_SIX, 100e12), _c(DERIVE_HYPE, 0)),
+            _opts1(_opt(OPT_HYPE, 70e8, false, -1e12, EXPIRED))
+        );
+        recs[2] = _recWith(102, alice, _coll2(_c(DERIVE_HYPE, 0.5e12), _c(DERIVE_SIX, 0)), _noOpts());
+        DeriveBlobBuilder.Blob memory b = _blobOf(recs);
+
+        _submit(alice, b.payload(_proofsOf(b, 3), _expiredAndSpot(SPOT)));
+        assertEq(_hypeLeg(alice), 1.333333333333 ether); // 0.833333333333 + 0.5
+        assertEq(_cashLeg(alice), 90_000_000);
+
+        // Omit 101: its cash goes, 100's HYPE is not restored.
+        DeriveCelestiaAttestedBalanceAdapter.SubaccountProof[] memory ps =
+            new DeriveCelestiaAttestedBalanceAdapter.SubaccountProof[](2);
+        ps[0] = b.proof(0, 100, false);
+        ps[1] = b.proof(2, 102, false);
+        _submit(alice, b.payload(ps, _expiredAndSpot(SPOT)));
+        assertEq(_hypeLeg(alice), 1.333333333333 ether);
+        assertEq(_cashLeg(alice), 0);
+    }
+
+    /// @dev A deficit in one subaccount is not netted against another's surplus: 100 holds HYPE 1 and owes 61 USDC.
+    function test_cdp_revert_deficitNotCoveredByOtherSubaccount() public {
+        DeriveBlobBuilder.Rec[] memory recs = new DeriveBlobBuilder.Rec[](2);
+        recs[0] = _recWith(100, alice, _coll2(_c(DERIVE_HYPE, 1e12), _c(DERIVE_SIX, -61e12)), _noOpts());
+        recs[1] = _recWith(101, alice, _coll2(_c(DERIVE_SIX, 1000e12), _c(DERIVE_HYPE, 0)), _noOpts());
+        DeriveBlobBuilder.Blob memory b = _blobOf(recs);
+        _expectSubmitRevert(
+            alice,
+            b.payload(_proofsOf(b, 2), _spotFeeds(SPOT)),
+            abi.encodeWithSelector(DeriveCelestiaAttestedBalanceAdapter.NegativeEquity.selector, 100)
+        );
+    }
+
+    /// @dev Rounding of the shortfall: HYPE 1, USDC −5, spot 61.7. Units given up are 5 / 61.7 rounded UP
+    ///      (81037277148, not …147), so the legs are worth at most the equity 56.7 and within one spot-unit of it.
+    function test_cdp_rounding_shortfallUnitsRoundUp() public {
+        uint256 spot = 61.7e18;
+        DeriveBlobBuilder.Rec memory r =
+            _recWith(100, alice, _coll2(_c(DERIVE_HYPE, 1e12), _c(DERIVE_SIX, -5e12)), _noOpts());
+        DeriveBlobBuilder.Blob memory b = _blob1(r);
+        _submit(alice, b.payload(_proofsOf(b, 1), _spotFeeds(spot)));
+
+        uint256 units12 = _hypeLeg(alice) / 1e6;
+        assertEq(units12, 1e12 - 81_037_277_148);
+        uint256 legUsd12 = units12 * spot / 1e18; // 12-decimal USD at the signed spot, rounded down
+        assertLe(legUsd12, 56.7e12);
+        assertLt(56.7e12 - legUsd12, spot / 1e18 + 1);
+    }
+
+    /// @dev Rounding of a non-cash debt: USDC 100 and a HYPE debt of 1 + 1e-12 at spot 61.7 is 61.7 + 6.17e-11,
+    ///      rounded UP to 61.700000000062. Cash is an 18-decimal token here, so the 12-decimal result shows.
+    function test_cdp_rounding_nonCashDebtRoundsUp() public {
+        (address[] memory ids, address[] memory toks) = _assets();
+        adapter = _construct(
+            ids,
+            toks,
+            DERIVE_A,
+            _pricer(_markets(), feedSigners, _collateralSpots()),
+            vapp.programVKey(),
+            vapp.verifier()
+        );
+        bytes32 role = adapter.SUBMITTER_ROLE();
+        vm.prank(admin);
+        adapter.grantRole(role, keeper);
+
+        DeriveBlobBuilder.Rec memory r =
+            _recWith(100, alice, _coll2(_c(DERIVE_A, 100e12), _c(DERIVE_HYPE, -(1e12 + 1))), _noOpts());
+        DeriveBlobBuilder.Blob memory b = _blob1(r);
+        _submit(alice, b.payload(_proofsOf(b, 1), _spotFeeds(61.7e18)));
+
+        (uint256 amount,) = adapter.getAdapterBalanceForAsset(alice, address(tokenA));
+        assertEq(amount, 38_299_999_999_938 * 1e6); // 100 − 61.700000000062
+        assertEq(_hypeLeg(alice), 0);
+    }
+
+    /// @dev A submit holding only non-negative collateral needs no feeds even with a pricer set, as before.
+    function test_cdp_plainCollateral_needsNoPricerCall() public {
+        DeriveBlobBuilder.Blob memory b = _blob(_rec(100, alice, DERIVE_HYPE, 3e12), _rec(101, bob, DERIVE_A, 1e12));
+        _submit(alice, b.payload(b.proof(0, 100, false)));
+        assertEq(_hypeLeg(alice), 3 ether);
+    }
+
+    function test_pricer_constructor_refusesCollateralSpotOfUnknownMarket() public {
+        IDeriveOptionPricer.CollateralSpot[] memory spots = _collateralSpots();
+        spots[0].optionAsset = address(0xDEAD);
+        vm.expectRevert(InvalidArguments.selector);
+        new DeriveOptionPricer(_markets(), feedSigners, spots);
+    }
+
+    function test_pricer_constructor_refusesDuplicateCollateralSpot() public {
+        IDeriveOptionPricer.CollateralSpot[] memory spots = new IDeriveOptionPricer.CollateralSpot[](2);
+        spots[0] = IDeriveOptionPricer.CollateralSpot({collateralAsset: DERIVE_HYPE, optionAsset: OPT_HYPE});
+        spots[1] = IDeriveOptionPricer.CollateralSpot({collateralAsset: DERIVE_HYPE, optionAsset: OPT_ETH});
+        vm.expectRevert(InvalidArguments.selector);
+        new DeriveOptionPricer(_markets(), feedSigners, spots);
+    }
+
     // ─────────────────────────────────────────────────────────────── real Derive batches
 
     /// @dev hype-split's subaccount 122119, from the blob of the Ethereum batch at block 26,450,225 (Celestia
@@ -1119,6 +1594,40 @@ contract DeriveCelestiaAttestedBalanceAdapterTest is BalanceAdapterTestBase {
         adapter.submit(vm.parseJsonAddress(json, ".account"), data);
     }
 
+    /// @dev hype-split's subaccount 122119 after it bought 10 × HYPE-20261127-75-C on credit: 0.12 HYPE, −3.890496741630
+    ///      USDC and the calls. The record is from the batch at Ethereum block 26,456,460 (2026-11-20 12:59 UTC); the
+    ///      signed feeds and Derive's `margin_watch` were captured together at 2026-11-22 20:03:07 UTC (the account
+    ///      had not changed). The adapter's legs, priced at the signed HYPE spot, must match `margin_watch`'s
+    ///      `subaccount_value` (5.715103424349 USD) within 0.1%.
+    function test_realBatch_hypeSplitCdp_matchesMarginWatch() public {
+        string memory json = _readFixture("hype_split_122119_cdp.json");
+        (bytes memory data, bytes32 commitment, address owner) = _loadMark("hype_split_122119_cdp.json", json);
+        _deployReal(json);
+        vapp.setCommitment(commitment);
+        vm.warp(vm.parseJsonUint(json, ".valuationTime"));
+        assertEq(owner, HYPE_SPLIT_SAFE);
+
+        uint256 g = gasleft();
+        _submit(owner, data);
+        emit log_named_uint("122119 CDP submit gas", g - gasleft());
+
+        uint256 hypeUnits12 = _hypeLeg(owner) / 1e6;
+        uint256 cash12 = _cashLeg(owner) * 1e6;
+        uint256 spot = vm.parseJsonUint(json, ".subaccounts.122119.spots[0].price");
+        uint256 adapterUsd12 = hypeUnits12 * spot / 1e18 + cash12;
+        uint256 derive12 = vm.parseJsonUint(json, ".marginWatch.subaccountValueE12");
+        emit log_named_uint("HYPE leg, 12 decimals", hypeUnits12);
+        emit log_named_uint("USDC leg, 12 decimals", cash12);
+        emit log_named_uint("adapter USD, 12 decimals", adapterUsd12);
+        emit log_named_uint("margin_watch USD, 12 decimals", derive12);
+
+        // The USDC debt and the option's value net to a negative cash side, so the HYPE leg carries the shortfall.
+        assertEq(cash12, 0);
+        assertLt(hypeUnits12, 0.12e12);
+        uint256 diff = adapterUsd12 > derive12 ? adapterUsd12 - derive12 : derive12 - adapterUsd12;
+        assertLe(diff * 1000, derive12);
+    }
+
     /// @dev Derive's published settlement of an expired ETH series, replayed through the adapter: a long 1800-call
     ///      of 1 unit must net to the intrinsic value at Derive's settlement, 1819.511710943306 − 1800.
     function test_realBatch_expiredSettlementMatchesDerive() public {
@@ -1151,13 +1660,25 @@ contract DeriveCelestiaAttestedBalanceAdapterTest is BalanceAdapterTestBase {
             ids,
             toks,
             DERIVE_USDC,
-            _pricer(_realMarkets(feeds), vm.parseJsonAddressArray(feeds, ".signers")),
+            _pricer(_realMarkets(feeds), vm.parseJsonAddressArray(feeds, ".signers"), _realCollateralSpots(feeds)),
             vapp.programVKey(),
             vapp.verifier()
         );
         bytes32 role = adapter.SUBMITTER_ROLE();
         vm.prank(admin);
         adapter.grantRole(role, keeper);
+    }
+
+    /// @dev Derive's HYPE collateral is priced at the real HYPE option market's spot feed.
+    function _realCollateralSpots(string memory feeds)
+        internal
+        view
+        returns (IDeriveOptionPricer.CollateralSpot[] memory out)
+    {
+        out = new IDeriveOptionPricer.CollateralSpot[](1);
+        out[0] = IDeriveOptionPricer.CollateralSpot({
+            collateralAsset: DERIVE_HYPE, optionAsset: vm.parseJsonAddress(feeds, ".optionAssets.HYPE")
+        });
     }
 
     function _realMarkets(string memory feeds) internal view returns (IDeriveOptionPricer.OptionMarket[] memory m) {

@@ -12,7 +12,8 @@ import "src/errors.sol";
 /// @title DeriveOptionPricer
 /// @author KPK
 /// @notice Stateless, immutable pricer for `DeriveCelestiaAttestedBalanceAdapter`: verifies Derive's signed oracle
-///         feeds and values options at Derive's mark (see {IDeriveOptionPricer-value}).
+///         feeds, values options at Derive's mark and prices collateral at Derive's spot (see
+///         {IDeriveOptionPricer-values}).
 /// @dev **Feed signatures.** Derive signs its feeds with the Lyra v2 `BaseLyraFeed` scheme, unchanged: EIP-712
 ///      `FeedData(bytes data,uint256 deadline,uint64 timestamp)` under the domain (name `Lyra{Spot,Forward,Rate,Vol}Feed`,
 ///      version "1", chain 957 = Derive chain, verifyingContract = that feed's Derive-chain contract). Recovered from
@@ -28,6 +29,9 @@ contract DeriveOptionPricer is IDeriveOptionPricer {
 
     /// @notice Upper bound on configured markets.
     uint256 public constant MAX_MARKETS = 8;
+
+    /// @notice Upper bound on collateral assets priced at a spot feed.
+    uint256 public constant MAX_COLLATERAL_SPOTS = 8;
 
     /// @notice Upper bound on items of each feed kind per call.
     uint256 public constant MAX_FEED_ITEMS = 32;
@@ -62,6 +66,9 @@ contract DeriveOptionPricer is IDeriveOptionPricer {
     /// @notice Derive option asset id → its market (feed contracts). Set once in the constructor.
     mapping(address optionAsset => OptionMarket market) public marketOf;
 
+    /// @notice Derive collateral asset id → the option asset whose spot feed prices it. Set once in the constructor.
+    mapping(address collateralAsset => address optionAsset) public spotMarketOf;
+
     address[] private _optionAssets;
 
     /// @dev The feed signers, set once in the constructor.
@@ -79,7 +86,9 @@ contract DeriveOptionPricer is IDeriveOptionPricer {
     /// @param markets_ Option assets to value, with their Derive-chain feed contracts (1 to {MAX_MARKETS}).
     /// @param signers_ The feed signers (1 to {MAX_SIGNERS}, unique). Every feed item must carry one signature from
     ///                 each.
-    constructor(OptionMarket[] memory markets_, address[] memory signers_) {
+    /// @param collateralSpots_ Collateral assets to price at a market's spot feed (0 to {MAX_COLLATERAL_SPOTS}); each
+    ///                         names a configured option market and is listed once.
+    constructor(OptionMarket[] memory markets_, address[] memory signers_, CollateralSpot[] memory collateralSpots_) {
         uint256 s = signers_.length;
         if (s == 0 || s > MAX_SIGNERS) revert InvalidArguments();
         for (uint256 i; i < s; ++i) {
@@ -103,6 +112,17 @@ contract DeriveOptionPricer is IDeriveOptionPricer {
             marketOf[om.optionAsset] = om;
             _optionAssets.push(om.optionAsset);
         }
+
+        uint256 c = collateralSpots_.length;
+        if (c > MAX_COLLATERAL_SPOTS) revert InvalidArguments();
+        for (uint256 i; i < c; ++i) {
+            CollateralSpot memory cs = collateralSpots_[i];
+            if (
+                cs.collateralAsset == address(0) || marketOf[cs.optionAsset].optionAsset == address(0)
+                    || spotMarketOf[cs.collateralAsset] != address(0)
+            ) revert InvalidArguments();
+            spotMarketOf[cs.collateralAsset] = cs.optionAsset;
+        }
     }
 
     /// @notice The configured option asset ids, in constructor order.
@@ -121,10 +141,15 @@ contract DeriveOptionPricer is IDeriveOptionPricer {
     }
 
     /// @inheritdoc IDeriveOptionPricer
-    function values(bytes calldata feeds, DeriveRecord.Option[] calldata options)
+    function isSpotAsset(address collateralAsset) external view returns (bool) {
+        return spotMarketOf[collateralAsset] != address(0);
+    }
+
+    /// @inheritdoc IDeriveOptionPricer
+    function values(bytes calldata feeds, DeriveRecord.Option[] calldata options, address[] calldata spotAssets)
         external
         view
-        returns (int256[] memory out)
+        returns (int256[] memory out, uint256[] memory spots)
     {
         FeedBook memory fb = _verifyFeeds(abi.decode(feeds, (Feeds)));
         out = new int256[](options.length);
@@ -137,6 +162,12 @@ contract DeriveOptionPricer is IDeriveOptionPricer {
             // `num` fits in uint256 (checked multiply), so num / 1e18 + 1 < 2^255 and the casts cannot wrap.
             // forge-lint: disable-next-line(unsafe-typecast)
             out[k] = o.amount > 0 ? int256(num / 1e18) : -int256((num + 1e18 - 1) / 1e18);
+        }
+        spots = new uint256[](spotAssets.length);
+        for (uint256 k; k < spotAssets.length; ++k) {
+            address market = spotMarketOf[spotAssets[k]];
+            if (market == address(0)) revert UnmappedSpotAsset(spotAssets[k]);
+            spots[k] = _spotPrice(market, fb);
         }
         _requireAllUsed(fb);
     }
@@ -175,12 +206,7 @@ contract DeriveOptionPricer is IDeriveOptionPricer {
         ForwardFeed memory fw,
         FeedBook memory fb
     ) private view returns (uint256) {
-        uint256 si = _spotIndex(fb.feeds.spots, asset);
-        if (si == _NONE) revert MissingSpot(asset);
-        fb.spotUsed[si] = true;
-        SpotFeed memory sp = fb.feeds.spots[si];
-        _requireFresh(sp.timestamp);
-        if (sp.price == 0) revert ZeroSpot(asset);
+        uint256 spot = _spotPrice(asset, fb);
 
         uint256 ri = _rateIndex(fb.feeds.rates, asset, expiry);
         if (ri == _NONE) revert MissingFeed(asset, expiry);
@@ -198,8 +224,19 @@ contract DeriveOptionPricer is IDeriveOptionPricer {
             a: vf.a, b: vf.b, rho: vf.rho, m: vf.m, sigma: vf.sigma, sviFwd: vf.sviFwd, refTau: vf.refTau
         });
         return DeriveOptionMath.optionPrice(
-            svi, strike18, sp.price, fw.fwdDiff, rt.rate, DeriveOptionMath.yearsTo(expiry, block.timestamp), isCall
+            svi, strike18, spot, fw.fwdDiff, rt.rate, DeriveOptionMath.yearsTo(expiry, block.timestamp), isCall
         );
+    }
+
+    /// @dev The verified, fresh, non-zero spot of option market `asset`'s underlying (1e18 USD); marks its item used.
+    function _spotPrice(address asset, FeedBook memory fb) private view returns (uint256) {
+        uint256 si = _spotIndex(fb.feeds.spots, asset);
+        if (si == _NONE) revert MissingSpot(asset);
+        fb.spotUsed[si] = true;
+        SpotFeed memory sp = fb.feeds.spots[si];
+        _requireFresh(sp.timestamp);
+        if (sp.price == 0) revert ZeroSpot(asset);
+        return sp.price;
     }
 
     /// @dev Verifies every item's signatures, deadline and timestamp, and returns the usage book.

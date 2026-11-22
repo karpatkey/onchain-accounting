@@ -85,7 +85,7 @@ Identity is the tuple `(chainId, protocolSubId, positionId, balanceAsset.asset, 
 | NexusMutualStakingPoolsAssisted | `nexus-mutual-staking-pools` | `abi.encode(address stakingPool)` (NFT id in `positionInstanceId`) | active + expired staked NXM (per StakingNFT) | `Staking` | false | NXM |
 | | | | claimable rewards (per StakingNFT) | `Rewards` | false | NXM |
 | MerklRewardsAttested | `merkl` | `abi.encode(address DISTRIBUTOR)` (static — the claim target, NOT the reward token; reward token is in `balanceAsset`) | **one leg per cached campaign share** — unclaimed = proof-verified cumulative minus on-chain `claimed`; `keccak256(abi.encode(campaignId, subCampaignId))` in `positionInstanceId`, or `bytes32(0)` when submitted untagged; stale root reads 0 | `Rewards` | false | each reward token |
-| DeriveCelestiaAttested | `derive-v3-subaccounts` | `abi.encode(address VAPP)` (static — Derive's `VerifiableApp`; collateral token is in `balanceAsset`) | **one leg per token**, netted over the proven subaccounts: collateral, plus long options minus short options at Derive's mark (from Derive's signed feeds); reads 0 after the next Derive batch | `Collateral` | false | each mapped collateral token |
+| DeriveCelestiaAttested | `derive-v3-subaccounts` | `abi.encode(address VAPP)` (static — Derive's `VerifiableApp`; collateral token is in `balanceAsset`) | **one leg per token**, summed over the proven subaccounts, each valued as equity: collateral (non-cash at Derive's signed spot) plus long options minus short options at Derive's mark minus USDC debt, credit-only (a negative cash net is taken from the same subaccount's non-cash legs); reads 0 after the next Derive batch | `Collateral` | false | each mapped collateral token |
 
 ## PositionKind usage census
 

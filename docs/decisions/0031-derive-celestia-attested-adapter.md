@@ -24,9 +24,9 @@ tested on real batches and on a fork of mainnet.
    | Hook | Implementation |
    |---|---|
    | `_liveEpoch()` | `VAPP.celestiaLastCommitment()` |
-   | `_verifyPayload(epoch, account, data)` | Refuse if VAPP's newest batch is more than 30 minutes old. Verify the blob's share 0 at index 0 and read the share count from it. For each subaccount in `data`: verify its shares against `epoch` at their stated blob indices (the subtree layout comes from the share count, never from the submitter), require consecutive indices, decode the record; require `owner == account`, zero perps, every collateral balance ≥ 0; require `programVKey()` and `verifier()` equal the immutable values passed to the constructor (the reviewed pair at deployment). Have the option pricer value every option of the submit from the signed feeds in `data` (decision 5) and require each subaccount's own cash to cover its own shorts; sum per token, map each Derive asset id to its Ethereum token through an immutable table, scale 12 decimals to the token's, and return every covered token, zero included. |
+   | `_verifyPayload(epoch, account, data)` | Refuse if VAPP's newest batch is more than 30 minutes old. Verify the blob's share 0 at index 0 and read the share count from it. For each subaccount in `data`: verify its shares against `epoch` at their stated blob indices (the subtree layout comes from the share count, never from the submitter), require consecutive indices, decode the record; require `owner == account`, zero perps; require `programVKey()` and `verifier()` equal the immutable values passed to the constructor (the reviewed pair at deployment). Have the pricer value every option and the spot of every non-cash collateral asset of the subaccounts that hold options or debt from the signed feeds in `data` (decision 5), require each such subaccount's own equity to be at least 0, and book its credit-only legs; sum per token, map each Derive asset id to its Ethereum token through an immutable table, scale 12 decimals to the token's, and return every covered token, zero included. |
    | `_isLive` | Live iff the stored epoch equals the live commitment, the batch is at most 30 minutes old by VAPP's proven `lastOpTimestamp` (the batch's `maxOpTimestamp`, an SP1 public input; the same bound refuses submits), and the program pins still hold. Measuring from the batch, not from the write, means a late first submit or a replay cannot make a stalled batch count again. |
-   | `_liveValue`, `_assetLegs` | The attested amount; one `Collateral` credit leg per asset, net of options. |
+   | `_liveValue`, `_assetLegs` | The attested amount; one `Collateral` credit leg per asset, net of options and debt. |
 
 2. **What the proof binds, stated as 0022 requires.** The proof binds the decoded amounts to the bytes Derive
    posted to Celestia for the newest batch. It does **not** bind them to `stateRoot()`: whether Derive's SP1 program
@@ -43,28 +43,47 @@ tested on real batches and on a fork of mainnet.
    settling, a keeper moves a dust amount between two subaccounts the fund owns (`private/transfer_spot`, session
    key with scope 12 only, which Derive limits to same-owner subaccounts). No Ethereum transaction is needed.
 
-5. **Options at Derive's mark, from Derive's signed feeds; perps refused.** The record lists each option as
-   (option asset, series, amount); the series packs expiry, strike (8-decimal USD) and a call flag. Derive's
-   option asset ids come from `public/get_instrument` (`base_asset_address`: `0xd071…3623` BTC, `0x4bb4…1eb4` ETH,
-   `0x7344…64d9` HYPE; quote USDC). Options are cash-settled in Derive's USDC cash asset, taken at $1, so every
-   option is credited (long, rounded down) or debited (short, rounded up) to the cash token.
-   - **Each subaccount on its own.** A subaccount's short options must be covered by its own cash plus its own
-     long options; shorts are never netted against another subaccount. The contract cannot prove the submitter
-     showed every subaccount of the wallet, so this keeps omission safe: every submitted subaccount is worth at
-     least 0, and leaving one out can only lower the figure. This assumes Derive has no recourse from one
-     subaccount to another (see Before acceptance).
+5. **Options and USDC debt at Derive's mark and spot, from Derive's signed feeds; perps refused.** The record lists
+   each option as (option asset, series, amount); the series packs expiry, strike (8-decimal USD) and a call flag.
+   Derive's option asset ids come from `public/get_instrument` (`base_asset_address`: `0xd071…3623` BTC, `0x4bb4…1eb4`
+   ETH, `0x7344…64d9` HYPE; quote USDC). Options are cash-settled in Derive's USDC cash asset, taken at $1, so
+   every option is worth its value in cash: long rounded down, short rounded up.
+   - **Equity per subaccount.** On Derive, buying an option without enough USDC borrows the USDC, so the balance
+     goes negative (subaccount 122119: 0.12 HYPE, −3.89049674163 USDC, 10 × HYPE-20261127-75-C), and a covered call
+     is collateralised by the underlying, not by cash. A subaccount that holds options or a negative balance is
+     therefore valued as equity in USD, 12 decimals: cash at 1; every other collateral asset at Derive's signed
+     spot (a positive balance rounded down, a debt rounded up); options as above. **The equity must be at least 0
+     on its own.** Equity is never netted across subaccounts. The contract cannot prove the submitter showed every
+     subaccount of the wallet, so this keeps omission safe: every submitted subaccount is worth at least 0, and
+     leaving one out can only lower the figure. This assumes Derive has no recourse from one subaccount to another
+     (see Before acceptance). A subaccount with only non-negative collateral and no options needs no price and is
+     booked as is.
+   - **Credit-only legs, in the fund's units.** The family refuses debt legs (0022, `DebtLegRejected`), so debt is
+     netted before it reaches the book, per subaccount, and the legs are worth at most the equity at the signed
+     spot: (1) every non-cash asset with a positive balance stays in its own units (a HYPE-denominated fund needs
+     HYPE legs to stay in HYPE units); (2) cash, options and every debt, a non-cash debt at spot rounded up, net
+     into the cash token; (3) if that net is negative, the subaccount's non-cash legs shrink by the shortfall, in
+     record order, each by the units worth it at spot, rounded up (against the fund). A subaccount's shortfall is
+     taken from its own non-cash legs, never covered by another subaccount's cash. Example (subaccount 122119): net
+     cash = −3.89 + 10 × 0.2139 = −1.75 USD, so the 0.12 HYPE leg becomes 0.12 − 1.75 / 62.37 = 0.0919 HYPE and the
+     cash leg 0. The NAV Calculator prices each leg at its own feed, so the USD total differs from the equity by that
+     feed's spread to Derive's spot.
    - **Zeros are written.** Every token the submitted records cover is attested, zero included, and the cash token
-     whenever options were valued. Within one batch only option prices can move (new feeds), and a value that fell
-     to zero must replace the earlier positive one instead of leaving it cached.
+     whenever a subaccount was priced. Within one batch only prices can move (new feeds), and a value that fell to
+     zero must replace the earlier positive one instead of leaving it cached.
    - **Prices.** A submit carries Derive's signed spot, forward, rate and SVI vol items, as served by
-     `public/get_latest_signed_feeds`. A separate immutable contract, `DeriveOptionPricer`, verifies them and prices
-     the options; it is split out so the adapter stays under the EIP-170 size limit (adapter 21,569 bytes, pricer
-     10,091). The signing scheme is not documented by Derive; it is Lyra v2's `BaseLyraFeed` scheme, recovered from
-     live data: EIP-712 `FeedData(bytes data,uint256 deadline,uint64 timestamp)`, domain name
-     `Lyra{Spot,Forward,Rate,Vol}Feed`, version "1", chain 957, verifying contract = that feed's Derive-chain
-     address (12 addresses for ETH, BTC, HYPE, each checked against both signers). Every item must carry one
-     signature from each of the pricer's fixed signers (today `0xe920…4f18`, `0xee68…e763`), be within its
-     deadline, not be from the future, and be used; items that price a live option must be at most 5 minutes old.
+     `public/get_latest_signed_feeds`. A separate immutable contract, `DeriveOptionPricer`, verifies them, prices the
+     options and returns the signed spot of each non-cash collateral asset the adapter asks for (a constructor
+     table `CollateralSpot[]` maps a Derive collateral asset id to the option market whose spot feed prices it:
+     Derive marks HYPE collateral and HYPE options at one HYPE spot). A pure USDC borrow against HYPE needs the
+     spot item alone. It is split out so the adapter stays under the EIP-170 size limit. The signing scheme is not
+     documented by Derive; it is Lyra v2's `BaseLyraFeed` scheme, recovered from live data: EIP-712
+     `FeedData(bytes data,uint256 deadline,uint64 timestamp)`, domain name `Lyra{Spot,Forward,Rate,Vol}Feed`,
+     version "1", chain 957, verifying contract = that feed's Derive-chain address (12 addresses for ETH, BTC, HYPE,
+     each checked against both signers). Every item must carry one signature from each of the pricer's fixed signers
+     (today `0xe920…4f18`, `0xee68…e763`), be within its deadline, not be from the future, and be used; items that
+     price a live option or a collateral asset must be at most 5 minutes old. Without a pricer the adapter keeps the
+     earlier behaviour: a negative balance ({NegativeBalance}) or an option is refused.
    - **Live option:** Black-76 on Derive's SVI slice. SVI as Derive publishes it: k = ln(K / SVI_fwd), clamped to
      ±4·sqrt(a + b·σ); w = a + b·(ρ(k − m) + sqrt((k − m)² + σ²)), capped at 144; vol = sqrt(w / SVI_refTau). Black-76
      with F = spot + fwd_diff, the rate clamped at 0, τ in 365-day years, a total-vol cap of 24.
@@ -76,6 +95,13 @@ tested on real batches and on a fork of mainnet.
      median gap of 0.00008%, worst 0.10%, $0.08 on $46,629. Not bit-exact: Derive's pricing code is not public. The
      onchain library matches 50-digit references (N(x) to 1e-12, Black-76 to 1e-12 relative) and the Python
      reference to the micro-USDC on two real subaccounts.
+   - **A real borrow, checked against Derive.** Subaccount 122119 (0.12 HYPE, −3.89049674163 USDC, 10 ×
+     HYPE-20261127-75-C) read through the adapter from its record in the batch at Ethereum block 26,456,460
+     (2026-11-20 12:59 UTC) and Derive's signed feeds of 2026-11-22 20:03 UTC: the legs are 0.091641218458 HYPE and
+     0 USDC, worth 5.714964376689 USD at the signed HYPE spot (62.36237877291293). `public/margin_watch` read
+     5.715103424349 in the same minute: the gap is −0.0024%, inside the 0.1% the test allows. The account had not
+     changed between the batch and the capture (`margin_watch` balances equal the record's). Fixture:
+     `test/integration/derive-celestia/hype_split_122119_cdp.json`.
    - **Licensing.** Lyra's open-source `SVI.sol` and `Black76.sol` are GPL-3.0/AGPL; nothing was copied. The math
      (`derive/DeriveOptionMath.sol`) is written from the published formulas.
    - Perps are refused: the record's per-perp fields beyond the amount are not decoded.
@@ -96,12 +122,23 @@ tested on real batches and on a fork of mainnet.
 ## Consequences
 
 - No NAV Calculator change; the member follows the Merkl pattern.
-- The fund's Derive account may hold options; perps must be closed at settlement. The leg is the options' fair
-  value by Derive's model, before closing costs (taker fees, about 0.7% of the option value on 108093, and the
-  bid/ask spread). A fund that wants those reflected applies a haircut at fund level.
-- **More trust:** the option value rests on Derive's two feed signers, the same keys Derive's margin engine uses.
-  They are not on Ethereum; rotating them means deploying a new pricer and adapter. A submit with options needs
-  feeds fetched within 5 minutes.
+- The fund's Derive account may hold options, a USDC borrow against its collateral, and calls or puts covered by
+  non-cash collateral; perps must be closed at settlement. The legs are the account's equity by Derive's model,
+  before closing costs (taker fees, about 0.7% of the option value on 108093, and the bid/ask spread). A fund that
+  wants those reflected applies a haircut at fund level.
+- **Debt shrinks the non-cash legs.** A subaccount that owes more cash than its options and cash cover has the rest
+  taken from its own non-cash legs (decision 5), so its HYPE leg reads less than the HYPE it holds. That is the
+  right quantity for a HYPE-denominated NAV: the debt is carried in HYPE.
+- **Residuals of the equity rule.** (a) Cash is taken at $1, as Derive's `margin_watch` does, while the NAV
+  Calculator prices the USDC leg at its own feed: a USDC depeg moves the two apart. (b) The record's USDC balance
+  excludes interest accrued since the subaccount last changed (`margin_watch` `pending_interest`, −0.0013 USD on
+  122119 after two days), so a debt is understated by its accrued interest until the next posting; `margin_watch`'s
+  `subaccount_value` excludes it too. (c) The submitter may pick any signed spot item from the last 5 minutes, as
+  with the option feeds: the figure moves by the collateral's 5-minute price move on the covered part only.
+  (d) Equity at least 0 is not Derive's margin rule: a subaccount can be liquidatable and still read its equity.
+- **More trust:** the option values and the collateral spot rest on Derive's two feed signers, the same keys Derive's
+  margin engine uses. They are not on Ethereum; rotating them means deploying a new pricer and adapter. A submit with
+  options, debt or covered collateral needs feeds fetched within 5 minutes.
 - **Trust that remains:** Derive's sequencer authors the blob; VAPP's owner (Safe `0x62c0…90F7`, a 4 h timelock
   or a 6-of-8 Safe) can call `setRoot`, `setVKey`, `setVerifier` without a proof. The vkey has rotated three
   times (blocks 26,101,785 and 26,110,967 directly, 26,364,645 through the timelock, installing `0x00bc954f…`).
@@ -118,21 +155,25 @@ tested on real batches and on a fork of mainnet.
 - Clears stay permissionless and stale-gated (0022): anyone can zero the leg after a batch. Under-report only.
 - Ethereum only, where VAPP is. A fund whose shares live on another chain needs a relay or offchain aggregation.
 - Collateral assets need an Ethereum price feed, unless the fund is denominated in the same asset. Options need none:
-  they are valued in USDC by the pricer.
+  they are valued in USDC by the pricer. The pricer's `CollateralSpot[]` table (append-only at deployment) names the
+  collateral assets it can price at Derive's spot; a debt or an option in an asset outside it is refused
+  (`UnmappedSpotAsset`).
 - Celestia retention is unknown; the keeper archives the blobs it proves against.
 
 ## Implementation
 
 `src/balances/AttestedBalanceAdapters/DeriveCelestiaAttestedBalanceAdapter.sol` with `derive/CelestiaShareProof.sol`,
 `derive/DeriveRecord.sol`, `derive/DeriveOptionPricer.sol` (+ `IDeriveOptionPricer.sol`) and
-`derive/DeriveOptionMath.sol`. Payload: `abi.encode(ShareProof, SubaccountProof[], bytes feeds)` with
+`derive/DeriveOptionMath.sol`. The pricer's constructor is `(OptionMarket[] markets, address[] signers, CollateralSpot[]
+collateralSpots)`; `values(feeds, options, spotAssets)` returns the option values and the verified spots. Payload: `abi.encode(ShareProof, SubaccountProof[], bytes feeds)` with
 `feeds = abi.encode(IDeriveOptionPricer.Feeds)` (a nested `bytes`: decoding the feeds in the same tuple overflows the
 stack under via-IR). Proof builder: `script/test/derive-celestia-proof.py` (about 1 s for the newest batch: one
 Ethereum call, one Celestia block). Caps: 8 subaccounts per submit, 32 shares per subaccount (about 330 options), 8
 tokens per account, 8 option markets, 32 feed items of each kind. Gas: a submit for subaccount 117522 (8 options, 4
 expiries, 2 markets) costs about 1.02M. Tests: the family conformance kit (`DeriveConformance.t.sol`), unit tests on
-synthetic blobs and signed feeds, real batches (including two option books priced from Derive's real signed feeds
-and an expired ETH series at Derive's published settlement), math vectors (`derive/DeriveOptionMath.t.sol`), and a
+synthetic blobs and signed feeds (long and short options on credit, covered calls and puts, a pure USDC borrow,
+deficits, rounding), real batches (including two option books priced from Derive's real signed feeds, an expired ETH
+series at Derive's published settlement, and subaccount 122119 with its USDC borrow against `margin_watch`), math vectors (`derive/DeriveOptionMath.t.sol`), and a
 fork test against the real VAPP at a pinned block.
 
 ## Before acceptance
@@ -143,6 +184,8 @@ fork test against the real VAPP at a pinned block.
    through the timelock. Also ask for a share-proof endpoint for the newest batch: it adds no trust (the
    adapter checks every proof against Ethereum) and removes the dependency on public Celestia nodes.
 4. Ask Derive to confirm in writing that a subaccount's losses never reach another subaccount of the same owner
-   (the per-subaccount coverage rule rests on it). If recourse exists, the adapter must require the full set of
-   the fund's subaccounts in every submit, which needs an onchain list of them.
+   (the per-subaccount equity rule rests on it), and that `margin_watch` `subaccount_value` (cash at 1, collateral at
+   the spot index, options at the mark) is the account's equity, with borrow interest accruing outside the record.
+   If recourse exists, the adapter must require the full set of the fund's subaccounts in every submit, which needs
+   an onchain list of them.
 5. Audit pass, deployment config and the settlement-guard integration.

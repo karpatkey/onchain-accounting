@@ -292,6 +292,43 @@ const gapsHtml = `<ul>
 <li><b>curve pool + gauge:</b> two declared positions because accounting is one route per position; legacy Curve pools report no wallet LP through <code>CurvePoolsMeta</code> (latent, in <code>src/</code>).</li>
 </ul>`;
 
+// NAV read cost and the subscription verdict, from test/poc/fundconfig/FundConfigNavGas.fork.t.sol (gas-nav-read.json).
+type NavGas = {
+  cap: { eip7825TxGasLimit: number };
+  today: { prodGetAccountNav: Record<string, { cold: number; warm: number }> };
+  perType: Record<string, { cold: number; warm: number }>;
+  fit: Record<"cold" | "warm", { aGas: number; bGasPerPosition: number; maxNUnderCap: number }>;
+  subscription: Record<"sync" | "async" | "oracle", { feasible: boolean; optimal?: boolean; why: string[] }>;
+};
+const navGas = JSON.parse(readFileSync(join(dir, "gas-nav-read.json"), "utf8")) as NavGas;
+const CAP = navGas.cap.eip7825TxGasLimit;
+
+function navReadHtml(): string {
+  const rows: [string, number][] = [
+    ...Object.entries(navGas.today.prodGetAccountNav).map(([k, v]) => [`getAccountNav, production ${k} (today)`, v.cold] as [string, number]),
+    ["fundNav, 1 funded Aave V3 position", navGas.perType.aaveFundedUsdc.cold],
+    ["fundNav, 1 funded Morpho vault", navGas.perType.morphoFundedN1.cold],
+    [`fundNav, ${navGas.fit.cold.maxNUnderCap} zero-balance Morpho positions (fit)`, navGas.fit.cold.aGas + navGas.fit.cold.bGasPerPosition * navGas.fit.cold.maxNUnderCap],
+  ];
+  const max = Math.max(CAP, ...rows.map(([, g]) => g)) * 1.05;
+  const W = 900, L = 330, barH = 22, gap = 10;
+  const sx = (g: number) => L + (g / max) * (W - L - 90);
+  let y = 8, out = "";
+  for (const [label, g] of rows) {
+    const over = g > CAP;
+    out += `<text x="${L - 8}" y="${y + 15}" text-anchor="end" class="lbl">${esc(label)}</text><rect x="${L}" y="${y}" width="${sx(g) - L}" height="${barH}" fill="${over ? "#e11d48" : "#2563eb"}"/><text x="${sx(g) + 6}" y="${y + 15}" class="val">${fmt(g)}</text>`;
+    y += barH + gap;
+  }
+  out += `<line x1="${sx(CAP)}" x2="${sx(CAP)}" y1="0" y2="${y}" stroke="#0f172a" stroke-dasharray="4 3"/><text x="${sx(CAP) - 4}" y="${y + 14}" text-anchor="end" class="lbl">EIP-7825 per-tx cap ${fmt(CAP)}</text>`;
+  const s = navGas.subscription;
+  const opt = (title: string, o: { feasible: boolean; optimal?: boolean; why: string[] }, cls: string) =>
+    `<div class="${cls}"><b>${title}</b><span>${o.feasible ? "feasible" : "not feasible"}${o.optimal === false ? " · not optimal" : ""}</span><em>${o.why.map(esc).join(" ")}</em></div>`;
+  return `<p>Cold reads (first touch in the tx), mainnet fork. Red bars do not fit in one transaction.</p>
+<svg viewBox="0 0 ${W} ${y + 22}" role="img">${out}</svg>
+<div class="std">${opt("1. Sync: NAV inside each subscription", s.sync, "part")}${opt("2. Async batch: NAV once per settlement", s.async, "part")}${opt("3. Oracle: pushed NAV snapshot", s.oracle, "ok")}</div>
+<p class="muted">fundNav cost per position depends heavily on type (funded Aave ≈ ${fmt(navGas.perType.aaveFundedUsdc.cold)} vs Morpho ≈ ${fmt(navGas.fit.cold.bGasPerPosition)} marginal); the POC's fundNav prices each leg separately and is not optimized, so these are upper bounds for the scoped design.</p>`;
+}
+
 const architecture = `<svg viewBox="0 0 940 330" role="img" class="arch">
   <defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#475569"/></marker></defs>
   <text x="20" y="22" class="h">Shared (immutable)</text>
@@ -333,6 +370,8 @@ ${invariantsHtml}
 ${derivationHtml()}
 <h3>Known gaps per type</h3>
 ${gapsHtml}
+<h2>Can the NAV be read on subscription?</h2>
+${navReadHtml()}
 <h2>Compared with NAV-based funds</h2>
 ${comparisonHtml()}
 <h2>Standard proposal: NAV-linked tokenized funds</h2>

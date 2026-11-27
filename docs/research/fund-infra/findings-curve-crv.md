@@ -16,10 +16,10 @@ Two surprises in `test/poc/fundconfig/FundConfigLpGauge.fork.t.sol`, checked wit
 
 **Doc drift:** `CurvePoolLib.sol:16-20` and `CurvePoolsMetaBalanceAdapter.sol:17-18` say StableSwap-NG pools reach a separate LP through `lp_token()`. The registered NG pools are self-LP and revert on `lp_token()`. Behaviour is right; the comments mislead.
 
-## 2. CRV priced stale in `fundNav` (likely a test artifact)
+## 2. CRV priced stale in `fundNav` (test artifact: the time warp)
 
-**Verdict:** cause not confirmed by a direct check; very likely the test's time warp. A control run (CRV in the Safe, no `vm.warp`, assert `stale == false`) has not been run.
+**Verdict:** the warp causes it. Control run in `test/poc/fundconfig/FundConfigNavGas.fork.t.sol` ([nav-read-gas.md](nav-read-gas.md)): with CRV held and no warp, `fundNav` is not stale; after `+1 days` it is. A USDC-only fund goes stale after the same warp, so the effect is feeds aging past their heartbeat on a fork with no new rounds, not anything CRV-specific.
 
 - CRV's primary feed is Chainlink CRV/USD `0xCd627aA160A6fA45Eb793D19Ef54f5062F20f33f`, heartbeat 86,400 s. At the fork block `updatedAt = 1795703003`, block time `1795703639`: 636 s old, fresh.
 - `test_CRV_claimViaMinter` runs `vm.warp(block.timestamp + 1 days)` (line 444) to accrue CRV. That moves the feed's age to 86,400 + 636 s, past the heartbeat, with no new round on the fork. `calculateValue` then correctly reports the price stale.
-- If confirmed, no pricing defect. A test that needs a fresh CRV price after warping must mock a new round (`vm.mockCall` on `latestRoundData`) or roll the fork forward instead of warping.
+- No pricing defect. A test that needs a fresh price after warping must mock a new round (`vm.mockCall` on `latestRoundData`) or roll the fork forward instead of warping.

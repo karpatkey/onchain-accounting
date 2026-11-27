@@ -1,5 +1,5 @@
 {
-  "about": "Grades for docs/research/fund-infra/architecture-comparison.md. Peers are NAV-based funds only: a manager runs a multi-protocol portfolio and shares are priced from a fund NAV. Allocator/meta-vaults (Morpho V2, Euler Earn, Yearn V3, Superform) are excluded. 2 = strong, 1 = partial, 0 = weak, null = not applicable or not verified. Grades are judgments from state-of-art.md (third-party systems) and this repo + the POC (kpk columns); each cell carries its basis.",
+  "about": "Grades for docs/research/fund-infra/architecture-comparison.md. Peers are NAV-based funds only: a manager runs a multi-protocol portfolio and shares are priced from a fund NAV. Allocator/meta-vaults (Morpho V2, Euler Earn, Yearn V3, Superform) are excluded. 2 = strong, 1 = partial, 0 = weak, null = not applicable or not verified. Peer grades come from state-of-art.md as corrected by peers/*.md (primary-source follow-up); kpk grades from this repo and the POC. Each cell carries its basis; low-confidence peer proposals were left at null.",
   "systems": ["kpk today", "kpk + FundConfig", "Enzyme", "Sommelier", "Veda", "Lagoon", "Aera v3", "Mellow", "Centrifuge"],
   "dimensions": [
     {
@@ -29,7 +29,7 @@
         [0, "Pushed NAV + PPS guardrail"],
         [0, "Accountant anchor/drift price"],
         [0, "Push-updated balances"],
-        [null, "NAVManager + holdings hook [UNVERIFIED pricing source]"]
+        [1, "On-chain holdings ledger, but prices pushed by feeders (peers/lagoon-centrifuge.md)"]
       ]
     },
     {
@@ -40,8 +40,8 @@
         [2, "Same Roles v2 conditions, generated per position"],
         [1, "Adapter + parser + policies"],
         [0, "Whole adaptor callable"],
-        [2, "Leaf per call with decoder/sanitizer"],
-        [null, "Safe/Roles path not read [UNVERIFIED]"],
+        [1, "Merkle leaf fixes target, selector and address args; amounts never bound (peers/veda-aera-mellow.md)"],
+        [2, "Safe + Zodiac Roles v2 function scoping per Lagoon docs; live config off-repo (peers/lagoon-centrifuge.md)"],
         [2, "Merkle root per guardian"],
         [2, "Verifier types (compact / merkle / custom)"],
         [1, "Manager/policy-scoped"]
@@ -59,7 +59,7 @@
         [0, "Independent"],
         [0, "Independent trust roots"],
         [0, "Verifier and risk manager separate"],
-        [null, "Hub-side, linkage [UNVERIFIED]"]
+        [0, "Manager permissions not derived from holdings (peers/lagoon-centrifuge.md)"]
       ]
     },
     {
@@ -68,7 +68,7 @@
       "cells": [
         [1, "Relies on the out-of-repo Roles allow-list; no tripwire in repo"],
         [2, "Every Roles permission comes from a declared, valued position; Safe-owner module changes stay outside"],
-        [2, "All moves go through adapters/positions"],
+        [1, "External positions via adapters; incoming-asset tracking path unconfirmed (peers/enzyme-sommelier.md)"],
         [1, "Adaptor balanceOf + post-call totalAssets band"],
         [0, "Any allowed leaf; NAV pushed"],
         [0, "Operator claim bounded by guardrail"],
@@ -89,7 +89,7 @@
         [null, "Off-chain"],
         [null, "Off-chain"],
         [null, "Off-chain"],
-        [null, "[UNVERIFIED]"]
+        [1, "Liability accounts in the hub ledger (peers/lagoon-centrifuge.md)"]
       ]
     },
     {
@@ -98,8 +98,8 @@
       "cells": [
         [2, "Per-adapter gas stipend, fail-open + health flags"],
         [1, "POC fundNav reuses adapters but is not hardened"],
-        [null, "[UNVERIFIED]"],
-        [null, "[UNVERIFIED]"],
+        [0, "calcGav has no per-position catch: one revert blocks buys (peers/enzyme-sommelier.md)"],
+        [0, "totalAssets propagates every adaptor revert (peers/enzyme-sommelier.md)"],
         [null, "Off-chain"],
         [null, "Off-chain"],
         [null, "Off-chain"],
@@ -116,7 +116,7 @@
         [1, "Type registry mutable by fund-deployer owner"],
         [1, "Registry multisig + governance (two-party)"],
         [1, "Owner-set roots"],
-        [null, "Protocol registries; proxy upgrade authority [UNVERIFIED]"],
+        [1, "Security Council can bypass NAV guardrails; owner-set roles (peers/lagoon-centrifuge.md)"],
         [1, "Owner/authority"],
         [1, "Role-based"],
         [2, "Immutable core; timelocked authorization"]
@@ -128,12 +128,12 @@
       "cells": [
         [2, "getAccountPositions: per-position PositionBalance with protocol identity, kind, debt flag"],
         [2, "Same, scoped to the fund's declared positions"],
-        [2, "getManagedAssets / getDebtAssets per external position"],
+        [1, "Per-external-position assets, no per-leg kind or identity schema (peers/enzyme-sommelier.md)"],
         [1, "Position ids + balanceOf; no protocol identity schema"],
         [0, "Single rate"],
         [0, "Single pushed total"],
         [0, "Single price"],
-        [0, "Pushed balances"],
+        [1, "Per-subvault, per-asset state on-chain, in shares; no per-position data (peers/veda-aera-mellow.md)"],
         [1, "Holdings per pool"]
       ]
     }

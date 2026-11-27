@@ -10,20 +10,21 @@ Grades: ● strong · ◐ partial · ○ weak · — not applicable or not verif
 | Dimension | kpk today | kpk + FundConfig | Enzyme | Sommelier | Veda | Lagoon | Aera v3 | Mellow | Centrifuge |
 |---|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|
 | Positions declared on-chain, per fund | ◐ | ● | ● | ● | ○ | ○ | ○ | ◐ | ● |
-| NAV computed on-chain from positions | ● | ● | ● | ● | ○ | ○ | ○ | ○ | — |
-| Manager permissions per function + arguments | ● | ● | ◐ | ○ | ● | — | ● | ● | ◐ |
-| Permissions and NAV from one declaration | ○ | ● | ◐ | ◐ | ○ | ○ | ○ | ○ | — |
-| Manager cannot open an unvalued position | ◐ | ● | ● | ◐ | ○ | ○ | ○ | ○ | — |
-| Debt and multi-leg positions | ● | ◐ | ● | ● | — | — | — | — | — |
-| One bad position cannot block NAV | ● | ◐ | — | — | — | — | — | — | — |
-| Shared components immutable or timelocked | ● | ● | ◐ | ◐ | ◐ | — | ◐ | ◐ | ● |
-| Per-position portfolio readable on-chain by integrators | ● | ● | ● | ◐ | ○ | ○ | ○ | ○ | ◐ |
+| NAV computed on-chain from positions | ● | ● | ● | ● | ○ | ○ | ○ | ○ | ◐ |
+| Manager permissions per function + arguments | ● | ● | ◐ | ○ | ◐ | ● | ● | ● | ◐ |
+| Permissions and NAV from one declaration | ○ | ● | ◐ | ◐ | ○ | ○ | ○ | ○ | ○ |
+| Manager cannot open an unvalued position | ◐ | ● | ◐ | ◐ | ○ | ○ | ○ | ○ | — |
+| Debt and multi-leg positions | ● | ◐ | ● | ● | — | — | — | — | ◐ |
+| One bad position cannot block NAV | ● | ◐ | ○ | ○ | — | — | — | — | — |
+| Shared components immutable or timelocked | ● | ● | ◐ | ◐ | ◐ | ◐ | ◐ | ◐ | ● |
+| Per-position portfolio readable on-chain by integrators | ● | ● | ◐ | ◐ | ○ | ○ | ○ | ◐ | ◐ |
 <!-- matrix:end -->
 
 ## Where kpk stands today
 
-- **Strong on the two halves separately.** NAV is computed on-chain from live adapter reads, with debt legs, a typed per-position identity schema, and per-adapter failure isolation (gas stipend, fail-open, health flags). Among the NAV-based peers only Enzyme and Sommelier also value on-chain from positions; Veda, Lagoon, Aera and Mellow price from an off-chain push bounded by guardrails, and the survey did not establish failure isolation for any peer. Permissions are Zodiac Roles v2 function+argument scopes, as fine-grained as Veda's merkle leaves, Aera's guardian roots or Mellow's verifiers.
-- **Weak on the link between them.** Roles (DeFi Kit) and the NAV registry are configured separately, and the registry is global per chain, not per fund. Completeness — the manager cannot open a position NAV does not see — rests on an allow-list kept outside this repo (CLAUDE.md residual risk). This is the same split Lagoon, Veda, Aera and Mellow have, minus their off-chain NAV.
+- **Strong on the two halves separately.** NAV is computed on-chain from live adapter reads, with debt legs, a typed per-position identity schema, and per-adapter failure isolation (gas stipend, fail-open, health flags). Among the NAV-based peers only Enzyme and Sommelier also value on-chain from positions, and neither isolates failures: Enzyme's `calcGav` and Sommelier's `totalAssets` revert when one position's valuation reverts ([peers/enzyme-sommelier.md](peers/enzyme-sommelier.md)). Veda, Lagoon, Aera and Mellow price from an off-chain push bounded by guardrails; Centrifuge keeps an on-chain holdings ledger with feeder-pushed prices. Permissions are Zodiac Roles v2 function+argument scopes; Veda's merkle leaves bind addresses but never amounts ([peers/veda-aera-mellow.md](peers/veda-aera-mellow.md)).
+- **Weak on the link between them.** Roles (DeFi Kit) and the NAV registry are configured separately, and the registry is global per chain, not per fund. Completeness — the manager cannot open a position NAV does not see — rests on an allow-list kept outside this repo (CLAUDE.md residual risk). Lagoon is the closest peer structurally: a Safe with Zodiac Roles v2 permissions per its docs, but with a pushed NAV ([peers/lagoon-centrifuge.md](peers/lagoon-centrifuge.md)).
+- **NAV read cost.** Today's `getAccountNav` scans the whole per-chain registry: for three large production accounts it costs 17.5–18.9M gas cold, above the 16,777,216 per-tx cap, so it cannot run inside a subscription tx ([nav-read-gas.md](nav-read-gas.md)). It works as an off-chain `eth_call`.
 
 ## What FundConfig changes
 

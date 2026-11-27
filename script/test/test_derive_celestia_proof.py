@@ -23,6 +23,9 @@ _spec.loader.exec_module(p)
 ETH = "0x4bb4c3cdc7562f08e9910a0c7d8bb7e108861eb4"
 HYPE = "0x7344bf2afff9afcd6d024865fc0ca53bf03464d9"
 USDC_TOKEN = "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"
+HYPE_TOKEN = "0x0762365e088Fb8D285b295d782BB7b23690713e2"
+DERIVE_HYPE = "0x2dd469db6ee0dbf0277f0f3021fd8a6486a751ce"
+DERIVE_USDC = "0x57b03e14d409adc7fab6cfc44b5886cad2d5f02b"
 
 
 def load(name):
@@ -95,6 +98,25 @@ class ReferenceValueTest(unittest.TestCase):
         with self.assertRaises(p.FeedError):
             p.expected_amounts([r], self.mf["subaccounts"]["119408"], self.mf["valuationTime"])
 
+    def test_122119_usdc_borrow_comes_out_of_hype(self):
+        # test_realBatch_hypeSplitCdp_matchesMarginWatch: the adapter books 91,641,218,458 (12 decimals) HYPE, 0 USDC.
+        fx = load("hype_split_122119_cdp.json")
+        got = p.expected_amounts([record_of(fx)], fx["subaccounts"]["122119"], fx["valuationTime"])
+        self.assertEqual(got, {USDC_TOKEN: 0, HYPE_TOKEN: 91_641_218_458 * 10**6})
+
+    def test_borrow_beyond_collateral_refused(self):
+        fx = load("hype_split_122119_cdp.json")
+        r = record_of(fx)
+        r["collateral"] = [(DERIVE_HYPE, 10**10), (DERIVE_USDC, -3890496741630)]
+        with self.assertRaises(p.FeedError):
+            p.expected_amounts([r], fx["subaccounts"]["122119"], fx["valuationTime"])
+
+    def test_spot_needed_only_for_equity_records(self):
+        held = {"id": 1, "collateral": [(DERIVE_HYPE, 10**12)], "options": []}
+        borrowing = dict(held, collateral=[(DERIVE_HYPE, 10**12), (DERIVE_USDC, -10**12)])
+        self.assertEqual(p.spot_currencies([held]), set())
+        self.assertEqual(p.spot_currencies([held, borrowing]), {"HYPE"})
+
 
 class MathVectorTest(unittest.TestCase):
     """Against the 50-digit mpmath references that DeriveOptionMath.t.sol also uses."""
@@ -155,6 +177,11 @@ class BuildFeedsTest(unittest.TestCase):
     def test_zero_amount_takes_no_items(self):
         f = p.build_feeds(self.signed, [self.opt(self.LIVE), self.opt(self.LIVE2, 0)], self.now)
         self.assertEqual([e["forward"]["expiry"] for e in f["expiries"]], [self.LIVE])
+
+    def test_collateral_spot_without_options(self):
+        f = p.build_feeds(self.signed, [], self.now, {"HYPE"})
+        self.assertEqual([s["currency"] for s in f["spots"]], ["HYPE"])
+        self.assertEqual(f["expiries"], [])
 
     def test_refusals(self):
         unsettled = copy.deepcopy(self.signed)

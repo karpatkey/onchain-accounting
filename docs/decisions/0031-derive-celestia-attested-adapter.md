@@ -168,8 +168,9 @@ tested on real batches and on a fork of mainnet.
 collateralSpots)`; `values(feeds, options, spotAssets)` returns the option values and the verified spots. Payload: `abi.encode(ShareProof, SubaccountProof[], bytes feeds)` with
 `feeds = abi.encode(IDeriveOptionPricer.Feeds)` (a nested `bytes`: decoding the feeds in the same tuple overflows the
 stack under via-IR). Proof builder: `script/test/derive-celestia-proof.py` (about 1 s for the newest batch: one
-Ethereum call, one Celestia block, and one signed-feeds call per option currency). For records with options it also
-writes the signed feed items they need and an `expected` amount from a float reference of the pricer. Caps: 8
+Ethereum call, one Celestia block, and one signed-feeds call per priced currency). For records valued as equity (options
+or a negative balance) it also writes the signed feed items they need, collateral spots included, and an `expected`
+amount that mirrors the adapter's equity booking with a float reference of the pricer. Caps: 8
 subaccounts per submit, 32 shares per subaccount (about 330 options), 8 tokens per account, 8 option markets, 32
 feed items of each kind. Gas: a submit for subaccount 117522 (8 options, 4 expiries, 2 markets) costs about 1.02M.
 Tests: the family conformance kit (`DeriveConformance.t.sol`), unit tests on synthetic blobs and signed feeds (long

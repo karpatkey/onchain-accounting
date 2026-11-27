@@ -21,13 +21,15 @@ the share count) and each record's shares, each with its blob index; the adapter
 the tree from those. The proof is only valid until Derive posts the next batch (about 10 minutes); fork tests pin
 `forkBlock` instead.
 
-When the records hold options, the output also carries `feeds`: the signed items that price them, from Derive's
-public/get_latest_signed_feeds, as 1e18 fixed-point decimal strings (the mark_feeds.json shape: `spots`, and per
-(currency, expiry) a `forward`, plus `rate` and `vol` for a live expiry). They are fetched at run time, not at
---block, and `valuationTime` is the fetch time: the pricer takes live-option items for 5 minutes, so fetch and
-submit together. An expired expiry needs Derive's settlement item (forward timestamp == expiry). `expected` then
-includes the options at an independent float reference of the pricer's formulas, which the adapter matches to
-1 micro-USDC (test/balances/AttestedBalanceAdapters/DeriveCelestiaAttestedBalanceAdapter.t.sol).
+When a record holds options or a negative balance, the adapter values it as equity, and the output also carries
+`feeds`: the signed items that price it, from Derive's public/get_latest_signed_feeds, as 1e18 fixed-point decimal
+strings (the mark_feeds.json shape: `spots`, and per (currency, expiry) a `forward`, plus `rate` and `vol` for a live
+expiry). A spot is included for each currency with a live option and for each non-cash collateral asset of such a
+record (COLLATERAL_SPOTS). They are fetched at run time, not at --block, and `valuationTime` is the fetch time: the
+pricer takes live-option and spot items for 5 minutes, so fetch and submit together. An expired expiry needs Derive's
+settlement item (forward timestamp == expiry). `expected` then mirrors the adapter's equity booking, with options at
+an independent float reference of the pricer's formulas, which the adapter matches to 1 micro-USDC
+(test/balances/AttestedBalanceAdapters/DeriveCelestiaAttestedBalanceAdapter.t.sol).
 
 Format and evidence: docs/decisions/0031-derive-celestia-attested-adapter.md.
 """
@@ -64,6 +66,9 @@ OPTION_MARKETS = {
     "0xd0711b9ebe84b778483709cde62bacfdbae13623": "BTC",
     "0x7344bf2afff9afcd6d024865fc0ca53bf03464d9": "HYPE",
 }
+# Derive collateral asset id -> feed currency whose signed spot prices it: the pricer's CollateralSpot table
+# (DeriveCelestiaAttestedBalanceAdapter.t.sol `_realCollateralSpots`).
+COLLATERAL_SPOTS = {"0x2dd469db6ee0dbf0277f0f3021fd8a6486a751ce": "HYPE"}
 # Derive-chain (957) feed contracts: each signed item's EIP-712 verifyingContract (DeriveOptionPricer).
 FEED_CONTRACTS = {
     "ETH": {"spot": "0x727aD65db6aE99DB5Dbee8F202846DD6009bf6D5", "forward": "0x791A570F5785FBdb02EA5C7a794c43111ae2f948",
@@ -386,13 +391,14 @@ def _signed(item, now, live):
             "signatures": item["signatures"]["signatures"]}
 
 
-def build_feeds(signed, opts, now):
-    """The feed items that price `opts` at `now`, from `signed` (currency -> get_latest_signed_feeds result).
+def build_feeds(signed, opts, now, spot_currencies=()):
+    """The feed items that price `opts` and the collateral spots at `now`, from `signed` (currency ->
+    get_latest_signed_feeds result).
 
-    Exactly the items the options use, as the pricer rejects unused ones: a spot per currency with a live option;
-    per (currency, expiry) a forward, plus a rate and a vol when the expiry is live.
+    Exactly the items used, as the pricer rejects unused ones: a spot per currency with a live option or in
+    `spot_currencies`; per (currency, expiry) a forward, plus a rate and a vol when the expiry is live.
     """
-    need = {}
+    need = {cur: set() for cur in spot_currencies}
     for o in opts:
         if o["amount"] == 0:
             continue
@@ -402,7 +408,7 @@ def build_feeds(signed, opts, now):
     feeds = {"spots": [], "expiries": []}
     for cur, expiries in sorted(need.items()):
         f = signed[cur]
-        if any(e > now for e in expiries):
+        if cur in spot_currencies or any(e > now for e in expiries):
             s = f["spot_data"][cur]
             feeds["spots"].append({"currency": cur, "price": _wad(s["price"]), "confidence": _wad(s["confidence"]),
                                    **_signed(s, now, True)})
@@ -489,37 +495,95 @@ def option_value12(o, feeds, now):
     return math.floor(v) if o["amount"] > 0 else -math.ceil(v)
 
 
+def needs_equity(r):
+    """The adapter values a record as equity when it holds options or any negative balance (_bookPriced)."""
+    return bool(r["options"]) or any(bal < 0 for _, bal in r["collateral"])
+
+
+def spot_currencies(recs):
+    """Feed currencies whose spot prices the non-cash collateral of the records valued as equity."""
+    out = set()
+    for r in recs:
+        if not needs_equity(r):
+            continue
+        for asset, bal in r["collateral"]:
+            if bal == 0 or asset not in ASSETS or asset == CASH_ASSET:
+                continue
+            if asset not in COLLATERAL_SPOTS:
+                raise FeedError(f"subaccount {r['id']}: {ASSETS[asset][0]} collateral has no spot feed")
+            out.add(COLLATERAL_SPOTS[asset])
+    return out
+
+
+def _ceil_div(a, b):
+    return -(-a // b)
+
+
+def _spot18(feeds, asset):
+    cur = COLLATERAL_SPOTS[asset]
+    s = next((s for s in feeds["spots"] if s["currency"] == cur), None)
+    if s is None:
+        raise FeedError(f"{cur}: no spot in feeds")
+    return int(s["price"])
+
+
 def expected_amounts(recs, feeds=None, now=None):
-    """Token -> amount the adapter reports for these records, mirroring its netting.
+    """Token -> amount the adapter reports for these records, mirroring _addCollateral and _addEquity.
 
     Raw 12-decimal balances are summed per token before converting once, as the adapter does: rounding each entry
-    first can come out lower across several subaccounts. Options are netted into USDC, and each subaccount's own
-    USDC must cover its own shorts (LiabilityExceedsCollateral).
+    first can come out lower across several subaccounts. A record with options or debt is equity in USD: cash at 1,
+    non-cash collateral at its signed spot (debt rounded up), options at the reference. Non-cash legs keep their
+    units; cash, options and debt net into USDC; a negative net is taken from the same record's non-cash legs at spot,
+    rounded up, and one larger than they are worth is refused (NegativeEquity). Every mapped token a record covers is
+    listed, zero included, as the adapter writes it.
     """
     raw = {}
-    _, cash_token, cash_dec = ASSETS[CASH_ASSET]
+
+    def add(asset, amount):
+        _, token, dec = ASSETS[asset]
+        raw[(token, dec)] = raw.get((token, dec), 0) + amount
+
     for r in recs:
-        cash = 0
         for asset, bal in r["collateral"]:
-            if bal > 0 and asset in ASSETS:
-                _, token, dec = ASSETS[asset]
-                raw[(token, dec)] = raw.get((token, dec), 0) + bal
-                cash += bal if asset == CASH_ASSET else 0
-        vals = [option_value12(o, feeds, now) for o in r["options"] if o["amount"] != 0]
-        if not vals:
+            if bal != 0 and asset not in ASSETS:
+                raise FeedError(f"subaccount {r['id']}: unmapped asset {asset}")
+        if not needs_equity(r):
+            for asset, bal in r["collateral"]:
+                if asset in ASSETS:
+                    add(asset, bal)
             continue
-        credit, debit = sum(v for v in vals if v > 0), -sum(v for v in vals if v < 0)
-        if debit > cash + credit:
-            raise FeedError(f"subaccount {r['id']}: short options owe more than its cash and longs")
-        key = (cash_token, cash_dec)
-        raw[key] = raw.get(key, 0) + credit - debit
+        net = sum(option_value12(o, feeds, now) for o in r["options"] if o["amount"] != 0)
+        non_cash, legs = 0, []
+        for asset, bal in r["collateral"]:
+            if asset not in ASSETS:
+                continue
+            if asset == CASH_ASSET:
+                net += bal
+            elif bal > 0:
+                spot = _spot18(feeds, asset)
+                non_cash += bal * spot // 10**18
+                legs.append((asset, bal, spot))
+            else:
+                if bal < 0:
+                    net -= _ceil_div(-bal * _spot18(feeds, asset), 10**18)
+                legs.append((asset, 0, None))
+        shortfall = max(-net, 0)
+        if shortfall > non_cash:
+            raise FeedError(f"subaccount {r['id']}: equity below 0 (options and debt exceed its collateral)")
+        add(CASH_ASSET, max(net, 0))
+        for asset, units, spot in legs:
+            if shortfall and units:
+                take = min(shortfall, units * spot // 10**18)
+                units -= _ceil_div(take * 10**18, spot)
+                shortfall -= take
+            add(asset, units)
     return {token: (bal * 10 ** (dec - 12) if dec >= 12 else bal // 10 ** (12 - dec))
             for (token, dec), bal in raw.items()}
 
 
 def value_with_feeds(recs, signed, now):
-    """(feeds, expected) for records holding options; raises FeedError when they cannot be valued."""
-    feeds = build_feeds(signed, [o for r in recs for o in r["options"]], now)
+    """(feeds, expected) for records valued as equity; raises FeedError when they cannot be valued."""
+    feeds = build_feeds(signed, [o for r in recs for o in r["options"]], now, spot_currencies(recs))
     return feeds, expected_amounts(recs, feeds, now)
 
 
@@ -565,8 +629,9 @@ def main():
     signed, now = {}, int(time.time())
 
     def feeds_for(rs):
-        for o in (o for r in rs for o in r["options"] if o["amount"] != 0 and o["asset"] in OPTION_MARKETS):
-            cur = OPTION_MARKETS[o["asset"]]
+        curs = {OPTION_MARKETS[o["asset"]] for r in rs for o in r["options"]
+                if o["amount"] != 0 and o["asset"] in OPTION_MARKETS}
+        for cur in curs | spot_currencies(rs):
             if cur not in signed:
                 signed[cur] = fetch_signed_feeds(a.derive_api, cur)
         return value_with_feeds(rs, signed, now)
@@ -604,7 +669,7 @@ def main():
         sys.exit(f"subaccounts belong to different owners: {owners}")
 
     chosen = [recs[k] for k in ks]
-    if feeds is None and any(o["amount"] != 0 for r in chosen for o in r["options"]):
+    if feeds is None and any(needs_equity(r) for r in chosen):
         try:
             feeds, expected = feeds_for(chosen)
         except FeedError as e:

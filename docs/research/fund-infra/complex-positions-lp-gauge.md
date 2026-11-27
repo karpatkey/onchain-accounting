@@ -42,10 +42,10 @@ Files: `poc/fundconfig/modules/{UniswapV3LpModule,CurvePoolModule,CurveGaugeModu
 ### Single-Accounting limitation
 - `Accounting` (frozen) is single-valued. A Curve position is therefore two positions (pool module and gauge module), each with its own coordinate and removal guard. A combined per-product guard is not expressible in the current interface.
 
-## NAV staleness with CRV held (resolved: test artifact)
+## NAV staleness with CRV held (likely a test artifact)
 
 - `fundNav` reported `stale = true` after the CRV claim: `calculateValue([CRV], …)` on NAV proxy `0x54EaD2A1dB7456cA917675Ea8908ec8A997c6214` returns `(0, true)`.
-- Cause: `test_CRV_claimViaMinter` warps `+1 days` to accrue CRV. The CRV/USD feed (`0xCd627a…`, heartbeat 86,400 s) was 636 s old at the fork block, so after the warp it is 86,400 + 636 s old with no new round on the fork, and is correctly stale. Not a pricing defect; see [findings-curve-crv.md](findings-curve-crv.md).
+- Likely cause (control run without the warp not yet done): `test_CRV_claimViaMinter` warps `+1 days` to accrue CRV. The CRV/USD feed (`0xCd627a…`, heartbeat 86,400 s) was 636 s old at the fork block, so after the warp it is 86,400 + 636 s old with no new round on the fork, which `Prices` flags stale. See [findings-curve-crv.md](findings-curve-crv.md).
 - To assert NAV after a claim, mock a fresh `latestRoundData` round after the warp, or roll the fork forward instead of warping.
 
 ## Test status

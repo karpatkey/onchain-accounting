@@ -1,6 +1,6 @@
 # kpk fund architecture vs the state of the art
 
-Compares three things: **kpk today** (Safe + Zodiac Roles v2 permissions built with DeFi Kit, valued by this repo's `NAVCalculator`), **kpk + FundConfig** (the POC in `poc/fundconfig/`), and eleven other systems surveyed in [state-of-art.md](state-of-art.md). Third-party grades come from that survey; kpk grades from this repo and the POC fork tests. Cells marked `[UNVERIFIED]` in the source keep that tag.
+Compares **kpk today** (Safe + Zodiac Roles v2 permissions built with DeFi Kit, valued by this repo's `NAVCalculator`) and **kpk + FundConfig** (the POC in `poc/fundconfig/`) with the **NAV-based funds** surveyed in [state-of-art.md](state-of-art.md): systems where a manager runs a multi-protocol portfolio and shares are priced from a fund NAV — Enzyme, Sommelier, Veda, Lagoon, Aera v3, Mellow, Centrifuge. Allocator and meta-vaults (Morpho V2, Euler Earn, Yearn V3, Superform) are left out: they allocate one asset across same-kind strategies and value through ERC-4626 reads, so they solve a narrower problem. Third-party grades come from the survey; kpk grades from this repo and the POC fork tests. Cells marked `[UNVERIFIED]` in the source are graded "—".
 
 ## Matrix
 
@@ -22,12 +22,12 @@ Grades: ● strong · ◐ partial · ○ weak · — not applicable or not verif
 
 ## Where kpk stands today
 
-- **Strong on the two halves separately.** NAV is computed on-chain from live adapter reads, with debt legs, a typed per-position identity schema, and per-adapter failure isolation (gas stipend, fail-open, health flags). No surveyed system combines all four; Morpho V2 is the only other fully on-chain one and its `realAssets` reverts on one bad market. Permissions are Zodiac Roles v2 function+argument scopes, as fine-grained as Veda's merkle leaves or Mellow's verifiers.
+- **Strong on the two halves separately.** NAV is computed on-chain from live adapter reads, with debt legs, a typed per-position identity schema, and per-adapter failure isolation (gas stipend, fail-open, health flags). Among the NAV-based peers only Enzyme and Sommelier also value on-chain from positions; Veda, Lagoon, Aera and Mellow price from an off-chain push bounded by guardrails, and the survey did not establish failure isolation for any peer. Permissions are Zodiac Roles v2 function+argument scopes, as fine-grained as Veda's merkle leaves, Aera's guardian roots or Mellow's verifiers.
 - **Weak on the link between them.** Roles (DeFi Kit) and the NAV registry are configured separately, and the registry is global per chain, not per fund. Completeness — the manager cannot open a position NAV does not see — rests on an allow-list kept outside this repo (CLAUDE.md residual risk). This is the same split Lagoon, Veda, Aera and Mellow have, minus their off-chain NAV.
 
 ## What FundConfig changes
 
-- **Single declaration.** Each declared `(module, instance)` produces both the Roles leaves and the accounting route. `FundConfig` owns the Roles proxy and has no raw passthrough, so a permission without a valued position cannot be written through Roles. Only Enzyme (lib + parser per type), Morpho V2 (ids shared by caps and `realAssets`) and Euler/Yearn (strategy set) come close, and none of them generates a call-level allow-list.
+- **Single declaration.** Each declared `(module, instance)` produces both the Roles leaves and the accounting route. `FundConfig` owns the Roles proxy and has no raw passthrough, so a permission without a valued position cannot be written through Roles. Among the NAV-based peers, Enzyme (lib + parser per external-position type) and Sommelier (one adaptor holds `balanceOf` and the callable functions) come closest; neither generates a call-level allow-list (Sommelier allows any function on a catalogued adaptor).
 - **Keeps kpk's strengths.** Same adapters, same Roles conditions, same per-position portfolio reads.
 - **Costs and gaps** (from the fork tests): ~0.49–0.58M gas per `addPosition`, ~112k marginal; single `Accounting` per position forces pool+gauge splits and makes the borrow removal guard per asset; `fundNav` is not yet hardened like `NAVCalculator`'s per-adapter isolation; Safe owners can still add modules outside `FundConfig`.
 
@@ -36,8 +36,8 @@ Grades: ● strong · ◐ partial · ○ weak · — not applicable or not verif
 | From | Pattern | Fit for kpk |
 |---|---|---|
 | Veda, Sommelier | Post-batch invariant: share supply unchanged, `totalAssets` within a deviation band after a manager call | A Roles-side or Safe-guard check around `execTransactionWithRole`; bounds value-extraction by a compromised bot ([settlement-and-threats.md](settlement-and-threats.md)) |
-| Morpho V2, Euler Earn | Timelock on risk-increasing changes, none on risk-reducing (`decreaseCap`) | `addPosition` behind a delay; `removePosition` immediate (it is already value-guarded) |
-| Morpho V2 (Sentinel), Euler (Guardian), Centrifuge (Supervisor) | A role that can only revoke or pause | A guardian on `FundConfig` that can only remove permissions for a position |
+| Centrifuge (timelocked authorization) | Timelock on actions outside the declared policy; none inside it | `addPosition` behind a delay; `removePosition` immediate (it is already value-guarded) |
+| Centrifuge (Supervisor), Aera (guardian removal) | A role that can only veto, revoke or pause | A guardian on `FundConfig` that can only remove permissions for a position |
 | Sommelier | Two-party registry admission (registry multisig + governance) | `ModuleRegistry` admission by Security Council + timelock |
 | Lagoon | Rate guardrail on NAV moves between settlements | Settlement layer cross-check on `fundNav` jumps |
 | Enzyme | Test that the permission-side asset set equals the accounting-side asset set | CI check over every module: assets reachable by `permissions()` ⊆ `assets()` |

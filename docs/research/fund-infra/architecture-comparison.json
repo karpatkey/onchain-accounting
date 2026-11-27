@@ -1,6 +1,6 @@
 {
-  "about": "Grades for docs/research/fund-infra/architecture-comparison.md. 2 = strong, 1 = partial, 0 = weak, null = not applicable or not verified. Grades are judgments from state-of-art.md (third-party systems) and this repo + the POC (kpk columns); each cell carries its basis.",
-  "systems": ["kpk today", "kpk + FundConfig", "Enzyme", "Sommelier", "Veda", "Morpho V2", "Lagoon", "Aera v3", "Mellow", "Euler Earn", "Yearn V3", "Centrifuge", "Superform"],
+  "about": "Grades for docs/research/fund-infra/architecture-comparison.md. Peers are NAV-based funds only: a manager runs a multi-protocol portfolio and shares are priced from a fund NAV. Allocator/meta-vaults (Morpho V2, Euler Earn, Yearn V3, Superform) are excluded. 2 = strong, 1 = partial, 0 = weak, null = not applicable or not verified. Grades are judgments from state-of-art.md (third-party systems) and this repo + the POC (kpk columns); each cell carries its basis.",
+  "systems": ["kpk today", "kpk + FundConfig", "Enzyme", "Sommelier", "Veda", "Lagoon", "Aera v3", "Mellow", "Centrifuge"],
   "dimensions": [
     {
       "key": "declared",
@@ -11,14 +11,10 @@
         [2, "Per-fund external position instances"],
         [2, "Cellar credit/debt position arrays"],
         [0, "Merkle leaves are permissions, not positions"],
-        [2, "Adapters + ids per vault"],
         [0, "No declaration; NAV is a number"],
         [0, "No declaration; guardian merkle ops"],
         [1, "Subvault asset allow-lists only"],
-        [2, "Strategy set (max 30)"],
-        [2, "Strategy set"],
-        [2, "Holdings per pool"],
-        [1, "Hook bundles per strategy"]
+        [2, "Holdings per pool"]
       ]
     },
     {
@@ -30,14 +26,10 @@
         [2, "getManagedAssets / getDebtAssets"],
         [2, "balanceOf per position"],
         [0, "Off-chain rate, bounded"],
-        [2, "realAssets over adapters"],
         [0, "Pushed NAV + PPS guardrail"],
         [0, "Accountant anchor/drift price"],
         [0, "Push-updated balances"],
-        [1, "ERC-4626 reads per strategy [UNVERIFIED exact fn]"],
-        [1, "Periodic process_report"],
-        [1, "NAVManager + holdings hook [UNVERIFIED pricing source]"],
-        [0, "Validator-signed PPS"]
+        [null, "NAVManager + holdings hook [UNVERIFIED pricing source]"]
       ]
     },
     {
@@ -49,14 +41,10 @@
         [1, "Adapter + parser + policies"],
         [0, "Whole adaptor callable"],
         [2, "Leaf per call with decoder/sanitizer"],
-        [1, "allocate/deallocate to adapters within caps"],
         [null, "Safe/Roles path not read [UNVERIFIED]"],
         [2, "Merkle root per guardian"],
         [2, "Verifier types (compact / merkle / custom)"],
-        [1, "Caps + queues"],
-        [1, "Roles only"],
-        [1, "Manager/policy-scoped"],
-        [1, "Aggregator authorization"]
+        [1, "Manager/policy-scoped"]
       ]
     },
     {
@@ -68,14 +56,10 @@
         [1, "Type registry holds lib (NAV) + parser (moves)"],
         [1, "Same position ids; permission is whole adaptor"],
         [0, "Rate and merkle tree independent"],
-        [1, "Caps and realAssets keyed by the same ids"],
         [0, "Independent"],
         [0, "Independent trust roots"],
         [0, "Verifier and risk manager separate"],
-        [1, "Strategy set drives caps and accounting"],
-        [1, "Strategy address shared"],
-        [1, "Hub-side, linkage [UNVERIFIED]"],
-        [0, "Hooks shared, PPS signed off-chain"]
+        [null, "Hub-side, linkage [UNVERIFIED]"]
       ]
     },
     {
@@ -87,14 +71,10 @@
         [2, "All moves go through adapters/positions"],
         [1, "Adaptor balanceOf + post-call totalAssets band"],
         [0, "Any allowed leaf; NAV pushed"],
-        [2, "Every allocation routes through a valuing adapter"],
         [0, "Operator claim bounded by guardrail"],
         [0, "Pushed price"],
         [0, "Risk-manager claim"],
-        [2, "Allocation only to strategies"],
-        [2, "Debt only to strategies"],
-        [1, "Holdings-scoped [UNVERIFIED]"],
-        [0, "Signed PPS"]
+        [null, "Holdings-scoped [UNVERIFIED]"]
       ]
     },
     {
@@ -106,14 +86,10 @@
         [2, "getDebtAssets"],
         [2, "debtPositions"],
         [null, "Off-chain"],
-        [0, "Supply-only adapters"],
         [null, "Off-chain"],
         [null, "Off-chain"],
         [null, "Off-chain"],
-        [0, "Supply-only strategies"],
-        [null, "Inside strategies"],
-        [null, "[UNVERIFIED]"],
-        [null, "Off-chain"]
+        [null, "[UNVERIFIED]"]
       ]
     },
     {
@@ -125,14 +101,10 @@
         [null, "[UNVERIFIED]"],
         [null, "[UNVERIFIED]"],
         [null, "Off-chain"],
-        [0, "realAssets revert blocks accrual"],
         [null, "Off-chain"],
         [null, "Off-chain"],
         [null, "Off-chain"],
-        [null, "[UNVERIFIED]"],
-        [null, "[UNVERIFIED]"],
-        [null, "[UNVERIFIED]"],
-        [null, "Off-chain"]
+        [null, "[UNVERIFIED]"]
       ]
     },
     {
@@ -144,14 +116,10 @@
         [1, "Type registry mutable by fund-deployer owner"],
         [1, "Registry multisig + governance (two-party)"],
         [1, "Owner-set roots"],
-        [2, "Immutable vaults; timelocked curator"],
-        [1, "Protocol registries; proxy upgrade authority [UNVERIFIED]"],
+        [null, "Protocol registries; proxy upgrade authority [UNVERIFIED]"],
         [1, "Owner/authority"],
         [1, "Role-based"],
-        [2, "Immutable factory; timelocks"],
-        [1, "Role manager"],
-        [2, "Immutable core; timelocked authorization"],
-        [1, "Timelocked governor"]
+        [2, "Immutable core; timelocked authorization"]
       ]
     },
     {
@@ -163,14 +131,10 @@
         [2, "getManagedAssets / getDebtAssets per external position"],
         [1, "Position ids + balanceOf; no protocol identity schema"],
         [0, "Single rate"],
-        [1, "realAssets per adapter"],
         [0, "Single pushed total"],
         [0, "Single price"],
         [0, "Pushed balances"],
-        [1, "Per-strategy ERC-4626 reads"],
-        [1, "Per-strategy current_debt"],
-        [1, "Holdings per pool"],
-        [0, "Signed PPS"]
+        [1, "Holdings per pool"]
       ]
     }
   ]

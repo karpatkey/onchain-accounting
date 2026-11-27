@@ -124,6 +124,25 @@ tested on real batches and on a fork of mainnet.
      5 were deferred, all since paid. The check, run for one of those recipients (`0x1e1f…124b`) at its enqueue
      block 26,354,952, exits 1 on its 682,753.36 USDC queue entry, and 0 today.
 
+7. **Shares on HyperEVM: the operator combines both chains at pinned blocks; the bridge legs join the check.** The
+   fund subscribes and redeems on HyperEVM and reaches Derive from Ethereum, the same Safe address on both
+   (`0x8c79…7476`). HYPE crosses over LayerZero V2: the HyperEVM native OFT adapter `0x1e04…9670` (eid 30367) locks
+   native HYPE, the Ethereum HYPE OFT `0x0762…13e2` (eid 30101) mints and burns; `OFTSent` and `OFTReceived` share a
+   guid. NAV is not computed on HyperEVM from this member (it reads VAPP on Ethereum): the operator adds the HyperEVM
+   holdings (native HYPE + WHYPE), the Ethereum HYPE and this member's legs, each chain read at its own pinned block.
+   - **Counting rule.** A transfer is counted on its source iff sent after the source pin, and on its destination iff
+     received at or before the destination pin. Exactly once is right; both is a double count, which non-simultaneous
+     reads make possible and which is the one way this setup can over-report; neither is in flight. `--preflight
+     SAFE --hyperevm-rpc URL --since-eth N --since-hyperevm M` classifies every transfer of the Safe since the
+     previous settlement's pins and fails on anything not counted exactly once. A send whose receipt went to another
+     address is a payout: counted at the source until sent.
+   - **Checked on the real path.** hype-split's 0.12 HYPE (sent at HyperEVM 51,693,622, received at Ethereum
+     26,450,116, deposited as action 8651 at 26,450,176, applied at 26,450,225), replayed at pinned blocks: settle
+     before the send, skip mid-bridge, settle on arrival, skip while the deposit is queued, settle once applied, and
+     skip (double count) with the HyperEVM pin before the send and the Ethereum pin after the arrival.
+   - **Rejected for now:** relaying the attested value to HyperEVM over LayerZero (adds trust in its verifiers and a
+     contract on each side) and proving Ethereum state there (no Ethereum light client on HyperEVM is known to us).
+
 ## Alternatives considered
 
 - **Derive-signed wallet value.** Needs Derive to build and operate a signer; the trust moves to its keys.
@@ -176,7 +195,8 @@ tested on real batches and on a fork of mainnet.
   by the previous record needs that record's shares, and it may belong to anyone; the fund holds two adjacent
   subaccount ids and touches both, so each frames the other.
 - Clears stay permissionless and stale-gated (0022): anyone can zero the leg after a batch. Under-report only.
-- Ethereum only, where VAPP is. A fund whose shares live on another chain needs a relay or offchain aggregation.
+- Ethereum only, where VAPP is. A fund whose shares live on another chain combines the chains offchain (decision 7);
+  the Derive leg itself is still read on Ethereum.
 - Collateral assets need an Ethereum price feed, unless the fund is denominated in the same asset. Options need none:
   they are valued in USDC by the pricer. The pricer's `CollateralSpot[]` table (append-only at deployment) names the
   collateral assets it can price at Derive's spot; a debt or an option in an asset outside it is refused

@@ -1,0 +1,1736 @@
+{
+  "generatedBy": "test/poc/fundconfig/FundConfigPermissionValidation.fork.t.sol",
+  "suites": [
+    {
+      "suite": "positive",
+      "total": 31,
+      "failures": 0,
+      "statuses": {
+        "Accepted": 31
+      },
+      "rows": [
+        {
+          "leaf": "0 approve(address,uint256) @ USDC",
+          "check": "positive",
+          "expected": "Accepted",
+          "actual": "Accepted",
+          "pass": true
+        },
+        {
+          "leaf": "1 deposit(uint256,address) @ kpk_USDC_Prime (Morpho vault)",
+          "check": "positive",
+          "expected": "Accepted",
+          "actual": "Accepted",
+          "pass": true
+        },
+        {
+          "leaf": "2 redeem(uint256,address,address) @ kpk_USDC_Prime (Morpho vault)",
+          "check": "positive",
+          "expected": "Accepted",
+          "actual": "Accepted",
+          "pass": true
+        },
+        {
+          "leaf": "3 withdraw(uint256,address,address) @ kpk_USDC_Prime (Morpho vault)",
+          "check": "positive",
+          "expected": "Accepted",
+          "actual": "Accepted",
+          "pass": true
+        },
+        {
+          "leaf": "4 approve(address,uint256) @ WETH",
+          "check": "positive",
+          "expected": "Accepted",
+          "actual": "Accepted",
+          "pass": true
+        },
+        {
+          "leaf": "5 supply(address,uint256,address,uint16) @ Aave V3 Pool",
+          "check": "positive",
+          "expected": "Accepted",
+          "actual": "Accepted",
+          "pass": true
+        },
+        {
+          "leaf": "6 withdraw(address,uint256,address) @ Aave V3 Pool",
+          "check": "positive",
+          "expected": "Accepted",
+          "actual": "Accepted",
+          "pass": true
+        },
+        {
+          "leaf": "7 approve(address,uint256) @ USDC",
+          "check": "positive",
+          "expected": "Accepted",
+          "actual": "Accepted",
+          "pass": true
+        },
+        {
+          "leaf": "8 borrow(address,uint256,uint256,uint16,address) @ Aave V3 Pool",
+          "check": "positive",
+          "expected": "Accepted",
+          "actual": "Accepted",
+          "pass": true
+        },
+        {
+          "leaf": "9 repay(address,uint256,uint256,address) @ Aave V3 Pool",
+          "check": "positive",
+          "expected": "Accepted",
+          "actual": "Accepted",
+          "pass": true
+        },
+        {
+          "leaf": "10 approve(address,uint256) @ USDC",
+          "check": "positive",
+          "expected": "Accepted",
+          "actual": "Accepted",
+          "pass": true
+        },
+        {
+          "leaf": "11 approve(address,uint256) @ WETH",
+          "check": "positive",
+          "expected": "Accepted",
+          "actual": "Accepted",
+          "pass": true
+        },
+        {
+          "leaf": "12 exactInputSingle((address,address,uint24,address,uint256,uint256,uint160)) @ Uniswap SwapRouter02",
+          "check": "positive",
+          "expected": "Accepted",
+          "actual": "Accepted",
+          "pass": true
+        },
+        {
+          "leaf": "13 exactInputSingle((address,address,uint24,address,uint256,uint256,uint160)) @ Uniswap SwapRouter02",
+          "check": "positive",
+          "expected": "Accepted",
+          "actual": "Accepted",
+          "pass": true
+        },
+        {
+          "leaf": "14 approve(address,uint256) @ USDC",
+          "check": "positive",
+          "expected": "Accepted",
+          "actual": "Accepted",
+          "pass": true
+        },
+        {
+          "leaf": "15 approve(address,uint256) @ WETH",
+          "check": "positive",
+          "expected": "Accepted",
+          "actual": "Accepted",
+          "pass": true
+        },
+        {
+          "leaf": "16 mint((address,address,uint24,int24,int24,uint256,uint256,uint256,uint256,address,uint256)) @ Uniswap V3 NonfungiblePositionManager",
+          "check": "positive",
+          "expected": "Accepted",
+          "actual": "Accepted",
+          "pass": true
+        },
+        {
+          "leaf": "17 increaseLiquidity((uint256,uint256,uint256,uint256,uint256,uint256)) @ Uniswap V3 NonfungiblePositionManager",
+          "check": "positive",
+          "expected": "Accepted",
+          "actual": "Accepted",
+          "pass": true
+        },
+        {
+          "leaf": "18 decreaseLiquidity((uint256,uint128,uint256,uint256,uint256)) @ Uniswap V3 NonfungiblePositionManager",
+          "check": "positive",
+          "expected": "Accepted",
+          "actual": "Accepted",
+          "pass": true
+        },
+        {
+          "leaf": "19 collect((uint256,address,uint128,uint128)) @ Uniswap V3 NonfungiblePositionManager",
+          "check": "positive",
+          "expected": "Accepted",
+          "actual": "Accepted",
+          "pass": true
+        },
+        {
+          "leaf": "20 approve(address,uint256) @ DAI",
+          "check": "positive",
+          "expected": "Accepted",
+          "actual": "Accepted",
+          "pass": true
+        },
+        {
+          "leaf": "21 approve(address,uint256) @ USDC",
+          "check": "positive",
+          "expected": "Accepted",
+          "actual": "Accepted",
+          "pass": true
+        },
+        {
+          "leaf": "22 approve(address,uint256) @ USDT",
+          "check": "positive",
+          "expected": "Accepted",
+          "actual": "Accepted",
+          "pass": true
+        },
+        {
+          "leaf": "23 add_liquidity(uint256[3],uint256) @ Curve 3pool",
+          "check": "positive",
+          "expected": "Accepted",
+          "actual": "Accepted",
+          "pass": true
+        },
+        {
+          "leaf": "24 remove_liquidity(uint256,uint256[3]) @ Curve 3pool",
+          "check": "positive",
+          "expected": "Accepted",
+          "actual": "Accepted",
+          "pass": true
+        },
+        {
+          "leaf": "25 approve(address,uint256) @ 3Crv",
+          "check": "positive",
+          "expected": "Accepted",
+          "actual": "Accepted",
+          "pass": true
+        },
+        {
+          "leaf": "26 deposit(uint256) @ Curve 3pool gauge",
+          "check": "positive",
+          "expected": "Accepted",
+          "actual": "Accepted",
+          "pass": true
+        },
+        {
+          "leaf": "27 withdraw(uint256) @ Curve 3pool gauge",
+          "check": "positive",
+          "expected": "Accepted",
+          "actual": "Accepted",
+          "pass": true
+        },
+        {
+          "leaf": "28 mint(address) @ Curve CRV minter",
+          "check": "positive",
+          "expected": "Accepted",
+          "actual": "Accepted",
+          "pass": true
+        },
+        {
+          "leaf": "29 requestWithdraw(uint256) @ EtherFi withdrawal assistant",
+          "check": "positive",
+          "expected": "Accepted",
+          "actual": "Accepted",
+          "pass": true
+        },
+        {
+          "leaf": "30 claimWithdraw(uint256) @ EtherFi withdrawal assistant",
+          "check": "positive",
+          "expected": "Accepted",
+          "actual": "Accepted",
+          "pass": true
+        }
+      ]
+    },
+    {
+      "suite": "words",
+      "total": 66,
+      "failures": 0,
+      "statuses": {
+        "CustomConditionViolation": 3,
+        "OrViolation": 30,
+        "ParameterNotAllowed": 33
+      },
+      "rows": [
+        {
+          "leaf": "0 approve(address,uint256) @ USDC",
+          "check": "word 0 xor1",
+          "expected": "OrViolation",
+          "actual": "OrViolation",
+          "pass": true
+        },
+        {
+          "leaf": "0 approve(address,uint256) @ USDC",
+          "check": "word 0 sentinel",
+          "expected": "OrViolation",
+          "actual": "OrViolation",
+          "pass": true
+        },
+        {
+          "leaf": "1 deposit(uint256,address) @ kpk_USDC_Prime (Morpho vault)",
+          "check": "word 1 sentinel",
+          "expected": "ParameterNotAllowed",
+          "actual": "ParameterNotAllowed",
+          "pass": true
+        },
+        {
+          "leaf": "2 redeem(uint256,address,address) @ kpk_USDC_Prime (Morpho vault)",
+          "check": "word 1 sentinel",
+          "expected": "ParameterNotAllowed",
+          "actual": "ParameterNotAllowed",
+          "pass": true
+        },
+        {
+          "leaf": "2 redeem(uint256,address,address) @ kpk_USDC_Prime (Morpho vault)",
+          "check": "word 2 sentinel",
+          "expected": "ParameterNotAllowed",
+          "actual": "ParameterNotAllowed",
+          "pass": true
+        },
+        {
+          "leaf": "3 withdraw(uint256,address,address) @ kpk_USDC_Prime (Morpho vault)",
+          "check": "word 1 sentinel",
+          "expected": "ParameterNotAllowed",
+          "actual": "ParameterNotAllowed",
+          "pass": true
+        },
+        {
+          "leaf": "3 withdraw(uint256,address,address) @ kpk_USDC_Prime (Morpho vault)",
+          "check": "word 2 sentinel",
+          "expected": "ParameterNotAllowed",
+          "actual": "ParameterNotAllowed",
+          "pass": true
+        },
+        {
+          "leaf": "4 approve(address,uint256) @ WETH",
+          "check": "word 0 xor1",
+          "expected": "OrViolation",
+          "actual": "OrViolation",
+          "pass": true
+        },
+        {
+          "leaf": "4 approve(address,uint256) @ WETH",
+          "check": "word 0 sentinel",
+          "expected": "OrViolation",
+          "actual": "OrViolation",
+          "pass": true
+        },
+        {
+          "leaf": "5 supply(address,uint256,address,uint16) @ Aave V3 Pool",
+          "check": "word 0 xor1",
+          "expected": "ParameterNotAllowed",
+          "actual": "ParameterNotAllowed",
+          "pass": true
+        },
+        {
+          "leaf": "5 supply(address,uint256,address,uint16) @ Aave V3 Pool",
+          "check": "word 0 sentinel",
+          "expected": "ParameterNotAllowed",
+          "actual": "ParameterNotAllowed",
+          "pass": true
+        },
+        {
+          "leaf": "5 supply(address,uint256,address,uint16) @ Aave V3 Pool",
+          "check": "word 2 sentinel",
+          "expected": "ParameterNotAllowed",
+          "actual": "ParameterNotAllowed",
+          "pass": true
+        },
+        {
+          "leaf": "6 withdraw(address,uint256,address) @ Aave V3 Pool",
+          "check": "word 0 xor1",
+          "expected": "ParameterNotAllowed",
+          "actual": "ParameterNotAllowed",
+          "pass": true
+        },
+        {
+          "leaf": "6 withdraw(address,uint256,address) @ Aave V3 Pool",
+          "check": "word 0 sentinel",
+          "expected": "ParameterNotAllowed",
+          "actual": "ParameterNotAllowed",
+          "pass": true
+        },
+        {
+          "leaf": "6 withdraw(address,uint256,address) @ Aave V3 Pool",
+          "check": "word 2 sentinel",
+          "expected": "ParameterNotAllowed",
+          "actual": "ParameterNotAllowed",
+          "pass": true
+        },
+        {
+          "leaf": "7 approve(address,uint256) @ USDC",
+          "check": "word 0 xor1",
+          "expected": "OrViolation",
+          "actual": "OrViolation",
+          "pass": true
+        },
+        {
+          "leaf": "7 approve(address,uint256) @ USDC",
+          "check": "word 0 sentinel",
+          "expected": "OrViolation",
+          "actual": "OrViolation",
+          "pass": true
+        },
+        {
+          "leaf": "8 borrow(address,uint256,uint256,uint16,address) @ Aave V3 Pool",
+          "check": "word 0 xor1",
+          "expected": "ParameterNotAllowed",
+          "actual": "ParameterNotAllowed",
+          "pass": true
+        },
+        {
+          "leaf": "8 borrow(address,uint256,uint256,uint16,address) @ Aave V3 Pool",
+          "check": "word 0 sentinel",
+          "expected": "ParameterNotAllowed",
+          "actual": "ParameterNotAllowed",
+          "pass": true
+        },
+        {
+          "leaf": "8 borrow(address,uint256,uint256,uint16,address) @ Aave V3 Pool",
+          "check": "word 4 sentinel",
+          "expected": "ParameterNotAllowed",
+          "actual": "ParameterNotAllowed",
+          "pass": true
+        },
+        {
+          "leaf": "9 repay(address,uint256,uint256,address) @ Aave V3 Pool",
+          "check": "word 0 xor1",
+          "expected": "ParameterNotAllowed",
+          "actual": "ParameterNotAllowed",
+          "pass": true
+        },
+        {
+          "leaf": "9 repay(address,uint256,uint256,address) @ Aave V3 Pool",
+          "check": "word 0 sentinel",
+          "expected": "ParameterNotAllowed",
+          "actual": "ParameterNotAllowed",
+          "pass": true
+        },
+        {
+          "leaf": "9 repay(address,uint256,uint256,address) @ Aave V3 Pool",
+          "check": "word 3 sentinel",
+          "expected": "ParameterNotAllowed",
+          "actual": "ParameterNotAllowed",
+          "pass": true
+        },
+        {
+          "leaf": "10 approve(address,uint256) @ USDC",
+          "check": "word 0 xor1",
+          "expected": "OrViolation",
+          "actual": "OrViolation",
+          "pass": true
+        },
+        {
+          "leaf": "10 approve(address,uint256) @ USDC",
+          "check": "word 0 sentinel",
+          "expected": "OrViolation",
+          "actual": "OrViolation",
+          "pass": true
+        },
+        {
+          "leaf": "11 approve(address,uint256) @ WETH",
+          "check": "word 0 xor1",
+          "expected": "OrViolation",
+          "actual": "OrViolation",
+          "pass": true
+        },
+        {
+          "leaf": "11 approve(address,uint256) @ WETH",
+          "check": "word 0 sentinel",
+          "expected": "OrViolation",
+          "actual": "OrViolation",
+          "pass": true
+        },
+        {
+          "leaf": "12 exactInputSingle((address,address,uint24,address,uint256,uint256,uint160)) @ Uniswap SwapRouter02",
+          "check": "word 0 xor1",
+          "expected": "OrViolation",
+          "actual": "OrViolation",
+          "pass": true
+        },
+        {
+          "leaf": "12 exactInputSingle((address,address,uint24,address,uint256,uint256,uint160)) @ Uniswap SwapRouter02",
+          "check": "word 0 sentinel",
+          "expected": "OrViolation",
+          "actual": "OrViolation",
+          "pass": true
+        },
+        {
+          "leaf": "12 exactInputSingle((address,address,uint24,address,uint256,uint256,uint160)) @ Uniswap SwapRouter02",
+          "check": "word 1 xor1",
+          "expected": "OrViolation",
+          "actual": "OrViolation",
+          "pass": true
+        },
+        {
+          "leaf": "12 exactInputSingle((address,address,uint24,address,uint256,uint256,uint160)) @ Uniswap SwapRouter02",
+          "check": "word 1 sentinel",
+          "expected": "OrViolation",
+          "actual": "OrViolation",
+          "pass": true
+        },
+        {
+          "leaf": "12 exactInputSingle((address,address,uint24,address,uint256,uint256,uint160)) @ Uniswap SwapRouter02",
+          "check": "word 2 xor1",
+          "expected": "OrViolation",
+          "actual": "OrViolation",
+          "pass": true
+        },
+        {
+          "leaf": "12 exactInputSingle((address,address,uint24,address,uint256,uint256,uint160)) @ Uniswap SwapRouter02",
+          "check": "word 2 sentinel",
+          "expected": "OrViolation",
+          "actual": "OrViolation",
+          "pass": true
+        },
+        {
+          "leaf": "12 exactInputSingle((address,address,uint24,address,uint256,uint256,uint160)) @ Uniswap SwapRouter02",
+          "check": "word 3 sentinel",
+          "expected": "OrViolation",
+          "actual": "OrViolation",
+          "pass": true
+        },
+        {
+          "leaf": "13 exactInputSingle((address,address,uint24,address,uint256,uint256,uint160)) @ Uniswap SwapRouter02",
+          "check": "word 0 xor1",
+          "expected": "OrViolation",
+          "actual": "OrViolation",
+          "pass": true
+        },
+        {
+          "leaf": "13 exactInputSingle((address,address,uint24,address,uint256,uint256,uint160)) @ Uniswap SwapRouter02",
+          "check": "word 0 sentinel",
+          "expected": "OrViolation",
+          "actual": "OrViolation",
+          "pass": true
+        },
+        {
+          "leaf": "13 exactInputSingle((address,address,uint24,address,uint256,uint256,uint160)) @ Uniswap SwapRouter02",
+          "check": "word 1 xor1",
+          "expected": "OrViolation",
+          "actual": "OrViolation",
+          "pass": true
+        },
+        {
+          "leaf": "13 exactInputSingle((address,address,uint24,address,uint256,uint256,uint160)) @ Uniswap SwapRouter02",
+          "check": "word 1 sentinel",
+          "expected": "OrViolation",
+          "actual": "OrViolation",
+          "pass": true
+        },
+        {
+          "leaf": "13 exactInputSingle((address,address,uint24,address,uint256,uint256,uint160)) @ Uniswap SwapRouter02",
+          "check": "word 2 xor1",
+          "expected": "OrViolation",
+          "actual": "OrViolation",
+          "pass": true
+        },
+        {
+          "leaf": "13 exactInputSingle((address,address,uint24,address,uint256,uint256,uint160)) @ Uniswap SwapRouter02",
+          "check": "word 2 sentinel",
+          "expected": "OrViolation",
+          "actual": "OrViolation",
+          "pass": true
+        },
+        {
+          "leaf": "13 exactInputSingle((address,address,uint24,address,uint256,uint256,uint160)) @ Uniswap SwapRouter02",
+          "check": "word 3 sentinel",
+          "expected": "OrViolation",
+          "actual": "OrViolation",
+          "pass": true
+        },
+        {
+          "leaf": "14 approve(address,uint256) @ USDC",
+          "check": "word 0 xor1",
+          "expected": "OrViolation",
+          "actual": "OrViolation",
+          "pass": true
+        },
+        {
+          "leaf": "14 approve(address,uint256) @ USDC",
+          "check": "word 0 sentinel",
+          "expected": "OrViolation",
+          "actual": "OrViolation",
+          "pass": true
+        },
+        {
+          "leaf": "15 approve(address,uint256) @ WETH",
+          "check": "word 0 xor1",
+          "expected": "OrViolation",
+          "actual": "OrViolation",
+          "pass": true
+        },
+        {
+          "leaf": "15 approve(address,uint256) @ WETH",
+          "check": "word 0 sentinel",
+          "expected": "OrViolation",
+          "actual": "OrViolation",
+          "pass": true
+        },
+        {
+          "leaf": "16 mint((address,address,uint24,int24,int24,uint256,uint256,uint256,uint256,address,uint256)) @ Uniswap V3 NonfungiblePositionManager",
+          "check": "word 0 xor1",
+          "expected": "ParameterNotAllowed",
+          "actual": "ParameterNotAllowed",
+          "pass": true
+        },
+        {
+          "leaf": "16 mint((address,address,uint24,int24,int24,uint256,uint256,uint256,uint256,address,uint256)) @ Uniswap V3 NonfungiblePositionManager",
+          "check": "word 0 sentinel",
+          "expected": "ParameterNotAllowed",
+          "actual": "ParameterNotAllowed",
+          "pass": true
+        },
+        {
+          "leaf": "16 mint((address,address,uint24,int24,int24,uint256,uint256,uint256,uint256,address,uint256)) @ Uniswap V3 NonfungiblePositionManager",
+          "check": "word 1 xor1",
+          "expected": "ParameterNotAllowed",
+          "actual": "ParameterNotAllowed",
+          "pass": true
+        },
+        {
+          "leaf": "16 mint((address,address,uint24,int24,int24,uint256,uint256,uint256,uint256,address,uint256)) @ Uniswap V3 NonfungiblePositionManager",
+          "check": "word 1 sentinel",
+          "expected": "ParameterNotAllowed",
+          "actual": "ParameterNotAllowed",
+          "pass": true
+        },
+        {
+          "leaf": "16 mint((address,address,uint24,int24,int24,uint256,uint256,uint256,uint256,address,uint256)) @ Uniswap V3 NonfungiblePositionManager",
+          "check": "word 2 xor1",
+          "expected": "ParameterNotAllowed",
+          "actual": "ParameterNotAllowed",
+          "pass": true
+        },
+        {
+          "leaf": "16 mint((address,address,uint24,int24,int24,uint256,uint256,uint256,uint256,address,uint256)) @ Uniswap V3 NonfungiblePositionManager",
+          "check": "word 2 sentinel",
+          "expected": "ParameterNotAllowed",
+          "actual": "ParameterNotAllowed",
+          "pass": true
+        },
+        {
+          "leaf": "16 mint((address,address,uint24,int24,int24,uint256,uint256,uint256,uint256,address,uint256)) @ Uniswap V3 NonfungiblePositionManager",
+          "check": "word 9 sentinel",
+          "expected": "ParameterNotAllowed",
+          "actual": "ParameterNotAllowed",
+          "pass": true
+        },
+        {
+          "leaf": "17 increaseLiquidity((uint256,uint256,uint256,uint256,uint256,uint256)) @ Uniswap V3 NonfungiblePositionManager",
+          "check": "word 0 nonexistent token",
+          "expected": "CustomConditionViolation",
+          "actual": "CustomConditionViolation",
+          "pass": true
+        },
+        {
+          "leaf": "18 decreaseLiquidity((uint256,uint128,uint256,uint256,uint256)) @ Uniswap V3 NonfungiblePositionManager",
+          "check": "word 0 nonexistent token",
+          "expected": "CustomConditionViolation",
+          "actual": "CustomConditionViolation",
+          "pass": true
+        },
+        {
+          "leaf": "19 collect((uint256,address,uint128,uint128)) @ Uniswap V3 NonfungiblePositionManager",
+          "check": "word 0 nonexistent token",
+          "expected": "CustomConditionViolation",
+          "actual": "CustomConditionViolation",
+          "pass": true
+        },
+        {
+          "leaf": "19 collect((uint256,address,uint128,uint128)) @ Uniswap V3 NonfungiblePositionManager",
+          "check": "word 1 sentinel",
+          "expected": "ParameterNotAllowed",
+          "actual": "ParameterNotAllowed",
+          "pass": true
+        },
+        {
+          "leaf": "20 approve(address,uint256) @ DAI",
+          "check": "word 0 xor1",
+          "expected": "ParameterNotAllowed",
+          "actual": "ParameterNotAllowed",
+          "pass": true
+        },
+        {
+          "leaf": "20 approve(address,uint256) @ DAI",
+          "check": "word 0 sentinel",
+          "expected": "ParameterNotAllowed",
+          "actual": "ParameterNotAllowed",
+          "pass": true
+        },
+        {
+          "leaf": "21 approve(address,uint256) @ USDC",
+          "check": "word 0 xor1",
+          "expected": "OrViolation",
+          "actual": "OrViolation",
+          "pass": true
+        },
+        {
+          "leaf": "21 approve(address,uint256) @ USDC",
+          "check": "word 0 sentinel",
+          "expected": "OrViolation",
+          "actual": "OrViolation",
+          "pass": true
+        },
+        {
+          "leaf": "22 approve(address,uint256) @ USDT",
+          "check": "word 0 xor1",
+          "expected": "ParameterNotAllowed",
+          "actual": "ParameterNotAllowed",
+          "pass": true
+        },
+        {
+          "leaf": "22 approve(address,uint256) @ USDT",
+          "check": "word 0 sentinel",
+          "expected": "ParameterNotAllowed",
+          "actual": "ParameterNotAllowed",
+          "pass": true
+        },
+        {
+          "leaf": "25 approve(address,uint256) @ 3Crv",
+          "check": "word 0 xor1",
+          "expected": "ParameterNotAllowed",
+          "actual": "ParameterNotAllowed",
+          "pass": true
+        },
+        {
+          "leaf": "25 approve(address,uint256) @ 3Crv",
+          "check": "word 0 sentinel",
+          "expected": "ParameterNotAllowed",
+          "actual": "ParameterNotAllowed",
+          "pass": true
+        },
+        {
+          "leaf": "28 mint(address) @ Curve CRV minter",
+          "check": "word 0 xor1",
+          "expected": "ParameterNotAllowed",
+          "actual": "ParameterNotAllowed",
+          "pass": true
+        },
+        {
+          "leaf": "28 mint(address) @ Curve CRV minter",
+          "check": "word 0 sentinel",
+          "expected": "ParameterNotAllowed",
+          "actual": "ParameterNotAllowed",
+          "pass": true
+        }
+      ]
+    },
+    {
+      "suite": "options",
+      "total": 60,
+      "failures": 0,
+      "statuses": {
+        "Accepted": 29,
+        "DelegateCallNotAllowed": 29,
+        "SendNotAllowed": 2
+      },
+      "rows": [
+        {
+          "leaf": "0 approve(address,uint256) @ USDC",
+          "check": "delegatecall on send-only",
+          "expected": "DelegateCallNotAllowed",
+          "actual": "DelegateCallNotAllowed",
+          "pass": true
+        },
+        {
+          "leaf": "0 approve(address,uint256) @ USDC",
+          "check": "value on send",
+          "expected": "Accepted",
+          "actual": "Accepted",
+          "pass": true
+        },
+        {
+          "leaf": "1 deposit(uint256,address) @ kpk_USDC_Prime (Morpho vault)",
+          "check": "delegatecall on send-only",
+          "expected": "DelegateCallNotAllowed",
+          "actual": "DelegateCallNotAllowed",
+          "pass": true
+        },
+        {
+          "leaf": "1 deposit(uint256,address) @ kpk_USDC_Prime (Morpho vault)",
+          "check": "value on send",
+          "expected": "Accepted",
+          "actual": "Accepted",
+          "pass": true
+        },
+        {
+          "leaf": "2 redeem(uint256,address,address) @ kpk_USDC_Prime (Morpho vault)",
+          "check": "delegatecall on send-only",
+          "expected": "DelegateCallNotAllowed",
+          "actual": "DelegateCallNotAllowed",
+          "pass": true
+        },
+        {
+          "leaf": "2 redeem(uint256,address,address) @ kpk_USDC_Prime (Morpho vault)",
+          "check": "value on send",
+          "expected": "Accepted",
+          "actual": "Accepted",
+          "pass": true
+        },
+        {
+          "leaf": "3 withdraw(uint256,address,address) @ kpk_USDC_Prime (Morpho vault)",
+          "check": "delegatecall on send-only",
+          "expected": "DelegateCallNotAllowed",
+          "actual": "DelegateCallNotAllowed",
+          "pass": true
+        },
+        {
+          "leaf": "3 withdraw(uint256,address,address) @ kpk_USDC_Prime (Morpho vault)",
+          "check": "value on send",
+          "expected": "Accepted",
+          "actual": "Accepted",
+          "pass": true
+        },
+        {
+          "leaf": "4 approve(address,uint256) @ WETH",
+          "check": "delegatecall on send-only",
+          "expected": "DelegateCallNotAllowed",
+          "actual": "DelegateCallNotAllowed",
+          "pass": true
+        },
+        {
+          "leaf": "4 approve(address,uint256) @ WETH",
+          "check": "value on send",
+          "expected": "Accepted",
+          "actual": "Accepted",
+          "pass": true
+        },
+        {
+          "leaf": "5 supply(address,uint256,address,uint16) @ Aave V3 Pool",
+          "check": "delegatecall on send-only",
+          "expected": "DelegateCallNotAllowed",
+          "actual": "DelegateCallNotAllowed",
+          "pass": true
+        },
+        {
+          "leaf": "5 supply(address,uint256,address,uint16) @ Aave V3 Pool",
+          "check": "value on send",
+          "expected": "Accepted",
+          "actual": "Accepted",
+          "pass": true
+        },
+        {
+          "leaf": "6 withdraw(address,uint256,address) @ Aave V3 Pool",
+          "check": "delegatecall on send-only",
+          "expected": "DelegateCallNotAllowed",
+          "actual": "DelegateCallNotAllowed",
+          "pass": true
+        },
+        {
+          "leaf": "6 withdraw(address,uint256,address) @ Aave V3 Pool",
+          "check": "value on send",
+          "expected": "Accepted",
+          "actual": "Accepted",
+          "pass": true
+        },
+        {
+          "leaf": "7 approve(address,uint256) @ USDC",
+          "check": "delegatecall on send-only",
+          "expected": "DelegateCallNotAllowed",
+          "actual": "DelegateCallNotAllowed",
+          "pass": true
+        },
+        {
+          "leaf": "7 approve(address,uint256) @ USDC",
+          "check": "value on send",
+          "expected": "Accepted",
+          "actual": "Accepted",
+          "pass": true
+        },
+        {
+          "leaf": "8 borrow(address,uint256,uint256,uint16,address) @ Aave V3 Pool",
+          "check": "delegatecall on send-only",
+          "expected": "DelegateCallNotAllowed",
+          "actual": "DelegateCallNotAllowed",
+          "pass": true
+        },
+        {
+          "leaf": "8 borrow(address,uint256,uint256,uint16,address) @ Aave V3 Pool",
+          "check": "value on send",
+          "expected": "Accepted",
+          "actual": "Accepted",
+          "pass": true
+        },
+        {
+          "leaf": "9 repay(address,uint256,uint256,address) @ Aave V3 Pool",
+          "check": "delegatecall on send-only",
+          "expected": "DelegateCallNotAllowed",
+          "actual": "DelegateCallNotAllowed",
+          "pass": true
+        },
+        {
+          "leaf": "9 repay(address,uint256,uint256,address) @ Aave V3 Pool",
+          "check": "value on send",
+          "expected": "Accepted",
+          "actual": "Accepted",
+          "pass": true
+        },
+        {
+          "leaf": "10 approve(address,uint256) @ USDC",
+          "check": "delegatecall on send-only",
+          "expected": "DelegateCallNotAllowed",
+          "actual": "DelegateCallNotAllowed",
+          "pass": true
+        },
+        {
+          "leaf": "10 approve(address,uint256) @ USDC",
+          "check": "value on send",
+          "expected": "Accepted",
+          "actual": "Accepted",
+          "pass": true
+        },
+        {
+          "leaf": "11 approve(address,uint256) @ WETH",
+          "check": "delegatecall on send-only",
+          "expected": "DelegateCallNotAllowed",
+          "actual": "DelegateCallNotAllowed",
+          "pass": true
+        },
+        {
+          "leaf": "11 approve(address,uint256) @ WETH",
+          "check": "value on send",
+          "expected": "Accepted",
+          "actual": "Accepted",
+          "pass": true
+        },
+        {
+          "leaf": "12 exactInputSingle((address,address,uint24,address,uint256,uint256,uint160)) @ Uniswap SwapRouter02",
+          "check": "delegatecall on send-only",
+          "expected": "DelegateCallNotAllowed",
+          "actual": "DelegateCallNotAllowed",
+          "pass": true
+        },
+        {
+          "leaf": "12 exactInputSingle((address,address,uint24,address,uint256,uint256,uint160)) @ Uniswap SwapRouter02",
+          "check": "value on send",
+          "expected": "Accepted",
+          "actual": "Accepted",
+          "pass": true
+        },
+        {
+          "leaf": "13 exactInputSingle((address,address,uint24,address,uint256,uint256,uint160)) @ Uniswap SwapRouter02",
+          "check": "delegatecall on send-only",
+          "expected": "DelegateCallNotAllowed",
+          "actual": "DelegateCallNotAllowed",
+          "pass": true
+        },
+        {
+          "leaf": "13 exactInputSingle((address,address,uint24,address,uint256,uint256,uint160)) @ Uniswap SwapRouter02",
+          "check": "value on send",
+          "expected": "Accepted",
+          "actual": "Accepted",
+          "pass": true
+        },
+        {
+          "leaf": "14 approve(address,uint256) @ USDC",
+          "check": "delegatecall on send-only",
+          "expected": "DelegateCallNotAllowed",
+          "actual": "DelegateCallNotAllowed",
+          "pass": true
+        },
+        {
+          "leaf": "14 approve(address,uint256) @ USDC",
+          "check": "value on send",
+          "expected": "Accepted",
+          "actual": "Accepted",
+          "pass": true
+        },
+        {
+          "leaf": "15 approve(address,uint256) @ WETH",
+          "check": "delegatecall on send-only",
+          "expected": "DelegateCallNotAllowed",
+          "actual": "DelegateCallNotAllowed",
+          "pass": true
+        },
+        {
+          "leaf": "15 approve(address,uint256) @ WETH",
+          "check": "value on send",
+          "expected": "Accepted",
+          "actual": "Accepted",
+          "pass": true
+        },
+        {
+          "leaf": "16 mint((address,address,uint24,int24,int24,uint256,uint256,uint256,uint256,address,uint256)) @ Uniswap V3 NonfungiblePositionManager",
+          "check": "delegatecall on send-only",
+          "expected": "DelegateCallNotAllowed",
+          "actual": "DelegateCallNotAllowed",
+          "pass": true
+        },
+        {
+          "leaf": "16 mint((address,address,uint24,int24,int24,uint256,uint256,uint256,uint256,address,uint256)) @ Uniswap V3 NonfungiblePositionManager",
+          "check": "value on send",
+          "expected": "Accepted",
+          "actual": "Accepted",
+          "pass": true
+        },
+        {
+          "leaf": "17 increaseLiquidity((uint256,uint256,uint256,uint256,uint256,uint256)) @ Uniswap V3 NonfungiblePositionManager",
+          "check": "delegatecall on send-only",
+          "expected": "DelegateCallNotAllowed",
+          "actual": "DelegateCallNotAllowed",
+          "pass": true
+        },
+        {
+          "leaf": "17 increaseLiquidity((uint256,uint256,uint256,uint256,uint256,uint256)) @ Uniswap V3 NonfungiblePositionManager",
+          "check": "value on send",
+          "expected": "Accepted",
+          "actual": "Accepted",
+          "pass": true
+        },
+        {
+          "leaf": "18 decreaseLiquidity((uint256,uint128,uint256,uint256,uint256)) @ Uniswap V3 NonfungiblePositionManager",
+          "check": "delegatecall on send-only",
+          "expected": "DelegateCallNotAllowed",
+          "actual": "DelegateCallNotAllowed",
+          "pass": true
+        },
+        {
+          "leaf": "18 decreaseLiquidity((uint256,uint128,uint256,uint256,uint256)) @ Uniswap V3 NonfungiblePositionManager",
+          "check": "value on send",
+          "expected": "Accepted",
+          "actual": "Accepted",
+          "pass": true
+        },
+        {
+          "leaf": "19 collect((uint256,address,uint128,uint128)) @ Uniswap V3 NonfungiblePositionManager",
+          "check": "delegatecall on send-only",
+          "expected": "DelegateCallNotAllowed",
+          "actual": "DelegateCallNotAllowed",
+          "pass": true
+        },
+        {
+          "leaf": "19 collect((uint256,address,uint128,uint128)) @ Uniswap V3 NonfungiblePositionManager",
+          "check": "value on send",
+          "expected": "Accepted",
+          "actual": "Accepted",
+          "pass": true
+        },
+        {
+          "leaf": "20 approve(address,uint256) @ DAI",
+          "check": "delegatecall on send-only",
+          "expected": "DelegateCallNotAllowed",
+          "actual": "DelegateCallNotAllowed",
+          "pass": true
+        },
+        {
+          "leaf": "20 approve(address,uint256) @ DAI",
+          "check": "value on send",
+          "expected": "Accepted",
+          "actual": "Accepted",
+          "pass": true
+        },
+        {
+          "leaf": "21 approve(address,uint256) @ USDC",
+          "check": "delegatecall on send-only",
+          "expected": "DelegateCallNotAllowed",
+          "actual": "DelegateCallNotAllowed",
+          "pass": true
+        },
+        {
+          "leaf": "21 approve(address,uint256) @ USDC",
+          "check": "value on send",
+          "expected": "Accepted",
+          "actual": "Accepted",
+          "pass": true
+        },
+        {
+          "leaf": "22 approve(address,uint256) @ USDT",
+          "check": "delegatecall on send-only",
+          "expected": "DelegateCallNotAllowed",
+          "actual": "DelegateCallNotAllowed",
+          "pass": true
+        },
+        {
+          "leaf": "22 approve(address,uint256) @ USDT",
+          "check": "value on send",
+          "expected": "Accepted",
+          "actual": "Accepted",
+          "pass": true
+        },
+        {
+          "leaf": "23 add_liquidity(uint256[3],uint256) @ Curve 3pool",
+          "check": "delegatecall on send-only",
+          "expected": "DelegateCallNotAllowed",
+          "actual": "DelegateCallNotAllowed",
+          "pass": true
+        },
+        {
+          "leaf": "23 add_liquidity(uint256[3],uint256) @ Curve 3pool",
+          "check": "value on send",
+          "expected": "Accepted",
+          "actual": "Accepted",
+          "pass": true
+        },
+        {
+          "leaf": "24 remove_liquidity(uint256,uint256[3]) @ Curve 3pool",
+          "check": "delegatecall on send-only",
+          "expected": "DelegateCallNotAllowed",
+          "actual": "DelegateCallNotAllowed",
+          "pass": true
+        },
+        {
+          "leaf": "24 remove_liquidity(uint256,uint256[3]) @ Curve 3pool",
+          "check": "value on send",
+          "expected": "Accepted",
+          "actual": "Accepted",
+          "pass": true
+        },
+        {
+          "leaf": "25 approve(address,uint256) @ 3Crv",
+          "check": "delegatecall on send-only",
+          "expected": "DelegateCallNotAllowed",
+          "actual": "DelegateCallNotAllowed",
+          "pass": true
+        },
+        {
+          "leaf": "25 approve(address,uint256) @ 3Crv",
+          "check": "value on send",
+          "expected": "Accepted",
+          "actual": "Accepted",
+          "pass": true
+        },
+        {
+          "leaf": "26 deposit(uint256) @ Curve 3pool gauge",
+          "check": "delegatecall on send-only",
+          "expected": "DelegateCallNotAllowed",
+          "actual": "DelegateCallNotAllowed",
+          "pass": true
+        },
+        {
+          "leaf": "26 deposit(uint256) @ Curve 3pool gauge",
+          "check": "value on send",
+          "expected": "Accepted",
+          "actual": "Accepted",
+          "pass": true
+        },
+        {
+          "leaf": "27 withdraw(uint256) @ Curve 3pool gauge",
+          "check": "delegatecall on send-only",
+          "expected": "DelegateCallNotAllowed",
+          "actual": "DelegateCallNotAllowed",
+          "pass": true
+        },
+        {
+          "leaf": "27 withdraw(uint256) @ Curve 3pool gauge",
+          "check": "value on send",
+          "expected": "Accepted",
+          "actual": "Accepted",
+          "pass": true
+        },
+        {
+          "leaf": "28 mint(address) @ Curve CRV minter",
+          "check": "delegatecall on send-only",
+          "expected": "DelegateCallNotAllowed",
+          "actual": "DelegateCallNotAllowed",
+          "pass": true
+        },
+        {
+          "leaf": "28 mint(address) @ Curve CRV minter",
+          "check": "value on send",
+          "expected": "Accepted",
+          "actual": "Accepted",
+          "pass": true
+        },
+        {
+          "leaf": "29 requestWithdraw(uint256) @ EtherFi withdrawal assistant",
+          "check": "value on delegatecall-only",
+          "expected": "SendNotAllowed",
+          "actual": "SendNotAllowed",
+          "pass": true
+        },
+        {
+          "leaf": "30 claimWithdraw(uint256) @ EtherFi withdrawal assistant",
+          "check": "value on delegatecall-only",
+          "expected": "SendNotAllowed",
+          "actual": "SendNotAllowed",
+          "pass": true
+        }
+      ]
+    },
+    {
+      "suite": "undeclared",
+      "total": 62,
+      "failures": 0,
+      "statuses": {
+        "FunctionNotAllowed": 31,
+        "TargetAddressNotAllowed": 31
+      },
+      "rows": [
+        {
+          "leaf": "0 approve(address,uint256) @ USDC",
+          "check": "undeclared selector on declared target",
+          "expected": "FunctionNotAllowed",
+          "actual": "FunctionNotAllowed",
+          "pass": true
+        },
+        {
+          "leaf": "0 approve(address,uint256) @ USDC",
+          "check": "declared selector on undeclared target",
+          "expected": "TargetAddressNotAllowed",
+          "actual": "TargetAddressNotAllowed",
+          "pass": true
+        },
+        {
+          "leaf": "1 deposit(uint256,address) @ kpk_USDC_Prime (Morpho vault)",
+          "check": "undeclared selector on declared target",
+          "expected": "FunctionNotAllowed",
+          "actual": "FunctionNotAllowed",
+          "pass": true
+        },
+        {
+          "leaf": "1 deposit(uint256,address) @ kpk_USDC_Prime (Morpho vault)",
+          "check": "declared selector on undeclared target",
+          "expected": "TargetAddressNotAllowed",
+          "actual": "TargetAddressNotAllowed",
+          "pass": true
+        },
+        {
+          "leaf": "2 redeem(uint256,address,address) @ kpk_USDC_Prime (Morpho vault)",
+          "check": "undeclared selector on declared target",
+          "expected": "FunctionNotAllowed",
+          "actual": "FunctionNotAllowed",
+          "pass": true
+        },
+        {
+          "leaf": "2 redeem(uint256,address,address) @ kpk_USDC_Prime (Morpho vault)",
+          "check": "declared selector on undeclared target",
+          "expected": "TargetAddressNotAllowed",
+          "actual": "TargetAddressNotAllowed",
+          "pass": true
+        },
+        {
+          "leaf": "3 withdraw(uint256,address,address) @ kpk_USDC_Prime (Morpho vault)",
+          "check": "undeclared selector on declared target",
+          "expected": "FunctionNotAllowed",
+          "actual": "FunctionNotAllowed",
+          "pass": true
+        },
+        {
+          "leaf": "3 withdraw(uint256,address,address) @ kpk_USDC_Prime (Morpho vault)",
+          "check": "declared selector on undeclared target",
+          "expected": "TargetAddressNotAllowed",
+          "actual": "TargetAddressNotAllowed",
+          "pass": true
+        },
+        {
+          "leaf": "4 approve(address,uint256) @ WETH",
+          "check": "undeclared selector on declared target",
+          "expected": "FunctionNotAllowed",
+          "actual": "FunctionNotAllowed",
+          "pass": true
+        },
+        {
+          "leaf": "4 approve(address,uint256) @ WETH",
+          "check": "declared selector on undeclared target",
+          "expected": "TargetAddressNotAllowed",
+          "actual": "TargetAddressNotAllowed",
+          "pass": true
+        },
+        {
+          "leaf": "5 supply(address,uint256,address,uint16) @ Aave V3 Pool",
+          "check": "undeclared selector on declared target",
+          "expected": "FunctionNotAllowed",
+          "actual": "FunctionNotAllowed",
+          "pass": true
+        },
+        {
+          "leaf": "5 supply(address,uint256,address,uint16) @ Aave V3 Pool",
+          "check": "declared selector on undeclared target",
+          "expected": "TargetAddressNotAllowed",
+          "actual": "TargetAddressNotAllowed",
+          "pass": true
+        },
+        {
+          "leaf": "6 withdraw(address,uint256,address) @ Aave V3 Pool",
+          "check": "undeclared selector on declared target",
+          "expected": "FunctionNotAllowed",
+          "actual": "FunctionNotAllowed",
+          "pass": true
+        },
+        {
+          "leaf": "6 withdraw(address,uint256,address) @ Aave V3 Pool",
+          "check": "declared selector on undeclared target",
+          "expected": "TargetAddressNotAllowed",
+          "actual": "TargetAddressNotAllowed",
+          "pass": true
+        },
+        {
+          "leaf": "7 approve(address,uint256) @ USDC",
+          "check": "undeclared selector on declared target",
+          "expected": "FunctionNotAllowed",
+          "actual": "FunctionNotAllowed",
+          "pass": true
+        },
+        {
+          "leaf": "7 approve(address,uint256) @ USDC",
+          "check": "declared selector on undeclared target",
+          "expected": "TargetAddressNotAllowed",
+          "actual": "TargetAddressNotAllowed",
+          "pass": true
+        },
+        {
+          "leaf": "8 borrow(address,uint256,uint256,uint16,address) @ Aave V3 Pool",
+          "check": "undeclared selector on declared target",
+          "expected": "FunctionNotAllowed",
+          "actual": "FunctionNotAllowed",
+          "pass": true
+        },
+        {
+          "leaf": "8 borrow(address,uint256,uint256,uint16,address) @ Aave V3 Pool",
+          "check": "declared selector on undeclared target",
+          "expected": "TargetAddressNotAllowed",
+          "actual": "TargetAddressNotAllowed",
+          "pass": true
+        },
+        {
+          "leaf": "9 repay(address,uint256,uint256,address) @ Aave V3 Pool",
+          "check": "undeclared selector on declared target",
+          "expected": "FunctionNotAllowed",
+          "actual": "FunctionNotAllowed",
+          "pass": true
+        },
+        {
+          "leaf": "9 repay(address,uint256,uint256,address) @ Aave V3 Pool",
+          "check": "declared selector on undeclared target",
+          "expected": "TargetAddressNotAllowed",
+          "actual": "TargetAddressNotAllowed",
+          "pass": true
+        },
+        {
+          "leaf": "10 approve(address,uint256) @ USDC",
+          "check": "undeclared selector on declared target",
+          "expected": "FunctionNotAllowed",
+          "actual": "FunctionNotAllowed",
+          "pass": true
+        },
+        {
+          "leaf": "10 approve(address,uint256) @ USDC",
+          "check": "declared selector on undeclared target",
+          "expected": "TargetAddressNotAllowed",
+          "actual": "TargetAddressNotAllowed",
+          "pass": true
+        },
+        {
+          "leaf": "11 approve(address,uint256) @ WETH",
+          "check": "undeclared selector on declared target",
+          "expected": "FunctionNotAllowed",
+          "actual": "FunctionNotAllowed",
+          "pass": true
+        },
+        {
+          "leaf": "11 approve(address,uint256) @ WETH",
+          "check": "declared selector on undeclared target",
+          "expected": "TargetAddressNotAllowed",
+          "actual": "TargetAddressNotAllowed",
+          "pass": true
+        },
+        {
+          "leaf": "12 exactInputSingle((address,address,uint24,address,uint256,uint256,uint160)) @ Uniswap SwapRouter02",
+          "check": "undeclared selector on declared target",
+          "expected": "FunctionNotAllowed",
+          "actual": "FunctionNotAllowed",
+          "pass": true
+        },
+        {
+          "leaf": "12 exactInputSingle((address,address,uint24,address,uint256,uint256,uint160)) @ Uniswap SwapRouter02",
+          "check": "declared selector on undeclared target",
+          "expected": "TargetAddressNotAllowed",
+          "actual": "TargetAddressNotAllowed",
+          "pass": true
+        },
+        {
+          "leaf": "13 exactInputSingle((address,address,uint24,address,uint256,uint256,uint160)) @ Uniswap SwapRouter02",
+          "check": "undeclared selector on declared target",
+          "expected": "FunctionNotAllowed",
+          "actual": "FunctionNotAllowed",
+          "pass": true
+        },
+        {
+          "leaf": "13 exactInputSingle((address,address,uint24,address,uint256,uint256,uint160)) @ Uniswap SwapRouter02",
+          "check": "declared selector on undeclared target",
+          "expected": "TargetAddressNotAllowed",
+          "actual": "TargetAddressNotAllowed",
+          "pass": true
+        },
+        {
+          "leaf": "14 approve(address,uint256) @ USDC",
+          "check": "undeclared selector on declared target",
+          "expected": "FunctionNotAllowed",
+          "actual": "FunctionNotAllowed",
+          "pass": true
+        },
+        {
+          "leaf": "14 approve(address,uint256) @ USDC",
+          "check": "declared selector on undeclared target",
+          "expected": "TargetAddressNotAllowed",
+          "actual": "TargetAddressNotAllowed",
+          "pass": true
+        },
+        {
+          "leaf": "15 approve(address,uint256) @ WETH",
+          "check": "undeclared selector on declared target",
+          "expected": "FunctionNotAllowed",
+          "actual": "FunctionNotAllowed",
+          "pass": true
+        },
+        {
+          "leaf": "15 approve(address,uint256) @ WETH",
+          "check": "declared selector on undeclared target",
+          "expected": "TargetAddressNotAllowed",
+          "actual": "TargetAddressNotAllowed",
+          "pass": true
+        },
+        {
+          "leaf": "16 mint((address,address,uint24,int24,int24,uint256,uint256,uint256,uint256,address,uint256)) @ Uniswap V3 NonfungiblePositionManager",
+          "check": "undeclared selector on declared target",
+          "expected": "FunctionNotAllowed",
+          "actual": "FunctionNotAllowed",
+          "pass": true
+        },
+        {
+          "leaf": "16 mint((address,address,uint24,int24,int24,uint256,uint256,uint256,uint256,address,uint256)) @ Uniswap V3 NonfungiblePositionManager",
+          "check": "declared selector on undeclared target",
+          "expected": "TargetAddressNotAllowed",
+          "actual": "TargetAddressNotAllowed",
+          "pass": true
+        },
+        {
+          "leaf": "17 increaseLiquidity((uint256,uint256,uint256,uint256,uint256,uint256)) @ Uniswap V3 NonfungiblePositionManager",
+          "check": "undeclared selector on declared target",
+          "expected": "FunctionNotAllowed",
+          "actual": "FunctionNotAllowed",
+          "pass": true
+        },
+        {
+          "leaf": "17 increaseLiquidity((uint256,uint256,uint256,uint256,uint256,uint256)) @ Uniswap V3 NonfungiblePositionManager",
+          "check": "declared selector on undeclared target",
+          "expected": "TargetAddressNotAllowed",
+          "actual": "TargetAddressNotAllowed",
+          "pass": true
+        },
+        {
+          "leaf": "18 decreaseLiquidity((uint256,uint128,uint256,uint256,uint256)) @ Uniswap V3 NonfungiblePositionManager",
+          "check": "undeclared selector on declared target",
+          "expected": "FunctionNotAllowed",
+          "actual": "FunctionNotAllowed",
+          "pass": true
+        },
+        {
+          "leaf": "18 decreaseLiquidity((uint256,uint128,uint256,uint256,uint256)) @ Uniswap V3 NonfungiblePositionManager",
+          "check": "declared selector on undeclared target",
+          "expected": "TargetAddressNotAllowed",
+          "actual": "TargetAddressNotAllowed",
+          "pass": true
+        },
+        {
+          "leaf": "19 collect((uint256,address,uint128,uint128)) @ Uniswap V3 NonfungiblePositionManager",
+          "check": "undeclared selector on declared target",
+          "expected": "FunctionNotAllowed",
+          "actual": "FunctionNotAllowed",
+          "pass": true
+        },
+        {
+          "leaf": "19 collect((uint256,address,uint128,uint128)) @ Uniswap V3 NonfungiblePositionManager",
+          "check": "declared selector on undeclared target",
+          "expected": "TargetAddressNotAllowed",
+          "actual": "TargetAddressNotAllowed",
+          "pass": true
+        },
+        {
+          "leaf": "20 approve(address,uint256) @ DAI",
+          "check": "undeclared selector on declared target",
+          "expected": "FunctionNotAllowed",
+          "actual": "FunctionNotAllowed",
+          "pass": true
+        },
+        {
+          "leaf": "20 approve(address,uint256) @ DAI",
+          "check": "declared selector on undeclared target",
+          "expected": "TargetAddressNotAllowed",
+          "actual": "TargetAddressNotAllowed",
+          "pass": true
+        },
+        {
+          "leaf": "21 approve(address,uint256) @ USDC",
+          "check": "undeclared selector on declared target",
+          "expected": "FunctionNotAllowed",
+          "actual": "FunctionNotAllowed",
+          "pass": true
+        },
+        {
+          "leaf": "21 approve(address,uint256) @ USDC",
+          "check": "declared selector on undeclared target",
+          "expected": "TargetAddressNotAllowed",
+          "actual": "TargetAddressNotAllowed",
+          "pass": true
+        },
+        {
+          "leaf": "22 approve(address,uint256) @ USDT",
+          "check": "undeclared selector on declared target",
+          "expected": "FunctionNotAllowed",
+          "actual": "FunctionNotAllowed",
+          "pass": true
+        },
+        {
+          "leaf": "22 approve(address,uint256) @ USDT",
+          "check": "declared selector on undeclared target",
+          "expected": "TargetAddressNotAllowed",
+          "actual": "TargetAddressNotAllowed",
+          "pass": true
+        },
+        {
+          "leaf": "23 add_liquidity(uint256[3],uint256) @ Curve 3pool",
+          "check": "undeclared selector on declared target",
+          "expected": "FunctionNotAllowed",
+          "actual": "FunctionNotAllowed",
+          "pass": true
+        },
+        {
+          "leaf": "23 add_liquidity(uint256[3],uint256) @ Curve 3pool",
+          "check": "declared selector on undeclared target",
+          "expected": "TargetAddressNotAllowed",
+          "actual": "TargetAddressNotAllowed",
+          "pass": true
+        },
+        {
+          "leaf": "24 remove_liquidity(uint256,uint256[3]) @ Curve 3pool",
+          "check": "undeclared selector on declared target",
+          "expected": "FunctionNotAllowed",
+          "actual": "FunctionNotAllowed",
+          "pass": true
+        },
+        {
+          "leaf": "24 remove_liquidity(uint256,uint256[3]) @ Curve 3pool",
+          "check": "declared selector on undeclared target",
+          "expected": "TargetAddressNotAllowed",
+          "actual": "TargetAddressNotAllowed",
+          "pass": true
+        },
+        {
+          "leaf": "25 approve(address,uint256) @ 3Crv",
+          "check": "undeclared selector on declared target",
+          "expected": "FunctionNotAllowed",
+          "actual": "FunctionNotAllowed",
+          "pass": true
+        },
+        {
+          "leaf": "25 approve(address,uint256) @ 3Crv",
+          "check": "declared selector on undeclared target",
+          "expected": "TargetAddressNotAllowed",
+          "actual": "TargetAddressNotAllowed",
+          "pass": true
+        },
+        {
+          "leaf": "26 deposit(uint256) @ Curve 3pool gauge",
+          "check": "undeclared selector on declared target",
+          "expected": "FunctionNotAllowed",
+          "actual": "FunctionNotAllowed",
+          "pass": true
+        },
+        {
+          "leaf": "26 deposit(uint256) @ Curve 3pool gauge",
+          "check": "declared selector on undeclared target",
+          "expected": "TargetAddressNotAllowed",
+          "actual": "TargetAddressNotAllowed",
+          "pass": true
+        },
+        {
+          "leaf": "27 withdraw(uint256) @ Curve 3pool gauge",
+          "check": "undeclared selector on declared target",
+          "expected": "FunctionNotAllowed",
+          "actual": "FunctionNotAllowed",
+          "pass": true
+        },
+        {
+          "leaf": "27 withdraw(uint256) @ Curve 3pool gauge",
+          "check": "declared selector on undeclared target",
+          "expected": "TargetAddressNotAllowed",
+          "actual": "TargetAddressNotAllowed",
+          "pass": true
+        },
+        {
+          "leaf": "28 mint(address) @ Curve CRV minter",
+          "check": "undeclared selector on declared target",
+          "expected": "FunctionNotAllowed",
+          "actual": "FunctionNotAllowed",
+          "pass": true
+        },
+        {
+          "leaf": "28 mint(address) @ Curve CRV minter",
+          "check": "declared selector on undeclared target",
+          "expected": "TargetAddressNotAllowed",
+          "actual": "TargetAddressNotAllowed",
+          "pass": true
+        },
+        {
+          "leaf": "29 requestWithdraw(uint256) @ EtherFi withdrawal assistant",
+          "check": "undeclared selector on declared target",
+          "expected": "FunctionNotAllowed",
+          "actual": "FunctionNotAllowed",
+          "pass": true
+        },
+        {
+          "leaf": "29 requestWithdraw(uint256) @ EtherFi withdrawal assistant",
+          "check": "declared selector on undeclared target",
+          "expected": "TargetAddressNotAllowed",
+          "actual": "TargetAddressNotAllowed",
+          "pass": true
+        },
+        {
+          "leaf": "30 claimWithdraw(uint256) @ EtherFi withdrawal assistant",
+          "check": "undeclared selector on declared target",
+          "expected": "FunctionNotAllowed",
+          "actual": "FunctionNotAllowed",
+          "pass": true
+        },
+        {
+          "leaf": "30 claimWithdraw(uint256) @ EtherFi withdrawal assistant",
+          "check": "declared selector on undeclared target",
+          "expected": "TargetAddressNotAllowed",
+          "actual": "TargetAddressNotAllowed",
+          "pass": true
+        }
+      ]
+    },
+    {
+      "suite": "removal",
+      "total": 20,
+      "failures": 0,
+      "statuses": {
+        "Accepted": 13,
+        "OrViolation": 1,
+        "ParameterNotAllowed": 2,
+        "TargetAddressNotAllowed": 4
+      },
+      "rows": [
+        {
+          "leaf": "0 approve(address,uint256) @ USDC",
+          "check": "positive",
+          "expected": "Accepted",
+          "actual": "Accepted",
+          "pass": true
+        },
+        {
+          "leaf": "1 deposit(uint256,address) @ kpk_USDC_Prime (Morpho vault)",
+          "check": "positive",
+          "expected": "Accepted",
+          "actual": "Accepted",
+          "pass": true
+        },
+        {
+          "leaf": "2 redeem(uint256,address,address) @ kpk_USDC_Prime (Morpho vault)",
+          "check": "positive",
+          "expected": "Accepted",
+          "actual": "Accepted",
+          "pass": true
+        },
+        {
+          "leaf": "3 withdraw(uint256,address,address) @ kpk_USDC_Prime (Morpho vault)",
+          "check": "positive",
+          "expected": "Accepted",
+          "actual": "Accepted",
+          "pass": true
+        },
+        {
+          "leaf": "4 approve(address,uint256) @ DAI",
+          "check": "positive",
+          "expected": "Accepted",
+          "actual": "Accepted",
+          "pass": true
+        },
+        {
+          "leaf": "5 approve(address,uint256) @ USDC",
+          "check": "positive",
+          "expected": "Accepted",
+          "actual": "Accepted",
+          "pass": true
+        },
+        {
+          "leaf": "6 approve(address,uint256) @ USDT",
+          "check": "positive",
+          "expected": "Accepted",
+          "actual": "Accepted",
+          "pass": true
+        },
+        {
+          "leaf": "7 add_liquidity(uint256[3],uint256) @ Curve 3pool",
+          "check": "positive",
+          "expected": "Accepted",
+          "actual": "Accepted",
+          "pass": true
+        },
+        {
+          "leaf": "8 remove_liquidity(uint256,uint256[3]) @ Curve 3pool",
+          "check": "positive",
+          "expected": "Accepted",
+          "actual": "Accepted",
+          "pass": true
+        },
+        {
+          "leaf": "USDC approve",
+          "check": "USDC approve(DEAD) before removal",
+          "expected": "OrViolation",
+          "actual": "OrViolation",
+          "pass": true
+        },
+        {
+          "leaf": "0 approve(address,uint256) @ USDC",
+          "check": "positive",
+          "expected": "Accepted",
+          "actual": "Accepted",
+          "pass": true
+        },
+        {
+          "leaf": "1 deposit(uint256,address) @ kpk_USDC_Prime (Morpho vault)",
+          "check": "positive",
+          "expected": "Accepted",
+          "actual": "Accepted",
+          "pass": true
+        },
+        {
+          "leaf": "2 redeem(uint256,address,address) @ kpk_USDC_Prime (Morpho vault)",
+          "check": "positive",
+          "expected": "Accepted",
+          "actual": "Accepted",
+          "pass": true
+        },
+        {
+          "leaf": "3 withdraw(uint256,address,address) @ kpk_USDC_Prime (Morpho vault)",
+          "check": "positive",
+          "expected": "Accepted",
+          "actual": "Accepted",
+          "pass": true
+        },
+        {
+          "leaf": "removed 0 approve(address,uint256) @ DAI",
+          "check": "removed leaf rejected",
+          "expected": "TargetAddressNotAllowed",
+          "actual": "TargetAddressNotAllowed",
+          "pass": true
+        },
+        {
+          "leaf": "removed 1 approve(address,uint256) @ USDC",
+          "check": "removed leaf rejected",
+          "expected": "ParameterNotAllowed",
+          "actual": "ParameterNotAllowed",
+          "pass": true
+        },
+        {
+          "leaf": "removed 2 approve(address,uint256) @ USDT",
+          "check": "removed leaf rejected",
+          "expected": "TargetAddressNotAllowed",
+          "actual": "TargetAddressNotAllowed",
+          "pass": true
+        },
+        {
+          "leaf": "removed 3 add_liquidity(uint256[3],uint256) @ Curve 3pool",
+          "check": "removed leaf rejected",
+          "expected": "TargetAddressNotAllowed",
+          "actual": "TargetAddressNotAllowed",
+          "pass": true
+        },
+        {
+          "leaf": "removed 4 remove_liquidity(uint256,uint256[3]) @ Curve 3pool",
+          "check": "removed leaf rejected",
+          "expected": "TargetAddressNotAllowed",
+          "actual": "TargetAddressNotAllowed",
+          "pass": true
+        },
+        {
+          "leaf": "USDC approve",
+          "check": "USDC approve(DEAD) after removal",
+          "expected": "ParameterNotAllowed",
+          "actual": "ParameterNotAllowed",
+          "pass": true
+        }
+      ]
+    }
+  ]
+}

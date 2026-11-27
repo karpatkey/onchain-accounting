@@ -1,0 +1,8 @@
+{
+  "name": "defikit-diff",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "defi-kit": "^2.27.4"
+  }
+}

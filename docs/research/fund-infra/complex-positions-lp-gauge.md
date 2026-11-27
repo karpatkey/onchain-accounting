@@ -42,11 +42,11 @@ Files: `poc/fundconfig/modules/{UniswapV3LpModule,CurvePoolModule,CurveGaugeModu
 ### Single-Accounting limitation
 - `Accounting` (frozen) is single-valued. A Curve position is therefore two positions (pool module and gauge module), each with its own coordinate and removal guard. A combined per-product guard is not expressible in the current interface.
 
-## NAV staleness with CRV held (open finding, not resolved)
+## NAV staleness with CRV held (resolved: test artifact)
 
-- `fundNav` returns `stale = true` whenever CRV is in the Safe (wallet after claim, or accrued rewards). Trace: `calculateValue([CRV], [1.1e12], USDC)` on NAV proxy `0x54EaD2A1dB7456cA917675Ea8908ec8A997c6214` returns `(0, true)`. The feed path resolves to Chainlink CRV/USD `0xCd627aA160A6fA45Eb793D19Ef54f5062F20f33f`, whose underlying round has `updatedAt = 1795702986`.
-- The fork timestamp is about `1795703639`, so the feed is about 650 seconds old. The registered heartbeat is `86400` (`script/config/nav-config/assets-and-price-feeds/1.json` lines 369-374; `script/config/price-feeds-catalogue.json` line 183). By configuration, the feed should not be stale. The root cause of the `(0, true)` result is not determined from the trace; the pricing path is `ceaf249c` in the Prices implementation `0xaBCC2526a6ebCFE637EB2B660410adff60eCFB73`.
-- Consequence for tests: the enter/exit test asserts NAV exactly, but has no warp, so no CRV accrues. The claim test has no NAV assertion. Do not reintroduce NAV assertions after a claim until the CRV pricing result is explained.
+- `fundNav` reported `stale = true` after the CRV claim: `calculateValue([CRV], …)` on NAV proxy `0x54EaD2A1dB7456cA917675Ea8908ec8A997c6214` returns `(0, true)`.
+- Cause: `test_CRV_claimViaMinter` warps `+1 days` to accrue CRV. The CRV/USD feed (`0xCd627a…`, heartbeat 86,400 s) was 636 s old at the fork block, so after the warp it is 86,400 + 636 s old with no new round on the fork, and is correctly stale. Not a pricing defect; see [findings-curve-crv.md](findings-curve-crv.md).
+- To assert NAV after a claim, mock a fresh `latestRoundData` round after the warp, or roll the fork forward instead of warping.
 
 ## Test status
 

@@ -9,7 +9,7 @@
     "evm_version": "cancun"
   },
   "baseline": "HEAD f57a7c8b, poc/fundconfig/FundConfig.sol as committed",
-  "after": "uncommitted worktree edit to poc/fundconfig/FundConfig.sol (not committed)",
+  "after": "commit f15b767d, poc/fundconfig/FundConfig.sol",
   "gas_unit": "vm.lastCallGas().gasTotalUsed of a single addPosition call, unless noted",
   "commands": {
     "profile": "FOUNDRY_PROFILE=slow forge test --match-path 'test/poc/fundconfig/FundConfigGas.fork.t.sol' -vv",

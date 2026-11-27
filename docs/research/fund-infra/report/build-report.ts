@@ -1,0 +1,197 @@
+// Builds docs/research/fund-infra/report/index.html from the measured gas JSON files next to it.
+// Run: bun docs/research/fund-infra/report/build-report.ts
+// Every number in the page comes from gas-profile.json / gas-complex-*.json; nothing is typed in by hand.
+import { readdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
+import { join } from "node:path";
+
+const dir = join(import.meta.dir, "..");
+// Shape written by test/poc/fundconfig/FundConfigGas.fork.t.sol runs (docs/research/fund-infra/gas-profile.json).
+type StepEntry = { total: number; children: Record<string, { calls: number; gas: number }>; fundconfig_residual: number };
+type Phase = "before" | "after";
+type GasProfile = {
+  fork_block: number;
+  toolchain: { forge: string; solc: string };
+  per_step: Record<Phase, Record<string, StepEntry>>;
+  scaling: { before: Record<string, number>; after: Record<string, number>; delta_before: Record<string, number>; delta_after: Record<string, number> };
+  t6_gap_decomposition: Record<
+    "gap_first_minus_second_AB" | "dedupe_allCooled_first_minus_second" | "warm_access_second_AB_minus_secondCooled" | "first_fund_cold_penalty_allCooled_minus_AB_first",
+    Record<Phase, number>
+  >;
+};
+// Our own generated file, read once; a wrong shape fails loudly on first property access.
+const profile = JSON.parse(readFileSync(join(dir, "gas-profile.json"), "utf8")) as GasProfile;
+
+type Row = { type: string; step: string; gas: number };
+const isRow = (r: unknown): r is Row =>
+  !!r && typeof r === "object" && "type" in r && "step" in r && "gas" in r && typeof r.gas === "number";
+const complex: { file: string; rows: Row[] }[] = readdirSync(dir)
+  .filter((f) => /^gas-complex-.*\.json$/.test(f))
+  .map((f) => {
+    const raw: unknown = JSON.parse(readFileSync(join(dir, f), "utf8"));
+    const list = Array.isArray(raw) ? raw : raw && typeof raw === "object" && "rows" in raw && Array.isArray(raw.rows) ? raw.rows : [];
+    return { file: f, rows: list.filter(isRow) };
+  });
+
+const fmt = (n: number) => n.toLocaleString("en-US");
+const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
+
+const SEGMENTS: [string, string][] = [
+  ["registry.moduleOf", "#94a3b8"],
+  ["module.validate", "#64748b"],
+  ["module.permissions", "#f59e0b"],
+  ["roles.scopeTarget", "#38bdf8"],
+  ["roles.scopeFunction", "#2563eb"],
+  ["fundconfig_residual", "#e11d48"],
+];
+const segLabel: Record<string, string> = {
+  "registry.moduleOf": "registry lookup",
+  "module.validate": "module.validate",
+  "module.permissions": "module.permissions",
+  "roles.scopeTarget": "Roles scopeTarget",
+  "roles.scopeFunction": "Roles scopeFunction",
+  fundconfig_residual: "FundConfig storage + overhead",
+};
+
+function stackedBars(): string {
+  const rows: { label: string; entry: StepEntry }[] = [];
+  for (const call of ["fundA.morpho", "fundA.aave", "fundB.morpho", "fundB.aave"])
+    for (const phase of ["before", "after"] as const) rows.push({ label: `${call} · ${phase}`, entry: profile.per_step[phase][call] });
+  const max = Math.max(...rows.map((r) => r.entry.total));
+  const W = 900, left = 170, barH = 22, gap = 10, top = 10;
+  const scale = (W - left - 90) / max;
+  let y = top, out = "";
+  for (const r of rows) {
+    let x = left;
+    out += `<text x="${left - 8}" y="${y + 15}" text-anchor="end" class="lbl">${esc(r.label)}</text>`;
+    for (const [k, color] of SEGMENTS) {
+      const g = k === "fundconfig_residual" ? r.entry.fundconfig_residual : (r.entry.children[k]?.gas ?? 0);
+      const w = g * scale;
+      out += `<rect x="${x}" y="${y}" width="${w}" height="${barH}" fill="${color}"><title>${segLabel[k]}: ${fmt(g)} gas</title></rect>`;
+      x += w;
+    }
+    out += `<text x="${x + 6}" y="${y + 15}" class="val">${fmt(r.entry.total)}</text>`;
+    y += barH + gap;
+  }
+  // Legend in two rows of three so the longest label never runs off the 900-wide canvas.
+  const ly = y + 8;
+  SEGMENTS.forEach(([k, c], i) => {
+    const lx = left + (i % 3) * 230, row = ly + Math.floor(i / 3) * 20;
+    out += `<rect x="${lx}" y="${row}" width="12" height="12" fill="${c}"/><text x="${lx + 16}" y="${row + 11}" class="lbl">${segLabel[k]}</text>`;
+  });
+  return `<svg viewBox="0 0 ${W} ${ly + 44}" role="img">${out}</svg>`;
+}
+
+function scalingChart(): string {
+  const s = profile.scaling;
+  const ns = Object.keys(s.before).map((k) => Number(k.slice(1)));
+  const W = 900, H = 340, L = 80, B = 40, T = 30, R = 20;
+  const max = Math.max(...Object.values<number>(s.before));
+  const x = (n: number) => L + ((n - 1) / (ns.length - 1)) * (W - L - R);
+  const y = (g: number) => T + (1 - g / max) * (H - T - B);
+  let out = "";
+  for (let i = 0; i <= 5; i++) {
+    const g = (max / 5) * i;
+    out += `<line x1="${L}" x2="${W - R}" y1="${y(g)}" y2="${y(g)}" class="grid"/><text x="${L - 8}" y="${y(g) + 4}" text-anchor="end" class="lbl">${(g / 1e6).toFixed(1)}M</text>`;
+  }
+  for (const n of ns) out += `<text x="${x(n)}" y="${H - B + 18}" text-anchor="middle" class="lbl">N=${n}</text>`;
+  for (const [phase, color] of [["before", "#e11d48"], ["after", "#16a34a"]] as const) {
+    const pts = ns.map((n) => `${x(n)},${y(s[phase][`N${n}`])}`).join(" ");
+    out += `<polyline points="${pts}" fill="none" stroke="${color}" stroke-width="2.5"/>`;
+    for (const n of ns) out += `<circle cx="${x(n)}" cy="${y(s[phase][`N${n}`])}" r="3.5" fill="${color}"><title>${phase} N=${n}: ${fmt(s[phase][`N${n}`])} gas</title></circle>`;
+    const last = s[phase][`N${ns.at(-1)}`];
+    out += `<text x="${x(ns.at(-1)!) - 6}" y="${y(last) - 8}" text-anchor="end" class="val" fill="${color}">${phase}: ${fmt(last)}</text>`;
+  }
+  return `<svg viewBox="0 0 ${W} ${H}" role="img">${out}</svg>`;
+}
+
+function gapWaterfall(): string {
+  const d = profile.t6_gap_decomposition;
+  const items: [string, number][] = [
+    ["Roles condition-tree dedupe (all cold)", d.dedupe_allCooled_first_minus_second.after],
+    ["Warm access on fund B (saves)", -d.warm_access_second_AB_minus_secondCooled.after],
+    ["Cold-first penalty on fund A", -d.first_fund_cold_penalty_allCooled_minus_AB_first.after],
+  ];
+  const total = d.gap_first_minus_second_AB.after;
+  const W = 900, L = 260, barH = 26, gap = 12;
+  const max = Math.max(total, items[0][1] + Math.max(0, items[1][1])) * 1.15;
+  const sx = (g: number) => L + (g / max) * (W - L - 120);
+  let acc = 0, y = 10, out = "";
+  for (const [label, v] of items) {
+    const a = sx(Math.min(acc, acc + v)), b = sx(Math.max(acc, acc + v));
+    out += `<text x="${L - 8}" y="${y + 17}" text-anchor="end" class="lbl">${esc(label)}</text><rect x="${a}" y="${y}" width="${b - a}" height="${barH}" fill="${v >= 0 ? "#2563eb" : "#f59e0b"}"/><text x="${b + 6}" y="${y + 17}" class="val">${v >= 0 ? "+" : "−"}${fmt(Math.abs(v))}</text>`;
+    acc += v;
+    y += barH + gap;
+  }
+  out += `<text x="${L - 8}" y="${y + 17}" text-anchor="end" class="lbl"><tspan font-weight="600">Fund B cheaper by</tspan></text><rect x="${sx(0)}" y="${y}" width="${sx(total) - sx(0)}" height="${barH}" fill="#16a34a"/><text x="${sx(total) + 6}" y="${y + 17}" class="val">${fmt(total)}</text>`;
+  return `<svg viewBox="0 0 ${W} ${y + barH + 10}" role="img">${out}</svg>`;
+}
+
+function complexSection(): string {
+  if (complex.length === 0) return `<p class="muted">No complex-position gas files yet.</p>`;
+  return complex
+    .map(({ file, rows }) => {
+      const max = Math.max(...rows.map((r) => r.gas));
+      const W = 900, L = 330, barH = 20, gap = 8;
+      let y = 6, out = "";
+      for (const r of rows) {
+        const w = (r.gas / max) * (W - L - 100);
+        out += `<text x="${L - 8}" y="${y + 14}" text-anchor="end" class="lbl">${esc(`${r.type} · ${r.step}`)}</text><rect x="${L}" y="${y}" width="${w}" height="${barH}" fill="#7c3aed"/><text x="${L + w + 6}" y="${y + 14}" class="val">${fmt(r.gas)}</text>`;
+        y += barH + gap;
+      }
+      return `<h3><code>${esc(file)}</code></h3><svg viewBox="0 0 ${W} ${y + 4}" role="img">${out}</svg>`;
+    })
+    .join("\n");
+}
+
+const architecture = `<svg viewBox="0 0 940 330" role="img" class="arch">
+  <defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#475569"/></marker></defs>
+  <text x="20" y="22" class="h">Shared (immutable)</text>
+  <rect x="20" y="34" width="250" height="56" rx="8" class="box"/><text x="145" y="58" text-anchor="middle" class="t">ModuleRegistry</text><text x="145" y="76" text-anchor="middle" class="s">security-council gated, write-once</text>
+  <rect x="20" y="106" width="250" height="74" rx="8" class="box"/><text x="145" y="130" text-anchor="middle" class="t">Position modules</text><text x="145" y="148" text-anchor="middle" class="s">permissions(instance) → leaves</text><text x="145" y="166" text-anchor="middle" class="s">accounting(instance) → adapter</text>
+  <rect x="20" y="196" width="250" height="56" rx="8" class="box"/><text x="145" y="220" text-anchor="middle" class="t">Balance adapters + NAVCalculator</text><text x="145" y="238" text-anchor="middle" class="s">this repo, unchanged</text>
+  <text x="340" y="22" class="h">Per fund</text>
+  <rect x="340" y="80" width="230" height="110" rx="8" class="box hl"/><text x="455" y="106" text-anchor="middle" class="t">FundConfig</text><text x="455" y="126" text-anchor="middle" class="s">declared (module, instance)[]</text><text x="455" y="144" text-anchor="middle" class="s">owner of Roles, no passthrough</text><text x="455" y="162" text-anchor="middle" class="s">merge leaves → Or-trees</text><text x="455" y="180" text-anchor="middle" class="s">fundNav(quote)</text>
+  <rect x="650" y="40" width="230" height="64" rx="8" class="box"/><text x="765" y="66" text-anchor="middle" class="t">Zodiac Roles v2 clone</text><text x="765" y="86" text-anchor="middle" class="s">scopeFunction / scopeTarget</text>
+  <rect x="650" y="160" width="230" height="64" rx="8" class="box"/><text x="765" y="186" text-anchor="middle" class="t">Fund Safe (avatar)</text><text x="765" y="206" text-anchor="middle" class="s">holds every position</text>
+  <rect x="650" y="262" width="230" height="52" rx="8" class="box"/><text x="765" y="293" text-anchor="middle" class="t">Manager / bot</text>
+  <line x1="270" y1="62" x2="340" y2="110" class="ar"/><line x1="270" y1="143" x2="340" y2="135" class="ar"/>
+  <line x1="340" y1="170" x2="270" y2="222" class="ar"/><text x="300" y="214" class="s">values</text>
+  <line x1="570" y1="110" x2="650" y2="76" class="ar"/><text x="578" y="70" class="s">derived perms</text>
+  <line x1="765" y1="104" x2="765" y2="160" class="ar"/><text x="772" y="138" class="s">module</text>
+  <path d="M880,288 H905 V72 H884" fill="none" class="ar"/><text x="918" y="180" class="s" transform="rotate(-90 918 180)" text-anchor="middle">execTransactionWithRole</text>
+</svg>`;
+
+const html = `<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>FundConfig POC report</title>
+<style>
+  body{font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#0f172a;max-width:960px;margin:32px auto;padding:0 24px;background:#fff}
+  h1{font-size:26px;margin:0 0 4px} h2{font-size:19px;margin:36px 0 8px;border-bottom:1px solid #e2e8f0;padding-bottom:4px} h3{font-size:15px;margin:18px 0 6px}
+  .muted{color:#64748b} code{background:#f1f5f9;padding:1px 4px;border-radius:4px;font-size:13px}
+  table{border-collapse:collapse;width:100%;font-size:14px} th,td{border:1px solid #e2e8f0;padding:6px 8px;text-align:left} th{background:#f8fafc} td.n{text-align:right;font-variant-numeric:tabular-nums}
+  svg{width:100%;height:auto} .lbl{font-size:12px;fill:#334155} .val{font-size:12px;fill:#0f172a;font-variant-numeric:tabular-nums} .grid{stroke:#e2e8f0}
+  .arch .box{fill:#f8fafc;stroke:#94a3b8} .arch .hl{fill:#eff6ff;stroke:#2563eb;stroke-width:2} .arch .t{font-size:14px;font-weight:600;fill:#0f172a} .arch .s{font-size:12px;fill:#475569} .arch .h{font-size:13px;font-weight:600;fill:#64748b;text-transform:uppercase} .arch .ar{stroke:#475569;stroke-width:1.5;marker-end:url(#ah)}
+  .kpi{display:flex;gap:16px;margin:16px 0} .kpi div{flex:1;border:1px solid #e2e8f0;border-radius:8px;padding:12px} .kpi b{display:block;font-size:22px}
+</style></head><body>
+<h1>FundConfig POC: one declaration, derived permissions and NAV</h1>
+<p class="muted">Mainnet fork at block ${fmt(profile.fork_block)} · forge ${esc(profile.toolchain.forge)} · solc ${esc(profile.toolchain.solc)}. All numbers from <code>gas-profile.json</code>${complex.length ? " and " + complex.map((c) => `<code>${esc(c.file)}</code>`).join(", ") : ""}.</p>
+<div class="kpi">
+  <div><span class="muted">Fund A, 2 positions</span><b>${fmt(profile.per_step.after["fundA.morpho"].total + profile.per_step.after["fundA.aave"].total)}</b><span class="muted">was ${fmt(profile.per_step.before["fundA.morpho"].total + profile.per_step.before["fundA.aave"].total)} gas</span></div>
+  <div><span class="muted">Marginal position (N≥3)</span><b>~${fmt(Math.round(profile.scaling.delta_after.N7_to_N8 / 1000))}k</b><span class="muted">was ~${fmt(Math.round(profile.scaling.delta_before.N7_to_N8 / 1000))}k gas</span></div>
+  <div><span class="muted">Second identical fund saves</span><b>${fmt(profile.t6_gap_decomposition.gap_first_minus_second_AB.after)}</b><span class="muted">mostly Roles condition-tree reuse</span></div>
+</div>
+<h2>Architecture</h2>
+${architecture}
+<h2>addPosition gas, per step (before → after)</h2>
+${stackedBars()}
+<h2>Scaling: Nth position sharing one approve key</h2>
+${scalingChart()}
+<h2>Why the second fund is cheaper</h2>
+${gapWaterfall()}
+<h2>Complex position types</h2>
+${complexSection()}
+</body></html>
+`;
+
+const outPath = join(import.meta.dir, "index.html");
+writeFileSync(outPath, html);
+console.log(`wrote ${outPath}${existsSync(outPath) ? "" : " (missing?)"}`);

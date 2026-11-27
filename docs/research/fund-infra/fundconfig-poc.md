@@ -63,6 +63,19 @@ What changed in `poc/fundconfig/FundConfig.sol`: `permissions()` is computed onc
 
 Scaling (N positions on one shared key, mock vaults): the marginal cost per added position falls from about 245–255k to about 110–112k for N≥3. Total at N=8 is 2,473,051 before and 1,262,800 after.
 
+## Complex position types
+
+Detail and per-call gas: [complex-positions-debt-swap.md](complex-positions-debt-swap.md) and [complex-positions-lp-gauge.md](complex-positions-lp-gauge.md). The core (`FundConfig`, `IPositionModule`, `PermissionMerge`) was frozen while these were written, so they also test whether the interface holds.
+
+|Type|Expressible fund-agnostically?|What it stressed|Gap found|
+|---|---|---|---|
+|Aave V3 borrow|Yes: asset `EqualTo`, `onBehalfOf` `EqualToAvatar`|Debt leg (`isDebt`) in `fundNav`; approve merged with the supply module|No health-factor/LTV bound in Roles; removal guard is per asset, so a co-declared supply of the same asset blocks removing the borrow; `removePosition` 1.17M gas, unprofiled|
+|Uniswap V3 swap|Yes: `exactInputSingle` tuple, tokens pinned to the declared pool's pair, recipient `EqualToAvatar`|Tuple conditions; every swap output is a declared, accounted token|Single-hop only; slippage bound is only the caller's `amountOutMinimum`|
+|Uniswap V3 LP NFT|Yes, with a `Custom` condition: the module itself checks the Safe owns `tokenId` and it belongs to the declared pool|Permission logic living in the shared module; `Custom` ≈9.7k gas|`mint` gas unmeasured|
+|Curve pool + gauge|Yes, as two declared positions|Multi-target product under a single-`Accounting` interface|Legacy pools like 3pool report no wallet LP through `CurvePoolsMeta` (latent in `src/`, no legacy pool registered today); see [findings-curve-crv.md](findings-curve-crv.md)|
+
+Interface lessons: a per-leg accounting filter (`Accounting[]` or a leg selector) would fix both the borrow removal guard and the pool+gauge split.
+
 ## Deviations from the spec
 
 - **Instance coordinates.** Morpho instance = vault address (asset read from `vault.asset()`). Aave = one module per market, instance = underlying asset as `bytes32`. EtherFi instance = `bytes32(uint160(assistant))`.

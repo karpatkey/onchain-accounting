@@ -422,8 +422,8 @@ contract FundConfigLpGaugeForkTest is TestEnvConfigurator {
     }
 
     /// @notice CRV claim through Roles: the gauge accrues CRV while staked; `Minter.mint(gauge)` pays it to the Safe.
-    ///         NAV is not asserted here: `fundNav` values the claimed CRV stale at this block (see the doc), so this test
-    ///         checks only the permission and the transfer.
+    ///         NAV is not asserted here: the `+1 days` warp below ages the CRV/USD feed past its 86,400 s heartbeat on the
+    ///         fork, so `fundNav` correctly flags CRV stale. This test checks only the permission and the transfer.
     function test_CRV_claimViaMinter() public {
         (address safe, FundConfig fc, IRolesV2 roles) = _newFund(16);
         deal(USDC, safe, 1_000e6);

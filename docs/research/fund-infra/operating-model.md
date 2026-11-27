@@ -90,6 +90,7 @@ Under-counting is the failure mode for undeclared inflows, never over-counting: 
 - **Safe-owner paths are outside the guarantee.** Owners can enable another module, set a guard, or disable Roles. FundConfig narrows the roles-vs-accounting gap to that path; it does not close it.
 - **One accounting route per position.** Multi-leg products (pool + gauge) need two positions; the Aave borrow removal guard is per asset, so a co-declared supply of the same asset blocks removing the borrow.
 - **No risk bounds in Roles.** Conditions pin targets, assets and recipients, not amounts, LTV or slippage (beyond the caller's `amountOutMinimum`).
+- **Every non-assistant leaf allows sending ETH.** All 25 such leaves in the POC modules use `ExecutionOptions.Send`; DeFi Kit grants `None` for the same functions. A manager could attach the Safe's ETH as `value` to payable targets (SwapRouter02, the Uniswap V3 position manager); unused ETH left there is sweepable by anyone through `refundETH` [INFERENCE, not tested]. Fix: modules emit `None` unless the call needs ETH (found by the DeFi Kit diff, not yet fixed).
 - **NAV in a subscription tx.** Fits only small funds today (`nav-read-gas.md`); batching price calls would raise the ceiling (`fundconfig-poc.md` § Ideas to improve). Large funds need an async settlement or a pushed NAV.
 - **`fundNav` has no per-position failure isolation** yet, unlike `NAVCalculator`.
 - **Undeclared inflows are not counted** (see Dynamic positions).
@@ -97,4 +98,11 @@ Under-counting is the failure mode for undeclared inflows, never over-counting: 
 
 ## Validation of derived permissions
 
-See [permission-validation.md](permission-validation.md) (behavioural check of every derived leaf against the live Roles v2 mastercopy) and [defikit-diff/defikit-diff.md](defikit-diff/defikit-diff.md) (diff against what DeFi Kit grants for the same positions).
+Two independent checks, both in this branch:
+
+| Check | What it asks | Result |
+|---|---|---|
+| [permission-validation.md](permission-validation.md) (`FundConfigPermissionValidation.fork.t.sol`) | Does the live Roles v2 mastercopy enforce exactly what FundConfig derived? Generic over every leaf of the 8-position example fund: a satisfying call passes; each constrained argument mutated is rejected; undeclared selectors and targets, wrong execution options, merges and removal behave as derived | 239 checks, 0 mismatches |
+| [defikit-diff/defikit-diff.md](defikit-diff/defikit-diff.md) (`node diff.mjs`, offline) | Is FundConfig at least as strict as what DeFi Kit (today's production source) grants for the same positions? | 12 functions identical; Uniswap V3 LP stricter in FundConfig (tokenId bound by the custom check); DeFi Kit also grants Aave `setUserUseReserveAsCollateral` and `claimRewards`, which the POC modules omit; FundConfig grants `Send` where DeFi Kit grants `None` (see Limitations); no DeFi Kit recipe for the swap, Curve and EtherFi positions |
+
+The behavioural check validates enforcement against the derivation, not the derivation against intent; the DeFi Kit diff is the intent check for the overlapping protocols.

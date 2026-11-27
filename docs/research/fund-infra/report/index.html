@@ -52,6 +52,31 @@
 <li><b>uniswap-v3-swap:</b> single-hop only; slippage bound is only the caller's <code>amountOutMinimum</code>.</li>
 <li><b>curve pool + gauge:</b> two declared positions because accounting is one route per position; legacy Curve pools report no wallet LP through <code>CurvePoolsMeta</code> (latent, in <code>src/</code>).</li>
 </ul>
+<h2>Validation of the derived permissions</h2>
+<p>Against the live Roles v2 mastercopy on a mainnet fork, generic over every leaf of the worked example: <b>239 checks, 0 mismatches</b>. This checks that Roles enforces what FundConfig derived; the DeFi Kit diff checks the derivation against today's production permissions.</p>
+<table><thead><tr><th>Check</th><th>Cases</th><th>Mismatches</th><th>Roles outcomes</th></tr></thead><tbody><tr><td>A call satisfying each derived leaf passes Roles</td><td class="n">31</td><td class="n">0</td><td>Accepted 31</td></tr><tr><td>Each constrained argument, mutated alone, is rejected</td><td class="n">66</td><td class="n">0</td><td>CustomConditionViolation 3, OrViolation 30, ParameterNotAllowed 33</td></tr><tr><td>Wrong execution option (delegatecall, ETH value) is rejected where not derived</td><td class="n">60</td><td class="n">0</td><td>Accepted 29, DelegateCallNotAllowed 29, SendNotAllowed 2</td></tr><tr><td>Undeclared selector on a declared target / undeclared target is rejected</td><td class="n">62</td><td class="n">0</td><td>FunctionNotAllowed 31, TargetAddressNotAllowed 31</td></tr><tr><td>After removing a position, only its unshared leaves stop passing</td><td class="n">20</td><td class="n">0</td><td>Accepted 13, OrViolation 1, ParameterNotAllowed 2, TargetAddressNotAllowed 4</td></tr></tbody></table>
+<h3>Against DeFi Kit (today's production permissions)</h3>
+<ul>
+<li>12 overlapping functions derive identical condition trees (approve, Morpho deposit/redeem/withdraw, Aave supply/withdraw/borrow/repay).</li>
+<li>Uniswap V3 LP is stricter in FundConfig: the tokenId is bound to a Safe-owned NFT of the declared pool by the module's custom check.</li>
+<li>Looser in FundConfig: every non-assistant leaf allows sending ETH (<code>Send</code>); DeFi Kit grants <code>None</code>. To fix in the modules.</li>
+<li>Missing in the POC modules: Aave <code>setUserUseReserveAsCollateral</code> and <code>claimRewards</code>. No DeFi Kit recipe exists for the swap, Curve and EtherFi positions.</li>
+</ul>
+<h2>Operating model</h2>
+<table>
+<thead><tr><th>Actor</th><th>Controls</th><th>Cannot</th></tr></thead><tbody>
+<tr><td>Security Council</td><td>Admits position modules (write-once registry); registers assets and price feeds; upgrades NAVCalculator</td><td>Change a registered module; touch a fund's positions</td></tr>
+<tr><td>Fund curator</td><td><code>addPosition</code>, <code>removePosition</code>, <code>assignManager</code></td><td>Write a permission no registered module derives; remove a position that holds value</td></tr>
+<tr><td>Fund Safe owners</td><td>Enable/disable modules, guards</td><td>— (outside FundConfig's guarantee)</td></tr>
+<tr><td>Manager / bot</td><td>Execute derived calls only</td><td>Anything else</td></tr>
+</tbody></table>
+<ul>
+<li><b>New position of an existing type:</b> one curator tx; its assets must be priced in NAVCalculator.</li>
+<li><b>New position type:</b> module (+ adapter) reviewed, then registered by the Security Council.</li>
+<li><b>Dynamic positions:</b> runtime ids (LP NFTs, withdrawal tickets) need no re-declaration; new markets or vaults do.</li>
+<li><b>Upgrades:</b> modules, adapters and FundConfig are immutable. A module fix is a new module id plus a per-fund swap, which needs a <code>replacePosition</code> the POC lacks; a bad module needs a deprecate + revoke path the POC lacks.</li>
+</ul>
+<p class="muted">Full detail: <code>operating-model.md</code>.</p>
 <h2>Can the NAV be read on subscription?</h2>
 <p>Cold reads (first touch in the tx), mainnet fork. Red bars do not fit in one transaction.</p>
 <svg viewBox="0 0 900 222" role="img"><text x="322" y="23" text-anchor="end" class="lbl">getAccountNav, production account2 (today)</text><rect x="330" y="8" width="422.06927252446997" height="22" fill="#e11d48"/><text x="758.06927252447" y="23" class="val">17,470,450</text><text x="322" y="55" text-anchor="end" class="lbl">getAccountNav, production account9 (today)</text><rect x="330" y="40" width="436.6889213437048" height="22" fill="#e11d48"/><text x="772.6889213437048" y="55" class="val">18,075,592</text><text x="322" y="87" text-anchor="end" class="lbl">getAccountNav, production account10 (today)</text><rect x="330" y="72" width="457.1428571428571" height="22" fill="#e11d48"/><text x="793.1428571428571" y="87" class="val">18,922,229</text><text x="322" y="119" text-anchor="end" class="lbl">fundNav, 1 funded Aave V3 position</text><rect x="330" y="104" width="27.619554908522844" height="22" fill="#2563eb"/><text x="363.61955490852284" y="119" class="val">1,143,239</text><text x="322" y="151" text-anchor="end" class="lbl">fundNav, 1 funded Morpho vault</text><rect x="330" y="136" width="7.207535041005372" height="22" fill="#2563eb"/><text x="343.20753504100537" y="151" class="val">298,337</text><text x="322" y="183" text-anchor="end" class="lbl">fundNav, 137 zero-balance Morpho positions (fit)</text><rect x="330" y="168" width="403.8851025426234" height="22" fill="#2563eb"/><text x="739.8851025426234" y="183" class="val">16,717,764</text><line x1="735.3214056939516" x2="735.3214056939516" y1="0" y2="200" stroke="#0f172a" stroke-dasharray="4 3"/><text x="731.3214056939516" y="214" text-anchor="end" class="lbl">EIP-7825 per-tx cap 16,777,216</text></svg>

@@ -300,6 +300,49 @@ type NavGas = {
   fit: Record<"cold" | "warm", { aGas: number; bGasPerPosition: number; maxNUnderCap: number }>;
   subscription: Record<"sync" | "async" | "oracle", { feasible: boolean; optimal?: boolean; why: string[] }>;
 };
+// Behavioural validation of the derived permissions (FundConfigPermissionValidation.fork.t.sol).
+type Validation = { suites: { suite: string; total: number; failures: number; statuses: Record<string, number> }[] };
+const validation = JSON.parse(readFileSync(join(dir, "permission-validation.json"), "utf8")) as Validation;
+const SUITE_LABEL: Record<string, string> = {
+  positive: "A call satisfying each derived leaf passes Roles",
+  words: "Each constrained argument, mutated alone, is rejected",
+  options: "Wrong execution option (delegatecall, ETH value) is rejected where not derived",
+  undeclared: "Undeclared selector on a declared target / undeclared target is rejected",
+  removal: "After removing a position, only its unshared leaves stop passing",
+};
+
+function validationHtml(): string {
+  const rows = validation.suites
+    .map((s) => `<tr><td>${esc(SUITE_LABEL[s.suite] ?? s.suite)}</td><td class="n">${s.total}</td><td class="n">${s.failures}</td><td>${Object.entries(s.statuses).map(([k, v]) => `${esc(k)} ${v}`).join(", ")}</td></tr>`)
+    .join("");
+  const total = validation.suites.reduce((a, s) => a + s.total, 0);
+  const failures = validation.suites.reduce((a, s) => a + s.failures, 0);
+  return `<p>Against the live Roles v2 mastercopy on a mainnet fork, generic over every leaf of the worked example: <b>${total} checks, ${failures} mismatches</b>. This checks that Roles enforces what FundConfig derived; the DeFi Kit diff checks the derivation against today's production permissions.</p>
+<table><thead><tr><th>Check</th><th>Cases</th><th>Mismatches</th><th>Roles outcomes</th></tr></thead><tbody>${rows}</tbody></table>
+<h3>Against DeFi Kit (today's production permissions)</h3>
+<ul>
+<li>12 overlapping functions derive identical condition trees (approve, Morpho deposit/redeem/withdraw, Aave supply/withdraw/borrow/repay).</li>
+<li>Uniswap V3 LP is stricter in FundConfig: the tokenId is bound to a Safe-owned NFT of the declared pool by the module's custom check.</li>
+<li>Looser in FundConfig: every non-assistant leaf allows sending ETH (<code>Send</code>); DeFi Kit grants <code>None</code>. To fix in the modules.</li>
+<li>Missing in the POC modules: Aave <code>setUserUseReserveAsCollateral</code> and <code>claimRewards</code>. No DeFi Kit recipe exists for the swap, Curve and EtherFi positions.</li>
+</ul>`;
+}
+
+const operatingHtml = `<table>
+<thead><tr><th>Actor</th><th>Controls</th><th>Cannot</th></tr></thead><tbody>
+<tr><td>Security Council</td><td>Admits position modules (write-once registry); registers assets and price feeds; upgrades NAVCalculator</td><td>Change a registered module; touch a fund's positions</td></tr>
+<tr><td>Fund curator</td><td><code>addPosition</code>, <code>removePosition</code>, <code>assignManager</code></td><td>Write a permission no registered module derives; remove a position that holds value</td></tr>
+<tr><td>Fund Safe owners</td><td>Enable/disable modules, guards</td><td>— (outside FundConfig's guarantee)</td></tr>
+<tr><td>Manager / bot</td><td>Execute derived calls only</td><td>Anything else</td></tr>
+</tbody></table>
+<ul>
+<li><b>New position of an existing type:</b> one curator tx; its assets must be priced in NAVCalculator.</li>
+<li><b>New position type:</b> module (+ adapter) reviewed, then registered by the Security Council.</li>
+<li><b>Dynamic positions:</b> runtime ids (LP NFTs, withdrawal tickets) need no re-declaration; new markets or vaults do.</li>
+<li><b>Upgrades:</b> modules, adapters and FundConfig are immutable. A module fix is a new module id plus a per-fund swap, which needs a <code>replacePosition</code> the POC lacks; a bad module needs a deprecate + revoke path the POC lacks.</li>
+</ul>
+<p class="muted">Full detail: <code>operating-model.md</code>.</p>`;
+
 const navGas = JSON.parse(readFileSync(join(dir, "gas-nav-read.json"), "utf8")) as NavGas;
 const CAP = navGas.cap.eip7825TxGasLimit;
 
@@ -377,6 +420,10 @@ ${invariantsHtml}
 ${derivationHtml()}
 <h3>Known gaps per type</h3>
 ${gapsHtml}
+<h2>Validation of the derived permissions</h2>
+${validationHtml()}
+<h2>Operating model</h2>
+${operatingHtml}
 <h2>Can the NAV be read on subscription?</h2>
 ${navReadHtml()}
 <h2>Compared with NAV-based funds</h2>

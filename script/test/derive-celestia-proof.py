@@ -13,6 +13,8 @@ Usage:
   derive-celestia-proof.py --pick-options                           pick one USDC + options record in the batch
   derive-celestia-proof.py --preflight SAFE                         settlement check: exit 0 only if nothing is in
                                                                     flight between SAFE and Derive (see "preflight")
+    [--hyperevm-rpc URL --since-eth N --since-hyperevm M]           ... and over LayerZero to/from HyperEVM, since the
+                                                                    previous settlement's pins (see "Bridge legs")
   options: --out FILE (default stdout), --eth-rpc URL, --celestia-rpc URL, --derive-api URL,
            --block N (read VAPP at block N instead of the newest; rebuilds a fixture for a pinned fork block)
 
@@ -701,14 +703,105 @@ def preflight(rpc, safe, block, chunk=LOG_CHUNK):
             "deferred": deferred, "reasons": reasons}
 
 
-def preflight_verdict(rpc, safe, block=None, chunk=LOG_CHUNK):
+# Bridge legs (plan Phase 2): the fund's shares live on HyperEVM, Derive is reached from Ethereum, and HYPE crosses
+# over LayerZero V2 (HyperEVM native OFT adapter, locking native HYPE <-> Ethereum HYPE OFT, mint/burn). The operator
+# reads each chain at its own pinned block, so a transfer is counted on its source iff it was sent after the source
+# pin, and on its destination iff it was received at or before the destination pin. Exactly once is right; both is
+# a double count (the two reads are not simultaneous), neither is in flight. Scans start at the previous settlement's
+# pins: that settlement proved nothing was in flight then.
+ETHEREUM, HYPEREVM = "ethereum", "hyperevm"
+OFT = {ETHEREUM: "0x0762365e088Fb8D285b295d782BB7b23690713e2", HYPEREVM: "0x1e0470ef72d029bdc87d3b8543fb62fc04db9670"}
+CHAIN_OF_EID = {30101: ETHEREUM, 30367: HYPEREVM}
+WHYPE = "0x5555555555555555555555555555555555555555"  # HyperEVM wrapped HYPE; the fund holds HYPE as native or WHYPE
+# OFTSent(bytes32,uint32,address,uint256,uint256), OFTReceived(bytes32,uint32,address,uint256), balanceOf(address).
+TOPIC_OFT_SENT = "0x85496b760a4b7f8d66384b9df21b381f5d1b1e79f229a47aaf4c232edc2fe59a"
+TOPIC_OFT_RECEIVED = "0xefed6d3500546b29533b128a29e3a94d70788727f0507505ac12eaf2e578fd9c"
+SEL_BALANCE_OF = "0x70a08231"
+# Alchemy's HyperEVM endpoint answers a filtered 1,000,000-block eth_getLogs in about 0.3 s. The public
+# rpc.hyperliquid.xyz/evm is not usable for these scans: 10,000-block queries time out, and of two filtered
+# 1,000-block queries one returned at once and the other timed out after 90 s (2026-11-27).
+HYPEREVM_LOG_CHUNK = 1_000_000
+
+
+def bridge_check(chains, safe):
+    """Holdings at the pins and every LayerZero transfer of `safe` since the last settlement, classified.
+
+    `chains[name]` = {"rpc", "pin", "since", "chunk"} for ETHEREUM and HYPEREVM.
+    """
+    safe = safe.lower()
+    head = {c: int(v["rpc"]("eth_blockNumber", []), 16) for c, v in chains.items()}
+
+    def scan(c, topics, since=None):
+        v = chains[c]
+        return chunked_logs(v["rpc"], OFT[c], topics, v["since"] if since is None else since, head[c], v["chunk"])
+
+    received = {}
+    for c in chains:
+        for lg in scan(c, [TOPIC_OFT_RECEIVED, None, _topic(safe)]):
+            received[lg["topics"][1].lower()] = {"chain": c, "to": safe, "block": int(lg["blockNumber"], 16),
+                                                 "amount": _words(lg["data"])[1]}
+    transfers, reasons = [], []
+    for c in chains:
+        pin_src = chains[c]["pin"]
+        for lg in scan(c, [TOPIC_OFT_SENT, None, _topic(safe)]):
+            guid = lg["topics"][1].lower()
+            dst_eid, amount, _ = _words(lg["data"])
+            dst = CHAIN_OF_EID.get(dst_eid)
+            sent = int(lg["blockNumber"], 16)
+            rec = received.pop(guid, None)
+            if rec is None and dst is not None:  # delivered to someone else, or not yet
+                for r in scan(dst, [TOPIC_OFT_RECEIVED, guid]):
+                    rec = {"chain": dst, "to": _addr(int(r["topics"][2], 16)), "block": int(r["blockNumber"], 16),
+                           "amount": _words(r["data"])[1]}
+            t = {"guid": guid, "from": c, "to": dst, "recipient": rec and rec["to"], "amount": amount,
+                 "sentBlock": sent, "receivedBlock": rec and rec["block"]}
+            on_src = sent > pin_src
+            if dst is None:
+                t["verdict"] = "ok" if on_src else "unknown destination"
+            elif rec is not None and rec["to"] != safe:
+                t["verdict"] = "payout"  # leaves the fund on receipt; counted at the source until sent
+            else:
+                on_dst = rec is not None and rec["block"] <= chains[dst]["pin"]
+                t["verdict"] = "double count" if on_src and on_dst else "ok" if on_src or on_dst else "in flight"
+            if t["verdict"] in ("in flight", "double count", "unknown destination"):
+                reasons.append(f"bridge {guid} {c} -> {dst or dst_eid}: {t['verdict']} "
+                               f"(sent {sent}, received {t['receivedBlock']}, pins {pin_src}/"
+                               f"{chains[dst]['pin'] if dst else '-'})")
+            transfers.append(t)
+    for guid, rec in received.items():  # inflows the Safe did not send: counted on arrival only
+        transfers.append({"guid": guid, "from": None, "to": rec["chain"], "recipient": safe, "amount": rec["amount"],
+                          "sentBlock": None, "receivedBlock": rec["block"], "verdict": "inflow"})
+
+    def balance_of(c, token):
+        return _call(chains[c]["rpc"], token, SEL_BALANCE_OF + safe[2:].rjust(64, "0"), chains[c]["pin"])[0]
+
+    hyp = chains[HYPEREVM]
+    holdings = {"hyperevmNative": int(hyp["rpc"]("eth_getBalance", [safe, hex(hyp["pin"])]), 16),
+                "hyperevmWhype": balance_of(HYPEREVM, WHYPE), "ethereumHype": balance_of(ETHEREUM, OFT[ETHEREUM])}
+    holdings["outsideDerive"] = sum(holdings.values())  # the Derive leg comes from the attested adapter
+    return {"pins": {c: v["pin"] for c, v in chains.items()}, "holdings": holdings, "transfers": transfers,
+            "reasons": reasons}
+
+
+def preflight_verdict(rpc, safe, block=None, chunk=LOG_CHUNK, hyperevm=None):
     """(exit code, report): 0 nothing in flight, 1 something is (skip the window), 2 a read failed (skip too).
 
-    `block` None reads at the current head.
+    `block` None reads at the current head. `hyperevm` = {"rpc", "pin" (None: head), "since", "chunk", "sinceEth"}
+    adds the bridge legs.
     """
     try:
         block = block or int(rpc("eth_blockNumber", []), 16)
         report = preflight(rpc, safe, block, chunk)
+        if hyperevm:
+            pin_h = hyperevm["pin"] or int(hyperevm["rpc"]("eth_blockNumber", []), 16)
+            bridge = bridge_check({
+                ETHEREUM: {"rpc": rpc, "pin": block, "since": hyperevm["sinceEth"], "chunk": chunk},
+                HYPEREVM: {"rpc": hyperevm["rpc"], "pin": pin_h, "since": hyperevm["since"],
+                           "chunk": hyperevm["chunk"]},
+            }, safe)
+            report["bridge"] = bridge
+            report["reasons"] += bridge["reasons"]
+            report["ok"] = not report["reasons"]
     except (RuntimeError, ValueError, KeyError, IndexError, subprocess.CalledProcessError) as e:
         return 2, {"ok": False, "block": block, "safe": safe.lower(), "error": f"{type(e).__name__}: {e}"}
     return (0 if report["ok"] else 1), report
@@ -722,6 +815,11 @@ def main():
     g.add_argument("--pick-options", action="store_true")
     g.add_argument("--preflight", metavar="SAFE")
     ap.add_argument("--log-chunk", type=int, default=LOG_CHUNK)
+    ap.add_argument("--hyperevm-rpc", help="with --preflight: also check the LayerZero legs to/from HyperEVM")
+    ap.add_argument("--hyperevm-block", type=int, help="HyperEVM pin (default: head)")
+    ap.add_argument("--hyperevm-log-chunk", type=int, default=HYPEREVM_LOG_CHUNK)
+    ap.add_argument("--since-eth", type=int, help="previous settlement's Ethereum pin (first: the Safe's deployment)")
+    ap.add_argument("--since-hyperevm", type=int, help="previous settlement's HyperEVM pin")
     ap.add_argument("--out")
     ap.add_argument("--eth-rpc")
     ap.add_argument("--celestia-rpc", default="https://rpc.celestia.pops.one")
@@ -733,7 +831,14 @@ def main():
         f"https://eth-mainnet.g.alchemy.com/v2/{os.environ['ALCHEMY_API_KEY']}" if os.environ.get("ALCHEMY_API_KEY")
         else "https://ethereum-rpc.publicnode.com")
     if a.preflight:
-        code, report = preflight_verdict(lambda m, p: eth(eth_url, m, p), a.preflight, a.block, a.log_chunk)
+        hyperevm = None
+        if a.hyperevm_rpc:
+            if a.since_eth is None or a.since_hyperevm is None:
+                ap.error("--hyperevm-rpc needs --since-eth and --since-hyperevm (the previous settlement's pins)")
+            hyperevm = {"rpc": lambda m, p: eth(a.hyperevm_rpc, m, p), "pin": a.hyperevm_block,
+                        "since": a.since_hyperevm, "sinceEth": a.since_eth, "chunk": a.hyperevm_log_chunk}
+        code, report = preflight_verdict(lambda m, p: eth(eth_url, m, p), a.preflight, a.block, a.log_chunk,
+                                         hyperevm)
         print(json.dumps(report, indent=1))
         sys.exit(code)
     block = a.block or int(eth(eth_url, "eth_blockNumber", []), 16)

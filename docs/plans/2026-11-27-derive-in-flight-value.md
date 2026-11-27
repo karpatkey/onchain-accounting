@@ -124,10 +124,62 @@ Exit 0: nothing is in flight. Exit 1: something is; skip the window. Exit 2: a r
 With the fund's dust: one deposit and one withdrawal. Run the preflight during each (expect exit 1, then 0 once
 consumed), confirm the withdrawal is paid in a `submitBatch` transaction, and record the times in ADR 0031.
 
+## Phase 2: subscriptions on HyperEVM, HYPE bridged both ways
+
+The fund's shares are subscribed and redeemed on HyperEVM; Derive is reached from Ethereum. Every subscription
+deployed to Derive crosses HyperEVM → Ethereum → Derive, every redemption the reverse. Decision (2026-11-27):
+**option A**, the fund's figure is combined offchain by the operator from both chains at pinned blocks; the Derive
+leg is computed on Ethereum. Relaying the attested value to HyperEVM (option B) is deferred.
+
+| Fact | Evidence |
+|---|---|
+| The Portfolio Safe is the same address on both chains, `0x8c79753aad88183f5747c91684d6c0cbfcb27476` | `eth_getCode` non-empty on both; HyperEVM balance 0.072169747 HYPE, 0 WHYPE (`0x5555…5555`) on 2026-11-27 |
+| HYPE crosses over LayerZero V2: HyperEVM native OFT adapter `0x1e0470ef72d029bdc87d3b8543fb62fc04db9670` (eid 30367, `token()` = 0, locks native HYPE) ↔ Ethereum HYPE OFT `0x0762365e088Fb8D285b295d782BB7b23690713e2` (eid 30101, `token()` = itself, mint/burn); each is the other's `peers()` | `cast call` on both chains |
+| Events: `OFTSent(bytes32 indexed guid, uint32 dstEid, address indexed fromAddress, uint256 amountSentLD, uint256 amountReceivedLD)` on the source, `OFTReceived(bytes32 indexed guid, uint32 srcEid, address indexed toAddress, uint256 amountReceivedLD)` on the destination; the guid pairs them | `OFTReceived` topic `0xefed6d35…` in Ethereum receipts below |
+| Real path: 0.12 HYPE sent from the HyperEVM Safe at HyperEVM block 51,693,622 (`0x0c6e…297c`, `OFTSent` dstEid 30101), arrived at the Ethereum Safe at block 26,450,116 (`0xd095…cb5a`, srcEid 30367) 65 s later; Derive action 8651 (type 2, deposit to new subaccount) queued at 26,450,176; applied by the batch the NAV fork test pins, 26,450,225. Then 1.17 HYPE: sent at 52,030,071 (`0x2ff2…c849`), arrived at 26,477,611 (`0xba70…41f6`); action 9615 (type 1) queued at 26,478,173. No `OFTSent` from the Safe on Ethereum yet | `OFTSent` in the HyperEVM receipts; `OFTReceived` logs filtered by `toAddress`; `PublicActionQueued` filtered by `sender` |
+| Log scans on HyperEVM need Alchemy's endpoint (`hyperliquid-mainnet.g.alchemy.com`, a filtered 1,000,000-block `eth_getLogs` in about 0.3 s). The public `rpc.hyperliquid.xyz/evm` times out on 10,000 blocks, and one of two filtered 1,000-block queries timed out after 90 s | `cast logs` timings, 2026-11-27 |
+
+**When a transfer is counted.** The operator reads each chain at a pinned block (`pE`, `pH`). A transfer is counted
+on its source chain iff it was sent after the source pin (the tokens were still there), and on its destination
+iff it was received at or before the destination pin. Exactly once is correct; both is a **double count** (sent
+after the source pin, received before the destination pin: possible because the two reads are not simultaneous);
+neither is **in flight**. The check fails on any transfer of the Safe not counted exactly once.
+
+**Scan bound.** Log scans start at the previous settlement's pins (`--since-eth`, `--since-hyperevm`): that
+settlement's check already proved nothing was in flight then, and every transfer that matters now was sent after it.
+The first settlement scans from the Safe's deployment.
+
+## Task 4: two-chain preflight
+
+- `--preflight SAFE` gains `--hyperevm-rpc`, `--hyperevm-block` (pin, default head), `--since-eth`,
+  `--since-hyperevm` and `--hyperevm-log-chunk` (default 1,000,000, Alchemy). Without `--hyperevm-rpc` it behaves as
+  today; with it, both `since` pins are required.
+- Reads `OFTSent` from the Safe and `OFTReceived` to the Safe on both chains, from the `since` blocks to each chain's
+  head (a transfer received after the pin still has to be classified), pairs them by guid, and classifies each by
+  the rule above. A send from the Safe whose receipt went to another address is a payout, not fund value, once
+  received; while unreceived it counts as in flight.
+- Output adds `holdings` at the pins (HyperEVM native HYPE + WHYPE, Ethereum HYPE OFT, in wei) and `transfers[]`
+  with `{guid, from, to, amount, sentBlock, receivedBlock, verdict}`; reasons for every `in flight` and `double count`.
+- Done: offline tests; live run for the hype-split Safe prints `ok`.
+
+## Task 5: lifecycle simulation (offline, CI)
+
+Two fake chains plus Derive's queues step through one cycle: subscribe on HyperEVM → bridge to Ethereum → Derive
+deposit → batch applies it → withdrawal paid in the batch → a second withdrawal queued, then paid → bridge back →
+redeem. At every step: the verdict (settle or skip), and that holdings + Derive leg never count a unit twice and equal
+the true fund total whenever the verdict is settle. Also the double-count case: pins straddling a transfer.
+
+## Task 6: replay of the real path (network, by hand)
+
+A test class skipped unless `DERIVE_LIVE=1` and archive RPCs are configured, pinning the real 0.12 HYPE path:
+before the HyperEVM send (settle), mid-bridge (skip), arrived at 26,450,116 (settle), action 8651 queued at
+26,450,176 (skip), applied at 26,450,225 (settle), plus pins straddling the transfer (skip, double count).
+
 ## Out of scope
 
 - Valuing in-flight amounts (pending deposits exist only in event data; parked withdrawals: see "Why no outbox
   adapter").
 - The settlement guard contract and its wiring; this plan supplies the check it calls.
+- Relaying the Derive figure to HyperEVM (option B) and proving Ethereum state there.
 - Sizing the outbox bucket with Derive (requested in Task 2's acceptance item, decided by Derive).
 - Native ETH and perps.

@@ -11,6 +11,7 @@ a fixture the script wrote itself.
 import copy
 import importlib.util
 import json
+import os
 import unittest
 from pathlib import Path
 
@@ -327,6 +328,299 @@ class PreflightTest(unittest.TestCase):
         code, report = p.preflight_verdict(failing, SAFE, self.BLOCK)
         self.assertEqual(code, 2)
         self.assertFalse(report["ok"])
+
+
+E18 = 10**18
+
+
+class SimChain:
+    """One chain's state over its blocks, answering the RPC calls the preflight makes, at any pinned block."""
+
+    def __init__(self, head):
+        self.head, self.logs, self.deltas, self.consumed, self.entries = head, [], {}, [(0, 0)], {}
+
+    def mine(self):
+        self.head += 1
+        return self.head
+
+    def credit(self, token, delta, block):  # token None: native coin
+        self.deltas.setdefault(token, []).append((block, delta))
+
+    def balance(self, token, pin):
+        return sum(d for b, d in self.deltas.get(token, []) if b <= pin)
+
+    def log(self, address, topics, data, block):
+        self.logs.append({"address": address.lower(), "topics": topics, "data": "0x" + data, "block": block,
+                          "blockNumber": hex(block), "transactionHash": "0x" + word(len(self.logs))})
+
+    def __call__(self, method, params):
+        if method == "eth_blockNumber":
+            return hex(self.head)
+        if method == "eth_getBalance":
+            return hex(self.balance(None, int(params[1], 16)))
+        if method == "eth_getLogs":
+            f = params[0]
+            lo, hi = int(f["fromBlock"], 16), int(f["toBlock"], 16)
+            return [lg for lg in self.logs if lg["address"] == f["address"].lower() and lo <= lg["block"] <= hi
+                    and all(w is None or w == got for w, got in zip(f["topics"], lg["topics"]))]
+        if method != "eth_call":
+            raise AssertionError(method)
+        to, data, pin = params[0]["to"].lower(), params[0]["data"], int(params[1], 16)
+        if (to, data) == (p.VAPP.lower(), p.SEL_CONSUMED_PUBLIC):
+            return "0x" + word(max((b, v) for b, v in self.consumed if b <= pin)[1])
+        if to == p.ACTION_MANAGER.lower() and data in p.SEL_ACTION_TYPES:
+            return "0x" + word(p.SEL_ACTION_TYPES.index(data) + 1)
+        if data.startswith(p.SEL_BALANCE_OF):
+            return "0x" + word(self.balance(to, pin))
+        if data.startswith(p.SEL_QUEUE_ENTRY):
+            opened, closed, entry = self.entries.get(data[10:], (None, None, None))
+            live = opened is not None and opened <= pin and (closed is None or pin < closed)
+            return "0x" + (entry if live else word(0) * 5)
+        return "0x" + word(0)  # deferredWithdrawals: none in these flows
+
+
+class World:
+    """The fund across HyperEVM, Ethereum and Derive. `total` is the truth: it moves only on subscribe and redeem
+    (and on a payout); every other step moves value between places, some of them invisible to a balance read."""
+
+    EID = {p.ETHEREUM: 30101, p.HYPEREVM: 30367}
+
+    def __init__(self):
+        self.chain = {p.ETHEREUM: SimChain(p.OUTBOX_FROM_BLOCK + 1_000), p.HYPEREVM: SimChain(51_000_000)}
+        self.since = {c: ch.head for c, ch in self.chain.items()}
+        self.total, self.derive, self.next_action, self.guids = 0, [(0, 0)], 0, 0
+        self.flight, self.deposits, self.withdrawals, self.queue = {}, [], [], []
+
+    @property
+    def eth(self):
+        return self.chain[p.ETHEREUM]
+
+    @property
+    def hyp(self):
+        return self.chain[p.HYPEREVM]
+
+    def _token(self, c):
+        return None if c == p.HYPEREVM else p.OFT[p.ETHEREUM].lower()
+
+    def _action(self, action_type):
+        b = self.eth.mine()
+        self.eth.log(p.ACTION_MANAGER, [p.TOPIC_PUBLIC_ACTION, "0x" + word(self.next_action), "0x" + aword(SAFE),
+                                        "0x" + word(action_type)], "", b)
+        self.next_action += 1
+        return b
+
+    def subscribe(self, amount):
+        self.hyp.credit(None, amount, self.hyp.mine())
+        self.total += amount
+
+    def redeem(self, amount):
+        self.hyp.credit(None, -amount, self.hyp.mine())
+        self.total -= amount
+
+    def send(self, src, amount, recipient=SAFE):
+        """LayerZero send from the Safe on `src` to the other chain; tokens leave at once."""
+        b = self.chain[src].mine()
+        self.chain[src].credit(self._token(src), -amount, b)
+        self.guids += 1
+        guid = "0x" + word(0xbeef00 + self.guids)
+        dst = p.ETHEREUM if src == p.HYPEREVM else p.HYPEREVM
+        self.chain[src].log(p.OFT[src], [p.TOPIC_OFT_SENT, guid, "0x" + aword(SAFE)],
+                            word(self.EID[dst]) + word(amount) + word(amount), b)
+        self.flight[guid] = (src, dst, amount, recipient)
+        if recipient != SAFE:
+            self.total -= amount  # a redemption paid out cross-chain leaves the fund when sent
+        return guid
+
+    def deliver(self, guid):
+        src, dst, amount, recipient = self.flight.pop(guid)
+        b = self.chain[dst].mine()
+        if recipient == SAFE:
+            self.chain[dst].credit(self._token(dst), amount, b)
+        self.chain[dst].log(p.OFT[dst], [p.TOPIC_OFT_RECEIVED, guid, "0x" + aword(recipient)],
+                            word(self.EID[src]) + word(amount), b)
+
+    def deposit(self, amount):
+        self.eth.credit(self._token(p.ETHEREUM), -amount, self._action(1))
+        self.deposits.append(amount)
+
+    def request_withdrawal(self, amount, throttled=False):
+        self._action(3)
+        self.withdrawals.append((amount, throttled))
+
+    def batch(self):
+        """Applies every queued action; pays withdrawals in the same transaction unless the outbox throttles them."""
+        b = self.eth.mine()
+        self.eth.consumed.append((b, self.next_action))
+        balance = self.derive[-1][1] + sum(self.deposits) - sum(a for a, _ in self.withdrawals)
+        self.derive.append((b, balance))
+        for amount, throttled in self.withdrawals:
+            if not throttled:
+                self.eth.credit(self._token(p.ETHEREUM), amount, b)
+                continue
+            index = len(self.queue)
+            wid = word(0xfeed00 + index)
+            key = ZERO[2:].rjust(64, "0") * 2 + word(index)
+            self.eth.entries[key] = (b, None, wid + aword(DERIVE_USDC) + word(7) + aword(SAFE) + word(amount))
+            self.eth.log(p.OUTBOX, [p.TOPIC_ENQUEUED, "0x" + wid, "0x" + aword(DERIVE_USDC), "0x" + aword(SAFE)],
+                         word(amount) + aword(ZERO) + aword(ZERO) + word(index), b)
+            self.queue.append((key, amount))
+        self.deposits, self.withdrawals = [], []
+
+    def process_queue(self):
+        b = self.eth.mine()
+        for key, amount in self.queue:
+            opened, _, entry = self.eth.entries[key]
+            self.eth.entries[key] = (opened, b, entry)
+            self.eth.credit(self._token(p.ETHEREUM), amount, b)
+        self.queue = []
+
+    def settle(self, pin_eth=None, pin_hyp=None):
+        """(exit code, report, counted): `counted` is what the operator would add up at these pins, the chains'
+        holdings plus the Derive leg the attested adapter reports from the newest batch at the Ethereum pin."""
+        pe, ph = pin_eth or self.eth.head, pin_hyp or self.hyp.head
+        code, report = p.preflight_verdict(self.eth, SAFE, pe, p.LOG_CHUNK, {
+            "rpc": self.hyp, "pin": ph, "since": self.since[p.HYPEREVM], "sinceEth": self.since[p.ETHEREUM],
+            "chunk": p.HYPEREVM_LOG_CHUNK})
+        derive_leg = max((b, v) for b, v in self.derive if b <= pe)[1]
+        return code, report, report["bridge"]["holdings"]["outsideDerive"] + derive_leg
+
+
+class LifecycleSimulationTest(unittest.TestCase):
+    """One subscription's round trip: HyperEVM -> LayerZero -> Ethereum -> Derive and back. Whenever the check
+    settles, what the operator counts equals the fund's true total; whenever value is invisible, it skips."""
+
+    def assertSettles(self, w):
+        code, report, counted = w.settle()
+        self.assertEqual(code, 0, report.get("reasons") or report.get("error"))
+        self.assertEqual(counted, w.total)
+
+    def assertSkips(self, w, reason):
+        code, report, _ = w.settle()
+        self.assertEqual(code, 1, report.get("error"))
+        self.assertTrue(any(reason in r for r in report["reasons"]), report["reasons"])
+
+    def test_round_trip(self):
+        w = World()
+        self.assertSettles(w)
+        w.subscribe(10 * E18)
+        self.assertSettles(w)
+
+        g = w.send(p.HYPEREVM, 6 * E18)                  # subscription capital to Ethereum
+        self.assertSkips(w, "in flight")
+        w.deliver(g)
+        self.assertSettles(w)
+
+        w.deposit(6 * E18)                               # into Derive
+        self.assertSkips(w, "not yet applied by a batch")
+        w.batch()
+        self.assertSettles(w)
+
+        w.request_withdrawal(2 * E18)                    # paid inside the batch
+        self.assertSkips(w, "not yet applied by a batch")
+        w.batch()
+        self.assertSettles(w)
+
+        w.request_withdrawal(1 * E18, throttled=True)    # parked in the outbox queue
+        w.batch()
+        self.assertSkips(w, "queued in the outbox")
+        w.process_queue()
+        self.assertSettles(w)
+
+        g = w.send(p.ETHEREUM, 3 * E18)                  # back to HyperEVM for redemptions
+        self.assertSkips(w, "in flight")
+        w.deliver(g)
+        self.assertSettles(w)
+        w.redeem(3 * E18)
+        self.assertSettles(w)
+        self.assertEqual(w.total, 7 * E18)
+
+    def test_pins_straddling_a_transfer_count_it_twice_and_are_refused(self):
+        w = World()
+        w.subscribe(5 * E18)
+        stale_hyp = w.hyp.head                          # HyperEVM read before the send
+        w.deliver(w.send(p.HYPEREVM, 5 * E18))          # Ethereum read after the arrival
+        code, report, counted = w.settle(pin_hyp=stale_hyp)
+        self.assertEqual(counted, 10 * E18)             # the danger: twice the fund
+        self.assertEqual(code, 1)
+        self.assertEqual([t["verdict"] for t in report["bridge"]["transfers"]], ["double count"])
+
+    def test_pins_straddling_the_other_way_miss_it_and_are_refused(self):
+        w = World()
+        w.subscribe(5 * E18)
+        stale_eth = w.eth.head                          # Ethereum read before the arrival
+        w.deliver(w.send(p.HYPEREVM, 5 * E18))          # HyperEVM read after the send
+        code, report, counted = w.settle(pin_eth=stale_eth)
+        self.assertEqual(counted, 0)
+        self.assertEqual(code, 1)
+        self.assertEqual([t["verdict"] for t in report["bridge"]["transfers"]], ["in flight"])
+
+    def test_cross_chain_payout_leaves_the_fund_on_send(self):
+        w = World()
+        w.subscribe(5 * E18)
+        w.deliver(w.send(p.HYPEREVM, 2 * E18))
+        before_payout = w.eth.head
+        g = w.send(p.ETHEREUM, 2 * E18, recipient=OTHER)  # a redeemer paid on HyperEVM straight from Ethereum
+        self.assertSkips(w, "in flight")                  # recipient unknown until delivered: conservative
+        w.deliver(g)
+        self.assertSettles(w)
+        self.assertEqual(w.total, 3 * E18)
+        # Ethereum read before the payout left, HyperEVM after it landed with the redeemer: still the fund's at the
+        # Ethereum pin and never the fund's on HyperEVM, so counted once, not a double count.
+        code, report, counted = w.settle(pin_eth=before_payout)
+        self.assertEqual((code, counted), (0, 5 * E18), report["reasons"])
+        self.assertEqual(sorted(t["verdict"] for t in report["bridge"]["transfers"]), ["ok", "payout"])
+
+
+@unittest.skipUnless(os.environ.get("DERIVE_LIVE") == "1" and os.environ.get("ALCHEMY_API_KEY"),
+                     "network replay: set DERIVE_LIVE=1 and ALCHEMY_API_KEY (archive RPCs for Ethereum and HyperEVM)")
+class LiveReplayTest(unittest.TestCase):
+    """hype-split's real first deposit, replayed at pinned blocks on both chains: 0.12 HYPE sent from the HyperEVM
+    Safe at 51,693,622 (`0x0c6e…297c`), received on Ethereum at 26,450,116 (`0xd095…cb5a`), deposited into Derive
+    as action 8651 at 26,450,176, applied by the batch at 26,450,225."""
+
+    SEND_H, RECV_E, DEPOSIT_E, BATCH_E = 51_693_622, 26_450_116, 26_450_176, 26_450_225
+    SINCE = {"eth": 26_449_000, "hyp": 51_693_000}  # stands in for the previous settlement's pins
+
+    def verdict(self, pin_eth, pin_hyp):
+        key = os.environ["ALCHEMY_API_KEY"]
+        eth_url = f"https://eth-mainnet.g.alchemy.com/v2/{key}"
+        hyp_url = f"https://hyperliquid-mainnet.g.alchemy.com/v2/{key}"
+        return p.preflight_verdict(lambda m, a: p.eth(eth_url, m, a), SAFE, pin_eth, p.LOG_CHUNK, {
+            "rpc": lambda m, a: p.eth(hyp_url, m, a), "pin": pin_hyp, "since": self.SINCE["hyp"],
+            "sinceEth": self.SINCE["eth"], "chunk": p.HYPEREVM_LOG_CHUNK})
+
+    def transfer(self, report):
+        return next(t for t in report["bridge"]["transfers"] if t["sentBlock"] == self.SEND_H)
+
+    def test_before_the_send(self):
+        code, report = self.verdict(self.RECV_E - 1, self.SEND_H - 1)
+        self.assertEqual(code, 0, report.get("reasons") or report.get("error"))
+        self.assertEqual(self.transfer(report)["verdict"], "ok")
+
+    def test_mid_bridge(self):
+        code, report = self.verdict(self.RECV_E - 1, self.SEND_H)
+        self.assertEqual(code, 1, report.get("error"))
+        self.assertEqual(self.transfer(report)["verdict"], "in flight")
+
+    def test_arrived_on_ethereum(self):
+        code, report = self.verdict(self.RECV_E, self.SEND_H + 100)
+        self.assertEqual(code, 0, report.get("reasons") or report.get("error"))
+        self.assertEqual(report["bridge"]["holdings"]["ethereumHype"], 12 * 10**16)
+
+    def test_deposit_queued_in_derive(self):
+        code, report = self.verdict(self.DEPOSIT_E, self.SEND_H + 100)
+        self.assertEqual(code, 1, report.get("error"))
+        self.assertEqual([a["actionId"] for a in report["pendingActions"]], [8651])
+        self.assertEqual(report["bridge"]["holdings"]["ethereumHype"], 0)
+
+    def test_applied_by_the_batch(self):
+        code, report = self.verdict(self.BATCH_E, self.SEND_H + 100)
+        self.assertEqual(code, 0, report.get("reasons") or report.get("error"))
+
+    def test_pins_straddling_the_transfer(self):
+        code, report = self.verdict(self.RECV_E, self.SEND_H - 1)
+        self.assertEqual(code, 1, report.get("error"))
+        self.assertEqual(self.transfer(report)["verdict"], "double count")
 
 
 if __name__ == "__main__":

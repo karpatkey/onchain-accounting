@@ -25,9 +25,9 @@ contract FundConfig {
     error PositionNotEmpty(bytes32 moduleId, bytes32 instance);
     error OptionsMismatch(address target, bytes4 selector);
 
-    /// @notice A declared position: the module that describes it and its coordinate.
+    /// @notice A declared position: its registered module id and its coordinate. The module is resolved through
+    ///         `REGISTRY`, which never replaces an id, so the lookup cannot drift from the declaration.
     struct Declared {
-        IPositionModule module;
         bytes32 moduleId;
         bytes32 instance;
     }
@@ -62,12 +62,6 @@ contract FundConfig {
 
     /// @dev `keccak256(moduleId, instance)` -> index + 1 into `_positions` (0 = absent).
     mapping(bytes32 => uint256) private _indexPlusOne;
-
-    /// @dev `keccak256(target, selector)` -> whether the key is currently granted on the Roles clone.
-    mapping(bytes32 => bool) private _keyActive;
-
-    /// @dev Target -> number of active keys on it. Target clearance is set on the first key and cleared on the last.
-    mapping(address => uint256) private _keysOnTarget;
 
     modifier onlyCurator() {
         if (msg.sender != CURATOR) revert NotCurator();
@@ -117,13 +111,21 @@ contract FundConfig {
         bytes32 id = keccak256(abi.encode(moduleId, instance));
         if (_indexPlusOne[id] != 0) revert PositionExists(moduleId, instance);
 
-        _positions.push(Declared({module: module, moduleId: moduleId, instance: instance}));
+        PermissionLeaf[] memory added = module.permissions(instance);
+        PermissionLeaf[] memory declared = _allLeaves();
+
+        _positions.push(Declared({moduleId: moduleId, instance: instance}));
         _indexPlusOne[id] = _positions.length;
         emit PositionAdded(moduleId, instance);
 
-        PermissionLeaf[] memory leaves = module.permissions(instance);
-        for (uint256 i; i < leaves.length; ++i) {
-            _syncKey(leaves[i].target, leaves[i].selector);
+        for (uint256 i; i < added.length; ++i) {
+            if (_firstOnTarget(added, i) && !_hasTarget(declared, added[i].target)) {
+                ROLES.scopeTarget(ROLE_KEY, added[i].target);
+            }
+        }
+        PermissionLeaf[] memory afterAdd = _concat(declared, added);
+        for (uint256 i; i < added.length; ++i) {
+            if (_firstOnKey(added, i)) _writeKey(added[i].target, added[i].selector, afterAdd);
         }
     }
 
@@ -136,13 +138,13 @@ contract FundConfig {
         uint256 idx = _indexPlusOne[id];
         if (idx == 0) revert UnknownPosition(moduleId, instance);
 
-        Declared memory d = _positions[idx - 1];
-        INAVCalculator.PositionBalance[] memory balances = _balances(d);
+        IPositionModule module = REGISTRY.moduleOf(moduleId);
+        INAVCalculator.PositionBalance[] memory balances = _balances(module, instance);
         for (uint256 i; i < balances.length; ++i) {
             if (balances[i].amount != 0) revert PositionNotEmpty(moduleId, instance);
         }
 
-        PermissionLeaf[] memory leaves = d.module.permissions(instance);
+        PermissionLeaf[] memory removed = module.permissions(instance);
 
         uint256 last = _positions.length - 1;
         if (idx - 1 != last) {
@@ -154,8 +156,14 @@ contract FundConfig {
         delete _indexPlusOne[id];
         emit PositionRemoved(moduleId, instance);
 
-        for (uint256 i; i < leaves.length; ++i) {
-            _syncKey(leaves[i].target, leaves[i].selector);
+        PermissionLeaf[] memory remaining = _allLeaves();
+        for (uint256 i; i < removed.length; ++i) {
+            if (_firstOnKey(removed, i)) _writeKey(removed[i].target, removed[i].selector, remaining);
+        }
+        for (uint256 i; i < removed.length; ++i) {
+            if (_firstOnTarget(removed, i) && !_hasTarget(remaining, removed[i].target)) {
+                ROLES.revokeTarget(ROLE_KEY, removed[i].target);
+            }
         }
     }
 
@@ -173,20 +181,7 @@ contract FundConfig {
 
     /// @notice Every Roles permission leaf declared by the current positions, before merging.
     function permissionSet() external view returns (PermissionLeaf[] memory out) {
-        uint256 total;
-        PermissionLeaf[][] memory perPosition = new PermissionLeaf[][](_positions.length);
-        for (uint256 i; i < _positions.length; ++i) {
-            perPosition[i] = _positions[i].module.permissions(_positions[i].instance);
-            total += perPosition[i].length;
-        }
-
-        out = new PermissionLeaf[](total);
-        uint256 k;
-        for (uint256 i; i < perPosition.length; ++i) {
-            for (uint256 j; j < perPosition[i].length; ++j) {
-                out[k++] = perPosition[i][j];
-            }
-        }
+        out = _allLeaves();
     }
 
     /// @notice Fund NAV in `quoteAsset`: signed sum of declared positions plus the Safe's wallet balances of their assets.
@@ -206,7 +201,7 @@ contract FundConfig {
         }
 
         for (uint256 i; i < _positions.length; ++i) {
-            INAVCalculator.PositionBalance[] memory balances = _balances(_positions[i]);
+            INAVCalculator.PositionBalance[] memory balances = _balances(_moduleAt(i), _positions[i].instance);
             for (uint256 j; j < balances.length; ++j) {
                 if (balances[j].amount == 0) continue;
                 (int256 v, bool s) = _price(balances[j].balanceAsset.asset, balances[j].amount, quoteAsset);
@@ -225,59 +220,37 @@ contract FundConfig {
         ROLES.assignRoles(manager, keys, memberOf);
     }
 
-    /// @dev Recomputes the Roles permission for `(target, selector)` from every declared position.
+    /// @dev Recomputes the Roles permission for `(target, selector)` from `leaves`: every declared leaf after the change.
     ///      Unconditional leaf -> `allowFunction`; conditional leaves -> `scopeFunction` with their OR; none -> revoke.
     ///      All contributing leaves must share one `ExecutionOptions` value, so no option is granted by accident.
-    function _syncKey(address target, bytes4 selector) internal {
-        bytes32 key = keccak256(abi.encodePacked(target, selector));
-
-        PermissionLeaf[][] memory leaves = new PermissionLeaf[][](_positions.length);
-        uint256 total;
-        for (uint256 i; i < _positions.length; ++i) {
-            leaves[i] = _positions[i].module.permissions(_positions[i].instance);
-            total += leaves[i].length;
-        }
-
-        ConditionFlat[][] memory conditional = new ConditionFlat[][](total);
+    function _writeKey(address target, bytes4 selector, PermissionLeaf[] memory leaves) internal {
+        ConditionFlat[][] memory conditional = new ConditionFlat[][](leaves.length);
         uint256 conditionalCount;
         bool unconditional;
         bool hasOptions;
         ExecutionOptions opts;
-        for (uint256 i; i < leaves.length; ++i) {
-            for (uint256 j; j < leaves[i].length; ++j) {
-                PermissionLeaf memory leaf = leaves[i][j];
-                if (leaf.target != target || leaf.selector != selector) continue;
+        for (uint256 j; j < leaves.length; ++j) {
+            PermissionLeaf memory leaf = leaves[j];
+            if (leaf.target != target || leaf.selector != selector) continue;
 
-                if (!hasOptions) {
-                    opts = leaf.options;
-                    hasOptions = true;
-                } else if (leaf.options != opts) {
-                    revert OptionsMismatch(target, selector);
-                }
+            if (!hasOptions) {
+                opts = leaf.options;
+                hasOptions = true;
+            } else if (leaf.options != opts) {
+                revert OptionsMismatch(target, selector);
+            }
 
-                if (leaf.conditions.length == 0) {
-                    unconditional = true;
-                } else {
-                    conditional[conditionalCount++] = leaf.conditions;
-                }
+            if (leaf.conditions.length == 0) {
+                unconditional = true;
+            } else {
+                conditional[conditionalCount++] = leaf.conditions;
             }
         }
 
-        bool wasActive = _keyActive[key];
-        if (!unconditional && conditionalCount == 0) {
-            if (wasActive) {
-                ROLES.revokeFunction(ROLE_KEY, target, selector);
-                _keyActive[key] = false;
-                if (--_keysOnTarget[target] == 0) ROLES.revokeTarget(ROLE_KEY, target);
-            }
+        if (!hasOptions) {
+            ROLES.revokeFunction(ROLE_KEY, target, selector);
             return;
         }
-
-        if (!wasActive) {
-            if (_keysOnTarget[target]++ == 0) ROLES.scopeTarget(ROLE_KEY, target);
-            _keyActive[key] = true;
-        }
-
         if (unconditional) {
             ROLES.allowFunction(ROLE_KEY, target, selector, opts);
             return;
@@ -291,9 +264,74 @@ contract FundConfig {
         ROLES.scopeFunction(ROLE_KEY, target, selector, merged, opts);
     }
 
+    /// @dev Module of the declared position at `i`, resolved through the write-once registry.
+    function _moduleAt(uint256 i) internal view returns (IPositionModule) {
+        return REGISTRY.moduleOf(_positions[i].moduleId);
+    }
+
+    /// @dev Every declared position's leaves, flattened in storage order.
+    function _allLeaves() internal view returns (PermissionLeaf[] memory out) {
+        PermissionLeaf[][] memory perPosition = new PermissionLeaf[][](_positions.length);
+        uint256 total;
+        for (uint256 i; i < _positions.length; ++i) {
+            perPosition[i] = _moduleAt(i).permissions(_positions[i].instance);
+            total += perPosition[i].length;
+        }
+
+        out = new PermissionLeaf[](total);
+        uint256 k;
+        for (uint256 i; i < perPosition.length; ++i) {
+            for (uint256 j; j < perPosition[i].length; ++j) {
+                out[k++] = perPosition[i][j];
+            }
+        }
+    }
+
+    function _concat(PermissionLeaf[] memory a, PermissionLeaf[] memory b)
+        internal
+        pure
+        returns (PermissionLeaf[] memory out)
+    {
+        out = new PermissionLeaf[](a.length + b.length);
+        uint256 k;
+        for (uint256 i; i < a.length; ++i) {
+            out[k++] = a[i];
+        }
+        for (uint256 i; i < b.length; ++i) {
+            out[k++] = b[i];
+        }
+    }
+
+    function _hasTarget(PermissionLeaf[] memory leaves, address target) internal pure returns (bool) {
+        for (uint256 i; i < leaves.length; ++i) {
+            if (leaves[i].target == target) return true;
+        }
+        return false;
+    }
+
+    /// @dev True if no earlier leaf in `leaves` shares `leaves[i]`'s `(target, selector)`.
+    function _firstOnKey(PermissionLeaf[] memory leaves, uint256 i) internal pure returns (bool) {
+        for (uint256 j; j < i; ++j) {
+            if (leaves[j].target == leaves[i].target && leaves[j].selector == leaves[i].selector) return false;
+        }
+        return true;
+    }
+
+    /// @dev True if no earlier leaf in `leaves` shares `leaves[i]`'s target.
+    function _firstOnTarget(PermissionLeaf[] memory leaves, uint256 i) internal pure returns (bool) {
+        for (uint256 j; j < i; ++j) {
+            if (leaves[j].target == leaves[i].target) return false;
+        }
+        return true;
+    }
+
     /// @dev Adapter positions for one declared position, valued through its accounting route.
-    function _balances(Declared memory d) internal view returns (INAVCalculator.PositionBalance[] memory) {
-        Accounting memory a = d.module.accounting(d.instance);
+    function _balances(IPositionModule module, bytes32 instance)
+        internal
+        view
+        returns (INAVCalculator.PositionBalance[] memory)
+    {
+        Accounting memory a = module.accounting(instance);
         if (a.isMeta) {
             bytes32[] memory instances = new bytes32[](1);
             instances[0] = a.coordinate;
@@ -307,7 +345,7 @@ contract FundConfig {
         uint256 cap;
         address[][] memory perPosition = new address[][](_positions.length);
         for (uint256 i; i < _positions.length; ++i) {
-            perPosition[i] = _positions[i].module.assets(_positions[i].instance);
+            perPosition[i] = _moduleAt(i).assets(_positions[i].instance);
             cap += perPosition[i].length;
         }
 

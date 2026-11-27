@@ -1,6 +1,6 @@
 # FundConfig POC
 
-Status: T1–T7 pass on a mainnet fork at block 26,500,000 (`FOUNDRY_PROFILE=slow forge test --match-path 'test/poc/fundconfig/**'`: 7 passed, 0 failed). Gas figures below come from `console2` output of that run.
+Status: T1–T7 pass on a mainnet fork at block 26,500,000. `FOUNDRY_PROFILE=slow forge test --match-path 'test/poc/fundconfig/**' -vv`: 12 passed, 0 failed (T1–T7 plus 5 profiling tests in `FundConfigGas.fork.t.sol`). Gas figures below come from `-vv` logs of that run and `gas-profile.json`.
 
 ## What it is
 
@@ -24,7 +24,7 @@ Nothing else can write to the Roles clone. Its owner is `FundConfig`, and `FundC
 | `modules/EtherFiAssistedModule.sol` | EtherFi withdrawal queue via the assistant, `DelegateCall` only. |
 | `vendor/RolesV2.sol` | Minimal Roles v2 types and interfaces, vendored from `gnosisguild/zodiac-modifier-roles@f55d00de507428cd3841975e7d85310c900c7b09`. |
 
-Fork tests: `test/poc/fundconfig/FundConfig.fork.t.sol` (T1–T7).
+Fork tests: `test/poc/fundconfig/FundConfig.fork.t.sol` (T1–T7). Gas profiling and scaling: `test/poc/fundconfig/FundConfigGas.fork.t.sol`.
 
 ## Invariants
 
@@ -49,16 +49,19 @@ Fork tests: `test/poc/fundconfig/FundConfig.fork.t.sol` (T1–T7).
 
 ## Gas
 
-Measured by `vm.lastCallGas().gasTotalUsed` around each `addPosition` call in T6 and logged with `console2.log`. Two identical funds (same Safe setup, same two positions: Morpho vault and Aave USDC). Both positions write the shared `approve(USDC)` key, so the second position merges into an existing Or-tree.
+Measured by `vm.lastCallGas().gasTotalUsed` around each `addPosition` call. Two identical funds (same Safe setup, same two positions: Morpho vault and Aave USDC). Both positions write the shared `approve(USDC)` key, so the second position merges into an existing Or-tree. "Before" is the committed `poc/fundconfig/FundConfig.sol` (HEAD `f57a7c8b`); "after" is the optimized contract. Raw data and commands are in `gas-profile.json`.
 
-| Call | Fund A | Fund B |
-|---|---|---|
-| `addPosition(morpho vault)` | 879,382 | 816,076 |
-| `addPosition(aave USDC)` | 852,462 | 763,568 |
-| Total | 1,731,844 | 1,579,644 |
+| Call | Fund A before | Fund A after | Fund B before | Fund B after |
+|---|---|---|---|---|
+| `addPosition(morpho vault)` | 879,382 | 556,112 | 816,076 | 492,806 |
+| `addPosition(aave USDC)` | 852,462 | 576,570 | 763,568 | 487,676 |
+| Total | 1,731,844 | 1,132,682 | 1,579,644 | 980,482 |
 
-Fund B's total is 152,200 gas (8.8%) lower. The T6 assertion only checks `totalB < totalA`. This POC does not isolate the cause. Candidates are the condition-buffer dedupe the spec predicts, and first-call effects in fund A (cold code and storage for shared contracts). Separating them would need a controlled run with the order of the two funds swapped.
+The optimization saves 599,162 gas per T6 run in each fund (−34.6% for fund A, −37.9% for fund B). Fund B is 152,200 lower than fund A, both before and after. The control runs in `FundConfigGas.fork.t.sol` split that gap into three parts: dedupe with all shared addresses cold, 132,200; warm access on fund B, 39,700; and an all-cooled first call costing 19,700 more than the normal run. Most of the cross-fund saving is Roles blob reuse. `approve(USDC)` `scopeFunction` costs about 116k on fund A, including a CREATE2 blob deploy (about 40k), and about 65k on fund B, with no deploy.
 
+What changed in `poc/fundconfig/FundConfig.sol`: `permissions()` is computed once per add or remove, not once per leaf. `_keyActive` and `_keysOnTarget` are removed, since the declared leaves determine them. `Declared` drops its module slot and resolves the module through the write-once registry.
+
+Scaling (N positions on one shared key, mock vaults): the marginal cost per added position falls from about 245–255k to about 110–112k for N≥3. Total at N=8 is 2,473,051 before and 1,262,800 after.
 
 ## Deviations from the spec
 
@@ -75,5 +78,5 @@ Fund B's total is 152,200 gas (8.8%) lower. The T6 assertion only checks `totalB
 - **Per-fund NAV.** `fundNav` is per fund and does not replace the global `NAVCalculator`. It reuses the same adapters and pricing.
 - **Integrity merge constraints.** Or-trees must satisfy Roles v2 `Integrity.enforce` (BFS order, non-empty children, empty `compValue` for Or/And/Pass). `PermissionMerge` builds them to satisfy this, but the constraints are real.
 - **Safe-owner paths stay outside FundConfig.** Because `FundConfig` owns Roles, no other caller can write Roles permissions. The Safe's owners can still enable another module, set a guard, or disable the Roles module, and none of that goes through `FundConfig`. The CLAUDE.md residual risk is narrowed to that path, not closed; it still needs monitoring outside this repo.
-- **O(n·k) recompute.** Each add or remove re-reads every declared position's leaves and rewrites the merged keys, so cost grows with positions times keys. This likely dominates the ~0.8M gas per `addPosition` in T6 (Roles writes alone are ~0.1–0.17M per key per the research run); not profiled.
+- **Recompute cost.** Each add or remove calls `permissions()` once per declared position. That is O(N) external calls per add and O(N²) across N adds. The merged keys are rewritten in memory, and each touched key is written once. The remaining cost is dominated by Roles `scopeFunction` and FundConfig's storage writes (the storage share is inferred, not measured per SSTORE). `gas-profile.json` shows ~110k per added position at N≥3 with mock vaults.
 - **Custom condition cost unmeasured.** Only Matches/EqualTo/EqualToAvatar-style conditions are exercised.

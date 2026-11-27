@@ -9,7 +9,7 @@ against the commitment.
 
 Usage:
   derive-celestia-proof.py --subaccount ID [--subaccount ID ...]   prove these records (same owner)
-  derive-celestia-proof.py --pick-collateral-only                   pick one USDC/USDT-only record in the batch
+  derive-celestia-proof.py --pick-collateral-only                   pick one record holding only mapped collateral
   derive-celestia-proof.py --pick-options                           pick one USDC + options record in the batch
   options: --out FILE (default stdout), --eth-rpc URL, --celestia-rpc URL, --derive-api URL,
            --block N (read VAPP at block N instead of the newest; rebuilds a fixture for a pinned fork block)
@@ -54,6 +54,8 @@ SCALE = 10**12
 ASSETS = {
     "0x57b03e14d409adc7fab6cfc44b5886cad2d5f02b": ("USDC", "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48", 6),
     "0x5e72430ec945ccc183c34e2860ffc2b5bac712c2": ("USDT", "0xdAC17F958D2ee523a2206206994597C13D831ec7", 6),
+    # Derive's HYPE label; its third resolveAsset word is the LayerZero HYPE OFT hype-split bridges in.
+    "0x2dd469db6ee0dbf0277f0f3021fd8a6486a751ce": ("HYPE", "0x0762365e088Fb8D285b295d782BB7b23690713e2", 18),
 }
 CASH_ASSET = "0x57b03e14d409adc7fab6cfc44b5886cad2d5f02b"  # options settle in Derive's USDC
 # Derive option asset id -> feed currency, from public/get_instrument `base_asset_address` (2026-11-20).
@@ -576,7 +578,7 @@ def main():
               and all(bal >= 0 and asset in ASSETS for asset, bal in r["collateral"])
               and any(bal > 0 for _, bal in r["collateral"])]
         if not ok:
-            sys.exit("no USDC/USDT-only subaccount in the newest batch; try again after the next batch")
+            sys.exit("no subaccount holding only mapped collateral in the newest batch; try after the next batch")
         ks = [ok[0]]
     elif a.pick_options:
         ks = None

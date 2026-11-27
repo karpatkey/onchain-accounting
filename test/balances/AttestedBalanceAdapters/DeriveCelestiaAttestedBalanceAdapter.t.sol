@@ -1620,7 +1620,7 @@ contract DeriveCelestiaAttestedBalanceAdapterTest is BalanceAdapterTestBase {
     ///      `subaccount_value` (5.715103424349 USD) within 0.1%.
     function test_realBatch_hypeSplitCdp_matchesMarginWatch() public {
         string memory json = _readFixture("hype_split_122119_cdp.json");
-        (bytes memory data, bytes32 commitment, address owner) = _loadMark("hype_split_122119_cdp.json", json);
+        (bytes memory data, bytes32 commitment, address owner) = _loadMark(json, json, ".subaccounts.122119");
         _deployReal(json);
         vapp.setCommitment(commitment);
         vm.warp(vm.parseJsonUint(json, ".valuationTime"));

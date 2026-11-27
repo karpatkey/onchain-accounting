@@ -194,6 +194,85 @@ const standardHtml = `<div class="std">
   <div class="gap"><b>(c) Portfolio accounting</b><span>per-position assets, debt, protocol exposure</span><em>Uncovered by any ERC. kpk's PositionBalance + FundConfig supply it.</em></div>
 </div>`;
 
+// Worked example: one fund declaring every position type, dumped by test/poc/fundconfig/FundConfigDerivation.fork.t.sol.
+type Cond = { parent: number; paramType: string; operatorName: string; compValue: string };
+type Leaf = { target: string; targetLabel: string; signature: string; options: string; conditions: Cond[] };
+type Bal = { symbol: string; amount: number | string; isDebt: boolean; value?: number | string };
+type DerivedPosition = {
+  kind: string; instance: string; instanceLabel: string; leaves: Leaf[];
+  accounting: { adapter: string; isMeta: boolean; coordinate: string; assetFilter: string };
+  balances: Bal[] | null;
+};
+type RolesKey = { targetLabel: string; signature: string; leafCount: number; roleCall: string; conditionMerge: string };
+type Derivation = {
+  meta: { forkBlock: number; positionCount: number; rolesKeyCount: number; leafCount: number };
+  fund: { safe: string };
+  positions: DerivedPosition[];
+  rolesKeys: RolesKey[];
+};
+const derivation = JSON.parse(readFileSync(join(dir, "derivation-example.json"), "utf8")) as Derivation;
+// Adapter names come from the deployment registry, so the example shows which production adapter values each position.
+const deployments = JSON.parse(readFileSync(join(dir, "../../../script/config/deployments/1.json"), "utf8")) as { balanceAdapters: Record<string, string> };
+const adapterName = new Map(Object.entries(deployments.balanceAdapters).map(([name, addr]) => [addr.toLowerCase(), name]));
+const addrLabel = new Map<string, string>([[derivation.fund.safe.toLowerCase(), "Safe"]]);
+for (const p of derivation.positions) {
+  if (/^0x0{24}/.test(p.instance)) addrLabel.set(`0x${p.instance.slice(26)}`.toLowerCase(), p.instanceLabel);
+  for (const l of p.leaves) addrLabel.set(l.target.toLowerCase(), l.targetLabel);
+}
+
+// Renders one ConditionFlat tree (BFS, parent indices) as "argN = …" clauses, expanding tuples one level.
+function describeConditions(conds: Cond[]): string {
+  if (conds.length === 0) return "any arguments";
+  const value = (c: Cond): string => {
+    switch (c.operatorName) {
+      case "PASS": return "any";
+      case "EQUAL_TO_AVATAR": return "= Safe";
+      case "CUSTOM": return `custom check (${addrLabel.get(`0x${c.compValue.slice(2, 42)}`.toLowerCase()) ?? "module"})`;
+      case "EQUAL_TO": {
+        const hex = c.compValue.slice(2);
+        // Small values (fee tiers, rate modes) also have 24 leading zero nibbles; only wide values are addresses.
+        if (hex.length === 64 && hex.startsWith("0".repeat(24)) && BigInt(`0x${hex}`) > 0xffffffffffffn) {
+          const a = `0x${hex.slice(24)}`.toLowerCase();
+          return `= ${addrLabel.get(a) ?? `${a.slice(0, 8)}…`}`;
+        }
+        return `= ${BigInt(`0x${hex || "0"}`).toString()}`;
+      }
+      default: return c.operatorName.toLowerCase();
+    }
+  };
+  const childrenOf = (i: number) => conds.map((c, j) => [c, j] as const).filter(([c, j]) => j !== i && c.parent === i);
+  return childrenOf(0)
+    .map(([c, j], argIdx) =>
+      c.paramType === "Tuple"
+        ? `arg${argIdx} (${childrenOf(j).map(([cc], k) => `.${k} ${value(cc)}`).filter((s) => !s.endsWith(" any")).join(", ")})`
+        : `arg${argIdx} ${value(c)}`,
+    )
+    .filter((s) => !s.endsWith(" any") && !s.endsWith("()"))
+    .join(", ") || "any arguments";
+}
+
+function derivationHtml(): string {
+  const rows = derivation.positions
+    .map((p) => {
+      const leaves = p.leaves
+        .map((l) => `<li><code>${esc(l.signature.split("(")[0])}</code> on ${esc(l.targetLabel)}${l.options !== "Send" ? ` <span class="tag">${esc(l.options)}</span>` : ""}<br><span class="muted">${esc(describeConditions(l.conditions))}</span></li>`)
+        .join("");
+      const a = p.accounting;
+      const name = adapterName.get(a.adapter.toLowerCase()) ?? "POC-only adapter (not deployed)";
+      const legs = (p.balances ?? []).map((b) => `${b.isDebt ? "−" : "+"}${esc(b.symbol)}`).join(" ") || "no balance at dump time";
+      return `<tr><td><b>${esc(p.kind)}</b><br><span class="muted">${esc(p.instanceLabel)}</span></td><td><ul class="leaves">${leaves}</ul></td><td>${esc(name)}${a.isMeta ? " <span class=\"tag\">meta, this instance only</span>" : ""}<br><span class="muted">legs: ${legs}</span></td></tr>`;
+    })
+    .join("");
+  const merged = derivation.rolesKeys
+    .filter((k) => k.leafCount > 1)
+    .map((k) => `<li><code>${esc(k.signature.split("(")[0])}</code> on ${esc(k.targetLabel)}: ${k.leafCount} positions → one <code>${esc(k.roleCall)}</code> with an <b>${esc(k.conditionMerge.toUpperCase())}</b> of their conditions</li>`)
+    .join("");
+  const m = derivation.meta;
+  return `<p>One fund declares ${m.positionCount} positions. FundConfig derives ${m.leafCount} permission leaves, writes them as ${m.rolesKeyCount} Roles entries, and values the same ${m.positionCount} positions. Everything below is dumped from the fork test at block ${fmt(m.forkBlock)}; condition text is rendered from the stored condition trees.</p>
+<table class="deriv"><thead><tr><th>Declared position</th><th>→ Permissions written to Roles</th><th>→ Accounting route</th></tr></thead><tbody>${rows}</tbody></table>
+<h3>Shared functions merged</h3><ul>${merged}</ul>`;
+}
+
 // What the fork tests prove about the derivation (test names in fundconfig-poc.md and the complex-positions docs).
 const invariantsHtml = `<table>
 <thead><tr><th>Invariant</th><th>Why it holds</th><th>Proven by</th></tr></thead><tbody>
@@ -206,16 +285,12 @@ const invariantsHtml = `<table>
 </tbody></table>
 <p class="muted">Outside FundConfig: the Safe's owners can still enable another module, set a guard, or remove Roles.</p>`;
 
-const typesHtml = `<table>
-<thead><tr><th>Position type</th><th>Derived permissions</th><th>Derived accounting</th><th>Gap</th></tr></thead><tbody>
-<tr><td>Morpho vault</td><td><code>approve(asset→vault)</code>; <code>deposit/redeem/withdraw</code> receiver/owner = Safe</td><td>MorphoVaultsMeta, instance = vault</td><td>—</td></tr>
-<tr><td>Aave V3 supply</td><td><code>approve(asset→pool)</code>; <code>supply/withdraw</code> asset pinned, onBehalfOf/to = Safe</td><td>AaveV3InstancesMeta, filter = asset</td><td>—</td></tr>
-<tr><td>Aave V3 borrow</td><td><code>borrow/repay</code> asset pinned, onBehalfOf = Safe; approve merged with supply</td><td>Same adapter, debt leg (<code>isDebt</code>)</td><td>No LTV bound in Roles; guard is per asset</td></tr>
-<tr><td>Uniswap V3 swap</td><td><code>exactInputSingle</code> tuple: tokens = declared pool's pair, recipient = Safe</td><td>Output tokens are declared wallet assets</td><td>Single-hop only</td></tr>
-<tr><td>Uniswap V3 LP</td><td><code>mint</code> pinned to pool, recipient = Safe; <code>increase/decrease/collect</code> tokenId via <code>Custom</code> check in the module</td><td>UniswapV3PoolsMeta, instance = pool</td><td>—</td></tr>
-<tr><td>Curve pool + gauge</td><td>Two positions: pool add/remove; gauge deposit/withdraw + Minter <code>mint(gauge)</code></td><td>CurvePoolsMeta + CurveGaugesMeta</td><td>Needs per-leg accounting; legacy pools report no wallet LP (src)</td></tr>
-<tr><td>EtherFi withdrawal queue</td><td><code>DelegateCall</code> to the assistant only</td><td>EtherFiWithdrawalQueueAssisted</td><td>—</td></tr>
-</tbody></table>`;
+// Known limits per type, from the complex-positions docs; the derived permissions and routes themselves come from derivationHtml().
+const gapsHtml = `<ul>
+<li><b>aave-v3-borrow:</b> no LTV / health-factor bound in Roles; the removal guard is per asset, so a co-declared supply of the same asset blocks removing the borrow.</li>
+<li><b>uniswap-v3-swap:</b> single-hop only; slippage bound is only the caller's <code>amountOutMinimum</code>.</li>
+<li><b>curve pool + gauge:</b> two declared positions because accounting is one route per position; legacy Curve pools report no wallet LP through <code>CurvePoolsMeta</code> (latent, in <code>src/</code>).</li>
+</ul>`;
 
 const architecture = `<svg viewBox="0 0 940 330" role="img" class="arch">
   <defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#475569"/></marker></defs>
@@ -247,15 +322,18 @@ const html = `<!doctype html>
   .kpi{display:flex;gap:16px;margin:16px 0} .kpi div{flex:1;border:1px solid #e2e8f0;border-radius:8px;padding:12px} .kpi b{display:block;font-size:22px}
   .matrix{font-size:13px;table-layout:fixed} .matrix th.dim{width:220px;font-weight:500;background:#fff} .matrix th.sys{height:120px;vertical-align:bottom;padding:4px 0;background:#fff} .matrix th.sys span{display:block;writing-mode:vertical-rl;transform:rotate(180deg);margin:0 auto;white-space:nowrap} .matrix th.kpk span{font-weight:700;color:#1d4ed8} .matrix td.g{text-align:center;font-size:16px;padding:4px 0} .matrix td.kpk{outline:2px solid #2563eb;outline-offset:-2px}
   .std{display:flex;gap:12px;margin:12px 0} .std div{flex:1;border-radius:8px;padding:12px;border:1px solid #e2e8f0} .std b{display:block} .std span{display:block;color:#475569;font-size:13px;margin:4px 0} .std em{font-size:13px;font-style:normal} .std .ok{background:#fef9c3} .std .part{background:#fef9c3} .std .gap{background:#dcfce7;border-color:#16a34a}
+  .deriv{font-size:13px} .deriv td{vertical-align:top} .deriv td:first-child{width:170px} .deriv td:last-child{width:230px} .leaves{margin:0;padding-left:16px} .leaves li{margin:2px 0} .tag{font-size:11px;background:#e0e7ff;color:#3730a3;border-radius:4px;padding:0 4px}
 </style></head><body>
 <h1>FundConfig: one declaration, derived permissions and accounting</h1>
 <p class="muted">A fund declares its positions once. Each declared <code>(module, instance)</code> yields both the Zodiac Roles v2 leaves the manager may call and the balance-adapter route that values it. Mainnet fork at block ${fmt(profile.fork_block)}.</p>
 <h2>How the derivation works</h2>
 ${architecture}
 ${invariantsHtml}
-<h2>Position types derived so far</h2>
-${typesHtml}
-<h2>Compared with the state of the art</h2>
+<h2>Worked example: one fund, every position type</h2>
+${derivationHtml()}
+<h3>Known gaps per type</h3>
+${gapsHtml}
+<h2>Compared with NAV-based funds</h2>
 ${comparisonHtml()}
 <h2>Standard proposal: NAV-linked tokenized funds</h2>
 <p class="muted">Three interfaces on the fund's share token, against existing ERCs (detail: <code>architecture-comparison.md</code>, <code>erc-landscape.md</code>). Green = where no ERC exists and kpk already has the substance.</p>

@@ -7,17 +7,17 @@ Compares **kpk today** (Safe + Zodiac Roles v2 permissions built with DeFi Kit, 
 Grades: ● strong · ◐ partial · ○ weak · — not applicable or not verified. Source of truth: [architecture-comparison.json](architecture-comparison.json); the table below is generated from it by `bun docs/research/fund-infra/report/build-report.ts`, which also renders it in [report/index.html](report/index.html) with the per-cell basis on hover.
 
 <!-- matrix:start -->
-| Dimension | kpk today | kpk + FundConfig | Enzyme | Sommelier | Veda | Morpho V2 | Lagoon | Aera v3 | Mellow | Euler Earn | Yearn V3 | Centrifuge | Superform |
-|---|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|
-| Positions declared on-chain, per fund | ◐ | ● | ● | ● | ○ | ● | ○ | ○ | ◐ | ● | ● | ● | ◐ |
-| NAV computed on-chain from positions | ● | ● | ● | ● | ○ | ● | ○ | ○ | ○ | ◐ | ◐ | ◐ | ○ |
-| Manager permissions per function + arguments | ● | ● | ◐ | ○ | ● | ◐ | — | ● | ● | ◐ | ◐ | ◐ | ◐ |
-| Permissions and NAV from one declaration | ○ | ● | ◐ | ◐ | ○ | ◐ | ○ | ○ | ○ | ◐ | ◐ | ◐ | ○ |
-| Manager cannot open an unvalued position | ◐ | ● | ● | ◐ | ○ | ● | ○ | ○ | ○ | ● | ● | ◐ | ○ |
-| Debt and multi-leg positions | ● | ◐ | ● | ● | — | ○ | — | — | — | ○ | — | — | — |
-| One bad position cannot block NAV | ● | ◐ | — | — | — | ○ | — | — | — | — | — | — | — |
-| Shared components immutable or timelocked | ● | ● | ◐ | ◐ | ◐ | ● | ◐ | ◐ | ◐ | ● | ◐ | ● | ◐ |
-| Per-position portfolio readable on-chain by integrators | ● | ● | ● | ◐ | ○ | ◐ | ○ | ○ | ○ | ◐ | ◐ | ◐ | ○ |
+| Dimension | kpk today | kpk + FundConfig | Enzyme | Sommelier | Veda | Lagoon | Aera v3 | Mellow | Centrifuge |
+|---|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|
+| Positions declared on-chain, per fund | ◐ | ● | ● | ● | ○ | ○ | ○ | ◐ | ● |
+| NAV computed on-chain from positions | ● | ● | ● | ● | ○ | ○ | ○ | ○ | — |
+| Manager permissions per function + arguments | ● | ● | ◐ | ○ | ● | — | ● | ● | ◐ |
+| Permissions and NAV from one declaration | ○ | ● | ◐ | ◐ | ○ | ○ | ○ | ○ | — |
+| Manager cannot open an unvalued position | ◐ | ● | ● | ◐ | ○ | ○ | ○ | ○ | — |
+| Debt and multi-leg positions | ● | ◐ | ● | ● | — | — | — | — | — |
+| One bad position cannot block NAV | ● | ◐ | — | — | — | — | — | — | — |
+| Shared components immutable or timelocked | ● | ● | ◐ | ◐ | ◐ | — | ◐ | ◐ | ● |
+| Per-position portfolio readable on-chain by integrators | ● | ● | ● | ◐ | ○ | ○ | ○ | ○ | ◐ |
 <!-- matrix:end -->
 
 ## Where kpk stands today

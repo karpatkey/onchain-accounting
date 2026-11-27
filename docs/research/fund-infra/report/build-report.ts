@@ -5,6 +5,18 @@ import { readdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 
 const dir = join(import.meta.dir, "..");
+
+// Every input is a JSON file this repo's tests or config write. Each is read through a guard that checks the
+// top-level keys the report uses, so a renamed or missing field fails here with the file name, not mid-render.
+function hasKeys<K extends string>(v: unknown, keys: readonly K[]): v is Record<K, unknown> {
+  return !!v && typeof v === "object" && keys.every((k) => k in v);
+}
+function readJson<T>(rel: string, isT: (v: unknown) => v is T): T {
+  const v: unknown = JSON.parse(readFileSync(join(dir, rel), "utf8"));
+  if (!isT(v)) throw new Error(`${rel}: unexpected shape`);
+  return v;
+}
+
 // Shape written by test/poc/fundconfig/FundConfigGas.fork.t.sol runs (docs/research/fund-infra/gas-profile.json).
 type StepEntry = { total: number; children: Record<string, { calls: number; gas: number }>; fundconfig_residual: number };
 type Phase = "before" | "after";
@@ -18,8 +30,8 @@ type GasProfile = {
     Record<Phase, number>
   >;
 };
-// Our own generated file, read once; a wrong shape fails loudly on first property access.
-const profile = JSON.parse(readFileSync(join(dir, "gas-profile.json"), "utf8")) as GasProfile;
+const isGasProfile = (v: unknown): v is GasProfile => hasKeys(v, ["fork_block", "toolchain", "per_step", "scaling", "t6_gap_decomposition"]);
+const profile = readJson("gas-profile.json", isGasProfile);
 
 type Row = { type: string; step: string; gas: number };
 const isRow = (r: unknown): r is Row =>
@@ -146,7 +158,7 @@ function complexSection(): string {
 // Grades: 2 strong, 1 partial, 0 weak, null n/a or unverified (architecture-comparison.json).
 type Grade = 2 | 1 | 0 | null;
 type Comparison = { systems: string[]; dimensions: { key: string; label: string; cells: [Grade, string][] }[] };
-const comparison = JSON.parse(readFileSync(join(dir, "architecture-comparison.json"), "utf8")) as Comparison;
+const comparison = readJson("architecture-comparison.json", (v): v is Comparison => hasKeys(v, ["systems", "dimensions"]));
 const GRADE_STYLE: Record<string, { glyph: string; bg: string }> = {
   "2": { glyph: "●", bg: "#dcfce7" },
   "1": { glyph: "◐", bg: "#fef9c3" },
@@ -210,9 +222,11 @@ type Derivation = {
   positions: DerivedPosition[];
   rolesKeys: RolesKey[];
 };
-const derivation = JSON.parse(readFileSync(join(dir, "derivation-example.json"), "utf8")) as Derivation;
+const derivation = readJson("derivation-example.json", (v): v is Derivation => hasKeys(v, ["meta", "fund", "positions", "rolesKeys"]));
 // Adapter names come from the deployment registry, so the example shows which production adapter values each position.
-const deployments = JSON.parse(readFileSync(join(dir, "../../../script/config/deployments/1.json"), "utf8")) as { balanceAdapters: Record<string, string> };
+const deployments = readJson("../../../script/config/deployments/1.json", (v): v is { balanceAdapters: Record<string, string> } =>
+  hasKeys(v, ["balanceAdapters"]),
+);
 const adapterName = new Map(Object.entries(deployments.balanceAdapters).map(([name, addr]) => [addr.toLowerCase(), name]));
 const addrLabel = new Map<string, string>([[derivation.fund.safe.toLowerCase(), "Safe"]]);
 for (const p of derivation.positions) {
@@ -302,7 +316,7 @@ type NavGas = {
 };
 // Behavioural validation of the derived permissions (FundConfigPermissionValidation.fork.t.sol).
 type Validation = { suites: { suite: string; total: number; failures: number; statuses: Record<string, number> }[] };
-const validation = JSON.parse(readFileSync(join(dir, "permission-validation.json"), "utf8")) as Validation;
+const validation = readJson("permission-validation.json", (v): v is Validation => hasKeys(v, ["suites"]));
 const SUITE_LABEL: Record<string, string> = {
   positive: "A call satisfying each derived leaf passes Roles",
   words: "Each constrained argument, mutated alone, is rejected",
@@ -343,7 +357,7 @@ const operatingHtml = `<table>
 </ul>
 <p class="muted">Full detail: <code>operating-model.md</code>.</p>`;
 
-const navGas = JSON.parse(readFileSync(join(dir, "gas-nav-read.json"), "utf8")) as NavGas;
+const navGas = readJson("gas-nav-read.json", (v): v is NavGas => hasKeys(v, ["cap", "today", "perType", "fit", "subscription"]));
 const CAP = navGas.cap.eip7825TxGasLimit;
 
 function navReadHtml(): string {

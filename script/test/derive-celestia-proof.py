@@ -682,7 +682,7 @@ def preflight(rpc, safe, block, chunk=LOG_CHUNK):
         _, b_recipient, b_asset, index = _words(lg["data"])
         data = SEL_QUEUE_ENTRY + f"{b_recipient:064x}{b_asset:064x}{index:064x}"
         entry_id, asset, _, _, remaining = _call(rpc, OUTBOX, data, block)
-        if f"0x{entry_id:064x}" == wid.lower() and remaining > 0:
+        if f"0x{entry_id:064x}" == wid.lower():  # processQueue deletes an entry once paid in full
             queued.append({"id": wid, "asset": _addr(asset), "remaining": remaining,
                            "bucket": [_addr(b_recipient), _addr(b_asset)], "queueIndex": index})
 

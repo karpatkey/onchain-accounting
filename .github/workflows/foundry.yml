@@ -340,6 +340,14 @@ jobs:
           python3 -m unittest test_snapshot_and_clear_meta test_ops_safe -v
           python3 -O -m unittest test_snapshot_and_clear_meta test_ops_safe
 
+      - name: Derive proof builder (derive-celestia-proof.py, ADR 0031)
+        # The keeper's payload builder: record decoder, signed-feed selection and the float reference of the option
+        # pricer, held to the same real-batch values the adapter's Solidity tests pin. Offline; plain and -O as above.
+        working-directory: script/test
+        run: |
+          python3 -m unittest test_derive_celestia_proof -v
+          python3 -O -m unittest test_derive_celestia_proof
+
       - name: ADR 0029 feed retirement (retire_custom_feeds)
         # The record tool for the ADR 0029 subset redeploy: it may blank ONLY the named customPriceFeeds keys
         # (archived under retiredCustomPriceFeeds) and must leave the proxy, implementation, libraries and

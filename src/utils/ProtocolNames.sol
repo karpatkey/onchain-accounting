@@ -127,6 +127,13 @@ library ProtocolNames {
     string internal constant MERKL = "Merkl";
 
     // ─────────────────────────────────────────────────────────────────────────────────────────────────────────────
+    // Derivatives venues
+    // ─────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+    /// @dev `ProtocolIds.DERIVE_V3` — the attested Derive adapter (`DeriveCelestiaAttestedBalanceAdapter`).
+    string internal constant DERIVE_V3 = "Derive";
+
+    // ─────────────────────────────────────────────────────────────────────────────────────────────────────────────
     // protocolId → display name
     // ─────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -190,6 +197,7 @@ library ProtocolNames {
         if (protocolId == ProtocolIds.MAPLE) return MAPLE;
 
         if (protocolId == ProtocolIds.MERKL) return MERKL;
+        if (protocolId == ProtocolIds.DERIVE_V3) return DERIVE_V3;
 
         if (protocolId == ProtocolIds.WALLET) return WALLET;
 

@@ -85,6 +85,7 @@ Identity is the tuple `(chainId, protocolSubId, positionId, balanceAsset.asset, 
 | NexusMutualStakingPoolsAssisted | `nexus-mutual-staking-pools` | `abi.encode(address stakingPool)` (NFT id in `positionInstanceId`) | active + expired staked NXM (per StakingNFT) | `Staking` | false | NXM |
 | | | | claimable rewards (per StakingNFT) | `Rewards` | false | NXM |
 | MerklRewardsAttested | `merkl` | `abi.encode(address DISTRIBUTOR)` (static — the claim target, NOT the reward token; reward token is in `balanceAsset`) | **one leg per cached campaign share** — unclaimed = proof-verified cumulative minus on-chain `claimed`; `keccak256(abi.encode(campaignId, subCampaignId))` in `positionInstanceId`, or `bytes32(0)` when submitted untagged; stale root reads 0 | `Rewards` | false | each reward token |
+| DeriveCelestiaAttested | `derive-v3-subaccounts` | `abi.encode(address VAPP)` (static — Derive's `VerifiableApp`; collateral token is in `balanceAsset`) | **one leg per token**, summed over the proven subaccounts, each valued as equity: collateral (non-cash at Derive's signed spot) plus long options minus short options at Derive's mark minus USDC debt, credit-only (a negative cash net is taken from the same subaccount's non-cash legs); reads 0 after the next Derive batch | `Collateral` | false | each mapped collateral token |
 
 ## PositionKind usage census
 
@@ -96,7 +97,7 @@ split legs of the withdrawal-queue / cooldown adapters, which each emit a `Suppl
 | `Wallet` | 1 | ERC20DefaultBalanceAdapter |
 | `Supplied` | 22 | lending supply, vaults, Cap cUSD, unstaked LP, withdrawal/exit queues (claimable + locked legs), Ethena cooldown, Euler vaults |
 | `Borrowed` | 8 | Aave V3, Spark, Compound V3, Morpho Markets, Fluid Vaults, StakeWise V3, Euler vaults, Gearbox credit accounts |
-| `Collateral` | 7 | Aave V3, Spark, Compound V3, Morpho Markets, Fluid Vaults, Euler vaults, Gearbox credit accounts |
+| `Collateral` | 8 | Aave V3, Spark, Compound V3, Morpho Markets, Fluid Vaults, Euler vaults, Gearbox credit accounts, Derive (attested) |
 | `Staking` | 13 | Safety Module (locked + unlocked stake), Umbrella (locked + unlocked stake), StakeWise V3, Cap stcUSD, Nexus staked NXM, Balancer gauges ×2, Curve gauge ×2, Convex ×2 (each: per-coin split + undecomposable-pool LP fallback) |
 | `Rewards` | 11 | SM, Umbrella, Nexus staked NXM, Compound V3, Balancer gauges ×2, Curve gauge, Convex |
 | `Fees` | 2 | Uniswap V3 (PancakeSwap V3 inherits) |

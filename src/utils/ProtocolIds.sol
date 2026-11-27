@@ -35,6 +35,8 @@ pragma solidity ^0.8;
 ///        UNISWAP_V2 / PANCAKESWAP_V2     → (address pair)
 ///        COMPOUND_V3_COMETS / FLUID_FTOKENS     → (address comet / fToken)
 ///        MERKL                           → (address distributor) — reward token is in balanceAsset, not positionId
+///        DERIVE_V3_SUBACCOUNTS           → (address verifiableApp) — collateral token is in balanceAsset; the
+///                                          fund's subaccounts are summed into one leg per token
 ///        NEXUS_MUTUAL_STAKING_POOLS      → (address stakingPool); StakingNFT tokenId in positionInstanceId
 ///        STADER_WITHDRAWAL              → (address userWithdrawalManager) — static coordinate
 ///        KELP_WITHDRAWAL                → (address withdrawalManager)     — static coordinate; payout asset in balanceAsset
@@ -227,6 +229,11 @@ library ProtocolIds {
 
     // Merkl rewards distributor
     bytes32 internal constant MERKL = keccak256("merkl");
+
+    // Derive v3 (attested from its Celestia batch data, ADR 0031)
+    bytes32 internal constant DERIVE = keccak256("derive");
+    bytes32 internal constant DERIVE_V3 = keccak256("derive-v3");
+    bytes32 internal constant DERIVE_V3_SUBACCOUNTS = keccak256("derive-v3-subaccounts");
 
     // Bridge escrow
     bytes32 internal constant BRIDGE_ESCROW = keccak256("bridge-escrow");

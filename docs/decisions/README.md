@@ -42,3 +42,4 @@ Short, numbered records of *why* the codebase looks the way it does. Read these 
 | 0025 | [A registered heartbeat MUST equal the provider's declared heartbeat](0025-heartbeat-equals-declared.md) | accepted |
 | 0029 | [Staleness flags a price, it never changes the NAV value](0029-staleness-flags-never-changes-value.md) | proposed |
 | 0030 | [Assisted adapters: keeper-fed `submitFor` + cache-free `previewPositions`](0030-assisted-adapters-keeper-submit-and-preview.md) | accepted |
+| 0031 | [Derive v3 balances: an attested member verified against Derive's Celestia blob commitment](0031-derive-celestia-attested-adapter.md) | proposed |

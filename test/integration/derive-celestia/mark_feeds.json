@@ -1,0 +1,378 @@
+{
+ "chainId": 957,
+ "signers": [
+  "0xe92024520e22adc1b93e2084e8846122ef1b4f18",
+  "0xee688353d3faf5eb7253dfb8824b6c764d98e763"
+ ],
+ "valuationTime": 1795189351,
+ "feedContracts": {
+  "ETH": {
+   "spot": "0x727aD65db6aE99DB5Dbee8F202846DD6009bf6D5",
+   "forward": "0x791A570F5785FBdb02EA5C7a794c43111ae2f948",
+   "rate": "0x14062Edef4E2b7bd5399929E014a271A22dF77E3",
+   "vol": "0xb27cb6b08e6c298C8634D73D5F6649665e90d160"
+  },
+  "BTC": {
+   "spot": "0x5Eb59391e7870807aD2C8792E8c5e75838E0fdb0",
+   "forward": "0x958c54bFACc0E2dee586564B31Bf3F171f256279",
+   "rate": "0x37D299d9D83186B6043E68c00D58b1F59C965461",
+   "vol": "0x388341d9E5A7D7d5accD738B2a31b0622E0c1b87"
+  },
+  "HYPE": {
+   "spot": "0x4fdeC4F8cfA5bddedbc60338516F3cb6ba03b143",
+   "forward": "0x0f79fA7bD5C098b99743a9714bcD11f219C9b695",
+   "rate": "0x18522e5D09F3a6964Fc094C230bFcB1AB27e0f17",
+   "vol": "0x481916590863053eA2d8F21B64Ee9429820512d1"
+  }
+ },
+ "optionAssets": {
+  "ETH": "0x4bb4c3cdc7562f08e9910a0c7d8bb7e108861eb4",
+  "BTC": "0xd0711b9ebe84b778483709cde62bacfdbae13623",
+  "HYPE": "0x7344bf2afff9afcd6d024865fc0ca53bf03464d9"
+ },
+ "subaccounts": {
+  "117522": {
+   "spots": [
+    {
+     "currency": "BTC",
+     "price": "59937771133197080000000",
+     "confidence": "1000000000000000000",
+     "deadline": 1795192939,
+     "timestamp": 1795189339,
+     "signatures": [
+      "0x32542f6b33a9257d61333e3f9f934d1cf1f0d80d745133bf22a420b5e1d510e53e84dc1729250a168d646752a62a5e7ee4235b5415c3fae62101ef764f5ba5271c",
+      "0x94d311bc42a366476c7c4436fdee6fb41d6df002be2b543c4a24a57312c2981f55e037b0ff9aef42cc4d6cb6d0b5ce8c14ee2fa06b12c7f4cc693466fecc626c1c"
+     ]
+    },
+    {
+     "currency": "ETH",
+     "price": "1662826578680899700000",
+     "confidence": "1000000000000000000",
+     "deadline": 1795192942,
+     "timestamp": 1795189342,
+     "signatures": [
+      "0xb9589c2477f22d27b7f51cf691d9171b00265ade4ab81009018a12e8fc21ce18500da9d0fc2113937f6397d5ed1b9bdb68fa2c65a0b80248764821bd476713c01c",
+      "0x7b7bb3384717fee9b68e450f40a1155c958c235da6bd7688694522bc28e0780b7cf1798ef8f5f44bf2f01a9649c49b11dd0ef4f0898af9d79e6156aff9c084df1c"
+     ]
+    }
+   ],
+   "expiries": [
+    {
+     "currency": "BTC",
+     "forward": {
+      "expiry": 1795766400,
+      "start": "0",
+      "latest": "0",
+      "fwdDiff": "22766000000003260000",
+      "confidence": "1000000000000000000",
+      "deadline": 1795192930,
+      "timestamp": 1795189330,
+      "signatures": [
+       "0xca3f858b0722639c0f2c26cdcba6e4dd38d30194d5165d1f96c350b8ba0ca4757944ae36119b41b62aa31ca7285d5860c2c20a911e8e425ac51dba663b173e7c1c",
+       "0x6219ae88dd8869c3443e638c6ec84152f9cba898f18219c44624330fb8214cca116e466739119fe3698b0303558ffd3c940ddfb79735440594d5110b012907c41c"
+      ]
+     },
+     "rate": {
+      "expiry": 1795766400,
+      "rate": "38900000000000000",
+      "confidence": "1000000000000000000",
+      "deadline": 1795192920,
+      "timestamp": 1795189320,
+      "signatures": [
+       "0xa15b6dc665bcf63220261e747363f538877fa42b3a89afcc10ec3ee4c19774880575acf305af329945aa17d5b9f1dea5f3671eff488dc84e7170a2cdfa1371af1b",
+       "0xb1d8e418c8ca763c874610b8cd6cd8d874f148c05fa5e253a785d927653c0b456494c85cb1db6c9a7bd445336079c9fd74caeb5b554222eac12eda5ff0a7a6611c"
+      ]
+     },
+     "vol": {
+      "expiry": 1795766400,
+      "a": "-8261650000000000",
+      "b": "72143500000000000",
+      "rho": "287526000000000000",
+      "m": "125327000000000000",
+      "sigma": "176371000000000000",
+      "sviFwd": "60057656000000000000000",
+      "refTau": "18299720953830000",
+      "confidence": "950000000000000000",
+      "deadline": 1795192920,
+      "timestamp": 1795189320,
+      "signatures": [
+       "0xf3bcce0c81bad76d750b7afae21db35af9084b1796a3d8ce56120c38a7a3b94002dc29dc535af2c33ecfc8d33f96d42c4d086a2ba4d01671d907f86c02c129c01c",
+       "0xdc21467b9b4bdd3ecf2ef54ffd6206a33638012dddf38d002d6aa78cbc34b4451f6e65f35fbc4cebb16ae169cbd7c93c1decf91e0ac340fc0714fcbb344e2ac51c"
+      ]
+     }
+    },
+    {
+     "currency": "ETH",
+     "forward": {
+      "expiry": 1795248000,
+      "start": "0",
+      "latest": "0",
+      "fwdDiff": "-1068100000000186000",
+      "confidence": "1000000000000000000",
+      "deadline": 1795192940,
+      "timestamp": 1795189340,
+      "signatures": [
+       "0x72e5daf24046693d4fa7469a97066a5fcfa3aae3d66a32aca44f3b2d06cba12f00501293c2420b7fff7fb8b5128a0b2af797abdde393c722b7b4077d833d94b61b",
+       "0xc188de0c4d6ece564066af437b786ca41658d0402b779445707c478fc4bed0f15501593ffcf2b03ba7d25b217e2e2d2e467501cf52fb78f04a971352e912bb921b"
+      ]
+     },
+     "rate": {
+      "expiry": 1795248000,
+      "rate": "38900000000000000",
+      "confidence": "1000000000000000000",
+      "deadline": 1795192940,
+      "timestamp": 1795189340,
+      "signatures": [
+       "0x480ab3fd1d5c2f25612742ac99f364871e2972027ed38c86baa0886201e9fe663f9452f03675b9333bad3bf9de1166e0de433d5be94935c77b11de8cfd1fad221c",
+       "0x810f3a7284c1c91afdf7383efe5df3690c2b6d780da3627a0f5f1fb2dc97854d5027cbf1e9eb15ad245a88817d9084dcfd97f95875dd72f2ca9d2eeaa09d24311b"
+      ]
+     },
+     "vol": {
+      "expiry": 1795248000,
+      "a": "-2776020000000000",
+      "b": "45781100000000000",
+      "rho": "145867000000000000",
+      "m": "54893500000000000",
+      "sigma": "89369700000000000",
+      "sviFwd": "1666563700000000000000",
+      "refTau": "1860730593610000",
+      "confidence": "950000000000000000",
+      "deadline": 1795192940,
+      "timestamp": 1795189340,
+      "signatures": [
+       "0x4158c7fa3c3e332dec9484dd9f827362eb4af3a10e409291b49fa7a22ef81d332df218898e010b11266c6e3255787fff329a82080d6cea16102c7aabb5f50f661c",
+       "0x663f8347097ed9eab7ae9d43f2f3debfc40369def35133bba8f508b8c216f3ad1a4f634b120c725c485c814527ac6220d1a3bb7a91a741f2f0621f793c1389321b"
+      ]
+     }
+    },
+    {
+     "currency": "ETH",
+     "forward": {
+      "expiry": 1795766400,
+      "start": "0",
+      "latest": "0",
+      "fwdDiff": "667699999999968000",
+      "confidence": "1000000000000000000",
+      "deadline": 1795192940,
+      "timestamp": 1795189340,
+      "signatures": [
+       "0x347b96473fb0f89226aa3c02d57551129c13ef2c7dd09baec5706d5401eb6d207f3600498b1d792eb6dc5f71a4d568cc0c65609ee7383c611d99f36ea1057c501c",
+       "0xfcc7e27c390b24d023cae677bc229d63b150f3704c9e4ae94f872988ef109c901db07c34346ef51fed5bf002c2839ded92e478e7f8c318f3640985a169e24ec51b"
+      ]
+     },
+     "rate": {
+      "expiry": 1795766400,
+      "rate": "38900000000000000",
+      "confidence": "1000000000000000000",
+      "deadline": 1795192940,
+      "timestamp": 1795189340,
+      "signatures": [
+       "0x8a41cc692324f942f83639c551f7f413fe7cdea3eebb7761e5a3da24dab3495c44eb80efb4f73ebd8cd7d71f4f33ec9b1e4c4a23c019fd449015ac5f7ef76cc11b",
+       "0x54a2316bdcd4a7783ea07bfc98572be50ac35ef3ae098b4f35190080023360d935fd022850ffb3180c34b6cc925b4c245725e741633628e32a6eba7027e700bd1b"
+      ]
+     },
+     "vol": {
+      "expiry": 1795766400,
+      "a": "-17960400000000000",
+      "b": "93498400000000000",
+      "rho": "-18432000000000000",
+      "m": "70133000000000000",
+      "sigma": "269626000000000000",
+      "sviFwd": "1668299500000000000000",
+      "refTau": "18299086757990000",
+      "confidence": "950000000000000000",
+      "deadline": 1795192940,
+      "timestamp": 1795189340,
+      "signatures": [
+       "0x5c340e31f37913f36efac95b1d5c9dfbd921361b806b43a626ccf95c40e6202a7285cdaeceb70fe1c933ac4ca63d0e2cba90c74839fd62424656fb2782e4a5591b",
+       "0xa758e28eabe4eb7ce2b638826a500ea352e91c535259c470f39f1444e11eca237671995108fe45d71d7b9afb9e29cb31f6f316098df3a1ab2dc54d8ca879126f1b"
+      ]
+     }
+    },
+    {
+     "currency": "ETH",
+     "forward": {
+      "expiry": 1798185600,
+      "start": "0",
+      "latest": "0",
+      "fwdDiff": "5482299999999896000",
+      "confidence": "1000000000000000000",
+      "deadline": 1795192940,
+      "timestamp": 1795189340,
+      "signatures": [
+       "0x8346c2e78b4c01e7b7c7065683efeef1bc925af28121500defc906be1c078066183d53c78e3c6161ee4f2b688a257d3e4bb7e640f2fccc5ec0fb7791597de4e31c",
+       "0xd80a882c25bac8b6e4475058ebb97664b8778337fbb74ed105db348aa053ef597a5fc4c02883e8769b6a8c845dbd9eda813c6f1aa7523387bf7956b96b9880bb1c"
+      ]
+     },
+     "rate": {
+      "expiry": 1798185600,
+      "rate": "39006160462400460",
+      "confidence": "1000000000000000000",
+      "deadline": 1795192940,
+      "timestamp": 1795189340,
+      "signatures": [
+       "0x93dc2aa3c04fb25e56bacd7b89497d1a212091eff47f7b2de697df395b6ae9740f2d35a188c79d2fc76503f55df0c1293a1dc92d67beac0ced8c341692b692e81b",
+       "0x1ee1d34584f8597b1e23052365e67b20da5539b6adfaf299fa9ca687e7162e6115bf46b0a769ce23a6417f9fe61c840fb0a090ca8d022b0a90745e66171dddd51b"
+      ]
+     },
+     "vol": {
+      "expiry": 1798185600,
+      "a": "-456480000000000000",
+      "b": "348316000000000000",
+      "rho": "35289600000000000",
+      "m": "199616000000000000",
+      "sigma": "1403260000000000000",
+      "sviFwd": "1673114100000000000000",
+      "refTau": "95011415525110000",
+      "confidence": "950000000000000000",
+      "deadline": 1795192940,
+      "timestamp": 1795189340,
+      "signatures": [
+       "0x7fa7ce585993d5c47d96f50e800294a454b32268fd249f3ac677e9bb475aacf26cc7808b8ee96cc13011078e1ca6153b123df6db8d08798788bdac015b9c28e81c",
+       "0x8604876489c7f27be1c2c40525cb123b8f530cebb5234bbbe33c310d578d71ad0721f2f9f10058e527f1157767d05c36cfad6b5e3dd878bbce258741e1545b961c"
+      ]
+     }
+    }
+   ],
+   "options": [
+    {
+     "name": "ETH-20261127-3700-C",
+     "amount": -100.0,
+     "price": 3.02700099408135e-08
+    },
+    {
+     "name": "ETH-20261127-3200-C",
+     "amount": 100.0,
+     "price": 1.8267876087764437e-05
+    },
+    {
+     "name": "ETH-20261225-4500-C",
+     "amount": -100.0,
+     "price": 0.01706626248491724
+    },
+    {
+     "name": "ETH-20261225-3800-C",
+     "amount": 100.0,
+     "price": 0.1852875896685091
+    },
+    {
+     "name": "ETH-20261121-1725-P",
+     "amount": 35.0,
+     "price": 67.89525173853117
+    },
+    {
+     "name": "ETH-20261127-1700-P",
+     "amount": 60.0,
+     "price": 79.17215625637311
+    },
+    {
+     "name": "BTC-20261127-55000-P",
+     "amount": 5.0,
+     "price": 398.45837613915774
+    },
+    {
+     "name": "BTC-20261127-60000-P",
+     "amount": 1.0,
+     "price": 1670.5556612374544
+    }
+   ],
+   "collateral12": "15209662737830603",
+   "netOptions12": "10806334684643188",
+   "expectedCash12": "26015997422473791"
+  },
+  "119408": {
+   "spots": [
+    {
+     "currency": "HYPE",
+     "price": "61036327942306820000",
+     "confidence": "1000000000000000000",
+     "deadline": 1795192946,
+     "timestamp": 1795189346,
+     "signatures": [
+      "0xa072402c2247572a0725a3413776af54159defadcf96bfdae9068b21554cdf35359979f47db04c01588ef9b828488b5d9d9a90f320a9e84d39039a1099c724441b",
+      "0x5d924033eff5cb07b35095ff3209fcc9580b13df4a7435334505db6729dffda52ec72a90502854c6e80fee92893ddedd7de5452db983a45f3de0b2341c8d3c301b"
+     ]
+    }
+   ],
+   "expiries": [
+    {
+     "currency": "HYPE",
+     "forward": {
+      "expiry": 1798185600,
+      "start": "0",
+      "latest": "0",
+      "fwdDiff": "511824000000004300",
+      "confidence": "1000000000000000000",
+      "deadline": 1795192940,
+      "timestamp": 1795189340,
+      "signatures": [
+       "0x641e86e55e7892258f0597c874c2f956069535f7d5b6a83e2e9c7df2b6e511ee6a7b1395d8a17cb6f425c2796345a573321c59ca5b5109b6dd240ea271da5f6b1b",
+       "0x87406d33eb1e362952b40c893bdccfdb687b35a788528b7804bbe8fbd9bbf6d36d54cdea1b7796fbcda8625fecddf32b4fa4f4be083e6eb435f358529fee81a71b"
+      ]
+     },
+     "rate": {
+      "expiry": 1798185600,
+      "rate": "39006160462400460",
+      "confidence": "1000000000000000000",
+      "deadline": 1795192940,
+      "timestamp": 1795189340,
+      "signatures": [
+       "0x0d781ab49d736872a5607297297692d93ddfa8a5353d3e404da392b0cd1aa8340c10a69644dc2a776a0b753dba9e2f34ff6471145ea8e8a1f686cf06804bb9b11b",
+       "0x7f00ca43d648ba9306f6c884a3a9ea5a5920778cb426993e505b4bf6ef31ba233eccbd4a91de90b3400122ffe555dc89b7350a6b7687ea81d8c036ad703a99c81b"
+      ]
+     },
+     "vol": {
+      "expiry": 1798185600,
+      "a": "8051490000000000",
+      "b": "113850000000000000",
+      "rho": "71578000000000000",
+      "m": "95058800000000000",
+      "sigma": "368182000000000000",
+      "sviFwd": "61716104000000000000",
+      "refTau": "95011415525110000",
+      "confidence": "950000000000000000",
+      "deadline": 1795192940,
+      "timestamp": 1795189340,
+      "signatures": [
+       "0x079709aae8ebe36e1a5530befcffe49fbe44519cd8cdd9affb1efa89ccd5904f5ef11ad1e20145aa4a52edc07b14889e5a83277db0bc4458dcf549183aff897e1b",
+       "0x97f99ccae4296abb14a32b05996cbd62d9b021d8a6a4a928a2b226bacbdbd0e73d182a29dc7d04e1a278bc42b660293e81af5d2fcc9a74adee1734a3cb3789c01c"
+      ]
+     }
+    }
+   ],
+   "options": [
+    {
+     "name": "HYPE-20261225-70-P",
+     "amount": -3000.0,
+     "price": 10.996494704425148
+    },
+    {
+     "name": "HYPE-20261225-82-P",
+     "amount": 3000.0,
+     "price": 21.308322624852234
+    }
+   ],
+   "collateral12": "57866122673124317",
+   "netOptions12": "30935483761281256",
+   "expectedCash12": "88801606434405573"
+  }
+ },
+ "expiredSettlement": {
+  "currency": "ETH",
+  "forward": {
+   "expiry": 1794816000,
+   "start": "109048378496584690000000",
+   "latest": "3384169458194537000000000",
+   "fwdDiff": "0",
+   "confidence": "1000000000000000000",
+   "deadline": 1797408000,
+   "timestamp": 1794816000,
+   "signatures": [
+    "0xc8ce19ea6ae24144fb4c8322e97ab9bcff279a227db9d463e6601a0893be5a631bc498821fc9c82627cd93307a7b874560dddfcfb040f7ec498ff7faee89d85b1c",
+    "0x42a62a166216923d208580ef159ee9af59ca7eae90c3cea94a8d090c908add435587bd561a85b1394d65e4b8c90775444c68ee379041b41df19cc98f0c15bccb1b"
+   ]
+  },
+  "settlementPrice18": "1819511710943306838888",
+  "derivePublishedSettlement": "1819.511710943306"
+ }
+}

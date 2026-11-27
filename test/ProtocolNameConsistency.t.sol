@@ -82,6 +82,11 @@ import {
     MerklRewardsAttestedBalanceAdapter
 } from "src/balances/AttestedBalanceAdapters/MerklRewardsAttestedBalanceAdapter.sol";
 import {
+    DeriveCelestiaAttestedBalanceAdapter
+} from "src/balances/AttestedBalanceAdapters/DeriveCelestiaAttestedBalanceAdapter.sol";
+import {MockDeriveVapp} from "test/balances/AttestedBalanceAdapters/DeriveConformance.t.sol";
+import {Mock_ERC20} from "test/mocks/tokens.sol";
+import {
     AaveV3InstancesMetaBalanceAdapter
 } from "src/balances/MetaBalanceAdapters/AaveV3InstancesMetaBalanceAdapter.sol";
 import {AaveV4SpokesMetaBalanceAdapter} from "src/balances/MetaBalanceAdapters/AaveV4SpokesMetaBalanceAdapter.sol";
@@ -248,7 +253,8 @@ contract ProtocolNameConsistencyTest is Test {
     ///      sibling can appear — so both are asserted in {test_hardcodedAdapters_matchCanonicalNames} above.
     ///      `CapBalanceAdapterBase` is abstract and is not counted (the census walks `out/` for deployable artifacts).
     ///      13 -> **14** when `MerklRewardsAttestedBalanceAdapter` (attested family) was added.
-    uint256 internal constant HARDCODED_ADAPTER_COUNT = 14;
+    ///      14 -> **15** when `DeriveCelestiaAttestedBalanceAdapter` (attested family, ADR 0031) was added.
+    uint256 internal constant HARDCODED_ADAPTER_COUNT = 15;
 
     BalancesHarness internal nav;
     address internal stub;
@@ -335,6 +341,26 @@ contract ProtocolNameConsistencyTest is Test {
             new MerklRewardsAttestedBalanceAdapter(stub, address(nav), address(this)).protocolName(),
             ProtocolNames.MERKL,
             "MerklRewards"
+        );
+        assertEq(_deriveAdapter().protocolName(), ProtocolNames.DERIVE_V3, "DeriveCelestiaAttested");
+    }
+
+    function _deriveAdapter() internal returns (DeriveCelestiaAttestedBalanceAdapter) {
+        MockDeriveVapp vapp = new MockDeriveVapp();
+        address[] memory ids = new address[](1);
+        address[] memory toks = new address[](1);
+        ids[0] = address(0xD1);
+        toks[0] = address(new Mock_ERC20("T", 18));
+        return new DeriveCelestiaAttestedBalanceAdapter(
+            address(vapp),
+            address(nav),
+            address(this),
+            vapp.programVKey(),
+            vapp.verifier(),
+            ids,
+            toks,
+            address(0),
+            address(0)
         );
     }
 
@@ -728,7 +754,7 @@ contract ProtocolNameConsistencyTest is Test {
     ///      `PROTOCOL_NAME_COUNT` pinned to the array's own length would be a tautology, not a guard. So: when you
     ///      add a `ProtocolNames` constant, add it to this array by hand. Revisit once `foundry.toml` is free.
     function test_distinctProtocolsHaveDistinctNames() public pure {
-        string[37] memory names = [
+        string[38] memory names = [
             ProtocolNames.WALLET,
             ProtocolNames.AAVE_V3,
             ProtocolNames.SPARK,
@@ -765,7 +791,8 @@ contract ProtocolNameConsistencyTest is Test {
             ProtocolNames.ANKR,
             ProtocolNames.RENZO,
             ProtocolNames.POLYGON,
-            ProtocolNames.YO
+            ProtocolNames.YO,
+            ProtocolNames.DERIVE_V3
         ];
 
         for (uint256 i = 0; i < names.length; i++) {

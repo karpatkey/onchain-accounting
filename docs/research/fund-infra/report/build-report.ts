@@ -143,6 +143,80 @@ function complexSection(): string {
     .join("\n");
 }
 
+// Grades: 2 strong, 1 partial, 0 weak, null n/a or unverified (architecture-comparison.json).
+type Grade = 2 | 1 | 0 | null;
+type Comparison = { systems: string[]; dimensions: { key: string; label: string; cells: [Grade, string][] }[] };
+const comparison = JSON.parse(readFileSync(join(dir, "architecture-comparison.json"), "utf8")) as Comparison;
+const GRADE_STYLE: Record<string, { glyph: string; bg: string }> = {
+  "2": { glyph: "●", bg: "#dcfce7" },
+  "1": { glyph: "◐", bg: "#fef9c3" },
+  "0": { glyph: "○", bg: "#fee2e2" },
+  null: { glyph: "—", bg: "#f8fafc" },
+};
+
+function comparisonHtml(): string {
+  const head = comparison.systems
+    .map((s, i) => `<th class="sys${i < 2 ? " kpk" : ""}"><span>${esc(s)}</span></th>`)
+    .join("");
+  const body = comparison.dimensions
+    .map((d) => {
+      const cells = d.cells
+        .map(([g, basis], i) => {
+          const st = GRADE_STYLE[String(g)];
+          return `<td class="g${i < 2 ? " kpk" : ""}" style="background:${st.bg}" title="${esc(basis)}">${st.glyph}</td>`;
+        })
+        .join("");
+      return `<tr><th class="dim">${esc(d.label)}</th>${cells}</tr>`;
+    })
+    .join("");
+  // Fixed layout takes widths from the first row, so the label column is sized via <colgroup>.
+  return `<table class="matrix"><colgroup><col style="width:260px">${comparison.systems.map(() => "<col>").join("")}</colgroup><thead><tr><th></th>${head}</tr></thead><tbody>${body}</tbody></table>
+<p class="muted">● strong · ◐ partial · ○ weak · — n/a or unverified. Hover a cell for its basis. Source: <code>architecture-comparison.json</code>.</p>`;
+}
+
+// The markdown doc embeds the same matrix between markers, so the JSON stays the single source of the grades.
+function writeComparisonMarkdown(): void {
+  const mdPath = join(dir, "architecture-comparison.md");
+  const md = readFileSync(mdPath, "utf8");
+  const header = `| Dimension | ${comparison.systems.join(" | ")} |\n|---|${comparison.systems.map(() => ":-:").join("|")}|`;
+  const rows = comparison.dimensions
+    .map((d) => `| ${d.label} | ${d.cells.map(([g]) => GRADE_STYLE[String(g)].glyph).join(" | ")} |`)
+    .join("\n");
+  const start = "<!-- matrix:start -->", end = "<!-- matrix:end -->";
+  const i = md.indexOf(start), j = md.indexOf(end);
+  if (i < 0 || j < i) throw new Error(`matrix markers missing in ${mdPath}`);
+  writeFileSync(mdPath, `${md.slice(0, i + start.length)}\n${header}\n${rows}\n${md.slice(j)}`);
+}
+
+const standardHtml = `<div class="std">
+  <div class="ok"><b>(a) Fund discovery</b><span>share token → metadata, NAV source</span><em>Partly covered: ERC-7575, ERC-8318 draft. Missing: share-token binding.</em></div>
+  <div class="part"><b>(b) NAV-bound settlement</b><span>requests settle only against an authorized NAV, min-out</span><em>Gap: ERC-7540 has no min-out by design; ERC-8330 snapshots exist. Keep as kpk interface.</em></div>
+  <div class="gap"><b>(c) Portfolio accounting</b><span>per-position assets, debt, protocol exposure</span><em>Uncovered by any ERC. kpk's PositionBalance + FundConfig supply it.</em></div>
+</div>`;
+
+// What the fork tests prove about the derivation (test names in fundconfig-poc.md and the complex-positions docs).
+const invariantsHtml = `<table>
+<thead><tr><th>Invariant</th><th>Why it holds</th><th>Proven by</th></tr></thead><tbody>
+<tr><td>Every Roles permission traces to a declared position</td><td>FundConfig owns the Roles proxy and has no raw-permission entrypoint</td><td>T7 (owner = FundConfig; owner calls from curator or raw <code>call</code> fail)</td></tr>
+<tr><td>Every declared position is valued</td><td>The same module returns the leaves and the adapter route; <code>fundNav</code> walks the declared list</td><td>T1 (NAV tracks Morpho + Aave deposits within 0.1%), borrow (debt negative), Curve (both legs)</td></tr>
+<tr><td>Undeclared calls are refused</td><td>Leaves pin targets, assets and recipient = Safe (<code>EqualToAvatar</code>)</td><td>T2; swap into undeclared token; LP NFT from another pool; borrow on behalf of a third party</td></tr>
+<tr><td>Shared functions merge, and unmerge cleanly</td><td>Leaves on the same (target, selector) become one Or-tree; removal drops only that branch</td><td>T3 (<code>approve(USDC)</code> for Aave pool + Morpho vault)</td></tr>
+<tr><td>Accounting cannot be dropped while value remains</td><td><code>removePosition</code> reverts while the position's adapter reports a balance</td><td>T4; borrow with open debt</td></tr>
+<tr><td>Assisted positions reachable only through their assistant</td><td>Module permits only <code>DelegateCall</code> to the assistant</td><td>T5 (direct EtherFi LiquidityPool call reverts)</td></tr>
+</tbody></table>
+<p class="muted">Outside FundConfig: the Safe's owners can still enable another module, set a guard, or remove Roles.</p>`;
+
+const typesHtml = `<table>
+<thead><tr><th>Position type</th><th>Derived permissions</th><th>Derived accounting</th><th>Gap</th></tr></thead><tbody>
+<tr><td>Morpho vault</td><td><code>approve(asset→vault)</code>; <code>deposit/redeem/withdraw</code> receiver/owner = Safe</td><td>MorphoVaultsMeta, instance = vault</td><td>—</td></tr>
+<tr><td>Aave V3 supply</td><td><code>approve(asset→pool)</code>; <code>supply/withdraw</code> asset pinned, onBehalfOf/to = Safe</td><td>AaveV3InstancesMeta, filter = asset</td><td>—</td></tr>
+<tr><td>Aave V3 borrow</td><td><code>borrow/repay</code> asset pinned, onBehalfOf = Safe; approve merged with supply</td><td>Same adapter, debt leg (<code>isDebt</code>)</td><td>No LTV bound in Roles; guard is per asset</td></tr>
+<tr><td>Uniswap V3 swap</td><td><code>exactInputSingle</code> tuple: tokens = declared pool's pair, recipient = Safe</td><td>Output tokens are declared wallet assets</td><td>Single-hop only</td></tr>
+<tr><td>Uniswap V3 LP</td><td><code>mint</code> pinned to pool, recipient = Safe; <code>increase/decrease/collect</code> tokenId via <code>Custom</code> check in the module</td><td>UniswapV3PoolsMeta, instance = pool</td><td>—</td></tr>
+<tr><td>Curve pool + gauge</td><td>Two positions: pool add/remove; gauge deposit/withdraw + Minter <code>mint(gauge)</code></td><td>CurvePoolsMeta + CurveGaugesMeta</td><td>Needs per-leg accounting; legacy pools report no wallet LP (src)</td></tr>
+<tr><td>EtherFi withdrawal queue</td><td><code>DelegateCall</code> to the assistant only</td><td>EtherFiWithdrawalQueueAssisted</td><td>—</td></tr>
+</tbody></table>`;
+
 const architecture = `<svg viewBox="0 0 940 330" role="img" class="arch">
   <defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#475569"/></marker></defs>
   <text x="20" y="22" class="h">Shared (immutable)</text>
@@ -171,27 +245,39 @@ const html = `<!doctype html>
   svg{width:100%;height:auto} .lbl{font-size:12px;fill:#334155} .val{font-size:12px;fill:#0f172a;font-variant-numeric:tabular-nums} .grid{stroke:#e2e8f0}
   .arch .box{fill:#f8fafc;stroke:#94a3b8} .arch .hl{fill:#eff6ff;stroke:#2563eb;stroke-width:2} .arch .t{font-size:14px;font-weight:600;fill:#0f172a} .arch .s{font-size:12px;fill:#475569} .arch .h{font-size:13px;font-weight:600;fill:#64748b;text-transform:uppercase} .arch .ar{stroke:#475569;stroke-width:1.5;marker-end:url(#ah)}
   .kpi{display:flex;gap:16px;margin:16px 0} .kpi div{flex:1;border:1px solid #e2e8f0;border-radius:8px;padding:12px} .kpi b{display:block;font-size:22px}
+  .matrix{font-size:13px;table-layout:fixed} .matrix th.dim{width:220px;font-weight:500;background:#fff} .matrix th.sys{height:120px;vertical-align:bottom;padding:4px 0;background:#fff} .matrix th.sys span{display:block;writing-mode:vertical-rl;transform:rotate(180deg);margin:0 auto;white-space:nowrap} .matrix th.kpk span{font-weight:700;color:#1d4ed8} .matrix td.g{text-align:center;font-size:16px;padding:4px 0} .matrix td.kpk{outline:2px solid #2563eb;outline-offset:-2px}
+  .std{display:flex;gap:12px;margin:12px 0} .std div{flex:1;border-radius:8px;padding:12px;border:1px solid #e2e8f0} .std b{display:block} .std span{display:block;color:#475569;font-size:13px;margin:4px 0} .std em{font-size:13px;font-style:normal} .std .ok{background:#fef9c3} .std .part{background:#fef9c3} .std .gap{background:#dcfce7;border-color:#16a34a}
 </style></head><body>
-<h1>FundConfig POC: one declaration, derived permissions and NAV</h1>
-<p class="muted">Mainnet fork at block ${fmt(profile.fork_block)} · forge ${esc(profile.toolchain.forge)} · solc ${esc(profile.toolchain.solc)}. All numbers from <code>gas-profile.json</code>${complex.length ? " and " + complex.map((c) => `<code>${esc(c.file)}</code>`).join(", ") : ""}.</p>
+<h1>FundConfig: one declaration, derived permissions and accounting</h1>
+<p class="muted">A fund declares its positions once. Each declared <code>(module, instance)</code> yields both the Zodiac Roles v2 leaves the manager may call and the balance-adapter route that values it. Mainnet fork at block ${fmt(profile.fork_block)}.</p>
+<h2>How the derivation works</h2>
+${architecture}
+${invariantsHtml}
+<h2>Position types derived so far</h2>
+${typesHtml}
+<h2>Compared with the state of the art</h2>
+${comparisonHtml()}
+<h2>Standard proposal: NAV-linked tokenized funds</h2>
+<p class="muted">Three interfaces on the fund's share token, against existing ERCs (detail: <code>architecture-comparison.md</code>, <code>erc-landscape.md</code>). Green = where no ERC exists and kpk already has the substance.</p>
+${standardHtml}
+<h2>Appendix: cost of deriving on-chain</h2>
 <div class="kpi">
   <div><span class="muted">Fund A, 2 positions</span><b>${fmt(profile.per_step.after["fundA.morpho"].total + profile.per_step.after["fundA.aave"].total)}</b><span class="muted">was ${fmt(profile.per_step.before["fundA.morpho"].total + profile.per_step.before["fundA.aave"].total)} gas</span></div>
   <div><span class="muted">Marginal position (N≥3)</span><b>~${fmt(Math.round(profile.scaling.delta_after.N7_to_N8 / 1000))}k</b><span class="muted">was ~${fmt(Math.round(profile.scaling.delta_before.N7_to_N8 / 1000))}k gas</span></div>
   <div><span class="muted">Second identical fund saves</span><b>${fmt(profile.t6_gap_decomposition.gap_first_minus_second_AB.after)}</b><span class="muted">mostly Roles condition-tree reuse</span></div>
 </div>
-<h2>Architecture</h2>
-${architecture}
-<h2>addPosition gas, per step (before → after)</h2>
+<h3>addPosition gas per step (before → after)</h3>
 ${stackedBars()}
-<h2>Scaling: Nth position sharing one approve key</h2>
+<h3>Scaling: Nth position sharing one approve key</h3>
 ${scalingChart()}
-<h2>Why the second fund is cheaper</h2>
+<h3>Why the second fund is cheaper</h3>
 ${gapWaterfall()}
-<h2>Complex position types</h2>
+<h3>Manager calls and setup per complex type</h3>
 ${complexSection()}
 </body></html>
 `;
 
 const outPath = join(import.meta.dir, "index.html");
 writeFileSync(outPath, html);
-console.log(`wrote ${outPath}${existsSync(outPath) ? "" : " (missing?)"}`);
+writeComparisonMarkdown();
+console.log(`wrote ${outPath} and the architecture-comparison.md matrix`);

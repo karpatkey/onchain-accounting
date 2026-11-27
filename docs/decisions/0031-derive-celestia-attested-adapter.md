@@ -106,6 +106,24 @@ tested on real batches and on a fork of mainnet.
      (`derive/DeriveOptionMath.sol`) is written from the published formulas.
    - Perps are refused: the record's per-perp fields beyond the amount are not decoded.
 
+6. **In-flight value: skip the settlement window, do not value it.** Value between the fund Safe and Derive is in
+   neither leg: a deposit queued in the `OnchainActionManager` (`0xE366…AD3`) until a batch applies it; a withdrawal
+   the `WithdrawalOutbox` (`0x7c74…FA63`) rate-limits into its queue, paid later by permissionless `processQueue`;
+   a withdrawal deferred after a failed transfer, paid by the owner's `deferredProcess`. A normal withdrawal is paid
+   inside `submitBatch` itself. A withdrawal's debit is in a committed batch before any payout, and a new batch
+   zeroes older entries, so in-flight value is only ever missing, never counted twice; and it matters only at
+   settlement (decision 3).
+   - **Check.** The settlement guard runs `script/test/derive-celestia-proof.py --preflight SAFE` immediately before
+     it signs and settles only on exit 0 (1: something in flight, 2: a read failed). At one block, Ethereum only:
+     no deposit, deposit-to-new-subaccount or withdrawal request from the Safe with an action id at or above
+     `VAPP.consumedPublicAccIndex()`; no unpaid queued withdrawal, each read in the bucket it was enqueued in (a later
+     `setBucketLimit` moves the Safe's bucket, not its old entries); no deferred one with
+     `deferredWithdrawals(id) != 0`. The log scans start at deployment and need an archive RPC (about 2 s on Alchemy).
+   - **Observed.** From the outbox's deployment to block 26,507,752 (2026-11-27): 187 of about 6,081 payouts were
+     queued, all in the shared global bucket, each paid in full within 1,882 blocks (median 225, about 45 minutes);
+     5 were deferred, all since paid. The check, run for one of those recipients (`0x1e1f…124b`) at its enqueue
+     block 26,354,952, exits 1 on its 682,753.36 USDC queue entry, and 0 today.
+
 ## Alternatives considered
 
 - **Derive-signed wallet value.** Needs Derive to build and operate a signer; the trust moves to its keys.
@@ -118,6 +136,11 @@ tested on real batches and on a fork of mainnet.
   batches while its sequencer keeps trading, which the epoch alone cannot see.
 - **Per-batch keeper or absence proofs.** Absence proofs average 2.8 shares per newer batch, and cannot use
   neighbours when the fund's id is the highest in the section (38 of 84 batches checked).
+- **Value queued withdrawals with an outbox adapter** (`derive-spike` spec §3), so a settlement can go ahead while
+  one waits. The queue is shared (the global `(0,0)` bucket): an unbounded walk lets any Derive user push it past the
+  gas stipend, and `AdapterGasExhausted` then reverts every `getAccountNav`; a bounded walk returns a partial sum
+  that the NAV Calculator accepts silently (it reads any other adapter revert as "nothing to report"). Entries also
+  stay in the bucket chosen when they were enqueued. A per-fund bucket from Derive removes most of the delay instead.
 
 ## Consequences
 
@@ -159,6 +182,11 @@ tested on real batches and on a fork of mainnet.
   collateral assets it can price at Derive's spot; a debt or an option in an asset outside it is refused
   (`UnmappedSpotAsset`).
 - Celestia retention is unknown; the keeper archives the blobs it proves against.
+- **A settlement can wait for in-flight value** (decision 6): while the fund's own deposit is unapplied or its
+  withdrawal is queued or deferred, no NAV is struck; the longest queue wait so far was about 6.3 hours. The check
+  runs before the settlement transaction, not inside it, so the guard runs it immediately before signing. A
+  deposit's `fallbackRecipient` receives the funds if Derive cannot apply it, and the check clears once the action
+  is consumed: the fund names its own wallet as fallback.
 
 ## Implementation
 
@@ -178,8 +206,9 @@ and short options on credit, covered calls and puts, a pure USDC borrow, deficit
 two option books priced from Derive's real signed feeds, an expired ETH series at Derive's published settlement,
 subaccount 122119 with its USDC borrow against `margin_watch`, and a fixture the proof builder wrote unedited, matched
 to its reference), math vectors (`derive/DeriveOptionMath.t.sol`), the proof builder's own suite
-(`script/test/test_derive_celestia_proof.py`: decoder, feed selection, and its reference on the same real books), and a
-fork test against the real VAPP at a pinned block.
+(`script/test/test_derive_celestia_proof.py`: decoder, feed selection, its reference on the same real books, and the
+in-flight preflight against a stubbed chain), and a fork test against the real VAPP at a pinned block. In-flight
+preflight: `--preflight SAFE` in the same script (decision 6). Plan: `docs/plans/2026-11-27-derive-in-flight-value.md`.
 
 ## Before acceptance
 
@@ -194,3 +223,6 @@ fork test against the real VAPP at a pinned block.
    If recourse exists, the adapter must require the full set of the fund's subaccounts in every submit, which needs
    an onchain list of them.
 5. Audit pass, deployment config and the settlement-guard integration.
+6. One deposit and one withdrawal of the fund's dust: record the queue-to-batch time, confirm the payout in a
+   `submitBatch` transaction, and see the preflight exit 1 while each is pending, then 0. Ask Derive for a per-fund
+   withdrawal bucket (`setBucketLimit`) sized to the fund's flows.

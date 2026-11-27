@@ -1,0 +1,1749 @@
+{
+  "meta": {
+    "schema": "fundconfig-derivation/v1",
+    "chainId": 1,
+    "forkBlock": 26500000,
+    "quoteAsset": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+    "positionCount": 8,
+    "rolesKeyCount": 24,
+    "leafCount": 31
+  },
+  "fund": {
+    "fundConfig": "0x15cF58144EF33af1e14b5208015d11F9143E27b9",
+    "safe": "0x4DD77c6104C598a47FD51768B118b208a2290C09",
+    "roles": "0x676740BF6049c7F7129f38acE7BF2535d77153B6",
+    "curator": "0xD22c503216d1FFC1Da829E7B3a12925Cb9641F47",
+    "manager": "0xA5d55E7A556fbA22974479497E6bf7e097D81b5e",
+    "roleKey": "0x2447c43a6160806768d4c947ce727fb12b7f2700badae716947943ea245c25d6",
+    "registry": "0x5615dEB798BB3E4dFa0139dFa1b3D433Cc23b72f",
+    "navCalculator": "0x54EaD2A1dB7456cA917675Ea8908ec8A997c6214"
+  },
+  "positions": [
+    {
+      "index": 0,
+      "kind": "morpho-vault",
+      "moduleName": "MorphoVaultModule",
+      "moduleId": "0xf08837591134515b65bc1dfcd4aa4adfc22e7a851346de36d85c63d2a23a1d5c",
+      "instance": "0x000000000000000000000000e108fbc04852b5df72f9e44d7c29f47e7a993add",
+      "instanceLabel": "kpk_USDC_Prime",
+      "accounting": {
+        "adapter": "0x72a012B30b240458C3f79fd20E5c2A907d77e54f",
+        "isMeta": true,
+        "coordinate": "0x000000000000000000000000e108fbc04852b5df72f9e44d7c29f47e7a993add",
+        "assetFilter": "0x0000000000000000000000000000000000000000"
+      },
+      "assets": [
+        {
+          "asset": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+          "label": "USDC"
+        }
+      ],
+      "leaves": [
+        {
+          "target": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+          "targetLabel": "USDC",
+          "selector": "0x095ea7b3",
+          "signature": "approve(address,uint256)",
+          "options": "Send",
+          "conditions": [
+            {
+              "parent": 0,
+              "paramType": "Calldata",
+              "operator": 5,
+              "operatorName": "MATCHES",
+              "compValue": "0x"
+            },
+            {
+              "parent": 0,
+              "paramType": "Static",
+              "operator": 16,
+              "operatorName": "EQUAL_TO",
+              "compValue": "0x000000000000000000000000e108fbc04852b5df72f9e44d7c29f47e7a993add"
+            },
+            {
+              "parent": 0,
+              "paramType": "Static",
+              "operator": 0,
+              "operatorName": "PASS",
+              "compValue": "0x"
+            }
+          ]
+        },
+        {
+          "target": "0xe108fbc04852B5df72f9E44d7C29F47e7A993aDd",
+          "targetLabel": "kpk_USDC_Prime (Morpho vault)",
+          "selector": "0x6e553f65",
+          "signature": "deposit(uint256,address)",
+          "options": "Send",
+          "conditions": [
+            {
+              "parent": 0,
+              "paramType": "Calldata",
+              "operator": 5,
+              "operatorName": "MATCHES",
+              "compValue": "0x"
+            },
+            {
+              "parent": 0,
+              "paramType": "Static",
+              "operator": 0,
+              "operatorName": "PASS",
+              "compValue": "0x"
+            },
+            {
+              "parent": 0,
+              "paramType": "Static",
+              "operator": 15,
+              "operatorName": "EQUAL_TO_AVATAR",
+              "compValue": "0x"
+            }
+          ]
+        },
+        {
+          "target": "0xe108fbc04852B5df72f9E44d7C29F47e7A993aDd",
+          "targetLabel": "kpk_USDC_Prime (Morpho vault)",
+          "selector": "0xba087652",
+          "signature": "redeem(uint256,address,address)",
+          "options": "Send",
+          "conditions": [
+            {
+              "parent": 0,
+              "paramType": "Calldata",
+              "operator": 5,
+              "operatorName": "MATCHES",
+              "compValue": "0x"
+            },
+            {
+              "parent": 0,
+              "paramType": "Static",
+              "operator": 0,
+              "operatorName": "PASS",
+              "compValue": "0x"
+            },
+            {
+              "parent": 0,
+              "paramType": "Static",
+              "operator": 15,
+              "operatorName": "EQUAL_TO_AVATAR",
+              "compValue": "0x"
+            },
+            {
+              "parent": 0,
+              "paramType": "Static",
+              "operator": 15,
+              "operatorName": "EQUAL_TO_AVATAR",
+              "compValue": "0x"
+            }
+          ]
+        },
+        {
+          "target": "0xe108fbc04852B5df72f9E44d7C29F47e7A993aDd",
+          "targetLabel": "kpk_USDC_Prime (Morpho vault)",
+          "selector": "0xb460af94",
+          "signature": "withdraw(uint256,address,address)",
+          "options": "Send",
+          "conditions": [
+            {
+              "parent": 0,
+              "paramType": "Calldata",
+              "operator": 5,
+              "operatorName": "MATCHES",
+              "compValue": "0x"
+            },
+            {
+              "parent": 0,
+              "paramType": "Static",
+              "operator": 0,
+              "operatorName": "PASS",
+              "compValue": "0x"
+            },
+            {
+              "parent": 0,
+              "paramType": "Static",
+              "operator": 15,
+              "operatorName": "EQUAL_TO_AVATAR",
+              "compValue": "0x"
+            },
+            {
+              "parent": 0,
+              "paramType": "Static",
+              "operator": 15,
+              "operatorName": "EQUAL_TO_AVATAR",
+              "compValue": "0x"
+            }
+          ]
+        }
+      ],
+      "balances": [
+        {
+          "asset": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+          "symbol": "USDC",
+          "amount": 999999999,
+          "isDebt": false,
+          "protocolId": "0x281335d191299304b6bdb3c4042efa6414c8988df37f941868fa00511796515e",
+          "protocolSubId": "0xf08837591134515b65bc1dfcd4aa4adfc22e7a851346de36d85c63d2a23a1d5c",
+          "positionKind": "Supplied",
+          "isLocked": false,
+          "value": 999999998,
+          "stale": false
+        }
+      ],
+      "netValue": 999999998,
+      "stale": false
+    },
+    {
+      "index": 1,
+      "kind": "aave-v3-supply",
+      "moduleName": "AaveV3Module",
+      "moduleId": "0xd82958de0148a43c40e2dce49da0a1a46161681a9fa089c074cba5c44c70008c",
+      "instance": "0x000000000000000000000000c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+      "instanceLabel": "Aave V3 WETH supply (collateral)",
+      "accounting": {
+        "adapter": "0xa1b3c695A768A6Ce571fF699F463224CB32260C1",
+        "isMeta": true,
+        "coordinate": "0x0000000000000000000000007b4eb56e7cd4b454ba8ff71e4518426369a138a3",
+        "assetFilter": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
+      },
+      "assets": [
+        {
+          "asset": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
+          "label": "WETH"
+        }
+      ],
+      "leaves": [
+        {
+          "target": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
+          "targetLabel": "WETH",
+          "selector": "0x095ea7b3",
+          "signature": "approve(address,uint256)",
+          "options": "Send",
+          "conditions": [
+            {
+              "parent": 0,
+              "paramType": "Calldata",
+              "operator": 5,
+              "operatorName": "MATCHES",
+              "compValue": "0x"
+            },
+            {
+              "parent": 0,
+              "paramType": "Static",
+              "operator": 16,
+              "operatorName": "EQUAL_TO",
+              "compValue": "0x00000000000000000000000087870bca3f3fd6335c3f4ce8392d69350b4fa4e2"
+            },
+            {
+              "parent": 0,
+              "paramType": "Static",
+              "operator": 0,
+              "operatorName": "PASS",
+              "compValue": "0x"
+            }
+          ]
+        },
+        {
+          "target": "0x87870Bca3F3fD6335C3F4ce8392D69350B4fA4E2",
+          "targetLabel": "Aave V3 Pool",
+          "selector": "0x617ba037",
+          "signature": "supply(address,uint256,address,uint16)",
+          "options": "Send",
+          "conditions": [
+            {
+              "parent": 0,
+              "paramType": "Calldata",
+              "operator": 5,
+              "operatorName": "MATCHES",
+              "compValue": "0x"
+            },
+            {
+              "parent": 0,
+              "paramType": "Static",
+              "operator": 16,
+              "operatorName": "EQUAL_TO",
+              "compValue": "0x000000000000000000000000c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2"
+            },
+            {
+              "parent": 0,
+              "paramType": "Static",
+              "operator": 0,
+              "operatorName": "PASS",
+              "compValue": "0x"
+            },
+            {
+              "parent": 0,
+              "paramType": "Static",
+              "operator": 15,
+              "operatorName": "EQUAL_TO_AVATAR",
+              "compValue": "0x"
+            },
+            {
+              "parent": 0,
+              "paramType": "Static",
+              "operator": 0,
+              "operatorName": "PASS",
+              "compValue": "0x"
+            }
+          ]
+        },
+        {
+          "target": "0x87870Bca3F3fD6335C3F4ce8392D69350B4fA4E2",
+          "targetLabel": "Aave V3 Pool",
+          "selector": "0x69328dec",
+          "signature": "withdraw(address,uint256,address)",
+          "options": "Send",
+          "conditions": [
+            {
+              "parent": 0,
+              "paramType": "Calldata",
+              "operator": 5,
+              "operatorName": "MATCHES",
+              "compValue": "0x"
+            },
+            {
+              "parent": 0,
+              "paramType": "Static",
+              "operator": 16,
+              "operatorName": "EQUAL_TO",
+              "compValue": "0x000000000000000000000000c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2"
+            },
+            {
+              "parent": 0,
+              "paramType": "Static",
+              "operator": 0,
+              "operatorName": "PASS",
+              "compValue": "0x"
+            },
+            {
+              "parent": 0,
+              "paramType": "Static",
+              "operator": 15,
+              "operatorName": "EQUAL_TO_AVATAR",
+              "compValue": "0x"
+            }
+          ]
+        }
+      ],
+      "balances": [
+        {
+          "asset": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
+          "symbol": "WETH",
+          "amount": 999999999999999998,
+          "isDebt": false,
+          "protocolId": "0xbbbf88eb3aaea499bd8961e51ce38087d4dda7879001b87ead64f8a7a3d0b2da",
+          "protocolSubId": "0x52253c69c4edd1c73cf92a0cd20f4a4fa75087bb55a85c4f5562cb0533375f60",
+          "positionKind": "Collateral",
+          "isLocked": false,
+          "value": 1702306726,
+          "stale": false
+        }
+      ],
+      "netValue": 1702306726,
+      "stale": false
+    },
+    {
+      "index": 2,
+      "kind": "aave-v3-borrow",
+      "moduleName": "AaveV3BorrowModule",
+      "moduleId": "0xe15231cab80b71569da34c0fa202fe65086046ebe1da1e4629383752576c9ecd",
+      "instance": "0x000000000000000000000000a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+      "instanceLabel": "Aave V3 USDC borrow",
+      "accounting": {
+        "adapter": "0xa1b3c695A768A6Ce571fF699F463224CB32260C1",
+        "isMeta": true,
+        "coordinate": "0x0000000000000000000000007b4eb56e7cd4b454ba8ff71e4518426369a138a3",
+        "assetFilter": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"
+      },
+      "assets": [
+        {
+          "asset": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+          "label": "USDC"
+        }
+      ],
+      "leaves": [
+        {
+          "target": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+          "targetLabel": "USDC",
+          "selector": "0x095ea7b3",
+          "signature": "approve(address,uint256)",
+          "options": "Send",
+          "conditions": [
+            {
+              "parent": 0,
+              "paramType": "Calldata",
+              "operator": 5,
+              "operatorName": "MATCHES",
+              "compValue": "0x"
+            },
+            {
+              "parent": 0,
+              "paramType": "Static",
+              "operator": 16,
+              "operatorName": "EQUAL_TO",
+              "compValue": "0x00000000000000000000000087870bca3f3fd6335c3f4ce8392d69350b4fa4e2"
+            },
+            {
+              "parent": 0,
+              "paramType": "Static",
+              "operator": 0,
+              "operatorName": "PASS",
+              "compValue": "0x"
+            }
+          ]
+        },
+        {
+          "target": "0x87870Bca3F3fD6335C3F4ce8392D69350B4fA4E2",
+          "targetLabel": "Aave V3 Pool",
+          "selector": "0xa415bcad",
+          "signature": "borrow(address,uint256,uint256,uint16,address)",
+          "options": "Send",
+          "conditions": [
+            {
+              "parent": 0,
+              "paramType": "Calldata",
+              "operator": 5,
+              "operatorName": "MATCHES",
+              "compValue": "0x"
+            },
+            {
+              "parent": 0,
+              "paramType": "Static",
+              "operator": 16,
+              "operatorName": "EQUAL_TO",
+              "compValue": "0x000000000000000000000000a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"
+            },
+            {
+              "parent": 0,
+              "paramType": "Static",
+              "operator": 0,
+              "operatorName": "PASS",
+              "compValue": "0x"
+            },
+            {
+              "parent": 0,
+              "paramType": "Static",
+              "operator": 0,
+              "operatorName": "PASS",
+              "compValue": "0x"
+            },
+            {
+              "parent": 0,
+              "paramType": "Static",
+              "operator": 0,
+              "operatorName": "PASS",
+              "compValue": "0x"
+            },
+            {
+              "parent": 0,
+              "paramType": "Static",
+              "operator": 15,
+              "operatorName": "EQUAL_TO_AVATAR",
+              "compValue": "0x"
+            }
+          ]
+        },
+        {
+          "target": "0x87870Bca3F3fD6335C3F4ce8392D69350B4fA4E2",
+          "targetLabel": "Aave V3 Pool",
+          "selector": "0x573ade81",
+          "signature": "repay(address,uint256,uint256,address)",
+          "options": "Send",
+          "conditions": [
+            {
+              "parent": 0,
+              "paramType": "Calldata",
+              "operator": 5,
+              "operatorName": "MATCHES",
+              "compValue": "0x"
+            },
+            {
+              "parent": 0,
+              "paramType": "Static",
+              "operator": 16,
+              "operatorName": "EQUAL_TO",
+              "compValue": "0x000000000000000000000000a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"
+            },
+            {
+              "parent": 0,
+              "paramType": "Static",
+              "operator": 0,
+              "operatorName": "PASS",
+              "compValue": "0x"
+            },
+            {
+              "parent": 0,
+              "paramType": "Static",
+              "operator": 0,
+              "operatorName": "PASS",
+              "compValue": "0x"
+            },
+            {
+              "parent": 0,
+              "paramType": "Static",
+              "operator": 15,
+              "operatorName": "EQUAL_TO_AVATAR",
+              "compValue": "0x"
+            }
+          ]
+        }
+      ],
+      "balances": [
+        {
+          "asset": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+          "symbol": "USDC",
+          "amount": 100000001,
+          "isDebt": true,
+          "protocolId": "0xbbbf88eb3aaea499bd8961e51ce38087d4dda7879001b87ead64f8a7a3d0b2da",
+          "protocolSubId": "0x52253c69c4edd1c73cf92a0cd20f4a4fa75087bb55a85c4f5562cb0533375f60",
+          "positionKind": "Borrowed",
+          "isLocked": false,
+          "value": -100000000,
+          "stale": false
+        }
+      ],
+      "netValue": -100000000,
+      "stale": false
+    },
+    {
+      "index": 3,
+      "kind": "uniswap-v3-swap",
+      "moduleName": "SwapModule",
+      "moduleId": "0x5d36566942e2482adb1eae6a6f2aa992161445742d74588596f6433bc24d17ab",
+      "instance": "0x00000000000000000000000088e6a0c2ddd26feeb64f039a2c41296fcb3f5640",
+      "instanceLabel": "Uniswap V3 USDC/WETH 0.05% swap",
+      "accounting": {
+        "adapter": "0xc7183455a4C133Ae270771860664b6B7ec320bB1",
+        "isMeta": false,
+        "coordinate": "0x0000000000000000000000000000000000000000000000000000000000000000",
+        "assetFilter": "0x0000000000000000000000000000000000000000"
+      },
+      "assets": [
+        {
+          "asset": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+          "label": "USDC"
+        },
+        {
+          "asset": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
+          "label": "WETH"
+        }
+      ],
+      "leaves": [
+        {
+          "target": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+          "targetLabel": "USDC",
+          "selector": "0x095ea7b3",
+          "signature": "approve(address,uint256)",
+          "options": "Send",
+          "conditions": [
+            {
+              "parent": 0,
+              "paramType": "Calldata",
+              "operator": 5,
+              "operatorName": "MATCHES",
+              "compValue": "0x"
+            },
+            {
+              "parent": 0,
+              "paramType": "Static",
+              "operator": 16,
+              "operatorName": "EQUAL_TO",
+              "compValue": "0x00000000000000000000000068b3465833fb72a70ecdf485e0e4c7bd8665fc45"
+            },
+            {
+              "parent": 0,
+              "paramType": "Static",
+              "operator": 0,
+              "operatorName": "PASS",
+              "compValue": "0x"
+            }
+          ]
+        },
+        {
+          "target": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
+          "targetLabel": "WETH",
+          "selector": "0x095ea7b3",
+          "signature": "approve(address,uint256)",
+          "options": "Send",
+          "conditions": [
+            {
+              "parent": 0,
+              "paramType": "Calldata",
+              "operator": 5,
+              "operatorName": "MATCHES",
+              "compValue": "0x"
+            },
+            {
+              "parent": 0,
+              "paramType": "Static",
+              "operator": 16,
+              "operatorName": "EQUAL_TO",
+              "compValue": "0x00000000000000000000000068b3465833fb72a70ecdf485e0e4c7bd8665fc45"
+            },
+            {
+              "parent": 0,
+              "paramType": "Static",
+              "operator": 0,
+              "operatorName": "PASS",
+              "compValue": "0x"
+            }
+          ]
+        },
+        {
+          "target": "0x68b3465833fb72A70ecDF485E0e4C7bD8665Fc45",
+          "targetLabel": "Uniswap SwapRouter02",
+          "selector": "0x04e45aaf",
+          "signature": "exactInputSingle((address,address,uint24,address,uint256,uint256,uint160))",
+          "options": "Send",
+          "conditions": [
+            {
+              "parent": 0,
+              "paramType": "Calldata",
+              "operator": 5,
+              "operatorName": "MATCHES",
+              "compValue": "0x"
+            },
+            {
+              "parent": 0,
+              "paramType": "Tuple",
+              "operator": 5,
+              "operatorName": "MATCHES",
+              "compValue": "0x"
+            },
+            {
+              "parent": 1,
+              "paramType": "Static",
+              "operator": 16,
+              "operatorName": "EQUAL_TO",
+              "compValue": "0x000000000000000000000000a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"
+            },
+            {
+              "parent": 1,
+              "paramType": "Static",
+              "operator": 16,
+              "operatorName": "EQUAL_TO",
+              "compValue": "0x000000000000000000000000c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2"
+            },
+            {
+              "parent": 1,
+              "paramType": "Static",
+              "operator": 16,
+              "operatorName": "EQUAL_TO",
+              "compValue": "0x00000000000000000000000000000000000000000000000000000000000001f4"
+            },
+            {
+              "parent": 1,
+              "paramType": "Static",
+              "operator": 15,
+              "operatorName": "EQUAL_TO_AVATAR",
+              "compValue": "0x"
+            },
+            {
+              "parent": 1,
+              "paramType": "Static",
+              "operator": 0,
+              "operatorName": "PASS",
+              "compValue": "0x"
+            },
+            {
+              "parent": 1,
+              "paramType": "Static",
+              "operator": 0,
+              "operatorName": "PASS",
+              "compValue": "0x"
+            },
+            {
+              "parent": 1,
+              "paramType": "Static",
+              "operator": 0,
+              "operatorName": "PASS",
+              "compValue": "0x"
+            }
+          ]
+        },
+        {
+          "target": "0x68b3465833fb72A70ecDF485E0e4C7bD8665Fc45",
+          "targetLabel": "Uniswap SwapRouter02",
+          "selector": "0x04e45aaf",
+          "signature": "exactInputSingle((address,address,uint24,address,uint256,uint256,uint160))",
+          "options": "Send",
+          "conditions": [
+            {
+              "parent": 0,
+              "paramType": "Calldata",
+              "operator": 5,
+              "operatorName": "MATCHES",
+              "compValue": "0x"
+            },
+            {
+              "parent": 0,
+              "paramType": "Tuple",
+              "operator": 5,
+              "operatorName": "MATCHES",
+              "compValue": "0x"
+            },
+            {
+              "parent": 1,
+              "paramType": "Static",
+              "operator": 16,
+              "operatorName": "EQUAL_TO",
+              "compValue": "0x000000000000000000000000c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2"
+            },
+            {
+              "parent": 1,
+              "paramType": "Static",
+              "operator": 16,
+              "operatorName": "EQUAL_TO",
+              "compValue": "0x000000000000000000000000a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"
+            },
+            {
+              "parent": 1,
+              "paramType": "Static",
+              "operator": 16,
+              "operatorName": "EQUAL_TO",
+              "compValue": "0x00000000000000000000000000000000000000000000000000000000000001f4"
+            },
+            {
+              "parent": 1,
+              "paramType": "Static",
+              "operator": 15,
+              "operatorName": "EQUAL_TO_AVATAR",
+              "compValue": "0x"
+            },
+            {
+              "parent": 1,
+              "paramType": "Static",
+              "operator": 0,
+              "operatorName": "PASS",
+              "compValue": "0x"
+            },
+            {
+              "parent": 1,
+              "paramType": "Static",
+              "operator": 0,
+              "operatorName": "PASS",
+              "compValue": "0x"
+            },
+            {
+              "parent": 1,
+              "paramType": "Static",
+              "operator": 0,
+              "operatorName": "PASS",
+              "compValue": "0x"
+            }
+          ]
+        }
+      ],
+      "balances": [],
+      "netValue": 0,
+      "stale": false
+    },
+    {
+      "index": 4,
+      "kind": "uniswap-v3-lp",
+      "moduleName": "UniswapV3LpModule",
+      "moduleId": "0xaa9dcfe1ed98b84f87cf7e93cddd6cdd4d2a59362dd4533611d1af07480624da",
+      "instance": "0x00000000000000000000000088e6a0c2ddd26feeb64f039a2c41296fcb3f5640",
+      "instanceLabel": "Uniswap V3 USDC/WETH 0.05% LP",
+      "accounting": {
+        "adapter": "0x2F7e8f78FD8EE977F6D53752b03A79c77012Ba52",
+        "isMeta": true,
+        "coordinate": "0x00000000000000000000000088e6a0c2ddd26feeb64f039a2c41296fcb3f5640",
+        "assetFilter": "0x0000000000000000000000000000000000000000"
+      },
+      "assets": [
+        {
+          "asset": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+          "label": "USDC"
+        },
+        {
+          "asset": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
+          "label": "WETH"
+        }
+      ],
+      "leaves": [
+        {
+          "target": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+          "targetLabel": "USDC",
+          "selector": "0x095ea7b3",
+          "signature": "approve(address,uint256)",
+          "options": "Send",
+          "conditions": [
+            {
+              "parent": 0,
+              "paramType": "Calldata",
+              "operator": 5,
+              "operatorName": "MATCHES",
+              "compValue": "0x"
+            },
+            {
+              "parent": 0,
+              "paramType": "Static",
+              "operator": 16,
+              "operatorName": "EQUAL_TO",
+              "compValue": "0x000000000000000000000000c36442b4a4522e871399cd717abdd847ab11fe88"
+            },
+            {
+              "parent": 0,
+              "paramType": "Static",
+              "operator": 0,
+              "operatorName": "PASS",
+              "compValue": "0x"
+            }
+          ]
+        },
+        {
+          "target": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
+          "targetLabel": "WETH",
+          "selector": "0x095ea7b3",
+          "signature": "approve(address,uint256)",
+          "options": "Send",
+          "conditions": [
+            {
+              "parent": 0,
+              "paramType": "Calldata",
+              "operator": 5,
+              "operatorName": "MATCHES",
+              "compValue": "0x"
+            },
+            {
+              "parent": 0,
+              "paramType": "Static",
+              "operator": 16,
+              "operatorName": "EQUAL_TO",
+              "compValue": "0x000000000000000000000000c36442b4a4522e871399cd717abdd847ab11fe88"
+            },
+            {
+              "parent": 0,
+              "paramType": "Static",
+              "operator": 0,
+              "operatorName": "PASS",
+              "compValue": "0x"
+            }
+          ]
+        },
+        {
+          "target": "0xC36442b4a4522E871399CD717aBDD847Ab11FE88",
+          "targetLabel": "Uniswap V3 NonfungiblePositionManager",
+          "selector": "0x88316456",
+          "signature": "mint((address,address,uint24,int24,int24,uint256,uint256,uint256,uint256,address,uint256))",
+          "options": "Send",
+          "conditions": [
+            {
+              "parent": 0,
+              "paramType": "Calldata",
+              "operator": 5,
+              "operatorName": "MATCHES",
+              "compValue": "0x"
+            },
+            {
+              "parent": 0,
+              "paramType": "Tuple",
+              "operator": 5,
+              "operatorName": "MATCHES",
+              "compValue": "0x"
+            },
+            {
+              "parent": 1,
+              "paramType": "Static",
+              "operator": 16,
+              "operatorName": "EQUAL_TO",
+              "compValue": "0x000000000000000000000000a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"
+            },
+            {
+              "parent": 1,
+              "paramType": "Static",
+              "operator": 16,
+              "operatorName": "EQUAL_TO",
+              "compValue": "0x000000000000000000000000c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2"
+            },
+            {
+              "parent": 1,
+              "paramType": "Static",
+              "operator": 16,
+              "operatorName": "EQUAL_TO",
+              "compValue": "0x00000000000000000000000000000000000000000000000000000000000001f4"
+            },
+            {
+              "parent": 1,
+              "paramType": "Static",
+              "operator": 0,
+              "operatorName": "PASS",
+              "compValue": "0x"
+            },
+            {
+              "parent": 1,
+              "paramType": "Static",
+              "operator": 0,
+              "operatorName": "PASS",
+              "compValue": "0x"
+            },
+            {
+              "parent": 1,
+              "paramType": "Static",
+              "operator": 0,
+              "operatorName": "PASS",
+              "compValue": "0x"
+            },
+            {
+              "parent": 1,
+              "paramType": "Static",
+              "operator": 0,
+              "operatorName": "PASS",
+              "compValue": "0x"
+            },
+            {
+              "parent": 1,
+              "paramType": "Static",
+              "operator": 0,
+              "operatorName": "PASS",
+              "compValue": "0x"
+            },
+            {
+              "parent": 1,
+              "paramType": "Static",
+              "operator": 0,
+              "operatorName": "PASS",
+              "compValue": "0x"
+            },
+            {
+              "parent": 1,
+              "paramType": "Static",
+              "operator": 15,
+              "operatorName": "EQUAL_TO_AVATAR",
+              "compValue": "0x"
+            },
+            {
+              "parent": 1,
+              "paramType": "Static",
+              "operator": 0,
+              "operatorName": "PASS",
+              "compValue": "0x"
+            }
+          ]
+        },
+        {
+          "target": "0xC36442b4a4522E871399CD717aBDD847Ab11FE88",
+          "targetLabel": "Uniswap V3 NonfungiblePositionManager",
+          "selector": "0x219f5d17",
+          "signature": "increaseLiquidity((uint256,uint256,uint256,uint256,uint256,uint256))",
+          "options": "Send",
+          "conditions": [
+            {
+              "parent": 0,
+              "paramType": "Calldata",
+              "operator": 5,
+              "operatorName": "MATCHES",
+              "compValue": "0x"
+            },
+            {
+              "parent": 0,
+              "paramType": "Tuple",
+              "operator": 5,
+              "operatorName": "MATCHES",
+              "compValue": "0x"
+            },
+            {
+              "parent": 1,
+              "paramType": "Static",
+              "operator": 22,
+              "operatorName": "CUSTOM",
+              "compValue": "0x1d1499e622d69689cdf9004d05ec547d650ff211b64f039a2c41296fcb3f5640"
+            },
+            {
+              "parent": 1,
+              "paramType": "Static",
+              "operator": 0,
+              "operatorName": "PASS",
+              "compValue": "0x"
+            },
+            {
+              "parent": 1,
+              "paramType": "Static",
+              "operator": 0,
+              "operatorName": "PASS",
+              "compValue": "0x"
+            },
+            {
+              "parent": 1,
+              "paramType": "Static",
+              "operator": 0,
+              "operatorName": "PASS",
+              "compValue": "0x"
+            },
+            {
+              "parent": 1,
+              "paramType": "Static",
+              "operator": 0,
+              "operatorName": "PASS",
+              "compValue": "0x"
+            },
+            {
+              "parent": 1,
+              "paramType": "Static",
+              "operator": 0,
+              "operatorName": "PASS",
+              "compValue": "0x"
+            }
+          ]
+        },
+        {
+          "target": "0xC36442b4a4522E871399CD717aBDD847Ab11FE88",
+          "targetLabel": "Uniswap V3 NonfungiblePositionManager",
+          "selector": "0x0c49ccbe",
+          "signature": "decreaseLiquidity((uint256,uint128,uint256,uint256,uint256))",
+          "options": "Send",
+          "conditions": [
+            {
+              "parent": 0,
+              "paramType": "Calldata",
+              "operator": 5,
+              "operatorName": "MATCHES",
+              "compValue": "0x"
+            },
+            {
+              "parent": 0,
+              "paramType": "Tuple",
+              "operator": 5,
+              "operatorName": "MATCHES",
+              "compValue": "0x"
+            },
+            {
+              "parent": 1,
+              "paramType": "Static",
+              "operator": 22,
+              "operatorName": "CUSTOM",
+              "compValue": "0x1d1499e622d69689cdf9004d05ec547d650ff211b64f039a2c41296fcb3f5640"
+            },
+            {
+              "parent": 1,
+              "paramType": "Static",
+              "operator": 0,
+              "operatorName": "PASS",
+              "compValue": "0x"
+            },
+            {
+              "parent": 1,
+              "paramType": "Static",
+              "operator": 0,
+              "operatorName": "PASS",
+              "compValue": "0x"
+            },
+            {
+              "parent": 1,
+              "paramType": "Static",
+              "operator": 0,
+              "operatorName": "PASS",
+              "compValue": "0x"
+            },
+            {
+              "parent": 1,
+              "paramType": "Static",
+              "operator": 0,
+              "operatorName": "PASS",
+              "compValue": "0x"
+            }
+          ]
+        },
+        {
+          "target": "0xC36442b4a4522E871399CD717aBDD847Ab11FE88",
+          "targetLabel": "Uniswap V3 NonfungiblePositionManager",
+          "selector": "0xfc6f7865",
+          "signature": "collect((uint256,address,uint128,uint128))",
+          "options": "Send",
+          "conditions": [
+            {
+              "parent": 0,
+              "paramType": "Calldata",
+              "operator": 5,
+              "operatorName": "MATCHES",
+              "compValue": "0x"
+            },
+            {
+              "parent": 0,
+              "paramType": "Tuple",
+              "operator": 5,
+              "operatorName": "MATCHES",
+              "compValue": "0x"
+            },
+            {
+              "parent": 1,
+              "paramType": "Static",
+              "operator": 22,
+              "operatorName": "CUSTOM",
+              "compValue": "0x1d1499e622d69689cdf9004d05ec547d650ff211b64f039a2c41296fcb3f5640"
+            },
+            {
+              "parent": 1,
+              "paramType": "Static",
+              "operator": 15,
+              "operatorName": "EQUAL_TO_AVATAR",
+              "compValue": "0x"
+            },
+            {
+              "parent": 1,
+              "paramType": "Static",
+              "operator": 0,
+              "operatorName": "PASS",
+              "compValue": "0x"
+            },
+            {
+              "parent": 1,
+              "paramType": "Static",
+              "operator": 0,
+              "operatorName": "PASS",
+              "compValue": "0x"
+            }
+          ]
+        }
+      ],
+      "balances": [
+        {
+          "asset": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+          "symbol": "USDC",
+          "amount": 999999999,
+          "isDebt": false,
+          "protocolId": "0x52829c187e5156727843717a4f1fd6556202c3edd8ba93b66c9b03434473e63a",
+          "protocolSubId": "0x52829c187e5156727843717a4f1fd6556202c3edd8ba93b66c9b03434473e63a",
+          "positionKind": "Supplied",
+          "isLocked": false,
+          "value": 999999998,
+          "stale": false
+        },
+        {
+          "asset": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
+          "symbol": "WETH",
+          "amount": 589865184525588774,
+          "isDebt": false,
+          "protocolId": "0x52829c187e5156727843717a4f1fd6556202c3edd8ba93b66c9b03434473e63a",
+          "protocolSubId": "0x52829c187e5156727843717a4f1fd6556202c3edd8ba93b66c9b03434473e63a",
+          "positionKind": "Supplied",
+          "isLocked": false,
+          "value": 1004131471,
+          "stale": false
+        }
+      ],
+      "netValue": 2004131469,
+      "stale": false
+    },
+    {
+      "index": 5,
+      "kind": "curve-pool",
+      "moduleName": "CurvePoolModule",
+      "moduleId": "0x56c733530a3972c2ad0dc6b05981ad33bc6ea5134ea849e1f031d18988812f29",
+      "instance": "0x000000000000000000000000bebc44782c7db0a1a60cb6fe97d0b483032ff1c7",
+      "instanceLabel": "Curve 3pool",
+      "accounting": {
+        "adapter": "0x4c25B00401d28d5F6FC65a7Af8386b239FA5e735",
+        "isMeta": true,
+        "coordinate": "0x000000000000000000000000bebc44782c7db0a1a60cb6fe97d0b483032ff1c7",
+        "assetFilter": "0x0000000000000000000000000000000000000000"
+      },
+      "assets": [
+        {
+          "asset": "0x6B175474E89094C44Da98b954EedeAC495271d0F",
+          "label": "DAI"
+        },
+        {
+          "asset": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+          "label": "USDC"
+        },
+        {
+          "asset": "0xdAC17F958D2ee523a2206206994597C13D831ec7",
+          "label": "USDT"
+        }
+      ],
+      "leaves": [
+        {
+          "target": "0x6B175474E89094C44Da98b954EedeAC495271d0F",
+          "targetLabel": "DAI",
+          "selector": "0x095ea7b3",
+          "signature": "approve(address,uint256)",
+          "options": "Send",
+          "conditions": [
+            {
+              "parent": 0,
+              "paramType": "Calldata",
+              "operator": 5,
+              "operatorName": "MATCHES",
+              "compValue": "0x"
+            },
+            {
+              "parent": 0,
+              "paramType": "Static",
+              "operator": 16,
+              "operatorName": "EQUAL_TO",
+              "compValue": "0x000000000000000000000000bebc44782c7db0a1a60cb6fe97d0b483032ff1c7"
+            },
+            {
+              "parent": 0,
+              "paramType": "Static",
+              "operator": 0,
+              "operatorName": "PASS",
+              "compValue": "0x"
+            }
+          ]
+        },
+        {
+          "target": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+          "targetLabel": "USDC",
+          "selector": "0x095ea7b3",
+          "signature": "approve(address,uint256)",
+          "options": "Send",
+          "conditions": [
+            {
+              "parent": 0,
+              "paramType": "Calldata",
+              "operator": 5,
+              "operatorName": "MATCHES",
+              "compValue": "0x"
+            },
+            {
+              "parent": 0,
+              "paramType": "Static",
+              "operator": 16,
+              "operatorName": "EQUAL_TO",
+              "compValue": "0x000000000000000000000000bebc44782c7db0a1a60cb6fe97d0b483032ff1c7"
+            },
+            {
+              "parent": 0,
+              "paramType": "Static",
+              "operator": 0,
+              "operatorName": "PASS",
+              "compValue": "0x"
+            }
+          ]
+        },
+        {
+          "target": "0xdAC17F958D2ee523a2206206994597C13D831ec7",
+          "targetLabel": "USDT",
+          "selector": "0x095ea7b3",
+          "signature": "approve(address,uint256)",
+          "options": "Send",
+          "conditions": [
+            {
+              "parent": 0,
+              "paramType": "Calldata",
+              "operator": 5,
+              "operatorName": "MATCHES",
+              "compValue": "0x"
+            },
+            {
+              "parent": 0,
+              "paramType": "Static",
+              "operator": 16,
+              "operatorName": "EQUAL_TO",
+              "compValue": "0x000000000000000000000000bebc44782c7db0a1a60cb6fe97d0b483032ff1c7"
+            },
+            {
+              "parent": 0,
+              "paramType": "Static",
+              "operator": 0,
+              "operatorName": "PASS",
+              "compValue": "0x"
+            }
+          ]
+        },
+        {
+          "target": "0xbEbc44782C7dB0a1A60Cb6fe97d0b483032FF1C7",
+          "targetLabel": "Curve 3pool",
+          "selector": "0x4515cef3",
+          "signature": "add_liquidity(uint256[3],uint256)",
+          "options": "Send",
+          "conditions": []
+        },
+        {
+          "target": "0xbEbc44782C7dB0a1A60Cb6fe97d0b483032FF1C7",
+          "targetLabel": "Curve 3pool",
+          "selector": "0xecb586a5",
+          "signature": "remove_liquidity(uint256,uint256[3])",
+          "options": "Send",
+          "conditions": []
+        }
+      ],
+      "balances": [],
+      "netValue": 0,
+      "stale": false
+    },
+    {
+      "index": 6,
+      "kind": "curve-gauge",
+      "moduleName": "CurveGaugeModule",
+      "moduleId": "0x429afdf010c793d712582267e6330990f2902234ef12e36776c429679882a0d6",
+      "instance": "0x000000000000000000000000bfcf63294ad7105dea65aa58f8ae5be2d9d0952a",
+      "instanceLabel": "Curve 3pool gauge",
+      "accounting": {
+        "adapter": "0xC0c22b89E9cC80a3891dF0ceF1e81b78b865F646",
+        "isMeta": true,
+        "coordinate": "0x000000000000000000000000bfcf63294ad7105dea65aa58f8ae5be2d9d0952a",
+        "assetFilter": "0x0000000000000000000000000000000000000000"
+      },
+      "assets": [
+        {
+          "asset": "0xD533a949740bb3306d119CC777fa900bA034cd52",
+          "label": "CRV"
+        }
+      ],
+      "leaves": [
+        {
+          "target": "0x6c3F90f043a72FA612cbac8115EE7e52BDe6E490",
+          "targetLabel": "3Crv",
+          "selector": "0x095ea7b3",
+          "signature": "approve(address,uint256)",
+          "options": "Send",
+          "conditions": [
+            {
+              "parent": 0,
+              "paramType": "Calldata",
+              "operator": 5,
+              "operatorName": "MATCHES",
+              "compValue": "0x"
+            },
+            {
+              "parent": 0,
+              "paramType": "Static",
+              "operator": 16,
+              "operatorName": "EQUAL_TO",
+              "compValue": "0x000000000000000000000000bfcf63294ad7105dea65aa58f8ae5be2d9d0952a"
+            },
+            {
+              "parent": 0,
+              "paramType": "Static",
+              "operator": 0,
+              "operatorName": "PASS",
+              "compValue": "0x"
+            }
+          ]
+        },
+        {
+          "target": "0xbFcF63294aD7105dEa65aA58F8AE5BE2D9d0952A",
+          "targetLabel": "Curve 3pool gauge",
+          "selector": "0xb6b55f25",
+          "signature": "deposit(uint256)",
+          "options": "Send",
+          "conditions": []
+        },
+        {
+          "target": "0xbFcF63294aD7105dEa65aA58F8AE5BE2D9d0952A",
+          "targetLabel": "Curve 3pool gauge",
+          "selector": "0x2e1a7d4d",
+          "signature": "withdraw(uint256)",
+          "options": "Send",
+          "conditions": []
+        },
+        {
+          "target": "0xd061D61a4d941c39E5453435B6345Dc261C2fcE0",
+          "targetLabel": "Curve CRV minter",
+          "selector": "0x6a627842",
+          "signature": "mint(address)",
+          "options": "Send",
+          "conditions": [
+            {
+              "parent": 0,
+              "paramType": "Calldata",
+              "operator": 5,
+              "operatorName": "MATCHES",
+              "compValue": "0x"
+            },
+            {
+              "parent": 0,
+              "paramType": "Static",
+              "operator": 16,
+              "operatorName": "EQUAL_TO",
+              "compValue": "0x000000000000000000000000bfcf63294ad7105dea65aa58f8ae5be2d9d0952a"
+            }
+          ]
+        }
+      ],
+      "balances": [
+        {
+          "asset": "0x6B175474E89094C44Da98b954EedeAC495271d0F",
+          "symbol": "DAI",
+          "amount": 145363882812347462248,
+          "isDebt": false,
+          "protocolId": "0x5af0ee7dec5167f618066986345e64763b2d91718dfb37f9969a1b0670a83e71",
+          "protocolSubId": "0x429afdf010c793d712582267e6330990f2902234ef12e36776c429679882a0d6",
+          "positionKind": "Staking",
+          "isLocked": false,
+          "value": 145325202,
+          "stale": false
+        },
+        {
+          "asset": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+          "symbol": "USDC",
+          "amount": 142683099,
+          "isDebt": false,
+          "protocolId": "0x5af0ee7dec5167f618066986345e64763b2d91718dfb37f9969a1b0670a83e71",
+          "protocolSubId": "0x429afdf010c793d712582267e6330990f2902234ef12e36776c429679882a0d6",
+          "positionKind": "Staking",
+          "isLocked": false,
+          "value": 142683098,
+          "stale": false
+        },
+        {
+          "asset": "0xdAC17F958D2ee523a2206206994597C13D831ec7",
+          "symbol": "USDT",
+          "amount": 712695497,
+          "isDebt": false,
+          "protocolId": "0x5af0ee7dec5167f618066986345e64763b2d91718dfb37f9969a1b0670a83e71",
+          "protocolSubId": "0x429afdf010c793d712582267e6330990f2902234ef12e36776c429679882a0d6",
+          "positionKind": "Staking",
+          "isLocked": false,
+          "value": 711760846,
+          "stale": false
+        }
+      ],
+      "netValue": 999769146,
+      "stale": false
+    },
+    {
+      "index": 7,
+      "kind": "etherfi-assisted",
+      "moduleName": "EtherFiAssistedModule",
+      "moduleId": "0xdb9b80c4e507247d3b1b6bbd01a1218c58e6d317a7cb8c0ed025ed71f41801a9",
+      "instance": "0x000000000000000000000000d2ea372e6c1ba08ce3d20f4ce69d68f13e1f92c4",
+      "instanceLabel": "EtherFi withdrawal assistant",
+      "accounting": {
+        "adapter": "0xd074FAf8D8f2909BE3E6D51c219916065c5d870A",
+        "isMeta": false,
+        "coordinate": "0x0000000000000000000000000000000000000000000000000000000000000000",
+        "assetFilter": "0x0000000000000000000000000000000000000000"
+      },
+      "assets": [
+        {
+          "asset": "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE",
+          "label": "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE"
+        }
+      ],
+      "leaves": [
+        {
+          "target": "0xD2EA372e6c1bA08cE3d20F4Ce69d68f13E1F92c4",
+          "targetLabel": "EtherFi withdrawal assistant",
+          "selector": "0x745400c9",
+          "signature": "requestWithdraw(uint256)",
+          "options": "DelegateCall",
+          "conditions": []
+        },
+        {
+          "target": "0xD2EA372e6c1bA08cE3d20F4Ce69d68f13E1F92c4",
+          "targetLabel": "EtherFi withdrawal assistant",
+          "selector": "0xb13acedd",
+          "signature": "claimWithdraw(uint256)",
+          "options": "DelegateCall",
+          "conditions": []
+        }
+      ],
+      "balances": [
+        {
+          "asset": "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE",
+          "symbol": "ETH",
+          "amount": 4999999999999999999,
+          "isDebt": false,
+          "protocolId": "0x9ed682ab063e39bdebd1d4192ad9adc4cab7e77a19e842400e6efc8e9e6696ea",
+          "protocolSubId": "0x37f0efb45012637b8f417401f7b558d9c0c3327a74881e9f6236659ecb34e9bb",
+          "positionKind": "Supplied",
+          "isLocked": true,
+          "value": 8511533633,
+          "stale": false
+        }
+      ],
+      "netValue": 8511533633,
+      "stale": false
+    }
+  ],
+  "rolesKeys": [
+    {
+      "target": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+      "targetLabel": "USDC",
+      "selector": "0x095ea7b3",
+      "signature": "approve(address,uint256)",
+      "options": "Send",
+      "leafCount": 5,
+      "conditionalLeafCount": 5,
+      "unconditionalLeaf": false,
+      "roleCall": "scopeFunction",
+      "conditionMerge": "or"
+    },
+    {
+      "target": "0xe108fbc04852B5df72f9E44d7C29F47e7A993aDd",
+      "targetLabel": "kpk_USDC_Prime (Morpho vault)",
+      "selector": "0x6e553f65",
+      "signature": "deposit(uint256,address)",
+      "options": "Send",
+      "leafCount": 1,
+      "conditionalLeafCount": 1,
+      "unconditionalLeaf": false,
+      "roleCall": "scopeFunction",
+      "conditionMerge": "single"
+    },
+    {
+      "target": "0xe108fbc04852B5df72f9E44d7C29F47e7A993aDd",
+      "targetLabel": "kpk_USDC_Prime (Morpho vault)",
+      "selector": "0xba087652",
+      "signature": "redeem(uint256,address,address)",
+      "options": "Send",
+      "leafCount": 1,
+      "conditionalLeafCount": 1,
+      "unconditionalLeaf": false,
+      "roleCall": "scopeFunction",
+      "conditionMerge": "single"
+    },
+    {
+      "target": "0xe108fbc04852B5df72f9E44d7C29F47e7A993aDd",
+      "targetLabel": "kpk_USDC_Prime (Morpho vault)",
+      "selector": "0xb460af94",
+      "signature": "withdraw(uint256,address,address)",
+      "options": "Send",
+      "leafCount": 1,
+      "conditionalLeafCount": 1,
+      "unconditionalLeaf": false,
+      "roleCall": "scopeFunction",
+      "conditionMerge": "single"
+    },
+    {
+      "target": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
+      "targetLabel": "WETH",
+      "selector": "0x095ea7b3",
+      "signature": "approve(address,uint256)",
+      "options": "Send",
+      "leafCount": 3,
+      "conditionalLeafCount": 3,
+      "unconditionalLeaf": false,
+      "roleCall": "scopeFunction",
+      "conditionMerge": "or"
+    },
+    {
+      "target": "0x87870Bca3F3fD6335C3F4ce8392D69350B4fA4E2",
+      "targetLabel": "Aave V3 Pool",
+      "selector": "0x617ba037",
+      "signature": "supply(address,uint256,address,uint16)",
+      "options": "Send",
+      "leafCount": 1,
+      "conditionalLeafCount": 1,
+      "unconditionalLeaf": false,
+      "roleCall": "scopeFunction",
+      "conditionMerge": "single"
+    },
+    {
+      "target": "0x87870Bca3F3fD6335C3F4ce8392D69350B4fA4E2",
+      "targetLabel": "Aave V3 Pool",
+      "selector": "0x69328dec",
+      "signature": "withdraw(address,uint256,address)",
+      "options": "Send",
+      "leafCount": 1,
+      "conditionalLeafCount": 1,
+      "unconditionalLeaf": false,
+      "roleCall": "scopeFunction",
+      "conditionMerge": "single"
+    },
+    {
+      "target": "0x87870Bca3F3fD6335C3F4ce8392D69350B4fA4E2",
+      "targetLabel": "Aave V3 Pool",
+      "selector": "0xa415bcad",
+      "signature": "borrow(address,uint256,uint256,uint16,address)",
+      "options": "Send",
+      "leafCount": 1,
+      "conditionalLeafCount": 1,
+      "unconditionalLeaf": false,
+      "roleCall": "scopeFunction",
+      "conditionMerge": "single"
+    },
+    {
+      "target": "0x87870Bca3F3fD6335C3F4ce8392D69350B4fA4E2",
+      "targetLabel": "Aave V3 Pool",
+      "selector": "0x573ade81",
+      "signature": "repay(address,uint256,uint256,address)",
+      "options": "Send",
+      "leafCount": 1,
+      "conditionalLeafCount": 1,
+      "unconditionalLeaf": false,
+      "roleCall": "scopeFunction",
+      "conditionMerge": "single"
+    },
+    {
+      "target": "0x68b3465833fb72A70ecDF485E0e4C7bD8665Fc45",
+      "targetLabel": "Uniswap SwapRouter02",
+      "selector": "0x04e45aaf",
+      "signature": "exactInputSingle((address,address,uint24,address,uint256,uint256,uint160))",
+      "options": "Send",
+      "leafCount": 2,
+      "conditionalLeafCount": 2,
+      "unconditionalLeaf": false,
+      "roleCall": "scopeFunction",
+      "conditionMerge": "or"
+    },
+    {
+      "target": "0xC36442b4a4522E871399CD717aBDD847Ab11FE88",
+      "targetLabel": "Uniswap V3 NonfungiblePositionManager",
+      "selector": "0x88316456",
+      "signature": "mint((address,address,uint24,int24,int24,uint256,uint256,uint256,uint256,address,uint256))",
+      "options": "Send",
+      "leafCount": 1,
+      "conditionalLeafCount": 1,
+      "unconditionalLeaf": false,
+      "roleCall": "scopeFunction",
+      "conditionMerge": "single"
+    },
+    {
+      "target": "0xC36442b4a4522E871399CD717aBDD847Ab11FE88",
+      "targetLabel": "Uniswap V3 NonfungiblePositionManager",
+      "selector": "0x219f5d17",
+      "signature": "increaseLiquidity((uint256,uint256,uint256,uint256,uint256,uint256))",
+      "options": "Send",
+      "leafCount": 1,
+      "conditionalLeafCount": 1,
+      "unconditionalLeaf": false,
+      "roleCall": "scopeFunction",
+      "conditionMerge": "single"
+    },
+    {
+      "target": "0xC36442b4a4522E871399CD717aBDD847Ab11FE88",
+      "targetLabel": "Uniswap V3 NonfungiblePositionManager",
+      "selector": "0x0c49ccbe",
+      "signature": "decreaseLiquidity((uint256,uint128,uint256,uint256,uint256))",
+      "options": "Send",
+      "leafCount": 1,
+      "conditionalLeafCount": 1,
+      "unconditionalLeaf": false,
+      "roleCall": "scopeFunction",
+      "conditionMerge": "single"
+    },
+    {
+      "target": "0xC36442b4a4522E871399CD717aBDD847Ab11FE88",
+      "targetLabel": "Uniswap V3 NonfungiblePositionManager",
+      "selector": "0xfc6f7865",
+      "signature": "collect((uint256,address,uint128,uint128))",
+      "options": "Send",
+      "leafCount": 1,
+      "conditionalLeafCount": 1,
+      "unconditionalLeaf": false,
+      "roleCall": "scopeFunction",
+      "conditionMerge": "single"
+    },
+    {
+      "target": "0x6B175474E89094C44Da98b954EedeAC495271d0F",
+      "targetLabel": "DAI",
+      "selector": "0x095ea7b3",
+      "signature": "approve(address,uint256)",
+      "options": "Send",
+      "leafCount": 1,
+      "conditionalLeafCount": 1,
+      "unconditionalLeaf": false,
+      "roleCall": "scopeFunction",
+      "conditionMerge": "single"
+    },
+    {
+      "target": "0xdAC17F958D2ee523a2206206994597C13D831ec7",
+      "targetLabel": "USDT",
+      "selector": "0x095ea7b3",
+      "signature": "approve(address,uint256)",
+      "options": "Send",
+      "leafCount": 1,
+      "conditionalLeafCount": 1,
+      "unconditionalLeaf": false,
+      "roleCall": "scopeFunction",
+      "conditionMerge": "single"
+    },
+    {
+      "target": "0xbEbc44782C7dB0a1A60Cb6fe97d0b483032FF1C7",
+      "targetLabel": "Curve 3pool",
+      "selector": "0x4515cef3",
+      "signature": "add_liquidity(uint256[3],uint256)",
+      "options": "Send",
+      "leafCount": 1,
+      "conditionalLeafCount": 0,
+      "unconditionalLeaf": true,
+      "roleCall": "allowFunction",
+      "conditionMerge": "none"
+    },
+    {
+      "target": "0xbEbc44782C7dB0a1A60Cb6fe97d0b483032FF1C7",
+      "targetLabel": "Curve 3pool",
+      "selector": "0xecb586a5",
+      "signature": "remove_liquidity(uint256,uint256[3])",
+      "options": "Send",
+      "leafCount": 1,
+      "conditionalLeafCount": 0,
+      "unconditionalLeaf": true,
+      "roleCall": "allowFunction",
+      "conditionMerge": "none"
+    },
+    {
+      "target": "0x6c3F90f043a72FA612cbac8115EE7e52BDe6E490",
+      "targetLabel": "3Crv",
+      "selector": "0x095ea7b3",
+      "signature": "approve(address,uint256)",
+      "options": "Send",
+      "leafCount": 1,
+      "conditionalLeafCount": 1,
+      "unconditionalLeaf": false,
+      "roleCall": "scopeFunction",
+      "conditionMerge": "single"
+    },
+    {
+      "target": "0xbFcF63294aD7105dEa65aA58F8AE5BE2D9d0952A",
+      "targetLabel": "Curve 3pool gauge",
+      "selector": "0xb6b55f25",
+      "signature": "deposit(uint256)",
+      "options": "Send",
+      "leafCount": 1,
+      "conditionalLeafCount": 0,
+      "unconditionalLeaf": true,
+      "roleCall": "allowFunction",
+      "conditionMerge": "none"
+    },
+    {
+      "target": "0xbFcF63294aD7105dEa65aA58F8AE5BE2D9d0952A",
+      "targetLabel": "Curve 3pool gauge",
+      "selector": "0x2e1a7d4d",
+      "signature": "withdraw(uint256)",
+      "options": "Send",
+      "leafCount": 1,
+      "conditionalLeafCount": 0,
+      "unconditionalLeaf": true,
+      "roleCall": "allowFunction",
+      "conditionMerge": "none"
+    },
+    {
+      "target": "0xd061D61a4d941c39E5453435B6345Dc261C2fcE0",
+      "targetLabel": "Curve CRV minter",
+      "selector": "0x6a627842",
+      "signature": "mint(address)",
+      "options": "Send",
+      "leafCount": 1,
+      "conditionalLeafCount": 1,
+      "unconditionalLeaf": false,
+      "roleCall": "scopeFunction",
+      "conditionMerge": "single"
+    },
+    {
+      "target": "0xD2EA372e6c1bA08cE3d20F4Ce69d68f13E1F92c4",
+      "targetLabel": "EtherFi withdrawal assistant",
+      "selector": "0x745400c9",
+      "signature": "requestWithdraw(uint256)",
+      "options": "DelegateCall",
+      "leafCount": 1,
+      "conditionalLeafCount": 0,
+      "unconditionalLeaf": true,
+      "roleCall": "allowFunction",
+      "conditionMerge": "none"
+    },
+    {
+      "target": "0xD2EA372e6c1bA08cE3d20F4Ce69d68f13E1F92c4",
+      "targetLabel": "EtherFi withdrawal assistant",
+      "selector": "0xb13acedd",
+      "signature": "claimWithdraw(uint256)",
+      "options": "DelegateCall",
+      "leafCount": 1,
+      "conditionalLeafCount": 0,
+      "unconditionalLeaf": true,
+      "roleCall": "allowFunction",
+      "conditionMerge": "none"
+    }
+  ],
+  "nav": {
+    "quoteAsset": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+    "fundNav": 23617409531,
+    "stale": false,
+    "walletNet": 9499668559,
+    "sumOfNet": 23617409531
+  }
+}

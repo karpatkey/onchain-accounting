@@ -1,0 +1,570 @@
+{
+  "schema": "defikit-diff/v1",
+  "versions": {
+    "defi-kit": "2.27.4",
+    "zodiac-roles-sdk": "3.4.8"
+  },
+  "derivation": "docs/research/fund-infra/derivation-example.json",
+  "dkCalls": [
+    "morphoVaults.deposit",
+    "aave_v3.deposit",
+    "aave_v3.borrow",
+    "uniswap_v3.deposit"
+  ],
+  "summary": {
+    "fcVariants": 31,
+    "dkVariants": 18,
+    "status": {
+      "fc_looser": 12,
+      "fc_only": 17,
+      "different": 1,
+      "dk_only": 4,
+      "mixed": 1
+    },
+    "optionsStatusOnMatched": {
+      "fc_looser": 14
+    },
+    "dkOnlyBySource": {
+      "uniswap_v3.deposit": 2,
+      "aave_v3.deposit": 2
+    }
+  },
+  "byPosition": {
+    "0": {
+      "kind": "morpho-vault",
+      "instanceLabel": "kpk_USDC_Prime",
+      "fcVariants": 4,
+      "dkSources": [
+        "morphoVaults.deposit"
+      ],
+      "status": {
+        "fc_looser": 4
+      },
+      "notCovered": null
+    },
+    "1": {
+      "kind": "aave-v3-supply",
+      "instanceLabel": "Aave V3 WETH supply (collateral)",
+      "fcVariants": 3,
+      "dkSources": [
+        "aave_v3.deposit"
+      ],
+      "status": {
+        "fc_looser": 3
+      },
+      "notCovered": null
+    },
+    "2": {
+      "kind": "aave-v3-borrow",
+      "instanceLabel": "Aave V3 USDC borrow",
+      "fcVariants": 3,
+      "dkSources": [
+        "aave_v3.borrow"
+      ],
+      "status": {
+        "fc_looser": 3
+      },
+      "notCovered": null
+    },
+    "3": {
+      "kind": "uniswap-v3-swap",
+      "instanceLabel": "Uniswap V3 USDC/WETH 0.05% swap",
+      "fcVariants": 4,
+      "dkSources": [],
+      "status": {
+        "fc_only": 4
+      },
+      "notCovered": "Uniswap V3 SwapRouter02 exactInputSingle: DeFi Kit only has cowswap.swap (different target)"
+    },
+    "4": {
+      "kind": "uniswap-v3-lp",
+      "instanceLabel": "Uniswap V3 USDC/WETH 0.05% LP",
+      "fcVariants": 6,
+      "dkSources": [
+        "uniswap_v3.deposit"
+      ],
+      "status": {
+        "fc_looser": 2,
+        "different": 1,
+        "fc_only": 2,
+        "mixed": 1
+      },
+      "notCovered": null
+    },
+    "5": {
+      "kind": "curve-pool",
+      "instanceLabel": "Curve 3pool",
+      "fcVariants": 5,
+      "dkSources": [],
+      "status": {
+        "fc_only": 5
+      },
+      "notCovered": "Curve 3pool: no curve key in defi-kit/eth"
+    },
+    "6": {
+      "kind": "curve-gauge",
+      "instanceLabel": "Curve 3pool gauge",
+      "fcVariants": 4,
+      "dkSources": [],
+      "status": {
+        "fc_only": 4
+      },
+      "notCovered": "Curve 3pool gauge + CRV minter: no curve key in defi-kit/eth"
+    },
+    "7": {
+      "kind": "etherfi-assisted",
+      "instanceLabel": "EtherFi withdrawal assistant",
+      "fcVariants": 2,
+      "dkSources": [],
+      "status": {
+        "fc_only": 2
+      },
+      "notCovered": "EtherFi withdrawal assistant: no etherfi key in defi-kit/eth"
+    }
+  },
+  "records": [
+    {
+      "side": "both",
+      "position": 0,
+      "targetLabel": "USDC",
+      "target": "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+      "selector": "0x095ea7b3",
+      "signature": "approve(address,uint256)",
+      "fcOptions": "Send",
+      "status": "fc_looser",
+      "dkSource": "morphoVaults.deposit",
+      "dkOptions": "None",
+      "optionsStatus": "fc_looser",
+      "paramDiffs": []
+    },
+    {
+      "side": "both",
+      "position": 2,
+      "targetLabel": "USDC",
+      "target": "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+      "selector": "0x095ea7b3",
+      "signature": "approve(address,uint256)",
+      "fcOptions": "Send",
+      "status": "fc_looser",
+      "dkSource": "aave_v3.borrow",
+      "dkOptions": "None",
+      "optionsStatus": "fc_looser",
+      "paramDiffs": []
+    },
+    {
+      "side": "both",
+      "position": 4,
+      "targetLabel": "USDC",
+      "target": "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+      "selector": "0x095ea7b3",
+      "signature": "approve(address,uint256)",
+      "fcOptions": "Send",
+      "status": "fc_looser",
+      "dkSource": "uniswap_v3.deposit",
+      "dkOptions": "None",
+      "optionsStatus": "fc_looser",
+      "paramDiffs": []
+    },
+    {
+      "side": "fc",
+      "position": 3,
+      "targetLabel": "USDC",
+      "target": "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+      "selector": "0x095ea7b3",
+      "signature": "approve(address,uint256)",
+      "fcOptions": "Send",
+      "status": "fc_only",
+      "reason": "Uniswap V3 SwapRouter02 exactInputSingle: DeFi Kit only has cowswap.swap (different target)"
+    },
+    {
+      "side": "fc",
+      "position": 5,
+      "targetLabel": "USDC",
+      "target": "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+      "selector": "0x095ea7b3",
+      "signature": "approve(address,uint256)",
+      "fcOptions": "Send",
+      "status": "fc_only",
+      "reason": "Curve 3pool: no curve key in defi-kit/eth"
+    },
+    {
+      "side": "both",
+      "position": 0,
+      "targetLabel": "kpk_USDC_Prime (Morpho vault)",
+      "target": "0xe108fbc04852b5df72f9e44d7c29f47e7a993add",
+      "selector": "0x6e553f65",
+      "signature": "deposit(uint256,address)",
+      "fcOptions": "Send",
+      "status": "fc_looser",
+      "dkSource": "morphoVaults.deposit",
+      "dkOptions": "None",
+      "optionsStatus": "fc_looser",
+      "paramDiffs": []
+    },
+    {
+      "side": "both",
+      "position": 0,
+      "targetLabel": "kpk_USDC_Prime (Morpho vault)",
+      "target": "0xe108fbc04852b5df72f9e44d7c29f47e7a993add",
+      "selector": "0xba087652",
+      "signature": "redeem(uint256,address,address)",
+      "fcOptions": "Send",
+      "status": "fc_looser",
+      "dkSource": "morphoVaults.deposit",
+      "dkOptions": "None",
+      "optionsStatus": "fc_looser",
+      "paramDiffs": []
+    },
+    {
+      "side": "both",
+      "position": 0,
+      "targetLabel": "kpk_USDC_Prime (Morpho vault)",
+      "target": "0xe108fbc04852b5df72f9e44d7c29f47e7a993add",
+      "selector": "0xb460af94",
+      "signature": "withdraw(uint256,address,address)",
+      "fcOptions": "Send",
+      "status": "fc_looser",
+      "dkSource": "morphoVaults.deposit",
+      "dkOptions": "None",
+      "optionsStatus": "fc_looser",
+      "paramDiffs": []
+    },
+    {
+      "side": "both",
+      "position": 1,
+      "targetLabel": "WETH",
+      "target": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+      "selector": "0x095ea7b3",
+      "signature": "approve(address,uint256)",
+      "fcOptions": "Send",
+      "status": "fc_looser",
+      "dkSource": "aave_v3.deposit",
+      "dkOptions": "None",
+      "optionsStatus": "fc_looser",
+      "paramDiffs": []
+    },
+    {
+      "side": "both",
+      "position": 4,
+      "targetLabel": "WETH",
+      "target": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+      "selector": "0x095ea7b3",
+      "signature": "approve(address,uint256)",
+      "fcOptions": "Send",
+      "status": "fc_looser",
+      "dkSource": "uniswap_v3.deposit",
+      "dkOptions": "None",
+      "optionsStatus": "fc_looser",
+      "paramDiffs": []
+    },
+    {
+      "side": "fc",
+      "position": 3,
+      "targetLabel": "WETH",
+      "target": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+      "selector": "0x095ea7b3",
+      "signature": "approve(address,uint256)",
+      "fcOptions": "Send",
+      "status": "fc_only",
+      "reason": "Uniswap V3 SwapRouter02 exactInputSingle: DeFi Kit only has cowswap.swap (different target)"
+    },
+    {
+      "side": "both",
+      "position": 1,
+      "targetLabel": "Aave V3 Pool",
+      "target": "0x87870bca3f3fd6335c3f4ce8392d69350b4fa4e2",
+      "selector": "0x617ba037",
+      "signature": "supply(address,uint256,address,uint16)",
+      "fcOptions": "Send",
+      "status": "fc_looser",
+      "dkSource": "aave_v3.deposit",
+      "dkOptions": "None",
+      "optionsStatus": "fc_looser",
+      "paramDiffs": []
+    },
+    {
+      "side": "both",
+      "position": 1,
+      "targetLabel": "Aave V3 Pool",
+      "target": "0x87870bca3f3fd6335c3f4ce8392d69350b4fa4e2",
+      "selector": "0x69328dec",
+      "signature": "withdraw(address,uint256,address)",
+      "fcOptions": "Send",
+      "status": "fc_looser",
+      "dkSource": "aave_v3.deposit",
+      "dkOptions": "None",
+      "optionsStatus": "fc_looser",
+      "paramDiffs": []
+    },
+    {
+      "side": "both",
+      "position": 2,
+      "targetLabel": "Aave V3 Pool",
+      "target": "0x87870bca3f3fd6335c3f4ce8392d69350b4fa4e2",
+      "selector": "0xa415bcad",
+      "signature": "borrow(address,uint256,uint256,uint16,address)",
+      "fcOptions": "Send",
+      "status": "fc_looser",
+      "dkSource": "aave_v3.borrow",
+      "dkOptions": "None",
+      "optionsStatus": "fc_looser",
+      "paramDiffs": []
+    },
+    {
+      "side": "both",
+      "position": 2,
+      "targetLabel": "Aave V3 Pool",
+      "target": "0x87870bca3f3fd6335c3f4ce8392d69350b4fa4e2",
+      "selector": "0x573ade81",
+      "signature": "repay(address,uint256,uint256,address)",
+      "fcOptions": "Send",
+      "status": "fc_looser",
+      "dkSource": "aave_v3.borrow",
+      "dkOptions": "None",
+      "optionsStatus": "fc_looser",
+      "paramDiffs": []
+    },
+    {
+      "side": "fc",
+      "position": 3,
+      "targetLabel": "Uniswap SwapRouter02",
+      "target": "0x68b3465833fb72a70ecdf485e0e4c7bd8665fc45",
+      "selector": "0x04e45aaf",
+      "signature": "exactInputSingle((address,address,uint24,address,uint256,uint256,uint160))",
+      "fcOptions": "Send",
+      "status": "fc_only",
+      "reason": "Uniswap V3 SwapRouter02 exactInputSingle: DeFi Kit only has cowswap.swap (different target)"
+    },
+    {
+      "side": "fc",
+      "position": 3,
+      "targetLabel": "Uniswap SwapRouter02",
+      "target": "0x68b3465833fb72a70ecdf485e0e4c7bd8665fc45",
+      "selector": "0x04e45aaf",
+      "signature": "exactInputSingle((address,address,uint24,address,uint256,uint256,uint160))",
+      "fcOptions": "Send",
+      "status": "fc_only",
+      "reason": "Uniswap V3 SwapRouter02 exactInputSingle: DeFi Kit only has cowswap.swap (different target)"
+    },
+    {
+      "side": "both",
+      "position": 4,
+      "targetLabel": "Uniswap V3 NonfungiblePositionManager",
+      "target": "0xc36442b4a4522e871399cd717abdd847ab11fe88",
+      "selector": "0x88316456",
+      "signature": "mint((address,address,uint24,int24,int24,uint256,uint256,uint256,uint256,address,uint256))",
+      "fcOptions": "Send",
+      "status": "different",
+      "dkSource": "uniswap_v3.deposit",
+      "dkOptions": "None",
+      "optionsStatus": "fc_looser",
+      "paramDiffs": [
+        {
+          "path": "root.0.0",
+          "kind": "different",
+          "fc": "EQUAL_TO 0x000000000000000000000000a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+          "dk": "OR"
+        },
+        {
+          "path": "root.0.1",
+          "kind": "different",
+          "fc": "EQUAL_TO 0x000000000000000000000000c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "dk": "OR"
+        }
+      ]
+    },
+    {
+      "side": "fc",
+      "position": 4,
+      "targetLabel": "Uniswap V3 NonfungiblePositionManager",
+      "target": "0xc36442b4a4522e871399cd717abdd847ab11fe88",
+      "selector": "0x219f5d17",
+      "signature": "increaseLiquidity((uint256,uint256,uint256,uint256,uint256,uint256))",
+      "fcOptions": "Send",
+      "status": "fc_only",
+      "reason": "DeFi Kit has no matching function"
+    },
+    {
+      "side": "dk",
+      "source": "uniswap_v3.deposit",
+      "target": "0xc36442b4a4522e871399cd717abdd847ab11fe88",
+      "selector": "0x219f5d17",
+      "signature": null,
+      "dkOptions": "None",
+      "status": "dk_only",
+      "dkRootConstraints": 1
+    },
+    {
+      "side": "fc",
+      "position": 4,
+      "targetLabel": "Uniswap V3 NonfungiblePositionManager",
+      "target": "0xc36442b4a4522e871399cd717abdd847ab11fe88",
+      "selector": "0x0c49ccbe",
+      "signature": "decreaseLiquidity((uint256,uint128,uint256,uint256,uint256))",
+      "fcOptions": "Send",
+      "status": "fc_only",
+      "reason": "DeFi Kit has no matching function"
+    },
+    {
+      "side": "dk",
+      "source": "uniswap_v3.deposit",
+      "target": "0xc36442b4a4522e871399cd717abdd847ab11fe88",
+      "selector": "0x0c49ccbe",
+      "signature": null,
+      "dkOptions": "None",
+      "status": "dk_only",
+      "dkRootConstraints": 0
+    },
+    {
+      "side": "both",
+      "position": 4,
+      "targetLabel": "Uniswap V3 NonfungiblePositionManager",
+      "target": "0xc36442b4a4522e871399cd717abdd847ab11fe88",
+      "selector": "0xfc6f7865",
+      "signature": "collect((uint256,address,uint128,uint128))",
+      "fcOptions": "Send",
+      "status": "mixed",
+      "dkSource": "uniswap_v3.deposit",
+      "dkOptions": "None",
+      "optionsStatus": "fc_looser",
+      "paramDiffs": [
+        {
+          "path": "root.0.0",
+          "kind": "fc_stricter",
+          "fc": "CUSTOM 0x1d1499e622d69689cdf9004d05ec547d650ff211b64f039a2c41296fcb3f5640",
+          "dk": "PASS"
+        }
+      ]
+    },
+    {
+      "side": "fc",
+      "position": 5,
+      "targetLabel": "DAI",
+      "target": "0x6b175474e89094c44da98b954eedeac495271d0f",
+      "selector": "0x095ea7b3",
+      "signature": "approve(address,uint256)",
+      "fcOptions": "Send",
+      "status": "fc_only",
+      "reason": "Curve 3pool: no curve key in defi-kit/eth"
+    },
+    {
+      "side": "fc",
+      "position": 5,
+      "targetLabel": "USDT",
+      "target": "0xdac17f958d2ee523a2206206994597c13d831ec7",
+      "selector": "0x095ea7b3",
+      "signature": "approve(address,uint256)",
+      "fcOptions": "Send",
+      "status": "fc_only",
+      "reason": "Curve 3pool: no curve key in defi-kit/eth"
+    },
+    {
+      "side": "fc",
+      "position": 5,
+      "targetLabel": "Curve 3pool",
+      "target": "0xbebc44782c7db0a1a60cb6fe97d0b483032ff1c7",
+      "selector": "0x4515cef3",
+      "signature": "add_liquidity(uint256[3],uint256)",
+      "fcOptions": "Send",
+      "status": "fc_only",
+      "reason": "Curve 3pool: no curve key in defi-kit/eth"
+    },
+    {
+      "side": "fc",
+      "position": 5,
+      "targetLabel": "Curve 3pool",
+      "target": "0xbebc44782c7db0a1a60cb6fe97d0b483032ff1c7",
+      "selector": "0xecb586a5",
+      "signature": "remove_liquidity(uint256,uint256[3])",
+      "fcOptions": "Send",
+      "status": "fc_only",
+      "reason": "Curve 3pool: no curve key in defi-kit/eth"
+    },
+    {
+      "side": "fc",
+      "position": 6,
+      "targetLabel": "3Crv",
+      "target": "0x6c3f90f043a72fa612cbac8115ee7e52bde6e490",
+      "selector": "0x095ea7b3",
+      "signature": "approve(address,uint256)",
+      "fcOptions": "Send",
+      "status": "fc_only",
+      "reason": "Curve 3pool gauge + CRV minter: no curve key in defi-kit/eth"
+    },
+    {
+      "side": "fc",
+      "position": 6,
+      "targetLabel": "Curve 3pool gauge",
+      "target": "0xbfcf63294ad7105dea65aa58f8ae5be2d9d0952a",
+      "selector": "0xb6b55f25",
+      "signature": "deposit(uint256)",
+      "fcOptions": "Send",
+      "status": "fc_only",
+      "reason": "Curve 3pool gauge + CRV minter: no curve key in defi-kit/eth"
+    },
+    {
+      "side": "fc",
+      "position": 6,
+      "targetLabel": "Curve 3pool gauge",
+      "target": "0xbfcf63294ad7105dea65aa58f8ae5be2d9d0952a",
+      "selector": "0x2e1a7d4d",
+      "signature": "withdraw(uint256)",
+      "fcOptions": "Send",
+      "status": "fc_only",
+      "reason": "Curve 3pool gauge + CRV minter: no curve key in defi-kit/eth"
+    },
+    {
+      "side": "fc",
+      "position": 6,
+      "targetLabel": "Curve CRV minter",
+      "target": "0xd061d61a4d941c39e5453435b6345dc261c2fce0",
+      "selector": "0x6a627842",
+      "signature": "mint(address)",
+      "fcOptions": "Send",
+      "status": "fc_only",
+      "reason": "Curve 3pool gauge + CRV minter: no curve key in defi-kit/eth"
+    },
+    {
+      "side": "fc",
+      "position": 7,
+      "targetLabel": "EtherFi withdrawal assistant",
+      "target": "0xd2ea372e6c1ba08ce3d20f4ce69d68f13e1f92c4",
+      "selector": "0x745400c9",
+      "signature": "requestWithdraw(uint256)",
+      "fcOptions": "DelegateCall",
+      "status": "fc_only",
+      "reason": "EtherFi withdrawal assistant: no etherfi key in defi-kit/eth"
+    },
+    {
+      "side": "fc",
+      "position": 7,
+      "targetLabel": "EtherFi withdrawal assistant",
+      "target": "0xd2ea372e6c1ba08ce3d20f4ce69d68f13e1f92c4",
+      "selector": "0xb13acedd",
+      "signature": "claimWithdraw(uint256)",
+      "fcOptions": "DelegateCall",
+      "status": "fc_only",
+      "reason": "EtherFi withdrawal assistant: no etherfi key in defi-kit/eth"
+    },
+    {
+      "side": "dk",
+      "source": "aave_v3.deposit",
+      "target": "0x87870bca3f3fd6335c3f4ce8392d69350b4fa4e2",
+      "selector": "0x5a3b74b9",
+      "signature": null,
+      "dkOptions": "None",
+      "status": "dk_only",
+      "dkRootConstraints": 1
+    },
+    {
+      "side": "dk",
+      "source": "aave_v3.deposit",
+      "target": "0x8164cc65827dcfe994ab23944cbc90e0aa80bfcb",
+      "selector": "0x236300dc",
+      "signature": null,
+      "dkOptions": "None",
+      "status": "dk_only",
+      "dkRootConstraints": 3
+    }
+  ]
+}

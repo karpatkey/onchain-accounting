@@ -1,0 +1,76 @@
+{
+  "block": 26500000,
+  "chain": 1,
+  "cap": {"eip7825TxGasLimit": 16777216},
+  "method": {
+    "cold": "vm.cool on FundConfig, Safe, NAV proxy, Morpho/Aave/Curve adapters, USDC, CRV (and vaults/gauge declared); feeds not cooled. First read in the test.",
+    "warm": "identical call repeated immediately.",
+    "production": "getAccountNav(account, address(0)) on a fresh fork per account; cold = first call, warm = repeat.",
+    "quote": "USDC for fundNav; USD (address(0)) for getAccountNav"
+  },
+  "today": {
+    "prodGetAccountNav": {
+      "account2": {"cold": 17470450, "warm": 9521950, "overCapCold": 693234, "valueUsd8dp": 58094797709493, "stalePriceAssets": 0},
+      "account9": {"cold": 18075592, "warm": 9976092, "overCapCold": 1298376, "valueUsd8dp": 1698251351540557, "stalePriceAssets": 0},
+      "account10": {"cold": 18922229, "warm": 10313229, "overCapCold": 2145013, "valueUsd8dp": 8112344709219076, "stalePriceAssets": 0}
+    }
+  },
+  "perType": {
+    "emptyNoPositions": {"cold": 3633, "warm": 1633},
+    "morphoZeroN1": {"cold": 301281, "warm": 124281},
+    "morphoFundedN1": {"cold": 298337, "warm": 213337, "valueUsd8dp": 99999999998},
+    "aaveFundedUsdc": {"cold": 1143239, "warm": 534739, "valueUsd8dp": 99999999998},
+    "curveGaugeZero": {"cold": 58222, "warm": 34722}
+  },
+  "scaling": {
+    "morphoZero": {
+      "N0": {"cold": 3633, "warm": 1633},
+      "N1": {"cold": 301281, "warm": 124281},
+      "N2": {"cold": 273999, "warm": 181499},
+      "N4": {"cold": 815272, "warm": 443772},
+      "N8": {"cold": 1141036, "warm": 694036},
+      "N12": {"cold": 1579499, "warm": 986499}
+    }
+  },
+  "fit": {
+    "warm": {"n": [1, 2, 4, 8, 12], "aGas": 62198, "bGasPerPosition": 78485, "maxNUnderCap": 213},
+    "cold": {"n": [2, 4, 8, 12], "aGas": 167205, "bGasPerPosition": 120807, "maxNUnderCap": 137, "note": "N=1 cold is a first-touch outlier and is excluded"}
+  },
+  "crvControl": {
+    "crvHeld": {"staleBefore": false, "staleAfter1d": true},
+    "usdcHeld": {"staleBefore": false, "staleAfter1d": true},
+    "conclusion": "A +1 day warp stales the USDC path too, so the held-CRV result does not isolate CRV. The staleness is time-driven (24h-heartbeat feeds). Findings-curve-crv.md section 2 is consistent with that but not confirmed as CRV-specific."
+  },
+  "subscription": {
+    "sync": {
+      "feasible": true,
+      "maxPositions": 137,
+      "basis": "fundNav cold, Morpho-type zero-balance positions (fit, N>=2); warm ceiling 213",
+      "productionGetAccountNav": {"feasible": false, "coldGas": [17470450, 18075592, 18922229]},
+      "why": [
+        "Per-tx cost is the cold read; warm figures apply only within one tx after the first read.",
+        "Subscription tx needs headroom above NAV for the mint/deposit path and the 16,777,216 cap.",
+        "Production accounts 2, 9, 10 already exceed the cap cold at 26.5M."
+      ]
+    },
+    "async": {
+      "feasible": true,
+      "maxPositions": 137,
+      "basis": "one NAV per settlement tx, amortized over the batch; same ceiling as sync",
+      "productionGetAccountNav": {"feasible": false},
+      "why": [
+        "Batching cuts per-request gas, not the per-tx ceiling; the settlement tx must still fit.",
+        "Needed when user-paid sync NAV gas per subscription is too high, not when the cap binds."
+      ]
+    },
+    "oracle": {
+      "feasible": true,
+      "optimal": false,
+      "why": [
+        "Keeper/oracle update txs are paid on a cadence, on top of NAV computation (off-chain or on-chain to post).",
+        "Price is as old as the last push, which opens NAV-timing arbitrage; bound it with staleness checks.",
+        "Fallback when the cap binds: a pushed snapshot avoids the single-tx limit for large accounts."
+      ]
+    }
+  }
+}

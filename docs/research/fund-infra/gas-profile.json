@@ -1,0 +1,167 @@
+{
+  "subject": "FundConfig.addPosition gas: per-step profile, controls, scaling, before/after",
+  "fork_block": 26500000,
+  "toolchain": {
+    "forge": "1.7.1",
+    "solc": "0.8.34",
+    "via_ir": true,
+    "optimizer_runs": 200,
+    "evm_version": "cancun"
+  },
+  "baseline": "HEAD f57a7c8b, poc/fundconfig/FundConfig.sol as committed",
+  "after": "commit f15b767d, poc/fundconfig/FundConfig.sol",
+  "gas_unit": "vm.lastCallGas().gasTotalUsed of a single addPosition call, unless noted",
+  "commands": {
+    "profile": "FOUNDRY_PROFILE=slow forge test --match-path 'test/poc/fundconfig/FundConfigGas.fork.t.sol' -vv",
+    "trace_T6_AB": "FOUNDRY_PROFILE=slow forge test --match-path 'test/poc/fundconfig/FundConfigGas.fork.t.sol' --match-test test_profile_T6_AB -vvvv",
+    "suite": "FOUNDRY_PROFILE=slow forge test --match-path 'test/poc/fundconfig/**' -vv"
+  },
+  "per_step": {
+    "before": {
+      "fundA.morpho": {
+        "total": 879382,
+        "children": {
+          "registry.moduleOf": {"calls": 1, "gas": 2357},
+          "module.validate": {"calls": 1, "gas": 3668},
+          "module.permissions": {"calls": 5, "gas": 114765},
+          "roles.scopeTarget": {"calls": 2, "gas": 49680},
+          "roles.scopeFunction": {"calls": 4, "gas": 333290}
+        },
+        "fundconfig_residual": 375622
+      },
+      "fundA.aave": {
+        "total": 852462,
+        "children": {
+          "registry.moduleOf": {"calls": 1, "gas": 2357},
+          "module.validate": {"calls": 1, "gas": 38798},
+          "module.permissions": {"calls": 7, "gas": 146143},
+          "roles.scopeTarget": {"calls": 1, "gas": 24840},
+          "roles.scopeFunction": {"calls": 3, "gas": 311897}
+        },
+        "fundconfig_residual": 328427
+      },
+      "fundB.morpho": {
+        "total": 816076,
+        "children": {
+          "registry.moduleOf": {"calls": 1, "gas": 357},
+          "module.validate": {"calls": 1, "gas": 1168},
+          "module.permissions": {"calls": 5, "gas": 114765},
+          "roles.scopeTarget": {"calls": 2, "gas": 49680},
+          "roles.scopeFunction": {"calls": 4, "gas": 276984}
+        },
+        "fundconfig_residual": 373122
+      },
+      "fundB.aave": {
+        "total": 763568,
+        "children": {
+          "registry.moduleOf": {"calls": 1, "gas": 357},
+          "module.validate": {"calls": 1, "gas": 8798},
+          "module.permissions": {"calls": 7, "gas": 146143},
+          "roles.scopeTarget": {"calls": 1, "gas": 24840},
+          "roles.scopeFunction": {"calls": 3, "gas": 255003}
+        },
+        "fundconfig_residual": 328427
+      }
+    },
+    "after": {
+      "fundA.morpho": {
+        "total": 556112,
+        "children": {
+          "registry.moduleOf": {"calls": 1, "gas": 2357},
+          "module.validate": {"calls": 1, "gas": 3668},
+          "module.permissions": {"calls": 1, "gas": 22953},
+          "roles.scopeTarget": {"calls": 2, "gas": 49680},
+          "roles.scopeFunction": {"calls": 4, "gas": 333290}
+        },
+        "fundconfig_residual": 144164
+      },
+      "fundA.aave": {
+        "total": 576570,
+        "children": {
+          "registry.moduleOf": {"calls": 2, "gas": 2714},
+          "module.validate": {"calls": 1, "gas": 38798},
+          "module.permissions": {"calls": 2, "gas": 42274},
+          "roles.scopeTarget": {"calls": 1, "gas": 24840},
+          "roles.scopeFunction": {"calls": 3, "gas": 311897}
+        },
+        "fundconfig_residual": 156047
+      },
+      "fundB.morpho": {
+        "total": 492806,
+        "children": {
+          "registry.moduleOf": {"calls": 1, "gas": 357},
+          "module.validate": {"calls": 1, "gas": 1168},
+          "module.permissions": {"calls": 1, "gas": 22953},
+          "roles.scopeTarget": {"calls": 2, "gas": 49680},
+          "roles.scopeFunction": {"calls": 4, "gas": 276984}
+        },
+        "fundconfig_residual": 141664
+      },
+      "fundB.aave": {
+        "total": 487676,
+        "children": {
+          "registry.moduleOf": {"calls": 2, "gas": 714},
+          "module.validate": {"calls": 1, "gas": 8798},
+          "module.permissions": {"calls": 2, "gas": 42274},
+          "roles.scopeTarget": {"calls": 1, "gas": 24840},
+          "roles.scopeFunction": {"calls": 3, "gas": 255003}
+        },
+        "fundconfig_residual": 156047
+      }
+    }
+  },
+  "t6_orderings": {
+    "AB": {
+      "before": {"first.morpho": 879382, "first.aave": 852462, "first.total": 1731844, "second.morpho": 816076, "second.aave": 763568, "second.total": 1579644},
+      "after": {"first.morpho": 556112, "first.aave": 576570, "first.total": 1132682, "second.morpho": 492806, "second.aave": 487676, "second.total": 980482}
+    },
+    "BA": {
+      "before": {"first.total": 1731844, "second.total": 1579644},
+      "after": {"first.total": 1132682, "second.total": 980482},
+      "note": "identical configs; the swapped order gives the same numbers, so the second fund's savings do not depend on which fund runs first"
+    },
+    "allCooled": {
+      "before": {"first.morpho": 881382, "first.aave": 870162, "first.total": 1751544, "second.morpho": 820076, "second.aave": 799268, "second.total": 1619344},
+      "after": {"first.morpho": 558112, "first.aave": 594270, "first.total": 1152382, "second.morpho": 496806, "second.aave": 523376, "second.total": 1020182},
+      "note": "cool(fundconfig, roles, registry, adapters, USDC, shared Roles contracts) before each call"
+    },
+    "secondCooled": {
+      "before": {"first.total": 1731844, "second.morpho": 820076, "second.aave": 799268, "second.total": 1619344},
+      "after": {"first.total": 1132682, "second.morpho": 496806, "second.aave": 523376, "second.total": 1020182},
+      "note": "only the second fund's shared addresses are cooled before its call"
+    }
+  },
+  "t6_gap_decomposition": {
+    "gap_first_minus_second_AB": {"before": 152200, "after": 152200},
+    "dedupe_allCooled_first_minus_second": {"before": 132200, "after": 132200},
+    "warm_access_second_AB_minus_secondCooled": {"before": -39700, "after": -39700},
+    "first_fund_cold_penalty_allCooled_minus_AB_first": {"before": 19700, "after": 19700},
+    "check": "132200 + 39700 - 19700 = 152200"
+  },
+  "scaling": {
+    "setup": "N declared positions, all on the Morpho module, each with a distinct MockVault whose asset() is USDC; each addPosition is one call; approve(USDC) key shared by all",
+    "before": {"N1": 872944, "N2": 997004, "N3": 1234309, "N4": 1475017, "N5": 1719221, "N6": 1967137, "N7": 2218306, "N8": 2473051},
+    "after": {"N1": 552538, "N2": 596651, "N3": 706582, "N4": 816854, "N5": 927613, "N6": 1039033, "N7": 1150654, "N8": 1262800},
+    "delta_before": {"N1_to_N2": 124060, "N2_to_N3": 237305, "N3_to_N4": 240708, "N4_to_N5": 244204, "N5_to_N6": 247916, "N6_to_N7": 251169, "N7_to_N8": 254745},
+    "delta_after": {"N1_to_N2": 44113, "N2_to_N3": 109931, "N3_to_N4": 110272, "N4_to_N5": 110759, "N5_to_N6": 111420, "N6_to_N7": 111621, "N7_to_N8": 112146},
+    "note": "MockVault is used because validate and permissions only call asset(); mainnet vault addresses were not guessed. The N1->N2 step was not investigated."
+  },
+  "test_totals": {
+    "T6_test_gas": {"before": 8443367, "after": 7427988},
+    "note": "whole-test gas including setup, not addPosition-only"
+  },
+  "results": {
+    "profile_suite": "5 passed, 0 failed",
+    "fundconfig_suite_T1_T7_plus_profile": "12 passed, 0 failed (7 existing + 5 profiling)"
+  },
+  "attribution": {
+    "measured": [
+      "module.permissions was called once per leaf per declared position on every add (before: 5 calls on fund A morpho, 7 on aave); now once per add plus once per existing position (1 and 2 calls)",
+      "Roles scopeFunction and scopeTarget totals did not change (333,290 and 49,680 for morpho; 311,897 and 24,840 for aave); they now dominate the remaining cost",
+      "fund B's cheaper second add is still driven by Roles blob reuse (scopeFunction ~65k with no CREATE2 deploy, vs ~116k with a deploy on fund A's approve(USDC))"
+    ],
+    "inference": [
+      "the fundconfig residual (~375k before, ~144k after on fund A morpho) is mostly FundConfig storage writes and ABI overhead; the drop is consistent with removing the _keyActive and _keysOnTarget writes and the module slot in Declared, but was not confirmed with a per-SSTORE count"
+    ]
+  }
+}

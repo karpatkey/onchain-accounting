@@ -326,7 +326,14 @@ function navReadHtml(): string {
   return `<p>Cold reads (first touch in the tx), mainnet fork. Red bars do not fit in one transaction.</p>
 <svg viewBox="0 0 ${W} ${y + 22}" role="img">${out}</svg>
 <div class="std">${opt("1. Sync: NAV inside each subscription", s.sync, "part")}${opt("2. Async batch: NAV once per settlement", s.async, "part")}${opt("3. Oracle: pushed NAV snapshot", s.oracle, "ok")}</div>
-<p class="muted">fundNav cost per position depends heavily on type (funded Aave ≈ ${fmt(navGas.perType.aaveFundedUsdc.cold)} vs Morpho ≈ ${fmt(navGas.fit.cold.bGasPerPosition)} marginal); the POC's fundNav prices each leg separately and is not optimized, so these are upper bounds for the scoped design.</p>`;
+<p class="muted">fundNav cost per position depends heavily on type (funded Aave ≈ ${fmt(navGas.perType.aaveFundedUsdc.cold)} vs Morpho ≈ ${fmt(navGas.fit.cold.bGasPerPosition)} marginal); the POC's fundNav prices each leg separately and is not optimized, so these are upper bounds for the scoped design.</p>
+<h3>Ideas to fit more positions</h3>
+<ul>
+<li><b>Batch the price calls:</b> sum every leg and wallet balance per asset, then make one <code>calculateValue</code> call for credits and one for debts, instead of one per leg. Price reads scale with distinct assets, not legs.</li>
+<li>Resolve each position's module once per <code>fundNav</code> call; dedupe wallet tokens in linear time.</li>
+<li>Gas-stipend each adapter and fail open with a health flag, as <code>NAVCalculator</code> does, so one bad position cannot block a subscription.</li>
+</ul>
+<p class="muted">Not implemented or measured yet; details in <code>fundconfig-poc.md</code> § Ideas to improve.</p>`;
 }
 
 const architecture = `<svg viewBox="0 0 940 330" role="img" class="arch">

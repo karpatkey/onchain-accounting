@@ -78,7 +78,7 @@ Verdict: **sync (1) works for small funds only. Async (2) has the same per-tx ce
    - Lags: the price is as old as the last push, which opens NAV-timing arbitrage. Bound it with staleness checks.
    - Fallback when the cap binds (large production accounts).
 
-## fundNav inefficiency (noted, not fixed)
+## fundNav inefficiency (noted, not fixed; fixes in [fundconfig-poc.md § Ideas to improve](fundconfig-poc.md#ideas-to-improve))
 
 - One `NAV_CALCULATOR.calculateValue` call per leg and per wallet token.
 - `_walletTokens` is O(N²).

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Pins derive-celestia-proof.py's offline half: the record decoder, the signed-feed selection and its float
-reference of DeriveOptionPricer, against the real-batch fixtures the Solidity tests use.
+reference of DeriveOptionPricer, against the real-batch fixtures the Solidity tests use; and the settlement
+preflight's verdicts against a stubbed chain.
 
 Run from this directory with `python3 -m unittest test_derive_celestia_proof` (also under `python3 -O`). No network.
 The reference values asserted here are the ones DeriveCelestiaAttestedBalanceAdapter.t.sol pins for the adapter,
@@ -198,6 +199,134 @@ class BuildFeedsTest(unittest.TestCase):
         for name, (signed, opts, now) in cases.items():
             with self.subTest(name), self.assertRaises(p.FeedError):
                 p.build_feeds(signed, opts, now)
+
+
+SAFE = "0x8c79753aad88183f5747c91684d6c0cbfcb27476"
+OTHER = "0x00000000000000000000000000000000000000bb"
+ZERO = "0x" + "00" * 20
+CONSUMED = 100
+
+
+def word(x):
+    return f"{x:064x}"
+
+
+def aword(a):
+    return a[2:].lower().rjust(64, "0")
+
+
+class FakeChain:
+    """eth_call and eth_getLogs as a node answers them: logs filtered by address, topics and block range."""
+
+    def __init__(self):
+        self.logs, self.calls, self.ranges = [], {}, []
+        self.calls[(p.VAPP.lower(), p.SEL_CONSUMED_PUBLIC)] = word(CONSUMED)
+        for sel, t in zip(p.SEL_ACTION_TYPES, (1, 2, 3)):
+            self.calls[(p.ACTION_MANAGER.lower(), sel)] = word(t)
+
+    def __call__(self, method, params):
+        if method == "eth_call":
+            to, data = params[0]["to"].lower(), params[0]["data"]
+            return "0x" + self.calls.get((to, data), word(0) * 5)
+        if method != "eth_getLogs":
+            raise AssertionError(method)
+        f = params[0]
+        lo, hi = int(f["fromBlock"], 16), int(f["toBlock"], 16)
+        self.ranges.append((f["address"].lower(), lo, hi))
+        return [lg for lg in self.logs
+                if lg["address"] == f["address"].lower() and lo <= lg["block"] <= hi
+                and all(want is None or want == got for want, got in zip(f["topics"], lg["topics"]))]
+
+    def log(self, address, topics, data, block):
+        self.logs.append({"address": address.lower(), "topics": topics, "data": "0x" + data, "block": block,
+                          "transactionHash": "0x" + word(len(self.logs))})
+
+    def action(self, action_id, sender, action_type, block=p.ACTION_MANAGER_FROM_BLOCK + 5):
+        self.log(p.ACTION_MANAGER, [p.TOPIC_PUBLIC_ACTION, "0x" + word(action_id), "0x" + aword(sender),
+                                    "0x" + word(action_type)], "", block)
+
+    def enqueued(self, wid, recipient, bucket, index, remaining):
+        """A WithdrawalEnqueued log; the entry stays in `bucket` with `remaining` left (0: paid and deleted)."""
+        self.log(p.OUTBOX, [p.TOPIC_ENQUEUED, "0x" + word(wid), "0x" + aword(DERIVE_USDC), "0x" + aword(recipient)],
+                 word(remaining) + aword(bucket[0]) + aword(bucket[1]) + word(index), p.OUTBOX_FROM_BLOCK + 9)
+        if remaining:
+            entry = word(wid) + aword(DERIVE_USDC) + word(7) + aword(recipient) + word(remaining)
+            key = p.SEL_QUEUE_ENTRY + aword(bucket[0]) + aword(bucket[1]) + word(index)
+            self.calls[(p.OUTBOX.lower(), key)] = entry
+
+    def deferred(self, did, recipient, unpaid):
+        self.log(p.OUTBOX, [p.TOPIC_DEFERRED, "0x" + word(did), "0x" + word(0xabc + did), "0x" + aword(DERIVE_USDC)],
+                 word(7) + aword(recipient) + word(5 * 10**6), p.OUTBOX_FROM_BLOCK + 11)
+        if unpaid:
+            self.calls[(p.OUTBOX.lower(), p.SEL_DEFERRED + word(did))] = word(0xc0ffee)
+
+
+class PreflightTest(unittest.TestCase):
+    BLOCK = p.OUTBOX_FROM_BLOCK + 25_000
+
+    def setUp(self):
+        self.chain = FakeChain()
+
+    def verdict(self, chunk=p.LOG_CHUNK):
+        return p.preflight_verdict(self.chain, SAFE, self.BLOCK, chunk)
+
+    def test_nothing_in_flight(self):
+        self.chain.action(CONSUMED - 1, SAFE, 1)          # its deposit, already applied by a batch
+        self.chain.enqueued(1, SAFE, (ZERO, ZERO), 3, 0)  # queued once, since paid
+        self.chain.deferred(0, SAFE, unpaid=False)        # deferred once, since paid
+        code, report = self.verdict()
+        self.assertEqual((code, report["reasons"]), (0, []))
+
+    def test_action_at_the_consumed_index_is_pending(self):
+        self.chain.action(CONSUMED, SAFE, 1)
+        code, report = self.verdict()
+        self.assertEqual(code, 1)
+        self.assertEqual([a["actionId"] for a in report["pendingActions"]], [CONSUMED])
+
+    def test_every_tracked_action_type_is_pending_and_others_are_not(self):
+        for i, t in enumerate((1, 2, 3, 7)):  # deposit, deposit to new subaccount, withdrawal request; 7 untracked
+            self.chain.action(CONSUMED + i, SAFE, t)
+        self.chain.action(CONSUMED + 9, OTHER, 1)  # someone else's deposit
+        _, report = self.verdict()
+        self.assertEqual([a["actionType"] for a in report["pendingActions"]], [1, 2, 3])
+
+    def test_queued_withdrawal_read_in_the_bucket_it_was_enqueued_in(self):
+        # Enqueued in the global bucket; the Safe's current bucketKey may point elsewhere, so it is never consulted.
+        self.chain.enqueued(2, SAFE, (ZERO, ZERO), 41, 1_000_000)
+        self.chain.enqueued(3, OTHER, (ZERO, ZERO), 42, 9_000_000)
+        code, report = self.verdict()
+        self.assertEqual(code, 1)
+        self.assertEqual([(q["queueIndex"], q["remaining"]) for q in report["queued"]], [(41, 1_000_000)])
+
+    def test_unpaid_deferred_withdrawal_of_the_safe_only(self):
+        self.chain.deferred(0, SAFE, unpaid=True)
+        self.chain.deferred(1, OTHER, unpaid=True)
+        self.chain.deferred(2, SAFE, unpaid=False)
+        code, report = self.verdict()
+        self.assertEqual(code, 1)
+        self.assertEqual([d["deferredId"] for d in report["deferred"]], [0])
+
+    def test_logs_scanned_once_from_deployment_to_the_pinned_block(self):
+        self.chain.deferred(0, SAFE, unpaid=True)
+        self.chain.logs[-1]["block"] = self.BLOCK  # on the last block of the last chunk
+        self.chain.action(CONSUMED, SAFE, 1, block=p.ACTION_MANAGER_FROM_BLOCK)  # on the first block
+        _, report = self.verdict(chunk=7_000)
+        self.assertEqual((len(report["pendingActions"]), len(report["deferred"])), (1, 1))
+        for address, start in ((p.ACTION_MANAGER.lower(), p.ACTION_MANAGER_FROM_BLOCK),
+                               (p.OUTBOX.lower(), p.OUTBOX_FROM_BLOCK)):
+            spans = sorted({(lo, hi) for a, lo, hi in self.chain.ranges if a == address})
+            self.assertEqual(spans[0][0], start)
+            self.assertEqual(spans[-1][1], self.BLOCK)
+            self.assertTrue(all(b[0] == a[1] + 1 for a, b in zip(spans, spans[1:])), spans)  # no gap, no overlap
+
+    def test_read_failure_is_exit_2(self):
+        def failing(method, params):
+            if method == "eth_getLogs":
+                raise RuntimeError("eth_getLogs: archive requests require a personal token")
+            return self.chain(method, params)
+        code, report = p.preflight_verdict(failing, SAFE, self.BLOCK)
+        self.assertEqual(code, 2)
+        self.assertFalse(report["ok"])
 
 
 if __name__ == "__main__":

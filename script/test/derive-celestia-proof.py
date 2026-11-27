@@ -11,6 +11,8 @@ Usage:
   derive-celestia-proof.py --subaccount ID [--subaccount ID ...]   prove these records (same owner)
   derive-celestia-proof.py --pick-collateral-only                   pick one record holding only mapped collateral
   derive-celestia-proof.py --pick-options                           pick one USDC + options record in the batch
+  derive-celestia-proof.py --preflight SAFE                         settlement check: exit 0 only if nothing is in
+                                                                    flight between SAFE and Derive (see "preflight")
   options: --out FILE (default stdout), --eth-rpc URL, --celestia-rpc URL, --derive-api URL,
            --block N (read VAPP at block N instead of the newest; rebuilds a fixture for a pinned fork block)
 
@@ -595,12 +597,131 @@ def is_option_candidate(r, max_options=12):
             and all(bal == 0 or (asset == CASH_ASSET and bal > 0) for asset, bal in r["collateral"]))
 
 
+# ------------------------------------------------------------------------------------------------ preflight
+# Settlement in-flight check (docs/plans/2026-11-27-derive-in-flight-value.md). Value between a fund Safe and Derive
+# is in neither NAV leg: a deposit queued on Ethereum but not yet applied by a batch, a withdrawal parked in the
+# outbox's rate-limit queue, or a withdrawal deferred after a failed transfer. The settlement guard runs this right
+# before it signs and skips the window unless it passes; it reads Ethereum only, all at one block. It runs before the
+# settlement transaction, not inside it, so the gap between the two must be kept to seconds.
+#
+# Pending actions: action ids are `publicAccHistory.length - 1` at queue time (ActionManager `_appendPublic`), and
+# VAPP.consumedPublicAccIndex() is the first id no batch has consumed yet, so an action is pending iff
+# id >= consumedPublicAccIndex. A queued withdrawal request also fails the check although its value is still in the
+# attested subaccount until its batch: conservative on purpose, keep it.
+# Queued withdrawals: an entry stays in the bucket chosen when it was enqueued, which can differ from the Safe's
+# current bucketKey, so each is read where its WithdrawalEnqueued says; a paid entry is deleted (id becomes zero).
+# Deferred withdrawals: unpaid iff deferredWithdrawals(deferredId) != 0 (deferredProcess deletes it; `consumed(id)`
+# is replay protection and true for every deferred one).
+# A deposit's `fallbackRecipient` receives the funds if Derive cannot apply it; the check clears once the action is
+# consumed, so a fund must name its own wallet as fallback.
+
+ACTION_MANAGER = "0xE366CcA474968e33b777E13905829A3b800CFAD3"
+OUTBOX = "0x7c743D79C9C595cE332314503d84cBBb4E85FA63"
+# First block with code at each proxy (eth_getCode bisection, 2026-11-27): no event can predate it.
+ACTION_MANAGER_FROM_BLOCK = 26_097_581
+OUTBOX_FROM_BLOCK = 26_097_577
+# keccak256 of the event signatures and function selectors (`cast keccak` / `cast sig`; hashlib has no keccak):
+# PublicActionQueued(uint256,address,uint64,bytes,bytes32), WithdrawalEnqueued(bytes32,address,address,uint128,
+# address,address,uint256), WithdrawalDeferred(uint256,bytes32,address,uint64,address,uint128); consumedPublicAccIndex(),
+# DEPOSIT_TYPE(), DEPOSIT_TO_NEW_SUBACCOUNT_TYPE(), WITHDRAWAL_TYPE(), deferredWithdrawals(uint256),
+# queueEntry(address,address,uint256).
+TOPIC_PUBLIC_ACTION = "0xea5d2d4aa41b860cc464a7033c748b8a87630dac2abbd1ce7db29afd94154c76"
+TOPIC_ENQUEUED = "0x34f5d9b906f59607b40497097216f665902a0cdae9f864bf7242dd87c8999f0c"
+TOPIC_DEFERRED = "0xd02ce5c2994eabd72f0129570fcba54f6904ab570305000af144d6eb540e5687"
+SEL_CONSUMED_PUBLIC = "0xf0d739e2"
+SEL_ACTION_TYPES = ("0x14ba698f", "0xa4a61859", "0x4b3ccf18")
+SEL_DEFERRED = "0xdfca460a"
+SEL_QUEUE_ENTRY = "0xc3ed098a"
+# The scans start at deployment, so they need an archive RPC (publicnode refuses: "Archive requests require a
+# personal token"). Alchemy answers each whole scan in one call (the three take about 2 s, 2026-11-27); 10,000-block
+# chunks took 90-107 s. A provider with a smaller range cap fails with exit 2 and needs a smaller --log-chunk.
+LOG_CHUNK = 500_000
+
+
+def _topic(addr):
+    return "0x" + addr[2:].lower().rjust(64, "0")
+
+
+def _words(hexdata):
+    h = hexdata[2:]
+    return [int(h[i:i + 64], 16) for i in range(0, len(h), 64)]
+
+
+def _addr(word):
+    return "0x" + f"{word:064x}"[24:]
+
+
+def _call(rpc, to, data, block):
+    return _words(rpc("eth_call", [{"to": to, "data": data}, hex(block)]))
+
+
+def chunked_logs(rpc, address, topics, start, end, chunk):
+    """Every log of `address` matching `topics` in [start, end], fetched in `chunk`-block ranges."""
+    lo = start
+    while lo <= end:
+        hi = min(lo + chunk - 1, end)
+        yield from rpc("eth_getLogs", [{"address": address, "topics": topics, "fromBlock": hex(lo), "toBlock": hex(hi)}])
+        lo = hi + 1
+
+
+def preflight(rpc, safe, block, chunk=LOG_CHUNK):
+    """In-flight value of `safe` at `block`; `ok` only if there is none. `rpc(method, params)` is the transport."""
+    safe = safe.lower()
+    consumed = _call(rpc, VAPP, SEL_CONSUMED_PUBLIC, block)[0]
+    types = {_call(rpc, ACTION_MANAGER, s, block)[0] for s in SEL_ACTION_TYPES}
+    pending = []
+    for lg in chunked_logs(rpc, ACTION_MANAGER, [TOPIC_PUBLIC_ACTION, None, _topic(safe)],
+                           ACTION_MANAGER_FROM_BLOCK, block, chunk):
+        action_id, action_type = int(lg["topics"][1], 16), int(lg["topics"][3], 16)
+        if action_id >= consumed and action_type in types:
+            pending.append({"actionId": action_id, "actionType": action_type, "tx": lg["transactionHash"]})
+
+    queued = []
+    for lg in chunked_logs(rpc, OUTBOX, [TOPIC_ENQUEUED, None, None, _topic(safe)], OUTBOX_FROM_BLOCK, block, chunk):
+        wid = lg["topics"][1]
+        _, b_recipient, b_asset, index = _words(lg["data"])
+        data = SEL_QUEUE_ENTRY + f"{b_recipient:064x}{b_asset:064x}{index:064x}"
+        entry_id, asset, _, _, remaining = _call(rpc, OUTBOX, data, block)
+        if f"0x{entry_id:064x}" == wid.lower() and remaining > 0:
+            queued.append({"id": wid, "asset": _addr(asset), "remaining": remaining,
+                           "bucket": [_addr(b_recipient), _addr(b_asset)], "queueIndex": index})
+
+    deferred = []
+    for lg in chunked_logs(rpc, OUTBOX, [TOPIC_DEFERRED], OUTBOX_FROM_BLOCK, block, chunk):
+        _, recipient, amount = _words(lg["data"])
+        did = int(lg["topics"][1], 16)
+        if _addr(recipient) == safe and _call(rpc, OUTBOX, SEL_DEFERRED + f"{did:064x}", block)[0] != 0:
+            deferred.append({"deferredId": did, "id": lg["topics"][2], "asset": _addr(int(lg["topics"][3], 16)),
+                             "amount": amount})
+
+    reasons = ([f"action {p['actionId']} (type {p['actionType']}) not yet applied by a batch" for p in pending]
+               + [f"withdrawal {q['id']} queued in the outbox, {q['remaining']} left" for q in queued]
+               + [f"withdrawal {d['id']} deferred (id {d['deferredId']}), unpaid" for d in deferred])
+    return {"ok": not reasons, "block": block, "safe": safe, "pendingActions": pending, "queued": queued,
+            "deferred": deferred, "reasons": reasons}
+
+
+def preflight_verdict(rpc, safe, block=None, chunk=LOG_CHUNK):
+    """(exit code, report): 0 nothing in flight, 1 something is (skip the window), 2 a read failed (skip too).
+
+    `block` None reads at the current head.
+    """
+    try:
+        block = block or int(rpc("eth_blockNumber", []), 16)
+        report = preflight(rpc, safe, block, chunk)
+    except (RuntimeError, ValueError, KeyError, IndexError, subprocess.CalledProcessError) as e:
+        return 2, {"ok": False, "block": block, "safe": safe.lower(), "error": f"{type(e).__name__}: {e}"}
+    return (0 if report["ok"] else 1), report
+
+
 def main():
     ap = argparse.ArgumentParser()
     g = ap.add_mutually_exclusive_group(required=True)
     g.add_argument("--subaccount", type=int, action="append")
     g.add_argument("--pick-collateral-only", action="store_true")
     g.add_argument("--pick-options", action="store_true")
+    g.add_argument("--preflight", metavar="SAFE")
+    ap.add_argument("--log-chunk", type=int, default=LOG_CHUNK)
     ap.add_argument("--out")
     ap.add_argument("--eth-rpc")
     ap.add_argument("--celestia-rpc", default="https://rpc.celestia.pops.one")
@@ -611,6 +732,10 @@ def main():
     eth_url = a.eth_rpc or os.environ.get("MAINNET_URL") or (
         f"https://eth-mainnet.g.alchemy.com/v2/{os.environ['ALCHEMY_API_KEY']}" if os.environ.get("ALCHEMY_API_KEY")
         else "https://ethereum-rpc.publicnode.com")
+    if a.preflight:
+        code, report = preflight_verdict(lambda m, p: eth(eth_url, m, p), a.preflight, a.block, a.log_chunk)
+        print(json.dumps(report, indent=1))
+        sys.exit(code)
     block = a.block or int(eth(eth_url, "eth_blockNumber", []), 16)
     anchor = eth(eth_url, "eth_call", [{"to": VAPP, "data": GET_ANCHOR}, hex(block)])[2:]
     height, commitment = int(anchor[0:64], 16), "0x" + anchor[128:192]

@@ -45,9 +45,10 @@ flowchart LR
 The spec's §3 adapter would read the outbox queue and report the Safe's parked withdrawals as a locked position, so
 a settlement could go ahead while one waits. It is dropped:
 
-- **It covers a rare case.** Normal withdrawals never sit in the queue (Facts). The adapter only buys the ability to
-  settle while one of the fund's own withdrawals is rate-limited; without it that window is skipped and the next
-  one is used.
+- **It covers an uncommon, bounded case.** Since deployment, 187 of about 6,081 payouts were queued (about 3%), in
+  18 of the ~57 7,200-block days, all in the global bucket, each paid within 1,882 blocks (about 6.3 h; median 225, about 45 min);
+  five were deferred, all since paid (Facts). The adapter only buys the ability to settle while one of the fund's own
+  withdrawals waits; without it that window is skipped and the next one is used, at worst about 6 h later so far.
 - **The queue is shared, which makes it hostile to read.** Buckets fall back to a global `(0,0)` bucket that any
   Derive user's throttled withdrawals land in. Walking it unbounded lets a third party push it past the gas stipend:
   `AdapterGasExhausted` then reverts every `getAccountNav`, not just the settlement. Walking it bounded returns a
@@ -57,8 +58,8 @@ a settlement could go ahead while one waits. It is dropped:
 - **Cost.** A new contract, its deployment and NAV registration, for the case above.
 
 Mitigation for the delay it would have avoided: ask Derive for a per-fund bucket (`setBucketLimit`) sized to the
-fund's flows, and do not withdraw large amounts right before a NAV strike. Revisit the adapter only if skipped
-windows happen in practice.
+fund's flows (every queued entry so far sat in the shared global bucket), and do not withdraw large amounts right
+before a NAV strike. Revisit the adapter if skipped windows happen in practice.
 
 ## Facts (checked 2026-11-27 on mainnet and in the verified sources)
 
@@ -67,6 +68,7 @@ windows happen in practice.
 | Proxies: VAPP `0xd330145C17fB6EF2a21ACf1275Ce683A305F58BB`, WithdrawalOutbox `0x7c743D79C9C595cE332314503d84cBBb4E85FA63` (impl `0xda213f6af45a7d6dc728bab03fa4a1d81ff2b418`), OnchainActionManager `0xE366CcA474968e33b777E13905829A3b800CFAD3` (impl `0x42fd440db1b84e95b4ab6a8ec5fc3073b1c0a4e5`) | EIP-1967 implementation slot of each proxy; sources at `https://sourcify.dev/server/v2/contract/1/<impl>?fields=sources` |
 | Normal withdrawals are paid inside `VAPP.submitBatch` (VAPP-only `executeWithdrawals`), in token units | tx `0x9a9efb137717c96b30fea29ffbfd083e0f0a95ccfd34ed2f075c0be9b767a287`: USDC `Transfer` and `WithdrawalPaid.paid` both `0x49c1288194` |
 | In one day, every payout came in a batch and none waited: blocks 26,500,489-26,507,688 hold 181 `WithdrawalPaid` in 109 transactions, all `submitBatch` (selector `0xcaf85453`) sent to the VAPP, and zero `WithdrawalEnqueued` and zero `WithdrawalDeferred`. One day is a sample, not a rate | `cast logs` on the outbox over that range in 1,200-block chunks, then `eth_getTransactionByHash` on each transaction |
+| Since deployment (blocks 26,097,577-26,507,752): 187 `WithdrawalEnqueued` (blocks 26,142,399-26,485,885, 138 recipients, all in bucket `(0,0)`), every one later paid in full, after 225 blocks median, 1,110 at p90, 1,882 at most; 6,081 `WithdrawalPaid`; 5 `WithdrawalDeferred` (`deferredWithdrawalId` = 5), all with `deferredWithdrawals(id) == 0` | One whole-range `eth_getLogs` per event on Alchemy, 2026-11-27; first `WithdrawalPaid` with `remaining == 0` per id |
 | A queue entry keeps the raw `recipient` and `asset` and stays in the bucket chosen at enqueue time (`WithdrawalEnqueued.bucketRecipient/bucketAsset`); `queueEntry → (bytes32 id, address asset, uint64 accountId, address recipient, uint128 remainingAmount)`, token units | Outbox `_resolveBucket`, `setBucketLimit`, `_computePay`, `_payOut` |
 | A deferred withdrawal is unpaid iff `deferredWithdrawals(deferredId) != 0`; `deferredProcess` deletes it. `consumed(id)` is replay protection, true for every deferred withdrawal. Queued entries can also be diverted to deferred. In `WithdrawalDeferred`, `recipient` is not indexed | Outbox `_admit` (sets `consumed` before `_divertToDeferred`), `processQueue` path, `deferredProcess` |
 | Ethereum-queued actions have ids `publicAccHistory.length - 1`; `VAPP.consumedPublicAccIndex()` is the next id to consume. Action `id` is pending iff `consumedPublicAccIndex() <= id < publicHeadIndex()`. `actionId` is indexed in `PublicActionQueued` | ActionManager `_appendPublic`; VAPP `submitBatch` |

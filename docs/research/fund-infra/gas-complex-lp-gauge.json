@@ -1,0 +1,12 @@
+[
+  {"type": "uniswap-v3-lp", "step": "increaseLiquidity", "gas": 130972},
+  {"type": "uniswap-v3-lp", "step": "decreaseLiquidity", "gas": 129693},
+  {"type": "uniswap-v3-lp", "step": "collect", "gas": 96571},
+  {"type": "uniswap-v3-lp", "step": "custom-check-direct (approx)", "gas": 9650},
+  {"type": "curve-3pool-gauge", "step": "add_liquidity", "gas": 180443},
+  {"type": "curve-3pool-gauge", "step": "gauge deposit (enter/exit test)", "gas": 484502},
+  {"type": "curve-3pool-gauge", "step": "gauge deposit (claim test)", "gas": 491002},
+  {"type": "curve-3pool-gauge", "step": "gauge withdraw", "gas": 147939},
+  {"type": "curve-3pool-gauge", "step": "remove_liquidity", "gas": 135612},
+  {"type": "curve-3pool-gauge", "step": "minter mint(gauge)", "gas": 230155}
+]

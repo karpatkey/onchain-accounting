@@ -1,0 +1,9 @@
+[
+  {"type": "aave-v3-borrow", "step": "addPosition", "gas": 479332},
+  {"type": "aave-v3-borrow", "step": "borrow", "gas": 239934},
+  {"type": "aave-v3-borrow", "step": "repay", "gas": 81125},
+  {"type": "aave-v3-borrow", "step": "removePosition", "gas": 1172408},
+  {"type": "uniswap-v3-swap", "step": "addPosition", "gas": 834575},
+  {"type": "uniswap-v3-swap", "step": "approve", "gas": 54356},
+  {"type": "uniswap-v3-swap", "step": "exactInputSingle", "gas": 183523}
+]

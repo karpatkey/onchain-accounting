@@ -173,11 +173,12 @@ contract MyAsset_CustomPriceFeed is ICustomPriceFeed, INavSourcedPriceFeed {
         returns (uint256 price, bool stale, uint80 roundId, uint256 startedAt, uint256 updatedAt, uint80 answeredInRound)
     {
         // Base/USD from the NAV's selector (normalized to NAV_DECIMALS = 8). Stale on genuine base-feed staleness,
-        // NOT on L2 sequencer-down alone (NavBaseUsdLib un-folds pd.sequencerDown — ADR 0019). roundId/startedAt/
-        // answeredInRound have no meaning for a NAV read.
+        // NOT on L2 sequencer-down alone (NavBaseUsdLib un-folds pd.sequencerDown — ADR 0019). A stale base still
+        // carries its last price, and so does this feed (ADR 0029); base8 == 0 means the NAV has no usable base
+        // price. roundId/startedAt/answeredInRound have no meaning for a NAV read.
         uint256 base8;
         (base8, stale, updatedAt) = NavBaseUsdLib.baseUsd(NAV, BASE_ASSET);
-        if (stale) return (0, true, 0, 0, updatedAt, 0);
+        if (base8 == 0) return (0, true, 0, 0, updatedAt, 0);
 
         uint256 rate = _readRate(); // protocol-specific, 18-decimal base-token per 1 underlying
         if (rate == 0) return (0, true, 0, 0, updatedAt, 0);
@@ -223,10 +224,10 @@ Conventions:
 
 - **Pin every input as `immutable`** in the constructor. No setters.
 - **Use `OracleArgumentChecks` / `AddressCheckLib`** for argument validation. Don't roll your own zero-checks.
-- **Return `(0, true)` on any failure path**, never revert. Stale prices propagate into NAV via `NAV.stalePriceAssets`.
+- **Return `(0, true)` on a structural failure** (zero rate, non-positive answer, decimals or band violation), never revert. **When an input is only stale, return the computed price with `stale = true`** ([ADR 0029](../decisions/0029-staleness-flags-never-changes-value.md)): the NAV keeps using it, flagged in `NAV.stalePriceAssets`, until it is `MAX_STALE_PRICE_AGE` (7 days) old.
 - **Implement `latestRoundData()` and `governingFeedFreshness()`** as well as `getLatestPrice()`. `ICustomPriceFeed` requires all three; `Prices.sol` reads price/staleness from `getLatestPrice()`, while `latestRoundData()` exists for callers inspecting freshness (return the worst-case `updatedAt`, or `(0, 0, 0, 0, 0)` for feeds with no trackable timestamp) and `governingFeedFreshness()` returns the matched `(updatedAt, heartbeat)` pair of whichever Chainlink leg has the largest age-to-heartbeat ratio, or `(0, 0)` when there is none ([ADR 0020](../decisions/0020-custom-feed-governing-leg-freshness.md)). Computing price and staleness from one private `_compute()` helper, as above, keeps them consistent.
 - **`decimals()`** returns `NAV_DECIMALS` (8) — `NavBaseUsdLib` normalizes the base/USD to 8 dp, so the feed's output is always 8 dp.
-- **Base/USD comes from the NAV** (`NavBaseUsdLib.baseUsd(NAV, BASE_ASSET)`), never an embedded Chainlink oracle ([ADR 0019](../decisions/0019-nav-sourced-base-price.md)). Its staleness (all-base-feeds-stale) is inherited for free; L2 **sequencer-down alone does not** zero the feed. `BASE_ASSET` MUST be a direct-feed asset (circularity invariant) — expose it as an immutable `BASE_ASSET()` (`INavSourcedPriceFeed`), since registration rejects a `Custom` feed that cannot answer (`CustomFeedBaseUnreadable`) or that answers with the very asset being registered (`CustomFeedBaseCircular`); a feed with no NAV dependency answers `address(0)`. Any `asset/base` Chainlink **rate** leg you read yourself (e.g. weETH/eETH) keeps its own heartbeat check; if the rate goes negative or zero, treat as stale.
+- **Base/USD comes from the NAV** (`NavBaseUsdLib.baseUsd(NAV, BASE_ASSET)`), never an embedded Chainlink oracle ([ADR 0019](../decisions/0019-nav-sourced-base-price.md)). Its staleness (no base feed fresh) is inherited for free and carried with the price; L2 **sequencer-down alone does not** mark the feed stale. `BASE_ASSET` MUST be a direct-feed asset (circularity invariant) — expose it as an immutable `BASE_ASSET()` (`INavSourcedPriceFeed`), since registration rejects a `Custom` feed that cannot answer (`CustomFeedBaseUnreadable`) or that answers with the very asset being registered (`CustomFeedBaseCircular`); a feed with no NAV dependency answers `address(0)`. Any `asset/base` Chainlink **rate** leg you read yourself (e.g. weETH/eETH) keeps its own heartbeat check; if the rate goes negative or zero, return `(0, true)`; if it is only past its heartbeat, keep the price and set `stale`.
 - **One asset per contract.** Even if two assets share the same recipe, deploy two contracts.
 
 ### B.3 Tests
@@ -238,7 +239,8 @@ File: `test/prices/protocols/<Asset>_CustomPriceFeed.t.sol`.
 Cover, with a **mock NAV** (`Mock_NAVCalculator` — `setAssetPrice`/`setAssetStale`/`setSequencerDown`) as the base/USD source + a mocked rate provider:
 
 - **Happy path**: known inputs → expected output (compute by hand).
-- **Base stale** (`nav.setAssetStale(baseAsset, true)`) → returns `(0, true)`.
+- **Base stale** (`nav.setAssetStale(baseAsset, true)`) → returns the computed price with `stale == true` (ADR 0029).
+- **No usable base** (`nav.setAssetPrice(baseAsset, 0)`) → returns `(0, true)`.
 - **L2 sequencer-down alone** (`nav.setSequencerDown(baseAsset, true)`) → still returns the last price, **not** stale (base feed fresh) — the F1 behavior.
 - **Zero or negative rate** → `(0, true)`.
 - **Constructor zero-address guards** for every immutable (incl. `nav_` not-a-contract and `baseAsset_` not-an-ERC20).
@@ -247,7 +249,7 @@ Cover, with a **mock NAV** (`Mock_NAVCalculator` — `setAssetPrice`/`setAssetSt
 - **`latestRoundData()`** returns the round data (and `answer == 0` when stale).
 - **`governingFeedFreshness()`** returns the governing leg's `(updatedAt, heartbeat)` — for a pure NAV-base feed, the base leg's pair; `(0, 0)` when there is no trackable Chainlink dependency.
 - **`supportsInterface`** returns true for `ICustomPriceFeed` and `IERC165`.
-- **(If you read an `asset/base` Chainlink rate leg yourself)** negative / stale rate feed → `(0, true)`.
+- **(If you read an `asset/base` Chainlink rate leg yourself)** negative rate → `(0, true)`; stale rate → computed price with `stale == true`.
 
 #### B.3.2 Fork test
 
@@ -366,7 +368,7 @@ Use this path when an asset is already registered and you want to add a second (
 NAVCalculator.addOrModifyPriceFeed(asset, feedAddress, PriceType.Redstone /* or API3 */, heartbeat)
 ```
 
-This appends the feed to the asset's array. On the next read, `Prices._selectFeed` picks the freshest non-stale survivor across all feeds.
+This appends the feed to the asset's array. On the next read, `Prices._selectFeed` picks the freshest fresh feed across all feeds, falling back to the freshest usable stale one when none is fresh (ADR 0029).
 
 ### C.3 Verify
 

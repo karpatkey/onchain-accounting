@@ -82,12 +82,13 @@ contract NXM_CustomPriceFeedTest is Test {
         assertEq(price, 90e8, "0.03 ETH/NXM * $3000 = $90 at 8 decimals");
     }
 
-    /// @dev NAV-sourced base staleness is now the primary staleness source: base stale -> feed stale, price 0.
+    /// @dev NAV-sourced base staleness is the primary staleness source: base stale -> feed stale, still priced off the
+    ///      last base price (ADR 0029).
     function test_stale_whenBaseStale() public {
         NXM_CustomPriceFeed oracle = new NXM_CustomPriceFeed(address(nxm), address(ramm), address(nav), address(weth));
         nav.setAssetStale(address(weth), true);
         (uint256 price, bool stale) = oracle.getLatestPrice();
         assertTrue(stale, "stale when base stale");
-        assertEq(price, 0, "price 0 when base stale");
+        assertEq(price, 90e8, "priced off the last base price when the base is stale");
     }
 }

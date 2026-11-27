@@ -116,7 +116,7 @@ struct Position {
     int256  price;            // price used: quoteAsset per balanceAsset unit
     uint8   priceDecimals;    // decimal precision of price
     bool    stale;            // true if the price feed was stale at query time
-    bool    quoteAssetStale;  // true if the quote asset's own feed was stale (value falls back to USD 8dp)
+    bool    quoteAssetStale;  // true if the quote asset's own feed was stale (value uses its last-known price; ADR 0029)
     // + the identity fields: protocolBrand, protocolId, protocolSubId, positionId,
     //   positionKind, isLocked, positionInstanceId
     bool    irregular;           // true if the asset's primary price diverged from its monitor feeds beyond

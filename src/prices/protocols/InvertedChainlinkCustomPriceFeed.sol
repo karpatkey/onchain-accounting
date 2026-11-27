@@ -144,7 +144,8 @@ contract InvertedChainlinkCustomPriceFeed is ICustomPriceFeed, INavSourcedPriceF
         _decimals = NAV_DECIMALS;
     }
 
-    /// @notice Reads the `USD / X` leg, applies staleness, and inverts it into X/USD.
+    /// @notice Reads the `USD / X` leg and inverts it into X/USD. A leg past `FEED_HEARTBEAT` still prices the asset,
+    ///         flagged stale (ADR 0029); a decimals mismatch, a non-positive answer or an out-of-band answer return 0.
     function _compute()
         private
         view
@@ -187,9 +188,7 @@ contract InvertedChainlinkCustomPriceFeed is ICustomPriceFeed, INavSourcedPriceF
 
         // Guard against an upstream clock ahead of ours before measuring age (as {TwoFeedChainlinkPriceFeed}).
         uint256 eff = updatedAt > block.timestamp ? block.timestamp : updatedAt;
-        if (block.timestamp - eff >= FEED_HEARTBEAT) {
-            return (0, true, roundId, startedAt, updatedAt, answeredInRound);
-        }
+        stale = block.timestamp - eff >= FEED_HEARTBEAT;
 
         // X/USD = 1 / (X per USD), in NAV_DECIMALS. Division LAST — the answer is the denominator.
         price = _navUnit.mulDiv(_feedUnit, uint256(answer), Math.Rounding.Floor);

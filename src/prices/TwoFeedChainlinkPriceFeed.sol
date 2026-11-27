@@ -22,8 +22,10 @@ import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 ///         only the rate feed + its heartbeat plus the NAV and base asset, and keep their own named contract.
 /// @dev Price is `rate · base8 / 10**rateDecimals` (Math.Rounding.Floor) — i.e. `(asset/base) · (base/USD)`, with the
 ///      rate feed's decimals cancelled out — returned in `NAV_DECIMALS` (8). The rate feed is read each call and the
-///      base/USD term is read from the NAV; the result is stale when the rate answer is non-positive, the rate feed is
-///      past its own heartbeat, or the NAV reports the base feed stale (all-base-feeds-stale; L2 sequencer-down alone does not — it surfaces via the NAV's top-level `sequencerDown` flag). Rate-leg freshness uses
+///      base/USD term is read from the NAV. The result is `(0, true)` when the rate answer is non-positive or the NAV
+///      has no usable base price. It keeps its computed price, flagged stale (ADR 0029), when the rate feed is past its
+///      own heartbeat or the NAV reports the base feed stale (no base feed fresh; L2 sequencer-down alone does not —
+///      it surfaces via the NAV's top-level `sequencerDown` flag). Rate-leg freshness uses
 ///      `effectiveUpdatedAt = min(updatedAt, block.timestamp)` to avoid upstream-clock bias; the returned `updatedAt`
 ///      is the more conservative `min(rateLegUpdatedAt, baseUpdatedAt)`. Sourcing base/USD from the NAV (rather than a
 ///      hardcoded Chainlink oracle) makes the base term identical to the one the NAV prices the base asset's own legs
@@ -73,7 +75,9 @@ abstract contract TwoFeedChainlinkPriceFeed is ICustomPriceFeed, INavSourcedPric
         _rateUnit = 10 ** uint256(AggregatorV3Interface(rateFeed_).decimals());
     }
 
-    /// @notice Reads the rate feed + the NAV base/USD, applies staleness, and composes `rate · base8 / 10**rateDecimals`.
+    /// @notice Reads the rate feed + the NAV base/USD and composes `rate · base8 / 10**rateDecimals`. A stale base or
+    ///         a rate leg past `RATE_HEARTBEAT` still prices the asset, flagged stale (ADR 0029); only a missing base
+    ///         price or a non-positive rate returns 0.
     function _compute()
         internal
         view
@@ -91,18 +95,16 @@ abstract contract TwoFeedChainlinkPriceFeed is ICustomPriceFeed, INavSourcedPric
         (roundId, rate, startedAt, rateUpdatedAt, answeredInRound) = RATE_FEED.latestRoundData();
 
         // Base/USD from the NAV's selector (normalized to NAV_DECIMALS = 8); it marks the base stale on
-        // all-base-feeds-stale only (L2 sequencer-down alone does NOT — NavBaseUsdLib un-folds pd.sequencerDown; ADR 0019).
+        // no-base-feed-fresh only (L2 sequencer-down alone does NOT — NavBaseUsdLib un-folds pd.sequencerDown; ADR 0019).
         (uint256 base8, bool baseStale, uint256 baseUpdatedAt) = NavBaseUsdLib.baseUsd(NAV, BASE_ASSET);
 
         // Report the more conservative (older) updatedAt across the rate leg and the NAV base read.
         updatedAt = rateUpdatedAt <= baseUpdatedAt ? rateUpdatedAt : baseUpdatedAt;
 
-        if (baseStale || rate <= 0) return (0, true, roundId, startedAt, updatedAt, answeredInRound);
+        if (base8 == 0 || rate <= 0) return (0, true, roundId, startedAt, updatedAt, answeredInRound);
 
         uint256 effRate = rateUpdatedAt > block.timestamp ? block.timestamp : rateUpdatedAt;
-        if (block.timestamp - effRate >= RATE_HEARTBEAT) {
-            return (0, true, roundId, startedAt, updatedAt, answeredInRound);
-        }
+        stale = baseStale || block.timestamp - effRate >= RATE_HEARTBEAT;
 
         // asset/USD = (asset/base) * (base/USD) / 10^rateDecimals
         price = uint256(rate).mulDiv(base8, _rateUnit, Math.Rounding.Floor);

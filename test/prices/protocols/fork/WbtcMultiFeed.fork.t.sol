@@ -139,14 +139,24 @@ contract WbtcMultiFeedForkTest is NAVCalculatorForkHarness {
         console2.log("Price (USD)          :", uint256(price) / 1e8);
     }
 
-    /// After Redstone's 24h heartbeat expires every feed is stale.
+    /// @notice After every heartbeat expires every feed is stale; ADR 0029: the FRESHEST stale feed (the larger
+    ///         `updatedAt`; ties keep the earlier-registered) still supplies the price, with `healthyFeedCount == 0`.
     function test_allFeedsStale_after24hWarp() public {
         vm.warp(block.timestamp + REDSTONE_HEARTBEAT + 1);
 
-        (int256 price,, bool stale,) = nav.latestPrice(WBTC);
+        (, int256 aAnswer,, uint256 aUpdated,) = AggregatorV3Interface(CHAINLINK_BTC_USD).latestRoundData();
+        (, int256 bAnswer,, uint256 bUpdated,) = AggregatorV3Interface(REDSTONE_BTC_USD).latestRoundData();
+        bool bWins = bUpdated > aUpdated; // feed 0 = CHAINLINK_BTC_USD, feed 1 = REDSTONE_BTC_USD
+        int256 expected = bWins ? bAnswer : aAnswer;
 
-        assertTrue(stale, "expected all-stale after 24h warp");
-        assertEq(price, 0, "price must be 0 when all feeds are stale");
+        (int256 price,, bool stale,) = nav.latestPrice(WBTC);
+        INAVCalculator.PriceFeedData memory d = nav.getPriceData(WBTC);
+
+        assertTrue(stale, "expected all-stale after the warp");
+        assertEq(price, expected, "the freshest stale feed supplies the price");
+        assertGt(price, 0);
+        assertEq(d.priceFeed, bWins ? REDSTONE_BTC_USD : CHAINLINK_BTC_USD, "getPriceData reports the stale winner");
+        assertEq(d.healthyFeedCount, 0);
     }
 
     // ─── Constraints ───────────────────────────────────────────────────────────

@@ -455,11 +455,55 @@ contract NAVCalculatorPaginatedNavTest is SuperTest {
     }
 
     /// @notice A stale price does not stop a slice from being returned — it is reported alongside a value, exactly
-    ///         as the complete read does. Pinned so the flag can never be mistaken for a rejection.
+    ///         as the complete read does. Pinned so the flag can never be mistaken for a rejection. ADR 0029: the
+    ///         value is the stale asset's last-known price, not 0.
     function test_staleSliceStillReturnsAValue() public {
+        int256 freshSlice = _slice(_arr1(address(adapterC))).value;
         _staleDaiOnly();
         INAVCalculator.PartialNAV memory p = _slice(_arr1(address(adapterC)));
         assertEq(p.stalePriceAssets.length, 1);
-        assertEq(p.value, 0, "a stale asset prices at 0 in the slice, as in the complete read");
+        assertEq(p.value, 25_000e8, "25,000 DAI at its last price of $1");
+        assertEq(p.value, freshSlice, "staleness never changes the slice value");
+    }
+
+    /// @notice ADR 0029 parity with a stale asset: the single-adapter slices still sum to the complete NAV, which
+    ///         equals the pre-stale NAV, and the complete NAV equals the sum of its positions.
+    function test_partitionSumsToCompleteWithStaleAsset() public {
+        int256 freshComplete = nav.getAccountNav(safe, address(0)).value;
+        _staleDaiOnly();
+        INAVCalculator.NAV memory complete = nav.getAccountNav(safe, address(0));
+        assertEq(complete.value, freshComplete, "stale DAI keeps its value");
+
+        address[] memory all = nav.getAllAdapters();
+        int256 summed;
+        for (uint256 i = 0; i < all.length; i++) {
+            summed += _slice(_arr1(all[i])).value;
+        }
+        assertEq(summed, complete.value, "slices == complete with a stale asset");
+
+        INAVCalculator.Position[] memory ps = nav.getAccountPositions(safe, address(0));
+        int256 posSum;
+        for (uint256 i = 0; i < ps.length; i++) {
+            posSum += ps[i].value;
+        }
+        assertEq(posSum, complete.value, "sum(positions) == NAV with a stale asset");
+    }
+
+    /// @notice The same partition invariant once DAI has NO usable price (past MAX_STALE_PRICE_AGE): DAI's slice is
+    ///         0, still flagged, and the slices still sum to the complete NAV.
+    function test_partitionSumsToCompleteWithUnpriceableAsset() public {
+        vm.warp(block.timestamp + MAX_STALE_PRICE_AGE + 1);
+        INAVCalculator.NAV memory complete = nav.getAccountNav(safe, address(0));
+        assertEq(complete.stalePriceAssets.length, 1);
+        INAVCalculator.PartialNAV memory c = _slice(_arr1(address(adapterC)));
+        assertEq(c.value, 0, "an unusable asset contributes 0");
+        assertEq(c.stalePriceAssets.length, 1, "and is still flagged");
+
+        address[] memory all = nav.getAllAdapters();
+        int256 summed;
+        for (uint256 i = 0; i < all.length; i++) {
+            summed += _slice(_arr1(all[i])).value;
+        }
+        assertEq(summed, complete.value);
     }
 }

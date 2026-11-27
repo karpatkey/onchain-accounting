@@ -14,14 +14,15 @@ import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 /// @title BaseCustomPriceFeed
 /// @author KPK
 /// @notice Shared skeleton for the "exchange-rate × base/USD" custom price feeds: it reads the base asset's USD price
-///         from the **NAV** (`getPriceData(BASE_ASSET)` — the NAV's own selector, typically ETH/USD), applies the
-///         staleness gate, multiplies by a protocol-supplied 18-decimal exchange rate, and returns the result in
+///         from the **NAV** (`getPriceData(BASE_ASSET)` — the NAV's own selector, typically ETH/USD), carries its
+///         staleness flag, multiplies by a protocol-supplied 18-decimal exchange rate, and returns the result in
 ///         `NAV_DECIMALS` (8). Concrete feeds implement only `_rate()` — the protocol's exchange rate as 18-decimal
 ///         base-token units per 1 `UNDERLYING` (e.g. ETH per rETH), the orientation the multiply expects.
 /// @dev Sourcing base/USD from the NAV (rather than a hardcoded Chainlink oracle) makes the base term identical to the
 ///      one the NAV prices the base asset's own legs with — so it cancels cleanly when NAV is quoted in the base.
 ///      See {NavBaseUsdLib} (incl. the circularity invariant) and `docs/decisions`. Math: `price = rate · base8 / 1e18`
-///      (Floor); stale when the NAV reports the base feed stale (all-feeds-stale; NOT L2 sequencer-down alone) or `_rate()` is 0.
+///      (Floor). Stale, keeping the computed price, when the NAV reports the base feed stale (no base feed fresh; NOT L2
+///      sequencer-down alone); `(0, true)` when the NAV has no usable base price or `_rate()` is 0 (ADR 0029).
 abstract contract BaseCustomPriceFeed is ICustomPriceFeed, INavSourcedPriceFeed {
     using Math for uint256;
 
@@ -50,12 +51,13 @@ abstract contract BaseCustomPriceFeed is ICustomPriceFeed, INavSourcedPriceFeed 
     }
 
     /// @notice The protocol's exchange rate, expressed as 18-decimal base-token units per 1 `UNDERLYING`
-    ///         (e.g. ETH per rETH). Return 0 to mark the price stale/unavailable.
+    ///         (e.g. ETH per rETH). Return 0 to mark the price unavailable (the feed then reports 0, stale).
     /// @dev The only hook a concrete feed must implement.
     function _rate() internal view virtual returns (uint256);
 
-    /// @notice Reads the base feed + rate, applies staleness, and combines them. Mirrors the former per-feed
-    ///         `_compute()`. Exposed to subclasses that need a different `latestRoundData` shape.
+    /// @notice Reads the base feed + rate and combines them. A stale base still prices the asset, flagged stale
+    ///         (ADR 0029); only a missing base price or a zero rate returns 0. Exposed to subclasses that need a
+    ///         different `latestRoundData` shape.
     function _compute()
         internal
         view
@@ -69,10 +71,10 @@ abstract contract BaseCustomPriceFeed is ICustomPriceFeed, INavSourcedPriceFeed 
         )
     {
         // Base/USD from the NAV's selector (normalized to NAV_DECIMALS = 8); it marks the base stale on
-        // all-base-feeds-stale only (L2 sequencer-down alone does NOT — NavBaseUsdLib un-folds pd.sequencerDown; ADR 0019). roundId/startedAt/answeredInRound have no meaning for a NAV read.
+        // no-base-feed-fresh only (L2 sequencer-down alone does NOT — NavBaseUsdLib un-folds pd.sequencerDown; ADR 0019). roundId/startedAt/answeredInRound have no meaning for a NAV read.
         uint256 base8;
         (base8, stale, updatedAt) = NavBaseUsdLib.baseUsd(NAV, BASE_ASSET);
-        if (stale) return (0, true, 0, 0, updatedAt, 0);
+        if (base8 == 0) return (0, true, 0, 0, updatedAt, 0);
         uint256 rate = _rate();
         if (rate == 0) return (0, true, 0, 0, updatedAt, 0);
         // rate is 18 decimals, base8 is 8 decimals → result in NAV_DECIMALS (8).

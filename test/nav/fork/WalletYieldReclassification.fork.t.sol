@@ -94,12 +94,12 @@ contract WalletYieldReclassificationForkTest is TestEnvConfigurator {
         createSelectForkWithCadence(getAlchemyUrl("eth-mainnet"), FORK_BLOCK);
 
         // ETCH BOTH LIBRARIES WITH THIS TREE'S CODE, or this test silently measures the wrong thing.
-        // `NAVRegistryLib` and `PriceFeedLib` are pre-linked at deterministic CREATE2 addresses, and those
-        // pins are DELIBERATELY STALE on this branch — the regeneration is a deploy-time step, so the two
-        // pin assertions are red by decision. On a mainnet fork those addresses hold the code that is live
-        // today, so an implementation compiled here would DELEGATECALL the OLD library: no claimant map, no
-        // disarm-on-claim, and the whole point of the test evaporates while it still passes or fails for
-        // unrelated reasons. Etching puts this tree's logic behind the pinned addresses.
+        // `NAVRegistryLib` and `PriceFeedLib` are pre-linked at deterministic CREATE2 addresses. Where a pin
+        // still equals the live address (NAVRegistryLib today), the fork holds the live code there, and an
+        // implementation compiled here would DELEGATECALL it; etching puts this tree's logic behind it. Where
+        // the pin has moved off the live address (PriceFeedLib since ADR 0029), the etch lands on an empty
+        // address only the NEW implementation links to, so step 1's baseline runs the live PriceFeedLib and
+        // step 2 is a real old-engine -> new-engine comparison.
         vm.etch(LibraryPins.NAV_REGISTRY_LIB, vm.deployCode("NAVRegistryLib.sol:NAVRegistryLib").code);
         vm.etch(LibraryPins.PRICE_FEED_LIB, vm.deployCode("PriceFeedLib.sol:PriceFeedLib").code);
     }
@@ -120,14 +120,42 @@ contract WalletYieldReclassificationForkTest is TestEnvConfigurator {
         uint256 g0 = gasleft();
         int256 before = _nav();
         uint256 gasBefore = g0 - gasleft();
+        INAVCalculator.Asset[] memory staleBefore =
+        NAVCalculator(NAV).getAccountNav(ACCOUNT, address(0)).stalePriceAssets;
         assertGt(before, 0, "precondition: the account must hold something priced");
 
-        // 2. Upgrade the proxy. This alone must not move NAV — if it does, the upgrade is not safe and nothing
-        //    after this point is interpretable.
+        // 2. Upgrade the proxy. This alone must not move any FRESH valuation — if it does, the upgrade is not safe
+        //    and nothing after this point is interpretable. Since ADR 0029 a STALE asset keeps its last price
+        //    instead of pricing at 0, and at this block 17 assets (ETH/WETH and the ETH-based LSTs) are stale, so
+        //    the total legitimately rises. The invariant that survives: the non-stale positions sum to exactly the
+        //    old NAV (the old engine valued every stale leg at 0).
         address newImpl = address(new NAVCalculator());
         vm.prank(ADMIN_AND_MANAGER);
         IUUPS(NAV).upgradeToAndCall(newImpl, "");
-        assertEq(_nav(), before, "the upgrade alone must not change NAV");
+        INAVCalculator.Position[] memory upgraded = NAVCalculator(NAV).getAccountPositions(ACCOUNT, address(0));
+        int256 freshSum;
+        for (uint256 i; i < upgraded.length; ++i) {
+            if (!upgraded[i].stale) {
+                freshSum += upgraded[i].value;
+            } else {
+                // A stale leg is valued at exactly the price the selector reports for it (or 0 if none usable).
+                assertEq(
+                    upgraded[i].price,
+                    NAVCalculator(NAV).getPriceData(upgraded[i].balanceAsset.asset).price,
+                    "a stale leg is priced at the selected (stale) price"
+                );
+            }
+        }
+        assertEq(freshSum, before, "the upgrade alone must not change any fresh valuation");
+        // Freshness classification is unchanged by ADR 0029, so the stale set must be identical.
+        INAVCalculator.Asset[] memory staleAfter =
+        NAVCalculator(NAV).getAccountNav(ACCOUNT, address(0)).stalePriceAssets;
+        assertEq(staleAfter.length, staleBefore.length, "the upgrade must not change the stale set");
+        for (uint256 i; i < staleAfter.length; ++i) {
+            assertEq(staleAfter[i].asset, staleBefore[i].asset, "the upgrade must not change the stale set");
+        }
+        // The reclassification below is measured against the post-upgrade NAV.
+        before = _nav();
 
         // 3. Register all 16 adapters with their 23 coordinates. Each claim disarms the default adapter for
         //    that token in the same transaction.

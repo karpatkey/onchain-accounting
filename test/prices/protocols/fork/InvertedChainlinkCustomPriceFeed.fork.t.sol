@@ -136,10 +136,12 @@ contract InvertedChainlinkCustomPriceFeedForkTest is TestEnvConfigurator {
 
     /// @dev Past the heartbeat the feed must report stale rather than a frozen price.
     function test_goesStalePastHeartbeat() public {
+        (uint256 freshPrice,) = feed.getLatestPrice();
+        assertGt(freshPrice, 0, "control: priced while fresh");
         (,,, uint256 legUpdatedAt,) = AggregatorV3Interface(USD_ARS_FEED).latestRoundData();
         vm.warp(legUpdatedAt + HEARTBEAT);
         (uint256 price, bool stale) = feed.getLatestPrice();
         assertTrue(stale, "age == heartbeat => stale");
-        assertEq(price, 0);
+        assertEq(price, freshPrice, "a stale leg keeps the last price, flagged stale (ADR 0029)");
     }
 }

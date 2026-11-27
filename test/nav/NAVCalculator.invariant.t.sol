@@ -206,6 +206,8 @@ contract NAVCalculatorInvariantTest is SuperTest {
         assertEq(stale1, stale2, "Staleness should be consistent");
         assertEq(stale2, stale3, "Staleness should be consistent");
         assertTrue(stale1, "Price should be stale");
+        assertEq(price1, 1, "ADR 0029: a stale feed keeps its last price (not 0)");
+        assertEq(nav.getPriceData(address(usdc)).healthyFeedCount, 0, "stale => healthyFeedCount == 0");
         assertEq(price1, price2, "Price should be consistent");
         assertEq(price2, price3, "Price should be consistent");
     }

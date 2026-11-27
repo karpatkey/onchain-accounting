@@ -1,6 +1,7 @@
 # 0019 — Custom price feeds source their base/USD from the NAV (one price source per base asset)
 
 **Status:** accepted
+**Amended by:** [0029](0029-staleness-flags-never-changes-value.md): a stale base no longer leaves the derived asset unpriced; the feed computes its price from the stale base and reports `stale = true`.
 
 ## Context
 

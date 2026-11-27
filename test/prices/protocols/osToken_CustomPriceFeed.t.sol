@@ -69,11 +69,15 @@ contract osToken_CustomPriceFeedTest is Test {
         assertEq(uint256(answer), RATE * uint256(USD) / 1e18);
     }
 
+    /// @dev ADR 0029: a stale base still prices the osToken (flagged stale). `latestRoundData().answer` keeps its
+    ///      `stale ? 0 : price` shape (the NAV reads only its `updatedAt`).
     function test_stale_whenBaseStale() public {
+        (uint256 freshPrice,) = oracle.getLatestPrice();
         nav.setAssetStale(address(weth), true);
         (uint256 price, bool stale) = oracle.getLatestPrice();
         assertTrue(stale);
-        assertEq(price, 0);
+        assertEq(price, freshPrice, "stale base keeps the last base price");
+        assertEq(price, RATE * uint256(USD) / 1e18);
         (, int256 answer,,,) = oracle.latestRoundData();
         assertEq(answer, 0, "stale returns answer 0");
     }

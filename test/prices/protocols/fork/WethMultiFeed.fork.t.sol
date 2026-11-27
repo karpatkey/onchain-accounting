@@ -141,14 +141,24 @@ contract WethMultiFeedForkTest is NAVCalculatorForkHarness {
         console2.log("Price (USD)          :", uint256(price) / 1e8);
     }
 
-    /// After API3's 24h heartbeat expires every feed is stale.
+    /// @notice After every heartbeat expires every feed is stale; ADR 0029: the FRESHEST stale feed (the larger
+    ///         `updatedAt`; ties keep the earlier-registered) still supplies the price, with `healthyFeedCount == 0`.
     function test_allFeedsStale_after86400Warp() public {
         vm.warp(block.timestamp + API3_HEARTBEAT + 1);
 
-        (int256 price,, bool stale,) = nav.latestPrice(WETH);
+        (, int256 aAnswer,, uint256 aUpdated,) = AggregatorV3Interface(CHAINLINK_ETH_USD).latestRoundData();
+        (, int256 bAnswer,, uint256 bUpdated,) = AggregatorV3Interface(API3_ETH_USD).latestRoundData();
+        bool bWins = bUpdated > aUpdated; // feed 0 = CHAINLINK_ETH_USD, feed 1 = API3_ETH_USD
+        int256 expected = bWins ? bAnswer / 1e10 : aAnswer;
 
-        assertTrue(stale, "expected all-stale after 24h warp");
-        assertEq(price, 0, "price must be 0 when all feeds are stale");
+        (int256 price,, bool stale,) = nav.latestPrice(WETH);
+        INAVCalculator.PriceFeedData memory d = nav.getPriceData(WETH);
+
+        assertTrue(stale, "expected all-stale after the warp");
+        assertEq(price, expected, "the freshest stale feed supplies the price");
+        assertGt(price, 0);
+        assertEq(d.priceFeed, bWins ? API3_ETH_USD : CHAINLINK_ETH_USD, "getPriceData reports the stale winner");
+        assertEq(d.healthyFeedCount, 0);
     }
 
     // ─── Constraints ───────────────────────────────────────────────────────────

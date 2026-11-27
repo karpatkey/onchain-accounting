@@ -1,0 +1,6 @@
+# L-01 — "Never uses a price older than 7 days" is not an on-chain invariant (heartbeat >= MAX_STALE_PRICE_AGE accepted)
+- Evidence: STATIC_CONFIRMED. src/prices/PriceFeedLib.sol:157-160 (a fresh feed bypasses the cap), and addFeed at :1679 checks only `heartbeat == 0`. Enforced only by script/deploy/preflight/declared_heartbeat_guard.py:550.
+- Defect: the 7-day cap applies only to feeds that are already stale. A primary registered with a heartbeat of 7 days or more (including the documented `type(uint256).max` "gate disabled" sentinel) is classed FRESH at any age. It is therefore used unflagged past 7 days, and when it crosses its heartbeat it goes straight to unusable, which brings back the value cliff.
+- Scenario: a MANAGER (or the RealignHeartbeats script) registers or updates a primary at 604800 s or max outside the preflight path. A deprecated feed then reports a dead price as fresh indefinitely.
+- Severity: Low (trusted MANAGER plus an off-chain guard; no live config violates it — the largest registered primary is 90000 s, Robinhood is 518400 s).
+- Fix: `if (heartbeat >= MAX_STALE_PRICE_AGE && heartbeat != type(uint256).max) revert` in addFeed for primaries, if bytes allow. Otherwise document the exception and keep the preflight guard blocking.

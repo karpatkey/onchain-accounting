@@ -145,9 +145,11 @@ iff it was received at or before the destination pin. Exactly once is correct; b
 after the source pin, received before the destination pin: possible because the two reads are not simultaneous);
 neither is **in flight**. The check fails on any transfer of the Safe not counted exactly once.
 
-**Scan bound.** Log scans start at the previous settlement's pins (`--since-eth`, `--since-hyperevm`): that
-settlement's check already proved nothing was in flight then, and every transfer that matters now was sent after it.
-The first settlement scans from the Safe's deployment.
+**Scan bound.** Log scans start one block after the previous settlement's pins (`--since-eth`, `--since-hyperevm`):
+that settlement's check proved every transfer at or before them was counted exactly once. The check refuses
+(exit 2) unless `since <= pin <= head` on each chain, so swapped or future bounds cannot scan nothing. The first
+settlement uses bounds before the Safe's first transfer: for hype-split, a scan of both chains from block 0 found only
+HyperEVM sends at 51,693,622 and 52,030,071 and Ethereum receipts at 26,450,116 and 26,477,611 (2026-11-27).
 
 ## Task 4: two-chain preflight
 
@@ -156,8 +158,11 @@ The first settlement scans from the Safe's deployment.
   today; with it, both `since` pins are required.
 - Reads `OFTSent` from the Safe and `OFTReceived` to the Safe on both chains, from the `since` blocks to each chain's
   head (a transfer received after the pin still has to be classified), pairs them by guid, and classifies each by
-  the rule above. A send from the Safe whose receipt went to another address is a payout, not fund value, once
-  received; while unreceived it counts as in flight.
+  the rule above. A send from the Safe whose receipt went to another address is a payout, not fund value: counted at
+  the source until sent. While unreceived its recipient is unknown, so it is classified like a transfer to the Safe
+  (in flight if sent at or before the source pin). A send to a chain other than these two is refused once at or
+  before the pin, in every later run too. `--hyperevm-block` and the `since` flags without `--hyperevm-rpc` are an
+  error.
 - Output adds `holdings` at the pins (HyperEVM native HYPE + WHYPE, Ethereum HYPE OFT, in wei) and `transfers[]`
   with `{guid, from, to, amount, sentBlock, receivedBlock, verdict}`; reasons for every `in flight` and `double count`.
 - Done: offline tests; live run for the hype-split Safe prints `ok`.
@@ -167,7 +172,9 @@ The first settlement scans from the Safe's deployment.
 Two fake chains plus Derive's queues step through one cycle: subscribe on HyperEVM → bridge to Ethereum → Derive
 deposit → batch applies it → withdrawal paid in the batch → a second withdrawal queued, then paid → bridge back →
 redeem. At every step: the verdict (settle or skip), and that holdings + Derive leg never count a unit twice and equal
-the true fund total whenever the verdict is settle. Also the double-count case: pins straddling a transfer.
+the true fund total whenever the verdict is settle. Also the double-count case: pins straddling a transfer. Edge
+cases: other users' traffic on both OFTs, an inflow from someone else, WHYPE, a later `since`, an upper-case guid,
+an unsupported destination, broken reads and bad bounds (exit 2), and the CLI flag wiring.
 
 ## Task 6: replay of the real path (network, by hand)
 

@@ -726,14 +726,21 @@ HYPEREVM_LOG_CHUNK = 1_000_000
 def bridge_check(chains, safe):
     """Holdings at the pins and every LayerZero transfer of `safe` since the last settlement, classified.
 
-    `chains[name]` = {"rpc", "pin", "since", "chunk"} for ETHEREUM and HYPEREVM.
+    `chains[name]` = {"rpc", "pin", "since", "chunk"} for ETHEREUM and HYPEREVM. `since` is the previous settlement's
+    pin on that chain: everything at or before it was counted exactly once then, so scans start one block later. A
+    send to a chain other than these two is refused ("unknown destination") once at or before the pin, in every
+    later run too: the fund does not use one.
     """
     safe = safe.lower()
     head = {c: int(v["rpc"]("eth_blockNumber", []), 16) for c, v in chains.items()}
+    for c, v in chains.items():
+        # A swapped, future or stale bound would scan nothing, or stop before receipts that make a double count.
+        if not v["since"] <= v["pin"] <= head[c]:
+            raise ValueError(f"{c}: need since <= pin <= head, got {v['since']}, {v['pin']}, {head[c]}")
 
-    def scan(c, topics, since=None):
+    def scan(c, topics):
         v = chains[c]
-        return chunked_logs(v["rpc"], OFT[c], topics, v["since"] if since is None else since, head[c], v["chunk"])
+        return chunked_logs(v["rpc"], OFT[c], topics, v["since"] + 1, head[c], v["chunk"])
 
     received = {}
     for c in chains:
@@ -802,7 +809,8 @@ def preflight_verdict(rpc, safe, block=None, chunk=LOG_CHUNK, hyperevm=None):
             report["bridge"] = bridge
             report["reasons"] += bridge["reasons"]
             report["ok"] = not report["reasons"]
-    except (RuntimeError, ValueError, KeyError, IndexError, subprocess.CalledProcessError) as e:
+    except (RuntimeError, ValueError, KeyError, IndexError, TypeError, AttributeError,
+            subprocess.CalledProcessError) as e:
         return 2, {"ok": False, "block": block, "safe": safe.lower(), "error": f"{type(e).__name__}: {e}"}
     return (0 if report["ok"] else 1), report
 
@@ -832,6 +840,9 @@ def main():
         else "https://ethereum-rpc.publicnode.com")
     if a.preflight:
         hyperevm = None
+        bridge_flags = (a.hyperevm_block, a.since_eth, a.since_hyperevm)
+        if not a.hyperevm_rpc and any(f is not None for f in bridge_flags):
+            ap.error("--hyperevm-block, --since-eth and --since-hyperevm need --hyperevm-rpc")
         if a.hyperevm_rpc:
             if a.since_eth is None or a.since_hyperevm is None:
                 ap.error("--hyperevm-rpc needs --since-eth and --since-hyperevm (the previous settlement's pins)")

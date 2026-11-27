@@ -8,10 +8,13 @@ The reference values asserted here are the ones DeriveCelestiaAttestedBalanceAda
 so the two implementations are held to each other; test_scriptFixture_optionsMatchReference closes the loop on
 a fixture the script wrote itself.
 """
+import contextlib
 import copy
 import importlib.util
+import io
 import json
 import os
+import sys
 import unittest
 from pathlib import Path
 
@@ -417,27 +420,55 @@ class World:
         self.hyp.credit(None, -amount, self.hyp.mine())
         self.total -= amount
 
-    def send(self, src, amount, recipient=SAFE):
-        """LayerZero send from the Safe on `src` to the other chain; tokens leave at once."""
+    def wrap(self, amount):
+        """Native HYPE -> WHYPE on HyperEVM: the fund holds both."""
+        b = self.hyp.mine()
+        self.hyp.credit(None, -amount, b)
+        self.hyp.credit(p.WHYPE.lower(), amount, b)
+
+    def send(self, src, amount, recipient=SAFE, dst_eid=None):
+        """LayerZero send from the Safe on `src` to the other chain (or to `dst_eid`); tokens leave at once."""
         b = self.chain[src].mine()
         self.chain[src].credit(self._token(src), -amount, b)
         self.guids += 1
         guid = "0x" + word(0xbeef00 + self.guids)
         dst = p.ETHEREUM if src == p.HYPEREVM else p.HYPEREVM
         self.chain[src].log(p.OFT[src], [p.TOPIC_OFT_SENT, guid, "0x" + aword(SAFE)],
-                            word(self.EID[dst]) + word(amount) + word(amount), b)
+                            word(dst_eid or self.EID[dst]) + word(amount) + word(amount), b)
         self.flight[guid] = (src, dst, amount, recipient)
         if recipient != SAFE:
             self.total -= amount  # a redemption paid out cross-chain leaves the fund when sent
         return guid
 
-    def deliver(self, guid):
+    def deliver(self, guid, upper=False):
         src, dst, amount, recipient = self.flight.pop(guid)
         b = self.chain[dst].mine()
         if recipient == SAFE:
             self.chain[dst].credit(self._token(dst), amount, b)
-        self.chain[dst].log(p.OFT[dst], [p.TOPIC_OFT_RECEIVED, guid, "0x" + aword(recipient)],
+        topic = "0x" + guid[2:].upper() if upper else guid  # nodes return hex in either case
+        self.chain[dst].log(p.OFT[dst], [p.TOPIC_OFT_RECEIVED, topic, "0x" + aword(recipient)],
                             word(self.EID[src]) + word(amount), b)
+
+    def inflow(self, dst, amount):
+        """Someone else bridges HYPE to the Safe: counted on arrival only."""
+        b = self.chain[dst].mine()
+        self.chain[dst].credit(self._token(dst), amount, b)
+        self.chain[dst].log(p.OFT[dst], [p.TOPIC_OFT_RECEIVED, "0x" + word(0xd00d00 + b), "0x" + aword(SAFE)],
+                            word(30184) + word(amount), b)
+        self.total += amount
+
+    def noise(self):
+        """Other users' transfers on the same OFTs, in both directions: never the Safe's."""
+        for c in self.chain:
+            b = self.chain[c].mine()
+            self.chain[c].log(p.OFT[c], [p.TOPIC_OFT_SENT, "0x" + word(0xaaa000 + b), "0x" + aword(OTHER)],
+                              word(30101) + word(9 * E18) + word(9 * E18), b)
+            self.chain[c].log(p.OFT[c], [p.TOPIC_OFT_RECEIVED, "0x" + word(0xbbb000 + b), "0x" + aword(OTHER)],
+                              word(30367) + word(9 * E18), b)
+
+    def settled(self):
+        """Record a settlement at the current heads: the next check scans from here."""
+        self.since = {c: ch.head for c, ch in self.chain.items()}
 
     def deposit(self, amount):
         self.eth.credit(self._token(p.ETHEREUM), -amount, self._action(1))
@@ -481,6 +512,8 @@ class World:
         code, report = p.preflight_verdict(self.eth, SAFE, pe, p.LOG_CHUNK, {
             "rpc": self.hyp, "pin": ph, "since": self.since[p.HYPEREVM], "sinceEth": self.since[p.ETHEREUM],
             "chunk": p.HYPEREVM_LOG_CHUNK})
+        if code == 2:
+            return code, report, None
         derive_leg = max((b, v) for b, v in self.derive if b <= pe)[1]
         return code, report, report["bridge"]["holdings"]["outsideDerive"] + derive_leg
 
@@ -571,6 +604,109 @@ class LifecycleSimulationTest(unittest.TestCase):
         self.assertEqual(sorted(t["verdict"] for t in report["bridge"]["transfers"]), ["ok", "payout"])
 
 
+class BridgeEdgeTest(unittest.TestCase):
+    """The cases a round trip does not reach: other users' traffic, inflows, WHYPE, the scan bound, guid case,
+    unsupported destinations, broken reads and the CLI flags."""
+
+    def transfers(self, report):
+        return [(t["verdict"], t["amount"]) for t in report["bridge"]["transfers"]]
+
+    def test_other_users_traffic_is_ignored_and_amounts_are_read(self):
+        w = World()
+        w.subscribe(5 * E18)
+        w.noise()
+        g = w.send(p.HYPEREVM, 2 * E18)
+        w.noise()  # other users' receipts on Ethereum must not pass for this transfer's
+        code, report, _ = w.settle()
+        self.assertEqual((code, self.transfers(report)), (1, [("in flight", 2 * E18)]))
+        w.deliver(g, upper=True)  # the receipt's guid in upper case
+        w.noise()
+        code, report, counted = w.settle()
+        self.assertEqual((code, counted), (0, 5 * E18), report["reasons"])
+        self.assertEqual(self.transfers(report), [("ok", 2 * E18)])
+
+    def test_inflow_counted_on_arrival(self):
+        w = World()
+        w.inflow(p.ETHEREUM, 3 * E18)
+        code, report, counted = w.settle()
+        self.assertEqual((code, counted), (0, 3 * E18), report["reasons"])
+        self.assertEqual(self.transfers(report), [("inflow", 3 * E18)])
+
+    def test_whype_counts_as_hype_at_the_pin(self):
+        w = World()
+        w.subscribe(5 * E18)
+        w.wrap(2 * E18)
+        pin = w.hyp.head
+        w.wrap(1 * E18)
+        code, report, counted = w.settle(pin_hyp=pin)
+        self.assertEqual((code, counted), (0, 5 * E18), report["reasons"])
+        self.assertEqual(report["bridge"]["holdings"]["hyperevmWhype"], 2 * E18)
+
+    def test_scan_starts_after_the_previous_settlement(self):
+        w = World()
+        w.subscribe(5 * E18)
+        w.deliver(w.send(p.HYPEREVM, 2 * E18))
+        w.settled()
+        w.deliver(w.send(p.ETHEREUM, 1 * E18))
+        code, report, counted = w.settle()
+        self.assertEqual((code, counted), (0, 5 * E18), report["reasons"])
+        self.assertEqual(self.transfers(report), [("ok", 1 * E18)])  # the settled 2 HYPE is not re-read
+
+    def test_send_to_an_unsupported_chain_is_refused(self):
+        w = World()
+        w.subscribe(5 * E18)
+        w.send(p.HYPEREVM, 1 * E18, dst_eid=30184)  # Base: not a chain the fund reads
+        code, report, _ = w.settle()
+        self.assertEqual(code, 1)
+        self.assertEqual(self.transfers(report), [("unknown destination", 1 * E18)])
+
+    def test_bad_bounds_and_broken_reads_are_exit_2(self):
+        w = World()
+        w.subscribe(5 * E18)
+        w.since = {p.ETHEREUM: w.hyp.head, p.HYPEREVM: w.eth.head}  # swapped: Ethereum's bound above its head
+        self.assertEqual(w.settle()[0], 2)
+        w.since = {c: ch.head for c, ch in w.chain.items()}
+        self.assertEqual(w.settle(pin_hyp=w.hyp.head - 1)[0], 2)  # pin before since
+        for broken in ("raise", "null"):
+            w2 = World()
+            hyp = w2.hyp
+
+            def flaky(method, params, hyp=hyp, broken=broken):
+                if method == "eth_getLogs":
+                    if broken == "raise":
+                        raise RuntimeError("eth_getLogs: query timeout")
+                    return None
+                return hyp(method, params)
+            code, report = p.preflight_verdict(w2.eth, SAFE, w2.eth.head, p.LOG_CHUNK, {
+                "rpc": flaky, "pin": hyp.head, "since": hyp.head - 5, "sinceEth": w2.eth.head, "chunk": 1_000})
+            self.assertEqual(code, 2, (broken, report))
+
+    def test_cli_maps_the_flags_and_refuses_partial_ones(self):
+        w = World()
+        w.subscribe(5 * E18)
+        g = w.send(p.HYPEREVM, 2 * E18)  # in flight: only a correctly wired run sees it
+        chains = {"sim://eth": w.eth, "sim://hyp": w.hyp}
+        real_eth, argv = p.eth, sys.argv
+        p.eth = lambda url, method, params: chains[url](method, params)
+        try:
+            def run(*args):
+                sys.argv = ["derive-celestia-proof.py", "--preflight", SAFE, "--eth-rpc", "sim://eth", *args]
+                with self.assertRaises(SystemExit) as cm, contextlib.redirect_stdout(io.StringIO()) as out, \
+                        contextlib.redirect_stderr(io.StringIO()):
+                    p.main()
+                return cm.exception.code, out.getvalue()
+            since = ["--since-eth", str(w.since[p.ETHEREUM]), "--since-hyperevm", str(w.since[p.HYPEREVM])]
+            code, out = run("--hyperevm-rpc", "sim://hyp", *since)
+            self.assertEqual(code, 1)
+            self.assertIn("in flight", out)
+            self.assertEqual(run(*since)[0], 2)                           # bridge flags without --hyperevm-rpc
+            self.assertEqual(run("--hyperevm-rpc", "sim://hyp")[0], 2)  # --hyperevm-rpc without the bounds
+            w.deliver(g)
+            self.assertEqual(run("--hyperevm-rpc", "sim://hyp", *since)[0], 0)
+        finally:
+            p.eth, sys.argv = real_eth, argv
+
+
 @unittest.skipUnless(os.environ.get("DERIVE_LIVE") == "1" and os.environ.get("ALCHEMY_API_KEY"),
                      "network replay: set DERIVE_LIVE=1 and ALCHEMY_API_KEY (archive RPCs for Ethereum and HyperEVM)")
 class LiveReplayTest(unittest.TestCase):
@@ -579,7 +715,9 @@ class LiveReplayTest(unittest.TestCase):
     as action 8651 at 26,450,176, applied by the batch at 26,450,225."""
 
     SEND_H, RECV_E, DEPOSIT_E, BATCH_E = 51_693_622, 26_450_116, 26_450_176, 26_450_225
-    SINCE = {"eth": 26_449_000, "hyp": 51_693_000}  # stands in for the previous settlement's pins
+    # The Safe's whole bridge history (scanned from block 0 on both chains, 2026-11-27): HyperEVM sends at 51,693,622
+    # and 52,030,071, Ethereum receipts at 26,450,116 and 26,477,611, nothing else. These bounds precede all of it.
+    SINCE = {"eth": 26_449_000, "hyp": 51_693_000}
 
     def verdict(self, pin_eth, pin_hyp):
         key = os.environ["ALCHEMY_API_KEY"]

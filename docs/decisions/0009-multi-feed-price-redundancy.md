@@ -2,6 +2,7 @@
 
 **Status:** Accepted  
 **Date:** 2026-05-16
+**Amended by:** [0029](0029-staleness-flags-never-changes-value.md): when no feed is fresh, the freshest usable stale feed now supplies the price (flagged stale) instead of the asset pricing at 0.
 
 ---
 

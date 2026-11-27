@@ -9,7 +9,9 @@ import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 interface ICustomPriceFeed is IERC165 {
     /// @notice Returns the latest price for the underlying asset, and whether the price is stale
     /// (only relevant when this custom price feed makes use of an external oracle)
-    /// @return price The latest price of the underlying asset.
+    /// @return price The latest price of the underlying asset. When an input is only stale, return the computed price
+    ///         with `stale = true` (the NAV keeps using it, flagged, up to MAX_STALE_PRICE_AGE; ADR 0029). Return 0
+    ///         only on a structural failure (zero rate, non-positive answer, decimals or band violation).
     /// @return stale If the price returned is stale.
     function getLatestPrice() external view returns (uint256 price, bool stale);
 
@@ -34,6 +36,12 @@ interface ICustomPriceFeed is IERC165 {
     /// @dev For feeds with indirect oracle exposure (e.g. ETHPlus via Reserve Protocol): return
     ///      a meaningful updatedAt sourced from the underlying protocol's refresh timestamps.
     /// @dev For feeds with no trackable oracle dependency: return (0, 0, 0, 0, 0).
+    /// @dev `updatedAt` MUST be the real timestamp of the oldest input, never `block.timestamp`: the NAV ages a stale
+    ///      feed by it, and stops using the feed once it is MAX_STALE_PRICE_AGE old (ADR 0029). A feed that reported
+    ///      `block.timestamp` while stale would stay usable forever.
+    /// @dev `answer` is 0 while the feed is stale (it is the computed price otherwise), unlike Chainlink, which
+    ///      returns its last answer regardless of age. The NAV reads the price from getLatestPrice() — which carries a
+    ///      stale price — and takes only `updatedAt` from here; external Chainlink-ABI readers see 0 when stale.
     function latestRoundData()
         external
         view

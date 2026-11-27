@@ -41,11 +41,22 @@ contract weETH_CustomPriceFeedForkTest is TestEnvConfigurator {
         assertFalse(stale);
     }
 
+    /// @dev ADR 0029: a stale NAV base still prices the asset (flagged stale) until the base's last update is
+    ///      `MAX_STALE_PRICE_AGE` old; past that the base has no usable price and the feed returns (0, true).
     function test_getLatestPriceStale() public {
-        vm.warp(block.timestamp + 30 days);
+        (uint256 freshPrice, bool freshStale) = oracle.getLatestPrice();
+        assertFalse(freshStale, "control: fresh at the fork block");
+        assertGt(freshPrice, 0);
+
+        vm.warp(block.timestamp + 2 days); // base past its heartbeat, well inside the cap
         (uint256 price, bool stale) = oracle.getLatestPrice();
-        assertEq(price, 0, "Stale price returns 0 (I-1)");
         assertEq(stale, true, "Price should be marked stale when the NAV base feed is stale");
+        assertEq(price, freshPrice, "a stale base keeps the last price (ADR 0029)");
+
+        vm.warp(block.timestamp + 30 days); // base past MAX_STALE_PRICE_AGE: no usable base price
+        (price, stale) = oracle.getLatestPrice();
+        assertEq(price, 0, "no usable base price past the 7-day cap");
+        assertEq(stale, true);
     }
 
     function test_decimals() public view {

@@ -366,8 +366,10 @@ contract NAVCalculatorErrorTest is SuperTest {
         INAVCalculator.NAV memory navResult = nav.getAccountNav(safe, address(0));
         assertTrue(navResult.timestamp >= 0, "nav returned");
 
-        (,, bool stale,) = nav.latestPrice(address(token));
+        (int256 price,, bool stale,) = nav.latestPrice(address(token));
         assertTrue(stale, "Zero price should be marked as stale");
+        // ADR 0029: a zero answer is UNUSABLE (not usable-stale), so there is no price to fall back to.
+        assertEq(price, 0, "an unusable feed gives no price");
     }
 
     // ============================================

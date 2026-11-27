@@ -336,7 +336,17 @@ contract InvertedChainlinkCustomPriceFeedTest is Test {
         feed.setUpdatedAt(block.timestamp - HEARTBEAT);
         (uint256 price, bool stale) = oracle.getLatestPrice();
         assertTrue(stale, "age == heartbeat => stale");
-        assertEq(price, 0);
+        assertEq(price, ARS_EXPECTED_PRICE, "a leg past its heartbeat still prices, flagged stale (ADR 0029)");
+
+        // Well past the heartbeat: same price, still stale.
+        feed.setUpdatedAt(block.timestamp - 3 * HEARTBEAT);
+        (price, stale) = oracle.getLatestPrice();
+        assertTrue(stale);
+        assertEq(price, ARS_EXPECTED_PRICE);
+
+        // `latestRoundData().answer` keeps its `stale ? 0 : price` shape.
+        (, int256 answer,,,) = oracle.latestRoundData();
+        assertEq(answer, 0, "stale => zero answer in latestRoundData");
 
         // One second inside the window is fresh.
         feed.setUpdatedAt(block.timestamp - (HEARTBEAT - 1));

@@ -142,10 +142,11 @@ contract NavBacktest is IntegrationFromConfigBase {
     ///      Must only revert for truly unknown metrics (guarded in setUp);
     ///      on-chain failures are caught by the caller.
     ///
-    ///      `nav` records NAV.value only. A stale or feedless asset is priced at 0 and summed as a
-    ///      zero-value leg (src/prices/PriceFeedLib.sol), so a feed breaching its heartbeat shows up
-    ///      as an ordinary value drop with nothing marking it as an oracle event. Pair `nav` with
-    ///      `nav-stale-assets` in a window's `metrics` to record that count alongside the value.
+    ///      `nav` records NAV.value only. A stale asset keeps its last-known price (ADR 0029), so a feed
+    ///      breaching its heartbeat does NOT move the value; only an asset with no usable price (feedless,
+    ///      or every feed older than MAX_STALE_PRICE_AGE) is summed as a zero-value leg. Neither case is
+    ///      marked in `nav` itself: pair it with `nav-stale-assets` in a window's `metrics` to record the
+    ///      stale count alongside the value.
     function _evalMetric(bytes32 h, address account) internal view returns (string memory) {
         if (h == METRIC_NAV) {
             return vm.toString(nav.getAccountNav(account, QUOTE_USD).value);
